@@ -1307,8 +1307,21 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
                 -- built `caps := #[]` by both `.reply`-shaped arms and the
                 -- reply path runs no unwrap (PR #866 round-2).  The receive
                 -- leg's own count is the returned `summary`, staged by the arm.
+                -- **WS-OD OD3.14: the receive leg's priority hand-off.**  The
+                -- return donation's walk starts at `recordedServer`, which is the
+                -- receiver `tid` on every NON-delegated reply and covers both
+                -- legs there; on a *delegated* one they differ and the receiver
+                -- has just completed a rendezvous, so `blockingServer` does not
+                -- relate them and the reply leg's walk never reaches `tid`.  The
+                -- newly dequeued caller's priority would be lost exactly as it
+                -- was on `.receive` before OD3.14 -- the same defect at a sibling
+                -- site.  Gated on the equality that makes the earlier walk BE
+                -- this one, so the non-delegated arm is unchanged.
                 .ok (summary, Architecture.stageWokenSendCompletion
-                          (Architecture.stageDeliveredMessage st3 prevCaller 0)
+                          (Architecture.stageDeliveredMessage
+                            (applyReceiveLegPipHandoff st3 tid nextThread recordedServer
+                              executingCore)
+                            prevCaller 0)
                           wokenSender?)
 
 -- ============================================================================
@@ -3023,7 +3036,18 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
               -- `.blockedOnReceive`) and for a plain `Send` rendezvous (the woken
               -- sender is `.ready`), and `applyCallDonation` is itself the
               -- identity unless the receiver is `.unbound` and the donor `.bound`.
-              match applyReceiveRendezvousDonation st' tid dequeued with
+              --
+              -- **WS-OD OD3.14: and the priority the donation does not carry.**
+              -- The dequeued caller is `.blockedOnReply _ (some tid)`, and
+              -- `resolveEffectivePrioDeadline` is `max basePrio pipBoost` -- the
+              -- donation moves the SchedContext, hence the *base* priority, and
+              -- moves no boost at all, so a chain blocked behind that caller
+              -- stopped dead at it.  This arm ran no chain walk while `.call`
+              -- (`endpointCallCrossCoreDispatch`) and `.replyRecv` both did:
+              -- one condition, three API paths, and the two that dequeue a
+              -- parked `Call` disagreeing about it.  `applyReceiveRendezvousHandoff`
+              -- is the donation and the walk under ONE reading of the guard.
+              match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
               | .error e => .error e
               | .ok stDon =>
                 -- WS-RA RA.B.6: a non-blocking consume delivered into the caller's
@@ -3488,7 +3512,14 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 -- observer (`returnDonatedSchedContext_preserves_projection` makes
                 -- the same argument for the hand-off's other direction); and the
                 -- endpoint→receiver flow this donation follows is gated above.
-                match applyReceiveRendezvousDonation st' tid dequeued with
+                --
+                -- **WS-OD OD3.14**: likewise the priority half, and for the same
+                -- reason no extra gate is owed -- `projectKernelObject` strips
+                -- `pipBoost` (AJ2-B), and the run-queue re-bucketing the walk
+                -- performs is bounded by `receiveRendezvousHandoffWriteSet`,
+                -- exactly as the flow-checked `.call` arm's own walk is bounded
+                -- by `endpointCallLiveWriteSet`.
+                match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
                 | .error e => .error e
                 | .ok stDon =>
                   -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
@@ -5216,7 +5247,12 @@ theorem dispatchArm_receive_matches_returnShape
     -- It writes only `schedContextBinding` and `SchedContext.boundThread` and so
     -- cannot disturb a return frame; naming it here rather than assuming it away
     -- is what keeps this theorem a statement about the arm the kernel runs.
-    (hDon : applyReceiveRendezvousDonation st' tid next = .ok stDon)
+    -- WS-OD OD3.14: and the priority half runs with it, under one guard, so the
+    -- hypothesis names the hand-off rather than the donation alone -- the chain
+    -- walk writes `pipBoost` and run-queue buckets, neither of which is a
+    -- register context, so the frame conclusion is unchanged.
+    (hDon : applyReceiveRendezvousHandoff st' tid next (determineExecutingCore st tid)
+        = .ok stDon)
     (hTcb : (Architecture.stageWokenSendCompletion stDon
         ((st.getEndpoint? epId).bind (·.sendQ.head))).getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
@@ -6681,7 +6717,8 @@ theorem dispatchWithCapChecked_receive_delegates
       (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
               decoded.capRecvSlot (determineExecutingCore st tid) st with
        | (st', .ok (dequeued, summary, _)) =>
-           (match applyReceiveRendezvousDonation st' tid dequeued with
+           (match applyReceiveRendezvousHandoff st' tid dequeued
+                    (determineExecutingCore st tid) with
             | .error e => .error e
             | .ok stDon =>
                 .ok ((), Architecture.stageDeliveredMessage
@@ -6923,7 +6960,8 @@ def syscallDelegates : SyscallId → Prop
            -- obligation names it: a delegation claim that omitted a step would
            -- be a claim about a different program.
            | (st', .ok (dequeued, summary, _)) =>
-               (match applyReceiveRendezvousDonation st' tid dequeued with
+               (match applyReceiveRendezvousHandoff st' tid dequeued
+                        (determineExecutingCore st tid) with
                 | .error e => .error e
                 | .ok stDon =>
                     .ok ((), Architecture.stageDeliveredMessage

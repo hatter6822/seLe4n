@@ -33,16 +33,26 @@ advance, so SM3.C.11 introduces a *dynamic* extension to the
 2PL discipline that preserves deadlock-freedom under the SM0.I
 total order on `LockId`.
 
-## Four structural signals from SM3.B
+## Six structural signals from SM3.B
 
 SM3.B.3 (audit-pass-5) exposes the chain start point at the type
-level via four signals (the fourth added by WS-SM SM6.E's suspend
-PIP-revert ordering fix):
+level.  Three signals originally; the fourth was added by WS-SM
+SM6.E's suspend PIP-revert ordering fix, and the last two by
+WS-OD OD3.14, which closed the priority inversion on the receive
+rendezvous — `.receive` gained a walk it had never performed, and
+`.replyRecv` a second one for the delegated reply its first walk
+does not reach:
 
 * `pipChainStart_endpointCall : ... → Option ThreadId`
 * `pipChainStart_endpointReply : ... → Option ThreadId`
 * `pipChainStart_replyRecv : ... → Option ThreadId`
+* `pipChainStart_replyRecvReceiveLeg : ... → Option ThreadId`
+* `pipChainStart_endpointReceive : ... → Option ThreadId`
 * `pipChainStart_tcbSuspend : ... → Option ThreadId`
+
+A transition may therefore declare more than one chain start: the
+count is per *walk*, since each is a separate obligation on the
+walker below.
 
 When non-`none`, the kernel transition will walk the chain
 beginning at the returned `ThreadId` after the core action
@@ -89,8 +99,9 @@ The strategy preserves deadlock-freedom (Theorem 3.7.1) because:
 ## Used by
 
 SM3.C.11.b — the per-transition `withLockSet` wrappers for the
-4 PIP-invoking transitions consume `pipChainStart_<τ>` after the
-static lock-set is held and `action` completes.
+5 PIP-invoking transitions consume their `pipChainStart_<τ>`
+markers (six in all — `.replyRecv` declares two) after the static
+lock-set is held and `action` completes.
 -/
 
 namespace SeLe4n.Kernel.Concurrency

@@ -1420,6 +1420,91 @@ theorem applyReceiveRendezvousDonation_confinedToCores (st st' : SystemState)
     simp only [if_true] at hStep
     exact applyRendezvousCallDonation_confinedToCores st st' receiver dequeued hStep
 
+/-- **WS-OD OD3.14: the cores the receive rendezvous' hand-off may write.**
+
+OD3.6's donation half is per-core silent, so this is exactly the chain walk's own
+write set — the receiver's home core, and every boosted server's above it.  On a
+receive that dequeued no `Call` neither half runs and the set is empty.
+
+Like `.call`'s `endpointCallLiveWriteSet`, the chain leg is **not** computable
+from the pre-state: the walk runs at the *post-donation* state, and the donation
+rewrites SchedContext bindings that `determineTargetCore` reads.  `chainState` is
+therefore a parameter rather than something this definition pretends to recover;
+callers instantiate it at the donation's own result. -/
+def receiveRendezvousHandoffWriteSet (st : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
+    (chainState : SystemState) : List CoreId :=
+  if rendezvousDequeuedCall st dequeued then
+    pipChainWriteSet chainState receiver executingCore chainState.objectIndex.length
+  else []
+
+/-- **WS-OD OD3.14**: the hand-off's per-core writes stay inside that set.
+
+Two legs composed, and nothing new: the donation is `[]`-confined (OD3.6) and
+the walk is confined to `pipChainWriteSet` at the state it runs on (SM8.B.2).
+The declared set is the walk's alone because widening `[]` into it is free
+(`observableSlotsConfinedToCores_mono`) — stating the union `[] ++ …` would
+declare the same cores in a shape every consumer would have to normalise. -/
+theorem applyReceiveRendezvousHandoff_confinedToCores (st stDon st' : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hDon : applyReceiveRendezvousDonation st receiver dequeued = .ok stDon)
+    (hStep : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st') :
+    observableSlotsConfinedToCores st st'
+      (receiveRendezvousHandoffWriteSet st receiver dequeued executingCore stDon) := by
+  obtain ⟨stDon', hDon', hEq⟩ :=
+    applyReceiveRendezvousHandoff_ok_decompose st st' receiver dequeued executingCore hStep
+  have hSame : stDon' = stDon := by rw [hDon'] at hDon; exact Except.ok.inj hDon
+  subst hSame
+  have hDonConf : observableSlotsConfinedToCores st stDon' [] :=
+    applyReceiveRendezvousDonation_confinedToCores st stDon' receiver dequeued hDon'
+  unfold receiveRendezvousHandoffWriteSet
+  cases hCall : rendezvousDequeuedCall st dequeued with
+  | false =>
+      rw [hCall] at hEq
+      simp only [Bool.false_eq_true, if_false] at hEq
+      subst hEq
+      simp only [Bool.false_eq_true, if_false]
+      exact hDonConf
+  | true =>
+      rw [hCall] at hEq
+      simp only [if_true] at hEq
+      subst hEq
+      simp only [if_true]
+      unfold applyReceiverPipHandoff
+      exact observableSlotsConfinedToCores_trans hDonConf
+        (propagatePipChainCrossCore_confinedToCores executingCore
+          stDon'.objectIndex.length stDon' receiver)
+
+/-- **WS-OD OD3.14: the cores the receive leg's hand-off may write.**
+
+Unlike the receive arm's `receiveRendezvousHandoffWriteSet`, this one *is*
+computable from the pre-state: the step runs at the very state it reads, because
+the arm that calls it has already committed its donation return. -/
+def receiveLegPipHandoffWriteSet (st : SystemState)
+    (receiver dequeued alreadyWalked : SeLe4n.ThreadId) (executingCore : CoreId) :
+    List CoreId :=
+  if alreadyWalked == receiver then []
+  else if rendezvousDequeuedCall st dequeued then
+    pipChainWriteSet st receiver executingCore st.objectIndex.length
+  else []
+
+/-- **WS-OD OD3.14**: the receive leg's hand-off writes only inside that set —
+nothing at all on the two identity arms, and the chain walk's own cores on the
+third. -/
+theorem applyReceiveLegPipHandoff_confinedToCores (st : SystemState)
+    (receiver dequeued alreadyWalked : SeLe4n.ThreadId) (executingCore : CoreId) :
+    observableSlotsConfinedToCores st
+      (applyReceiveLegPipHandoff st receiver dequeued alreadyWalked executingCore)
+      (receiveLegPipHandoffWriteSet st receiver dequeued alreadyWalked executingCore) := by
+  unfold applyReceiveLegPipHandoff receiveLegPipHandoffWriteSet applyReceiverPipHandoff
+  split
+  · exact observableSlotsConfinedToCores_refl st []
+  · split
+    · exact propagatePipChainCrossCore_confinedToCores executingCore st.objectIndex.length st
+        receiver
+    · exact observableSlotsConfinedToCores_refl st []
+
+
 /-- SM8.B.2: **the cores the live cross-core `.call` may write.**
 
 `endpointCallCrossCoreDispatch` is not just `endpointCallOnCore`: it runs the
@@ -2176,10 +2261,17 @@ theorem endpointReceiveDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.O
   simpa using h
 
 /-- SM8.B.2: **the cores the live `.replyRecv` may write** — the answered
-caller's home core, the receive leg's set at the reply's post-state, and the
-donation leg's set at the receive's post-state. Each leg is read at the state
-that leg actually runs at, which is the discipline `endpointCallDispatchChainWriteSet`
-established: reading a later leg at `st` would name a different chain. -/
+caller's home core, the receive leg's set at the reply's post-state, the
+donation leg's set at the receive's post-state, and (**WS-OD OD3.14**) the
+receive leg's priority hand-off at the donation return's post-state. Each leg is
+read at the state that leg actually runs at, which is the discipline
+`endpointCallDispatchChainWriteSet` established: reading a later leg at `st`
+would name a different chain.
+
+The fourth leg is empty on every **non-delegated** reply, because there the
+donation return's own walk already started at the receiver and OD3.14's gate
+makes this step the identity — so no pin taken against the three-leg set moves
+on any state a non-delegated `.replyRecv` reaches. -/
 def replyRecvBodyWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
@@ -2196,7 +2288,15 @@ def replyRecvBodyWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadI
               replyRecvReturnDonationWriteSet receiver
                 ((recordedReplyServer? st prevCaller).getD receiver) nextThread
                 (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD receiver))
-                st2))
+                st2 ++
+                (match replyRecvReturnDonation receiver
+                    ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                    (determineExecutingCore st
+                      ((recordedReplyServer? st prevCaller).getD receiver)) st2 with
+                 | .error _ => []
+                 | .ok (_, st3) =>
+                    receiveLegPipHandoffWriteSet st3 receiver nextThread
+                      ((recordedReplyServer? st prevCaller).getD receiver) executingCore)))
 
 /-- SM8.B.2 (**the live `.replyRecv` bound**): `replyRecvBody` — the function
 `API.dispatchWithCap`'s `.replyRecv` arm routes through — writes no core outside
@@ -2259,18 +2359,25 @@ theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)
               ((recordedReplyServer? st prevCaller).getD receiver) nextThread
               (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD receiver))
               st2 st3 u2 hDon
+            -- WS-OD OD3.14: the receive leg's priority hand-off is the fourth
+            -- leg, read at the state it runs at.  On a non-delegated reply it is
+            -- the identity and its declared set is empty.
+            have hPip := applyReceiveLegPipHandoff_confinedToCores st3 receiver nextThread
+              ((recordedReplyServer? st prevCaller).getD receiver) executingCore
             have hStaged : observableSlotsConfinedToCores st2 st'
                 (replyRecvReturnDonationWriteSet receiver
                   ((recordedReplyServer? st prevCaller).getD receiver) nextThread
                   (determineExecutingCore st
-                    ((recordedReplyServer? st prevCaller).getD receiver)) st2) := by
+                    ((recordedReplyServer? st prevCaller).getD receiver)) st2 ++
+                  receiveLegPipHandoffWriteSet st3 receiver nextThread
+                    ((recordedReplyServer? st prevCaller).getD receiver) executingCore) := by
               rw [← hStep.2]
               exact observableSlotsConfinedToCores_of_framed_suffix
                 (by rw [Architecture.stageWokenSendCompletion_scheduler_eq,
                         Architecture.stageDeliveredMessage_scheduler_eq])
                 (by rw [Architecture.stageWokenSendCompletion_machine_eq,
                         Architecture.stageDeliveredMessage_machine_eq])
-                hConf
+                (observableSlotsConfinedToCores_trans hConf hPip)
             exact observableSlotsConfinedToCores_trans hReply
               (observableSlotsConfinedToCores_trans hRecv hStaged)
 

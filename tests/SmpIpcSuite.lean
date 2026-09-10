@@ -1991,6 +1991,129 @@ private def runDonationReturnPopChecks : IO Unit := do
      | .error e => e == KernelError.invalidArgument
      | .ok _ => false)
 
+-- ============================================================================
+-- WS-OD OD3.14 — the receive rendezvous' PRIORITY hand-off
+-- ============================================================================
+
+/-- OD3.14: the **active** server's own scheduling context, priority 20 — well
+below the queued caller's 60.
+
+With it bound, `applyCallDonation` is the identity (it donates only to an
+`.unbound` receiver), which is the case the inversion bites hardest: no
+donation fires at all, so the receiver's `pipBoost` is the *only* channel the
+queued caller's priority has. -/
+private def scHandoffServer : SeLe4n.SchedContextId := SchedContextId.ofNat 845
+
+private def handoffServerSc : SchedContext :=
+  { scId := scHandoffServer, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨20⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    boundThread := some donServer, isActive := true }
+
+/-- `stDonBase` with the server holding its own budget rather than passive. -/
+private def stHandoffActiveBase : SystemState :=
+  { stDonBase with
+      objects :=
+        (stDonBase.objects.insert scHandoffServer.toObjId
+            (.schedContext handoffServerSc)).insert donServer.toObjId
+          (.tcb { mkTcb 842 20 (some c1) with
+                    schedContextBinding := .bound scHandoffServer }) }
+
+/-- WS-OD OD3.14: the client-first rendezvous, at runtime.
+
+The caller parks a `Call` on an endpoint with no receiver; the server then takes
+it with `seL4_Recv`.  That is the shape `.call` never reaches — there the
+receiver is already waiting and the call arm propagates the chain itself — and
+it is the shape the `.receive` arm handled without any propagation at all until
+OD3.14, so a chain blocked behind the caller stopped dead at it. -/
+private def runReceivePriorityHandoffChecks : IO Unit := do
+  IO.println "--- WS-OD OD3.14 the receive rendezvous' priority hand-off ---"
+  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
+  | none => assertBool "OD3.14 setup: the no-receiver call parks the caller" false
+  | some (stParked, _) =>
+    assertBool "the caller parks on the endpoint (.blockedOnCall)"
+      (ipcStateIs stParked donClient (.blockedOnCall donEp))
+    match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stParked) with
+    | none => assertBool "OD3.14 setup: the server's receive completes the rendezvous" false
+    | some (stRecv, (sender, _)) =>
+      assertBool "the receive dequeues the parked caller" (sender == donClient)
+      assertBool "the dequeued caller is blocked on reply to THIS receiver"
+        (ipcStateIs stRecv donClient (.blockedOnReply donEp (some donServer)))
+      assertBool "the rendezvous guard fires on the dequeued caller"
+        (decide (rendezvousDequeuedCall stRecv donClient = true))
+      match applyReceiveRendezvousDonation stRecv donServer donClient,
+            applyReceiveRendezvousHandoff stRecv donServer donClient c1 with
+      | .ok stDonOnly, .ok stHandoff =>
+          -- The superseded shape, kept as the witness that the assertions below
+          -- track the WALK and not the donation: with an active receiver the
+          -- donation is the identity, so this state is the rendezvous' own.
+          assertBool "NEGATIVE (the defect): the donation alone installs no boost"
+            (match stDonOnly.getTcb? donServer with
+             | some t => decide (t.pipBoost = none) | none => false)
+          assertBool "NEGATIVE (the defect): ...so the receiver still resolves to its own 20"
+            (match stDonOnly.getTcb? donServer with
+             | some t => decide ((resolveEffectivePrioDeadline stDonOnly t).1 = ⟨20⟩)
+             | none => false)
+          -- ...and the hand-off carries the queued caller's 60 across.
+          assertBool "the hand-off boosts the receiver to the queued caller's priority (60)"
+            (match stHandoff.getTcb? donServer with
+             | some t => decide (t.pipBoost = some ⟨60⟩) | none => false)
+          assertBool "...so the receiver's effective scheduling priority becomes 60"
+            (match stHandoff.getTcb? donServer with
+             | some t => decide ((resolveEffectivePrioDeadline stHandoff t).1 = ⟨60⟩)
+             | none => false)
+          assertBool "the active receiver keeps its OWN SchedContext (no donation fired)"
+            (match stHandoff.getTcb? donServer with
+             | some t => decide (t.schedContextBinding = .bound scHandoffServer) | none => false)
+          -- The sibling step, both ways.  `.replyRecv`'s reply leg already walks
+          -- from the recorded server, so the receive leg's hand-off must be the
+          -- identity exactly when that walk started at the receiver.
+          assertBool "the receive leg's hand-off is inert when the earlier walk covered the receiver"
+            (match (applyReceiveLegPipHandoff stRecv donServer donClient donServer
+                      c1).getTcb? donServer with
+             | some t => decide (t.pipBoost = none) | none => false)
+          assertBool "...and boosts the receiver on a DELEGATED reply, where it did not"
+            (match (applyReceiveLegPipHandoff stRecv donServer donClient donClient
+                      c1).getTcb? donServer with
+             | some t => decide (t.pipBoost = some ⟨60⟩) | none => false)
+      | _, _ => assertBool "OD3.14: both hand-off shapes succeed on the rendezvous" false
+  -- NEGATIVE: a receive that BLOCKS dequeues nobody, so the guard is false and
+  -- neither half of the hand-off runs.  This is the arm that keeps every result
+  -- taken before OD3.14 true on the states it held for.
+  match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1
+      stHandoffActiveBase) with
+  | none => assertBool "OD3.14 setup: a receive with no sender blocks" false
+  | some (stBlocked, (sender, _)) =>
+    assertBool "NEGATIVE: a receive that blocks returns the receiver's own id"
+      (sender == donServer)
+    assertBool "NEGATIVE: ...so the rendezvous guard is false"
+      (decide (rendezvousDequeuedCall stBlocked donServer = false))
+    match applyReceiveRendezvousHandoff stBlocked donServer donServer c1 with
+    | .ok stNoop =>
+        assertBool "NEGATIVE: ...and the hand-off installs no boost"
+          (match stNoop.getTcb? donServer with
+           | some t => decide (t.pipBoost = none) | none => false)
+    | .error _ => assertBool "OD3.14: the inert hand-off succeeds" false
+  -- NEGATIVE: a plain `Send` rendezvous wakes its sender `.ready` rather than
+  -- leaving it reply-blocked, so it lends the receiver nothing and the guard is
+  -- false there too.
+  match okPair (endpointSendDualOnCore donEp donClient IpcMessage.empty c0
+      stHandoffActiveBase) with
+  | none => assertBool "OD3.14 setup: a plain send with no receiver parks the sender" false
+  | some (stSend, _) =>
+    match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stSend) with
+    | none => assertBool "OD3.14 setup: the receive completes the send rendezvous" false
+    | some (stSendRdv, (sender, _)) =>
+      assertBool "NEGATIVE: the plain-send rendezvous wakes its sender .ready"
+        (sender == donClient && ipcStateIs stSendRdv donClient .ready)
+      assertBool "NEGATIVE: ...so the rendezvous guard is false"
+        (decide (rendezvousDequeuedCall stSendRdv donClient = false))
+      match applyReceiveRendezvousHandoff stSendRdv donServer donClient c1 with
+      | .ok stNoop2 =>
+          assertBool "NEGATIVE: ...and the hand-off installs no boost"
+            (match stNoop2.getTcb? donServer with
+             | some t => decide (t.pipBoost = none) | none => false)
+      | .error _ => assertBool "OD3.14: the plain-send hand-off succeeds" false
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -2012,6 +2135,7 @@ def runSmpIpcChecks : IO Unit := do
   runHandlerContentionChecks
   runDonationChainStructureChecks
   runDonationReturnPopChecks
+  runReceivePriorityHandoffChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

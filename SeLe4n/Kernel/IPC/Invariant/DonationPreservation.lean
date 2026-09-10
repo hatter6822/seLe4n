@@ -1907,6 +1907,99 @@ theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull
     · rw [hRv]
       exact hReceiverNotOwner
 
+/-! ### WS-OD OD3.14 — and the priority hand-off that runs beside it
+
+`applyReceiveRendezvousHandoff` is OD3.6's donation plus the PIP chain walk from
+the receiver, under one reading of the guard.  Each obligation below is the two
+existing ones composed: the donation's, and the walk's frame — no new argument,
+which is the point of expressing the step over the two rather than inlining it. -/
+
+/-- WS-OD OD3.14: the hand-off preserves the object-store extension invariant —
+the donation does (OD3.6) and the chain walk does (SM5.F.2). -/
+theorem applyReceiveRendezvousHandoff_preserves_objects_invExt
+    (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hObjInv : st.objects.invExt)
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    st''.objects.invExt := by
+  obtain ⟨stDon, hDon, hEq⟩ :=
+    applyReceiveRendezvousHandoff_ok_decompose st st'' receiver dequeued executingCore h
+  have hObjDon : stDon.objects.invExt :=
+    applyReceiveRendezvousDonation_preserves_objects_invExt st stDon receiver dequeued
+      hObjInv hDon
+  subst hEq
+  split
+  · exact propagatePipChainCrossCore_preserves_objects_invExt stDon receiver executingCore _
+      hObjDon
+  · exact hObjDon
+
+/-- **WS-OD OD3.14: the hand-off preserves `ipcInvariantFull`.**
+
+The caller obligation is OD3.6's and no more: the walk writes `pipBoost` and
+run-queue buckets, which the bundle reads nowhere, so it contributes a frame
+rather than a hypothesis. -/
+theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull
+    (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hReceiverNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+        st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId receiver)
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    ipcInvariantFull st'' := by
+  obtain ⟨stDon, hDon, hEq⟩ :=
+    applyReceiveRendezvousHandoff_ok_decompose st st'' receiver dequeued executingCore h
+  have hObjDon : stDon.objects.invExt :=
+    applyReceiveRendezvousDonation_preserves_objects_invExt st stDon receiver dequeued
+      hObjInv hDon
+  have hInvDon : ipcInvariantFull stDon :=
+    applyReceiveRendezvousDonation_preserves_ipcInvariantFull st stDon receiver dequeued
+      hObjInv hInv hReceiverNotOwner hDon
+  subst hEq
+  split
+  · exact propagatePipChainCrossCore_preserves_ipcInvariantFull stDon receiver executingCore _
+      hObjDon hInvDon
+  · exact hInvDon
+
+/-- WS-OD OD3.14: the hand-off keeps SM5.H's replenish-queue affinity — the
+`hObjInvDon` hypothesis `Donation.lean` had to leave open (it sits below the
+module that proves the donation preserves `invExt`) is discharged here. -/
+theorem applyReceiveRendezvousHandoff_preserves_replenishAffinity_smp
+    (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st)
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    replenishQueueAffinityConsistent_smp st'' :=
+  applyReceiveRendezvousHandoff_preserves_replenishQueueAffinityConsistent_smp
+    st st'' receiver dequeued executingCore hObjInv
+    (fun stDon hDon => applyReceiveRendezvousDonation_preserves_objects_invExt st stDon
+      receiver dequeued hObjInv hDon)
+    hCons h
+
+/-- WS-OD OD3.14: the receive leg's hand-off preserves the object-store extension
+invariant — the identity arm trivially, the walk arm by SM5.F.2. -/
+theorem applyReceiveLegPipHandoff_preserves_objects_invExt (st : SystemState)
+    (receiver dequeued alreadyWalked : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hObjInv : st.objects.invExt) :
+    (applyReceiveLegPipHandoff st receiver dequeued alreadyWalked executingCore).objects.invExt := by
+  rcases applyReceiveLegPipHandoff_cases st receiver dequeued alreadyWalked executingCore with
+    hEq | hEq <;> rw [hEq]
+  · exact hObjInv
+  · exact propagatePipChainCrossCore_preserves_objects_invExt st receiver executingCore _ hObjInv
+
+/-- WS-OD OD3.14: and it preserves `ipcInvariantFull`, with no caller obligation
+at all — unlike the donation half, a chain walk writes only `pipBoost` and
+run-queue buckets, which the bundle reads nowhere. -/
+theorem applyReceiveLegPipHandoff_preserves_ipcInvariantFull (st : SystemState)
+    (receiver dequeued alreadyWalked : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull
+      (applyReceiveLegPipHandoff st receiver dequeued alreadyWalked executingCore) := by
+  rcases applyReceiveLegPipHandoff_cases st receiver dequeued alreadyWalked executingCore with
+    hEq | hEq <;> rw [hEq]
+  · exact hInv
+  · exact propagatePipChainCrossCore_preserves_ipcInvariantFull st receiver executingCore _
+      hObjInv hInv
+
+
 -- ============================================================================
 -- §6  WS-OD OD3.8 — the pop preserves the donation chain
 -- ============================================================================

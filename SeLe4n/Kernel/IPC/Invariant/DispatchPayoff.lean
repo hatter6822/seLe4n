@@ -246,10 +246,20 @@ theorem replyRecvBody_preserves_ipcInvariantFull
                           ((recordedReplyServer? st prevCaller).getD tid))
                         st2 st3 () hObjInv2 hInv2 hSrvIdle2 hNotOwner2 hRet
                       have hObjInv3 := hObjInv3f st3 hRet
-                      have hInvD := stageDeliveredMessage_preserves_ipcInvariantFull st3
-                        prevCaller 0 hObjInv3 hInv3
-                      have hObjInvD := stageDeliveredMessage_objects_invExt st3
-                        prevCaller 0 hObjInv3
+                      -- WS-OD OD3.14: the receive leg's priority hand-off runs
+                      -- between the donation return and the staging.  It writes
+                      -- `pipBoost` and run-queue buckets on a delegated reply and
+                      -- is the identity otherwise, so it contributes a frame and
+                      -- no obligation.
+                      have hObjInv3P := applyReceiveLegPipHandoff_preserves_objects_invExt st3
+                        tid nextThread ((recordedReplyServer? st prevCaller).getD tid) ec hObjInv3
+                      have hInv3P := applyReceiveLegPipHandoff_preserves_ipcInvariantFull st3
+                        tid nextThread ((recordedReplyServer? st prevCaller).getD tid) ec
+                        hObjInv3 hInv3
+                      have hInvD := stageDeliveredMessage_preserves_ipcInvariantFull _
+                        prevCaller 0 hObjInv3P hInv3P
+                      have hObjInvD := stageDeliveredMessage_objects_invExt _
+                        prevCaller 0 hObjInv3P
                       rw [← hOut]
                       exact ⟨stageWokenSendCompletion_preserves_ipcInvariantFull _ _
                           hObjInvD hInvD,
@@ -575,21 +585,27 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                       -- guard (`rendezvousDequeuedCall_blockedOnReply`); only the
                       -- whole-store not-owner fact is the pack's, and the pack
                       -- states it over this very stage's committed state.
-                      cases hDonation : applyReceiveRendezvousDonation st1 tid nextThread with
+                      -- **WS-OD OD3.14**: and the priority half runs with it,
+                      -- under one reading of the guard, so the composition passes
+                      -- through the hand-off rather than the donation alone.  The
+                      -- chain walk adds no obligation: it writes `pipBoost` and
+                      -- run-queue buckets, which the bundle reads nowhere.
+                      cases hDonation : applyReceiveRendezvousHandoff st1 tid nextThread
+                          (determineExecutingCore st tid) with
                       | error e => rw [hDonation] at hStep; simp only [] at hStep; cases hStep
                       | ok stDon =>
                           rw [hDonation] at hStep
                           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                           have hDonInv : ipcInvariantFull stDon :=
-                            applyReceiveRendezvousDonation_preserves_ipcInvariantFull st1 stDon
-                              tid nextThread hObjInv1 hRecvInv
+                            applyReceiveRendezvousHandoff_preserves_ipcInvariantFull st1 stDon
+                              tid nextThread (determineExecutingCore st tid) hObjInv1 hRecvInv
                               (fun s sTcb sc0 hs => by
                                 rw [hRecv] at hRecvNotOwner
                                 exact hRecvNotOwner s sTcb sc0 hs)
                               hDonation
                           have hDonObj : stDon.objects.invExt :=
-                            applyReceiveRendezvousDonation_preserves_objects_invExt st1 stDon
-                              tid nextThread hObjInv1 hDonation
+                            applyReceiveRendezvousHandoff_preserves_objects_invExt st1 stDon
+                              tid nextThread (determineExecutingCore st tid) hObjInv1 hDonation
                           have hSC := stageWokenSendCompletion_preserves_ipcInvariantFull stDon
                             ((st.getEndpoint? epId).bind (·.sendQ.head)) hDonObj hDonInv
                           have hSCobj := stageWokenSendCompletion_objects_invExt stDon

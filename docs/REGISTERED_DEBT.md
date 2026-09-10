@@ -456,9 +456,42 @@ only where the context heads no stack would be indistinguishable from one whose
 writing arm is wrong.  Two of the row's five deliverables were already
 discharged: the projection re-derivation landed with the fourth store at OD3.1,
 and the de-threading family size does not move, since the new theorem is not an
-`ipcInvariantFull` bundle.  OD4 onward are open. Plan:
+`ipcInvariantFull` bundle.
+
+**OD3.9–OD3.13 landed at `v0.34.134` → `v0.34.137`** — the sweep OD3.8 did not
+anticipate.  OD3.9 fixed a **live** defect (`spliceOutMidQueueNode` left its
+successor's `queuePPrev` naming the removed thread, so that thread could never
+again be dequeued and every later bound-notification delivery to it returned
+`.illegalState` — an authority-crossing denial of service, reported before being
+fixed), and OD3.10–OD3.13 declared the queue-structure TCBs four more arms write
+and none had named: `.notificationSignal`'s two splice neighbours, and the one
+neighbour each of `.send`, `.call`, `.receive` and `.replyRecv` relinks.  The
+last took `maxLockSetSize` 13 → **14** — the escalation clause firing and being
+answered — with `admissibleCriticalSection` for the 1 ms tick 25 → 23 µs and the
+uniform envelope 2340 → 2520 µs.
+
+**OD3.14 landed at `v0.34.141`, closing OD3** — the *priority* half of the
+rendezvous hand-off, reported by review on the OD3 cut and pre-existing rather
+than introduced by it.  OD3.6's donation moves a queued caller's scheduling
+context, hence its base priority, and `resolveEffectivePrioDeadline` is
+`max basePrio pipBoost`, so the inherited **boost** travelled by no route at all
+on the `.receive` arm: a chain blocked behind the dequeued caller stopped dead at
+it — unbounded priority inversion, on the arm a passive server takes its first
+request with, and biting with no donation at all since `applyCallDonation` is the
+identity for an already-`.bound` receiver that still gains the waiter.
+`applyReceiveRendezvousHandoff` is the donation and the walk under **one** reading
+of the guard; the same sweep found the defect at a sibling (`.replyRecv` walks
+from the *recorded server*, which is the receiver only on a non-delegated reply)
+and closed it with `applyReceiveLegPipHandoff`, gated on the equality that makes
+the first walk be the second.  `maxLockSetSize` does not move: a chain is
+state-discovered and unbounded, so its locks are declared through the
+`pipChainStart_<τ>` markers rather than through `lockSet_<τ>`, and the marker
+family grows with the walks — two new ones, plus the reply leg's own corrected to
+name the thread it actually walks from.
+
+OD4 onward are open. Plan:
 [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)
-(47 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
+(48 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
 gap above, and the `passiveServerIdle` break the `v0.34.97` reclaim introduced —
 the second of which OD1 has now closed.
 
@@ -535,7 +568,7 @@ Scope, findings and evidence for any of these are in
 | Workstream | Versions |
 |------------|----------|
 | **WS-AP** | v0.34.71– (closure post-v1.0.0 — the ASID capability surface; two SM7 debts re-targeted from the closed SM8) |
-| **WS-OD** | v0.34.98– (in flight; OD1 closed at v0.34.108, OD2 at v0.34.125, OD3 at v0.34.132; closes before WS-RR RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
+| **WS-OD** | v0.34.98– (in flight; OD1 closed at v0.34.108, OD2 at v0.34.125, OD3 at v0.34.141; closes before WS-RR RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
 | **WS-XV** | v0.34.114–v0.34.124 (registered, then **absorbed into WS-BP as its BP0 phase**; the finding is retained in this file, the work is [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md) §5 BP0) |
 | **WS-BP** | v0.34.59– (planned; opens after WS-RR RR8 closes — the bare-metal boot path **and the cross-implementation agreement it ends**, absorbing WS-XV as BP0 at `v0.34.124`, [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md)) |
 | **WS-LC** | v0.34.51–v0.34.56 |

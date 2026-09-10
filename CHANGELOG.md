@@ -1,3 +1,84 @@
+## v0.34.141 — WS-OD OD3.14: the receive rendezvous hands over the caller's priority, not only its budget
+
+A review finding on the OD3 cut, verified against the code, reported as a
+possible vulnerability, and fixed here with the theorem set a live kernel
+transition owes.  **Pre-existing** rather than introduced by this PR: the base
+branch's `.receive` arm read the rendezvous straight into staging.
+
+### The defect
+
+OD3.6 (`v0.34.129`) made a `.receive` that rendezvouses with a queued `Call`
+donate the caller's scheduling context, which carries the caller's **base**
+priority.  `resolveEffectivePrioDeadline` is `max basePrio pipBoost`, so the
+caller's **inherited boost** — the value `propagatePipChainCrossCore` installs by
+walking `blockingServer` — travelled by no route at all on that arm, while
+`.call` (`endpointCallCrossCoreDispatch`) and `.replyRecv`
+(`replyRecvReturnDonation`) both walked.
+
+So on a chain `D → C → S` — `D` blocked on `C`, and `C` dequeued into
+`.blockedOnReply` on the passive server `S` — `D`'s inherited priority stopped
+dead at `C`, and `S` ran below it: **unbounded priority inversion**, on the arm a
+passive server takes its *first* request with.  It bites with **no donation at
+all** too, since `applyCallDonation` is the identity for an already-`.bound`
+receiver that still gains the waiter.
+
+### What lands
+
+- **One action, one guard.**  `applyReceiverPipHandoff` is the walk;
+  `applyReceiveRendezvousHandoff` is OD3.6's donation and that walk under a
+  **single** reading of `rendezvousDequeuedCall`, taken from the *pre*-state — so
+  the two provably fire on the same states, and no `ipcState` frame lemma is owed
+  for a second reading.  A Tier 3 negative refuses the post-state guard, and
+  another refuses a dispatch arm that matches on the donation alone.
+- **Both `.receive` arms**, unchecked and flow-checked.  No extra flow gate is
+  owed: `projectKernelObject` strips `pipBoost` (AJ2-B), and the run-queue
+  re-bucketing is bounded by `receiveRendezvousHandoffWriteSet` exactly as the
+  checked `.call` arm's own walk is bounded by `endpointCallLiveWriteSet`.
+- **The sibling gap, closed in the same cut.**  `.replyRecv` walks from the
+  *recorded server*, which is the receiver only on a non-delegated reply; on a
+  delegated one the receiver never gets the new caller's boost.
+  `applyReceiveLegPipHandoff` adds that walk, gated on the equality that makes
+  the reply leg's walk **be** it — so the non-delegated arm is unchanged, byte
+  for byte, and every result taken before this cut survives on the states it held
+  for.
+- **The obligation set**, composed from the donation's and the walk's rather than
+  re-derived: `ipcInvariantFull`, `objects.invExt`,
+  `replenishQueueAffinityConsistent_smp`, the per-core confinement, and both
+  dispatch-payoff arms (unchecked and flow-checked).  The walk adds no
+  hypothesis — it writes `pipBoost` and run-queue buckets, which the bundle reads
+  nowhere.
+- **`replyRecvBodyWriteSet` gains a fourth leg**, read at the state that leg runs
+  at, which is the discipline the module states for the other three.  It is empty
+  on every non-delegated reply.
+- **The SM3.C walker's obligation list grows with the walks, not the syscalls.**
+  `pipChainStart_endpointReceive` and `pipChainStart_replyRecvReceiveLeg` join
+  the family, and the reply leg's own marker is corrected to name the **recorded
+  server** it actually walks from rather than the caller the retired single-core
+  `endpointReplyRecvWithDonation` walked from — a hint that names the wrong start
+  point would send the walker up a different chain on a delegated reply.  The
+  inventory is 113 entries with 6 in the `chainStart` category, and the phase
+  manifest's totals move 1133 → 1135 entries (919 theorems, unchanged: both new
+  markers are `def`s).
+- **`maxLockSetSize` does not move, and that is a decision.**  A blocking chain
+  is state-discovered and unbounded, so a `LockSet` capped at the ceiling cannot
+  name it; the chain's locks are declared through the `pipChainStart_<τ>` markers
+  rather than through `lockSet_<τ>`, which is what keeps the static footprint an
+  honest declaration of the static locks.  `admissibleCriticalSection` for the
+  1 ms tick stays at 23 µs.
+
+### Evidence
+
+Seventeen runtime assertions in `tests/SmpIpcSuite.lean`, built on the
+client-first ordering the defect needs: the caller parks a `Call`, an **active**
+server (so the donation is the identity) takes it with `seL4_Recv`, and the two
+steps are compared on the same state — the donation alone leaves
+`pipBoost = none` and the receiver resolving to its own 20, the hand-off installs
+`some 60` and the receiver resolves to 60.  Both directions of the delegated /
+non-delegated split, and three inert paths (a receive that blocks, a plain `Send`
+rendezvous, a non-delegated reply).  Five new Tier 3 negatives, each
+mutation-tested in both directions against a change that keeps every token and
+breaks the relation.
+
 ## v0.34.140 — PR #893 review round 2: a footprint the constructor understated, a scan that recorded one arm, and the ceiling figure in three more places
 
 Three P2 findings from the review of `0fb99814`, all three verified against the

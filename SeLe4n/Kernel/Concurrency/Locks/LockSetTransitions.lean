@@ -2579,9 +2579,9 @@ def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
 
 /-! ## Dynamic priority-inheritance chain locking
 
-Three user syscalls (`.call`, `.reply`, `.replyRecv`) invoke a
+Four user syscalls (`.call`, `.reply`, `.replyRecv`, `.receive`) invoke a
 priority-inheritance chain walk after their core IPC mutation
-completes:
+completes, and `.replyRecv` invokes **two** (WS-OD OD3.14):
 
 * `endpointCallWithDonation`: calls `propagatePriorityInheritance
   receiverTid` on the handshake path (only when the endpoint had a
@@ -2589,7 +2589,15 @@ completes:
 * `endpointReplyWithDonation`: calls `revertPriorityInheritance
   callerTid` after the base reply.
 * `endpointReplyRecvWithDonation`: calls `revertPriorityInheritance
-  callerTid` after the base replyRecv.
+  callerTid` after the base replyRecv.  The live `replyRecvReturnDonation`
+  walks from the **recorded server** instead, and **WS-OD OD3.14** adds a
+  second walk from the receiver on a *delegated* reply, where the first
+  does not reach it.
+* `applyReceiveRendezvousHandoff` (**WS-OD OD3.14**): calls
+  `propagatePipChainCrossCore receiverTid` when the receive leg dequeued a
+  queued `Call`, so the caller now blocked on this receiver can lend it its
+  priority.  Before OD3.14 the `.receive` arm performed no walk and the
+  caller's inherited priority stopped dead at it.
 
 The chain walk visits each TCB in the blocking graph reachable from
 the start point via the `blockingServer` relation, updating each
@@ -2693,19 +2701,65 @@ edge cases where the replier is itself blocked, the chain extends. -/
     (_donatedOriginalOwnerTid : Option ThreadId) : Option ThreadId :=
   some callerTid
 
-/-- WS-SM SM3.B.3 audit-pass-5: chain-start hint for `.replyRecv`.
+/-- WS-SM SM3.B.3 audit-pass-5: chain-start hint for `.replyRecv`'s **reply
+leg**.
 
-`endpointReplyRecvWithDonation` invokes
-`revertPriorityInheritance callerTid` (== the receiver, who's
-also the replier in the combined transition) after the base
-replyRecv succeeds.  Symmetric to `pipChainStart_endpointReply`. -/
+The reply leg's walk reverts the boost at the thread whose waiter set it just
+shrank, which is the **recorded server** — the thread the answered caller
+donated to.  On a non-delegated reply that is the receiver itself (and so is
+`recordedReplyServer?`'s `.getD` default when the reply records no server at
+all), which is the case the single-core `endpointReplyRecvWithDonation` this
+marker was first written for could only reach; **WS-OD OD3.14** made the
+distinction load-bearing, since the live `replyRecvReturnDonation` walks from
+`recordedServerTid` and a hint naming the receiver would send the SM3.C walker
+up a different chain on a delegated reply.
+
+Symmetric to `pipChainStart_endpointReply`, and paired with
+`pipChainStart_replyRecvReceiveLeg` below: the arm runs **two** legs, each
+changing a different thread's waiter set, so it declares two chain starts. -/
 @[inline] def pipChainStart_replyRecv
-    (callerTid : ThreadId) (_cnodeRootObjId : ObjId)
+    (_callerTid : ThreadId) (_cnodeRootObjId : ObjId)
     (_replyTargetTid : ThreadId) (_endpointObjId : ObjId)
     (_newSenderTid : Option ThreadId)
     (_donatedScId : Option SchedContextId)
-    (_donatedOriginalOwnerTid : Option ThreadId) : Option ThreadId :=
-  some callerTid
+    (_donatedOriginalOwnerTid : Option ThreadId)
+    (recordedServerTid : ThreadId) : Option ThreadId :=
+  some recordedServerTid
+
+/-- **WS-OD OD3.14**: chain-start hint for `.replyRecv`'s **receive leg**.
+
+The receive leg adds the newly dequeued `Call` caller to the *receiver*'s waiter
+set, so the receiver's own boost must be recomputed.  A single walk from the
+recorded server covers that exactly when the two threads coincide — every
+non-delegated reply — which is why this marker is `none` there: the reply leg's
+own walk **is** this one, and declaring a second chain start would ask the SM3.C
+walker to acquire the same chain twice.
+
+`newSenderTid` is the dequeued caller when the receive leg rendezvoused with a
+queued `Call` and `none` otherwise, so it carries the same fact
+`rendezvousDequeuedCall` decides at the transition. -/
+@[inline] def pipChainStart_replyRecvReceiveLeg
+    (receiverTid : ThreadId) (recordedServerTid : ThreadId)
+    (newSenderTid : Option ThreadId) : Option ThreadId :=
+  if recordedServerTid == receiverTid then none
+  else newSenderTid.map (fun _ => receiverTid)
+
+/-- **WS-OD OD3.14**: chain-start hint for `.receive`.
+
+`applyReceiveRendezvousHandoff` invokes `propagatePipChainCrossCore receiverTid`
+**only on the rendezvous path** — when the receive dequeued a queued `Call`, so
+that caller is now `.blockedOnReply` on this receiver and its priority must
+reach the scheduler through the receiver's `pipBoost`.  A receive that blocked,
+and a plain `Send` rendezvous, invoke no walk, so the chain-start signal mirrors
+`dequeuedCallerTid` exactly — the same shape `pipChainStart_endpointCall` uses
+for its own handshake path.
+
+Before OD3.14 this arm invoked no walk at all and therefore had no marker; that
+absence was the priority-inversion defect, not a property of the transition. -/
+@[inline] def pipChainStart_endpointReceive
+    (receiverTid : ThreadId) (_cnodeRootObjId _endpointObjId : ObjId)
+    (dequeuedCallerTid : Option ThreadId) : Option ThreadId :=
+  dequeuedCallerTid.map (fun _ => receiverTid)
 
 /-- WS-SM SM6.E (suspend PIP-revert ordering fix): chain-start hint for
 `.tcbSuspend`.

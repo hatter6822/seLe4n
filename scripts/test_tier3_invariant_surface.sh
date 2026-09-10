@@ -1397,7 +1397,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # sequence is caught, which is how OD3.1's insertion was caught in the first
 # place.  Anchored between the two neighbours that bracket the pair rather than
 # on the whole runner: the sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runReceivePriorityHandoffChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -1680,9 +1680,9 @@ run_check "INVARIANT" rg -n '^def applyReceiveRendezvousDonation' SeLe4n/Kernel/
 # checked arm is pinned by the delegation theorem and the `syscallDelegates`
 # obligation below, both of which NAME the step -- a delegation claim that omits
 # a step is a claim about a different program.
-run_check "INVARIANT" rg -n 'applyReceiveRendezvousDonation st. tid dequeued' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchWithCapChecked_receive_delegates[^\n]*(\n([ \t][^\n]*)?)*applyReceiveRendezvousDonation st. tid dequeued" SeLe4n/Kernel/API.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \u2200 \(ctx : LabelingContext\)[^\n]*(\n([ \t][^\n]*)?)*applyReceiveRendezvousDonation st. tid dequeued" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" rg -n 'applyReceiveRendezvousHandoff st. tid dequeued' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchWithCapChecked_receive_delegates[^\n]*(\n([ \t][^\n]*)?)*applyReceiveRendezvousHandoff st. tid dequeued" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \u2200 \(ctx : LabelingContext\)[^\n]*(\n([ \t][^\n]*)?)*applyReceiveRendezvousHandoff st. tid dequeued" SeLe4n/Kernel/API.lean'
 # NEGATIVE: and the unchecked arm must not stage from the RECEIVE's post-state,
 # which is what it did before OD3.6 -- a token-preserving mutation that keeps the
 # donation call in the file while staging around it.
@@ -1708,6 +1708,69 @@ run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_confinedToC
 # member is a DISJUNCTION -- conditioning it on `installsCaps` alone would omit
 # it on exactly the passive-server path, which installs nothing.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReceive[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+
+# ============================================================================
+# WS-OD OD3.14 -- the receive rendezvous' PRIORITY hand-off
+# ============================================================================
+#
+# The donation OD3.6 added carries a caller's scheduling context, hence its
+# BASE priority; `resolveEffectivePrioDeadline` is `max basePrio pipBoost`, so
+# the inherited BOOST travelled by no route at all on this arm.  A chain
+# `D -> C -> S` (D blocked on C, C dequeued into `.blockedOnReply` on the
+# passive server S) therefore left D's priority stopping dead at C: unbounded
+# priority inversion, on the arm `.call` and `.replyRecv` both propagate from.
+# It bites with NO donation too -- `applyCallDonation` is the identity for an
+# already-`.bound` receiver, which still gains the waiter.
+#
+# The action is ONE definition; the guarded pair reads its guard ONCE.
+run_check "INVARIANT" rg -n '^def applyReceiverPipHandoff' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def applyReceiveRendezvousHandoff' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def applyReceiveLegPipHandoff' SeLe4n/Kernel/IPC/Operations/Donation.lean
+# The guard is read from the PRE-state, inside the hand-off, so the donation and
+# the boost provably fire on the same states.  Region-bounded to the definition:
+# a Lean declaration header sits at column 0, so the gap cannot leave it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReceiveRendezvousHandoff[^\n]*(\n([ \t][^\n]*)?)*if rendezvousDequeuedCall st dequeued then" SeLe4n/Kernel/IPC/Operations/Donation.lean'
+# NEGATIVE: and NOT from the post-donation state, which would be a second answer
+# to the question the first `if` already asks -- a mutation that keeps every
+# name in the file and silently owes an `ipcState` frame lemma nothing supplies.
+run_negative_check "INVARIANT" rg -n 'rendezvousDequeuedCall stDon dequeued' SeLe4n/Kernel/IPC/Operations/Donation.lean
+# NEGATIVE: no dispatch arm may match on the donation alone.  The token stays in
+# the tree (the hand-off is defined over it), so this refuses the RELATION --
+# an arm that donates and does not walk -- rather than the name.
+run_negative_check "INVARIANT" rg -n 'match applyReceiveRendezvousDonation st. tid dequeued with' SeLe4n/Kernel/API.lean
+# `replyRecvBody` runs the SAME step for its receive leg, gated on the equality
+# that makes the reply leg's walk BE the receiver's.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBody[^\n]*(\n([ \t][^\n]*)?)*applyReceiveLegPipHandoff st3 tid nextThread recordedServer" SeLe4n/Kernel/API.lean'
+# NEGATIVE: passing the RECEIVER as the already-walked thread would make the step
+# unconditionally inert -- every name present, the fix disabled.
+run_negative_check "INVARIANT" rg -n 'applyReceiveLegPipHandoff st3 tid nextThread tid' SeLe4n/Kernel/API.lean
+# NEGATIVE: and the body must not inline the walk instead of sharing the step.
+run_negative_check "INVARIANT" rg -n 'PriorityInheritance.propagatePipChainCrossCore st3' SeLe4n/Kernel/API.lean
+# The obligation set the live transition owes, composed from the donation's and
+# the walk's rather than re-derived.
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_ok_decompose' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_preserves_objects_invExt' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_preserves_replenishQueueAffinityConsistent_smp' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveLegPipHandoff_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveLegPipHandoff_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The walk is not per-core silent, so `.replyRecv`'s declared write set gains a
+# FOURTH leg, read at the state that leg runs at -- the discipline the module
+# states for the other three.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBodyWriteSet[^\n]*(\n([ \t][^\n]*)?)*receiveLegPipHandoffWriteSet st3 receiver nextThread" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+# The SM3.C walker's obligation list grows with the walks, not with the
+# syscalls: `.replyRecv` declares TWO chain starts because it performs two.
+run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_endpointReceive' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_replyRecvReceiveLeg' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# ...and the reply leg's marker names the RECORDED SERVER, which is where the
+# live `replyRecvReturnDonation` actually walks from.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def pipChainStart_replyRecv\b[^\n]*(\n([ \t][^\n]*)?)*some recordedServerTid" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# NEGATIVE: naming the receiver there would send the walker up a different chain
+# on a delegated reply -- the superseded spelling, refused.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def pipChainStart_replyRecv\b[^\n]*(\n([ \t][^\n]*)?)*some callerTid" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSetTheorems_chainStart_count[^\n]*(\n([ \t][^\n]*)?)*\.chainStart\)\)\.length = 6" SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean'
+
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*\(receiveRendezvousDonatedSc\? st endpointId\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_donated_sc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_donation_stateLevel_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean

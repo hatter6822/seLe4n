@@ -197,11 +197,12 @@ run_check_with_timeout "TRACE" lake exe per_object_lock_suite
 # declarations, the `lockAcquireSequence` canonical sort and
 # ordered/complete/canonical theorems, `permittedKinds` plus the
 # per-transition `lockSet_consistent_<τ>` theorems, the audit-pass-5
-# `pipChainStart_<τ>` PIP chain-walk start markers (4 as of SM6.E's
+# `pipChainStart_<τ>` PIP chain-walk start markers (6 as of WS-OD
+# OD3.14's receive-arm and delegated-replyRecv walks, on top of SM6.E's
 # `pipChainStart_tcbSuspend`), the audit-pass-6
 # `tcbSetPriority`/`tcbSetMCPriority`/`tcbSetIPCBuffer`/`serviceRegister`
 # footprint extensions (SC + VSpaceRoot + endpoint locks), and the
-# 99-theorem inventory aggregator (with the `chainStart` category).
+# 113-entry inventory aggregator (with the `chainStart` category).
 run_check_with_timeout "TRACE" lake exe lock_set_suite
 
 # WS-SM SM3.C — withLockSet 2PL discipline regression suite.

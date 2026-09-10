@@ -148,6 +148,8 @@ open SeLe4n.Kernel.Concurrency
 #check @pipChainStart_endpointCall
 #check @pipChainStart_endpointReply
 #check @pipChainStart_replyRecv
+#check @pipChainStart_replyRecvReceiveLeg
+#check @pipChainStart_endpointReceive
 
 /-! ## SM3.B.4 — Per-transition consistency theorems -/
 
@@ -764,15 +766,49 @@ example :
     pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
       (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩ := by decide
 
-/-! ### pipChainStart_replyRecv always emits revertPIP at caller. -/
+/-! ### pipChainStart_replyRecv emits revertPIP at the **recorded server**.
+
+WS-OD OD3.14: the reply leg's walk starts at the thread whose waiter set it
+shrank, which is the recorded server — the receiver itself on a non-delegated
+reply, and a different thread when the reply capability was delegated.  Naming
+the receiver there would send the SM3.C walker up a different chain. -/
 
 example :
     pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
-      none none none = some ⟨5⟩ := by decide
+      none none none ⟨5⟩ = some ⟨5⟩ := by decide
 
 example :
     pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
-      (some ⟨11⟩) (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩ := by decide
+      (some ⟨11⟩) (some ⟨42⟩) (some ⟨7⟩) ⟨9⟩ = some ⟨9⟩ := by decide
+
+/-! ### pipChainStart_replyRecvReceiveLeg (WS-OD OD3.14) — the SECOND walk.
+
+`none` on a non-delegated reply, because the reply leg's own walk started at the
+receiver and **is** this walk; `none` when the receive leg dequeued nothing;
+and the receiver otherwise. -/
+
+example :
+    pipChainStart_replyRecvReceiveLeg ⟨5⟩ ⟨5⟩ (some ⟨11⟩) = none := by decide
+
+example :
+    pipChainStart_replyRecvReceiveLeg ⟨5⟩ ⟨9⟩ none = none := by decide
+
+example :
+    pipChainStart_replyRecvReceiveLeg ⟨5⟩ ⟨9⟩ (some ⟨11⟩) = some ⟨5⟩ := by decide
+
+/-! ### pipChainStart_endpointReceive (WS-OD OD3.14) — the walk `.receive`
+gained when the priority inversion on its rendezvous path was closed.
+
+Mirrors the dequeued caller exactly: a receive that blocked, and a plain `Send`
+rendezvous, invoke no walk. -/
+
+example :
+    pipChainStart_endpointReceive ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) none
+      = none := by decide
+
+example :
+    pipChainStart_endpointReceive ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (some ⟨11⟩)
+      = some ⟨5⟩ := by decide
 
 /-! ### pipChainStart_tcbSuspend (SM6.E) walks only when the victim was
 reply-blocked — the signal is exactly the G2-precaptured blocking server. -/
@@ -787,7 +823,7 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 111 := by decide
+example : lockSetTheorems.length = 113 := by decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
@@ -804,7 +840,7 @@ example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length 
 example : (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 4 := by
+example : (lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 6 := by
   decide
 
 -- ============================================================================
@@ -1539,8 +1575,8 @@ private def runLookupFixtureChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 111"
-    (decide (lockSetTheorems.length = 111))
+  assertBool "lockSetTheorems.length = 113"
+    (decide (lockSetTheorems.length = 113))
   assertBool "projection category count = 22"
     (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
   assertBool "lockSet category count = 35 (one per SyscallId variant)"
@@ -1551,8 +1587,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6))
   assertBool "algebra category count = 9"
     (decide ((lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9))
-  assertBool "chainStart category count = 4 (audit-pass-5 PIP-chain markers + SM6.E suspend)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 4))
+  assertBool "chainStart category count = 6 (audit-pass-5 markers + SM6.E suspend + WS-OD OD3.14's two)"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 6))
   assertBool "category-partition sum = total"
     (decide
       ((lockSetTheorems.filter (fun t => t.category == .projection)).length +
@@ -1582,13 +1618,28 @@ private def runPipChainStartChecks : IO Unit := do
   assertBool "pipChainStart_endpointReply: donation args do not affect chain-start"
     (decide (pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
               (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩))
-  -- pipChainStart_replyRecv mirrors endpointReply.
-  assertBool "pipChainStart_replyRecv: always = some callerTid (no extras)"
+  -- pipChainStart_replyRecv names the RECORDED SERVER (WS-OD OD3.14): the reply
+  -- leg walks from the thread whose waiter set it shrank, which is the receiver
+  -- only when the reply capability was not delegated.
+  assertBool "pipChainStart_replyRecv: non-delegated ⇒ the receiver"
     (decide (pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
-              none none none = some ⟨5⟩))
-  assertBool "pipChainStart_replyRecv: full args do not affect chain-start"
+              none none none ⟨5⟩ = some ⟨5⟩))
+  assertBool "pipChainStart_replyRecv: DELEGATED ⇒ the recorded server, not the receiver"
     (decide (pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
-              (some ⟨11⟩) (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩))
+              (some ⟨11⟩) (some ⟨42⟩) (some ⟨7⟩) ⟨9⟩ = some ⟨9⟩))
+  -- WS-OD OD3.14: `.replyRecv`'s SECOND walk, and `.receive`'s new one.
+  assertBool "pipChainStart_replyRecvReceiveLeg: non-delegated ⇒ none (the reply leg covered it)"
+    (decide (pipChainStart_replyRecvReceiveLeg ⟨5⟩ ⟨5⟩ (some ⟨11⟩) = none))
+  assertBool "pipChainStart_replyRecvReceiveLeg: delegated but no Call dequeued ⇒ none"
+    (decide (pipChainStart_replyRecvReceiveLeg ⟨5⟩ ⟨9⟩ none = none))
+  assertBool "pipChainStart_replyRecvReceiveLeg: delegated with a dequeued Call ⇒ the receiver"
+    (decide (pipChainStart_replyRecvReceiveLeg ⟨5⟩ ⟨9⟩ (some ⟨11⟩) = some ⟨5⟩))
+  assertBool "pipChainStart_endpointReceive: no Call dequeued ⇒ none"
+    (decide (pipChainStart_endpointReceive ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              none = none))
+  assertBool "pipChainStart_endpointReceive: a dequeued Call ⇒ the receiver"
+    (decide (pipChainStart_endpointReceive ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (some ⟨11⟩) = some ⟨5⟩))
   -- Defense-in-depth: the chain-start TCB equals the receiver in `.call`
   -- handshake mode, so the static lockSet (which includes receiverTid in
   -- its `tcbLock receiverTid .write` entry) already covers the chain

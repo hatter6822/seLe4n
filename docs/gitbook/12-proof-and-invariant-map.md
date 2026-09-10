@@ -121,7 +121,7 @@ make the theorem assume what it claims to prove.
 `scripts/check_ipc_invariant_dethreading.py` (Tier 0) measures this over the
 comment-free code view, deriving the conjunct set and each bundle's own
 pre-state rather than matching binder names, and reports **zero** conjuncts
-bound on a post-state across all **170** statements in the family, with the
+bound on a post-state across all **172** statements in the family, with the
 conjunct set and the bundle family both derived from the sources.  The figure is
 spelled in the form the gate reads, so a cut that grows the family fails until
 this sentence is corrected — it said 146 while the tree measured 170, unwatched,
@@ -160,9 +160,11 @@ naming that context. It is a conjunct of `ipcReachable`, not of
 `donationChainFrame` rather than assumed. The frame is stated over the two
 projections the walk actually reads (`replyStackLinks?`,
 `schedContextStackHead?`), so it **is** the read set rather than an
-over-approximation of it. Nothing writes the three stack fields yet, so the
-predicate is vacuously true of every reachable state — deliberately: the
-invariant and its frames land before the transitions that must preserve them.
+over-approximation of it. The donation **pop** writes all three (WS-OD OD3.1,
+`v0.34.126`) and carries its own preservation theorem (OD3.8, `v0.34.132`), but
+its writing arm needs a stack nothing yet constructs, so the predicate is still
+vacuously true of every reachable state — deliberately: the invariant and its
+frames land before the transitions that must preserve them.
 
 OD3.1–OD3.3 (`v0.34.126`) landed the transition that **reads** it. The donation
 return is now a four-write reply-stack pop with a fail-closed head validation,
@@ -371,9 +373,19 @@ platform rather than with the lock.
 > (`v0.34.130`) moved it again, 11 to 13**, on the same footprint once more and
 > for the first time on objects the transition *reads*: the donation return walks
 > one link past the reply-stack head and then validates that frame's caller's TCB
-> before binding a context to it. The constant is the WCRT headline's first
-> factor, so the per-lock critical section the RPi5's 1 ms tick admits falls
-> 37 µs → 30 µs → 25 µs across the three cuts. See
+> before binding a context to it. **WS-OD OD3.13 (`v0.34.137`) moved it a fourth
+> time, 13 to 14**, for the queue-structure TCB the receive leg relinks — the
+> last of the four arms that were writing one without naming it. The constant is
+> the WCRT headline's first factor, so the per-lock critical section the RPi5's
+> 1 ms tick admits falls 37 µs → 30 µs → 25 µs → **23 µs** across the four cuts,
+> and the 60 µs envelope rises to 2520 µs. Every one of those figures is derived
+> from the constant by theorem, so read it off `admissibleCriticalSection`
+> rather than off this sentence. **WS-OD OD3.14 (`v0.34.141`) moved it not at
+> all**, deliberately: the priority-inheritance chain a receive rendezvous must
+> now walk is state-discovered and unbounded, so its locks are declared through
+> the `pipChainStart_<τ>` markers the SM3.C walker consumes rather than through
+> `lockSet_<τ>` — which is what keeps the static footprint an honest declaration
+> of the *static* locks. See
 > [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §SM3.C.9 for the
 > canonical statement.
 
