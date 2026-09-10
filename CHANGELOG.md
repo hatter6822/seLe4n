@@ -1,3 +1,44 @@
+## v0.34.143 — WS-OD OD3.16: the raw-match scan reads the discriminator's own line
+
+Review round 4's finding on the OD3.14 cut, verified against the code and real.
+It is round 2's finding **one line over**.
+
+`emit_raw_match_rows`' rule for a `match … .objects[…]` ended in `next`, so the
+four-line window opened *after* the discriminator.  A `match st.objects[id]? with
+| some (.tcb t) => …` — valid Lean, with the first arm on the discriminator's own
+line — therefore recorded no `RAW_SITE` at all.
+
+That is not a lost row but a lost **site**, and the consequence is exactly what
+the gate exists to prevent: `RAW_MATCH_TOTAL` is derived from those rows, so a
+raw read written that way is absent from every *enforced* metric and moves only
+`RAW_MATCH_UNCLASSIFIED`, which round 1 correctly made diagnostic-only.  It would
+pass Tier 0 in silence.
+
+Round 2 widened this scan to the *end* of the window and never asked whether the
+window *began* in the right place — the sweep rule failing at the smallest
+possible distance, in the code written to fix the previous instance of the same
+class.
+
+**The fix.**  `scan_arms` runs on the discriminator line without consuming a
+window slot, so the four following lines are scanned exactly as before.  **No
+tree figure moves** (53 / 23 / 9 / 2 / 2 / 7 / 15, total 111, unchanged) —
+because no single-line discriminator exists in the tree today.  That is precisely
+why a recomputation is not evidence here, and the fix is pinned by fixtures
+instead.
+
+**The scanner becomes one program.**  `RAW_MATCH_AWK` is shared by the real run
+and a new `--self-test`, because two copies of a scanner is the shape this file's
+own metrics exist to catch.  Five Lean fixtures: the one-line discriminator, the
+multi-line form, a two-arm match, two sites in one file, and an arm one line
+beyond the window (which must still *not* be recorded, so the fix cannot widen
+the window as a side effect).
+
+**Wired into Tier 0 beside the monotonic gate, and that placement is the point.**
+The monotonic gate's own self-test synthesizes *baseline files*, so it exercises
+the comparison and never the measurement: a scanner that under-reaches simply
+produced floors that were lower, and both gates reported PASS.  A gate whose
+self-test cannot see its own measurement is a presence check on its own output.
+
 ## v0.34.142 — WS-OD OD3.15: the ceiling's derived figures stop being hand-maintained
 
 `maxLockSetSize` is the WCRT headline's first factor, and two published figures

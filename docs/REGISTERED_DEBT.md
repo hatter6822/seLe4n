@@ -502,7 +502,7 @@ correction.
 
 OD4 onward are open. Plan:
 [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)
-(49 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
+(50 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
 gap above, and the `passiveServerIdle` break the `v0.34.97` reclaim introduced —
 the second of which OD1 has now closed.
 
@@ -579,7 +579,7 @@ Scope, findings and evidence for any of these are in
 | Workstream | Versions |
 |------------|----------|
 | **WS-AP** | v0.34.71– (closure post-v1.0.0 — the ASID capability surface; two SM7 debts re-targeted from the closed SM8) |
-| **WS-OD** | v0.34.98– (in flight; OD1 closed at v0.34.108, OD2 at v0.34.125, OD3 at v0.34.142; closes before WS-RR RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
+| **WS-OD** | v0.34.98– (in flight; OD1 closed at v0.34.108, OD2 at v0.34.125, OD3 at v0.34.143; closes before WS-RR RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
 | **WS-XV** | v0.34.114–v0.34.124 (registered, then **absorbed into WS-BP as its BP0 phase**; the finding is retained in this file, the work is [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md) §5 BP0) |
 | **WS-BP** | v0.34.59– (planned; opens after WS-RR RR8 closes — the bare-metal boot path **and the cross-implementation agreement it ends**, absorbing WS-XV as BP0 at `v0.34.124`, [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md)) |
 | **WS-LC** | v0.34.51–v0.34.56 |

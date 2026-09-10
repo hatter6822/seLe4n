@@ -36,6 +36,123 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# The raw object-store match scanner, as ONE program shared by the real run and
+# the self-test below -- two copies of a scanner is the shape this file's own
+# metrics exist to catch.
+#
+# **The match line is scanned, not stepped over** (PR #893 review round 4).  The
+# window used to open on the line *after* the discriminator, because the rule
+# ended in `next`; a `match` whose first arm sits on the same line --
+# `match st.objects[id]? with | some (.tcb t) => ...`, which Lean accepts --
+# therefore recorded no `RAW_SITE` at all.  That is not a lost row but a lost
+# *site*: `RAW_MATCH_TOTAL` is derived from these rows, so such a read is absent
+# from every enforced metric and moves only `RAW_MATCH_UNCLASSIFIED`, which is
+# diagnostic-only -- it would pass Tier 0 in silence.  Round 2 had widened this
+# scan to the *end* of the window and never asked whether the window began in
+# the right place, which is the sweep rule failing one line over.  `scan_arms`
+# runs on the discriminator line without consuming a window slot, so the four
+# following lines are scanned exactly as before and no existing figure moves.
+# `$0` and the rest are awk's fields, not shell parameters, so the program is
+# single-quoted deliberately.
+# shellcheck disable=SC2016
+RAW_MATCH_AWK='
+    function scan_arms(   i, seen_key, key) {
+      for (i = 1; i <= nvars; i++) {
+        if (index($0, "some (." vars[i]) > 0) {
+          seen_key = match_id SUBSEP vars[i]
+          if (!(seen_key in seen)) {
+            seen[seen_key] = 1
+            key = FILENAME " " vars[i]
+            hits[key]++
+          }
+        }
+      }
+    }
+    FNR == 1 {pending = 0; match_id++; delete seen}
+    /match.*\.objects\[/ {pending = 4; match_id++; delete seen; scan_arms(); next}
+    pending > 0 {
+      scan_arms()
+      pending--
+    }
+    BEGIN {
+      nvars = split("tcb schedContext endpoint notification untyped cnode vspaceRoot",
+                    vars, " ")
+      match_id = 0
+    }
+    END {for (k in hits) print k, hits[k]}
+'
+
+# Self-test: the scanner against synthesized Lean fixtures, in a temporary tree,
+# so it can be checked without touching the repository.  Each case names the
+# shape it pins; the one-line case is the round-4 finding, kept so the window
+# cannot silently close over the discriminator again.
+if [[ "${1:-}" == "--self-test" ]]; then
+  fx="$(mktemp -d)"
+  trap 'rm -rf "$fx"' EXIT
+  printf '%s\n' \
+    'def a (st : SystemState) (id : ObjId) : Nat :=' \
+    '  match st.objects[id]? with | some (.tcb t) => 1 | _ => 0' \
+    > "$fx/OneLine.lean"
+  printf '%s\n' \
+    'def b (st : SystemState) (id : ObjId) : Nat :=' \
+    '  match st.objects[id]? with' \
+    '  | some (.tcb t) => 1' \
+    '  | _ => 0' \
+    > "$fx/MultiLine.lean"
+  printf '%s\n' \
+    'def c (st : SystemState) (id : ObjId) : Nat :=' \
+    '  match st.objects[id]? with' \
+    '  | some (.tcb t) => 1' \
+    '  | some (.endpoint e) => 2' \
+    '  | _ => 0' \
+    > "$fx/TwoArms.lean"
+  printf '%s\n' \
+    'def d (st : SystemState) (id : ObjId) : Nat :=' \
+    '  match st.objects[id]? with' \
+    '  | some (.tcb t) => 1' \
+    '  | _ => 0' \
+    'def e (st : SystemState) (id : ObjId) : Nat :=' \
+    '  match st.objects[id]? with | some (.tcb t) => 2 | _ => 0' \
+    > "$fx/TwoSites.lean"
+  printf '%s\n' \
+    'def f (st : SystemState) (id : ObjId) : Nat :=' \
+    '  match st.objects[id]? with' \
+    '  | none => 0' \
+    '  | none => 0' \
+    '  | none => 0' \
+    '  | none => 0' \
+    '  | some (.tcb t) => 1' \
+    > "$fx/OutsideWindow.lean"
+  st_fail=0
+  st_ok=0
+  st_expect() {
+    local name="$1" file="$2" want="$3" got
+    got="$( (cd "$fx" && awk "$RAW_MATCH_AWK" "$file") | sort | tr '\n' ';' )"
+    if [[ "$got" == "$want" ]]; then
+      echo "  OK   self-test: $name"
+      st_ok=$(( st_ok + 1 ))
+    else
+      echo "  SELF-TEST FAIL: $name: expected [$want], got [$got]" >&2
+      st_fail=1
+    fi
+  }
+  # The round-4 finding: a discriminator whose first arm shares its line.
+  st_expect "a one-line match records its arm" OneLine.lean "OneLine.lean tcb 1;"
+  # ...and the shapes that must not change while it is fixed.
+  st_expect "a multi-line match still records its arm" MultiLine.lean "MultiLine.lean tcb 1;"
+  st_expect "every arm of a multi-arm match is recorded" TwoArms.lean \
+    "TwoArms.lean endpoint 1;TwoArms.lean tcb 1;"
+  st_expect "two sites in one file count twice" TwoSites.lean "TwoSites.lean tcb 2;"
+  # The window is still four lines after the discriminator, not five.
+  st_expect "an arm beyond the window is not recorded" OutsideWindow.lean ""
+  if [[ "$st_fail" -ne 0 ]]; then
+    echo "raw-match scanner self-test: FAILED" >&2
+    exit 1
+  fi
+  echo "raw-match scanner self-test: $st_ok cases, $st_ok correct."
+  exit 0
+fi
+
 # WS-SM SM8.B (PR #861 review round 43): count CODE, not the prose about it.
 #
 # Every metric below is a line-oriented `grep` over Lean sources, so a
@@ -108,29 +225,7 @@ done < <(find tests SeLe4n/Testing Main.lean -type f -name "*.lean" 2>/dev/null)
 # end, with `seen` keyed by (match, variant) so a variant occurring twice in one
 # match still counts once, exactly as a per-variant pass counted it.
 emit_raw_match_rows() {
-  awk '
-    FNR == 1 {pending = 0; match_id++; delete seen}
-    /match.*\.objects\[/ {pending = 4; match_id++; delete seen; next}
-    pending > 0 {
-      for (i = 1; i <= nvars; i++) {
-        if (index($0, "some (." vars[i]) > 0) {
-          seen_key = match_id SUBSEP vars[i]
-          if (!(seen_key in seen)) {
-            seen[seen_key] = 1
-            key = FILENAME " " vars[i]
-            hits[key]++
-          }
-        }
-      }
-      pending--
-    }
-    BEGIN {
-      nvars = split("tcb schedContext endpoint notification untyped cnode vspaceRoot",
-                    vars, " ")
-      match_id = 0
-    }
-    END {for (k in hits) print k, hits[k]}
-  ' "${KERNEL_FILES[@]}" | sort
+  awk "$RAW_MATCH_AWK" "${KERNEL_FILES[@]}" | sort
 }
 
 # Helper: `<file> <count>` rows for the bare `tid.toObjId` object-store lookup,
