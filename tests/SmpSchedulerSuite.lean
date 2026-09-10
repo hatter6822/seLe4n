@@ -258,15 +258,27 @@ private def runWcrtScenarios : IO Unit := do
     (decide (WCRT_lockSet (timerTickOnCoreLockSet c3) 60 = 540))
   assertBool "core 2 wake lock-WCRT = 360 (= 2·3·60)"
     (decide (WCRT_lockSet (wakeThreadLockSet c2) 60 = 360))
-  -- Every per-core op is within the RPi5 maxLockSetSize·3·tCs = 1980 bound
-  -- (WS-RR RR7.11 moved the constant from 8 to 9).
-  assertBool "core 1 switch lock-WCRT ≤ RPi5 bound (1980)"
+  -- Every per-core op is within the RPi5 bound `maxLockSetSize · (numCores−1) · tCs`.
+  -- The figure in the label is INTERPOLATED from the constant, never written:
+  -- it read "1980" (the value at ceiling 11) beneath a ceiling of 14 while the
+  -- assertion checked `maxLockSetSize`, so a passing line claimed a bound
+  -- 540 µs tighter than the one established (PR #893 review round 6).  A label
+  -- that hard-codes a derived figure is the defect; deriving it ends the class.
+  assertBool s!"core 1 switch lock-WCRT ≤ RPi5 bound ({maxLockSetSize * (3 * 60)} µs)"
     (decide (WCRT_lockSet (switchToThreadOnCoreLockSet c1) 60 ≤ maxLockSetSize * (3 * 60)))
-  assertBool "core 3 timerTick lock-WCRT ≤ RPi5 bound (1980)"
+  assertBool s!"core 3 timerTick lock-WCRT ≤ RPi5 bound ({maxLockSetSize * (3 * 60)} µs)"
     (decide (WCRT_lockSet (timerTickOnCoreLockSet c3) 60 ≤ maxLockSetSize * (3 * 60)))
-  -- A typical syscall (≤ 4 locks) fits the 1 ms (1000 µs) timer-tick budget.
-  assertBool "typical 4-lock syscall WCRT (720 µs) < 1 ms tick budget (1000 µs)"
-    (decide (4 * (3 * 60) < 1000))
+  -- The tick budget is asserted against the DECLARED ceiling, not a typical
+  -- footprint.  The retired line here read "typical 4-lock syscall WCRT (720 µs)
+  -- < 1 ms tick budget" -- true arithmetic, and the exact framing CLAUDE.md
+  -- retracts: 4 is a typical footprint size, not `maxLockSetSize`, so it
+  -- reassured about a case the declared ceiling does not meet.  At 60 µs the
+  -- 1 ms tick does NOT admit 14 locks; what it admits is
+  -- `admissibleCriticalSection`, and that is the figure worth pinning.
+  assertBool s!"RPi5 1 ms tick admits {admissibleCriticalSection rpi5TickBudgetMicros} µs per lock at the declared ceiling"
+    (decide (admissibleCriticalSection rpi5TickBudgetMicros = 23))
+  assertBool "RPi5 1 ms tick refuses 60 µs sections at the declared ceiling"
+    (decide (¬ (maxLockSetSize * (3 * 60) ≤ rpi5TickBudgetMicros)))
 
 -- ============================================================================
 -- §7  Idle fallback — an empty core with idle enqueued never stalls

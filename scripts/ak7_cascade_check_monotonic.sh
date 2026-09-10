@@ -18,6 +18,21 @@
 # a file that already contains one, and a count alone cannot see the first
 # occurrence in a file that did not, so the floor has to be both.
 #
+# **The key is (file, DECLARATION, variant), and that granularity is where this
+# refinement stops** (PR #893 review round 6).  A (file, variant) key is still a
+# cardinality one level up: 22 of the 30 rows it produced had a count above one,
+# so hygienizing a raw read in one declaration while a fresh one appeared in
+# another declaration of the same file left the row and every scalar identical
+# -- the cross-file case this header already describes, with "file B" replaced
+# by "declaration e", and it survived the fix for it.  Keying by the enclosing
+# declaration turns that into a key the baseline does not name, which fails
+# outright.  It stops there because the DECLARATION IS THE UNIT OF
+# HYGIENIZATION: a count-preserving swap inside one declaration means that
+# declaration still has the same raw reads, which is not the movement this gate
+# exists to catch, whereas a whole declaration going clean while another starts
+# reading raw is.  Finer keys (line numbers, ordinals) would also churn the
+# baseline on every unrelated edit above them, so they buy noise, not reach.
+#
 # The scalar metrics below are derived from those rows (or are independent
 # should-grow ratchets) and are kept because they are what a reader quotes.
 # For every metric, enforces the direction the AK7 cascade is supposed to
@@ -96,8 +111,8 @@ if [[ "${1:-}" == "--self-test" ]]; then
 
   st_base="$st_tmp/baseline.txt"
   cat > "$st_base" <<'SELFTEST_BASELINE'
-RAW_SITE=SeLe4n/Kernel/A.lean|tcb|2
-RAW_SITE=SeLe4n/Kernel/B.lean|tcb|1
+RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
 RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4
 RAW_MATCH_TCB=3
 RAW_MATCH_SCHEDCONTEXT=0
@@ -163,47 +178,58 @@ SELFTEST_BASELINE
   }
 
   st_case "clean tree" pass \
-'RAW_SITE=SeLe4n/Kernel/A.lean|tcb|2
-RAW_SITE=SeLe4n/Kernel/B.lean|tcb|1
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
 RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4'
 
   # TOKEN-PRESERVING: B gives one up, C gains one. RAW_MATCH_TCB stays 3.
   st_case "a raw read moved to an unpinned file (totals unchanged)" fail \
-'RAW_SITE=SeLe4n/Kernel/A.lean|tcb|2
-RAW_SITE=SeLe4n/Kernel/C.lean|tcb|1
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
+RAW_SITE=SeLe4n/Kernel/C.lean|baz|tcb|1
 RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4'
 
   # TOKEN-PRESERVING: same key set, one file gains a second occurrence and the
   # other gives one up. A set-of-pairs floor with no counts passes this.
   st_case "a second raw read inside an already-pinned file" fail \
-'RAW_SITE=SeLe4n/Kernel/A.lean|tcb|3
-RAW_SITE=SeLe4n/Kernel/B.lean|tcb|0
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|3
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|0
 RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4'
 
   # TOKEN-PRESERVING: the variant changes, the file and the total do not.
   st_case "a pinned site changed variant" fail \
-'RAW_SITE=SeLe4n/Kernel/A.lean|tcb|2
-RAW_SITE=SeLe4n/Kernel/B.lean|schedContext|1
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|schedContext|1
 RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4'
 
   # TOKEN-PRESERVING: the lookup inventory has the same hazard.
   st_case "a raw tid.toObjId lookup moved to an unpinned file" fail \
-'RAW_SITE=SeLe4n/Kernel/A.lean|tcb|2
-RAW_SITE=SeLe4n/Kernel/B.lean|tcb|1
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
 RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|3
 RAW_LOOKUP_SITE=SeLe4n/Kernel/D.lean|1'
 
+  # TOKEN-PRESERVING, and the round-6 shape: the swap stays INSIDE one file and
+  # moves between declarations.  `foo` gives one up and `qux` gains one, so the
+  # file's total, the variant's total and every scalar are identical -- which is
+  # exactly what a (file, variant) key could not see, and what the declaration
+  # component turns into a key the baseline does not name.
+  st_case "a raw read moved between declarations of one pinned file" fail \
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|1
+RAW_SITE=SeLe4n/Kernel/A.lean|qux|tcb|1
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
+RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4'
+
   # The migration working must not be a failure.
   st_case "a pinned site hygienized away" pass \
-'RAW_SITE=SeLe4n/Kernel/A.lean|tcb|1
-RAW_SITE=SeLe4n/Kernel/B.lean|tcb|1
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|1
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
 RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4'
 
   if (( st_failed != 0 )); then
     echo "[ak7-monotonicity] Self-test FAILED." >&2
     exit 1
   fi
-  echo "[ak7-monotonicity] Self-test passed (6 cases, every mutation token-preserving)."
+  echo "[ak7-monotonicity] Self-test passed (7 cases, every mutation token-preserving)."
   exit 0
 fi
 

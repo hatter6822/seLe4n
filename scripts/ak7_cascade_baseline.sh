@@ -56,13 +56,31 @@ cd "$REPO_ROOT"
 # single-quoted deliberately.
 # shellcheck disable=SC2016
 RAW_MATCH_AWK='
+    # The enclosing declaration name, or "" when this line declares nothing.
+    # A Lean declaration header sits at column 0, so the caller gates on that;
+    # an attribute may share the line (`@[simp] theorem foo`) or occupy its own,
+    # and an anonymous `instance :` yields the sentinel rather than a stray `:`.
+    function decl_name(   i, n, parts, nm) {
+      n = split($0, parts, /[ \t]+/)
+      for (i = 1; i <= n; i++) {
+        if (parts[i] ~ /^(def|theorem|lemma|abbrev|instance|example|structure|inductive|class)$/) {
+          if (i < n) {
+            nm = parts[i + 1]
+            sub(/[({:\[].*$/, "", nm)
+            if (nm != "") return nm
+          }
+          return "<anonymous>"
+        }
+      }
+      return ""
+    }
     function scan_arms(   i, seen_key, key) {
       for (i = 1; i <= nvars; i++) {
         if (index($0, "some (." vars[i]) > 0) {
           seen_key = match_id SUBSEP vars[i]
           if (!(seen_key in seen)) {
             seen[seen_key] = 1
-            key = FILENAME " " vars[i]
+            key = FILENAME " " curdecl " " vars[i]
             hits[key]++
             # The first variant this match discriminates makes it a classified
             # SITE; later arms of the same match add rows but not sites.
@@ -74,7 +92,11 @@ RAW_MATCH_AWK='
         }
       }
     }
-    FNR == 1 {pending = 0; match_id++; delete seen}
+    FNR == 1 {pending = 0; match_id++; delete seen; curdecl = "<file-scope>"}
+    # Before the match rules, and WITHOUT `next`: a one-line
+    # `def f ... := match st.objects[id]? with ...` both opens a declaration and
+    # is a site, so the header must be read first and then fall through.
+    /^[^ \t]/ {d = decl_name(); if (d != "") curdecl = d}
     /match.*\.objects\[/ {pending = 4; match_id++; delete seen; scan_arms(); next}
     pending > 0 {
       scan_arms()
@@ -132,6 +154,15 @@ if [[ "${1:-}" == "--self-test" ]]; then
     '  | none => 0' \
     '  | some (.tcb t) => 1' \
     > "$fx/OutsideWindow.lean"
+  # The round-6 swap: `TwoSites.lean` with `d` hygienized and a fresh `g`.
+  printf '%s\n' \
+    'def d (st : SystemState) (id : ObjId) : Nat :=' \
+    '  st.getTcb? id |>.map (fun _ => 1) |>.getD 0' \
+    'def e (st : SystemState) (id : ObjId) : Nat :=' \
+    '  match st.objects[id]? with | some (.tcb t) => 2 | _ => 0' \
+    'def g (st : SystemState) (id : ObjId) : Nat :=' \
+    '  match st.objects[id]? with | some (.tcb t) => 3 | _ => 0' \
+    > "$fx/Swapped.lean"
   st_fail=0
   st_ok=0
   st_expect() {
@@ -146,12 +177,24 @@ if [[ "${1:-}" == "--self-test" ]]; then
     fi
   }
   # The round-4 finding: a discriminator whose first arm shares its line.
-  st_expect "a one-line match records its arm" OneLine.lean "OneLine.lean tcb 1;"
+  st_expect "a one-line match records its arm" OneLine.lean "OneLine.lean a tcb 1;"
   # ...and the shapes that must not change while it is fixed.
-  st_expect "a multi-line match still records its arm" MultiLine.lean "MultiLine.lean tcb 1;"
+  st_expect "a multi-line match still records its arm" MultiLine.lean "MultiLine.lean b tcb 1;"
   st_expect "every arm of a multi-arm match is recorded" TwoArms.lean \
-    "TwoArms.lean endpoint 1;TwoArms.lean tcb 1;"
-  st_expect "two sites in one file count twice" TwoSites.lean "TwoSites.lean tcb 2;"
+    "TwoArms.lean c endpoint 1;TwoArms.lean c tcb 1;"
+  # The round-6 finding.  This assertion used to read `TwoSites.lean tcb 2` --
+  # one row, two occurrences -- and that collapse WAS the defect: hygienizing
+  # `d` while a fresh raw read appears in some other declaration of the same
+  # file leaves the count at 2 and the floor accepts it.  Keyed by the enclosing
+  # declaration, `d` and `e` are separate floors, so the reappearance is a key
+  # the baseline does not name and fails outright.
+  st_expect "two sites in one file are two keyed floors" TwoSites.lean \
+    "TwoSites.lean d tcb 1;TwoSites.lean e tcb 1;"
+  # ...and the swap the old keying could not see, as the scanner sees it: `d`
+  # hygienized, a new declaration `g` carrying the raw read.  Same file, same
+  # variant, same total; a DIFFERENT inventory, which is the whole point.
+  st_expect "a raw read moved between declarations changes the inventory" Swapped.lean \
+    "Swapped.lean e tcb 1;Swapped.lean g tcb 1;"
   # The window is still four lines after the discriminator, not five.
   st_expect "an arm beyond the window is not recorded" OutsideWindow.lean ""
   # ...and `mode=sites` counts MATCHES, not variant incidences -- the operand
@@ -283,7 +326,7 @@ RAW_LOOKUP_ROWS="$(emit_raw_lookup_rows)"
 count_raw_match_variant() {
   local variant="$1"
   printf '%s\n' "${RAW_MATCH_ROWS}" \
-    | awk -v v="$variant" '$2 == v {s += $3} END {print s + 0}'
+    | awk -v v="$variant" '$3 == v {s += $4} END {print s + 0}'
 }
 
 # RAW_MATCH_* by-variant counts (production proof surface).
@@ -303,7 +346,7 @@ RAW_MATCH_VSPACEROOT=$(count_raw_match_variant "vspaceRoot")
 # heading.  The matches discriminating no variant are the remainder, reported
 # separately as RAW_MATCH_UNCLASSIFIED below.
 RAW_MATCH_TOTAL=$(printf '%s\n' "${RAW_MATCH_ROWS}" \
-  | awk 'NF {s += $3} END {print s + 0}')
+  | awk 'NF {s += $4} END {print s + 0}')
 
 # The raw matches that discriminate NO variant: every `match <expr>.objects[…]?`
 # minus the classified sites above.  Printed as a diagnostic only -- a match that
@@ -448,7 +491,7 @@ axiom_count              = $AXIOM_COUNT
 ## to its recorded count. The scalars below are derived from those rows and are
 ## kept as human-readable diagnostics.
 
-$(printf '%s\n' "${RAW_MATCH_ROWS}" | awk 'NF {print "RAW_SITE=" $1 "|" $2 "|" $3}')
+$(printf '%s\n' "${RAW_MATCH_ROWS}" | awk 'NF {print "RAW_SITE=" $1 "|" $2 "|" $3 "|" $4}')
 $(printf '%s\n' "${RAW_LOOKUP_ROWS}" | awk 'NF {print "RAW_LOOKUP_SITE=" $1 "|" $2}')
 
 RAW_MATCH_TCB=$RAW_MATCH_TCB

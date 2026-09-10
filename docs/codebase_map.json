@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/od2-inert-structure-chain-ngczo8",
-      "commit_sha": "07db404e006e887835263e5e922f8dac99107b68",
-      "tree_sha": "52961efb62baa5b248dadf0307287e7d9521042f",
-      "committed_at_utc": "2026-09-10T18:47:32+00:00"
+      "commit_sha": "9d19aea5adc8697f20b312b7489703bfccf4d026",
+      "tree_sha": "8167f87c9fad933ec44ac649cc09e687820ce408",
+      "committed_at_utc": "2026-09-10T19:02:50+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1a8ee48f6208798681f6745cb720321287b952d20a064c53ce85eb1e8b45991e"
+    "source_digest": "bbe172e6b4469dfd08b2db29ae95a6794a4b03b343b6b33d9f6fa063939a26a9"
   },
   "summary": {
     "module_count": 398,
     "declaration_count": 20668
   },
   "readme_sync": {
-    "version": "0.35.0",
+    "version": "0.35.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 328,
     "production_loc": 362103,
     "test_files": 70,
-    "test_loc": 74275,
+    "test_loc": 74287,
     "proved_theorem_lemma_decls": 12106,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -302062,15 +302062,22 @@
           "name": "runWcrtScenarios",
           "line": 252,
           "called": [
+            "WCRT",
             "WCRT_lockSet",
+            "admissibleCriticalSection",
+            "admits",
             "assertBool",
             "c0",
             "c1",
             "c2",
             "c3",
             "chooseThreadOnCoreLockSet",
+            "lock",
             "maxLockSetSize",
+            "rpi5TickBudgetMicros",
             "switchToThreadOnCoreLockSet",
+            "tick",
+            "timerTick",
             "timerTickOnCoreLockSet",
             "wakeThreadLockSet"
           ]
@@ -302078,7 +302085,7 @@
         {
           "kind": "def",
           "name": "runIdleScenarios",
-          "line": 275,
+          "line": 287,
           "called": [
             "assertBool",
             "c0",
@@ -302096,7 +302103,7 @@
         {
           "kind": "def",
           "name": "tE",
-          "line": 298,
+          "line": 310,
           "called": [
             "ThreadId",
             "ofNat"
@@ -302105,7 +302112,7 @@
         {
           "kind": "def",
           "name": "stWithBlocked",
-          "line": 302,
+          "line": 314,
           "called": [
             "SystemState",
             "c3",
@@ -302118,7 +302125,7 @@
         {
           "kind": "def",
           "name": "runDynamicSimulation",
-          "line": 308,
+          "line": 320,
           "called": [
             "assertBool",
             "c0",
@@ -302140,7 +302147,7 @@
         {
           "kind": "def",
           "name": "roundTripOutcome",
-          "line": 346,
+          "line": 358,
           "called": [
             "CoreId",
             "KernelError",
@@ -302162,7 +302169,7 @@
         {
           "kind": "def",
           "name": "roundTripSgiLabel",
-          "line": 358,
+          "line": 370,
           "called": [
             "none",
             "roundTripOutcome"
@@ -302171,7 +302178,7 @@
         {
           "kind": "def",
           "name": "roundTripDispatchLabel",
-          "line": 365,
+          "line": 377,
           "called": [
             "c3",
             "currentOnCore",
@@ -302184,7 +302191,7 @@
         {
           "kind": "def",
           "name": "fourCoreTraceLines",
-          "line": 382,
+          "line": 394,
           "called": [
             "c0",
             "c1",
@@ -302208,13 +302215,13 @@
         {
           "kind": "def",
           "name": "fixturePath",
-          "line": 400,
+          "line": 412,
           "called": []
         },
         {
           "kind": "def",
           "name": "runTraceFixtureCheck",
-          "line": 407,
+          "line": 419,
           "called": [
             "fixturePath",
             "fourCoreTraceLines",
@@ -302224,7 +302231,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 427,
+          "line": 439,
           "called": [
             "runAffinityScenarios",
             "runDynamicSimulation",
@@ -302240,7 +302247,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 442,
+          "line": 454,
           "called": []
         }
       ]

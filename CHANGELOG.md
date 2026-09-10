@@ -1,3 +1,62 @@
+## v0.35.1 — WS-OD OD3.19: two review findings, both a cardinality standing in for a set
+
+Review round 6 on `07db404e`, both P2, both verified against the code before
+being repaired, and both the same shape — a count where the property is a set.
+
+**1. THE RAW-READ INVENTORY WAS KEYED PER FILE.**
+`scripts/ak7_cascade_baseline.sh` keyed on `(file, variant)` with a count, so a
+change that hygienized a raw `.tcb` read in one declaration while a fresh one
+appeared in **another declaration of the same file** left the row and every
+scalar metric byte-identical, and Tier 0 accepted it.
+
+That is precisely the case the gate's own header already describes — "a change
+that hygienizes one raw read in file A and introduces a fresh one in file B
+leaves every total unchanged" — with *file B* replaced by *declaration e*.
+OD3.5f moved the floor from a whole-tree total to a per-file inventory and
+closed the cross-file case; the within-file case survived the fix for it.  And
+it was not an edge: **22 of the 30 rows had a count above one**, including
+`VSpaceInvariant.lean|vspaceRoot|9`.
+
+The key is now `(file, declaration, variant)` — 102 rows — so the swap becomes a
+key the baseline does not name, which fails outright.  `check_inventory` splits
+on the *last* `|`, so the comparison logic needed no change at all.
+
+**The refinement stops there, and the docstring says why.**  The declaration is
+the unit of hygienization: a count-preserving swap *inside* one declaration
+means that declaration still holds the same raw reads, which is not the movement
+this gate exists to catch, whereas a whole declaration going clean while another
+starts reading raw is.  Finer keys — line numbers, ordinals — would also churn
+the baseline on every unrelated edit above them, buying noise rather than reach.
+
+**2. A WCRT TEST LABEL CLAIMED A TIGHTER BOUND THAN IT CHECKED.**
+`tests/SmpSchedulerSuite.lean` printed `≤ RPi5 bound (1980)` — the value at
+ceiling **11** — beneath a ceiling of **14**, while the assertion checked
+`maxLockSetSize * (3 * 60)` = **2520**.  So a passing line claimed a bound 540 µs
+tighter than the one established, under a comment citing the 8 → 9 move.  The
+figure is now **interpolated from the constant**, which ends the class rather
+than correcting an instance.
+
+The neighbouring `typical 4-lock syscall WCRT (720 µs) < 1 ms tick budget` line
+went with it.  It was true arithmetic and the exact framing `CLAUDE.md` retracts
+— 4 is a *typical* footprint size, not `maxLockSetSize` — so it reassured about a
+case the declared ceiling does not meet.  What replaces it is the property that
+is actually about the ceiling: `admissibleCriticalSection rpi5TickBudgetMicros`
+is 23 µs, and 60 µs sections are refused.
+
+Self-tests grow to 10 (scanner) and 7 (monotonic gate), every new case
+token-preserving: the scanner's asserts that a raw read moved between two
+declarations of one file changes the inventory, and the gate's that such a move
+is rejected with every scalar unmoved.
+
+`GETTCB_ADOPTION`'s floor is re-anchored 2082 → 2092 in the same cut.  That rise
+predates this change — it is verified on clean `HEAD` with the edit stashed, and
+it is a should-grow metric, so the gate was passing on it; re-anchoring locks the
+gain in, as the gate's own docs prescribe.  No RAW_MATCH_* scalar moves.
+
+Validation: `test_full.sh` (Tier 0-3) exit 0.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md OD3.19
+
 ## v0.35.0 — minor line: WS-OD's reply-stack phases (OD1–OD3) are complete
 
 A version-only cut at the maintainer's request.  The 36 version sites move
