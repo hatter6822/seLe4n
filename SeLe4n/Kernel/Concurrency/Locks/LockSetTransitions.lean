@@ -701,11 +701,31 @@ waiting).
 Audit-pass-3 (donation-return extension, audit-pass-4 refinement):
 the reply phase may return a donated SC from the caller (replier)
 to the original owner — same shape as `lockSet_endpointReply`.
-The receive phase does NOT initiate donation (donation is
-caller-initiated from `endpointCall`, not receiver-initiated).
 
-The caller pre-resolves the donation pair by inspecting the
-replier's own TCB binding:
+**And the receive phase initiates one too** (WS-OD OD3.5, corrected
+here at OD3.17).  This docstring used to say the opposite — "the
+receive phase does NOT initiate donation (donation is
+caller-initiated from `endpointCall`, not receiver-initiated)" —
+which was true of the single-core transition it was written for and
+false of `replyRecvBody`: its receive leg runs
+`applyCallDonationOnCore nextThread tid` whenever it dequeues a
+queued `Call`, writing the **new** caller's SchedContext, provably
+not the returned one.  That is the passive-server steady state, not
+an edge case, and it is exactly why `redonatedScId` and the
+disjunctive state-level member exist.  A contract that denies a
+hand-off the footprint declares invites the next caller to omit the
+members it needs, so it is corrected rather than qualified.
+
+So the arm carries **two** SchedContext arguments: `donatedScId`
+(the reply leg's return, resolved from the replier's own binding)
+and `redonatedScId` (the receive leg's re-donation, resolved from
+the send-queue head through `receiveRendezvousDonatedSc?`).  The
+state-level lock is taken when *either* fires, because
+`SystemState.scThreadIndex` is an `RHTable` whose insert may rehash
+the whole table.
+
+The caller pre-resolves the reply leg's donation pair by inspecting
+the replier's own TCB binding:
 
 * If `replierTcb.schedContextBinding = .donated scId originalOwner`:
   pass `donatedScId := some scId` AND

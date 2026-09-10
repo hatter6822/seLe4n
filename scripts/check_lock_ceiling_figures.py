@@ -58,11 +58,28 @@ checks.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import re
 import subprocess
 import sys
 import tempfile
+
+# **Gates read code, prose reads prose — and this gate does both** (PR #893
+# review round 5).  The *claims* it holds to the derivation live in Markdown and
+# in Lean docstrings, so they are read from the real text.  The *constants and
+# the formula* are a question about code, so they are read through the shared
+# comment-free view: without it a docstring shaped like the canonical
+# declaration — `def maxLockSetSize : Nat := 13` quoted in historical prose —
+# would either be reported as a duplicate definition or, if the live
+# declaration were ever reformatted, supply the value itself.  A comment
+# deciding whether a Tier 0 gate passes is precisely what that rule forbids, and
+# writing a new scanner that reads Lean raw is how the rule gets broken again.
+_VIEW_SPEC = importlib.util.spec_from_file_location(
+    "lean_code_view", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "lean_code_view.py"))
+_VIEW = importlib.util.module_from_spec(_VIEW_SPEC)
+_VIEW_SPEC.loader.exec_module(_VIEW)
 
 # --------------------------------------------------------------------------
 # The derived values: three constants and the shape that combines them.
@@ -80,9 +97,16 @@ BUDGET_DEF = re.compile(r"^def\s+rpi5TickBudgetMicros\s*:\s*Nat\s*:=\s*(\d+)\s*$
 # three constants is only sound while `admissibleCriticalSection` divides the
 # budget by `maxLockSetSize * (numCores - 1)`; if that body changes, this gate
 # would compute a figure the kernel does not, which is worse than not checking.
+#
+# **Anchored at the end of the body** (PR #893 review round 5).  Without the
+# trailing anchor the pattern matched a *prefix*: `budget / (maxLockSetSize *
+# (numCores - 1)) + 1` satisfied it, so the gate would derive 23 while Lean
+# computed 24 and every stale prose figure would pass.  That is this project's
+# oldest rule — a presence check is not a relation check — inside the pin
+# written to enforce a relation, which is why the mutation is in the self-test.
 ADMISSIBLE_BODY = re.compile(
     r"def\s+admissibleCriticalSection\s*\(budget\s*:\s*Nat\)\s*:\s*Nat\s*:=\s*\n"
-    r"\s*budget\s*/\s*\(maxLockSetSize\s*\*\s*\(numCores\s*-\s*1\)\)"
+    r"\s*budget\s*/\s*\(maxLockSetSize\s*\*\s*\(numCores\s*-\s*1\)\)[ \t]*(?:\r?\n|\Z)"
 )
 
 # --------------------------------------------------------------------------
@@ -145,10 +169,28 @@ def prose_sources(root: str) -> list[str]:
 
 
 def read(root: str, relative: str) -> str | None:
+    """The file's real text — what a *prose* claim is written in."""
     try:
         with open(os.path.join(root, relative), "r", encoding="utf-8") as handle:
             return handle.read()
     except (OSError, UnicodeDecodeError):
+        return None
+
+
+def read_code(root: str, relative: str) -> str | None:
+    """The file's comment-free view — what a question about *code* must read.
+
+    Byte-aligned with the original, so line numbers still mean what they say.
+    An unterminated comment is unreadable rather than empty: returning `None`
+    makes the caller report a derivation it could not perform, which is the
+    fail-closed direction for a scanner building requirements.
+    """
+    text = read(root, relative)
+    if text is None:
+        return None
+    try:
+        return _VIEW.strip(text)
+    except Exception:
         return None
 
 
@@ -166,11 +208,11 @@ def derived_figures(root: str) -> tuple[dict[str, int], list[str]]:
         ("cores", CORES_SOURCE, CORES_DEF),
         ("budget", BUDGET_SOURCE, BUDGET_DEF),
     ):
-        text = read(root, relative)
+        text = read_code(root, relative)
         if text is None:
             problems.append(
-                f"derived_constants: {relative}: cannot be read, so the {name} "
-                f"this gate measures prose against cannot be derived"
+                f"derived_constants: {relative}: cannot be read as Lean code, so "
+                f"the {name} this gate measures prose against cannot be derived"
             )
             continue
         found = pattern.findall(text)
@@ -183,7 +225,7 @@ def derived_figures(root: str) -> tuple[dict[str, int], list[str]]:
             continue
         values[name] = int(found[0])
 
-    body = read(root, BUDGET_SOURCE)
+    body = read_code(root, BUDGET_SOURCE)
     if body is not None and not ADMISSIBLE_BODY.search(body):
         problems.append(
             f"derived_constants: {BUDGET_SOURCE}: `admissibleCriticalSection` no "
@@ -436,6 +478,28 @@ SELF_TESTS: tuple[tuple[str, str, str, dict[str, str], bool], ...] = (
         {BUDGET_SOURCE: "def rpi5TickBudgetMicros : Nat := 1000\n\n"
                         "def admissibleCriticalSection (budget : Nat) : Nat :=\n"
                         "  budget / (maxLockSetSize * numCores)\n"},
+        True,
+    ),
+    (
+        "...and so does a formula EXTENDED after the pinned expression",
+        "derived_constants", "preserving",
+        {BUDGET_SOURCE: "def rpi5TickBudgetMicros : Nat := 1000\n\n"
+                        "def admissibleCriticalSection (budget : Nat) : Nat :=\n"
+                        "  budget / (maxLockSetSize * (numCores - 1)) + 1\n"},
+        True,
+    ),
+    (
+        "a commented-out definition cannot supply the constant",
+        "-", "preserving",
+        {CEILING_SOURCE: "-- def maxLockSetSize : Nat := 13\n"
+                        + CLEAN_CEILING + "-- " + CLEAN_CLAIMS},
+        False,
+    ),
+    (
+        "...and a commented-out definition ALONE supplies nothing",
+        "derived_constants", "preserving",
+        {CEILING_SOURCE: "/- historical: def maxLockSetSize : Nat := 13 -/\n"
+                        "-- " + CLEAN_CLAIMS},
         True,
     ),
     (

@@ -64,6 +64,12 @@ RAW_MATCH_AWK='
             seen[seen_key] = 1
             key = FILENAME " " vars[i]
             hits[key]++
+            # The first variant this match discriminates makes it a classified
+            # SITE; later arms of the same match add rows but not sites.
+            if (!(match_id in site_seen)) {
+              site_seen[match_id] = 1
+              nsites++
+            }
           }
         }
       }
@@ -79,7 +85,10 @@ RAW_MATCH_AWK='
                     vars, " ")
       match_id = 0
     }
-    END {for (k in hits) print k, hits[k]}
+    END {
+      if (mode == "sites") {print nsites + 0}
+      else {for (k in hits) print k, hits[k]}
+    }
 '
 
 # Self-test: the scanner against synthesized Lean fixtures, in a temporary tree,
@@ -145,6 +154,25 @@ if [[ "${1:-}" == "--self-test" ]]; then
   st_expect "two sites in one file count twice" TwoSites.lean "TwoSites.lean tcb 2;"
   # The window is still four lines after the discriminator, not five.
   st_expect "an arm beyond the window is not recorded" OutsideWindow.lean ""
+  # ...and `mode=sites` counts MATCHES, not variant incidences -- the operand
+  # `RAW_MATCH_UNCLASSIFIED` subtracts from a count of match lines.  A two-arm
+  # match is two rows and ONE site; getting this wrong made the remainder
+  # negative (PR #893 review round 5).
+  st_sites() {
+    local name="$1" file="$2" want="$3" got
+    got="$( (cd "$fx" && awk -v mode=sites "$RAW_MATCH_AWK" "$file") )"
+    if [[ "$got" == "$want" ]]; then
+      echo "  OK   self-test: $name"
+      st_ok=$(( st_ok + 1 ))
+    else
+      echo "  SELF-TEST FAIL: $name: expected [$want], got [$got]" >&2
+      st_fail=1
+    fi
+  }
+  st_sites "a two-arm match is two rows but ONE site" TwoArms.lean 1
+  st_sites "two separate matches are two sites" TwoSites.lean 2
+  st_sites "a one-line match counts as a site" OneLine.lean 1
+  st_sites "a file with no classified match has no site" OutsideWindow.lean 0
   if [[ "$st_fail" -ne 0 ]]; then
     echo "raw-match scanner self-test: FAILED" >&2
     exit 1
@@ -228,6 +256,18 @@ emit_raw_match_rows() {
   awk "$RAW_MATCH_AWK" "${KERNEL_FILES[@]}" | sort
 }
 
+# The number of distinct `match … .objects[…]` expressions that discriminated at
+# least one constructor -- **sites, not variant incidences** (PR #893 review
+# round 5).  `RAW_MATCH_TOTAL` counts one row per (file, variant), so subtracting
+# it from a count of match *lines* compares two different things: since the
+# multi-arm support landed, one match discriminating `.tcb` and `.endpoint`
+# contributes two rows against one line and the remainder goes negative.  The
+# operand the subtraction wants is this one, computed by the same program so the
+# two readings cannot drift.
+count_classified_match_sites() {
+  awk -v mode=sites "$RAW_MATCH_AWK" "${KERNEL_FILES[@]}"
+}
+
 # Helper: `<file> <count>` rows for the bare `tid.toObjId` object-store lookup,
 # per file for the same reason.
 emit_raw_lookup_rows() {
@@ -281,7 +321,8 @@ RAW_MATCH_TOTAL=$(printf '%s\n' "${RAW_MATCH_ROWS}" \
 # any tree.
 RAW_MATCH_ALL=$( (grep -cE "match.*\.objects\[" "${KERNEL_FILES[@]}" 2>/dev/null || true) \
   | awk -F: '{s += $2} END {print s + 0}')
-RAW_MATCH_UNCLASSIFIED=$(( RAW_MATCH_ALL - RAW_MATCH_TOTAL ))
+RAW_MATCH_CLASSIFIED_SITES=$(count_classified_match_sites)
+RAW_MATCH_UNCLASSIFIED=$(( RAW_MATCH_ALL - RAW_MATCH_CLASSIFIED_SITES ))
 
 # RAW_LOOKUP_TID — `tid.toObjId` projected at object-store boundaries. Derived
 # from the per-file rows, so the total and the inventory cannot diverge.

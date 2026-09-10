@@ -1,3 +1,54 @@
+## v0.34.144 — WS-OD OD3.17: four review findings, three of them in the gates written to prevent this class
+
+Review round 5, all four verified against the code and all four real.  Three sit
+inside machinery added one and two cuts ago to stop exactly the kind of defect
+they are.
+
+**1. The formula pin matched a prefix.**  `check_lock_ceiling_figures.py` pins
+`admissibleCriticalSection`'s body so that a changed formula stops the
+derivation rather than silently producing a figure the kernel does not compute.
+The pattern had no end anchor, so `budget / (maxLockSetSize * (numCores − 1))
++ 1` satisfied it: the gate would derive 23 while Lean computed 24, and every
+stale prose figure would pass.  That is this project's oldest rule — a presence
+check is not a relation check — *inside the pin written to enforce a relation*.
+Anchored, with the suffix mutation in the self-test.
+
+**2. The same gate read Lean raw.**  Its claims are prose and are read from the
+real text, correctly; its **constants and formula** are a question about code
+and were read the same way.  A docstring shaped like the canonical declaration —
+historical text containing `def maxLockSetSize : Nat := 13` — could therefore
+decide whether a Tier 0 gate passes, which is the project's headline rule
+(*gates read code, prose reads prose*) broken in a scanner written the same day
+as the rule was cited to justify it.  The constants and the formula now come
+through `lean_code_view.strip`; the claims still come from the real text.  That
+is the rule applied *within* one gate rather than around it, and the self-test
+carries the token-preserving case: a commented-out definition alone supplies
+nothing.
+
+**3. `RAW_MATCH_UNCLASSIFIED` subtracted two different things.**
+`RAW_MATCH_ALL` counts match *lines*; `RAW_MATCH_TOTAL` counts (file, variant)
+incidences.  Before the multi-arm support they usually agreed; after it, one
+match discriminating `.tcb` and `.endpoint` contributes two rows against one
+line and the remainder goes **negative**.  The operand the subtraction wants is
+the number of distinct classified match *sites*, now emitted by the same awk
+program (`count_classified_match_sites`, `mode=sites`) so the two readings
+cannot drift.  Four new scanner self-test cases pin sites against rows.
+
+**4. `lockSet_replyRecv`'s contract denied a hand-off its own footprint
+declares.**  The docstring said *the receive phase does NOT initiate donation
+(donation is caller-initiated from `endpointCall`, not receiver-initiated)* —
+true of the single-core transition it was written for, and false of
+`replyRecvBody` since WS-OD OD3.5: its receive leg runs
+`applyCallDonationOnCore nextThread tid` whenever it dequeues a queued `Call`,
+writing the **new** caller's SchedContext, which is why `redonatedScId` and the
+disjunctive state-level member exist.  A contract that denies a hand-off invites
+the next caller to omit the members it needs, so it is corrected rather than
+qualified — the documentation was describing a *worse* state than the code,
+which is the one direction in which updating the prose is the fix.
+
+No tree figure moves in any of the four.  Self-tests grow to 18 cases
+(ceiling gate) and 9 (raw-match scanner), every new one token-preserving.
+
 ## v0.34.143 — WS-OD OD3.16: the raw-match scan reads the discriminator's own line
 
 Review round 4's finding on the OD3.14 cut, verified against the code and real.
