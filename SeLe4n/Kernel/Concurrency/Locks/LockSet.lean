@@ -932,11 +932,16 @@ the honest constant is the one the definition can produce.
 **The cost, stated rather than implied.**  This constant is the WCRT headline's
 first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrows the
 per-lock critical section the RPi5 tick admits: 37 µs at nine, 30 µs at eleven,
-and **25 µs** at thirteen (`admissibleCriticalSection_rpi5Tick`), widening the
-CC-5 contention bound in proportion each time.  Both raises are the maintainer's
-decision, taken against the same alternative — refusing to declare `.replyRecv`
-on the arms that do not fit — which would leave the tree's most-travelled IPC
-path under the coarse serialisation while the model claimed a footprint for it.
+25 µs at thirteen, and **23 µs** at fourteen
+(`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
+proportion each time.  The figure is *derived* from this constant and must be
+read off that theorem rather than from this paragraph: at fourteen the tick
+admits `14 · 3 · 23 = 966 µs ≤ 1000`, and quoting a superseded per-lock cost
+beside the current ceiling states a budget the constant does not satisfy.  Every
+raise is the maintainer's decision, taken against the same alternative — refusing
+to declare `.replyRecv` on the arms that do not fit — which would leave the
+tree's most-travelled IPC path under the coarse serialisation while the model
+claimed a footprint for it.
 
 **WS-OD OD3.7: 11 → 13**, and again on that same arm.  The donation return walks
 one link past the reply-stack head to find the outer caller
@@ -951,7 +956,18 @@ window on exactly the thread about to be handed a scheduling context.
 members and reaches nine; the arm-selected cancellation footprint reaches ten;
 `lockSet_tcbSuspend` and `lockSet_endpointCall` remain eight at their widest.
 This constant is not tight for any of them, and is tight only for the one arm
-that fuses a reply leg, a receive leg and a donation return into one syscall. -/
+that fuses a reply leg, a receive leg and a donation return into one syscall.
+
+**WS-OD OD3.13: 13 → 14**, on that same arm once more.  `.receive` and
+`.replyRecv` pop the endpoint's send queue or block on its receive queue through
+the two primitives every rendezvous-or-block uses, and each writes one further
+TCB — the popped thread's successor promoted to head, or the queue's old tail
+(`receiveSideQueueStructureNeighbor?`).  `.replyRecv` was at thirteen of
+thirteen, so the object its receive leg writes had nowhere to go.  A footprint
+that omits a written object is **false**, and every statement built on
+`lockSetForSyscall` was silent about that TCB rather than conservative; two
+microseconds of admissible critical section is what the true footprint costs.
+With this raise all eight declared syscall arms name every object they write. -/
 def maxLockSetSize : Nat := 14
 
 end SeLe4n.Kernel.Concurrency

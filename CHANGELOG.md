@@ -1,3 +1,51 @@
+## v0.34.139 — PR #893 review round 1: a diagnostic that was enforced, and a ceiling whose cost paragraph stopped one raise short
+
+Two P2 findings from the automated review of the OD2/OD3 cut, both verified
+against the code and both real; two more found while fixing them, in the same
+blocks and of the same class.
+
+1. **`RAW_MATCH_UNCLASSIFIED` was enforced while its own comment called it a
+   diagnostic — and it was not the figure its name claims.**  The baseline script
+   computed it as `grep -cE "match.*\.objects\["`, every raw object-store match
+   *including* the classified ones, so a variable named UNCLASSIFIED reported
+   **130** while `RAW_MATCH_TOTAL` beside it reported the **111** that were
+   classified.  It is now the remainder by subtraction (**19**), which is what
+   the name says and what the sibling comment promised.  And it is removed from
+   the enforced `METRICS` list: a `match` that binds the whole `KernelObject`
+   without naming a constructor **is not a reader-hygiene site** — the script
+   says exactly that where it computes the figure — so holding it to a drop would
+   have made a legitimate non-discriminating match a hard Tier 0 failure.  The
+   per-(file, variant) `RAW_SITE` inventory remains the binding floor for the
+   reads this migration is actually about.
+
+2. **`maxLockSetSize`'s cost paragraph stopped at thirteen.**  OD3.13 raised the
+   constant to 14 and `admissibleCriticalSection_rpi5Tick` to 23 µs, and left the
+   docstring's raise history ending at "25 µs at thirteen" while citing that very
+   theorem.  Beyond being stale it was *arithmetically false* next to the new
+   constant: `14 · 3 · 25 = 1050 µs` exceeds the 1 ms tick the paragraph claims
+   to fit, where the proven `14 · 3 · 23 = 966 µs` does not.  The history now
+   records OD3.13's 13 → 14 with the member that caused it, states the derived
+   figure, and says in terms that the number must be read off the theorem rather
+   than off the paragraph.
+
+Two further instances, found in the blocks the above touched rather than
+reported — the sweep rule, applied where a fix had just named the relation:
+
+3. **The superseded-figure negatives never gained `= 25`.**  Tier 3 refuses
+   `admissibleCriticalSection rpi5TickBudgetMicros = 30` and `= 37`, the values
+   the ninth- and eleventh-lock ceilings retired.  OD3.13 retired 25 and did not
+   add it, so for four cuts the one figure that could silently come back was the
+   one most recently wrong.  A hand-extended enumeration is extended at every
+   raise but the latest; the list now carries all three, and the comment says why
+   it has to grow.
+
+4. **The same block's prose still read "while the ceiling stands at thirteen."**
+
+None of the four changes a kernel transition: (1) and (3) are gate mechanics,
+(2) and (4) are prose corrected to match code that was already right.  The AK7
+gate and its six-case token-preserving self-test both pass with the recomputed
+figure.
+
 ## v0.34.138 — WS-OD OD3 audit: the consumed frame's answer is stated, the removal write set has one spelling, a stale anchor
 
 A deep audit of the OD2/OD3 cut (`v0.34.125` → `v0.34.137`), reading the code

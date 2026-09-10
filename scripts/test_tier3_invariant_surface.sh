@@ -11822,7 +11822,14 @@ run_check "INVARIANT" rg -n '^theorem lockSet_consistent_base_plus_eleven_opts' 
 # POSITIVE pin lives once, at the theorem itself (see the `:= by decide` anchor
 # above); repeating it here would be one question with two answers.  What this
 # block adds is the negative: no superseded figure may come back while the
-# ceiling stands at thirteen.
+# ceiling stands at fourteen.
+#
+# The list must gain the figure each raise supersedes.  OD3.13 moved the ceiling
+# 13 -> 14 and the cost 25 -> 23 and did NOT add `= 25` here, so for four cuts
+# the value it had just retired was the one figure that could come back
+# unrefused -- an enumeration that has to be extended by hand, extended at every
+# raise but the latest (PR #893 review).
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 25" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 30" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 

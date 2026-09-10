@@ -150,15 +150,28 @@ RAW_MATCH_VSPACEROOT=$(count_raw_match_variant "vspaceRoot")
 # `grep -cE "match.*\.objects\["`, which counts every raw object-store match
 # whether or not it discriminates a variant, so the "total" and the per-variant
 # figures below were answers to two different questions printed under one
-# heading.  The unclassified matches are still visible as RAW_MATCH_UNCLASSIFIED.
+# heading.  The matches discriminating no variant are the remainder, reported
+# separately as RAW_MATCH_UNCLASSIFIED below.
 RAW_MATCH_TOTAL=$(printf '%s\n' "${RAW_MATCH_ROWS}" \
   | awk 'NF {s += $3} END {print s + 0}')
 
-# Every `match <expr>.objects[…]?` regardless of whether it discriminates a
-# variant. Printed as a diagnostic only: a raw match that binds the whole
-# `KernelObject` without naming a constructor is not a reader-hygiene site.
-RAW_MATCH_UNCLASSIFIED=$( (grep -cE "match.*\.objects\[" "${KERNEL_FILES[@]}" 2>/dev/null || true) \
+# The raw matches that discriminate NO variant: every `match <expr>.objects[…]?`
+# minus the classified sites above.  Printed as a diagnostic only -- a match that
+# binds the whole `KernelObject` without naming a constructor is not a
+# reader-hygiene site, so this figure is deliberately absent from the enforced
+# METRICS list in `ak7_cascade_check_monotonic.sh`; see the note there.
+#
+# **It is the remainder, not the whole** (PR #893 review).  It was
+# `grep -cE "match.*\.objects\["` verbatim -- every raw match, classified ones
+# included -- so a variable named UNCLASSIFIED reported 130 while exactly 111 of
+# those sites were classified, and RAW_MATCH_TOTAL beside it reported that 111.
+# Two names for two different questions, one of which the name denied: the
+# project's own "a name is not the thing" defect, in a metric that reads as
+# measurement.  Deriving it by subtraction is what keeps the two consistent on
+# any tree.
+RAW_MATCH_ALL=$( (grep -cE "match.*\.objects\[" "${KERNEL_FILES[@]}" 2>/dev/null || true) \
   | awk -F: '{s += $2} END {print s + 0}')
+RAW_MATCH_UNCLASSIFIED=$(( RAW_MATCH_ALL - RAW_MATCH_TOTAL ))
 
 # RAW_LOOKUP_TID — `tid.toObjId` projected at object-store boundaries. Derived
 # from the per-file rows, so the total and the inventory cannot diverge.

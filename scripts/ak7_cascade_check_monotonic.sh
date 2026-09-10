@@ -246,7 +246,14 @@ METRICS=(
   "RAW_MATCH_CNODE:drop"
   "RAW_MATCH_VSPACEROOT:drop"
   "RAW_MATCH_TOTAL:drop"
-  "RAW_MATCH_UNCLASSIFIED:drop"
+  # RAW_MATCH_UNCLASSIFIED is deliberately NOT enforced (PR #893 review).  A raw
+  # match that binds the whole `KernelObject` without naming a constructor is
+  # not a reader-hygiene site -- the baseline script says so at the point it
+  # computes the figure -- so holding it to a drop would make a legitimate
+  # non-discriminating match a hard Tier 0 failure, refusing code this migration
+  # has no quarrel with.  The variant-discriminating reads are enforced, per
+  # site, by the RAW_SITE inventory below, which is the binding floor; this
+  # figure is a diagnostic and its comment now matches its treatment.
   "RAW_LOOKUP_TID:drop"
   "GETTCB_ADOPTION:grow"
   "GETSCHEDCTX_ADOPTION:grow"
