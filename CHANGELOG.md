@@ -1,3 +1,48 @@
+## v0.35.0 — minor line: WS-OD's reply-stack phases (OD1–OD3) are complete
+
+A version-only cut at the maintainer's request.  The 36 version sites move
+`0.34.145` → `0.35.0` and this entry is added; no other byte of the tree
+differs from `v0.34.145` — no Lean, no Rust, no gate, and no documentation
+beyond the version strings themselves.
+
+**What the line marks.**  The `0.34.x` series carried WS-OD from its
+registration at `v0.34.98` through the three phases that build the
+SchedContext reply stack:
+
+- **OD1** (`v0.34.100` → `v0.34.108`) — the `passiveServerIdle` hole the
+  `v0.34.97` reclaim introduced, closed by aborting the holder's outstanding
+  send or call before the hand-back, and by *placing* the unblocked holder on a
+  run queue rather than merely unblocking it.
+- **OD2** (`v0.34.125`) — `SchedContext.scReply`, an implemented
+  `Reply.wellFormed`, and `donationChainWellFormed` as a conjunct of
+  `ipcReachable`, preserved through `donationChainFrame` rather than assumed.
+- **OD3** (`v0.34.126` → `v0.34.145`) — the donation return generalised into a
+  reply-stack pop with fail-closed head and outer-caller validation, its chain
+  preservation, the footprint sweep, and five review rounds.
+
+**Three live defects were fixed inside that span**, each reported before being
+repaired: `.receive` performed no SchedContext donation at all, so a passive
+server taking its first request with `seL4_Recv` ran the client's work charged
+to no reservation (OD3.6); `spliceOutMidQueueNode` left its successor's
+`queuePPrev` naming the removed thread, so that thread could never again be
+dequeued (OD3.9); and the receive rendezvous handed over a caller's budget
+without its inherited priority, an unbounded priority inversion on the arm a
+passive server takes its first request with (OD3.14).
+
+**`maxLockSetSize` moved 9 → 14** across the span, as five syscall arms were
+found to declare footprints omitting objects they write.  The derived figures
+move with it and are theorems rather than paragraphs: the RPi5 1 ms tick admits
+**23 µs** per lock, down from 37.
+
+**What is not claimed.**  OD4–OD6 have not started, so the pop's writing arm
+remains unreachable — nothing writes a `SchedContext.scReply` yet, and
+`returnDonatedSchedContext_eq_legacy_of_none` proves the operation is
+store-for-store the pre-OD3 body on every state this tree reaches.  A passive
+server at call depth ≥ 2 still cannot run.  Nothing boots: WS-BP has not opened
+and SM10.1 is blocked on WS-RR.
+
+Refs: docs/REGISTERED_DEBT.md WS-OD
+
 ## v0.34.145 — WS-OD OD3.18: the header's donation inventories were a third copy of `permittedKinds`
 
 Found by running the sweep rule on the previous cut rather than by a review.

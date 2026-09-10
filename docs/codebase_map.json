@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/od2-inert-structure-chain-ngczo8",
-      "commit_sha": "f21fbb8dbd0d123036cda39124818fa08fb4c2ac",
-      "tree_sha": "b0e64263c51967c195c8f1d16e9b4a17c48ae09d",
-      "committed_at_utc": "2026-09-10T16:55:59+00:00"
+      "commit_sha": "07db404e006e887835263e5e922f8dac99107b68",
+      "tree_sha": "52961efb62baa5b248dadf0307287e7d9521042f",
+      "committed_at_utc": "2026-09-10T18:47:32+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 20668
   },
   "readme_sync": {
-    "version": "0.34.145",
+    "version": "0.35.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 328,
     "production_loc": 362103,
