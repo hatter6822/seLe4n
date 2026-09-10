@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/od2-inert-structure-chain-ngczo8",
-      "commit_sha": "b2eb0881ab9b2ec48f3fc422faa23e67fe67527f",
-      "tree_sha": "6102ac14a15c74c1e4b202dcc25b38e9b855dcd7",
-      "committed_at_utc": "2026-09-09T22:27:47+00:00"
+      "commit_sha": "0f16ad5750fe83ea4b3e6c7d1fa0ccc82bdde9c8",
+      "tree_sha": "3c1510118c89737d3ce08ebe33d963602a2f0ee6",
+      "committed_at_utc": "2026-09-10T01:32:53+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "123eb58ee134b5d6cf975cc9f0612aed5a5383db9c861ee67998b072abb239d9"
+    "source_digest": "8d412f16a307ebc873e86a5ffd865d1469bad3f2227964c7adb83d1ae592436f"
   },
   "summary": {
     "module_count": 398,
-    "declaration_count": 20633
+    "declaration_count": 20637
   },
   "readme_sync": {
-    "version": "0.34.137",
+    "version": "0.34.138",
     "lean_toolchain": "v4.28.0",
     "production_files": 328,
-    "production_loc": 361351,
+    "production_loc": 361390,
     "test_files": 70,
-    "test_loc": 74073,
-    "proved_theorem_lemma_decls": 12089,
+    "test_loc": 74100,
+    "proved_theorem_lemma_decls": 12090,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -123263,7 +123263,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.Endpoint",
       "path": "SeLe4n/Kernel/IPC/Operations/Endpoint.lean",
-      "declaration_count": 147,
+      "declaration_count": 148,
       "declarations": [
         {
           "kind": "namespace",
@@ -124024,7 +124024,7 @@
         {
           "kind": "def",
           "name": "replyStackOuterCaller",
-          "line": 963,
+          "line": 968,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -124042,7 +124042,7 @@
         {
           "kind": "theorem",
           "name": "replyStackOuterCaller",
-          "line": 987,
+          "line": 992,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -124057,7 +124057,7 @@
         {
           "kind": "theorem",
           "name": "replyStackOuterCaller",
-          "line": 1001,
+          "line": 1006,
           "called": [
             "Reply",
             "ReplyId",
@@ -124074,7 +124074,7 @@
         {
           "kind": "theorem",
           "name": "replyStackOuterCaller",
-          "line": 1019,
+          "line": 1024,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -124083,6 +124083,24 @@
             "getReply",
             "getSchedContext",
             "head",
+            "none",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyStackOuterCaller",
+          "line": 1084,
+          "called": [
+            "Reply",
+            "ReplyId",
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "donationHeadOf",
+            "getReply",
+            "getSchedContext",
             "none",
             "scId",
             "st"
@@ -124091,7 +124109,7 @@
         {
           "kind": "def",
           "name": "replyStackBelowHeadReads",
-          "line": 1087,
+          "line": 1127,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -124109,7 +124127,7 @@
         {
           "kind": "theorem",
           "name": "replyStackBelowHeadReads",
-          "line": 1115,
+          "line": 1155,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -124124,7 +124142,7 @@
         {
           "kind": "theorem",
           "name": "replyStackBelowHeadReads",
-          "line": 1130,
+          "line": 1170,
           "called": [
             "Reply",
             "ReplyId",
@@ -124141,7 +124159,7 @@
         {
           "kind": "theorem",
           "name": "replyStackBelowHeadReads",
-          "line": 1147,
+          "line": 1187,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -124159,7 +124177,7 @@
         {
           "kind": "def",
           "name": "storeDonationHeadClear",
-          "line": 1188,
+          "line": 1228,
           "called": [
             "KernelError",
             "ReplyId",
@@ -124174,7 +124192,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_none",
-          "line": 1199,
+          "line": 1239,
           "called": [
             "SystemState",
             "none",
@@ -124185,7 +124203,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_some",
-          "line": 1202,
+          "line": 1242,
           "called": [
             "ReplyId",
             "SystemState",
@@ -124200,7 +124218,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_cases",
-          "line": 1219,
+          "line": 1259,
           "called": [
             "Reply",
             "ReplyId",
@@ -124219,7 +124237,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_some_ok",
-          "line": 1258,
+          "line": 1298,
           "called": [
             "Reply",
             "ReplyId",
@@ -124236,7 +124254,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_ok_of_reply",
-          "line": 1283,
+          "line": 1323,
           "called": [
             "Reply",
             "ReplyId",
@@ -124254,7 +124272,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_scheduler_eq",
-          "line": 1304,
+          "line": 1344,
           "called": [
             "ReplyId",
             "SystemState",
@@ -124268,7 +124286,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_serviceRegistry_eq",
-          "line": 1313,
+          "line": 1353,
           "called": [
             "ReplyId",
             "SystemState",
@@ -124282,7 +124300,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_tlbShootdown_eq",
-          "line": 1322,
+          "line": 1362,
           "called": [
             "ReplyId",
             "SystemState",
@@ -124296,7 +124314,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_machine_eq",
-          "line": 1331,
+          "line": 1371,
           "called": [
             "ReplyId",
             "SystemState",
@@ -124310,7 +124328,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_preserves_objects_invExt",
-          "line": 1341,
+          "line": 1381,
           "called": [
             "ReplyId",
             "SystemState",
@@ -124325,7 +124343,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_preserves_objectIndexSet_invExt",
-          "line": 1351,
+          "line": 1391,
           "called": [
             "ReplyId",
             "SystemState",
@@ -124340,7 +124358,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_preserves_objectIndexSetComplete",
-          "line": 1362,
+          "line": 1402,
           "called": [
             "ReplyId",
             "SystemState",
@@ -124357,7 +124375,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_tcb_eq",
-          "line": 1379,
+          "line": 1419,
           "called": [
             "ObjId",
             "ReplyId",
@@ -124375,7 +124393,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_getTcb",
-          "line": 1393,
+          "line": 1433,
           "called": [
             "ReplyId",
             "SystemState",
@@ -124394,7 +124412,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_getSchedContext",
-          "line": 1406,
+          "line": 1446,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -124414,7 +124432,7 @@
         {
           "kind": "theorem",
           "name": "storeDonationHeadClear_tcb_backward",
-          "line": 1420,
+          "line": 1460,
           "called": [
             "ObjId",
             "ReplyId",
@@ -124433,7 +124451,7 @@
         {
           "kind": "def",
           "name": "returnDonatedSchedContext",
-          "line": 1472,
+          "line": 1512,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -124459,7 +124477,7 @@
         {
           "kind": "def",
           "name": "cleanupActiveDonation",
-          "line": 1558,
+          "line": 1598,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -124474,7 +124492,7 @@
         {
           "kind": "def",
           "name": "donateSchedContextValid",
-          "line": 1592,
+          "line": 1632,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -124487,7 +124505,7 @@
         {
           "kind": "theorem",
           "name": "donateSchedContextValid_eq",
-          "line": 1597,
+          "line": 1637,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -124500,7 +124518,7 @@
         {
           "kind": "def",
           "name": "returnDonatedSchedContextValid",
-          "line": 1604,
+          "line": 1644,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -124515,7 +124533,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContextValid_eq",
-          "line": 1611,
+          "line": 1651,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -124530,7 +124548,7 @@
         {
           "kind": "def",
           "name": "cleanupPreReceiveDonation",
-          "line": 1637,
+          "line": 1677,
           "called": [
             "SystemState",
             "ThreadId",
@@ -124544,7 +124562,7 @@
         {
           "kind": "def",
           "name": "cleanupPreReceiveDonationChecked",
-          "line": 1670,
+          "line": 1710,
           "called": [
             "KernelError",
             "SystemState",
@@ -124559,7 +124577,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonationChecked_ok_eq_cleanup",
-          "line": 1683,
+          "line": 1723,
           "called": [
             "SystemState",
             "ThreadId",
@@ -124575,7 +124593,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_eq_cleanupChecked_ok",
-          "line": 1717,
+          "line": 1757,
           "called": [
             "SystemState",
             "ThreadId",
@@ -124588,16 +124606,16 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1728>",
-          "line": 1728,
+          "name": "<anonymous:example:1768>",
+          "line": 1768,
           "called": [
             "cleanupPreReceiveDonation"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1729>",
-          "line": 1729,
+          "name": "<anonymous:example:1769>",
+          "line": 1769,
           "called": [
             "cleanupPreReceiveDonationChecked"
           ]
@@ -124605,7 +124623,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_scheduler_eq_z7",
-          "line": 1743,
+          "line": 1783,
           "called": [
             "KernelObject",
             "ObjId",
@@ -124617,7 +124635,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_storeChain",
-          "line": 1765,
+          "line": 1805,
           "called": [
             "Reply",
             "ReplyId",
@@ -124645,7 +124663,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_outerAcceptable",
-          "line": 1863,
+          "line": 1903,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -124661,7 +124679,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_eq_legacy_of_none",
-          "line": 1887,
+          "line": 1927,
           "called": [
             "Reply",
             "ReplyId",
@@ -124689,7 +124707,7 @@
         {
           "kind": "def",
           "name": "tcbBindingRewrite",
-          "line": 1937,
+          "line": 1977,
           "called": [
             "TCB"
           ]
@@ -124697,7 +124715,7 @@
         {
           "kind": "theorem",
           "name": "tcbBindingRewrite.refl",
-          "line": 1940,
+          "line": 1980,
           "called": [
             "TCB",
             "tcbBindingRewrite"
@@ -124706,7 +124724,7 @@
         {
           "kind": "theorem",
           "name": "tcbBindingRewrite.trans",
-          "line": 1942,
+          "line": 1982,
           "called": [
             "TCB",
             "tcbBindingRewrite"
@@ -124715,7 +124733,7 @@
         {
           "kind": "def",
           "name": "replyStackRewrite",
-          "line": 1958,
+          "line": 1998,
           "called": [
             "Reply"
           ]
@@ -124723,7 +124741,7 @@
         {
           "kind": "theorem",
           "name": "replyStackRewrite.refl",
-          "line": 1961,
+          "line": 2001,
           "called": [
             "Reply",
             "replyStackRewrite"
@@ -124732,7 +124750,7 @@
         {
           "kind": "theorem",
           "name": "replyStackRewrite.trans",
-          "line": 1963,
+          "line": 2003,
           "called": [
             "Reply",
             "replyStackRewrite"
@@ -124741,7 +124759,7 @@
         {
           "kind": "theorem",
           "name": "replyStackRewrite.caller_eq",
-          "line": 1971,
+          "line": 2011,
           "called": [
             "Reply",
             "replyStackRewrite"
@@ -124750,7 +124768,7 @@
         {
           "kind": "theorem",
           "name": "replyStackRewrite.replyId_eq",
-          "line": 1975,
+          "line": 2015,
           "called": [
             "Reply",
             "replyId",
@@ -124760,7 +124778,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_reply_rewrite",
-          "line": 1984,
+          "line": 2024,
           "called": [
             "ObjId",
             "Reply",
@@ -124790,7 +124808,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_tcb_bindingRewrite",
-          "line": 2027,
+          "line": 2067,
           "called": [
             "KernelObject",
             "ObjId",
@@ -124808,7 +124826,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tcb_rewrite",
-          "line": 2052,
+          "line": 2092,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -124835,7 +124853,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tcb_rewrite_backward",
-          "line": 2095,
+          "line": 2135,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -124865,7 +124883,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_other_tcb_eq",
-          "line": 2162,
+          "line": 2202,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -124889,7 +124907,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tcb_binding_cases",
-          "line": 2211,
+          "line": 2251,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -124916,15 +124934,15 @@
         {
           "kind": "def",
           "name": "donationReturnWritesKind",
-          "line": 2266,
+          "line": 2306,
           "called": [
             "KernelObject"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:2272>",
-          "line": 2272,
+          "name": "<anonymous:instance:2312>",
+          "line": 2312,
           "called": [
             "KernelObject",
             "donationReturnWritesKind"
@@ -124933,7 +124951,7 @@
         {
           "kind": "theorem",
           "name": "donationReturnWritesKind_notification",
-          "line": 2275,
+          "line": 2315,
           "called": [
             "Notification",
             "donationReturnWritesKind"
@@ -124942,7 +124960,7 @@
         {
           "kind": "theorem",
           "name": "donationReturnWritesKind_endpoint",
-          "line": 2278,
+          "line": 2318,
           "called": [
             "Endpoint",
             "donationReturnWritesKind"
@@ -124951,7 +124969,7 @@
         {
           "kind": "theorem",
           "name": "donationReturnWritesKind_cnode",
-          "line": 2281,
+          "line": 2321,
           "called": [
             "CNode",
             "donationReturnWritesKind"
@@ -124960,7 +124978,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_objects_backward_of_kind",
-          "line": 2296,
+          "line": 2336,
           "called": [
             "KernelObject",
             "ObjId",
@@ -124986,7 +125004,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_objects_forward_of_kind",
-          "line": 2343,
+          "line": 2383,
           "called": [
             "KernelObject",
             "ObjId",
@@ -125012,7 +125030,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_preserves_objects_invExt'",
-          "line": 2386,
+          "line": 2426,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -125030,7 +125048,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_objects_ne_stored",
-          "line": 2406,
+          "line": 2446,
           "called": [
             "ObjId",
             "ReplyId",
@@ -125058,7 +125076,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_objects_ne_of_not_reply",
-          "line": 2447,
+          "line": 2487,
           "called": [
             "ObjId",
             "Reply",
@@ -125081,7 +125099,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_post_schedContext",
-          "line": 2483,
+          "line": 2523,
           "called": [
             "Reply",
             "ReplyId",
@@ -125110,7 +125128,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_post_getSchedContext",
-          "line": 2535,
+          "line": 2575,
           "called": [
             "Reply",
             "ReplyId",
@@ -125132,7 +125150,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_post_boundThread",
-          "line": 2564,
+          "line": 2604,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -125149,7 +125167,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_post_scReply",
-          "line": 2585,
+          "line": 2625,
           "called": [
             "Reply",
             "ReplyId",
@@ -125171,7 +125189,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_serviceRegistry_eq",
-          "line": 2602,
+          "line": 2642,
           "called": [
             "KernelObject",
             "ObjId",
@@ -125183,7 +125201,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_scheduler_eq",
-          "line": 2609,
+          "line": 2649,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -125200,7 +125218,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_serviceRegistry_eq",
-          "line": 2629,
+          "line": 2669,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -125217,7 +125235,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tlbShootdown_eq",
-          "line": 2648,
+          "line": 2688,
           "called": [
             "KernelObject",
             "ObjId",
@@ -125236,7 +125254,7 @@
         {
           "kind": "def",
           "name": "notificationSignal",
-          "line": 2686,
+          "line": 2726,
           "called": [
             "Badge",
             "IpcMessage",
@@ -125263,7 +125281,7 @@
         {
           "kind": "def",
           "name": "notificationWait",
-          "line": 2758,
+          "line": 2798,
           "called": [
             "Badge",
             "Kernel",
@@ -125287,7 +125305,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_objects_ne",
-          "line": 2840,
+          "line": 2880,
           "called": [
             "ObjId",
             "SystemState",
@@ -125306,7 +125324,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_notification",
-          "line": 2865,
+          "line": 2905,
           "called": [
             "Notification",
             "ObjId",
@@ -125325,7 +125343,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_preserves_objects_ne",
-          "line": 2891,
+          "line": 2931,
           "called": [
             "IpcMessage",
             "ObjId",
@@ -125345,7 +125363,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_preserves_notification",
-          "line": 2912,
+          "line": 2952,
           "called": [
             "IpcMessage",
             "Notification",
@@ -125365,7 +125383,7 @@
         {
           "kind": "theorem",
           "name": "removeRunnable_preserves_objects",
-          "line": 2929,
+          "line": 2969,
           "called": [
             "SystemState",
             "ThreadId",
@@ -125376,7 +125394,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objects",
-          "line": 2936,
+          "line": 2976,
           "called": [
             "SystemState",
             "ThreadId",
@@ -125387,7 +125405,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSet",
-          "line": 2946,
+          "line": 2986,
           "called": [
             "SystemState",
             "ThreadId",
@@ -125398,7 +125416,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSetComplete",
-          "line": 2955,
+          "line": 2995,
           "called": [
             "SystemState",
             "ThreadId",
@@ -125412,7 +125430,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSet_invExt",
-          "line": 2965,
+          "line": 3005,
           "called": [
             "SystemState",
             "ThreadId",
@@ -125425,7 +125443,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_scheduler_eq",
-          "line": 2972,
+          "line": 3012,
           "called": [
             "SystemState",
             "ThreadId",
@@ -125442,7 +125460,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_endpoint",
-          "line": 2993,
+          "line": 3033,
           "called": [
             "Endpoint",
             "ObjId",
@@ -125462,7 +125480,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_cnode",
-          "line": 3013,
+          "line": 3053,
           "called": [
             "CNode",
             "ObjId",
@@ -125482,7 +125500,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_vspaceRoot",
-          "line": 3033,
+          "line": 3073,
           "called": [
             "ObjId",
             "SystemState",
@@ -125501,7 +125519,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_cnode_backward",
-          "line": 3054,
+          "line": 3094,
           "called": [
             "CNode",
             "ObjId",
@@ -125522,7 +125540,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_endpoint_backward",
-          "line": 3081,
+          "line": 3121,
           "called": [
             "Endpoint",
             "ObjId",
@@ -125543,7 +125561,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_notification_backward",
-          "line": 3108,
+          "line": 3148,
           "called": [
             "Notification",
             "ObjId",
@@ -125564,7 +125582,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_error_alreadyWaiting",
-          "line": 3137,
+          "line": 3177,
           "called": [
             "Notification",
             "ObjId",
@@ -125580,7 +125598,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_badge_path_notification",
-          "line": 3157,
+          "line": 3197,
           "called": [
             "Badge",
             "Notification",
@@ -125609,7 +125627,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_wait_path_notification",
-          "line": 3242,
+          "line": 3282,
           "called": [
             "Notification",
             "ObjId",
@@ -164864,7 +164882,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemove_eq_patches",
-          "line": 654,
+          "line": 658,
           "called": [
             "Endpoint",
             "IntrusiveQueue",
@@ -164880,6 +164898,8 @@
             "lookupTcb",
             "none",
             "queueNeighbourPatch",
+            "queueUnlinkPredecessor",
+            "queueUnlinkSuccessor",
             "st",
             "tail",
             "toObjId"
@@ -164888,7 +164908,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemove_objects_ne",
-          "line": 685,
+          "line": 687,
           "called": [
             "ObjId",
             "RHTable.getElem",
@@ -164906,6 +164926,8 @@
             "queueNeighbourPatch",
             "queueNeighbourPatch_at_other",
             "queueNeighbourPatch_invExt",
+            "queueUnlinkPredecessor",
+            "queueUnlinkSuccessor",
             "st",
             "symm",
             "toObjId"
@@ -164914,7 +164936,7 @@
         {
           "kind": "theorem",
           "name": "abortPendingIpcOnEndpoint_other_tcb_eq",
-          "line": 728,
+          "line": 727,
           "called": [
             "ObjId",
             "SystemState",
@@ -164937,7 +164959,7 @@
         {
           "kind": "theorem",
           "name": "abortHolderPendingIpc_other_tcb_eq",
-          "line": 783,
+          "line": 782,
           "called": [
             "ObjId",
             "SystemState",
@@ -164956,7 +164978,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlocking_replyArm_tcb_frame",
-          "line": 825,
+          "line": 824,
           "called": [
             "Kernel",
             "ObjId",
@@ -297111,7 +297133,7 @@
     {
       "module": "tests.SmpIpcSuite",
       "path": "tests/SmpIpcSuite.lean",
-      "declaration_count": 145,
+      "declaration_count": 148,
       "declarations": [
         {
           "kind": "namespace",
@@ -299010,22 +299032,21 @@
         },
         {
           "kind": "def",
-          "name": "popStoreWith",
-          "line": 1777,
+          "name": "popStoreShaped",
+          "line": 1780,
           "called": [
+            "Reply",
             "ReplyId",
             "SystemState",
             "TCB",
             "build",
             "chainHeadReply",
-            "chainOuterReply",
             "chainSc",
             "empty",
             "head",
             "mkTcb",
             "none",
             "popClient",
-            "popOuter",
             "popServer",
             "replyId",
             "toObjId",
@@ -299034,8 +299055,33 @@
         },
         {
           "kind": "def",
+          "name": "popOuterFrame",
+          "line": 1802,
+          "called": [
+            "Reply",
+            "chainOuterReply",
+            "chainSc",
+            "popOuter",
+            "replyId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "popStoreWith",
+          "line": 1807,
+          "called": [
+            "ReplyId",
+            "SystemState",
+            "TCB",
+            "head",
+            "popOuterFrame",
+            "popStoreShaped"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "popStore",
-          "line": 1800,
+          "line": 1812,
           "called": [
             "ReplyId",
             "SystemState",
@@ -299047,30 +299093,35 @@
         {
           "kind": "def",
           "name": "popStoreOuterDonating",
-          "line": 1806,
+          "line": 1818,
           "called": [
             "SchedContextId",
             "SystemState",
-            "build",
             "chainHeadReply",
             "chainOuterReply",
-            "chainSc",
-            "empty",
-            "mkTcb",
+            "popOuterFrame",
+            "popStoreShaped",
+            "popWaitingDonor"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "popStoreOuterConsumed",
+          "line": 1827,
+          "called": [
+            "SystemState",
+            "chainHeadReply",
+            "chainOuterReply",
             "none",
-            "popClient",
-            "popOuter",
-            "popServer",
-            "popWaitingDonor",
-            "replyId",
-            "toObjId",
-            "withObject"
+            "popOuterFrame",
+            "popStoreShaped",
+            "popWaitingDonor"
           ]
         },
         {
           "kind": "def",
           "name": "popBindingOf",
-          "line": 1823,
+          "line": 1831,
           "called": [
             "SchedContextBinding",
             "SystemState",
@@ -299082,7 +299133,7 @@
         {
           "kind": "def",
           "name": "popHeadOf",
-          "line": 1827,
+          "line": 1835,
           "called": [
             "ReplyId",
             "SystemState",
@@ -299094,7 +299145,7 @@
         {
           "kind": "def",
           "name": "popReplyLinks",
-          "line": 1830,
+          "line": 1838,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -299107,7 +299158,7 @@
         {
           "kind": "def",
           "name": "runDonationReturnPopChecks",
-          "line": 1836,
+          "line": 1844,
           "called": [
             "assertBool",
             "build",
@@ -299127,10 +299178,12 @@
             "popReplyLinks",
             "popServer",
             "popStore",
+            "popStoreOuterConsumed",
             "popStoreOuterDonating",
             "popStoreWith",
             "popWaitingDonor",
             "replyId",
+            "replyStackBelowHeadReads",
             "replyStackOuterCaller",
             "returnDonatedSchedContext",
             "toObjId",
@@ -299140,7 +299193,7 @@
         {
           "kind": "def",
           "name": "runSmpIpcChecks",
-          "line": 1967,
+          "line": 1994,
           "called": [
             "runCancellationCompositionChecks",
             "runCapTransferChecks",
@@ -299166,7 +299219,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1994,
+          "line": 2021,
           "called": [
             "runSmpIpcChecks"
           ]

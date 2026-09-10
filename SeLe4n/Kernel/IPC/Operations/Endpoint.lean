@@ -936,9 +936,14 @@ frame **below** the head.  So this walks exactly one link past the head, which i
 why it is `O(1)` and not a chain walk: the pop consumes one frame, so it needs one
 frame's worth of lookahead and no more.
 
-**Three answers, not two.**  `.ok none` means the head *is* the bottom of the
-stack, so the pop's target becomes `.bound` — the depth-1 case, and the answer on
-every state this tree reaches today.  `.ok (some outer)` names the outer caller,
+**Three answers, not two — and `.ok none` covers two states.**  `.ok none`
+means the pop's target becomes `.bound`, and it is the answer in two situations
+that must be told apart when reading it: the head *is* the bottom of the stack
+(the depth-1 case, and the answer on every state this tree reaches today), **or**
+the frame below the head validates but its `caller` has been consumed — a
+cancelled middle caller's frame, which nothing yet removes from the stack
+(`replyStackOuterCaller?_of_consumed_frame` states that answer, so that OD5.2
+decides it rather than inherits it).  `.ok (some outer)` names the outer caller,
 so the target becomes `.donated scId outer`.  `.error` means a link exists but
 does not validate, which is a different fact from there being no link and must
 not be conflated with it: a caller that read a corrupt link as "bottom of stack"
@@ -1055,6 +1060,41 @@ theorem replyStackOuterCaller?_ok_some (st : SystemState)
               intro h
               exact ⟨sc, rid, head, below, b, rfl, hHead, hPrev, hBelow,
                 by simpa using hDon, Except.ok.inj h⟩
+
+/-- WS-OD OD3.4 (PR audit): **a validated frame whose caller has been consumed
+answers `none` — the target owns the context outright.**
+
+The fourth state the resolver can meet: the frame below the head donates this
+context, so the walk validates it, but its `caller` is `none` — what
+`consumeReplyLink` leaves behind when a **middle** caller is cancelled and
+nothing yet removes its frame from the stack.  The resolver answers `.ok none`,
+and the pop then binds the target `.bound scId` with that frame still heading
+the stack.  That is seL4's non-head branch: `reply_remove` severs the stack at a
+cancelled middle reply, so the callee keeps the context and the callers below
+the cut never see it again.
+
+Plan §3.4 names the cancelled middle caller as the decision OD5.2 makes and
+forbids inheriting it by omission.  Before this theorem the answer *was*
+inherited — from `Reply.caller`'s pass-through, with the docstring above
+presenting `.ok none` as "the bottom of the stack" alone.  Stating it is what
+makes it a decision: OD5.2 keeps it (and lands the `.tcbSuspend` preservation at
+depth ≥ 2 against it) or replaces it, and either way changes a theorem and the
+runtime test that pins it rather than an accident of a field read.  Unreachable
+until OD4's push writes a stack, like every other `some`-head arm here. -/
+theorem replyStackOuterCaller?_of_consumed_frame (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext) (rid : SeLe4n.ReplyId) (r : Reply)
+    (below : SeLe4n.ReplyId) (b : Reply)
+    (hSc : st.getSchedContext? scId = some sc)
+    (hHead : donationHeadOf? st scId sc = .ok (some (rid, r)))
+    (hPrev : r.prev = some below)
+    (hBelow : st.getReply? below = some b)
+    (hDon : b.donatedSc = some scId)
+    (hConsumed : b.caller = none) :
+    replyStackOuterCaller? st scId = .ok none := by
+  unfold replyStackOuterCaller?
+  rw [hSc]
+  simp only [hHead, hPrev, hBelow, hDon, bne_self_eq_false, Bool.false_eq_true, if_false,
+    hConsumed]
 
 /-- **WS-OD OD3.7: the two objects the pop touches *below* the stack head.**
 

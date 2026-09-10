@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.137.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.138.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1446,7 +1446,7 @@ fell into with the rule that closes each.
 
 Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
 
-### WS-OD SchedContext donation chains — IN FLIGHT (registered v0.34.98; OD1 closed v0.34.108, OD2 v0.34.125, OD3 v0.34.126→132)
+### WS-OD SchedContext donation chains — IN FLIGHT (registered v0.34.98; OD1 closed v0.34.108, OD2 v0.34.125, OD3 v0.34.126→137)
 
 `applyCallDonation` donates only from a **`.bound`** caller, and
 `donateSchedContext` is the only operational construction site of a `.donated`
@@ -1457,7 +1457,7 @@ sender's *effective* context, bound or donated, and passes it down the chain.
 Two register rows close here: that gap, and the `passiveServerIdle` break the
 `v0.34.97` reclaim introduced.  **47 sub-tasks across OD1..OD6.**  **OD1 is
 closed** (`v0.34.100` → `v0.34.108`), **OD2 is closed** (`v0.34.125`, one cut),
-and **OD3 is closed** (`v0.34.126` → `v0.34.132`); OD4..OD6 have not
+and **OD3 is closed** (`v0.34.126` → `v0.34.137`); OD4..OD6 have not
 started.
 
 Six things new code must respect once this lands, and each is a decision the plan

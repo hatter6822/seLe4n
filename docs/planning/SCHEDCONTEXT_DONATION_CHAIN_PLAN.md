@@ -167,7 +167,16 @@ thread's budget to its callee), or the reclaim reaches the real holder in O(1)
 through `sc.scReply` / `sc.boundThread` and returns the context to the cancelled
 thread (consistent with the head case, but a deliberate divergence from seL4).
 The row states both, picks one, and proves the choice — it does not inherit one by
-omission.
+omission.  Until it lands, the answer the tree gives is **stated, not inherited**
+(PR audit of OD3, `v0.34.138`): `replyStackOuterCaller?_of_consumed_frame`
+proves that the resolver answers `none` on a validated frame whose caller has
+been consumed — the seL4-shaped fallback, the target bound outright with the
+consumed frame still heading the stack — and `tests/SmpIpcSuite.lean` pins both
+the resolver's answer and the pop's result.  Before that theorem the same
+behaviour fell out of `Reply.caller`'s pass-through while the resolver's
+docstring presented `.ok none` as the bottom of the stack alone, which is exactly
+the inheritance this paragraph forbids.  OD5.2 therefore changes a theorem and a
+witness, whichever answer it picks.
 
 ### 3.5 `passiveServerIdle` is closed by the reclaim, and not with `timeoutThread` itself
 
@@ -408,7 +417,7 @@ invariant hold across it.
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | OD5.1 | **Closes the §3.4 confused deputy.**  Reply freshening and the reply consumption clear `donatedSc` and `prev`, and the pop validates the previous reply's own `donatedSc` before accepting its caller.  Without this a reused Reply redirects a SchedContext to an unrelated thread | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Model/State.lean`, `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | L |
-| OD5.2 | The cancelled **middle** caller: state both candidate answers of §3.4, pick one, and prove it — the seL4-shaped fallback at the target, or the O(1) reclaim to the cancelled thread through the context's head.  Whichever is chosen, `.tcbSuspend` preservation at depth ≥ 2 lands with it.  Consumes OD5.1 | `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | XL |
+| OD5.2 | The cancelled **middle** caller: state both candidate answers of §3.4, pick one, and prove it — the seL4-shaped fallback at the target, or the O(1) reclaim to the cancelled thread through the context's head.  Whichever is chosen, `.tcbSuspend` preservation at depth ≥ 2 lands with it.  The interim answer is stated rather than inherited — `replyStackOuterCaller?_of_consumed_frame` (the seL4-shaped fallback, `v0.34.138`) and its runtime witness — so this row changes a theorem, not an accident.  Consumes OD5.1 | `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | XL |
 | OD5.3 | The **double pop**: cancelling a middle caller makes the donated-donation teardown reachable inside the same suspend, so two replenishment migrations run where the suspend's scheduler-domain footprint declares one pair.  Add the third core and re-prove the ladder and the bound | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
 | OD5.4 | Retype and revoke must not leave a live `prev` naming a deleted Reply, and must pop the context's head | `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean`, `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` | M |
 | OD5.5 | `.replyRecv` at depth ≥ 2 — the third live push site: its return leg uses OD3.4's resolver, and its re-donation fires when the next thread is itself `.donated` | `SeLe4n/Kernel/API.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | L |

@@ -648,9 +648,13 @@ site as far as every reader, human or scanner, is concerned).
 
 The tree had two inlined copies of this shape and one named abstraction over it;
 naming the third is what makes the removal's write set one lemma rather than a
-four-deep nested match.  The second patch's update also carries `queuePPrev`
-(WS-OD OD1.1), which is why the two patches take different `upd` functions and
-not one. -/
+four-deep nested match.  The two `upd` functions are the shared
+`queueUnlinkPredecessor` / `queueUnlinkSuccessor` (WS-OD OD3.9) — the definitions
+`endpointQueueRemove` itself applies and `spliceOutMidQueueNode_eq_patches` names
+— so the two removals' write sets are stated over one spelling rather than over a
+lambda each that could drift apart.  The successor's carries `queuePPrev`
+(WS-OD OD1.1), which is why the two patches take different updates and not
+one. -/
 theorem endpointQueueRemove_eq_patches (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st : SystemState) (ep : Endpoint) (tcb : TCB)
     (hEp : st.getEndpoint? endpointId = some ep)
@@ -658,10 +662,8 @@ theorem endpointQueueRemove_eq_patches (endpointId : SeLe4n.ObjId) (isReceiveQ :
     endpointQueueRemove endpointId isReceiveQ tid st =
       (let q := if isReceiveQ then ep.receiveQ else ep.sendQ
        let objs := queueNeighbourPatch
-         (queueNeighbourPatch st.objects tcb.queuePrev
-           (fun p => { p with queueNext := tcb.queueNext }))
-         tcb.queueNext
-         (fun n => { n with queuePrev := tcb.queuePrev, queuePPrev := tcb.queuePPrev })
+         (queueNeighbourPatch st.objects tcb.queuePrev (queueUnlinkPredecessor tcb))
+         tcb.queueNext (queueUnlinkSuccessor tcb)
        let q' : IntrusiveQueue :=
          { head := if q.head = some tid then tcb.queueNext else q.head,
            tail := if q.tail = some tid then tcb.queuePrev else q.tail }
@@ -699,14 +701,11 @@ theorem endpointQueueRemove_objects_ne
   simp only [Except.ok.injEq] at hStep
   subst hStep
   have hI1 : (queueNeighbourPatch st.objects tcb.queuePrev
-      (fun p => { p with queueNext := tcb.queueNext })).invExt :=
+      (queueUnlinkPredecessor tcb)).invExt :=
     queueNeighbourPatch_invExt _ _ _ hInv
   have hI2 : (queueNeighbourPatch
-      (queueNeighbourPatch st.objects tcb.queuePrev
-        (fun p => { p with queueNext := tcb.queueNext }))
-      tcb.queueNext
-      (fun n => { n with queuePrev := tcb.queuePrev,
-                         queuePPrev := tcb.queuePPrev })).invExt :=
+      (queueNeighbourPatch st.objects tcb.queuePrev (queueUnlinkPredecessor tcb))
+      tcb.queueNext (queueUnlinkSuccessor tcb)).invExt :=
     queueNeighbourPatch_invExt _ _ _ hI1
   simp only [RHTable_getElem?_eq_get?]
   rw [RHTable.getElem?_insert_ne _ tid.toObjId k _

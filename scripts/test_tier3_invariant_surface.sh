@@ -1509,6 +1509,16 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyStackOuterCaller\?[
 run_check "INVARIANT" rg -n '^def replyStackOuterCallerResolves' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerResolves_of_chainWellFormed' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerResolves_of_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The fourth state the resolver can meet -- a validated frame below the head
+# whose caller has been consumed (a cancelled middle caller) -- is answered by a
+# THEOREM and a runtime witness, not by the pass-through of `Reply.caller`: plan
+# §3.4 reserves that decision for OD5.2 and forbids inheriting it by omission,
+# and a stated answer is what a later row changes deliberately.  The witness
+# pins both halves, the resolver's answer and the pop's result.
+run_check "INVARIANT" rg -n '^theorem replyStackOuterCaller\?_of_consumed_frame' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n 'the resolver answers .none. on a validated frame whose caller was consumed' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'the pop over a consumed frame binds the target outright' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'and leaves the consumed frame heading the stack' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem replyStackOuterCaller\?_of_no_stack' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 
 # OD3.4: **the pop validates its donee, because it mints a donation.**  The
@@ -11839,7 +11849,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "lockSet_endpointReplyRecvOnCo
 # The runtime witness executes the merge, and pins that the sharpening is ONE
 # member: the recorded server merges only on a non-delegated reply, which is a
 # case split rather than an invariant.
-run_check "INVARIANT" rg -n 'a \.replyRecv whose donation owner is the answered caller declares 12' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'a \.replyRecv whose donation owner is the answered caller declares 13' tests/DeadlockFreedomSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the sharpening is one member, not two' tests/DeadlockFreedomSuite.lean
 
 # ============================================================================

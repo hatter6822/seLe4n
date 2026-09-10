@@ -1773,9 +1773,12 @@ private def popWaitingDonor : TCB :=
 
 /-- A donation return's pre-state: the context is bound to the server, which
 holds it `.donated` from the client.  `head?` says whether the context heads a
-reply stack, and `prev?` what that head links down to. -/
-private def popStoreWith (outerTcb : TCB) (head? : Option SeLe4n.ReplyId)
-    (prev? : Option SeLe4n.ReplyId) : SystemState :=
+reply stack, `prev?` what that head links down to, and `outerReply` is the frame
+below the head as the resolver will find it — one builder for every shape the
+checks below vary, so the negatives differ from the well-formed fixture in
+exactly the field each one names. -/
+private def popStoreShaped (outerTcb : TCB) (head? : Option SeLe4n.ReplyId)
+    (prev? : Option SeLe4n.ReplyId) (outerReply : Reply) : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject chainSc.toObjId
         (.schedContext { SchedContext.empty chainSc with
@@ -1783,9 +1786,7 @@ private def popStoreWith (outerTcb : TCB) (head? : Option SeLe4n.ReplyId)
     |>.withObject chainHeadReply.toObjId
         (.reply { replyId := chainHeadReply, caller := some popClient,
                   donatedSc := some chainSc, prev := prev? })
-    |>.withObject chainOuterReply.toObjId
-        (.reply { replyId := chainOuterReply, caller := some popOuter,
-                  donatedSc := some chainSc })
+    |>.withObject chainOuterReply.toObjId (.reply outerReply)
     |>.withObject popServer.toObjId
         (.tcb { mkTcb 81 50 none with schedContextBinding := .donated chainSc popClient })
     |>.withObject popClient.toObjId (.tcb (mkTcb 82 40 none))
@@ -1796,6 +1797,17 @@ private def popStoreWith (outerTcb : TCB) (head? : Option SeLe4n.ReplyId)
     |>.withObject popOuter.toObjId (.tcb outerTcb)
     |>.build)
 
+/-- The frame below the head as a live depth-2 chain leaves it: donating this
+context, with the outer caller still waiting on it. -/
+private def popOuterFrame : Reply :=
+  { replyId := chainOuterReply, caller := some popOuter, donatedSc := some chainSc }
+
+/-- The pre-state with the outer caller's TCB varied and the frame below the
+head well formed. -/
+private def popStoreWith (outerTcb : TCB) (head? : Option SeLe4n.ReplyId)
+    (prev? : Option SeLe4n.ReplyId) : SystemState :=
+  popStoreShaped outerTcb head? prev? popOuterFrame
+
 /-- The well-formed depth-≥ 2 fixture: a waiting-donor outer caller. -/
 private def popStore (head? : Option SeLe4n.ReplyId)
     (prev? : Option SeLe4n.ReplyId) : SystemState :=
@@ -1804,21 +1816,17 @@ private def popStore (head? : Option SeLe4n.ReplyId)
 /-- ...and the same store with the frame *below* the head donating some other
 context — what a re-linked (reused) Reply looks like from the resolver's side. -/
 private def popStoreOuterDonating (other : SeLe4n.SchedContextId) : SystemState :=
-  (BootstrapBuilder.empty
-    |>.withObject chainSc.toObjId
-        (.schedContext { SchedContext.empty chainSc with
-                           boundThread := some popServer, scReply := some chainHeadReply })
-    |>.withObject chainHeadReply.toObjId
-        (.reply { replyId := chainHeadReply, caller := some popClient,
-                  donatedSc := some chainSc, prev := some chainOuterReply })
-    |>.withObject chainOuterReply.toObjId
-        (.reply { replyId := chainOuterReply, caller := some popOuter,
-                  donatedSc := some other })
-    |>.withObject popServer.toObjId
-        (.tcb { mkTcb 81 50 none with schedContextBinding := .donated chainSc popClient })
-    |>.withObject popClient.toObjId (.tcb (mkTcb 82 40 none))
-    |>.withObject popOuter.toObjId (.tcb popWaitingDonor)
-    |>.build)
+  popStoreShaped popWaitingDonor (some chainHeadReply) (some chainOuterReply)
+    { popOuterFrame with donatedSc := some other }
+
+/-- ...and with the frame below the head *validated* but its caller consumed —
+what a cancelled middle caller's frame looks like while nothing yet removes it
+from the stack (plan §3.4; the decision OD5.2 makes).  The outer caller's TCB is
+still present, so the resolver's `none` here is decided by the frame and not by
+a missing thread. -/
+private def popStoreOuterConsumed : SystemState :=
+  popStoreShaped popWaitingDonor (some chainHeadReply) (some chainOuterReply)
+    { popOuterFrame with caller := none }
 
 private def popBindingOf (st : SystemState) (tid : SeLe4n.ThreadId) :
     Option SchedContextBinding :=
@@ -1949,6 +1957,25 @@ private def runDonationReturnPopChecks : IO Unit := do
   assertBool "the resolver answers `none` for a context heading no stack"
     (match replyStackOuterCaller? (popStore none none) chainSc with
      | .ok none => true | _ => false)
+  -- The fourth state — a frame below the head that validates but whose caller
+  -- has been consumed (a cancelled middle caller, whose frame nothing yet
+  -- removes).  The resolver answers `none` and the pop binds the target
+  -- outright, leaving that frame heading the stack: seL4's non-head branch,
+  -- stated by `replyStackOuterCaller?_of_consumed_frame` so that OD5.2 decides
+  -- it rather than inherits it.  Pinned in both halves — the resolver's answer
+  -- and the pop's result — because a later row changing one must change both.
+  assertBool "the resolver answers `none` on a validated frame whose caller was consumed"
+    (match replyStackOuterCaller? popStoreOuterConsumed chainSc with
+     | .ok none => true | _ => false)
+  assertBool "...and the below-head Reply read is still declared on that frame"
+    (replyStackBelowHeadReads? popStoreOuterConsumed chainSc == (some chainOuterReply, none))
+  match returnDonatedSchedContext popStoreOuterConsumed popServer chainSc popClient none with
+  | .error e => assertBool s!"the pop over a consumed frame must succeed (got {reprStr e})" false
+  | .ok st' =>
+    assertBool "the pop over a consumed frame binds the target outright"
+      (popBindingOf st' popClient == some (.bound chainSc))
+    assertBool "...and leaves the consumed frame heading the stack"
+      (popHeadOf st' == some (some chainOuterReply))
   -- NEGATIVE: the frame below is validated too — the confused deputy of §3.4.
   -- A reused Reply keeps its `caller`; what it loses is the donation, and that
   -- is what the resolver refuses to read past.

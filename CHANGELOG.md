@@ -1,3 +1,62 @@
+## v0.34.138 — WS-OD OD3 audit: the consumed frame's answer is stated, the removal write set has one spelling, a stale anchor
+
+A deep audit of the OD2/OD3 cut (`v0.34.125` → `v0.34.137`), reading the code
+rather than the prose about it.  Four findings, each fixed here.
+
+1. **The outer-caller resolver decided the cancelled-middle-caller question by
+   omission.**  `replyStackOuterCaller?` answers `.ok none` on a validated frame
+   below the head whose `caller` is `none` — what `consumeReplyLink` leaves
+   behind when a **middle** caller is cancelled and nothing yet removes its frame
+   — while its docstring presented `.ok none` as "the head is the bottom of the
+   stack" alone, and plan §3.4 reserves exactly that decision for OD5.2 with
+   "it does not inherit one by omission".  The behaviour is seL4's non-head
+   branch (`reply_remove` severs the stack at the cancelled reply, so the callee
+   keeps the context and the callers below the cut never see it again) and is
+   the right one to keep while OD5.2 is open: refusing would wedge a server chain
+   on a client's suspension — an availability failure across a trust boundary —
+   and reclaiming to the cancelled thread is OD5.2's other candidate, not a
+   default.  What changes is that the answer is **stated**:
+   `replyStackOuterCaller?_of_consumed_frame` proves it, the docstring names
+   both states `.ok none` covers, `tests/SmpIpcSuite.lean` pins the resolver's
+   answer *and* the pop's result on that state (the target bound outright, the
+   consumed frame still heading the stack, the below-head Reply read still
+   declared), three Tier 3 anchors hold all of it, and plan §3.4 and the OD5.2
+   row cite the theorem — so OD5.2 changes a theorem and a witness whichever
+   answer it picks.  Unreachable until OD4's push writes a stack, like every
+   other `some`-head arm of the resolver; the pop fixtures are refactored onto
+   one builder (`popStoreShaped`) so the new state differs from the well-formed
+   one in exactly the field it names.
+2. **`endpointQueueRemove_eq_patches` spelled the two unlink updates as
+   lambdas** after OD3.9 had made `queueUnlinkPredecessor` /
+   `queueUnlinkSuccessor` the one definition of what unlinking writes and
+   `spliceOutMidQueueNode_eq_patches` had been stated over them — the sweep rule
+   failing at the sibling one file over.  The statement is now over the shared
+   definitions (still `rfl`), so both removals' write sets are stated in one
+   spelling and a field added to the unlink reaches every statement about it.
+3. **A stale Tier 3 anchor** pinned the OD3.7 sharp-bound witness at
+   `declares 12` after OD3.13 moved it to 13 — the one failure a Tier 0–3 run
+   reported, and one `check_anchor_consistency.py` cannot see, since a prose
+   anchor pinned in one direction is satisfiable.  Retargeted.
+4. **`CLAUDE.md` / `AGENTS.md` still closed OD3 at `v0.34.132`**; the span is
+   `v0.34.126` → `v0.34.137`.
+
+What the audit confirmed without change, recorded so the next reader need not
+redo it: the pop's four stores and the `_ok_storeChain` decomposition that is
+their only description; the fail-closed arms of `donationHeadOf?` and of the
+below-frame validation; `outerCallerAcceptable` as exactly the three structural
+clauses `donationOwnerValid` needs; the chain predicate, its frame family, and
+the acyclicity argument `donationHeadPop_preserves_donationChainWellFormed`
+reads off termination; the receive-side donation's guard-is-obligation shape and
+its one definition for both receiving arms; every OD3.10–OD3.13 resolver derived
+from the resolver its arm already branches on, with the coverage lemmas at the
+syscall seam; the notification wait queue as a plain list, so `.notificationWait`
+writes no neighbour; `FrozenOps`' removal maintaining `queuePPrev` by derivation;
+the AK7 inventory gate's per-key comparison and its token-preserving self-test;
+the two OD3.9/OD3.11 negatives firing on token-preserving mutations of temp
+copies and silent on the tree; and the Rust cut — explicit `unsafe` blocks under
+`unsafe_op_in_unsafe_fn`, the host mock's error frame built through the crate's
+own encoder — with `test_rust.sh` and `test_aarch64_cross_build.sh` green.
+
 ## v0.34.137 — WS-OD OD3.12/OD3.13: the receive-side arms declare it, and `maxLockSetSize` moves to 14
 
 **The last two arms the OD3.9 sweep found undeclared**, and the ceiling they
