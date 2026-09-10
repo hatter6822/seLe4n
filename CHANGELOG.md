@@ -1,3 +1,83 @@
+## v0.34.145 — WS-OD OD3.18: the header's donation inventories were a third copy of `permittedKinds`
+
+Found by running the sweep rule on the previous cut rather than by a review.
+OD3.17 corrected `lockSet_replyRecv`'s docstring, which denied a hand-off its own
+footprint declares; CLAUDE.md's rule for that fix is *when a fix names a
+relation, grep for every other place that asks it*, and running it found the same
+question answered a second time — wrongly, three ways — in the same file's
+module header.
+
+**THREE DRIFTS, ALL IN TWO HAND-WRITTEN INVENTORIES.**
+
+1. `.receive` sat under "syscalls that do NOT need donation extension", with the
+   reason "the donation is initiated from the caller's `endpointCall` syscall —
+   handled there".  That is precisely the reasoning WS-OD OD3.6 disproved:
+   seL4-MCS donates on the receive side too, a passive server taking its first
+   request with `seL4_Recv` ran the client's work charged to no reservation, and
+   `lockSet_endpointReceive` has carried `donatedScId` since.  The header went on
+   denying it for twelve cuts.
+
+2. `lockSet_replyRecv`'s entry repeated the sentence OD3.17 retired at the
+   declaration site, word for word.
+
+3. `tcbSetPriority`, `tcbSetMCPriority` and `tcbSetAffinity` each write the
+   **target's own** bound SchedContext — priority and home core live there, not
+   on the TCB — and the header called the first two "TCB-only config ops".
+   `tcbSetAffinity` appeared in neither list.  `tcbSetIPCBuffer`, named in the
+   same entry, reads the target's VSpaceRoot, so it is not TCB-only either.
+
+**THE REMEDY IS DELETION OF THE DUPLICATE, NOT A CHECKER OVER IT.**
+The first attempt at this cut built one: a Tier 1 census that walked each
+footprint's elaborated body looking for `schedContextLock` and reconciled the
+result against a registry.  It went through six corrections in a row — a
+`lockSet_`-prefix frontier that a differently-named helper would defeat, a fuel
+constant that was tuned rather than derived, a skip set that was right for the
+narrow frontier and wrong for the wide one, a `getUsedConstants` that pushes per
+subterm occurrence rather than per constant — which is `unconditionalActions` all
+over again, and for the reason this file already records: *substituting `Expr`
+for text moves the class down a level; it does not close it.*
+
+The census was deleted before it shipped, because the tree **already derives this
+fact and proves it**.  `permittedKinds : SyscallId → List LockKind` is the
+declared kind inventory, and the `lockSet_consistent_<arm>` family states
+`∀ p ∈ (lockSet_<arm> …).pairs, p.fst.kind ∈ permittedKinds <arm>` at each
+footprint's **full arity** — `replyRecv`'s at eleven-plus arguments, every OD3.5
+and OD3.7 addition included.  So "may this footprint name a SchedContext lock" is
+answered by `.schedContext ∈ permittedKinds <arm>`, and a member added without
+the kind being permitted **fails to elaborate**.  That is a semantic answer about
+the pairs, not a syntactic one about the body, and no walk can improve on it.
+
+The two prose lists were therefore a *third* statement of `permittedKinds` — in
+the same file, checked by nothing, and free to drift, which is exactly what they
+did.
+
+Two limits of that enforcement are now stated at `permittedKinds` rather than
+left for a reader to assume.  The relation is `⊆`, not `=`: a kind may be
+permitted and never used, so a listed kind is not evidence that some argument
+produces it.  And the enforcement is per *consistency theorem* — the `*OnCore`,
+`WithCaps` and cancellation-composite footprints carry none of their own and
+inherit the property definitionally from the base they delegate to, so a
+refactor that stopped them delegating would be unchecked.  Closing that is a
+kind-consistency census in the shape of `LockFootprintBoundCensus.lean` (one
+canonical statement per footprint, decided by `isDefEq`, no traversal), which is
+category (1)/(3) work rather than another scanner, and is not this cut's
+subject.  They now defer to it, with the three claims corrected, and this cut adds no
+new checker: a second derivation of an already-proven fact is the very defect the
+cut is about, one level up.
+
+Corrected in passing: `lockSet_endpointSend`'s justification (a plain `Send`
+donates nothing because it carries no reply object, not because it is
+"asynchronous", which it is not), and the PIP-chain section, which now names the
+`pipChainStart_<τ>` marker family — the mechanism by which a walking arm actually
+declares its chain start, and which OD3.14 grew to six.
+
+The three prose negatives are mutation-tested in both directions: silent on the
+clean tree, firing when the retired claim is restored into the surrounding list.
+
+Validation: `test_full.sh` (Tier 0-3) exit 0.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md OD3.18
+
 ## v0.34.144 — WS-OD OD3.17: four review findings, three of them in the gates written to prevent this class
 
 Review round 5, all four verified against the code and all four real.  Three sit

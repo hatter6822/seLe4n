@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.144.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.145.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1446,7 +1446,7 @@ fell into with the rule that closes each.
 
 Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
 
-### WS-OD SchedContext donation chains — IN FLIGHT (registered v0.34.98; OD1 closed v0.34.108, OD2 v0.34.125, OD3 v0.34.126→144)
+### WS-OD SchedContext donation chains — IN FLIGHT (registered v0.34.98; OD1 closed v0.34.108, OD2 v0.34.125, OD3 v0.34.126→145)
 
 `applyCallDonation` donates only from a **`.bound`** caller, and
 `donateSchedContext` is the only operational construction site of a `.donated`
@@ -1455,9 +1455,9 @@ passive-server pattern does not work at call depth ≥ 2, where the callee stays
 `.unbound` and can never run.  seL4-MCS's `maybeDonateSchedContext` reads the
 sender's *effective* context, bound or donated, and passes it down the chain.
 Two register rows close here: that gap, and the `passiveServerIdle` break the
-`v0.34.97` reclaim introduced.  **51 sub-tasks across OD1..OD6.**  **OD1 is
+`v0.34.97` reclaim introduced.  **52 sub-tasks across OD1..OD6.**  **OD1 is
 closed** (`v0.34.100` → `v0.34.108`), **OD2 is closed** (`v0.34.125`, one cut),
-and **OD3 is closed** (`v0.34.126` → `v0.34.144`); OD4..OD6 have not
+and **OD3 is closed** (`v0.34.126` → `v0.34.145`); OD4..OD6 have not
 started.
 
 Six things new code must respect once this lands, and each is a decision the plan
@@ -1896,6 +1896,34 @@ covering a depth-≥ 2 return.  (6) **The return is invisible to every observer,
 not merely a high one**: every field it writes is stripped by
 `projectKernelObject`, so `returnDonatedSchedContext_preserves_projection` no
 longer carries an observability hypothesis on the server.
+
+**And the header's donation inventories were a third copy of `permittedKinds`**
+(OD3.18, `v0.34.145`).  Found by running the sweep rule on the previous cut
+rather than by a review: OD3.17 corrected a contract that denied a hand-off its
+own footprint declares, and the same question was answered a second time --
+wrongly, three ways -- in the same file's module header.  `.receive` sat under
+*syscalls that do NOT need donation extension* for twelve cuts after OD3.6 gave
+it a `donatedScId`; `lockSet_replyRecv`'s entry repeated the retired sentence
+word for word; and `tcbSetPriority`, `tcbSetMCPriority` and `tcbSetAffinity` --
+each writing the target's **bound SchedContext**, because priority and home core
+live there -- were called *TCB-only config ops*, with `tcbSetAffinity` in neither
+list.  Three things new code must respect.  (1) **`permittedKinds` is the
+canonical inventory, and it is proven rather than parallel**: a footprint may
+name a SchedContext lock exactly when `.schedContext ∈ permittedKinds <arm>`, and
+the `lockSet_consistent_<arm>` family states `∀ p ∈ (lockSet_<arm> …).pairs,
+p.fst.kind ∈ permittedKinds <arm>` at each footprint's **full arity**, so a
+member added without the kind being permitted fails to elaborate.  A prose list
+restating it is a copy that can drift and did.  (2) **The cut adds no checker,
+deliberately.**  Its first attempt was a Tier 1 census walking each footprint's
+elaborated body for `schedContextLock`; it took six corrections in a row -- a
+name-prefix frontier a differently-named helper defeats, a tuned rather than
+derived bound, a skip set right for the narrow frontier and wrong for the wide
+one, a `getUsedConstants` that pushes per subterm -- which is
+`unconditionalActions` again, for the reason recorded above: substituting `Expr`
+for text moves the class down a level and does not close it.  It was deleted
+before it shipped.  **Before writing a scanner, look for the fact the tree
+already proves.**  (3) **The remedy for a duplicated inventory is deleting the
+duplicate**, not adding a third artefact to reconcile the first two.
 
 Plan: [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md).
 

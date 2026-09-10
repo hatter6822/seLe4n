@@ -6213,6 +6213,29 @@ run_check "INVARIANT" rg -n 'found NO footprints' SeLe4n/Testing/LockFootprintBo
 # The four the hand-written conjunction had missed…
 run_check "INVARIANT" rg -n '^theorem lockSet_mintReplyCap_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbBindNotification_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+
+# WS-OD OD3.18: the module header's two hand-written inventories of which
+# footprints need a SchedContext member were a THIRD copy of `permittedKinds`,
+# which sits in the same file and is tied to the actual pairs by the
+# `lockSet_consistent_<arm>` family -- stated at each footprint's FULL arity, so
+# a member added without the kind being permitted fails to elaborate.  The
+# lists now defer to it rather than restating it, and this cut deliberately
+# added no new checker: a second derivation of an already-proven fact is the
+# very defect the cut is about, one level up.
+run_check "INVARIANT" rg -n 'def permittedKinds \(sid : SyscallId\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n 'permittedKinds \.receive' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n 'permittedKinds \.tcbSetPriority' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_prose_check "INVARIANT" rg -n 'the canonical inventory is' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+
+# The three corrected claims.  Each negative keeps the surrounding list and
+# refuses the retired sentence, so re-adding the claim is what fires it.
+run_prose_negative_check "INVARIANT" rg -Un 'lockSet_endpointReceive`\*\*: receive blocks waiting' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_prose_negative_check "INVARIANT" rg -Un 'Same as reply \(the receive phase doesn.t\n  initiate donation' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_prose_negative_check "INVARIANT" rg -Un 'SetMCPriority/SetIPCBuffer`\*\*:\n  TCB-only config ops' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# …and the corrections themselves, so a revert is a failure rather than a
+# silent return to the prior text.
+run_prose_check "INVARIANT" rg -n 'The 5 affected syscalls and their donation extensions' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_prose_check "INVARIANT" rg -n 'These two lists are a reading aid' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbUnbindNotification_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetAffinity_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # …and the fifth defect beneath them: the reply footprint's bound was stated at

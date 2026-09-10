@@ -500,9 +500,38 @@ consecutive review rounds of this phase each found a stale copy the previous
 round's sweep had missed, which is what made it a mechanism rather than a
 correction.
 
+**OD3.16 and OD3.17 landed at `v0.34.143` → `v0.34.144`** — review rounds 4 and
+5, seven findings, four of them inside gates written one and two cuts earlier to
+stop exactly the class they belong to: an unanchored formula pin that a longer
+body satisfied, a gate reading Lean raw on the day the *gates read code, prose
+reads prose* rule was cited to justify it, a subtraction whose two operands
+counted different things, and a contract still denying a hand-off its own
+footprint declares.
+
+**OD3.18 landed at `v0.34.145`, closing OD3** — found by running the sweep rule
+on the previous cut rather than by a review.  `LockSetTransitions.lean`'s module
+header answers *which footprints need a SchedContext member* a second time, and
+answered it wrongly three ways: `.receive` sat under "syscalls that do NOT need
+donation extension" for twelve cuts after OD3.6 gave it a `donatedScId`, on the
+very reasoning OD3.6 disproved; `lockSet_replyRecv`'s entry repeated the sentence
+OD3.17 had just retired at the declaration site; and `tcbSetPriority`,
+`tcbSetMCPriority` and `tcbSetAffinity` — each writing the target's **bound**
+SchedContext, because priority and home core live there — were called "TCB-only
+config ops", with `tcbSetAffinity` in neither list.  **The remedy is deletion of
+the duplicate.**  The tree already derives this fact and proves it:
+`permittedKinds` is the declared kind inventory, and the
+`lockSet_consistent_<arm>` family states `∀ p ∈ (lockSet_<arm> …).pairs,
+p.fst.kind ∈ permittedKinds <arm>` at each footprint's full arity, so a member
+added without the kind being permitted fails to elaborate.  The two prose lists
+were a third copy of it, checked by nothing.  A Tier 1 census over the
+footprints' elaborated bodies was written for this row and **deleted before it
+shipped**: it took six corrections in a row and was `unconditionalActions` again,
+which is the recorded reason not to answer a proven question a second way.
+**Nothing owed.**
+
 OD4 onward are open. Plan:
 [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)
-(51 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
+(52 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
 gap above, and the `passiveServerIdle` break the `v0.34.97` reclaim introduced —
 the second of which OD1 has now closed.
 
@@ -579,7 +608,7 @@ Scope, findings and evidence for any of these are in
 | Workstream | Versions |
 |------------|----------|
 | **WS-AP** | v0.34.71– (closure post-v1.0.0 — the ASID capability surface; two SM7 debts re-targeted from the closed SM8) |
-| **WS-OD** | v0.34.98– (in flight; OD1 closed at v0.34.108, OD2 at v0.34.125, OD3 at v0.34.144; closes before WS-RR RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
+| **WS-OD** | v0.34.98– (in flight; OD1 closed at v0.34.108, OD2 at v0.34.125, OD3 at v0.34.145; closes before WS-RR RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
 | **WS-XV** | v0.34.114–v0.34.124 (registered, then **absorbed into WS-BP as its BP0 phase**; the finding is retained in this file, the work is [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md) §5 BP0) |
 | **WS-BP** | v0.34.59– (planned; opens after WS-RR RR8 closes — the bare-metal boot path **and the cross-implementation agreement it ends**, absorbing WS-XV as BP0 at `v0.34.124`, [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md)) |
 | **WS-LC** | v0.34.51–v0.34.56 |

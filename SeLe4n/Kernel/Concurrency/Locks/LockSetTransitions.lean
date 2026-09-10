@@ -84,7 +84,17 @@ the gap by adding pre-resolved `Option SchedContextId` and
 `Option ThreadId` arguments to the affected `lockSet_<τ>`
 functions.
 
-The 4 affected syscalls and their donation extensions:
+**WS-OD OD3.6 made it 5.**  `.receive` was listed below as a
+syscall needing no donation extension, on the reasoning that a
+donation is always caller-initiated; OD3.6 found that seL4-MCS
+donates on the *receive* side too (`receiveIPC` → `reply_push`
+→ `schedContext_donate`), so a passive server taking its first
+request with `seL4_Recv` ran the client's work charged to no
+reservation.  `applyReceiveRendezvousDonation` implements it and
+`lockSet_endpointReceive` carries the members, so the entry has
+moved up into this list.
+
+The 5 affected syscalls and their donation extensions:
 
 * **`lockSet_endpointCall`** — adds `donatedScId : Option
   SchedContextId`.  When the caller has an active SC and the
@@ -100,10 +110,34 @@ The 4 affected syscalls and their donation extensions:
   client), so the origin-owner TCB is already in the lockSet.
   Only the SC is a new lock.
 
-* **`lockSet_replyRecv`** — adds `donatedScId : Option
-  SchedContextId`.  Same as reply (the receive phase doesn't
-  initiate donation — donation is caller-initiated via
-  `endpointCall`, not receiver-initiated).
+* **`lockSet_replyRecv`** — adds **two** SchedContext
+  arguments, because the arm performs two hand-offs.
+  `donatedScId` is the reply leg's return, exactly as
+  `lockSet_endpointReply`.  `redonatedScId` (WS-OD OD3.5) is the
+  receive leg's re-donation: `replyRecvBody` runs
+  `applyCallDonationOnCore nextThread tid` whenever its receive
+  leg dequeues a queued `Call`, writing the **new** caller's
+  SchedContext — provably not the returned one.  This bullet
+  used to say the receive phase does not initiate donation; that
+  was true of the single-core transition it was written for and
+  false of `replyRecvBody`, and the same sentence at the
+  declaration site was corrected at OD3.17.  See
+  `lockSet_replyRecv`'s own docstring for the full contract.
+
+* **`lockSet_endpointReceive`** (WS-OD OD3.6) — adds
+  `donatedScId : Option SchedContextId`.  A `.receive` that
+  dequeues a queued `Call` donates the dequeued caller's
+  scheduling context to the receiver
+  (`applyReceiveRendezvousDonation` →
+  `applyCallDonationOnCore dequeued receiver`), which writes the
+  SC's `boundThread`, both threads' `schedContextBinding` and
+  `SystemState.scThreadIndex`.  Receiver (`callerTid`) and donor
+  (`senderTid`) TCBs are already in the lockSet; the SC and the
+  state-level lock are the new members.  This entry used to sit
+  in the list below, on the reasoning that a donation is always
+  caller-initiated — which is what OD3.6 found to be false, and
+  is why a passive server taking its first request with
+  `seL4_Recv` ran the client's work charged to no reservation.
 
 * **`lockSet_tcbSuspend`** — adds `bindingScId : Option
   SchedContextId` AND `donatedOriginalOwnerTid : Option
@@ -136,11 +170,50 @@ donation paths.
 
 ### Syscalls that do NOT need donation extension
 
-* **`lockSet_endpointSend`**: send is asynchronous, no
-  donation.
-* **`lockSet_endpointReceive`**: receive blocks waiting; if a
-  caller arrives and donates, the donation is initiated from
-  the caller's `endpointCall` syscall — handled there.
+**These two lists are a reading aid; the canonical inventory is
+`permittedKinds`.**  A footprint that names a SchedContext lock
+**must** have `.schedContext ∈ permittedKinds <arm>`, and that is
+not a parallel claim someone has to keep in step: the
+`lockSet_consistent_<arm>` family *proves* it, each stating
+`∀ p ∈ (lockSet_<arm> …).pairs, p.fst.kind ∈ permittedKinds <arm>`
+at the footprint's **full arity**, so a member added without the
+kind being permitted fails to elaborate.  Read `permittedKinds`
+below; it also carries the reason each kind is there.
+
+Two things it does **not** say, stated because a reader will
+otherwise assume them.  The relation is `⊆`, not `=`: a kind may
+be permitted and never used, so `permittedKinds` is an upper
+bound and a listed kind is not evidence that some argument
+produces it — over-declaring is sound here and costs only
+precision.  And the enforcement is per *consistency theorem*: the
+`*OnCore`, `WithCaps` and cancellation-composite footprints carry
+none of their own and inherit the property definitionally from
+the base they delegate to, so a refactor that stopped them
+delegating would be unchecked.  A kind-consistency census in the
+shape of `SeLe4n/Testing/LockFootprintBoundCensus.lean` — one
+canonical statement per footprint, decided by `isDefEq`, no
+traversal — would close that; it is not this cut's subject.
+
+WS-OD OD3.18 found that these lists had drifted three ways, and
+that all three were the same mistake: the lists are a *third*
+copy of `permittedKinds`, written in prose, checked by nothing.
+`.receive` sat under "does NOT need donation extension" for
+twelve cuts after OD3.6 gave it a `donatedScId` and gave
+`permittedKinds .receive` its `.schedContext`; the `replyRecv`
+entry repeated a sentence corrected at the declaration site one
+cut earlier; and `tcbSetPriority`/`tcbSetMCPriority`/
+`tcbSetAffinity` were called "TCB-only" while all three permit
+`.schedContext` and name one.  Each drift came from a cut that
+correctly extended a footprint, its own docstring **and**
+`permittedKinds`, without knowing a fourth statement existed.
+The remedy is deletion of the duplicate, not a checker over it:
+a second derivation of an already-proven fact is the same defect
+one level up.
+
+* **`lockSet_endpointSend`**: a plain `Send` carries no reply
+  object, so nothing is donated.  (Not because it is
+  "asynchronous" — `.send` blocks; what rules out a donation is
+  the absent reply link, which is what `applyCallDonation` needs.)
 * **`lockSet_notificationSignal/Wait`**: notifications don't
   donate.
 * **`lockSet_cspaceMint/Copy/Move/Delete`**: capability ops
@@ -157,8 +230,17 @@ donation paths.
 * **`lockSet_schedContextUnbind`**: unbinds the SC's bound
   thread; the bound thread is already in lockSet as
   `targetTcbTid`.
-* **`lockSet_tcbResume/SetPriority/SetMCPriority/SetIPCBuffer`**:
-  TCB-only config ops, no donation.
+* **`lockSet_tcbResume`**: TCB-only config op, no donation.
+* **`lockSet_tcbSetPriority/SetMCPriority/SetAffinity`**: no
+  donation — but **not** TCB-only, which this entry claimed until
+  WS-OD OD3.18.  Priority and home core live on the bound
+  SchedContext, so each of the three writes the *target's own*
+  binding and each footprint carries a `boundSchedContextId`
+  member.  It is a subject write, not a hand-off: resolved from
+  the target's binding, never from a donor's.
+* **`lockSet_tcbSetIPCBuffer`**: no donation; it names the
+  target's VSpaceRoot in **read** mode for the buffer-address
+  validation, so it is not TCB-only either.
 
 ### PIP-chain TCB locks
 
@@ -172,6 +254,26 @@ TCBs are all at hierarchy level `.tcb` (3) and are acquired in
 invariant.  SM3.C's `withLockSet` combinator will handle PIP
 acquisition via a sub-call pattern (acquire-walk-extend) that
 preserves 2PL.
+
+**What a walking arm declares is its chain *start*.**  The
+`pipChainStart_<τ>` family below is the declaration mechanism:
+each returns the `Option ThreadId` the arm passes to
+`propagatePipChainCrossCore`, which is the one thread the walk
+begins at and therefore the only member the arm can name
+statically — the deferred SM3.C walker takes it and follows
+`blockingServer` upward under the ladder above.  A `LockSet` is
+capped at `maxLockSetSize` and a blocking chain is not, so the
+markers are *not* footprint members and no size bound counts
+them.  Six arms walk and so declare one:
+`endpointCall`, `endpointReply`, `replyRecv` (the reply leg's
+reversion), `replyRecvReceiveLeg` and `endpointReceive` (WS-OD
+OD3.14's receive-side hand-off, added when `.receive` and the
+delegated `.replyRecv` were found to donate a scheduling
+context without propagating the donor's inherited priority),
+and `tcbSuspend`.  A new arm that calls the walk adds a marker
+in the same cut; the marker must name the thread the arm
+actually passes, since a marker naming a different thread sends
+the walker up a different chain.
 -/
 
 namespace SeLe4n.Kernel.Concurrency
