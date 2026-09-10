@@ -1,3 +1,66 @@
+## v0.34.140 — PR #893 review round 2: a footprint the constructor understated, a scan that recorded one arm, and the ceiling figure in three more places
+
+Three P2 findings from the review of `0fb99814`, all three verified against the
+code and all three real; the stale-figure sweep they prompted found three further
+sites the review did not name.
+
+1. **`KernelOperation.ofReplyRecv` built a footprint narrower than the
+   transition's.**  OD3.5, OD3.7 and OD3.13 each added a member to
+   `lockSet_replyRecv`; the smart constructor kept passing `none` for all five,
+   so a `.replyRecv` that returns a donation, re-donates, is answered through a
+   *delegated* reply, or relinks a receive-queue neighbour produced a
+   `KernelOperation` whose `lockSet` omitted locks the operation takes — and
+   every WCRT and contention figure computed through the constructor this module
+   advertises undercounted it.  That is the defect the whole workstream exists to
+   close, in the surface that reports the cost of not closing it.  All five
+   arguments are accepted and forwarded now, each defaulted to `none`, so the
+   legacy shape reduces definitionally and no existing caller changes.
+
+2. **The raw-match scan recorded only the first arm of a multi-arm `match`.**
+   OD3.5f replaced seven independent per-variant passes with one pass, and the
+   consolidated scan set `pending = 0` and `next` on its first hit — so a `match`
+   discriminating `.tcb` on one arm and `.endpoint` on the next contributed one
+   `RAW_SITE` row instead of two.  The passes it replaced could not miss them.
+   The hole is exactly a **newly added second variant at an existing match
+   site**, which the monotonic gate would then pass — a regression in the gate's
+   own coverage, introduced by the cut that was hardening it.  The window is
+   scanned to its end now, with `seen` keyed by (match, variant) so a variant
+   twice in one match still counts once, as a per-variant pass counted it.
+   The tree's figures are unchanged (111 classified, 19 unclassified), so the
+   fix is inert today and was verified against a two-arm fixture instead: the
+   superseded scan records `tcb` alone, the current one records `tcb` **and**
+   `endpoint`.
+
+3. **`PerCoreWcrt`'s module header still said the ceiling was 11 and the 60 µs
+   envelope 1980 µs** — while line 296 of the same file said `14 · 3 · 60 =
+   2520 µs`.  A file that contradicts itself about a derived figure is worse
+   than one that omits it.
+
+...and the three the sweep found rather than the review:
+
+4. `PerCoreTimerTick.lean` gave the envelope as `1980 µs` "at the WS-OD OD3.5
+   constant" — in a docstring whose own next sentence claims the figure is
+   *derived* from `maxLockSetSize` "so it cannot go stale the way this sentence
+   twice has".  It had gone stale a third time.
+5. `SMP_MULTICORE_COMPLETION_PLAN.md` computed `11 × 3 = 33`, `≤ 30 µs` and
+   `1980 µs`.
+6. `HIERARCHICAL_CBS_PLAN.md` asserted `maxLockSetSize` is **11** and scheduled
+   D21 to raise it to `13` — a raise OD3.7 and OD3.13 overtook.  The row now
+   records that `lockSet_tcbSuspend`'s addition lands *inside* the ceiling and
+   that CB4.4 raises the constant only if a CB footprint exceeds 14.
+
+Only (1) and (2) change behaviour, and neither changes a kernel transition: (1)
+widens a footprint the constructor reports, (2) widens what a gate can see.
+Items 3–6 are prose corrected to match code that was already right.
+
+**The recurrence is the finding.**  This is the fourth consecutive round in which
+a hand-maintained copy of a figure derived from `maxLockSetSize` was found stale,
+and the sweep located three sites beyond the one reported.  The project's own
+remedy for this shape is a gate that holds prose to the derived value
+(RR7.28 does it for the de-threading bundle count); that is registered as the
+next step rather than taken here, since it is new machinery and this PR is under
+review.
+
 ## v0.34.139 — PR #893 review round 1: a diagnostic that was enforced, and a ceiling whose cost paragraph stopped one raise short
 
 Two P2 findings from the automated review of the OD2/OD3 cut, both verified

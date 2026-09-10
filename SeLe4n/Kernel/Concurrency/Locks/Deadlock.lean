@@ -1322,14 +1322,36 @@ def KernelOperation.ofEndpointCall (a : ThreadId) (b c : ObjId)
     (h : Option ThreadId := none) : KernelOperation :=
   ⟨lockSet_endpointCall a b c d e f g h, lockSet_endpointCall_size_le a b c d e f g h⟩
 
-/-- WS-SM SM3.D.6: build the `KernelOperation` for a `replyRecv` (a 7-arg,
-3-extension transition — the deepest static footprint). -/
+/-- WS-SM SM3.D.6: build the `KernelOperation` for a `replyRecv` — the deepest
+static footprint in the tree, and since WS-OD OD3.13 the arm that sets
+`maxLockSetSize`.
+
+**It forwards the whole footprint** (PR #893 review round 2).  OD3.5, OD3.7 and
+OD3.13 each added a member to `lockSet_replyRecv`, and this constructor kept
+passing `none` for all five — so the `KernelOperation` it built carried a
+footprint *narrower than the transition's*, and every WCRT and contention figure
+computed through the constructor this module advertises undercounted a
+`.replyRecv` that returns a donation, re-donates, is answered through a delegated
+reply, or relinks a receive-queue neighbour.  That is the defect this workstream
+exists to close, in the surface that reports the cost of not closing it.
+
+Each new argument defaults to `none`, so the shape built before they existed
+reduces definitionally and no existing caller changes; what changes is that a
+caller *may now say what it means*. -/
 def KernelOperation.ofReplyRecv (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
-    (h : Option ReplyId := none) (i : Bool := false) :
+    (h : Option ReplyId := none) (i : Bool := false)
+    -- WS-OD OD3.5: the recorded server's TCB and the SchedContext the receive
+    -- leg re-donates -- the arm's second hand-off.
+    (j : Option ThreadId := none) (k : Option SchedContextId := none)
+    -- WS-OD OD3.7: the Reply below the stack head and the outer caller whose
+    -- TCB the pop validates before handing it a scheduling context.
+    (l : Option ReplyId := none) (m : Option ThreadId := none)
+    -- WS-OD OD3.13: the queue-structure neighbour the receive leg relinks.
+    (n : Option ThreadId := none) :
     KernelOperation :=
-  ⟨lockSet_replyRecv a b c d e f g h i none none none none none,
-   lockSet_replyRecv_size_le a b c d e f g h i none none none none none⟩
+  ⟨lockSet_replyRecv a b c d e f g h i j k l m n,
+   lockSet_replyRecv_size_le a b c d e f g h i j k l m n⟩
 
 /-- WS-SM SM3.D.6: build the `KernelOperation` for a `tcbSuspend` (the
 5-extension transition — WS-SM SM6.E added the optional reply-link

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/od2-inert-structure-chain-ngczo8",
-      "commit_sha": "4eddacdc611474fd152f9d28d007babec5adc89b",
-      "tree_sha": "818eca482a50f445b12b1ba8701fca0ce7312b85",
-      "committed_at_utc": "2026-09-10T04:01:58+00:00"
+      "commit_sha": "0fb9981414eea7535d749fc4d6a58d80e57234b9",
+      "tree_sha": "bdcc6d6cce3a6f4171a40ad2a52d8bf0b46d650f",
+      "committed_at_utc": "2026-09-10T04:46:25+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "764577b9709c03c7496f237963e823bbdbc915313b529d76cc324bf3c2988c95"
+    "source_digest": "2a3a9f4d617560182313ed1805e16784658d15973ead608b81b796783041d919"
   },
   "summary": {
     "module_count": 398,
     "declaration_count": 20637
   },
   "readme_sync": {
-    "version": "0.34.139",
+    "version": "0.34.140",
     "lean_toolchain": "v4.28.0",
     "production_files": 328,
-    "production_loc": 361406,
+    "production_loc": 361430,
     "test_files": 70,
     "test_loc": 74100,
     "proved_theorem_lemma_decls": 12090,
@@ -35603,7 +35603,7 @@
         {
           "kind": "def",
           "name": "KernelOperation.ofReplyRecv",
-          "line": 1327,
+          "line": 1341,
           "called": [
             "KernelOperation",
             "ObjId",
@@ -35618,7 +35618,7 @@
         {
           "kind": "def",
           "name": "KernelOperation.ofTcbSuspend",
-          "line": 1337,
+          "line": 1359,
           "called": [
             "KernelOperation",
             "ObjId",
@@ -35633,7 +35633,7 @@
         {
           "kind": "def",
           "name": "otherCores",
-          "line": 1349,
+          "line": 1371,
           "called": [
             "CoreId",
             "filter"
@@ -35642,7 +35642,7 @@
         {
           "kind": "theorem",
           "name": "otherCores_length_eq",
-          "line": 1353,
+          "line": 1375,
           "called": [
             "CoreId",
             "length",
@@ -35653,7 +35653,7 @@
         {
           "kind": "def",
           "name": "contendersAhead",
-          "line": 1359,
+          "line": 1381,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -35665,7 +35665,7 @@
         {
           "kind": "theorem",
           "name": "contendersAhead_le",
-          "line": 1364,
+          "line": 1386,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -35678,7 +35678,7 @@
         {
           "kind": "theorem",
           "name": "sum_le_length_mul",
-          "line": 1372,
+          "line": 1394,
           "called": [
             "cons",
             "length"
@@ -35687,7 +35687,7 @@
         {
           "kind": "theorem",
           "name": "sum_map_le_sum_map",
-          "line": 1383,
+          "line": 1405,
           "called": [
             "cons"
           ]
@@ -35695,7 +35695,7 @@
         {
           "kind": "def",
           "name": "WCRT",
-          "line": 1399,
+          "line": 1421,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -35706,7 +35706,7 @@
         {
           "kind": "theorem",
           "name": "boundedWait_under_2pl",
-          "line": 1415,
+          "line": 1437,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -35729,7 +35729,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_le_totalWaitCost",
-          "line": 1434,
+          "line": 1456,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -35744,7 +35744,7 @@
         {
           "kind": "theorem",
           "name": "acquireOrder_nodup",
-          "line": 1459,
+          "line": 1481,
           "called": [
             "LockSet",
             "acquireOrder",
@@ -35754,7 +35754,7 @@
         {
           "kind": "def",
           "name": "CorePrefixOf",
-          "line": 1471,
+          "line": 1493,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -35766,7 +35766,7 @@
         {
           "kind": "theorem",
           "name": "coreFollows2PL_of_prefix",
-          "line": 1480,
+          "line": 1502,
           "called": [
             "CoreId",
             "CorePrefixOf",
@@ -35779,7 +35779,7 @@
         {
           "kind": "theorem",
           "name": "coreAcquiresInOrder_of_prefix",
-          "line": 1496,
+          "line": 1518,
           "called": [
             "CoreId",
             "CorePrefixOf",
@@ -35792,7 +35792,7 @@
         {
           "kind": "theorem",
           "name": "execution_satisfies_hypotheses_of_all_prefix",
-          "line": 1517,
+          "line": 1539,
           "called": [
             "CoreId",
             "CorePrefixOf",
@@ -35809,7 +35809,7 @@
         {
           "kind": "def",
           "name": "executionOfHeld",
-          "line": 1553,
+          "line": 1575,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -35822,7 +35822,7 @@
         {
           "kind": "theorem",
           "name": "executionOfHeld_heldBy",
-          "line": 1559,
+          "line": 1581,
           "called": [
             "CoreId",
             "LockId",
@@ -35835,7 +35835,7 @@
         {
           "kind": "theorem",
           "name": "lockSetHeld_realizes_heldBy",
-          "line": 1576,
+          "line": 1598,
           "called": [
             "CoreId",
             "LockId",
@@ -35854,7 +35854,7 @@
         {
           "kind": "def",
           "name": "twoCorePathScenario",
-          "line": 1599,
+          "line": 1621,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -35863,8 +35863,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1605>",
-          "line": 1605,
+          "name": "<anonymous:instance:1627>",
+          "line": 1627,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -206687,7 +206687,7 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 138,
+          "line": 140,
           "called": [
             "allCores",
             "bootCoreId"
@@ -206696,7 +206696,7 @@
         {
           "kind": "def",
           "name": "WCRT_lockSet",
-          "line": 166,
+          "line": 168,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206707,7 +206707,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_eq_product",
-          "line": 171,
+          "line": 173,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206719,7 +206719,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_nil",
-          "line": 175,
+          "line": 177,
           "called": [
             "WCRT_lockSet"
           ]
@@ -206727,7 +206727,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_mono_length",
-          "line": 180,
+          "line": 182,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206738,7 +206738,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_mono_cost",
-          "line": 186,
+          "line": 188,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206750,7 +206750,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_le_maxLockSetSize",
-          "line": 196,
+          "line": 198,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206763,7 +206763,7 @@
         {
           "kind": "theorem",
           "name": "rpi5OtherCoreCount",
-          "line": 208,
+          "line": 210,
           "called": [
             "numCores"
           ]
@@ -206771,7 +206771,7 @@
         {
           "kind": "theorem",
           "name": "perLockWaitCost_rpi5",
-          "line": 212,
+          "line": 214,
           "called": [
             "perLockWaitCost",
             "rpi5OtherCoreCount"
@@ -206780,7 +206780,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_rpi5",
-          "line": 216,
+          "line": 218,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206793,7 +206793,7 @@
         {
           "kind": "def",
           "name": "admissibleCriticalSection",
-          "line": 245,
+          "line": 247,
           "called": [
             "maxLockSetSize",
             "numCores"
@@ -206802,7 +206802,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_le_budget_of_admissible",
-          "line": 250,
+          "line": 252,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206818,7 +206818,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_le_budget_of_cost",
-          "line": 264,
+          "line": 266,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206833,13 +206833,13 @@
         {
           "kind": "def",
           "name": "rpi5TickBudgetMicros",
-          "line": 276,
+          "line": 278,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "admissibleCriticalSection_rpi5Tick",
-          "line": 290,
+          "line": 292,
           "called": [
             "admissibleCriticalSection",
             "rpi5TickBudgetMicros"
@@ -206848,7 +206848,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Tick_refuses_sixty_micro_sections",
-          "line": 304,
+          "line": 306,
           "called": [
             "maxLockSetSize",
             "numCores",
@@ -206858,7 +206858,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Tick_sixty_micro_section_footprint_boundary",
-          "line": 315,
+          "line": 317,
           "called": [
             "numCores",
             "rpi5TickBudgetMicros"
@@ -206867,7 +206867,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Tick_refused_sixty_micro_sections_at_the_previous_ceiling",
-          "line": 322,
+          "line": 324,
           "called": [
             "numCores",
             "rpi5TickBudgetMicros"
@@ -206876,7 +206876,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_bound_rpi5_smp",
-          "line": 351,
+          "line": 353,
           "called": [
             "AccessMode",
             "DeploymentSchedulingConfig",
@@ -206894,7 +206894,7 @@
         {
           "kind": "def",
           "name": "WCRT_smp",
-          "line": 370,
+          "line": 372,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206905,7 +206905,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_smp_decomposition",
-          "line": 375,
+          "line": 377,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206917,7 +206917,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_smp_r5_component_le",
-          "line": 382,
+          "line": 384,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206928,7 +206928,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_smp_lockSet_component_le",
-          "line": 389,
+          "line": 391,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206939,7 +206939,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_smp_bound_rpi5",
-          "line": 397,
+          "line": 399,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206954,7 +206954,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_op_bounded_of_size",
-          "line": 415,
+          "line": 417,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -206967,7 +206967,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_chooseThreadOnCore_eq",
-          "line": 423,
+          "line": 425,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -206979,7 +206979,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_chooseThreadOnCore_bounded",
-          "line": 428,
+          "line": 430,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -206992,7 +206992,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_switchToThreadOnCore_eq",
-          "line": 434,
+          "line": 436,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -207004,7 +207004,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_switchToThreadOnCore_bounded",
-          "line": 439,
+          "line": 441,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -207017,7 +207017,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_wakeThread_eq",
-          "line": 445,
+          "line": 447,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -207029,7 +207029,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_wakeThread_bounded",
-          "line": 450,
+          "line": 452,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -207042,7 +207042,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_timerTickOnCore_eq",
-          "line": 456,
+          "line": 458,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -207054,7 +207054,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_timerTickOnCore_bounded",
-          "line": 461,
+          "line": 463,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -207067,7 +207067,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_replenishOnCore_eq",
-          "line": 467,
+          "line": 469,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -207079,7 +207079,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_replenishOnCore_bounded",
-          "line": 472,
+          "line": 474,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -207092,7 +207092,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_advanceDomainOnCore_bounded",
-          "line": 478,
+          "line": 480,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -207105,7 +207105,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_handleRescheduleSgiOnCore_bounded",
-          "line": 486,
+          "line": 488,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -207119,7 +207119,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_timerTickOnCoreComplete_bounded",
-          "line": 496,
+          "line": 498,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -207132,7 +207132,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_mode_independent",
-          "line": 513,
+          "line": 515,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -207142,7 +207142,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_eq_totalWaitCost_of_length_eq",
-          "line": 524,
+          "line": 526,
           "called": [
             "AccessMode",
             "LockSet",
@@ -207158,7 +207158,7 @@
         {
           "kind": "theorem",
           "name": "kernelWait_le_WCRT_lockSet_of_length_eq",
-          "line": 537,
+          "line": 539,
           "called": [
             "AccessMode",
             "CoreId",
@@ -207176,7 +207176,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_bound_smp",
-          "line": 551,
+          "line": 553,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -207189,7 +207189,7 @@
         {
           "kind": "def",
           "name": "WCRT_smp_cycles",
-          "line": 563,
+          "line": 565,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -207200,7 +207200,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_smp_cycles_one",
-          "line": 568,
+          "line": 570,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -207211,7 +207211,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_smp_cycles_decomposition",
-          "line": 575,
+          "line": 577,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -207223,7 +207223,7 @@
         {
           "kind": "theorem",
           "name": "schedulerNoStallOnCore",
-          "line": 591,
+          "line": 593,
           "called": [
             "CoreId",
             "SystemState",
@@ -207239,7 +207239,7 @@
         {
           "kind": "theorem",
           "name": "schedulerNoStall_smp",
-          "line": 604,
+          "line": 606,
           "called": [
             "CoreId",
             "SystemState",
@@ -207255,7 +207255,7 @@
         {
           "kind": "theorem",
           "name": "boundedKernelWait_smp",
-          "line": 619,
+          "line": 621,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -207272,7 +207272,7 @@
         {
           "kind": "theorem",
           "name": "schedulerNoStall_smp_of_idleAvailableB",
-          "line": 636,
+          "line": 638,
           "called": [
             "CoreId",
             "SystemState",
@@ -207288,7 +207288,7 @@
         {
           "kind": "theorem",
           "name": "thread_eventually_scheduled_onCore",
-          "line": 657,
+          "line": 659,
           "called": [
             "CoreId",
             "SchedulerTrace",
@@ -207314,7 +207314,7 @@
         {
           "kind": "theorem",
           "name": "thread_eventually_scheduled_within_smp_bound",
-          "line": 687,
+          "line": 689,
           "called": [
             "AccessMode",
             "CoreId",
@@ -207344,7 +207344,7 @@
         {
           "kind": "theorem",
           "name": "no_starvation_under_smp",
-          "line": 728,
+          "line": 730,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -207383,7 +207383,7 @@
         {
           "kind": "theorem",
           "name": "r5_latency_within_smp_bound",
-          "line": 768,
+          "line": 770,
           "called": [
             "AccessMode",
             "Kernel",

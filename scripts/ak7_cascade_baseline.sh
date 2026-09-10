@@ -95,17 +95,31 @@ done < <(find tests SeLe4n/Testing Main.lean -type f -name "*.lean" 2>/dev/null)
 # across the file list, so a trailing `match … .objects[` at the end of one file
 # could otherwise pair with a `some (.tcb …)` in the first lines of the next and
 # report a site that exists in neither.
+#
+# **Every arm of the match is recorded, not just the first** (PR #893 review
+# round 2).  A `match` may discriminate several constructors inside the window --
+# `some (.tcb ...)` on one arm, `some (.endpoint ...)` on the next -- and the
+# first cut of this single-pass scan set `pending = 0` and `next` on the first
+# hit, so every later arm of the same match went unrecorded.  The per-variant
+# scans it replaced could not miss them, because each variant got its own pass;
+# consolidating the passes silently narrowed what the inventory sees, and the
+# hole is precisely a *newly added second variant at an existing match site* --
+# which the monotonic gate would then pass.  The window is now scanned to the
+# end, with `seen` keyed by (match, variant) so a variant occurring twice in one
+# match still counts once, exactly as a per-variant pass counted it.
 emit_raw_match_rows() {
   awk '
-    FNR == 1 {pending = 0}
-    /match.*\.objects\[/ {pending = 4; next}
+    FNR == 1 {pending = 0; match_id++; delete seen}
+    /match.*\.objects\[/ {pending = 4; match_id++; delete seen; next}
     pending > 0 {
       for (i = 1; i <= nvars; i++) {
         if (index($0, "some (." vars[i]) > 0) {
-          key = FILENAME " " vars[i]
-          hits[key]++
-          pending = 0
-          next
+          seen_key = match_id SUBSEP vars[i]
+          if (!(seen_key in seen)) {
+            seen[seen_key] = 1
+            key = FILENAME " " vars[i]
+            hits[key]++
+          }
         }
       }
       pending--
@@ -113,6 +127,7 @@ emit_raw_match_rows() {
     BEGIN {
       nvars = split("tcb schedContext endpoint notification untyped cnode vspaceRoot",
                     vars, " ")
+      match_id = 0
     }
     END {for (k in hits) print k, hits[k]}
   ' "${KERNEL_FILES[@]}" | sort

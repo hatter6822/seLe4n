@@ -54,8 +54,10 @@ respects the SM3.D static `maxLockSetSize` bound has lock-WCRT
 
 **WS-RR RR7.31: that bound is not automatically inside the 1 ms timer tick, and
 this header used to say it was.**  It is a product of three factors and only one
-of them is fixed: `maxLockSetSize` is **11** (RR7.11 raised it from 8 to 9; WS-OD
-OD3.5 from 9 to 11, for the two members `.replyRecv`'s second donation needs), the
+of them is fixed: `maxLockSetSize` is **14** (RR7.11 raised it from 8 to 9; WS-OD
+OD3.5 from 9 to 11, for the two members `.replyRecv`'s second donation needs;
+OD3.7 from 11 to 13 for the two objects the pop reads below its reply-stack head;
+OD3.13 from 13 to 14 for the queue-structure neighbour its receive leg relinks), the
 core-count factor is 3, and `WCRT_per_lock` — `tCs` throughout this module — is
 **ungrounded**: nothing in this tree measures a per-object critical section on a
 Cortex-A76, which is why the whole surface below is parametric in it.  So the
@@ -63,8 +65,8 @@ honest statement is the budget condition solved for the measurable factor:
 `admissibleCriticalSection` gives the largest per-lock cost a budget admits
 (`WCRT_lockSet_le_budget_of_admissible`), which for the RPi5 tick is **23 µs**
 (`admissibleCriticalSection_rpi5Tick`).  The 60 µs the master plan §7.2 assumed
-does **not** fit — `11 · 3 · 60 = 1980 µs`
-(`rpi5Tick_refuses_sixty_micro_sections`), nor did it at either previous ceiling —
+does **not** fit — `14 · 3 · 60 = 2520 µs`
+(`rpi5Tick_refuses_sixty_micro_sections`), nor did it at any previous ceiling —
 and the boundary at that cost is a footprint of five locks
 (`rpi5Tick_sixty_micro_section_footprint_boundary`), which is what the plan's
 "typical lock-set size ≤ 4" was really about.

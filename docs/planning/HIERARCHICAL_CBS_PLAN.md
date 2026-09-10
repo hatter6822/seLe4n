@@ -1535,11 +1535,14 @@ IPC unblocks), the IPC block footprints (`removeRunnable`'s callers),
 `lockSet_tcbSuspend`, the cancellation and fault suspends, retype cleanup,
 and the current-clearing dispatch paths.  `lockSet_tcbSuspend` is **nine**
 entries at its widest since WS-OD OD3.5 (the state-level lock its donation
-cancellation's `scThreadIndex` write takes) and `maxLockSetSize` is **11**, so
-the addition takes it to eleven — at the ceiling, with the widest footprint
-elsewhere (`lockSet_replyRecv`) already there: CB4.4 moves `maxLockSetSize` to
-`13` (D21), re-proves every `_size_le_maxLockSetSize`, and re-derives the
-constant-dependent terms of `WCRT_smp` and `PerCoreWcrt` with the new bound.
+cancellation's `scThreadIndex` write takes) and `maxLockSetSize` is **14**
+(WS-OD OD3.7 took it to 13 and OD3.13 to 14, both on `.replyRecv`), so the
+addition takes `lockSet_tcbSuspend` to eleven — **inside** the ceiling, where at
+the time this row was written it sat *at* it.  D21's planned raise to `13` is
+therefore overtaken: CB4.4 re-proves every `_size_le_maxLockSetSize` at the new
+arity and re-derives the constant-dependent terms of `WCRT_smp` and
+`PerCoreWcrt`, and raises the constant only if a CB footprint exceeds 14 —
+which, on this row's arithmetic, it does not.
 **Measure, do not quote**: both figures are snapshots of constants WS-OD and
 WS-RR also write to, and re-baselining this paragraph is part of CB4.4.  The ordering lemmas
 (`_pairwise_le`) are unchanged in kind: the ancestors are SchedContext locks
