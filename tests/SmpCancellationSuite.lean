@@ -194,7 +194,7 @@ open SeLe4n.Testing
 -- PR #831 review 4: running-core resolution + write-set-honest sweeps.
 #check @Lifecycle.Suspend.runningCoreOf?
 #check @SeLe4n.Kernel.PriorityInheritance.currentScan_boot_of_single_core
-#check @cancelSpliceNeighbors?
+#check @queueSpliceNeighbors?
 
 -- Audit closure: sorted run-queue triple, current-uniqueness slice,
 -- donation-side observer capstone.
@@ -390,6 +390,31 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlocking_holder_splice_next_write_mem
 #check @lockSet_cancelIpcBlocking_reply_size_le
 #check @lockSet_cancelIpcBlocking_noDonation_size_le
+-- WS-OD OD3.5: the footprint is **arm-selected** rather than summed — the
+-- victim's own splice neighbours are declared on the arm that splices and on no
+-- other, which is what takes the reply arm from ten members to eight and is
+-- checked in both directions.
+#check @cancelArmSpliceNeighbors?
+#check @cancelArmSpliceNeighbors?_of_blockedEndpoint
+#check @cancelArmSpliceNeighbors?_of_not_blockedEndpoint
+#check @lockSet_cancelIpcBlockingOnCore_replyArm_eq
+#check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev
+#check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next
+#check @lockSet_cancelIpcBlockingOnCore_size_le_ten
+-- ...and the frames that license it: the arms that declare no neighbour write
+-- none.
+#check @cancelIpcBlocking_notificationArm_tcb_frame
+#check @cancelIpcBlocking_replyArm_noDonation_tcb_frame
+#check @consumeReplyLink_other_tcb_eq
+-- ...and the general reply-arm frame, with the reclaim live: the four steps
+-- stated OUTSIDE their write sets, and the composite over them.
+#check @endpointQueueRemove_ok_getEndpoint?
+#check @endpointQueueRemove_eq_patches
+#check @endpointQueueRemove_objects_ne
+#check @abortPendingIpcOnEndpoint_other_tcb_eq
+#check @abortHolderPendingIpc_other_tcb_eq
+#check @returnDonatedSchedContext_other_tcb_eq
+#check @cancelIpcBlocking_replyArm_tcb_frame
 -- WS-OD OD1.5: and the payoff — `passiveServerIdle` is preserved by
 -- `cancelIpcBlocking` on every arm, which is what OD1 exists to prove.
 #check @passiveServerIdleFrame_of_backward_of_not_allowed
@@ -420,6 +445,9 @@ variable (rdSc? : Option SeLe4n.SchedContextId) (dh? : Option SeLe4n.ThreadId)
 -- holder's endpoint and its two queue neighbours.
 variable (hEp? : Option SeLe4n.ObjId)
 variable (hNb? : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+-- WS-OD OD3.7: and two more — the Reply one frame below the reply-stack head and
+-- that frame's caller's TCB, which the hand-back reads at call depth ≥ 2.
+variable (bhR? : Option SeLe4n.ReplyId) (oc? : Option SeLe4n.ThreadId)
 
 /-- SM6.E.5: the flagship's remote-poke conjunct applies. -/
 example (h1 : st.getTcb? victim = some tcb0)
@@ -512,16 +540,17 @@ example (stPost : SystemState) (holder : SeLe4n.ThreadId) (t : TCB)
 
 /-- SM6.E.2: the single-core atomicity theorem applies (2PL bracket shape). -/
 example :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb?) ec
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc?) ec
         (fun st => (cancelIpcBlocking st victim tcb, ())) s
       = (unwindAll ec
-          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb?).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc?).lockAcquireSequence.reverse
           (cancelIpcBlocking
             (acquireAll ec
-              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb?).lockAcquireSequence s)
+              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc?).lockAcquireSequence s)
             victim tcb),
          ()) :=
-  cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? hEp? hNb? s
+  cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? hEp? hNb?
+    bhR? oc? s
 
 /-- SM6.E.4: the donation atomicity companion applies (dispatcher form). -/
 example :
@@ -572,18 +601,24 @@ example (n : SeLe4n.ObjId)
 
 /-- WS-RR RR7.22 (residual, remediation): after the corrected reply arm no thread
 holds a SchedContext donated by the cancelled caller — the invariant premise the
-old arm left dangling. -/
+old arm left dangling.
+
+WS-OD OD3.1: the arm's reclaim is now a reply-stack *pop*, whose head validation
+is fail-closed, so the statement gained `donationChainWellFormed` — the predicate
+that says the head this context names resolves.  Without it the reclaim could
+refuse, and a refused reclaim leaves exactly the donation this result denies. -/
 example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
     (holder : SeLe4n.ThreadId) (holderTcb : TCB) (sc : SeLe4n.SchedContextId)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st victim = some tcb)
     (hBlocked : tcb.ipcState = .blockedOnReply ep rt)
     (hOwner : donationOwnerValid st)
+    (hChain : donationChainWellFormed st)
     (hHolder : donationHolderIsReplyTarget st victim)
     (hTcb : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).objects[holder.toObjId]?
       = some (.tcb holderTcb)) :
     holderTcb.schedContextBinding ≠ .donated sc victim :=
   cancelIpcBlocking_reply_no_donation_to_victim st victim tcb ep rt hInv hLookup hBlocked
-    hOwner hHolder holder holderTcb sc hTcb
+    hOwner hChain hHolder holder holderTcb sc hTcb
 
 /-- WS-RR RR7.22 (residual): the swept thread holds no Reply object, derived from
 the bundle's own reciprocity rather than assumed. -/
@@ -758,6 +793,24 @@ private def stReplyBlocked : SystemState :=
         replyObject := some rId })
     |>.build)
 
+/-- WS-OD OD3.5: a reply-blocked victim that *also* carries queue links — the
+shape the arm-selected split is about.  The links are stale (a `.blockedOnReply`
+thread is on no endpoint queue) and nothing in `ipcInvariantFull` forbids them,
+which is exactly why the footprint must decide by arm rather than by reading the
+fields. -/
+private def stReplyBlockedStaleLinks : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject epId (.endpoint {})
+    |>.withObject rId.toObjId (.reply { replyId := rId, caller := some victimTid })
+    |>.withObject bystanderTid.toObjId (.tcb (mkTcb 712 20 none))
+    |>.withObject ownerTid.toObjId (.tcb (mkTcb 713 20 none))
+    |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
+        ipcState := .blockedOnReply epId (some ownerTid),
+        replyObject := some rId,
+        queuePrev := some bystanderTid,
+        queueNext := some ownerTid })
+    |>.build)
+
 private def runReplyCancelChecks : IO Unit := do
   IO.println "--- §3.3 SM6.E.5 cancel a reply-blocked victim (reply link consumed) ---"
   let tcb := victimTcb stReplyBlocked
@@ -786,6 +839,29 @@ private def runReplyCancelChecks : IO Unit := do
     (decide ((replyLock rId, AccessMode.write) ∈
       (lockSet_tcbSuspend bystanderTid cnRoot victimTid none none none none
         (some rId)).pairs))
+  -- WS-OD OD3.5: **the arm-selected split, exercised on the shape it is about.**
+  -- The victim below is reply-blocked *and* carries queue links — a stale pair,
+  -- since a `.blockedOnReply` thread is on no endpoint queue.  The summed
+  -- resolver read them and put two TCB write locks in the footprint for a splice
+  -- this arm does not perform; the arm-selected one answers `(none, none)`.
+  --
+  -- The fixture KEEPS the links and varies the arm, which is the mutation that
+  -- finds this class: deleting them would leave every check passing against
+  -- either resolver.
+  let staleTcb := victimTcb stReplyBlockedStaleLinks
+  assertBool "setup: the reply-blocked victim carries stale queue links"
+    (decide (staleTcb.queuePrev = some bystanderTid
+      ∧ staleTcb.queueNext = some ownerTid))
+  assertBool "the summed resolver still reads them (it is not arm-aware)"
+    (decide (queueSpliceNeighbors? staleTcb = (some bystanderTid, some ownerTid)))
+  assertBool "the ARM-selected resolver answers (none, none) on the reply arm"
+    (decide (cancelArmSpliceNeighbors? staleTcb = (none, none)))
+  let lsStale := lockSet_cancelIpcBlockingOnCore stReplyBlockedStaleLinks victimTid
+  assertBool "no neighbour TCB write lock in the reply arm's footprint"
+    (decide ((tcbLock bystanderTid, AccessMode.write) ∉ lsStale.pairs
+      ∧ (tcbLock ownerTid, AccessMode.write) ∉ lsStale.pairs))
+  assertBool "...and the reply arm's footprint is within the sharp eight-member bound"
+    (decide (lsStale.size ≤ 8))
 
 -- ----------------------------------------------------------------------------
 -- Scenario D: actively RUNNING victim on a remote core (cross-core suspend).
@@ -1086,6 +1162,30 @@ private def runMidQueueSpliceChecks : IO Unit := do
         (match st'.getTcb? nextTid with
          | some t => decide (t.queuePrev = some prevTid)
          | none => false)
+      -- WS-OD OD3.9: and its `queuePPrev` with it.  The check above passed
+      -- before the fix, because it asked about the field the splice wrote;
+      -- `queuePPrev` is the field the splice *should* have written and the one
+      -- `endpointQueueRemoveDual` validates.
+      assertBool "successor's queuePPrev is patched to the predecessor"
+        (match st'.getTcb? nextTid with
+         | some t => decide (t.queuePPrev = some (.tcbNext prevTid))
+         | none => false)
+      -- WS-OD OD3.9 (the consequence, end to end): with a stale `queuePPrev`
+      -- the successor failed `pprevConsistent` and could never leave the
+      -- endpoint queue again -- so every later bound-notification delivery to
+      -- it returned `.illegalState`.  Suspending the thread *ahead* of a
+      -- passive server was therefore an authority-crossing denial of service
+      -- on that server.  The dual removal is the operation that reads the
+      -- field, so the regression is stated as that operation succeeding.
+      assertBool "the successor can still be dequeued by the dual removal"
+        (match endpointQueueRemoveDual epId false nextTid st' with
+         | .ok _ => true
+         | .error _ => false)
+      -- ... and so can the promoted predecessor, which is the queue head.
+      assertBool "the predecessor can still be dequeued by the dual removal"
+        (match endpointQueueRemoveDual epId false prevTid st' with
+         | .ok _ => true
+         | .error _ => false)
       -- Head/tail survive; the queue-mates stay blocked and keep their homes
       -- (the `spliceOutMidQueueNode_tcb_lookup` frame, operationally).
       assertBool "send-queue head/tail still span prev..next"

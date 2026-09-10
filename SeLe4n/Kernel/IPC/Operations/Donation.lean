@@ -350,7 +350,7 @@ theorem applyReplyDonation_characterisation
          | some (scId, owner) =>
              (match SeLe4n.ThreadId.toValid? owner with
               | some ownerVtid =>
-                  (match returnDonatedSchedContextValid st replierVtid scId ownerVtid with
+                  (match returnDonatedSchedContextValid st replierVtid scId ownerVtid none with
                    | .error e => .error e
                    | .ok st' => .ok (removeRunnable st' replierVtid.val))
               | none => .error .invalidArgument)
@@ -369,7 +369,7 @@ theorem applyReplyDonation_characterisation
         | none => rfl
         | some ownerVtid =>
             simp only []
-            cases returnDonatedSchedContextValid st replierVtid _ ownerVtid <;> rfl
+            cases returnDonatedSchedContextValid st replierVtid _ ownerVtid none <;> rfl
 
 /-- WS-RR RR2.1 / RR2.2 (operation): the cross-core `.call` SchedContext
 donation — the single-core `applyCallDonation` **plus** the SM5.H.4
@@ -639,5 +639,380 @@ theorem propagatePipChainCrossCore_preserves_replenishQueueAffinityConsistent_sm
     PriorityInheritance.propagatePipChainCrossCore_replenish_readings st tid ec fuel hObjInv
   intro c
   exact (replenishQueueAffinityConsistentOnCore_congr (hRepl c) hSc hTgt).mpr (hCons c)
+
+/-- **WS-OD OD3.6: seL4-MCS's `maybeDonateSchedContext`, asked once.**
+
+A receive that rendezvouses with a queued `Call` hands the caller's scheduling
+context to the receiver — seL4-MCS's `receiveIPC` reaches it through
+`reply_push` → `schedContext_donate`, so the server runs the request on the
+client's own reservation and the work is charged where it belongs.
+
+This is the step `replyRecvReturnDonation`'s third stage performs, lifted out of
+it so that `.receive` performs *the same one*.  It did not: the `.receive`
+dispatch arm ran `endpointReceiveDualWithCapsOnCore` and staged frames, with no
+donation anywhere on the path, so a passive server taking its **first** request
+with `seL4_Recv` received no budget while the same server taking its second and
+later requests with `seL4_ReplyRecv` was charged correctly — two API paths
+handling one condition asymmetrically, and the asymmetric one silently defeating
+the budget enforcement the whole CBS surface exists to provide.
+
+Both home cores are read from the state the donation runs on, which is the
+reading the two `*OnCore` donation primitives take at every other call site:
+neither primitive writes a `cpuAffinity`
+(`donateSchedContext_getTcb?_cpuAffinity_eq`), so a pre-resolution and a
+post-resolution agree.
+
+Total, and the identity wherever it must not fire: `applyCallDonation` no-ops
+(`.ok st`) unless the receiver is `.unbound` **and** the donor is `.bound`, so
+this is definitionally a no-op on every state where there is nothing to donate —
+which is what lets every result taken before OD3.6 survive on the states it held
+for.  `.invalidArgument` is reserved for a reserved (idle) thread id, which
+`ThreadId.toValid?` refuses and which no rendezvous can produce. -/
+def applyRendezvousCallDonation (st : SystemState)
+    (receiver donor : SeLe4n.ThreadId) : Except KernelError SystemState :=
+  match donor.toValid?, receiver.toValid? with
+  | some donorV, some receiverV =>
+      applyCallDonationOnCore st donorV receiverV
+        (determineTargetCore st donor) (determineTargetCore st receiver)
+  | _, _ => .error .invalidArgument
+
+/-- **WS-OD OD3.6: did the receive leg dequeue a `Call`?**
+
+The post-state question the donation is gated on: a `Call` sender lands
+`.blockedOnReply` at the rendezvous, a plain `Send` sender lands `.ready`, and a
+receive that dequeued nothing returns the receiver's own id — which is
+`.blockedOnReceive`, so the guard is false without a separate rendezvous test.
+
+Reads through `lookupTcb`, not `getTcb?`, because `lookupTcb` refuses a reserved
+(idle) thread id and the donation must never fire on one. -/
+def rendezvousDequeuedCall (st : SystemState) (dequeued : SeLe4n.ThreadId) : Bool :=
+  match lookupTcb st dequeued with
+  | some tcb =>
+      match tcb.ipcState with
+      | .blockedOnReply _ _ => true
+      | _                   => false
+  | none => false
+
+/-- **WS-OD OD3.6**: the guarded step — donate when the rendezvous dequeued a
+`Call`, and otherwise change nothing.  This is what a receiving arm calls. -/
+def applyReceiveRendezvousDonation (st : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) : Except KernelError SystemState :=
+  if rendezvousDequeuedCall st dequeued then
+    applyRendezvousCallDonation st receiver dequeued
+  else
+    .ok st
+
+/-- WS-OD OD3.6: a receive that dequeued no `Call` commits nothing at all. -/
+@[simp] theorem applyReceiveRendezvousDonation_of_no_call (st : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId)
+    (h : rendezvousDequeuedCall st dequeued = false) :
+    applyReceiveRendezvousDonation st receiver dequeued = .ok st := by
+  unfold applyReceiveRendezvousDonation
+  rw [h]
+  rfl
+
+/-- WS-OD OD3.6: and on a `Call` rendezvous it is exactly the donation. -/
+@[simp] theorem applyReceiveRendezvousDonation_of_call (st : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId)
+    (h : rendezvousDequeuedCall st dequeued = true) :
+    applyReceiveRendezvousDonation st receiver dequeued
+      = applyRendezvousCallDonation st receiver dequeued := by
+  unfold applyReceiveRendezvousDonation
+  rw [h]
+  rfl
+
+/-- **WS-OD OD3.6**: the rendezvous hand-off decomposes to the cross-core
+donation at the two validated thread ids, with both home cores read off the
+state it runs on.
+
+Every consumer's frame and preservation obligation goes through this, so a
+receiving arm never re-derives the `toValid?` case split; the `.error` arm is
+`.invalidArgument` on a reserved id, which no rendezvous produces. -/
+theorem applyRendezvousCallDonation_ok_decompose
+    (st st'' : SystemState) (receiver donor : SeLe4n.ThreadId)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') :
+    ∃ donorV receiverV : SeLe4n.ValidThreadId,
+      donorV.val = donor ∧ receiverV.val = receiver ∧
+      applyCallDonationOnCore st donorV receiverV
+        (determineTargetCore st donor) (determineTargetCore st receiver) = .ok st'' := by
+  unfold applyRendezvousCallDonation at h
+  cases hD : donor.toValid? with
+  | none => rw [hD] at h; simp only [] at h; cases h
+  | some donorV =>
+    cases hR : receiver.toValid? with
+    | none => rw [hD, hR] at h; simp only [] at h; cases h
+    | some receiverV =>
+      rw [hD, hR] at h
+      exact ⟨donorV, receiverV,
+        SeLe4n.ThreadId.toValid?_some_val_eq donor donorV hD,
+        SeLe4n.ThreadId.toValid?_some_val_eq receiver receiverV hR, h⟩
+
+/-- WS-OD OD3.6: the rendezvous hand-off keeps the SM5.H replenish-queue
+affinity, because the primitive it composes does and both home cores are read
+off the very state the donation runs on — the `rfl` instantiation of the
+primitive's two hypotheses. -/
+theorem applyRendezvousCallDonation_preserves_replenishQueueAffinityConsistent_smp
+    (st st'' : SystemState) (receiver donor : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') :
+    replenishQueueAffinityConsistent_smp st'' := by
+  obtain ⟨donorV, receiverV, hDv, hRv, hDon⟩ :=
+    applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
+  exact applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
+    st st'' donorV receiverV _ _ hObjInv hCons (by rw [hDv]) (by rw [hRv]) hDon
+
+/-- WS-OD OD3.6: and so does the guarded form, whose other arm changes nothing. -/
+theorem applyReceiveRendezvousDonation_preserves_replenishQueueAffinityConsistent_smp
+    (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st)
+    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
+    replenishQueueAffinityConsistent_smp st'' := by
+  unfold applyReceiveRendezvousDonation at h
+  cases hCall : rendezvousDequeuedCall st dequeued with
+  | false => rw [hCall] at h; simp only [Bool.false_eq_true, if_false] at h; cases h; exact hCons
+  | true =>
+    rw [hCall] at h
+    simp only [if_true] at h
+    exact applyRendezvousCallDonation_preserves_replenishQueueAffinityConsistent_smp
+      st st'' receiver dequeued hObjInv hCons h
+
+/-- **WS-OD OD3.6**: the guard *is* the donation's caller-blocked obligation.
+
+`applyCallDonation`'s invariant surface asks that the donor be `.blockedOnReply`
+at the donation site, and `rendezvousDequeuedCall` is exactly that fact read off
+the state the donation runs on — so a receiving arm discharges the hypothesis
+from its own guard rather than re-establishing it, and the two cannot disagree
+about which states the donation fires on.
+
+Stated over `getTcb?` because that is what the invariant surface reads;
+`lookupTcb`'s extra sentinel guard is a success the true branch has passed
+(`getTcb?_of_lookupTcb`). -/
+theorem rendezvousDequeuedCall_blockedOnReply (st : SystemState)
+    (dequeued : SeLe4n.ThreadId) (h : rendezvousDequeuedCall st dequeued = true) :
+    ∀ tcb, st.getTcb? dequeued = some tcb →
+      ∃ ep rt, tcb.ipcState = .blockedOnReply ep rt := by
+  unfold rendezvousDequeuedCall at h
+  intro tcb hG
+  cases hL : lookupTcb st dequeued with
+  | none => rw [hL] at h; exact absurd h (by simp)
+  | some tcb0 =>
+    have hEq : tcb = tcb0 := by
+      have hGet := getTcb?_of_lookupTcb st dequeued tcb0 hL
+      rw [hGet] at hG
+      exact (Option.some.inj hG).symm
+    subst hEq
+    rw [hL] at h
+    revert h
+    cases hIpc : tcb.ipcState <;> simp_all
+
+-- ============================================================================
+-- WS-OD OD3.14 — the receive rendezvous' PRIORITY hand-off
+-- ============================================================================
+
+/-- **WS-OD OD3.14: the receive-side priority hand-off.**
+
+A rendezvous that dequeued a `Call` leaves that caller `.blockedOnReply _ (some
+receiver)`, and `computeMaxWaiterPriority` — the value `updatePipBoostOnCore`
+installs — is a maximum over exactly the threads in that state.  So the
+receiver's `pipBoost` is the **only** channel by which a blocked caller's
+priority reaches the scheduler: `resolveEffectivePrioDeadline` takes the base
+priority from the SchedContext for `.bound` and `.donated` alike and then
+applies `max basePrio pipBoost`, so OD3.6's donation carries the caller's *base*
+priority to the receiver and carries no boost at all.  Without this walk a chain
+`D → C → S` — `D` blocked on `C`, `C` dequeued into `.blockedOnReply` on the
+passive server `S` — leaves `D`'s inherited priority stopping dead at `C`, which
+is unbounded priority inversion for `D`.  It bites with **no** donation too:
+`applyCallDonation` is the identity when the receiver is already `.bound`, and
+that receiver still gains the waiter.
+
+The walk starts **at the receiver** and runs upward, which is the same start
+point `.call` uses from its own receiver (`endpointCallCrossCoreDispatch`) and
+the same one `.replyRecv` reaches when its reply is not delegated.  Stating it as
+the chain walk rather than a single boost is what keeps it correct where the
+receiver is itself blocked deeper in a chain; where it is not, `blockingServer`
+terminates the walk after the receiver's own link.
+
+The SGI list is discarded, as at every other propagation site: the syscall seam
+derives its cross-core pokes from the `(pre, post)` diff
+(`computeCrossCoreSgis`), so a run-queue bucket this walk migrates on a remote
+core surfaces there.  The walk's **state** does not depend on `executingCore` at
+all — that argument decides only which SGIs the discarded list carries. -/
+def applyReceiverPipHandoff (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (executingCore : CoreId) : SystemState :=
+  (PriorityInheritance.propagatePipChainCrossCore st receiver executingCore).1
+
+/-- **WS-OD OD3.14**: both halves of a receive rendezvous' hand-off — the
+scheduling context (OD3.6) and the priority — under **one** reading of the
+guard.
+
+The guard is read from the *pre*-state `st`, once, and governs both halves, so
+the donation and the boost provably fire on exactly the same states.  A second
+reading on the post-donation state would be a second answer to a question this
+one already asks, and would owe an `ipcState` frame lemma for the donation
+before it could be trusted to agree.
+
+Total, and inert where it must be: on a receive that blocked, and on a plain
+`Send` rendezvous, `rendezvousDequeuedCall` is false and this is `.ok st` — so
+every result taken before OD3.14 survives on the states it held for, exactly as
+OD3.6's donation did. -/
+def applyReceiveRendezvousHandoff (st : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId) :
+    Except KernelError SystemState :=
+  match applyReceiveRendezvousDonation st receiver dequeued with
+  | .error e => .error e
+  | .ok stDon =>
+      .ok (if rendezvousDequeuedCall st dequeued then
+             applyReceiverPipHandoff stDon receiver executingCore
+           else stDon)
+
+/-- WS-OD OD3.14: a receive that dequeued no `Call` commits nothing at all —
+neither a donation nor a boost. -/
+@[simp] theorem applyReceiveRendezvousHandoff_of_no_call (st : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
+    (h : rendezvousDequeuedCall st dequeued = false) :
+    applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st := by
+  unfold applyReceiveRendezvousHandoff
+  rw [applyReceiveRendezvousDonation_of_no_call st receiver dequeued h]
+  simp only [h, Bool.false_eq_true, if_false]
+
+/-- WS-OD OD3.14: and on a `Call` rendezvous it is OD3.6's donation followed by
+the chain walk from the receiver. -/
+theorem applyReceiveRendezvousHandoff_of_call (st stDon : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hCall : rendezvousDequeuedCall st dequeued = true)
+    (hDon : applyRendezvousCallDonation st receiver dequeued = .ok stDon) :
+    applyReceiveRendezvousHandoff st receiver dequeued executingCore =
+      .ok (applyReceiverPipHandoff stDon receiver executingCore) := by
+  unfold applyReceiveRendezvousHandoff
+  rw [applyReceiveRendezvousDonation_of_call st receiver dequeued hCall, hDon]
+  simp only [hCall, if_true]
+
+/-- **WS-OD OD3.14**: the hand-off decomposes into OD3.6's donation and the
+chain walk, so every consumer composes the two existing obligation sets rather
+than re-deriving either.
+
+The `if` in the conclusion is the *pre*-state guard, which is what makes this a
+decomposition rather than a restatement: a consumer that has already branched on
+`rendezvousDequeuedCall` rewrites it away. -/
+theorem applyReceiveRendezvousHandoff_ok_decompose (st st'' : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    ∃ stDon, applyReceiveRendezvousDonation st receiver dequeued = .ok stDon ∧
+      st'' = (if rendezvousDequeuedCall st dequeued then
+                applyReceiverPipHandoff stDon receiver executingCore
+              else stDon) := by
+  unfold applyReceiveRendezvousHandoff at h
+  cases hDon : applyReceiveRendezvousDonation st receiver dequeued with
+  | error e => rw [hDon] at h; simp only [] at h; cases h
+  | ok stDon =>
+      rw [hDon] at h
+      simp only [Except.ok.injEq] at h
+      exact ⟨stDon, rfl, h.symm⟩
+
+/-- WS-OD OD3.14: the hand-off keeps the SM5.H replenish-queue affinity — the
+donation does (OD3.6) and the chain walk is a frame over it (RR2.20).
+
+`hObjInvDon` is the object-store invariant *after* the donation; the walk's frame
+argument reads it, and `Donation.lean` sits below the module that proves the
+donation preserves it, so it is a hypothesis here and discharged at the composite
+in `IPC/Invariant/DonationPreservation.lean`. -/
+theorem applyReceiveRendezvousHandoff_preserves_replenishQueueAffinityConsistent_smp
+    (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hObjInvDon : ∀ stDon, applyReceiveRendezvousDonation st receiver dequeued = .ok stDon →
+      stDon.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st)
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    replenishQueueAffinityConsistent_smp st'' := by
+  obtain ⟨stDon, hDon, hEq⟩ :=
+    applyReceiveRendezvousHandoff_ok_decompose st st'' receiver dequeued executingCore h
+  have hConsDon : replenishQueueAffinityConsistent_smp stDon :=
+    applyReceiveRendezvousDonation_preserves_replenishQueueAffinityConsistent_smp
+      st stDon receiver dequeued hObjInv hCons hDon
+  subst hEq
+  split
+  · exact propagatePipChainCrossCore_preserves_replenishQueueAffinityConsistent_smp
+      stDon receiver executingCore _ (hObjInvDon stDon hDon) hConsDon
+  · exact hConsDon
+
+/-- **WS-OD OD3.14: the receive leg's priority hand-off on an arm that has
+already walked from another thread.**
+
+`.replyRecv` runs two legs and each changes a waiter set: the reply leg removes
+the answered caller from the *recorded server*'s, and the receive leg adds the
+newly dequeued caller to the *receiver*'s.  A single walk from the recorded
+server covers both **exactly when the two threads coincide** — which is every
+non-delegated reply, since `recordedReplyServer?` then answers `tid` (and so does
+its `.getD tid` default when the reply records no server at all).
+
+On a **delegated** reply they differ, and `blockingServer` does not relate them:
+the receiver has just completed a rendezvous, so it is not `.blockedOnReply` on
+anything, and the reply leg's upward walk therefore never reaches it.  The newly
+dequeued caller's priority is then lost exactly as it was on `.receive` before
+OD3.14 — the same defect at a sibling site, which is why it is closed in the same
+cut rather than left to read as covered.
+
+`alreadyWalked` is the thread the arm's earlier walk started from, so the gate is
+the equality that makes that walk **be** this one, not an enumeration of cases.
+The rendezvous guard is read at the state this step runs on, which needs no frame
+lemma about the steps between: the question it asks is "is there a caller blocked
+on the receiver *here*", and that is the state whose boost is being recomputed. -/
+def applyReceiveLegPipHandoff (st : SystemState) (receiver dequeued : SeLe4n.ThreadId)
+    (alreadyWalked : SeLe4n.ThreadId) (executingCore : CoreId) : SystemState :=
+  if alreadyWalked == receiver then st
+  else if rendezvousDequeuedCall st dequeued then
+    applyReceiverPipHandoff st receiver executingCore
+  else st
+
+/-- WS-OD OD3.14: a **non-delegated** reply changes nothing — the arm's earlier
+walk started at the receiver, so this step is the identity and every result taken
+before OD3.14 survives verbatim on the states it held for. -/
+@[simp] theorem applyReceiveLegPipHandoff_of_not_delegated (st : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId) :
+    applyReceiveLegPipHandoff st receiver dequeued receiver executingCore = st := by
+  unfold applyReceiveLegPipHandoff
+  simp
+
+/-- WS-OD OD3.14: and so does a delegated reply whose receive leg dequeued no
+`Call` — there is no new waiter to carry. -/
+@[simp] theorem applyReceiveLegPipHandoff_of_no_call (st : SystemState)
+    (receiver dequeued alreadyWalked : SeLe4n.ThreadId) (executingCore : CoreId)
+    (h : rendezvousDequeuedCall st dequeued = false) :
+    applyReceiveLegPipHandoff st receiver dequeued alreadyWalked executingCore = st := by
+  unfold applyReceiveLegPipHandoff
+  split
+  · rfl
+  · simp only [h, Bool.false_eq_true, if_false]
+
+/-- WS-OD OD3.14: the step is either the identity or the chain walk from the
+receiver — the disjunction every consumer's frame argument splits on. -/
+theorem applyReceiveLegPipHandoff_cases (st : SystemState)
+    (receiver dequeued alreadyWalked : SeLe4n.ThreadId) (executingCore : CoreId) :
+    applyReceiveLegPipHandoff st receiver dequeued alreadyWalked executingCore = st ∨
+    applyReceiveLegPipHandoff st receiver dequeued alreadyWalked executingCore =
+      applyReceiverPipHandoff st receiver executingCore := by
+  unfold applyReceiveLegPipHandoff
+  split
+  · exact Or.inl rfl
+  · split
+    · exact Or.inr rfl
+    · exact Or.inl rfl
+
+/-- WS-OD OD3.14: the receive leg's hand-off keeps SM5.H's replenish-queue
+affinity — the identity arm trivially, the walk arm by RR2.20's frame. -/
+theorem applyReceiveLegPipHandoff_preserves_replenishQueueAffinityConsistent_smp
+    (st : SystemState) (receiver dequeued alreadyWalked : SeLe4n.ThreadId)
+    (executingCore : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st) :
+    replenishQueueAffinityConsistent_smp
+      (applyReceiveLegPipHandoff st receiver dequeued alreadyWalked executingCore) := by
+  rcases applyReceiveLegPipHandoff_cases st receiver dequeued alreadyWalked executingCore with
+    hEq | hEq <;> rw [hEq]
+  · exact hCons
+  · exact propagatePipChainCrossCore_preserves_replenishQueueAffinityConsistent_smp
+      st receiver executingCore _ hObjInv hCons
 
 end SeLe4n.Kernel

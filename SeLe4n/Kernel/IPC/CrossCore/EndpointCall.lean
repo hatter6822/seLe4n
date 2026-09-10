@@ -105,6 +105,39 @@ def endpointCallReceiver? (st : SystemState) (endpointId : SeLe4n.ObjId) :
   | some ep => ep.receiveQ.head
   | none => none
 
+/-- **WS-OD OD3.11**: the `.send` / `.call` instance of the queue-structure
+neighbour -- those arms pop the **receive** queue and block on the **send**
+queue.
+
+Derived from `endpointCallReceiver?` above, the resolver the arm's receiver
+member already comes from, so the footprint and the transition cannot disagree
+about which branch this call takes: a receiver resolved is a rendezvous, none is
+a block. -/
+def sendSideQueueStructureNeighbor? (st : SystemState) (endpointId : SeLe4n.ObjId) :
+    Option SeLe4n.ThreadId :=
+  endpointQueueStructureNeighbor? st (endpointCallReceiver? st endpointId)
+    ((st.getEndpoint? endpointId).bind (·.sendQ.tail))
+
+/-- **WS-OD OD3.11**: with a receiver waiting, the neighbour is that receiver's
+successor -- the thread the pop promotes to head. -/
+theorem sendSideQueueStructureNeighbor?_rendezvous (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (tcb : TCB)
+    (hRecv : endpointCallReceiver? st endpointId = some receiver)
+    (hTcb : st.getTcb? receiver = some tcb) :
+    sendSideQueueStructureNeighbor? st endpointId = tcb.queueNext := by
+  unfold sendSideQueueStructureNeighbor?
+  rw [hRecv]
+  exact endpointQueueStructureNeighbor?_rendezvous st receiver tcb _ hTcb
+
+/-- **WS-OD OD3.11**: with none, it is the send queue's old tail -- the thread
+the enqueue relinks. -/
+theorem sendSideQueueStructureNeighbor?_block (st : SystemState)
+    (endpointId : SeLe4n.ObjId)
+    (hNone : endpointCallReceiver? st endpointId = none) :
+    sendSideQueueStructureNeighbor? st endpointId
+      = (st.getEndpoint? endpointId).bind (·.sendQ.tail) := by
+  unfold sendSideQueueStructureNeighbor?; rw [hNone]; rfl
+
 /-- WS-SM SM6.A.5: the SchedContext the caller would donate on this call — its
 own bound SC (a `.bound scId` binding), if any. A caller that is `.unbound` or
 already holds a `.donated _ _` binding donates nothing on this call (matching
@@ -159,6 +192,9 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- transition cannot disagree about which CSpace root is written — the
     -- discipline `receiveInstallsCaps` established for the receive side.
     (rendezvousCapsDestination? st endpointId msg)
+    -- **WS-OD OD3.11**: and the queue-structure neighbour, resolved from the
+    -- same branch the transition takes.
+    (sendSideQueueStructureNeighbor? st endpointId)
 
 /-- **WS-RR RR7.8**: the capless resolved call footprint is definitionally the
 pre-RR7.8 one, so every statement and fixture taken over the four-argument form
@@ -169,7 +205,11 @@ theorem lockSet_endpointCallOnCore_capless (st : SystemState)
     lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId
       = lockSet_endpointCall caller cnodeRootObjId endpointId
           (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st caller)
-          (endpointCallServerFirstReply? st endpointId) := rfl
+          (endpointCallServerFirstReply? st endpointId) none
+          -- **WS-OD OD3.11**: "capless" is about the *message*, not about the
+          -- queue.  A call that carries no capabilities still pops or enqueues,
+          -- so the neighbour member is resolved here rather than `none`.
+          (sendSideQueueStructureNeighbor? st endpointId) := rfl
 
 /-- **WS-RR RR7.8**: the concrete lock-set a cross-core caps-carrying `.send`
 acquires. The send side had no resolved footprint at all — its capless shape
@@ -185,6 +225,8 @@ def lockSet_endpointSendOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
   lockSet_endpointSend sender cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId)
     (rendezvousCapsDestination? st endpointId msg)
+    -- **WS-OD OD3.11**: and the queue-structure neighbour.
+    (sendSideQueueStructureNeighbor? st endpointId)
 
 -- ============================================================================
 -- §3 WithCaps lock-set (plan §3.1)
@@ -215,9 +257,13 @@ def lockSet_endpointCallWithCaps (callerTid : SeLe4n.ThreadId)
     -- (`linkServerStashedReply` writes `reply.caller`); thread `replyId` so that
     -- write is covered by `replyLock rid` inside the WithCaps footprint, keeping
     -- copied reply caps on another core inside the 2PL serialization.
-    (replyId : Option SeLe4n.ReplyId := none) : LockSet :=
+    (replyId : Option SeLe4n.ReplyId := none)
+    -- **WS-OD OD3.11**: and the queue-structure neighbour, threaded through for
+    -- the same reason -- the caps footprint *is* the base footprint at `some
+    -- destCnodeObjId`, so every member the base declares it declares too.
+    (queueNeighbour : Option SeLe4n.ThreadId := none) : LockSet :=
   lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid donatedScId
-    replyId (some destCnodeObjId)
+    replyId (some destCnodeObjId) queueNeighbour
 
 /-- **WS-RR RR7.7**: the caps footprint *is* the base footprint at `some`, by
 `rfl`. A refactor that reintroduces a second definition breaks this marker at
@@ -226,11 +272,12 @@ theorem lockSet_endpointCallWithCaps_eq_call_some (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId destCnodeObjId endpointObjId : SeLe4n.ObjId)
     (receiverTid : Option SeLe4n.ThreadId)
     (donatedScId : Option SeLe4n.SchedContextId)
-    (replyId : Option SeLe4n.ReplyId) :
+    (replyId : Option SeLe4n.ReplyId)
+    (queueNeighbour : Option SeLe4n.ThreadId) :
     lockSet_endpointCallWithCaps callerTid cnodeRootObjId destCnodeObjId endpointObjId
-        receiverTid donatedScId replyId
+        receiverTid donatedScId replyId queueNeighbour
       = lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
-          donatedScId replyId (some destCnodeObjId) := rfl
+          donatedScId replyId (some destCnodeObjId) queueNeighbour := rfl
 
 -- ============================================================================
 -- §4 The cross-core endpoint-call transition (plan §3.2)
@@ -466,6 +513,7 @@ theorem lockSet_endpointCallOnCore_correct
     (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st caller)
     (endpointCallServerFirstReply? st endpointId)
     (rendezvousCapsDestination? st endpointId msg)
+    (sendSideQueueStructureNeighbor? st endpointId)
 
 /-- **WS-RR RR7.8**: the send footprint's kinds are permitted too, over every
 message — the send side's first resolved-footprint correctness statement. -/
@@ -477,6 +525,7 @@ theorem lockSet_endpointSendOnCore_correct
   lockSet_consistent_send sender cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId)
     (rendezvousCapsDestination? st endpointId msg)
+    (sendSideQueueStructureNeighbor? st endpointId)
 
 -- ============================================================================
 -- §7b WS-RR RR7.8 — the capability transfer's write set is declared
@@ -508,7 +557,9 @@ theorem lockSet_endpointCallOnCore_covers_capsDestination
       ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
   unfold lockSet_endpointCallOnCore lockSet_endpointCall
   rw [hDest]
-  exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
+  -- WS-OD OD3.11: one more extension outside (the queue-structure neighbour).
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _))
 
 /-- **WS-RR RR7.8**: …and the state-level lock, for the CDT structure the
 install writes. Without this member two transfers into *different* CSpaces have
@@ -521,7 +572,7 @@ theorem lockSet_endpointCallOnCore_covers_cdt
       ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
   unfold lockSet_endpointCallOnCore lockSet_endpointCall
   rw [hDest]
-  exact LockSet.mem_insertOrMerge_write_self _ _
+  exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
 
 /-- **WS-RR RR7.8**: the same two members on the send arm — the same transfer,
 so the same write set, so the same declaration. -/
@@ -533,7 +584,44 @@ theorem lockSet_endpointSendOnCore_covers_capsDestination
       ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs := by
   unfold lockSet_endpointSendOnCore lockSet_endpointSend
   rw [hDest]
-  exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
+  -- WS-OD OD3.11: one more extension outside (the queue-structure neighbour).
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _))
+
+/-- **WS-OD OD3.11**: the queue-structure neighbour is a declared **write**
+member of the resolved `.call` footprint.
+
+This is the finding this row closes.  A `.call` either pops the endpoint's
+receive queue -- which relinks the popped receiver's successor into the head --
+or enqueues the caller on the send queue, which relinks that queue's old tail.
+Exactly one of those TCBs is written on any given call, and the footprint named
+neither, so a `.call` on one core and a `.tcbSuspend` of the affected neighbour
+on another had provably disjoint footprints while both writing it.
+
+Stated over the resolver rather than over a supplied thread: which of the two
+branches this call takes is a property of the pre-state, and the resolver reads
+it from the same expression the transition branches on. -/
+theorem lockSet_endpointCallOnCore_covers_queueNeighbour
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) (q : SeLe4n.ThreadId)
+    (hq : sendSideQueueStructureNeighbor? st endpointId = some q) :
+    (tcbLock q, AccessMode.write)
+      ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+  unfold lockSet_endpointCallOnCore lockSet_endpointCall
+  rw [hq]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-OD OD3.11**: and on the send arm -- the same two primitives, so the
+same neighbour and the same declaration. -/
+theorem lockSet_endpointSendOnCore_covers_queueNeighbour
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) (q : SeLe4n.ThreadId)
+    (hq : sendSideQueueStructureNeighbor? st endpointId = some q) :
+    (tcbLock q, AccessMode.write)
+      ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs := by
+  unfold lockSet_endpointSendOnCore lockSet_endpointSend
+  rw [hq]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RR RR7.8**: and the send arm's state-level member. -/
 theorem lockSet_endpointSendOnCore_covers_cdt
@@ -544,7 +632,7 @@ theorem lockSet_endpointSendOnCore_covers_cdt
       ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs := by
   unfold lockSet_endpointSendOnCore lockSet_endpointSend
   rw [hDest]
-  exact LockSet.mem_insertOrMerge_write_self _ _
+  exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
 
 /-- **WS-RR RR7.8, the capstone: every object a caps-carrying send changes is
 declared write-mode in the footprint its bracket acquires.**
@@ -624,17 +712,28 @@ theorem endpointCallWithCaps_object_writes_declared
 
 /-- WS-SM SM6.A.5 (plan §4.3): the cross-core donation-chain lock-set
 extension. When the caller donates a SchedContext on the call, the
-`endpointCall` lock-set is *exactly* the non-donating lock-set extended with the
-donated SchedContext's **write** lock — so the SC migration (`applyCallDonation`
+`endpointCall` lock-set is the non-donating lock-set extended with the donated
+SchedContext's **write** lock — so the SC migration (`applyCallDonation`
 rebinding `boundThread` across cores, SM5.H.4) runs under a held SC write lock,
-serialised against every other core. -/
+serialised against every other core.
+
+**WS-OD OD3.5: and with the state-level lock**, because `donateSchedContext`
+does not stop at the object stores.  Its final step is
+`scThreadIndexAdd`/`scThreadIndexRemove` on `SystemState.scThreadIndex`, an
+`RHTable` whose insert may rehash and back-shift the whole table — so it does
+not decompose by object, and the SM3.A.10 declared subject for such structure is
+`stateLevelLock`.  The extension is therefore **two** members, not one; saying
+"exactly the non-donating set plus the SC lock", as this theorem did, was a
+statement about the object stores read as a statement about the operation. -/
 theorem lockSet_endpointCall_donation_extension
     (caller : SeLe4n.ThreadId) (cnRoot endpointId : SeLe4n.ObjId)
     (receiver? : Option SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) :
     lockSet_endpointCall caller cnRoot endpointId receiver? (some scId)
       = lockSetExtendOpt
-          (lockSet_endpointCall caller cnRoot endpointId receiver? none)
-          (some (schedContextLock scId, .write)) := by
+          (lockSetExtendOpt
+            (lockSet_endpointCall caller cnRoot endpointId receiver? none)
+            (some (schedContextLock scId, .write)))
+          (some (stateLevelLock, .write)) := by
   unfold lockSet_endpointCall
   rfl
 
@@ -927,7 +1026,7 @@ theorem lockSet_endpointCall_caller_tcb_write_mem
     (tcbLock caller, AccessMode.write)
       ∈ (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?).pairs :=
   lockSet_endpointCall_caller_tcb_write_mem_unconditional caller cnRoot endpointId
-    receiver? donatedSc? none none
+    receiver? donatedSc? none none none
 
 -- ============================================================================
 -- §9 WS-RR RR2.4 — the scheduler-domain footprint of the cross-core `.call`

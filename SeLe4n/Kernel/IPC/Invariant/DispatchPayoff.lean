@@ -246,10 +246,20 @@ theorem replyRecvBody_preserves_ipcInvariantFull
                           ((recordedReplyServer? st prevCaller).getD tid))
                         st2 st3 () hObjInv2 hInv2 hSrvIdle2 hNotOwner2 hRet
                       have hObjInv3 := hObjInv3f st3 hRet
-                      have hInvD := stageDeliveredMessage_preserves_ipcInvariantFull st3
-                        prevCaller 0 hObjInv3 hInv3
-                      have hObjInvD := stageDeliveredMessage_objects_invExt st3
-                        prevCaller 0 hObjInv3
+                      -- WS-OD OD3.14: the receive leg's priority hand-off runs
+                      -- between the donation return and the staging.  It writes
+                      -- `pipBoost` and run-queue buckets on a delegated reply and
+                      -- is the identity otherwise, so it contributes a frame and
+                      -- no obligation.
+                      have hObjInv3P := applyReceiveLegPipHandoff_preserves_objects_invExt st3
+                        tid nextThread ((recordedReplyServer? st prevCaller).getD tid) ec hObjInv3
+                      have hInv3P := applyReceiveLegPipHandoff_preserves_ipcInvariantFull st3
+                        tid nextThread ((recordedReplyServer? st prevCaller).getD tid) ec
+                        hObjInv3 hInv3
+                      have hInvD := stageDeliveredMessage_preserves_ipcInvariantFull _
+                        prevCaller 0 hObjInv3P hInv3P
+                      have hObjInvD := stageDeliveredMessage_objects_invExt _
+                        prevCaller 0 hObjInv3P
                       rw [← hOut]
                       exact ⟨stageWokenSendCompletion_preserves_ipcInvariantFull _ _
                           hObjInvD hInvD,
@@ -311,7 +321,18 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
         ∀ b, c.cap.badge = some b → b.valid) ∧
     (∀ st1 res, endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
         decoded.capRecvSlot (determineExecutingCore st tid) st = (st1, res) →
-      st1.objects.invExt)
+      st1.objects.invExt) ∧
+    -- **WS-OD OD3.6**: the arm's rendezvous donation makes the receiver hold a
+    -- `.donated` binding, and `donationOwnerValid` demands that a donation's
+    -- OWNER be `.unbound` -- so nothing may already name this receiver as owner.
+    -- A whole-store fact no local step establishes, stated exactly as
+    -- `replyRecvStage`'s first conjunct states the same obligation for the
+    -- reply leg: over the receive stage's committed state, which is a
+    -- pre-state-computable expression, so the pack stays pre-state.
+    (∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
+      (endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
+          decoded.capRecvSlot (determineExecutingCore st tid) st).1.getTcb? s = some sTcb →
+      sTcb.schedContextBinding ≠ .donated sc0 tid)
   replyStage : ∀ rid (r : Reply) (callerTid : SeLe4n.ThreadId),
     decoded.syscallId = .reply → cap.target = .replyCap rid →
     st.getReply? rid = some r → r.caller = some callerTid →
@@ -521,7 +542,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
           | error e => simp only [hRid] at hStep; cases hStep
           | ok replyIdOpt =>
               simp only [hRid] at hStep
-              obtain ⟨hRidFresh, hDeliveredBadges, hRecvInvExt⟩ :=
+              obtain ⟨hRidFresh, hDeliveredBadges, hRecvInvExt, hRecvNotOwner⟩ :=
                 hPack.recvStage epId replyIdOpt hSy hTgt hRid
               obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
               have hFresh := readyThread_endpointQueueFresh st tid tcbC
@@ -550,16 +571,48 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   | error e => simp only [] at hStep; cases hStep
                   | ok triple =>
                       obtain ⟨nextThread, summary, sgi1⟩ := triple
-                      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                      -- WS-OD OD3.6: the `Except`/`Prod` destructuring moved into
+                      -- the donation branch below -- the donation match now sits
+                      -- between the receive and the staging, so `hStep` is not yet
+                      -- an `.ok` equation here.  What remains is the iota
+                      -- reduction of the receive's own match.
+                      simp only [] at hStep
                       have hObjInv1 : st1.objects.invExt :=
                         hRecvInvExt st1 _ hRecv
-                      have hSC := stageWokenSendCompletion_preserves_ipcInvariantFull st1
-                        ((st.getEndpoint? epId).bind (·.sendQ.head)) hObjInv1 hRecvInv
-                      have hSCobj := stageWokenSendCompletion_objects_invExt st1
-                        ((st.getEndpoint? epId).bind (·.sendQ.head)) hObjInv1
-                      rw [← hStep]
-                      exact stageDeliveredMessage_preserves_ipcInvariantFull _ tid _
-                        hSCobj hSC
+                      -- **WS-OD OD3.6**: the rendezvous donation runs between the
+                      -- receive and the staging, so the composition passes through
+                      -- it.  Its donor-blocked obligation comes from the arm's own
+                      -- guard (`rendezvousDequeuedCall_blockedOnReply`); only the
+                      -- whole-store not-owner fact is the pack's, and the pack
+                      -- states it over this very stage's committed state.
+                      -- **WS-OD OD3.14**: and the priority half runs with it,
+                      -- under one reading of the guard, so the composition passes
+                      -- through the hand-off rather than the donation alone.  The
+                      -- chain walk adds no obligation: it writes `pipBoost` and
+                      -- run-queue buckets, which the bundle reads nowhere.
+                      cases hDonation : applyReceiveRendezvousHandoff st1 tid nextThread
+                          (determineExecutingCore st tid) with
+                      | error e => rw [hDonation] at hStep; simp only [] at hStep; cases hStep
+                      | ok stDon =>
+                          rw [hDonation] at hStep
+                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                          have hDonInv : ipcInvariantFull stDon :=
+                            applyReceiveRendezvousHandoff_preserves_ipcInvariantFull st1 stDon
+                              tid nextThread (determineExecutingCore st tid) hObjInv1 hRecvInv
+                              (fun s sTcb sc0 hs => by
+                                rw [hRecv] at hRecvNotOwner
+                                exact hRecvNotOwner s sTcb sc0 hs)
+                              hDonation
+                          have hDonObj : stDon.objects.invExt :=
+                            applyReceiveRendezvousHandoff_preserves_objects_invExt st1 stDon
+                              tid nextThread (determineExecutingCore st tid) hObjInv1 hDonation
+                          have hSC := stageWokenSendCompletion_preserves_ipcInvariantFull stDon
+                            ((st.getEndpoint? epId).bind (·.sendQ.head)) hDonObj hDonInv
+                          have hSCobj := stageWokenSendCompletion_objects_invExt stDon
+                            ((st.getEndpoint? epId).bind (·.sendQ.head)) hDonObj
+                          rw [← hStep]
+                          exact stageDeliveredMessage_preserves_ipcInvariantFull _ tid _
+                            hSCobj hSC
         all_goals try cases hStep
       case call =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1644,8 +1697,47 @@ private theorem witnessSt3_getTcb :
   rw [witnessSt3_lookup]
   simp [show (witnessScId.toObjId == witnessTid.toObjId) = false from by decide]
 
+/-- WS-OD OD3.6: the witness store holds exactly one TCB, so any thread that
+resolves in it resolves to that one -- which is what makes the rendezvous
+donation's not-owner conjunct decidable on the witness rather than assumed. -/
+private theorem witnessSt3_getTcb_unique (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (hs : witnessSt3.getTcb? s = some sTcb) : sTcb = witnessTcbBound := by
+  have h := hs
+  unfold SystemState.getTcb? at h
+  rw [witnessSt3_lookup] at h
+  by_cases h1 : witnessScId.toObjId == s.toObjId
+  · rw [if_pos h1] at h; exact absurd h (by simp)
+  · rw [if_neg h1] at h
+    by_cases h2 : witnessTid.toObjId == s.toObjId
+    · rw [if_pos h2] at h; exact (Option.some.inj h).symm
+    · rw [if_neg h2] at h; exact absurd h (by simp)
+
+/-- WS-OD OD2.6: the bound-SchedContext witness store holds no Reply — the fact
+the chain conjunct's first two clauses are discharged from. -/
+private theorem witnessSt3_no_reply (rid : SeLe4n.ReplyId) (r : Reply)
+    (hLk : witnessSt3.objects[rid.toObjId]? = some (.reply r)) : False := by
+  rw [witnessSt3_lookup] at hLk
+  split at hLk
+  · simp at hLk
+  · split at hLk
+    · simp at hLk
+    · cases hLk
+
+/-- WS-OD OD2.6: the one SchedContext in the witness store heads no reply
+stack, so its chain is the empty one. -/
+private theorem witnessSt3_no_stack_head (scId : SeLe4n.SchedContextId)
+    (sc : SchedContext)
+    (hLk : witnessSt3.objects[scId.toObjId]? = some (.schedContext sc)) :
+    sc.scReply = none := by
+  rw [witnessSt3_lookup] at hLk
+  split at hLk
+  · cases hLk; rfl
+  · split at hLk
+    · simp at hLk
+    · cases hLk
+
 private theorem witnessReachable3 : ipcReachable witnessSt3 := by
-  refine ⟨witnessInv3, witnessObjInv3, ?_, ?_, ?_⟩
+  refine ⟨witnessInv3, witnessObjInv3, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
@@ -1667,6 +1759,11 @@ private theorem witnessReachable3 : ipcReachable witnessSt3 := by
     · split at hLk
       · cases hLk
       · cases hLk
+  · -- WS-OD OD2.6: no Reply carries a donation and no SchedContext heads a
+    -- stack, so the chain invariant holds by evaluation.
+    exact donationChainWellFormed_of_no_donations _
+      (fun rid r hR => absurd hR (fun h => witnessSt3_no_reply rid r h))
+      witnessSt3_no_stack_head
 
 private def witnessDecoded : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default, syscallId := .send }
@@ -2181,7 +2278,7 @@ theorem syscallDispatchQuiescence_inhabited_receive :
     simp only [resolveRecvReplyId, witnessDecodedRecv] at hRes
     injection hRes with hOpt
     subst hOpt
-    refine ⟨?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_⟩
     · intro rid h; cases h
     · intro tcb hTcb m hMsg
       cases Option.some.inj (witnessSt3_getTcb.symm.trans hTcb)
@@ -2189,6 +2286,11 @@ theorem syscallDispatchQuiescence_inhabited_receive :
     · intro st1 res hStep
       obtain rfl : st1 = _ := (congrArg Prod.fst hStep).symm
       exact witnessObjInv3
+    · -- WS-OD OD3.6: the receive commits nothing on the absent endpoint, and the
+      -- one TCB the witness store holds is `.bound`, never a donation's owner.
+      intro s sTcb sc0 hs
+      rw [witnessSt3_getTcb_unique s sTcb hs]
+      simp [witnessTcbBound, witnessTcbFresh]
   · intro rid r callerTid hSy
     simp [witnessDecodedRecv] at hSy
   · intro notifId hSy
@@ -2438,7 +2540,7 @@ private theorem witnessInv4 : ipcInvariantFull witnessSt4 := by
 
 set_option maxHeartbeats 1000000 in
 private theorem witnessReachable4 : ipcReachable witnessSt4 := by
-  refine ⟨witnessInv4, witnessObjInv4, ?_, ?_, ?_⟩
+  refine ⟨witnessInv4, witnessObjInv4, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hLk
     rw [witnessSt4_lookup] at hLk
     split at hLk
@@ -2454,6 +2556,20 @@ private theorem witnessReachable4 : ipcReachable witnessSt4 := by
     split at hLk
     · cases hLk
     · exact absurd hLk (fun h => witnessSt3_no_notification _ _ h)
+  · -- WS-OD OD2.6: the fresh Reply this state adds carries neither a donation
+    -- nor a stack link (`Reply.empty`'s defaults), and the SchedContext beneath
+    -- it still heads no stack.
+    refine donationChainWellFormed_of_no_donations _ ?_ ?_
+    · intro rid r hR
+      rw [witnessSt4_lookup] at hR
+      split at hR
+      · cases hR; exact ⟨rfl, rfl⟩
+      · exact absurd hR (fun h => witnessSt3_no_reply rid r h)
+    · intro scId sc hSc
+      rw [witnessSt4_lookup] at hSc
+      split at hSc
+      · cases hSc
+      · exact witnessSt3_no_stack_head scId sc hSc
 
 private theorem witnessSt4_getTcb :
     witnessSt4.getTcb? witnessTid = some witnessTcbBound := by

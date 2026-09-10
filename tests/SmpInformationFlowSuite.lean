@@ -7860,6 +7860,43 @@ private def ipcFootprintState : SystemState :=
           (.endpoint { sendQ := { head := some ipcSender, tail := some ipcSender },
                        receiveQ := { head := some ipcReceiver, tail := some ipcReceiver } })) }
 
+/-- **WS-OD OD3.6** — the SchedContext a rendezvous donates.  Only the sender's
+`schedContextBinding` is read (`endpointCallDonatedSc?`), so the fixture need
+not store the object itself. -/
+private def ipcDonatedScId : SeLe4n.SchedContextId := ⟨1045⟩
+
+/-- A parked `Call` sender holding its own budget, with a caps-bearing message:
+the rendezvous both installs and donates. -/
+private def ipcDonatingSenderTcb : TCB :=
+  { ipcSenderTcb with schedContextBinding := .bound ipcDonatedScId }
+
+/-- ...and the **passive-server steady state**: the same donating sender with a
+capless message.  This is the arm OD3.6 exists for — it writes
+`SystemState.scThreadIndex` and installs no capability, so a state-level member
+conditioned on `installsCaps` alone would be absent exactly here. -/
+private def ipcDonatingCaplessSenderTcb : TCB :=
+  { mkTcb 1044 40 (some c0) with
+      pendingMessage := some ipcCaplessMessage,
+      schedContextBinding := .bound ipcDonatedScId }
+
+/-- The fixture with a donating, caps-carrying rendezvous sender. -/
+private def ipcDonatingFootprintState : SystemState :=
+  { ipcFootprintState with
+      objects := ipcFootprintState.objects.insert ipcSender.toObjId (.tcb ipcDonatingSenderTcb) }
+
+/-- The fixture with a donating, capless rendezvous sender. -/
+private def ipcDonatingCaplessFootprintState : SystemState :=
+  { ipcFootprintState with
+      objects :=
+        ipcFootprintState.objects.insert ipcSender.toObjId (.tcb ipcDonatingCaplessSenderTcb) }
+
+/-- ...and one that neither donates nor installs, for the negatives. -/
+private def ipcInertFootprintState : SystemState :=
+  { ipcFootprintState with
+      objects :=
+        ipcFootprintState.objects.insert ipcSender.toObjId
+          (.tcb { mkTcb 1044 40 (some c0) with pendingMessage := some ipcCaplessMessage }) }
+
 /-- The operands a live `.send` supplies: the endpoint its capability names and
 the message it built. -/
 private def ipcSendOperands (msg : IpcMessage) : Concurrency.SyscallLockOperands :=
@@ -7943,6 +7980,42 @@ private def runIpcDeclaredFootprintChecks : IO Unit := do
     (ipcDeclaredMember (Concurrency.lockSetForSyscall .replyRecv
       (.ofReplyTarget lowCurrent ipcReplyId (some lowEndpoint)) ipcFootprintState)
       Concurrency.stateLevelLock .write)
+  -- **WS-OD OD3.6's finding, at runtime.**  `.receive` performed no donation at
+  -- all, so it declared none — seL4-MCS's `receiveIPC` hands a dequeued `Call`
+  -- caller's scheduling context to a passive receiver, and this arm skipped it
+  -- while `.replyRecv` did it.  The resolver reads the same send-queue head the
+  -- `senderTid` member does, so these run against a fixture whose head is a
+  -- `.bound` caller rather than asserting a shape no state produces.
+  assertBool "the rendezvous resolver finds the donation on a `.bound` sender"
+    (decide (receiveRendezvousDonatedSc? ipcDonatingFootprintState lowEndpoint
+      = some ipcDonatedScId))
+  assertBool "a donating `.receive` declares the donated SchedContext write"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcDonatingFootprintState)
+      (Concurrency.schedContextLock ipcDonatedScId) .write)
+  -- The passive-server steady state: donates, installs nothing, and STILL
+  -- declares the state-level lock — `scThreadIndex` is an `RHTable` whose insert
+  -- may rehash, so no per-object member covers it.  This is the case a member
+  -- conditioned on `installsCaps` alone would miss.
+  assertBool "a capless donating `.receive` declares the state-level write"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcDonatingCaplessFootprintState)
+      Concurrency.stateLevelLock .write)
+  assertBool "...and the donated SchedContext write with it"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcDonatingCaplessFootprintState)
+      (Concurrency.schedContextLock ipcDonatedScId) .write)
+  -- NEGATIVE: a rendezvous with an `.unbound` sender carrying no capability
+  -- declares neither member, so both track the write rather than being
+  -- unconditionally present.
+  assertBool "NEGATIVE: a non-donating capless `.receive` declares no SchedContext"
+    (decide (¬ ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcInertFootprintState)
+      (Concurrency.schedContextLock ipcDonatedScId) .write))
+  assertBool "NEGATIVE: ...nor the state-level write"
+    (decide (¬ ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcInertFootprintState)
+      Concurrency.stateLevelLock .write))
   -- NEGATIVE: and a **capless** send does not, so the member tracks the write
   -- rather than being unconditionally present.
   assertBool "NEGATIVE: a capless `.send` does not declare the state-level write"

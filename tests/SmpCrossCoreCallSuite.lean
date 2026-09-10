@@ -60,6 +60,16 @@ open SeLe4n.Testing
 #check @endpointCallServerFirstReply?
 #check @lockSet_endpointCallOnCore
 #check @lockSet_endpointCallOnCore_correct
+-- WS-OD OD3.11: the one TCB a rendezvous-or-block writes besides its two
+-- principals -- the promoted head on a pop, the old tail on an enqueue.
+#check @endpointQueueStructureNeighbor?
+#check @sendSideQueueStructureNeighbor?
+#check @sendSideQueueStructureNeighbor?_rendezvous
+#check @sendSideQueueStructureNeighbor?_block
+#check @lockSet_endpointCallOnCore_covers_queueNeighbour
+#check @lockSet_endpointSendOnCore_covers_queueNeighbour
+#check @lockSetForSyscall_call_covers_queueNeighbour
+#check @lockSetForSyscall_send_covers_queueNeighbour
 #check @lockSet_endpointCallWithCaps
 #check @removeRunnableOnCore_bootCoreId
 
@@ -274,11 +284,19 @@ private def runLockSetChecks : IO Unit := do
   assertBool "endpointCall lock-set keys are duplicate-free"
     (decide ((lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid)
         (some scId)).pairs.map (·.fst)).Nodup)
-  -- SM6.A.5: donating extends the footprint by exactly the SC write lock.
-  assertBool "donation extends the lock-set by the SchedContext write lock"
+  -- SM6.A.5: donating extends the footprint by exactly the SC write lock —
+  -- **and, since WS-OD OD3.5, by the state-level lock as well**, because
+  -- `donateSchedContext` maintains `SystemState.scThreadIndex`, an `RHTable`
+  -- whose insert may rehash and which therefore does not decompose by object.
+  -- This mirrors `lockSet_endpointCall_donation_extension`; the two must not
+  -- drift.
+  assertBool "donation extends the lock-set by the SchedContext and state-level write locks"
     (decide (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) (some scId)
-      = lockSetExtendOpt (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) none)
-          (some (schedContextLock scId, .write))))
+      = lockSetExtendOpt
+          (lockSetExtendOpt
+            (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) none)
+            (some (schedContextLock scId, .write)))
+          (some (stateLevelLock, .write))))
   -- SM6.A.6: the caller-TCB *write* lock — covering the reply-blocked-state
   -- write — is concretely a declared member of the footprint (the membership
   -- behind `lockSet_endpointCall_caller_tcb_write_mem`, on distinct caller/recv).
@@ -479,6 +497,15 @@ private def runRendezvousChecks : IO Unit := do
 -- WS-RR RR3.13/RR3.14 — the pre-state side: the bundles' preconditions, derived:
 #check @ipcReachable
 #check @ipcReachable_default
+-- WS-OD OD2 — the donation chain: the predicate, its walk, its frame family,
+-- and the two witnesses that keep it from being discharged only vacuously.
+#check @donationChainWellFormed
+#check @donationChainFrom
+#check @replyStackLinksAt?
+#check @donationChainFrame
+#check @donationChainWellFormed_of_frame
+#check @donationChainWellFormed_of_no_donations
+#check @donationChainWitness_wellFormed
 #check @readyThread_endpointQueueFresh
 #check @readyThread_ownsNoDonation
 #check @sendTailCrossQueueFresh
@@ -652,6 +679,119 @@ carry could be an unsatisfiable conjunction, and every theorem taking them would
 be vacuous: the failure shape de-threading exists to remove, one level up. -/
 example : ipcReachable (default : SystemState) := ipcReachable_default
 
+/-- WS-OD OD2.4: the donation-chain conjunct **decides** rather than refuses.
+Every reachable state discharges it vacuously today — the donation pop is the
+only transition that writes the three reply-stack fields, and its writing arm
+needs a stack nothing yet constructs — and a conjunct that only ever fires
+vacuously is one nobody has checked against the structure it constrains: an
+over-strong one would look identical from that side.  The witness is the state a
+depth-2 Call chain leaves, and it satisfies the predicate whole, completeness
+clause included. -/
+example : donationChainWellFormed donationChainWitness :=
+  donationChainWitness_wellFormed
+
+/-- WS-OD OD2.4: ...and the walk from the context's own head returns the whole
+stack, innermost first — computed, not asserted. -/
+example :
+    donationChainFrom donationChainWitness donationChainWitnessContext 2
+        (some donationChainWitnessInner)
+      = some [donationChainWitnessInner, donationChainWitnessOuter] :=
+  donationChainWitness_chain
+
+/-! ### WS-OD OD3.8 — the pop, exercised on the depth-2 witness
+
+The pop's chain-preservation theorem has two arms, and only one of them is
+reachable on any state this tree produces: with no context heading a stack the
+`head? = none` arm frames the chain outright and says nothing about the reply
+links.  A theorem exercised only on that arm would be indistinguishable from one
+whose `some` arm is wrong, which is the shape OD2.4's witness exists to refuse —
+so the witness is popped here, and the state the pop leaves is shown to satisfy
+the predicate whole and to head exactly the tail of the stack it started with. -/
+
+private theorem witnessChainContextObject :
+    donationChainWitness.getSchedContext? donationChainWitnessContext
+      = some witnessChainSchedContext := by
+  rw [SystemState.getSchedContext?_eq_some_iff, donationChainWitness_lookup_cases]
+  rw [show (donationChainWitnessInner.toObjId == donationChainWitnessContext.toObjId) = false from
+        by decide,
+      show (donationChainWitnessOuter.toObjId == donationChainWitnessContext.toObjId) = false from
+        by decide]
+  simp
+
+private theorem witnessChainOuterObject :
+    donationChainWitness.objects[donationChainWitnessOuter.toObjId]?
+      = some (.reply witnessChainOuterReply) := by
+  rw [donationChainWitness_lookup_cases]
+  rw [show (donationChainWitnessInner.toObjId == donationChainWitnessOuter.toObjId) = false from
+        by decide,
+      show (donationChainWitnessOuter.toObjId == donationChainWitnessOuter.toObjId) = true from
+        by decide]
+  simp
+
+private theorem witnessChainValidatedHead :
+    donationHeadOf? donationChainWitness donationChainWitnessContext
+        witnessChainSchedContext
+      = .ok (some (donationChainWitnessInner, witnessChainInnerReply)) := by
+  have hInner : donationChainWitness.getReply? donationChainWitnessInner
+      = some witnessChainInnerReply := by
+    rw [SystemState.getReply?_eq_some_iff, donationChainWitness_lookup_cases]
+    simp
+  unfold donationHeadOf?
+  rw [show witnessChainSchedContext.scReply = some donationChainWitnessInner from rfl]
+  simp only []
+  rw [hInner]
+  simp [witnessChainInnerReply]
+
+/-- WS-OD OD3.8: **the pop preserves the chain on a stack that is actually two
+frames deep.**  The head the operation clears is the inner call's reply, and the
+context is left heading the outer one — the `head? = some` arm, which no state
+this tree reaches exercises. -/
+theorem donationChainWitness_pop_wellFormed
+    (owner : SeLe4n.ThreadId) {s1 s2 : SystemState}
+    (hS1 : storeObject donationChainWitnessContext.toObjId
+      (.schedContext { witnessChainSchedContext with
+          boundThread := some owner, scReply := some donationChainWitnessOuter })
+      donationChainWitness = .ok ((), s1))
+    (hClear : storeDonationHeadClear (some donationChainWitnessInner) s1 = .ok s2) :
+    donationChainWellFormed s2 :=
+  donationHeadPop_preserves_donationChainWellFormed
+    (head? := some (donationChainWitnessInner, witnessChainInnerReply))
+    donationChainWitness_objects_invExt donationChainWitness_wellFormed
+    witnessChainContextObject witnessChainValidatedHead hS1 hClear
+
+/-- WS-OD OD3.8: ...and the stack the popped context heads is **exactly the tail**
+of the one it headed before — computed on the post-state's own object store, not
+read off the invariant.  With `donationChainWitness_chain` on the other side, the
+pop is seen to consume one frame and leave the rest intact. -/
+theorem donationChainWitness_pop_chain
+    (owner : SeLe4n.ThreadId) {s1 s2 : SystemState}
+    (hS1 : storeObject donationChainWitnessContext.toObjId
+      (.schedContext { witnessChainSchedContext with
+          boundThread := some owner, scReply := some donationChainWitnessOuter })
+      donationChainWitness = .ok ((), s1))
+    (hClear : storeDonationHeadClear (some donationChainWitnessInner) s1 = .ok s2) :
+    donationChainFrom s2 donationChainWitnessContext 1 (some donationChainWitnessOuter)
+      = some [donationChainWitnessOuter] := by
+  have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt
+    donationChainWitness s1 _ _ donationChainWitness_objects_invExt hS1
+  obtain ⟨r0, _, hS2⟩ := storeDonationHeadClear_some_ok hClear
+  have hOuter1 : s1.objects[donationChainWitnessOuter.toObjId]?
+      = some (.reply witnessChainOuterReply) := by
+    rw [SeLe4n.Model.storeObject_objects_ne donationChainWitness s1 _ _ _
+      (by decide) donationChainWitness_objects_invExt hS1]
+    exact witnessChainOuterObject
+  have hOuter2 : s2.objects[donationChainWitnessOuter.toObjId]?
+      = some (.reply witnessChainOuterReply) := by
+    rw [SeLe4n.Model.storeObject_objects_ne s1 s2 _ _ _ (by decide) hInv1 hS2]
+    exact hOuter1
+  have hLinks : replyStackLinksAt? s2 donationChainWitnessOuter
+      = some (some donationChainWitnessContext, none) := by
+    unfold replyStackLinksAt?
+    rw [hOuter2]
+    simp [replyStackLinks?, witnessChainOuterReply]
+  rw [donationChainFrom_succ, hLinks]
+  simp
+
 /-- WS-RR RR3.13: the enqueueing bundles' freshness precondition is a
 **consequence**, not an assumption — a `.ready` thread cannot head or tail any
 endpoint queue, because every head and tail is blocked. -/
@@ -706,7 +846,13 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
 
 /-- WS-RR RR3.12: the donation return **upgrades** the relaxed invariant back to the
 full one — the other half of the reply chain's honest statement, and the reason the
-relaxation is a transient rather than a weakening. -/
+relaxation is a transient rather than a weakening.
+
+WS-OD OD3.2: the upgrade holds at **both** arms of the widened binding, so the
+statement takes an arbitrary `newOwner?` and the depth-≥ 2 obligation
+(`donationReturnOuterValid`) rather than restricting itself to the bottom of the
+reply stack — a version quantified only over `none` would have said nothing about
+the arm OD4 makes reachable. -/
 example (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (stcb : TCB)
@@ -714,10 +860,28 @@ example (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (hServerBind : stcb.schedContextBinding = .donated scId originalOwner)
     (hUnique : donationOwnerUnique st)
     (hInv : donationOwnerValidExcept st originalOwner)
-    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hOuter : donationReturnOuterValid st serverTid originalOwner newOwner?)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     donationOwnerValid st' :=
   returnDonatedSchedContext_establishes_donationOwnerValid_of_except st st' serverTid scId
-    originalOwner hObjInv stcb hServerObj hServerBind hUnique hInv h
+    originalOwner hObjInv stcb hServerObj hServerBind hUnique hInv newOwner? hOuter h
+
+/-- WS-OD OD3.2: ...and at the bottom of the reply stack the obligation is
+discharged outright, so the shape every call site in the tree produces today needs
+no new hypothesis at all. -/
+example (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (stcb : TCB)
+    (hServerObj : st.objects[serverTid.toObjId]? = some (.tcb stcb))
+    (hServerBind : stcb.schedContextBinding = .donated scId originalOwner)
+    (hUnique : donationOwnerUnique st)
+    (hInv : donationOwnerValidExcept st originalOwner)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner none = .ok st') :
+    donationOwnerValid st' :=
+  returnDonatedSchedContext_establishes_donationOwnerValid_of_except st st' serverTid scId
+    originalOwner hObjInv stcb hServerObj hServerBind hUnique hInv none
+    (donationReturnOuterValid_none st serverTid originalOwner) h
 
 /-- SM6.D completion (seL4-MCS one-object reuse): the composed cross-core
 `replyRecv` accepts a reply object that is *in use by the answered caller* —
@@ -800,6 +964,107 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     endpointRights receiverSlotBase st st' summary hInv hObjInv
     hMsgCaps hAllBudgetsNone hFreshSender hSendTailFresh
     hSenderNotRecv hSenderNotReply hSenderNotUnbound hStep c
+
+/-- **WS-OD OD3.11** fixture (rendezvous branch): two receivers queued, so the
+pop the `.call` performs promotes the *second* one to head and writes its TCB. -/
+private def stTwoReceivers? : Option SystemState :=
+  match endpointReceiveDual epId recvLocalTid (some replyId) stBase with
+  | .ok (_, st1) =>
+      match endpointReceiveDual epId recvRemoteTid none st1 with
+      | .ok (_, st2) => some st2
+      | .error _ => none
+  | .error _ => none
+
+/-- **WS-OD OD3.11** fixture (blocking branch): one sender already parked, so a
+second `.call` enqueues behind it and writes *its* TCB as the old tail. -/
+private def stOneParkedSender? : Option SystemState :=
+  match endpointCallOnCore epId recvLocalTid IpcMessage.empty bootCoreId stBase with
+  | (st1, .ok _) => some st1
+  | _ => none
+
+/-- §3.12: **WS-OD OD3.11** — the queue-structure neighbour, on both branches.
+
+`endpointQueuePopHead` relinks the popped thread's successor into the head and
+`endpointQueueEnqueue` relinks the enqueueing queue's old tail; the `.send` and
+`.call` footprints named neither, so a rendezvous on one core and a
+`.tcbSuspend` of the affected neighbour on another had provably disjoint
+footprints while both writing that TCB.  Both branches are exercised, and each
+is guarded against passing vacuously: the resolver must name a real thread, that
+thread's lock must be declared, and the transition must observably rewrite it. -/
+private def runQueueNeighbourFootprintChecks : IO Unit := do
+  IO.println "--- §3.12 WS-OD OD3.11 queue-structure neighbour footprint ---"
+  -- Rendezvous branch: the pop promotes the second receiver.
+  match stTwoReceivers? with
+  | none => assertBool "setup: two receivers queued" false
+  | some st =>
+      assertBool "setup: the receive queue is local -> remote"
+        (match st.getEndpoint? epId with
+         | some ep => decide (ep.receiveQ.head = some recvLocalTid
+             ∧ ep.receiveQ.tail = some recvRemoteTid)
+         | none => false)
+      assertBool "the resolver names the popped receiver's successor"
+        (decide (sendSideQueueStructureNeighbor? st epId = some recvRemoteTid))
+      let ls := lockSet_endpointCallOnCore st epId callerTid cnRoot
+      assertBool "the successor's TCB write lock is declared (rendezvous)"
+        (decide ((tcbLock recvRemoteTid, AccessMode.write) ∈ ls.pairs))
+      let (st', _) := endpointCallOnCore epId callerTid IpcMessage.empty bootCoreId st
+      assertBool "the call rewrites the promoted head's links"
+        (match st'.getTcb? recvRemoteTid with
+         | some t => decide (t.queuePrev = none ∧ t.queuePPrev = some .endpointHead)
+         | none => false)
+  -- Blocking branch: the enqueue relinks the old tail.
+  match stOneParkedSender? with
+  | none => assertBool "setup: one sender parked on the send queue" false
+  | some st =>
+      assertBool "setup: the send queue holds exactly the parked sender"
+        (match st.getEndpoint? epId with
+         | some ep => decide (ep.sendQ.head = some recvLocalTid
+             ∧ ep.sendQ.tail = some recvLocalTid ∧ ep.receiveQ.head = none)
+         | none => false)
+      assertBool "the resolver names the send queue's old tail"
+        (decide (sendSideQueueStructureNeighbor? st epId = some recvLocalTid))
+      let ls := lockSet_endpointCallOnCore st epId callerTid cnRoot
+      assertBool "the old tail's TCB write lock is declared (blocking)"
+        (decide ((tcbLock recvLocalTid, AccessMode.write) ∈ ls.pairs))
+      let (st', _) := endpointCallOnCore epId callerTid IpcMessage.empty bootCoreId st
+      assertBool "the call rewrites the old tail's queueNext"
+        (match st'.getTcb? recvLocalTid with
+         | some t => decide (t.queueNext = some callerTid)
+         | none => false)
+  -- NEGATIVE: an endpoint with an empty send queue and no receiver has no
+  -- neighbour at all -- the caller becomes the sole member, and nothing else is
+  -- written.  Mutating by deleting the member would be caught above; this keeps
+  -- it and changes the state.
+  assertBool "an empty endpoint declares no queue-structure neighbour"
+    (decide (sendSideQueueStructureNeighbor? stBase epId = none))
+  -- **WS-OD OD3.12**: the receive side is the mirror -- it pops the *send*
+  -- queue and blocks on the *receive* queue -- so the same two branches, with
+  -- the queues exchanged.
+  match stOneParkedSender? with
+  | none => assertBool "setup (receive side): one sender parked" false
+  | some st =>
+      assertBool "the receive-side resolver names the parked sender's successor"
+        (decide (receiveSideQueueStructureNeighbor? st epId = none))
+      let lsR := lockSet_endpointReceiveOnCore st epId callerTid cnRoot none
+      assertBool "a sole parked sender has no successor, so no member is declared"
+        (decide (lsR.pairs.all (fun p => p.1 ≠ tcbLock recvRemoteTid)))
+  match stTwoReceivers? with
+  | none => assertBool "setup (receive side): two receivers queued" false
+  | some st =>
+      -- With no sender parked, a `.receive` blocks and relinks the *receive*
+      -- queue's old tail -- here the second receiver.
+      assertBool "the receive-side resolver names the receive queue's old tail"
+        (decide (receiveSideQueueStructureNeighbor? st epId = some recvRemoteTid))
+      let lsR := lockSet_endpointReceiveOnCore st epId callerTid cnRoot none
+      assertBool "the old tail's TCB write lock is declared (receive, blocking)"
+        (decide ((tcbLock recvRemoteTid, AccessMode.write) ∈ lsR.pairs))
+      match endpointReceiveDualOnCore epId callerTid none bootCoreId st with
+      | (st', .ok _) =>
+          assertBool "the receive rewrites the old tail's queueNext"
+            (match st'.getTcb? recvRemoteTid with
+             | some t => decide (t.queueNext = some callerTid)
+             | none => false)
+      | (_, .error _) => assertBool "the blocking receive succeeds" false
 
 /-- SM6.D runtime: `threadHomeCore` and `determineTargetCore` agree on the
 suite fixtures (pinned → home core, unpinned → boot core). -/
@@ -908,21 +1173,25 @@ private def undeclaredDecl (st : SystemState) : Option Concurrency.LockSet :=
   declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
-/-- **PR #892 review round 6**: `.replyRecv`'s footprint declares for a
-non-delegated reply and **refuses** a delegated one.
+/-- **WS-OD OD3.5**: `.replyRecv`'s footprint declares for a delegated reply,
+and names the recorded server's TCB.
 
 `replyRecvBody` returns the donation of `(recordedReplyServer? st prevCaller).getD tid`,
 which on a delegated reply is not the invoking thread — so the transition writes
-that server's TCB and SchedContext while the footprint named neither.  The
-server's TCB write lock cannot be added: `lockSet_replyRecv`'s worst case is
-already `maxLockSetSize` exactly.  So the arm refuses and the bracket runs its
-undeclared fallback, which is always sound.
+that server's TCB while the footprint named neither it nor the second hand-off's
+SchedContext.  PR #892 review round 6 answered that by making the arm **refuse**,
+because the server's write lock had nowhere to go under a ceiling of nine; this
+witness pinned the refusal.  OD3.5 raised the ceiling to eleven and declared both
+missing members, so the delegated case is now *covered* rather than excused, and
+the property worth pinning inverted: the arm declares, and what it declares names
+the delegated server.
 
-The two states differ in **one field** — the answered caller's recorded reply
-target — which is the mutation this pins: keep every operand and change who the
-reply was issued to. -/
+The two states still differ in **one field** — the answered caller's recorded
+reply target — which is the mutation this pins: keep every operand and change who
+the reply was issued to.  What that mutation must now change is the *footprint*,
+not the decision to have one. -/
 private def runDelegatedReplyRecvFootprintChecks : IO Unit := do
-  IO.println "--- PR #892 round 6: `.replyRecv` refuses a delegated footprint ---"
+  IO.println "--- WS-OD OD3.5: `.replyRecv` declares for a delegated reply ---"
   let replier : SeLe4n.ThreadId := ⟨2⟩
   let prevCaller : SeLe4n.ThreadId := ⟨3⟩
   let delegate : SeLe4n.ThreadId := ⟨4⟩
@@ -958,14 +1227,38 @@ private def runDelegatedReplyRecvFootprintChecks : IO Unit := do
     (decide (SeLe4n.Kernel.recordedReplyServer? stDelegated prevCaller = some delegate))
   assertBool "a non-delegated `.replyRecv` declares a footprint"
     (Concurrency.lockSetForSyscall .replyRecv ops stOwn).isSome
-  assertBool "NEGATIVE: a delegated `.replyRecv` declares NONE"
-    (Concurrency.lockSetForSyscall .replyRecv ops stDelegated).isNone
-  -- And the declared one is inside the ceiling, which is why there is no room
-  -- for the delegated server's TCB.
-  assertBool "the declared footprint is at or under the ceiling"
-    (match Concurrency.lockSetForSyscall .replyRecv ops stOwn with
-     | some fp => decide (fp.size ≤ Concurrency.maxLockSetSize)
+  assertBool "…and so does a delegated one (OD3.5 — round 6's refusal is retired)"
+    (Concurrency.lockSetForSyscall .replyRecv ops stDelegated).isSome
+  -- The delegated server's TCB write lock is the member OD3.5 added.  It is a
+  -- key the non-delegated shape gets for free — there the recorded server IS the
+  -- invoking thread, so `insertOrMerge` folds it into the caller's own lock —
+  -- and the delegated shape must name separately.
+  assertBool "the delegated footprint names the recorded server's TCB write lock"
+    (match Concurrency.lockSetForSyscall .replyRecv ops stDelegated with
+     | some fp => decide ((tcbLock delegate, AccessMode.write) ∈ fp.pairs)
      | none => false)
+  assertBool "…which is a DISTINCT key from the invoking thread's"
+    (decide (tcbLock delegate ≠ tcbLock replier))
+  -- The mutation's payoff: changing who the reply was issued to changes the
+  -- footprint.  A declaration insensitive to the recorded server would satisfy
+  -- every assertion above about `stOwn` and still write a TCB it never named.
+  assertBool "NEGATIVE: the delegated footprint is not the non-delegated one"
+    (match Concurrency.lockSetForSyscall .replyRecv ops stOwn,
+           Concurrency.lockSetForSyscall .replyRecv ops stDelegated with
+     | some a, some b => !decide (a.pairs = b.pairs)
+     | _, _ => false)
+  assertBool "NEGATIVE: the non-delegated footprint does not name the delegate"
+    (match Concurrency.lockSetForSyscall .replyRecv ops stOwn with
+     | some fp => !decide ((tcbLock delegate, AccessMode.write) ∈ fp.pairs)
+     | none => false)
+  -- Both are inside the ceiling: OD3.5 raised it to eleven precisely so the
+  -- delegated shape fits rather than being refused.
+  assertBool "both declared footprints are at or under the ceiling"
+    (match Concurrency.lockSetForSyscall .replyRecv ops stOwn,
+           Concurrency.lockSetForSyscall .replyRecv ops stDelegated with
+     | some a, some b => decide (a.size ≤ Concurrency.maxLockSetSize)
+                      && decide (b.size ≤ Concurrency.maxLockSetSize)
+     | _, _ => false)
 
 /-- WS-RR RR7.12: the bracket, exercised. -/
 private def runDeclaredFootprintBracketChecks : IO Unit := do
@@ -1049,6 +1342,7 @@ def runSmpCrossCoreCallChecks : IO Unit := do
   runBlockingChecks
   runNoReceiverChecks
   runRendezvousChecks
+  runQueueNeighbourFootprintChecks
   runPerCoreBundleChecks
   runDeclaredFootprintBracketChecks
   runDelegatedReplyRecvFootprintChecks

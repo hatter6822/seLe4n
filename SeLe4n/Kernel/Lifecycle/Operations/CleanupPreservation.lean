@@ -386,13 +386,13 @@ theorem spliceOutMidQueueNode_tcb_lookup
           | some nextTid =>
             simp only []
             have hInv1 : (st.objects.insert prevTid.toObjId
-                (.tcb { prevTcb with queueNext := some nextTid })).invExt :=
+                (.tcb (queueUnlinkPredecessor tcb prevTcb))).invExt :=
               SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
             obtain ⟨t₁, hL1, hAff1⟩ :=
               insert_tcb_rewrite_lookup st.objects prevTid.toObjId k prevTcb
-                { prevTcb with queueNext := some nextTid } t0 hInv hL rfl hPre
+                (queueUnlinkPredecessor tcb prevTcb) t0 hInv hL rfl hPre
             cases hL2 : (st.objects.insert prevTid.toObjId
-                (.tcb { prevTcb with queueNext := some nextTid }))[nextTid.toObjId]? with
+                (.tcb (queueUnlinkPredecessor tcb prevTcb)))[nextTid.toObjId]? with
             | none => exact ⟨t₁, hL1, hAff1⟩
             | some obj2 =>
               cases obj2
@@ -400,9 +400,9 @@ theorem spliceOutMidQueueNode_tcb_lookup
                 obtain ⟨t₂, hL2', hAff2⟩ :=
                   insert_tcb_rewrite_lookup
                     (st.objects.insert prevTid.toObjId
-                      (.tcb { prevTcb with queueNext := some nextTid }))
+                      (.tcb (queueUnlinkPredecessor tcb prevTcb)))
                     nextTid.toObjId k nextTcb
-                    { nextTcb with queuePrev := some prevTid } t₁ hInv1 hL2 rfl hL1
+                    (queueUnlinkSuccessor tcb nextTcb) t₁ hInv1 hL2 rfl hL1
                 exact ⟨t₂, hL2', hAff2.trans hAff1⟩
               all_goals exact ⟨t₁, hL1, hAff1⟩
         all_goals
@@ -715,14 +715,14 @@ theorem spliceOutMidQueueNode_preserves_ipcInvariant
           | some nextTid =>
             simp only []
             have hInv1 : (st.objects.insert prevTid.toObjId
-                (.tcb { prevTcb with queueNext := some nextTid })).invExt :=
+                (.tcb (queueUnlinkPredecessor tcb prevTcb))).invExt :=
               SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
             have hIpc1 : ipcInvariant { st with
                 objects := st.objects.insert prevTid.toObjId
-                  (.tcb { prevTcb with queueNext := some nextTid }) } :=
+                  (.tcb (queueUnlinkPredecessor tcb prevTcb)) } :=
               ipcInvariant_insert_tcb st prevTid.toObjId _ hInv hIpc
             cases (st.objects.insert prevTid.toObjId
-                (.tcb { prevTcb with queueNext := some nextTid }))[nextTid.toObjId]? with
+                (.tcb (queueUnlinkPredecessor tcb prevTcb)))[nextTid.toObjId]? with
             | none => exact hIpc1
             | some obj2 =>
               cases obj2
@@ -730,7 +730,7 @@ theorem spliceOutMidQueueNode_preserves_ipcInvariant
                 exact ipcInvariant_insert_tcb
                   { st with
                       objects := st.objects.insert prevTid.toObjId
-                        (.tcb { prevTcb with queueNext := some nextTid }) }
+                        (.tcb (queueUnlinkPredecessor tcb prevTcb)) }
                   nextTid.toObjId _ hInv1 hIpc1
               all_goals exact hIpc1
         all_goals
@@ -863,7 +863,7 @@ theorem cleanupDonatedSchedContext_preserves_objects_invExt
     injection h with h; subst h; exact hInv
   · split at h
     · -- `.donated scId originalOwner`: delegate to returnDonatedSchedContext.
-      exact returnDonatedSchedContext_preserves_objects_invExt _ _ _ _ _ hInv h
+      exact returnDonatedSchedContext_preserves_objects_invExt _ _ _ _ _ hInv none h
     · -- `.bound` / `.unbound`: identity.
       injection h with h; subst h; exact hInv
 
@@ -882,7 +882,7 @@ theorem cleanupDonatedSchedContext_preserves_ipcInvariant
   · split at h
     · intro oid ntfn hL
       exact hIpc oid ntfn
-        (returnDonatedSchedContext_notification_backward _ _ _ _ _ hInv h oid ntfn hL)
+        (returnDonatedSchedContext_notification_backward _ _ _ _ _ hInv none h oid ntfn hL)
     · injection h with h; subst h; exact hIpc
 
 /-- After cleanup, the cleaned thread is not in the run queue. -/
@@ -1540,16 +1540,21 @@ def queueNeighbourPatch (objs : RHTable SeLe4n.ObjId KernelObject)
 
 `rfl`, the same pin `removeFromAllEndpointQueues_eq_fold` is: the decomposition
 cannot drift from the operation without failing the build.  Naming the two steps
-is what turns a four-deep nested match into two applications of one lemma. -/
+is what turns a four-deep nested match into two applications of one lemma.
+
+**WS-OD OD3.9**: and the two `upd` functions are now `queueUnlinkPredecessor` /
+`queueUnlinkSuccessor` -- the definitions `endpointQueueRemove` uses -- rather
+than two lambdas spelled here.  The successor's used to be
+`fun n => { n with queuePrev := tcb.queuePrev }`, dropping `queuePPrev`; see
+`queueUnlinkSuccessor` for what that cost. -/
 theorem spliceOutMidQueueNode_eq_patches (st : SystemState) (tid : SeLe4n.ThreadId) :
     spliceOutMidQueueNode st tid =
       (match lookupTcb st tid with
        | none => st
        | some tcb =>
          { st with objects := (queueNeighbourPatch
-             (queueNeighbourPatch st.objects tcb.queuePrev
-               (fun p => { p with queueNext := tcb.queueNext }))
-             tcb.queueNext (fun n => { n with queuePrev := tcb.queuePrev })) }) := rfl
+             (queueNeighbourPatch st.objects tcb.queuePrev (queueUnlinkPredecessor tcb))
+             tcb.queueNext (queueUnlinkSuccessor tcb)) }) := rfl
 
 theorem queueNeighbourPatch_invExt (objs : RHTable SeLe4n.ObjId KernelObject)
     (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB) (hInv : objs.invExt) :
@@ -1642,7 +1647,7 @@ theorem spliceOutMidQueueNode_tcb_backward
   · exact ⟨t', hPost, tcbQueueLinkRewrite.refl t'⟩
   · rename_i tcb hT
     obtain ⟨t1, h1, r1⟩ := queueNeighbourPatch_backward _ tcb.queueNext _
-      (fun n => ⟨tcb.queuePrev, n.queuePPrev, n.queueNext, rfl⟩)
+      (fun n => ⟨tcb.queuePrev, tcb.queuePPrev, n.queueNext, rfl⟩)
       (queueNeighbourPatch_invExt _ _ _ hInv) k t' hPost
     obtain ⟨t0, h0, r0⟩ := queueNeighbourPatch_backward st.objects tcb.queuePrev _
       (fun p => ⟨p.queuePrev, p.queuePPrev, tcb.queueNext, rfl⟩) hInv k t1 h1
@@ -1757,8 +1762,33 @@ theorem spliceOutMidQueueNode_next_queuePrev (st : SystemState) (tid : SeLe4n.Th
     ∃ t', (spliceOutMidQueueNode st tid).objects[nextTid.toObjId]? = some (.tcb t') ∧
       t'.queuePrev = tcb.queuePrev := by
   obtain ⟨t1, h1, _⟩ := queueNeighbourPatch_tcb_forward st.objects tcb.queuePrev
-    (fun p => { p with queueNext := tcb.queueNext }) hInv nextTid.toObjId nextTcb hNext
-  refine ⟨{ t1 with queuePrev := tcb.queuePrev }, ?_, rfl⟩
+    (queueUnlinkPredecessor tcb) hInv nextTid.toObjId nextTcb hNext
+  refine ⟨(queueUnlinkSuccessor tcb t1), ?_, rfl⟩
+  rw [spliceOutMidQueueNode_eq_patches, hLookup]
+  simp only
+  exact queueNeighbourPatch_at_self' _ tcb.queueNext nextTid _
+    (queueNeighbourPatch_invExt _ _ _ hInv) t1 hN h1
+
+/-- **WS-OD OD3.9**: after the splice the swept thread's successor carries the
+swept thread's own `queuePPrev` -- the back-pointer half of the skip.
+
+The `queuePrev` half above was stated from the day the splice existed; this half
+was not, because the splice did not write it.  A successor left naming the swept
+thread fails `endpointQueueRemoveDual`'s `pprevConsistent` check in every case it
+has a successor at all, so it could never leave the endpoint queue again -- the
+defect WS-OD OD1.1 closed in `endpointQueueRemove` and this cut closed here. -/
+theorem spliceOutMidQueueNode_next_queuePPrev (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (nextTid : SeLe4n.ThreadId) (nextTcb : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st tid = some tcb)
+    (hN : tcb.queueNext = some nextTid)
+    (hNext : st.getTcb? nextTid = some nextTcb) :
+    ∃ t', (spliceOutMidQueueNode st tid).getTcb? nextTid = some t' ∧
+      t'.queuePPrev = tcb.queuePPrev := by
+  obtain ⟨t1, h1, _⟩ := queueNeighbourPatch_tcb_forward st.objects tcb.queuePrev
+    (queueUnlinkPredecessor tcb) hInv nextTid.toObjId nextTcb
+    ((SystemState.getTcb?_eq_some_iff st nextTid nextTcb).mp hNext)
+  refine ⟨queueUnlinkSuccessor tcb t1,
+    (SystemState.getTcb?_eq_some_iff _ nextTid _).mpr ?_, rfl⟩
   rw [spliceOutMidQueueNode_eq_patches, hLookup]
   simp only
   exact queueNeighbourPatch_at_self' _ tcb.queueNext nextTid _
@@ -1774,13 +1804,13 @@ theorem spliceOutMidQueueNode_prev_queueNext (st : SystemState) (tid : SeLe4n.Th
     ∃ t', (spliceOutMidQueueNode st tid).objects[prevTid.toObjId]? = some (.tcb t') ∧
       t'.queueNext = tcb.queueNext := by
   have hInner : (queueNeighbourPatch st.objects tcb.queuePrev
-      (fun p => { p with queueNext := tcb.queueNext }))[prevTid.toObjId]?
-      = some (.tcb { prevTcb with queueNext := tcb.queueNext }) :=
+      (queueUnlinkPredecessor tcb))[prevTid.toObjId]?
+      = some (.tcb (queueUnlinkPredecessor tcb prevTcb)) :=
     queueNeighbourPatch_at_self' st.objects tcb.queuePrev prevTid _ hInv prevTcb hP hPrev
   obtain ⟨t1, h1, hcase⟩ := queueNeighbourPatch_tcb_forward _ tcb.queueNext
-    (fun m => { m with queuePrev := tcb.queuePrev })
+    (queueUnlinkSuccessor tcb)
     (queueNeighbourPatch_invExt _ _ _ hInv) prevTid.toObjId
-    { prevTcb with queueNext := tcb.queueNext } hInner
+    (queueUnlinkPredecessor tcb prevTcb) hInner
   refine ⟨t1, ?_, ?_⟩
   · rw [spliceOutMidQueueNode_eq_patches, hLookup]
     simp only
@@ -1796,7 +1826,7 @@ theorem spliceOutMidQueueNode_queuePrev_frame (st : SystemState) (tid : SeLe4n.T
     ∃ t', (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t') ∧
       t'.queuePrev = t0.queuePrev := by
   obtain ⟨t1, h1, hcase⟩ := queueNeighbourPatch_tcb_forward st.objects tcb.queuePrev
-    (fun p => { p with queueNext := tcb.queueNext }) hInv k t0 hk
+    (queueUnlinkPredecessor tcb) hInv k t0 hk
   refine ⟨t1, ?_, ?_⟩
   · rw [spliceOutMidQueueNode_eq_patches, hLookup]
     simp only
@@ -1814,10 +1844,10 @@ theorem spliceOutMidQueueNode_queueNext_frame (st : SystemState) (tid : SeLe4n.T
     ∃ t', (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t') ∧
       t'.queueNext = t0.queueNext := by
   have hInner : (queueNeighbourPatch st.objects tcb.queuePrev
-      (fun p => { p with queueNext := tcb.queueNext }))[k]? = some (.tcb t0) := by
+      (queueUnlinkPredecessor tcb))[k]? = some (.tcb t0) := by
     rw [queueNeighbourPatch_at_other st.objects tcb.queuePrev _ hInv k hNe]; exact hk
   obtain ⟨t1, h1, hcase⟩ := queueNeighbourPatch_tcb_forward _ tcb.queueNext
-    (fun n => { n with queuePrev := tcb.queuePrev })
+    (queueUnlinkSuccessor tcb)
     (queueNeighbourPatch_invExt _ _ _ hInv) k t0 hInner
   refine ⟨t1, ?_, ?_⟩
   · rw [spliceOutMidQueueNode_eq_patches, hLookup]

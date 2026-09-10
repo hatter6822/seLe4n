@@ -120,8 +120,12 @@ any conjunct on a **post** state as a hypothesis — a threaded conjunct would
 make the theorem assume what it claims to prove.
 `scripts/check_ipc_invariant_dethreading.py` (Tier 0) measures this over the
 comment-free code view, deriving the conjunct set and each bundle's own
-pre-state rather than matching binder names, and reports zero across all 146
-statements.
+pre-state rather than matching binder names, and reports **zero** conjuncts
+bound on a post-state across all **172** statements in the family, with the
+conjunct set and the bundle family both derived from the sources.  The figure is
+spelled in the form the gate reads, so a cut that grows the family fails until
+this sentence is corrected — it said 146 while the tree measured 170, unwatched,
+because the claim was phrased in words the gate's locator does not match.
 
 The payoff is at the dispatcher:
 
@@ -144,6 +148,35 @@ unsatisfiable pack field cannot hide. The state-shaped fields are collected in
 > `ipcInvariantFullExceptDonationOwner`, which the donation return upgrades back.
 > Do not assume `ipcInvariantFull` of a state between a reply and its donation
 > return.
+
+**The donation chain sits beside the bundle, not inside it.** WS-OD OD2
+(`v0.34.125`) added `SchedContext.scReply` — the head of a context's MCS reply
+stack — and `donationChainWellFormed`
+([`Defs.lean`](../../SeLe4n/Kernel/IPC/Invariant/Defs.lean)): every
+`Reply.donatedSc` resolves, and each context's head walks a **terminating**
+`prev`-chain (`donationChainFrom`, fuel-bounded) holding **exactly** the replies
+naming that context. It is a conjunct of `ipcReachable`, not of
+`ipcInvariantFull`, which keeps its twenty; and it is *preserved* through
+`donationChainFrame` rather than assumed. The frame is stated over the two
+projections the walk actually reads (`replyStackLinks?`,
+`schedContextStackHead?`), so it **is** the read set rather than an
+over-approximation of it. The donation **pop** writes all three (WS-OD OD3.1,
+`v0.34.126`) and carries its own preservation theorem (OD3.8, `v0.34.132`), but
+its writing arm needs a stack nothing yet constructs, so the predicate is still
+vacuously true of every reachable state — deliberately: the invariant and its
+frames land before the transitions that must preserve them.
+
+OD3.1–OD3.3 (`v0.34.126`) landed the transition that **reads** it. The donation
+return is now a four-write reply-stack pop with a fail-closed head validation,
+and `returnDonatedSchedContext_eq_legacy_of_none` proves it is the pre-OD3 body
+at `newOwner? = none` over a context heading no stack — which every call site in
+the tree passes, so the behaviour is unchanged and OD4's push remains the only
+phase that changes it. Three statements moved with it, because three claims
+stopped being true: exact Reply preservation became a Reply **frame**, the
+binding trichotomy widened at the target, and the two reusable frames that
+asserted whole-object Reply identity dropped to the `caller` projection the
+conjunct they serve actually reads.
+See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.7 for the canonical text.
 
 ### 3.4 Lifecycle — `SeLe4n/Kernel/Lifecycle/Invariant/`
 
@@ -315,10 +348,10 @@ platform rather than with the lock.
 >
 > `lockSetForSyscall` answers `some` for eight of the thirty-five syscalls since
 > WS-RR RR7.11 — the suspend arm plus the seven IPC hot-path arms — each with its
-> coverage proof (`.replyRecv` only for a reply the replier itself recorded: the
-> transition returns the *recorded* server's donation, so a delegated reply would
-> need that server's own TCB lock and the arm is already at nine of nine, and it
-> answers `none` there), while the remaining twenty-seven answer `none` and their
+> coverage proof (`.replyRecv` declares for a **delegated** reply too since WS-OD
+> OD3.5: the transition returns the *recorded* server's donation, and that
+> server's own TCB lock is now declared unconditionally, so the round-6 refusal
+> that answered `none` there is retired), while the remaining twenty-seven answer `none` and their
 > callers keep the coarser serialisation. WS-RR RR7.12 makes the **syscall seam
 > acquire** those eight: the entry resolves the footprint from its own decode,
 > acquires, re-resolves at the state the growing phase ended in, refuses on
@@ -332,7 +365,32 @@ platform rather than with the lock.
 > (WS-RR RR7.39; two before it).
 > The same cut moved `maxLockSetSize` from 8 to 9: a `.replyRecv` that both
 > returns a donation and installs capabilities is nine locks, the ninth being
-> the state-level lock the install's derivation-tree write needs. See
+> the state-level lock the install's derivation-tree write needs. **WS-OD OD3.5
+> (`v0.34.128`) moved it again, 9 to 11**, on the same footprint: that arm
+> performs *two* SchedContext hand-offs and declared one, and the eleventh
+> member is the recorded server's own TCB, which is what lets a reply answered
+> through a delegated capability declare a footprint at all. **WS-OD OD3.7
+> (`v0.34.130`) moved it again, 11 to 13**, on the same footprint once more and
+> for the first time on objects the transition *reads*: the donation return walks
+> one link past the reply-stack head and then validates that frame's caller's TCB
+> before binding a context to it. **WS-OD OD3.13 (`v0.34.137`) moved it a fourth
+> time, 13 to 14**, for the queue-structure TCB the receive leg relinks — the
+> last of the four arms that were writing one without naming it. The constant is
+> the WCRT headline's first factor, so the per-lock critical section the RPi5's
+> 1 ms tick admits falls 37 µs → 30 µs → 25 µs → **23 µs** across the four cuts,
+> and the 60 µs envelope rises to 2520 µs. Every one of those figures is derived
+> from the constant by theorem, so read it off `admissibleCriticalSection`
+> rather than off this sentence. **WS-OD OD3.14 (`v0.34.141`) moved it not at
+> all**, deliberately: the priority-inheritance chain a receive rendezvous must
+> now walk is state-discovered and unbounded, so its locks are declared through
+> the `pipChainStart_<τ>` markers the SM3.C walker consumes rather than through
+> `lockSet_<τ>` — which is what keeps the static footprint an honest declaration
+> of the *static* locks.
+>
+> At HEAD, the declared lock-set ceiling is **14**, the RPi5 tick admits **23 µs** per lock, and the uniform 60 µs envelope is **2520 µs** —
+> the canonical spelling `scripts/check_lock_ceiling_figures.py` (Tier 0, WS-OD
+> OD3.15) holds to the Lean sources, so this chapter cannot go stale behind the
+> constant the way it did between OD3.7 and OD3.14. See
 > [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §SM3.C.9 for the
 > canonical statement.
 

@@ -1742,139 +1742,56 @@ private theorem returnDonatedSchedContext_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
-    (hReceiverObjHigh : objectObservable ctx observer serverTid.toObjId = false)
     (hObjInv : st.objects.invExt)
-    (hReturn : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hReturn : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st')
     (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
         st.objectIndexSet.contains oid = true)
     (hObjSetInv : st.objectIndexSet.table.invExt) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold returnDonatedSchedContext at hReturn
-  revert hReturn
-  cases hObj : st.objects[scId.toObjId]? with
-  | none => intro h; cases h
-  | some obj => cases obj with
-    | schedContext sc =>
-      simp only []
-      -- WS-RR RR2.8: the new `sc.boundThread = some serverTid` guard.
-      split
-      · intro h; cases h
-      · cases hS1 : storeObject scId.toObjId _ st with
-        | error _ => intro h; cases h
-        | ok p1 =>
-          simp only []
-          cases hL1 : lookupTcb p1.2 originalOwner with
-          | none => intro h; cases h
-          | some clientTcb =>
-            simp only []
-            cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
-            | error _ => intro h; cases h
-            | ok p2 =>
-              simp only []
-              cases hL2 : lookupTcb p2.2 serverTid with
-              | none => intro h; cases h
-              | some serverTcb =>
-                simp only []
-                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
-                | error _ => intro h; cases h
-                | ok p3 =>
-                  simp only [Except.ok.injEq]
-                  intro hEq; subst hEq
-                  have hInv1 := storeObject_preserves_objects_invExt st p1.2
-                      scId.toObjId _ hObjInv hS1
-                  have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2
-                      originalOwner.toObjId _ hInv1 hS2
-                  rw [projectState_scThreadIndex_eq,
-                      storeObject_preserves_projection ctx observer p2.2 p3.2
-                      serverTid.toObjId _ hReceiverObjHigh hInv2 hS3]
-                  have hScInSet := hIdxComplete scId.toObjId
-                      (by rw [hObj]; exact fun h => nomatch h)
-                  have hOwnerInSt : st.objects[originalOwner.toObjId]? ≠ none := by
-                    by_cases hEqIds : originalOwner.toObjId = scId.toObjId
-                    · rw [hEqIds, hObj]; exact fun h => nomatch h
-                    · rw [← storeObject_objects_ne st p1.2 scId.toObjId originalOwner.toObjId _
-                          hEqIds hObjInv hS1,
-                        lookupTcb_some_objects p1.2 originalOwner clientTcb hL1]
-                      exact fun h => nomatch h
-                  have hOwnerInSetP1 :
-                      (st.objectIndexSet.insert scId.toObjId).contains originalOwner.toObjId = true := by
-                    by_cases hEqIds : originalOwner.toObjId = scId.toObjId
-                    · rw [hEqIds]
-                      exact SeLe4n.Kernel.RobinHood.RHSet.contains_insert_self
-                        st.objectIndexSet scId.toObjId hObjSetInv
-                    · rw [SeLe4n.Kernel.RobinHood.RHSet.contains_insert_ne
-                        st.objectIndexSet scId.toObjId originalOwner.toObjId
-                        (fun heq => hEqIds (eq_of_beq heq).symm) hObjSetInv]
-                      exact hIdxComplete originalOwner.toObjId hOwnerInSt
-                  simp only [projectState]; congr 1
-                  · funext o; by_cases hObs : objectObservable ctx observer o
-                    · simp only [projectObjects, hObs, ite_true]
-                      by_cases hEqOwner : o = originalOwner.toObjId
-                      · subst hEqOwner
-                        rw [storeObject_objects_eq p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2]
-                        have hCO := lookupTcb_some_objects p1.2 originalOwner clientTcb hL1
-                        by_cases hEqSc : originalOwner.toObjId = scId.toObjId
-                        · rw [hEqSc] at hCO
-                          rw [storeObject_objects_eq st p1.2 scId.toObjId _ hObjInv hS1] at hCO
-                          cases hCO
-                        · rw [storeObject_objects_ne st p1.2 scId.toObjId originalOwner.toObjId _
-                              hEqSc hObjInv hS1] at hCO
-                          rw [hCO]; simp only [Option.map, projectKernelObject]
-                      · by_cases hEqSc : o = scId.toObjId
-                        · subst hEqSc
-                          rw [storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId scId.toObjId _
-                              hEqOwner hInv1 hS2,
-                              storeObject_objects_eq st p1.2 scId.toObjId _ hObjInv hS1, hObj]
-                          simp only [Option.map, projectKernelObject]
-                        · rw [storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId o _
-                                  hEqOwner hInv1 hS2,
-                              storeObject_objects_ne st p1.2 scId.toObjId o _
-                                  hEqSc hObjInv hS1]
-                    · simp [projectObjects, hObs]
-                  · simp [projectRunnable, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                        storeObject_scheduler_eq st p1.2 _ _ hS1]
-                  · simp [projectCurrent, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                        storeObject_scheduler_eq st p1.2 _ _ hS1]
-                  · unfold storeObject at hS2; cases hS2
-                    unfold storeObject at hS1; cases hS1; funext sid; rfl
-                  · simp [projectActiveDomain, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                        storeObject_scheduler_eq st p1.2 _ _ hS1]
-                  · funext irq; simp only [projectIrqHandlers,
-                        storeObject_irqHandlers_eq p1.2 p2.2 _ _ hS2,
-                        storeObject_irqHandlers_eq st p1.2 _ _ hS1]
-                  · simp only [projectObjectIndex]
-                    unfold storeObject at hS1; cases hS1
-                    unfold storeObject at hS2; cases hS2
-                    simp only [hOwnerInSetP1, ite_true, hScInSet, ite_true]
-                  · simp [projectDomainTimeRemaining, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                        storeObject_scheduler_eq st p1.2 _ _ hS1]
-                  · simp [projectDomainSchedule, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                        storeObject_scheduler_eq st p1.2 _ _ hS1]
-                  · simp [projectDomainScheduleIndex, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                        storeObject_scheduler_eq st p1.2 _ _ hS1]
-                  · simp [projectMachineRegs, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
-                        storeObject_scheduler_eq st p1.2 _ _ hS1,
-                        storeObject_machine_eq p1.2 p2.2 _ _ hS2,
-                        storeObject_machine_eq st p1.2 _ _ hS1]
-                  · rw [storeObject_preserves_projectMemory ctx observer p1.2 p2.2 _ _ hS2,
-                        storeObject_preserves_projectMemory ctx observer st p1.2 _ _ hS1]
-                  · rw [storeObject_preserves_projectServiceRegistry ctx observer p1.2 p2.2 _ _ hS2,
-                        storeObject_preserves_projectServiceRegistry ctx observer st p1.2 _ _ hS1]
-    | _ => simp only []; intro h; cases h
-
--- ============================================================================
--- WS-SM SM6.D (#7.1 fold): objectIndexSet-completeness threading for the
--- folded Call-path `linkCallerReply`. `linkCallerReply_preserves_projection`
--- needs `objectIndexSetComplete` at the state where the link runs (post
--- PopHead + storeTcbIpcStateAndMessage). Both intermediate ops only mutate
--- *existing* object keys (they `storeObject` at keys already present), so the
--- set of present keys is unchanged and `objectIndexSet` only ever grows by a
--- membership no-op `insert` — hence completeness transfers. The two helpers
--- below carry it through `storeTcbQueueLinks` (a single `storeObject`) and
--- through `endpointQueuePopHead` (≤3 `storeObject`s: the endpoint write plus
--- up to two queue-link writes), mirroring
--- `endpointQueuePopHead_preserves_objects_invExt`.
--- ============================================================================
+  -- WS-OD OD3.2: four projection-**stable** writes, composed off the operation's
+  -- own store chain.  Every field the return touches is stripped by
+  -- `projectKernelObject` — a SchedContext's `boundThread` and `scReply`, a
+  -- Reply's `donatedSc` and `prev`, a TCB's `schedContextBinding` — so the step
+  -- is invisible to *any* observer, not merely to one for whom the server is
+  -- high.  The `hReceiverObjHigh` hypothesis the pre-OD3 proof carried is gone:
+  -- it was never needed, and demanding it made the result unusable wherever the
+  -- server is low.
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? hReturn
+  have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hObjSetInv hS1
+  have hSet2 := storeDonationHeadClear_preserves_objectIndexSet_invExt hSet1 hClear
+  have hSet3 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s2 s3 _ _ hSet2 hS3
+  have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
+    hObjSetInv hIdxComplete hS1
+  have hC2 := storeDonationHeadClear_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
+  have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
+    hSet2 hC2 hS3
+  have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
+    scId.toObjId _ (.schedContext sc) hSc
+    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _)
+    (hIdxComplete scId.toObjId (by rw [hSc]; intro hx; cases hx))
+    hObjInv hS1
+  have hP2 := storeDonationHeadClear_preserves_projection ctx observer hC1 hInv1 hClear
+  have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
+    originalOwner.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 originalOwner clientTcb hL1)
+    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _)
+    (hC2 originalOwner.toObjId (by
+      rw [lookupTcb_some_objects s2 originalOwner clientTcb hL1]; intro hx; cases hx))
+    hInv2 hS3
+  have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
+    serverTid.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 serverTid serverTcb hL2)
+    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _)
+    (hC3 serverTid.toObjId (by
+      rw [lookupTcb_some_objects s3 serverTid serverTcb hL2]; intro hx; cases hx))
+    hInv3 hS4
+  have hFinal : projectState ctx observer st' = projectState ctx observer s4 := by
+    rw [hEq]; rfl
+  rw [hFinal, hP4, hP3, hP2, hP1]
 
 /-- WS-SM SM6.D (#7.1 fold): `storeTcbQueueLinks` preserves
 `objectIndexSetComplete` — it is a single `storeObject` at an existing key. -/
@@ -2200,14 +2117,14 @@ theorem endpointReceiveDual_preserves_projection
                   | bound _ => rfl
                   | donated scId originalOwner =>
                     simp only []
-                    cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
+                    cases hReturn : returnDonatedSchedContext st receiver scId originalOwner none with
                     | error _ => rfl
                     | ok st' =>
-                      -- AI4-A: S3 (receiver) is non-observable → use storeObject_preserves_projection.
-                      -- S1/S2 modify fields stripped by projectKernelObject.
-                      -- Full chain proof via returnDonatedSchedContext_preserves_projection (below).
+                      -- WS-OD OD3.2: every field the return writes is stripped by
+                      -- `projectKernelObject`, so no observability hypothesis on the
+                      -- receiver is needed at all.
                       exact returnDonatedSchedContext_preserves_projection ctx observer
-                        st st' receiver scId originalOwner hReceiverObjHigh hObjInv hReturn
+                        st st' receiver scId originalOwner hObjInv none hReturn
                         hIdxComplete hObjSetInv
               -- Common tail: from st2 back to st (storeTcbIpcState → enqueue → cleanup).
               have hProjTail : projectState ctx observer st2 = projectState ctx observer st := by

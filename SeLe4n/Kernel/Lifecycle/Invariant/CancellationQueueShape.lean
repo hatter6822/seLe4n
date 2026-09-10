@@ -879,9 +879,9 @@ theorem spliceOutMidQueueNode_tcb_forward (st : SystemState) (tid : SeLe4n.Threa
   · exact ⟨t0, h, tcbQueueLinkRewrite.refl t0⟩
   · rename_i tcb hT
     obtain ⟨t1, h1, hc1⟩ := queueNeighbourPatch_tcb_forward st.objects tcb.queuePrev
-      (fun p => { p with queueNext := tcb.queueNext }) hInv k t0 h
+      (queueUnlinkPredecessor tcb) hInv k t0 h
     obtain ⟨t2, h2, hc2⟩ := queueNeighbourPatch_tcb_forward _ tcb.queueNext
-      (fun n => { n with queuePrev := tcb.queuePrev })
+      (queueUnlinkSuccessor tcb)
       (queueNeighbourPatch_invExt _ _ _ hInv) k t1 h1
     have r1 : tcbQueueLinkRewrite t1 t0 := by
       rcases hc1 with rfl | rfl
@@ -890,7 +890,7 @@ theorem spliceOutMidQueueNode_tcb_forward (st : SystemState) (tid : SeLe4n.Threa
     have r2 : tcbQueueLinkRewrite t2 t1 := by
       rcases hc2 with rfl | rfl
       · exact tcbQueueLinkRewrite.refl _
-      · exact ⟨tcb.queuePrev, t1.queuePPrev, t1.queueNext, rfl⟩
+      · exact ⟨tcb.queuePrev, tcb.queuePPrev, t1.queueNext, rfl⟩
     exact ⟨t2, h2, r2.trans r1⟩
 
 /-- The composite, read forwards away from the swept thread. -/
@@ -993,9 +993,8 @@ theorem sweptAndRestored_replyLinkageFrame
     (hUnlinked : tcbV.replyObject = none) :
     replyLinkageFrame st (sweptAndRestored st v frame) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
-  refine ⟨?_, ?_, ?_⟩
-  · intro rid r
-    exact sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+  refine ⟨replyLinkageFrame.callerAgree_of_objectAgree (fun rid r => ?_), ?_, ?_⟩
+  · exact sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
       rid.toObjId (.reply r) (by simp) (by simp)
   · intro tid tcb' hTcb'
     obtain ⟨t0, h0, hcase⟩ :=
@@ -1091,7 +1090,13 @@ other field is untouched.
 This is the description `tcbQueueLinkRewrite` under-approximates.  The weak form
 is what the framing conjuncts need (they only ask that the *other* fields agree);
 the sharp form is what the queue-shape conjuncts need, because they ask what the
-rewritten links actually became. -/
+rewritten links actually became.
+
+**WS-OD OD3.9**: the successor's `queuePPrev` is rewritten with its `queuePrev`
+-- the two travel together, since the pair *is* the back-pointer
+`endpointQueueRemoveDual` validates.  The statement carried only `queuePrev`
+because the operation wrote only `queuePrev`; both are the removed thread's own,
+which is what `queueUnlinkSuccessor` says. -/
 theorem spliceOutMidQueueNode_tcb_value (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcbV : TCB) (hInv : st.objects.invExt) (hLookup : lookupTcb st tid = some tcbV)
     (a : SeLe4n.ThreadId) (t0 : TCB)
@@ -1099,18 +1104,19 @@ theorem spliceOutMidQueueNode_tcb_value (st : SystemState) (tid : SeLe4n.ThreadI
     (spliceOutMidQueueNode st tid).objects[a.toObjId]? =
       some (.tcb { t0 with
         queueNext := if tcbV.queuePrev = some a then tcbV.queueNext else t0.queueNext,
-        queuePrev := if tcbV.queueNext = some a then tcbV.queuePrev else t0.queuePrev }) := by
+        queuePrev := if tcbV.queueNext = some a then tcbV.queuePrev else t0.queuePrev,
+        queuePPrev := if tcbV.queueNext = some a then tcbV.queuePPrev else t0.queuePPrev }) := by
   rw [spliceOutMidQueueNode_eq_patches, hLookup]
   simp only
   have h1 := queueNeighbourPatch_tcb_value st.objects tcbV.queuePrev
-    (fun p => { p with queueNext := tcbV.queueNext }) hInv a t0 hPre
+    (queueUnlinkPredecessor tcbV) hInv a t0 hPre
   have h2 := queueNeighbourPatch_tcb_value
-    (queueNeighbourPatch st.objects tcbV.queuePrev (fun p => { p with queueNext := tcbV.queueNext }))
-    tcbV.queueNext (fun n => { n with queuePrev := tcbV.queuePrev })
+    (queueNeighbourPatch st.objects tcbV.queuePrev (queueUnlinkPredecessor tcbV))
+    tcbV.queueNext (queueUnlinkSuccessor tcbV)
     (queueNeighbourPatch_invExt _ _ _ hInv) a _ h1
   rw [h2]
   by_cases hp : tcbV.queuePrev = some a <;> by_cases hnx : tcbV.queueNext = some a <;>
-    simp [hp, hnx]
+    simp [hp, hnx, queueUnlinkPredecessor, queueUnlinkSuccessor]
 
 /-- The composite's sharp pointwise reading away from the swept thread — the
 sweep writes only endpoints and the restore only the swept thread, so the splice's
@@ -1123,7 +1129,8 @@ theorem sweptAndRestored_tcb_value (st : SystemState) (v : SeLe4n.ThreadId)
     (sweptAndRestored st v frame).objects[a.toObjId]? =
       some (.tcb { t0 with
         queueNext := if tcbV.queuePrev = some a then tcbV.queueNext else t0.queueNext,
-        queuePrev := if tcbV.queueNext = some a then tcbV.queuePrev else t0.queuePrev }) :=
+        queuePrev := if tcbV.queueNext = some a then tcbV.queuePrev else t0.queuePrev,
+        queuePPrev := if tcbV.queueNext = some a then tcbV.queuePPrev else t0.queuePPrev }) :=
   (sweptAndRestored_tcb_iff st v frame hInv a.toObjId _
     (fun hEq => hav (SeLe4n.ThreadId.toObjId_injective _ _ hEq))).mpr
     (spliceOutMidQueueNode_tcb_value st v tcbV hInv hLookup a t0 hPre)

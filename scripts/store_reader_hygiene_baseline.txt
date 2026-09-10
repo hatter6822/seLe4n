@@ -1,0 +1,248 @@
+# AK7 cascade baseline (AN10-D)
+#
+# Refreshed by WS-AN Phase AN10. Format: human-readable sections plus a
+# KEY=VALUE block for monotonicity-script consumption.
+#
+# Should-drop metrics: every subsequent commit must keep these <= baseline.
+# Should-grow metrics: every subsequent commit must keep these >= baseline.
+
+## Reader-side raw patterns (should-drop)
+
+raw_match_tcb            = 53
+raw_match_schedcontext   = 23
+raw_match_endpoint       = 9
+raw_match_notification   = 2
+raw_match_untyped        = 2
+raw_match_cnode          = 7
+raw_match_vspaceroot     = 15
+raw_match_total          = 111
+raw_match_unclassified   = 19
+raw_lookup_tid           = 1609
+
+## Typed-helper adoption (should-grow)
+
+gettcb_adoption          = 2092
+getschedctx_adoption     = 311
+getendpoint_adoption     = 180
+getnotification_adoption = 85
+getuntyped_adoption      = 11
+getcnode_adoption        = 81
+getvspaceroot_adoption   = 34
+
+## Writer-side wrapper adoption (should-grow)
+
+storeobjectchecked_adoption = 15
+
+## Dispatch-boundary sentinel guards (should-grow)
+
+sentinel_check_dispatch  = 57
+
+## Regression test counts (should-grow)
+
+reader_hygiene_suite_tests           = 45
+kerrormatrix_rows        = 47
+
+## Proof-surface health (should-stay-zero)
+
+sorry_count              = 0
+axiom_count              = 0
+
+## Machine-diffable block
+##
+## RAW_SITE / RAW_LOOKUP_SITE rows are the binding floors: the gate refuses any
+## (file, variant) pair absent from the baseline, and holds every pair present
+## to its recorded count. The scalars below are derived from those rows and are
+## kept as human-readable diagnostics.
+
+RAW_SITE=SeLe4n/Kernel/API.lean|dispatchSyscall|cnode|1
+RAW_SITE=SeLe4n/Kernel/API.lean|dispatchSyscall|tcb|1
+RAW_SITE=SeLe4n/Kernel/API.lean|dispatchSyscallChecked|cnode|1
+RAW_SITE=SeLe4n/Kernel/API.lean|dispatchSyscallChecked|tcb|1
+RAW_SITE=SeLe4n/Kernel/API.lean|lookupThreadRegisterContext|tcb|1
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpace.lean|resolveAsidRoot|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpace.lean|vspaceMapPage_entry_consistent_frame|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpace.lean|vspaceMapPage_resolveAsidRoot_isSome|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpace.lean|vspaceUnmapPage_entry_consistent_frame|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpace.lean|vspaceUnmapPage_resolveAsidRoot_isSome|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpaceInvariant.lean|asidTableConsistent_of_storeObject_vspaceRoot|vspaceRoot|2
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpaceInvariant.lean|vspaceLookupFull_after_map|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpaceInvariant.lean|vspaceLookup_after_map|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpaceInvariant.lean|vspaceLookup_after_unmap|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpaceInvariant.lean|vspaceLookup_map_other|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpaceInvariant.lean|vspaceLookup_unmap_other|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpaceInvariant.lean|vspaceMapPage_success_preserves_vspaceInvariantBundle|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Architecture/VSpaceInvariant.lean|vspaceUnmapPage_success_preserves_vspaceInvariantBundle|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Capability/Operations.lean|cspaceDeleteSlotCore|cnode|1
+RAW_SITE=SeLe4n/Kernel/Capability/Operations.lean|cspaceInsertSlot|cnode|1
+RAW_SITE=SeLe4n/Kernel/Capability/Operations.lean|cspaceMutate|cnode|1
+RAW_SITE=SeLe4n/Kernel/Capability/Operations.lean|cspaceRevoke|cnode|1
+RAW_SITE=SeLe4n/Kernel/Capability/Operations.lean|validateRevokeCdtDescendants|cnode|1
+RAW_SITE=SeLe4n/Kernel/CrossSubsystem.lean|untypedAncestorChain|untyped|1
+RAW_SITE=SeLe4n/Kernel/IPC/DualQueue/Core.lean|endpointQueueEnqueue|endpoint|1
+RAW_SITE=SeLe4n/Kernel/IPC/DualQueue/Core.lean|endpointQueuePopHead|endpoint|1
+RAW_SITE=SeLe4n/Kernel/IPC/DualQueue/Core.lean|endpointQueueRemove|endpoint|1
+RAW_SITE=SeLe4n/Kernel/IPC/DualQueue/Transport.lean|endpointCall|endpoint|1
+RAW_SITE=SeLe4n/Kernel/IPC/DualQueue/Transport.lean|endpointQueueRemoveDual|endpoint|1
+RAW_SITE=SeLe4n/Kernel/IPC/DualQueue/Transport.lean|endpointReceiveDual|endpoint|1
+RAW_SITE=SeLe4n/Kernel/IPC/DualQueue/Transport.lean|endpointSendDual|endpoint|1
+RAW_SITE=SeLe4n/Kernel/IPC/Invariant/Defs.lean|dualQueueEndpointWellFormed|endpoint|1
+RAW_SITE=SeLe4n/Kernel/IPC/Operations/Endpoint.lean|donateSchedContext|schedContext|1
+RAW_SITE=SeLe4n/Kernel/IPC/Operations/Endpoint.lean|lookupTcb|tcb|1
+RAW_SITE=SeLe4n/Kernel/IPC/Operations/Endpoint.lean|notificationSignal|notification|1
+RAW_SITE=SeLe4n/Kernel/IPC/Operations/Endpoint.lean|notificationWait|notification|1
+RAW_SITE=SeLe4n/Kernel/IPC/Operations/Endpoint.lean|returnDonatedSchedContext|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean|retypeStoreObject_tlbEntryConsistent_frame|vspaceRoot|1
+RAW_SITE=SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean|retypeFromUntyped|untyped|1
+RAW_SITE=SeLe4n/Kernel/Lifecycle/Suspend.lean|resumeThread|tcb|2
+RAW_SITE=SeLe4n/Kernel/Lifecycle/Suspend.lean|suspendThread|tcb|3
+RAW_SITE=SeLe4n/Kernel/Lifecycle/Suspend.lean|suspendThread_transientWindowInvariant|tcb|1
+RAW_SITE=SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean|schedContextConfigure_preserves_boundThreadDomainConsistent_caseC|schedContext|1
+RAW_SITE=SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean|schedContextConfigure_preserves_boundThreadDomainConsistent_caseC|tcb|1
+RAW_SITE=SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean|schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly|schedContext|1
+RAW_SITE=SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean|schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|boundThreadDomainConsistent|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|boundThreadDomainConsistent|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|budgetPositive|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|budgetPositive|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|contextMatchesCurrent|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|currentBudgetPositive|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|currentBudgetPositive|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|currentThreadInActiveDomain|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|currentTimeSlicePositive|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|edfCurrentHasEarliestDeadline|tcb|2
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|effectiveBucketPriority|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|effectiveBucketPriority_lookup_non_sc|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|effectiveParamsMatchRunQueue|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|effectiveParamsMatchRunQueue|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent|schedContext|2
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent|tcb|2
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|schedulerPriorityMatch|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|schedulerPriorityMatch_insert|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|timeSlicePositive|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|endpointQueueRemove_preserves_allThreadsTimeSlicePositive|tcb|2
+RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|updatePipBoost_self_timeSlice|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean|maxBudgetInBand|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean|maxBudgetInBand|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean|maxBudgetInBandOnCore|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean|maxBudgetInBandOnCore|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean|maxPeriodInBand|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean|maxPeriodInBand|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean|maxPeriodInBandOnCore|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean|maxPeriodInBandOnCore|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean|resolveEffectivePriority|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean|stepPost|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|handleYield|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|handleYieldWithBudget|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|handleYieldWithBudget|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|processReplenishmentsDue|schedContext|2
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|refillSchedContext|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|schedule|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|scheduleEffective|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|switchDomain|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|timerTick|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|timerTickBudget|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|timerTickWithBudget|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|budgetPositive_subset|schedContext|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|budgetPositive_subset|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|chooseBestInBucket_edf_bridge|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|setCurrentThread_some_preserves_currentTimeSlicePositive|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Selection.lean|restoreIncomingContext|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Selection.lean|restoreIncomingContextChecked|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Selection.lean|restoreIncomingContextOnCore|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Selection.lean|saveOutgoingContext|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Selection.lean|saveOutgoingContextChecked|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean|blockedOnThread|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean|blockingChain|tcb|1
+RAW_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean|updatePipBoost_self_ipcState|tcb|1
+RAW_SITE=SeLe4n/Kernel/Service/Registry.lean|registerService|endpoint|1
+RAW_LOOKUP_SITE=SeLe4n/Kernel/API.lean|9
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Architecture/Invariant.lean|5
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Architecture/IpcBufferRead.lean|4
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Architecture/IpcBufferValidation.lean|5
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Architecture/RegisterDecode.lean|2
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean|33
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Capability/Operations.lean|1
+RAW_LOOKUP_SITE=SeLe4n/Kernel/CrossSubsystem.lean|17
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean|1
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean|27
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean|1
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean|5
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean|4
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean|1
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/DualQueue/Core.lean|24
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/DualQueue/Transport.lean|18
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/Call.lean|8
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean|2
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/Defs.lean|156
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|74
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean|8
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean|9
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean|29
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean|10
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Wait.lean|3
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean|3
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean|59
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean|63
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean|1
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean|35
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/Reachability.lean|3
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean|285
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean|71
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean|68
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean|18
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Invariant/WaitingThreadHelpers.lean|2
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean|11
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Operations/Endpoint.lean|30
+RAW_LOOKUP_SITE=SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean|19
+RAW_LOOKUP_SITE=SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean|4
+RAW_LOOKUP_SITE=SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean|2
+RAW_LOOKUP_SITE=SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean|27
+RAW_LOOKUP_SITE=SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean|4
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean|13
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean|48
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean|3
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean|20
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean|2
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean|29
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Lifecycle/Suspend.lean|8
+RAW_LOOKUP_SITE=SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean|18
+RAW_LOOKUP_SITE=SeLe4n/Kernel/SchedContext/Invariant/PriorityPreservation.lean|2
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|74
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean|18
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|11
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean|33
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/Liveness/TimerTick.lean|2
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean|14
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/Liveness/WCRT.lean|2
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|23
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|89
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/Operations/Selection.lean|9
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean|10
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/Compute.lean|6
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean|1
+RAW_LOOKUP_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean|13
+
+RAW_MATCH_TCB=53
+RAW_MATCH_SCHEDCONTEXT=23
+RAW_MATCH_ENDPOINT=9
+RAW_MATCH_NOTIFICATION=2
+RAW_MATCH_UNTYPED=2
+RAW_MATCH_CNODE=7
+RAW_MATCH_VSPACEROOT=15
+RAW_MATCH_TOTAL=111
+RAW_MATCH_UNCLASSIFIED=19
+RAW_LOOKUP_TID=1609
+GETTCB_ADOPTION=2092
+GETSCHEDCTX_ADOPTION=311
+GETENDPOINT_ADOPTION=180
+GETNOTIFICATION_ADOPTION=85
+GETUNTYPED_ADOPTION=11
+GETCNODE_ADOPTION=81
+GETVSPACEROOT_ADOPTION=34
+STOREOBJECTCHECKED_ADOPTION=15
+SENTINEL_CHECK_DISPATCH=57
+READER_HYGIENE_SUITE_TESTS=45
+KERRORMATRIX_ROWS=47
+SORRY_COUNT=0
+AXIOM_COUNT=0

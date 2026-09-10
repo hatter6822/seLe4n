@@ -18,6 +18,33 @@
 # anchor name resolves, NOT that the corresponding kernel transition was
 # exercised on a populated state.  Behavioural validation lives in Tier 2
 # (`test_tier2_negative.sh`, `test_tier2_trace.sh`).
+#
+# ---------------------------------------------------------------------------
+# The bounded gap.  An anchor of the form "declaration X has property Y"
+# must not be written `X(.|\n)*Y`.  `(.|\n)*` is not a region: it runs to the
+# end of the file, so the anchor passes whenever X occurs anywhere before Y
+# occurs anywhere -- which is a presence check standing in for the relation
+# the anchor's own comment claims.  It fails **open** in a positive check
+# (the property can be gone and the gate still passes) and fires spuriously
+# in a negative one.  Two earlier rounds hit this and abandoned the wildcard
+# at the one site each was shown; a sweep at WS-OD OD3 found 45 positives
+# and 5 negatives still carrying it, of which **8 positives were at that
+# moment satisfied by text spanning a declaration boundary** -- one of them
+# crossing 43 declarations, so a lock footprint could have lost the member
+# the anchor exists to pin.
+#
+# Write the gap as
+#
+#     [^\n]*(\n([ \t][^\n]*)?)*
+#
+# which consumes the rest of X's line and then any run of indented or blank
+# lines.  A Lean declaration header sits at column 0, so the gap provably
+# cannot leave the declaration it started in.  Bounding a *positive* is
+# always safe (strictly stricter, so it can only fail closed); bounding a
+# *negative* is not, and every negative bounded in that sweep was
+# mutation-tested in both directions -- silent on the clean tree, firing on
+# a mutation that keeps the token and moves it into the target declaration.
+# ---------------------------------------------------------------------------
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -805,11 +832,11 @@ run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_establishes_ipcInv
 # and the capstone must conclude the relaxed bundle at the *removed* thread — a
 # capstone concluding the full bundle would be false of the state the operation
 # produces, and one concluding it at another thread would say nothing.
-run_check "INVARIANT" bash -lc 'rg -U -n "def ipcInvariantFullExceptMembership(.|\n)*ipcStateQueueMembershipConsistentExcept st ex" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership(.|\n)*ipcInvariantFullExceptMembership st. tid" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def ipcInvariantFullExceptMembership[^\n]*(\n([ \t][^\n]*)?)*ipcStateQueueMembershipConsistentExcept st ex" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFullExceptMembership st. tid" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
 # The tail conjunct is the one the bundle does not entail, so its theorem must
 # take the predecessor hypothesis rather than assume it away.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent(.|\n)*splicePredecessorBlocked isReceiveQ endpointId st tid" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent[^\n]*(\n([ \t][^\n]*)?)*splicePredecessorBlocked isReceiveQ endpointId st tid" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
 # **WS-RR RR7.22 (residual)**: the pair closes.  The splice relaxes exactly one
 # conjunct and the receive-completing store restores it, so the two compose back
 # to the full bundle — and the three detachment facts the store asks for are the
@@ -823,11 +850,11 @@ run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_detached' 
 # Relation, not presence: the keystone must conclude the **full** bundle from the
 # **relaxed** one, and must take the store as its own step.  A keystone stated
 # from the full bundle would be vacuous on the state the splice produces.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem storeTcbReceiveComplete_closes_exceptMembership(.|\n)*ipcInvariantFullExceptMembership st tid(.|\n)*storeTcbReceiveComplete st tid msg = .ok st.(.|\n)*ipcInvariantFull st." SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem storeTcbReceiveComplete_closes_exceptMembership[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFullExceptMembership st tid[^\n]*(\n([ \t][^\n]*)?)*storeTcbReceiveComplete st tid msg = .ok st.[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull st." SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
 # NEGATIVE: `tid` holding no reply object is derived from `hNotReply` and the
 # bundle's own reciprocity — re-adding it as a hypothesis pushes the two-step
 # argument back onto every caller.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem storeTcbReceiveComplete_closes_exceptMembership(.|\n)*\(hUnlinked :" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem storeTcbReceiveComplete_closes_exceptMembership[^\n]*(\n([ \t][^\n]*)?)*\(hUnlinked :" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
 # The live bound-delivery arm's payoff: the whole bundle, per core, and at the
 # flow-checked dispatch the SM9 arm actually runs.
 run_check "INVARIANT" rg -n '^theorem boundDeliveryTarget\?_some' SeLe4n/Kernel/IPC/Operations/NotificationBind.lean
@@ -849,8 +876,8 @@ run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_off_boundary' 
 # definitional equation, and the pointwise lemma must carry the `Pre` that lets a
 # declining guard prove something.  Without `Pre` the lemma is `fold_preserves`
 # with extra steps and the guard-false arm is unprovable.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem removeFromAllEndpointQueues_eq_fold(.|\n)*endpointSweepBody \(spliceOutMidQueueNode st tid\) tid\) := rfl" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem RHTable.fold_pointwise(.|\n)*hEstablish : ∀ acc k v, t.get\? k = some v → Pre k acc → Q k \(f acc k v\)" SeLe4n/Kernel/RobinHood/Bridge.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem removeFromAllEndpointQueues_eq_fold[^\n]*(\n([ \t][^\n]*)?)*endpointSweepBody \(spliceOutMidQueueNode st tid\) tid\) := rfl" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem RHTable.fold_pointwise[^\n]*(\n([ \t][^\n]*)?)*hEstablish : ∀ acc k v, t.get\? k = some v → Pre k acc → Q k \(f acc k v\)" SeLe4n/Kernel/RobinHood/Bridge.lean'
 # The splice's per-key readings, and the queue shape across sweep-then-restore.
 run_check "INVARIANT" rg -n '^def queueNeighbourPatch' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_eq_patches' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
@@ -864,10 +891,10 @@ run_check "INVARIANT" rg -n '^theorem sweptAndRestored_dualQueueSystemInvariant'
 # Relation, not presence: the missing queue-shape fact must be a **hypothesis** of
 # the dual-queue theorem, not derived inside it — the bundle does not entail it, and
 # a version that quietly assumed it would be unsound rather than merely weak.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_dualQueueSystemInvariant(.|\n)*hCoh : sweptThreadBoundaryCoherent st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_dualQueueSystemInvariant[^\n]*(\n([ \t][^\n]*)?)*hCoh : sweptThreadBoundaryCoherent st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 # Link integrity holds over the **composite**, not over the sweep alone: the swept
 # thread's own links still name its old neighbours until the restore clears them.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_tcbQueueLinkIntegrity(.|\n)*tcbQueueLinkIntegrity \(sweptAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_tcbQueueLinkIntegrity[^\n]*(\n([ \t][^\n]*)?)*tcbQueueLinkIntegrity \(sweptAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 # NEGATIVE: no link-integrity claim about the bare sweep.
 run_negative_check "INVARIANT" rg -n 'tcbQueueLinkIntegrity \(removeFromAllEndpointQueues' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 # WS-RR RR7.22 (residual, whole bundle): all three coherence clauses are stated
@@ -878,44 +905,127 @@ run_check "INVARIANT" rg -n '^structure sweptThreadQueueCoherent' SeLe4n/Kernel/
 run_check "INVARIANT" rg -n '^theorem sweptAndRestored_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 # Relation, not presence: the keystone must take the coherence bundle as a
 # **hypothesis**, exactly as the dual-queue result takes its boundary clause.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_preserves_ipcInvariantFull(.|\n)*hCoh : sweptThreadQueueCoherent st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hCoh : sweptThreadQueueCoherent st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 # ...and it must state the whole bundle on the composite, not a weaker relaxation.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_preserves_ipcInvariantFull(.|\n)*ipcInvariantFull \(sweptAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull \(sweptAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 # The live arm is reached by an equation the compiler checks, not by a restatement.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_endpoint_arm_eq(.|\n)*sweptAndRestored st tid \(some Architecture.cancelledIpcFrame\) := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_endpoint_arm_eq[^\n]*(\n([ \t][^\n]*)?)*sweptAndRestored st tid \(some Architecture.cancelledIpcFrame\) := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 # NEGATIVE: the swept thread's non-reply state is *derived* where the bundle is
 # available, never taken as a further hypothesis of the live arm.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull(.|\n)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 run_check "INVARIANT" rg -n '^theorem replyObject_none_of_not_blockedOnReply' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # WS-RR RR7.22 (residual), the notification arm: its own purge description, its
 # own coherence hypothesis, its keystone and the live arm.
 run_check "INVARIANT" rg -n '^def notificationPurgeBody' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem removeFromAllNotificationWaitLists_eq_fold(.|\n)*st.objects.fold st \(notificationPurgeBody tid\) := rfl" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem removeFromAllNotificationWaitLists_eq_fold[^\n]*(\n([ \t][^\n]*)?)*st.objects.fold st \(notificationPurgeBody tid\) := rfl" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 run_check "INVARIANT" rg -n '^def sweptThreadOffQueueChains' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 run_check "INVARIANT" rg -n '^theorem purgedAndRestored_dualQueueSystemInvariant' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 run_check "INVARIANT" rg -n '^theorem purgedAndRestored_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 # Relation, not presence: the keystone takes the coherence fact as a hypothesis
 # and states the whole bundle on the composite.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem purgedAndRestored_preserves_ipcInvariantFull(.|\n)*hOff : sweptThreadOffQueueChains st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem purgedAndRestored_preserves_ipcInvariantFull(.|\n)*ipcInvariantFull \(purgedAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notification_arm_eq(.|\n)*purgedAndRestored st tid \(some Architecture.cancelledIpcFrame\) := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem purgedAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hOff : sweptThreadOffQueueChains st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem purgedAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull \(purgedAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notification_arm_eq[^\n]*(\n([ \t][^\n]*)?)*purgedAndRestored st tid \(some Architecture.cancelledIpcFrame\) := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 # NEGATIVE: the two derivable facts stay derived — the notification arm takes
 # neither a "not blocked on reply" nor an "off every endpoint boundary" premise.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull(.|\n)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 run_check "INVARIANT" rg -n '^theorem purgedAndRestored_victim_off_endpoint_boundaries' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
-# WS-OD OD1.1: the two endpoint-queue removals agree on `queuePPrev`.  The dual
-# removal gives the successor the removed thread's own back-pointer and refuses
-# a queue where that field disagrees with `queuePrev`; the single removal used to
-# patch `queuePrev` alone, so a timeout stranded its successor — it failed every
-# later dual-queue removal and could never leave the queue.  A *relation*, not a
-# presence: both fields must be written, in the same record update.
-run_check "INVARIANT" bash -lc 'rg -U -n "nextTid\.toObjId\s*\n?\s*\(\.tcb \{ nextTcb with queuePrev := tcb\.queuePrev,\s*\n?\s*queuePPrev := tcb\.queuePPrev \}\)" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
-# NEGATIVE: the stranding form — the successor patch naming `queuePrev` alone —
-# must not come back.  Mutating by *removing* the whole patch would be caught by
-# the positive above; this keeps the patch and breaks the relation.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "\.tcb \{ nextTcb with queuePrev := tcb\.queuePrev \}" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
+# WS-OD OD3.12 / OD3.13: and the two receive-side arms, through the same
+# resolver -- `.replyRecv`'s receive leg *is* `.receive`'s transition.  This is
+# the arm the ceiling moved for: it was at 13 of 13, so declaring the object its
+# receive leg writes raised `maxLockSetSize` to 14 and cost
+# `admissibleCriticalSection` two microseconds on the 1 ms tick.
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_queueNeighbour' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_queueNeighbour' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_receive_covers_queueNeighbour' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_queueNeighbour' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# Both receive-side footprints resolve the member through the shared resolver,
+# not through a second reading of the endpoint.
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*receiveSideQueueStructureNeighbor\? st endpointId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*receiveSideQueueStructureNeighbor\? st endpointObjId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# The ceiling and the figures derived from it move together -- the point of
+# stating them as theorems rather than paragraphs.
+run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 14' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 23" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+# NEGATIVE: the superseded figure must not come back.  Mutating by deleting the
+# theorem would be caught by the positive; this keeps it at the old number.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 25" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+# WS-OD OD3.11: `.send` and `.call` declare the one TCB their queue *structure*
+# change writes.  A rendezvous pops the receive queue, relinking the popped
+# receiver's successor into the head; a block enqueues on the send queue,
+# relinking its old tail.  Exactly one of the two, and neither was declared.
+run_check "INVARIANT" rg -n '^def endpointQueueStructureNeighbor\?' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def receiveSideQueueStructureNeighbor\?' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def sendSideQueueStructureNeighbor\?' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_queueNeighbour' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointSendOnCore_covers_queueNeighbour' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_send_covers_queueNeighbour' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_call_covers_queueNeighbour' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# The arm question -- pop or block -- is answered by the *same* resolver the
+# arm's receiver/sender member already comes from, so the footprint and the
+# transition cannot disagree about which branch this call takes.  A relation:
+# the tokens are present either way, what matters is that they compose.
+run_check "INVARIANT" bash -lc 'rg -U -n "def sendSideQueueStructureNeighbor\?[^\n]*(\n([ \t][^\n]*)?)*endpointQueueStructureNeighbor\? st \(endpointCallReceiver\? st endpointId\)" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def receiveSideQueueStructureNeighbor\?[^\n]*(\n([ \t][^\n]*)?)*endpointQueueStructureNeighbor\? st \(receiveRendezvousSender\? st endpointId\)" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
+# NEGATIVE: the branch must not be re-read from the endpoint here.  Mutating by
+# deleting the resolver would be caught by the positives; this keeps it and
+# re-derives the branch from the queue instead of from the arm's own resolver.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def sendSideQueueStructureNeighbor\?[^\n]*(\n([ \t][^\n]*)?)*receiveQ\.head" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
+# WS-OD OD3.10: the bound-notification delivery declares the two TCBs its
+# dequeue relinks.  `endpointQueueRemoveDual` writes the removed thread's
+# predecessor and successor, and `lockSet_notificationSignal` named neither -- so
+# a `.notificationSignal` on one core and a `.tcbSuspend` of a queue-mate on
+# another had provably disjoint footprints while both writing the same TCB.
+run_check "INVARIANT" rg -n '^def notificationSignalSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_notificationSignalOnCore_splice_prev_write_mem' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_notificationSignalOnCore_splice_next_write_mem' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_notificationSignal_covers_spliceNeighbors' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# The resolver is *derived* from the two the arm already asks -- the arm gate
+# from `boundDeliveryTarget?`, the neighbour identities from the neutral
+# `queueSpliceNeighbors?` the cancellation arms use -- so the footprint and the
+# transition cannot disagree about whether this signal splices, nor the two
+# footprint families about who a splice's neighbours are.  A relation: the
+# tokens are present either way, what matters is that they compose.
+run_check "INVARIANT" bash -lc 'rg -U -n "def notificationSignalSpliceNeighbors\?[^\n]*(\n([ \t][^\n]*)?)*boundDeliveryTarget\? st notificationId" SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def notificationSignalSpliceNeighbors\?[^\n]*(\n([ \t][^\n]*)?)*queueSpliceNeighbors\? tcb" SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean'
+# NEGATIVE: the neighbour identities must not be re-spelled here.  Mutating by
+# deleting the resolver would be caught by the positives; this keeps it and
+# inlines the pair it should be deriving.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def notificationSignalSpliceNeighbors\?[^\n]*(\n([ \t][^\n]*)?)*\(tcb\.queuePrev, tcb\.queueNext\)" SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean'
+# The neutral resolver is one definition, in the model, not one per family.
+run_check "INVARIANT" rg -n '^def queueSpliceNeighbors\?' SeLe4n/Model/Object/Types.lean
+run_negative_check "INVARIANT" rg -n '^def cancelSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# WS-OD OD1.1 + OD3.9: **all three** endpoint-queue removals agree on
+# `queuePPrev`, because there is one definition of what unlinking writes.  The
+# dual removal gives the successor the removed thread's own back-pointer and
+# refuses a queue where that field disagrees with `queuePrev`; a removal that
+# patches `queuePrev` alone strands its successor -- it fails every later dual
+# removal and can never leave the queue.  OD1.1 fixed that in
+# `endpointQueueRemove` and asserted the dual was "the removal every other
+# kernel path uses"; `spliceOutMidQueueNode` -- the removal `.tcbSuspend` and
+# thread destruction run -- was a third, and kept the defect for eight cuts.
+run_check "INVARIANT" rg -n '^def queueUnlinkPredecessor' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def queueUnlinkSuccessor' SeLe4n/Model/Object/Types.lean
+# A *relation*, not a presence: the successor update writes both link fields.
+run_check "INVARIANT" bash -lc 'rg -U -n "def queueUnlinkSuccessor[^\n]*(\n([ \t][^\n]*)?)*queuePrev := removed\.queuePrev, queuePPrev := removed\.queuePPrev" SeLe4n/Model/Object/Types.lean'
+# The two removals that spell their patches inline call the shared updates ...
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointQueueRemove[^\n]*(\n([ \t][^\n]*)?)*queueUnlinkSuccessor tcb nextTcb" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointQueueRemove[^\n]*(\n([ \t][^\n]*)?)*queueUnlinkPredecessor tcb prevTcb" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def spliceOutMidQueueNode[^\n]*(\n([ \t][^\n]*)?)*queueUnlinkSuccessor tcb nextTcb" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def spliceOutMidQueueNode[^\n]*(\n([ \t][^\n]*)?)*queueUnlinkPredecessor tcb prevTcb" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# ... and the third, which spells its write through `storeTcbQueueLinks`, is
+# tied to the same definition by a theorem about the object it stores -- a name
+# is not a definition, so the tie is proved rather than asserted.
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_stores_queueUnlinkSuccessor' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_stores_queueUnlinkPredecessor' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_next_queuePPrev' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+# NEGATIVE: the stranding form -- a successor patch naming `queuePrev` alone --
+# must not come back, in the shared definition or in any removal that inlines
+# one again.  Mutating by *removing* a patch would be caught by the positives
+# above; this keeps the patch and breaks the relation.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "with queuePrev := (tcb|tcbV|removed)\.queuePrev \}" SeLe4n/Model/Object/Types.lean SeLe4n/Kernel/IPC/DualQueue/Core.lean SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 # WS-OD OD1.2: the timeout's object-only prefix.  `abortPendingIpcOnEndpoint`
 # is the splice-and-clear half of `timeoutThread` with the two scheduler
 # writes (the wake and the priority-inheritance revert) left to the caller,
@@ -932,7 +1042,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "match abortPendingIpcOnEndpoint endpoi
 # NEGATIVE: the pre-OD1.2 body, which ran the removal inline.  Mutating by
 # deleting the prefix would be caught by the positive above; this keeps the
 # prefix and re-adds the inline removal beside it.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "def timeoutThread(.|\n)*match endpointQueueRemove" SeLe4n/Kernel/IPC/Operations/Timeout.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def timeoutThread[^\n]*(\n([ \t][^\n]*)?)*match endpointQueueRemove" SeLe4n/Kernel/IPC/Operations/Timeout.lean'
 # The blocking server is read from the **pre**-state: the prefix clears
 # `ipcState` to `.ready`, so a post-state read answers `none` at every call
 # and the priority-inheritance revert would never run.  Provenance is a
@@ -953,14 +1063,14 @@ run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_agrees_insert' SeLe4n/K
 # NEGATIVE: the agreement must not be stated as literal store equality.  That
 # form is unprovable here and would read as a stronger, checked claim; the
 # mutation that finds this keeps the theorem and strengthens its conclusion.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_agrees_with_dual(.|\n)*stS\.objects = stD\.objects" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_agrees_with_dual[^\n]*(\n([ \t][^\n]*)?)*stS\.objects = stD\.objects" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
 # The queue connectivity the bundle does not entail is **stated**, not assumed:
 # the carriage takes it as a hypothesis, in the same shape as
 # `splicePredecessorBlocked` and `sweptThreadQueueCoherent`.
 run_check "INVARIANT" rg -n '^def spliceRemovedIsTailWhenLast' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
 run_check "INVARIANT" rg -n '^def dualRemovalEnabled' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership(.|\n)*hTailLast : spliceRemovedIsTailWhenLast" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership(.|\n)*hEnabled : dualRemovalEnabled" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership[^\n]*(\n([ \t][^\n]*)?)*hTailLast : spliceRemovedIsTailWhenLast" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership[^\n]*(\n([ \t][^\n]*)?)*hEnabled : dualRemovalEnabled" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
 # The converse direction is derived, never assumed: a tail has no successor, so
 # a thread that has one is not the tail.
 run_check "INVARIANT" rg -n '^theorem spliceTail_ne_of_hasNext' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
@@ -969,7 +1079,7 @@ run_check "INVARIANT" rg -n '^theorem spliceTail_ne_of_hasNext' SeLe4n/Kernel/IP
 # scheduler in its own name.  A frame that claimed the store alone would be
 # unsound for any scheduler-writing step.
 run_check "INVARIANT" rg -n '^theorem passiveServerIdle_of_storeAgrees' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem passiveServerIdle_of_storeAgrees(.|\n)*hSched : st.\.scheduler = st\.scheduler" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem passiveServerIdle_of_storeAgrees[^\n]*(\n([ \t][^\n]*)?)*hSched : st.\.scheduler = st\.scheduler" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_storeAgrees_of_scheduler_eq' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
 run_check "INVARIANT" rg -n '^theorem ipcInvariantFullExceptMembership_of_storeAgrees_of_scheduler_eq' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
 # NEGATIVE: no store-only bundle frame.  Nineteen conjuncts read the store alone
@@ -999,11 +1109,11 @@ run_negative_check "INVARIANT" rg -n 'storeTcbReceiveComplete' SeLe4n/Kernel/IPC
 # constrains a queue only at its boundaries and says nothing about the thread's
 # membership in *other* endpoints' queues.
 run_check "INVARIANT" rg -n '^def spliceLeavesThreadDetached' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull(.|\n)*hDetached : ∀ st1" SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hDetached : ∀ st1" SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean'
 # Relation, not presence: the composite must consume the *transferred* keystone
 # and the staging frame — the two halves — rather than re-deriving either.
-run_check "INVARIANT" bash -lc 'rg -U -n "abortPendingIpcOnEndpoint_preserves_ipcInvariantFull(.|\n)*endpointQueueRemove_establishes_ipcInvariantFullExceptMembership" SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "abortPendingIpcOnEndpoint_preserves_ipcInvariantFull(.|\n)*timeoutStaging_preserves_ipcInvariantFull" SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "abortPendingIpcOnEndpoint_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*endpointQueueRemove_establishes_ipcInvariantFullExceptMembership" SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "abortPendingIpcOnEndpoint_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*timeoutStaging_preserves_ipcInvariantFull" SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean'
 # WS-RR RR7.22 (residual, remediation): the cancelled caller's donated
 # SchedContext goes back — seL4-MCS's `reply_remove` — with the fact that makes
 # the return well defined stated rather than assumed.
@@ -1088,17 +1198,17 @@ run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_holder_ipcState_allo
 # and the holder-allowed fact, not merely mention the operation.  The abort is
 # what moves a `.blockedOnCall` holder into the half `passiveServerIdle` permits,
 # so a composite that dropped either piece would be proving a different theorem.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem returnDonationToCancelledCaller_passiveServerIdleFrame(.|\n)*abortHolderPendingIpc_passiveServerIdleFrame(.|\n)*abortHolderPendingIpc_holder_ipcState_allowed" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem returnDonationToCancelledCaller_passiveServerIdleFrame[^\n]*(\n([ \t][^\n]*)?)*abortHolderPendingIpc_passiveServerIdleFrame[^\n]*(\n([ \t][^\n]*)?)*abortHolderPendingIpc_holder_ipcState_allowed" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
 # The abort's success is *derived* from the endpoint conjunct, not assumed: a
 # refused abort leaves the holder blocked, which is the state OD1 removes.
 run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_ok' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem abortHolderPendingIpc_holder_ipcState_allowed(.|\n)*hMem : ipcStateQueueMembershipConsistent st" SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem abortHolderPendingIpc_holder_ipcState_allowed[^\n]*(\n([ \t][^\n]*)?)*hMem : ipcStateQueueMembershipConsistent st" SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean'
 # NEGATIVE: the frame primitive must hand the backward obligation the structure's
 # own discriminating hypotheses.  Without them the reply arm cannot be proved at
 # all — the caller it re-binds needs the `.unbound` hypothesis and the holder it
 # unbinds needs the filter — so a primitive that dropped either would silently
 # force a weaker theorem elsewhere.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem passiveServerIdleFrame_of_backward_of_not_allowed(.|\n)*tcb.\.schedContextBinding = \.unbound →\n      ¬ passiveServerIdleAllowed tcb.\.ipcState →" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem passiveServerIdleFrame_of_backward_of_not_allowed[^\n]*(\n([ \t][^\n]*)?)*tcb.\.schedContextBinding = \.unbound →\n      ¬ passiveServerIdleAllowed tcb.\.ipcState →" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
 # WS-OD OD1.5: the footprint names the abort's three writes.  A declared set that
 # named the holder's TCB and not the endpoint it is queued on would be *false* on
 # the one arm where the abort runs.
@@ -1110,13 +1220,13 @@ run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_holder_splice_ne
 # The resolvers are gated on the abort's own guard, so a holder the abort leaves
 # alone contributes no member.  The mutation that finds a dropped gate keeps the
 # resolver and returns the links unconditionally.
-run_check "INVARIANT" bash -lc 'rg -U -n "def cancelHolderSpliceNeighbors\?(.|\n)*\| \.blockedOnSend _ \| \.blockedOnCall _ => \(t\.queuePrev, t\.queueNext\)(.|\n)*\| _ => \(none, none\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelHolderSpliceNeighbors\?[^\n]*(\n([ \t][^\n]*)?)*\| \.blockedOnSend _ \| \.blockedOnCall _ => \(t\.queuePrev, t\.queueNext\)[^\n]*(\n([ \t][^\n]*)?)*\| _ => \(none, none\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The bound is a *case analysis*, not a summed arity: eleven members summed is
 # over the ceiling, and it holds only because the donation-derived members and
 # the victim's own blocked-object members key on the same field.
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_reply_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_noDonation_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem lockSet_cancelIpcBlockingOnCore_size_le(.|\n)*cancelledCallerDonation_some_blockedOnReply" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem lockSet_cancelIpcBlockingOnCore_size_le[^\n]*(\n([ \t][^\n]*)?)*cancelledCallerDonation_some_blockedOnReply" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
 # WS-OD OD1.6: the reclaim is witnessed by an **executed run**, not only by a
 # theorem — the fixture pins what the live operation does, and the second check
 # pins the *bound* on the abort's reach: a holder in a state the conjunct permits
@@ -1140,26 +1250,26 @@ run_check "INVARIANT" rg -n '^theorem wakeAbortedDonationHolder_holder_runnable'
 # transition stops calling it is exactly the mutation a presence check misses,
 # and it restores the defect verbatim.  The removal wrapping the wake is also
 # what makes the degenerate `holder = victim` resolution fail safe.
-run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCore(.|\n)*removeRunnableOnCore\n    \(wakeAbortedDonationHolder st \(cancelIpcBlockingMigrated victim tcb st\) victim tcb\)\n    victim home" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCore[^\n]*(\n([ \t][^\n]*)?)*removeRunnableOnCore\n    \(wakeAbortedDonationHolder st \(cancelIpcBlockingMigrated victim tcb st\) victim tcb\)\n    victim home" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # ...and the wake must be gated on the holder being `.ready` in the POST state,
 # which is what distinguishes "the abort ran" from "the abort was inert" and
 # from "the whole reclaim was discarded".  A pre-state guard fires on the third.
-run_check "INVARIANT" bash -lc 'rg -U -n "def cancelAbortedHolderWake\?(.|\n)*match stPost\.getTcb\? holder with(.|\n)*if t\.ipcState = ThreadIpcState\.ready then some holder else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelAbortedHolderWake\?[^\n]*(\n([ \t][^\n]*)?)*match stPost\.getTcb\? holder with[^\n]*(\n([ \t][^\n]*)?)*if t\.ipcState = ThreadIpcState\.ready then some holder else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # ...and on the abort's OWN pre-state guard as well.  `donationOwnerValid`
 # constrains the donation's *owner*, never its holder, so a `.donated` holder
 # that is `.ready` and **currently running** is admissible — the ordinary
 # passive-server-running state.  On it the abort is inert, the holder stays
 # `.ready`, and a post-state-only gate would enqueue a running thread.
-run_check "INVARIANT" bash -lc 'rg -U -n "def cancelAbortedHolderWake\?(.|\n)*if \(cancelHolderBlockedEndpoint\? stPre \(some holder\)\)\.isNone then none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelAbortedHolderWake\?[^\n]*(\n([ \t][^\n]*)?)*if \(cancelHolderBlockedEndpoint\? stPre \(some holder\)\)\.isNone then none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # ...and the placement itself refuses a running thread, so it cannot break
 # `queueCurrentConsistent` however it is called.  `runnableOnSomeCore` is
 # run-queue membership only — dequeue-on-dispatch means it does not catch a
 # dispatched thread — which is why both predicates are asked.
-run_check "INVARIANT" bash -lc 'rg -U -n "def enqueueAbortedHolderOnCore(.|\n)*if runnableOnSomeCore st tid \|\| runningOnSomeCore st tid then st" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def enqueueAbortedHolderOnCore[^\n]*(\n([ \t][^\n]*)?)*if runnableOnSomeCore st tid \|\| runningOnSomeCore st tid then st" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The declared scheduler footprint names the woken core's run-queue write lock.
 # A footprint naming only the victim's home would be FALSE of the transition,
 # which this project rates worse than a wide one.
-run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCoreSchedLockSet \(home : CoreId\) \(wakeCore : Option CoreId\)(.|\n)*descheduleThreadLockSet home \+\+ \[\(SchedLockId\.runQueue ⟨c⟩, \.write\)\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCoreSchedLockSet \(home : CoreId\) \(wakeCore : Option CoreId\)[^\n]*(\n([ \t][^\n]*)?)*descheduleThreadLockSet home \+\+ \[\(SchedLockId\.runQueue ⟨c⟩, \.write\)\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_contains_wake_runQueue_write' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # The wake is a SCHEDULER write and nothing else — that is what keeps every
 # object-level and information-flow result about the composite true verbatim, so
@@ -1171,7 +1281,539 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem wakeAbortedDonationHolder_curren
 # the holder's label is not determined by the victim's.
 run_check "INVARIANT" rg -n '^def abortHolderWakeHigh' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 run_check "INVARIANT" rg -n '^theorem abortHolderWakeHigh_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlockingOnCore_reply_cancellation_NI(.|\n)*hWakeHigh : abortHolderWakeHigh ctx observer st victim tcb\) :\n    projectState" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlockingOnCore_reply_cancellation_NI[^\n]*(\n([ \t][^\n]*)?)*hWakeHigh : abortHolderWakeHigh ctx observer st victim tcb\) :\n    projectState" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+# ============================================================================
+# WS-OD OD2 — inert structure and the chain predicate
+# ============================================================================
+# OD2.1: `SchedContext.scReply` — the reply-stack head `Reply.wellFormed`'s
+# docstring has named since SM6.D and the structure did not have.  The field is
+# what keeps the OD4 push inside `maxLockSetSize`: the push reads the previous
+# head off an object the call footprint already write-locks.
+run_check "INVARIANT" rg -n '^  scReply : Option SeLe4n\.ReplyId := none$' SeLe4n/Kernel/SchedContext/Types.lean
+# ...and it participates in structural equality, or a push would be invisible to
+# every caller that compares states with `==`.  Relation, not presence: the field
+# can exist while the comparator ignores it, which is the shape that masked
+# lock-state regressions before SM3.A audit-pass-7.
+run_check "INVARIANT" rg -n 'a\.scReply == b\.scReply &&' SeLe4n/Kernel/SchedContext/Types.lean
+# The two exhaustive positional patterns keep their arity pin: a field added to
+# `SchedContext` fails these definitions rather than defaulting to "unread".
+run_check "INVARIANT" bash -lc 'rg -U -n "_replenishments, boundThread, scReply, _isActive, _lock⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_replenishments, _boundThread, _scReply, _isActive, _lock⟩" SeLe4n/Platform/Boot.lean'
+# A boot SchedContext heads no reply stack: every admissible boot Reply is inert
+# (`bootSafeReplyCheck` refuses a `donatedSc`), so a config-supplied head could
+# only dangle — a `donationChainWellFormed` violation installed before the first
+# instruction runs.  The reservation reads the head too, since it is an object id.
+run_check "INVARIANT" bash -lc 'rg -U -n "sc\.boundThread\.isNone &&\n    sc\.scReply\.isNone" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "scReply\.any \(fun rid => SeLe4n\.Kernel\.isIdleObjId rid\.toObjId\)" SeLe4n/Platform/Boot.lean'
+# OD2.2: the head is erased by the NI projection, in the same class as
+# `boundThread` — and erased in the SAME cut as the field, or the OD4 push would
+# be observable in the interval.
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_scReply_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+# ...and the sibling sweep: the `.reply` arm has erased all three reply-stack
+# fields since SM6.D, but only `caller` had a theorem, so the question "is the
+# donation push observable?" was answered for one field of three.
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_donatedSc_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_prev_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "\.schedContext \{ sc with boundThread := none, scReply := none," SeLe4n/Kernel/InformationFlow/Projection.lean'
+# NEGATIVE: the pre-OD2.2 arm, which erased `boundThread` alone.  The mutation
+# that finds this keeps the arm and the erasure it already had, and drops the
+# head — deleting the whole arm would be caught by the positive above.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\.schedContext \{ sc with boundThread := none,\n                              lock :=" SeLe4n/Kernel/InformationFlow/Projection.lean'
+# OD2.3: `Reply.wellFormed` states the half of the reply-stack discipline that is
+# a property of the object alone — a stack link only on a reply that is on a
+# stack.  It was `True`.
+run_check "INVARIANT" bash -lc 'rg -U -n "def wellFormed \(r : Reply\) : Prop :=\n  r\.donatedSc = none → r\.prev = none" SeLe4n/Model/Object/Reply.lean'
+run_negative_check "INVARIANT" rg -n 'def wellFormed \(_r : Reply\) : Prop := True' SeLe4n/Model/Object/Reply.lean
+# ...and it is CONSUMED rather than decorative: the state-level invariant carries
+# it as its own first conjunct, which is what the bridge below reads back.
+run_check "INVARIANT" rg -n '^theorem donationChainWellFormed\.replyWellFormedAt' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# OD2.4: the chain walk and the invariant.  The walk reads the store through two
+# projections rather than through raw lookups, which is what makes the frame the
+# read set rather than an over-approximation of it.
+run_check "INVARIANT" rg -n '^def replyStackLinks\?' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def schedContextStackHead\?' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def donationChainFrom' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^structure donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# Relation, not presence: a link is followed only AFTER the target's own
+# `donatedSc` has been checked against the context being walked.  Reply objects
+# are re-linked to new callers, so a stale `prev` over a reused Reply would
+# otherwise hand a scheduling context to an unrelated thread in another domain.
+run_check "INVARIANT" bash -lc 'rg -U -n "if donated = some scId then\n        \(donationChainFrom st scId fuel below\)\.map \(rid :: ·\)" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# NEGATIVE: the guardless walk.  The mutation keeps the recursion and drops the
+# validation, which is precisely the confused deputy §3.4 of the plan describes.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "some \(donated, below\) =>\n      \(donationChainFrom" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# ...and the projection the walk reads exposes the two STACK fields, never the
+# caller: validating a link by "the target has a caller" is exactly what a
+# re-linked Reply satisfies.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| some \(\.reply r\) => some \(r\.donatedSc, r\.prev\)" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "some \(\.reply r\) => some \(r\.caller" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The two facts the walk's own link validation yields, and the freshness
+# corollary the OD4 push consumes: a Reply carrying no donation is on no chain.
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_mem' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem not_mem_donationChainFrom_of_not_donating' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_mono' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The predicate is inhabited, and inhabited by evaluation rather than by there
+# being nothing to evaluate — the shape every current transition discharges it
+# through, and the one that stops being available when the push lands.
+run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_no_reply_or_schedContext' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_no_donations' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# OD2.5: the frame family — the objects-equality frame, the no-chain-object-write
+# frame, the walk's own congruence (the no-Reply-write frame), the single-store
+# primitive and its three per-kind instances, and the preservation payoff.
+run_check "INVARIANT" rg -n '^structure donationChainFrame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem of_no_chain_object_write' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_congr' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject$' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_tcb' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_schedContext' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_reply' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# OD2.6: the chain joins `ipcReachable`, not `ipcInvariantFull` — that bundle has
+# exactly twenty conjuncts and a theorem family whose size a Tier-0 gate holds
+# equal to the prose quoting it.  Relation, not presence: the conjunct must be in
+# the DEFINITION, which is what the accessor below reads back.
+run_check "INVARIANT" bash -lc 'rg -U -n "notificationWaiterConsistent st ∧\n  donationChainWellFormed st" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem donationChainWellFormed \{st : SystemState\} \(h : ipcReachable st\) :\n    _root_\.SeLe4n\.Kernel\.donationChainWellFormed st := h\.2\.2\.2\.2\.2" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+# The inhabitation witnesses are re-discharged rather than left to a default: a
+# pack whose new field nobody can establish is conditional in a different way.
+run_check "INVARIANT" rg -n '^private theorem witnessSt3_no_stack_head' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
+run_check "INVARIANT" rg -n '^private theorem witnessSt3_no_reply' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
+# ...and the walk reads the store through ONE named state-level projection
+# rather than inlining a lookup into its own `match`.  That is what lets the
+# frame fix exactly the two stack fields, so a Reply rewrite touching only
+# `caller` frames past it — which reading `SystemState.getReply?` would not.
+run_check "INVARIANT" rg -n '^def replyStackLinksAt\?' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "match replyStackLinksAt\? st rid with" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The predicate DECIDES rather than refuses: a depth-2 chain — the state OD3 and
+# OD4 will produce — satisfies it whole, completeness clause included.  Without
+# this the conjunct is only ever discharged vacuously, and an over-strong one
+# would look identical from that side.  An acceptance case, deliberately.
+run_check "INVARIANT" rg -n '^def donationChainWitness' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWitness_chain' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+# OD2.7 / OD3.1: the structural checks and the pop checks are RUN, not merely
+# defined — the relation a presence check on either section's name would miss.
+# Stated as the contiguous run so a section deleted from the middle of the
+# sequence is caught, which is how OD3.1's insertion was caught in the first
+# place.  Anchored between the two neighbours that bracket the pair rather than
+# on the whole runner: the sequence below it is what the fixture check ends.
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runReceivePriorityHandoffChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+
+# ============================================================================
+# WS-OD OD3 — the pop, generalised and inert
+# ============================================================================
+# OD3.1: the return's target binding is `donationReturnBinding scId newOwner?`,
+# whose two arms are `.bound scId` at the bottom of the reply stack and
+# `.donated scId outer` one level up.  Relation, not presence: the mutation that
+# finds this keeps the definition and makes the return write `.bound scId`
+# directly, which is what the pre-OD3 body did and which the negative below
+# refuses.
+run_check "INVARIANT" rg -n '^@\[inline\] def donationReturnBinding' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "schedContextBinding := donationReturnBinding scId newOwner\? \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "let clientTcb. := \{ clientTcb with schedContextBinding := \.bound scId \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# ...and both arms name the SAME context, which is what keeps every consumer that
+# only asks "which scheduling context does this thread reference" — the
+# `scThreadIndex` discipline in particular — insensitive to the stack depth.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem donationReturnBinding_scId\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The head validation is FAIL-CLOSED: a head that resolves to no Reply, or to one
+# donating a different context, is a refusal rather than an empty stack.  Treating
+# it as empty would leave a Reply naming a context that no longer names it, which
+# is the stale-link shape the chain design exists to refuse.
+run_check "INVARIANT" rg -n '^def donationHeadOf\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "if r\.donatedSc != some scId then \.error \.invalidArgument" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# NEGATIVE: the guard present but its verdict inverted into an empty stack — the
+# mutation keeps every token and breaks the relation.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "if r\.donatedSc != some scId then \.ok none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# The pop writes the rebind and the stack head as ONE SchedContext store: a frame
+# stated over either half alone would be false of the operation.
+run_check "INVARIANT" bash -lc 'rg -U -n "let sc. := \{ sc with boundThread := some originalOwner,\n                           scReply := head\?\.bind \(fun p => p\.2\.prev\) \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# The head clear is its own step with its own frames, so a downstream frame
+# extends by one rewrite rather than by a second arm through the whole proof.
+run_check "INVARIANT" rg -n '^def storeDonationHeadClear' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_cases' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_tcb_eq' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
+# OD3.3: the phase is INERT — at `newOwner? = none` over a context heading no
+# stack the new definition *is* the old one.  This is the acceptance case, and it
+# names the pre-OD3 body in full rather than asserting a property of it.
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_eq_legacy_of_none' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContext st serverTid scId originalOwner none =\n      \(if sc\.boundThread != some serverTid then \.error \.invalidArgument" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# OD3.1: the depth-≥ 2 arm is EXERCISED, not merely reachable.  Relation, not
+# presence: a suite that only ever calls the pop at the bottom of the stack would
+# still name the transition on every line, so the anchor requires a call passing
+# `some` and a check reading the popped head back.  A generalisation nothing has
+# run is one that arrives untested on the day OD4 makes it reachable.
+run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContext \(popStore \(some chainHeadReply\) \(some chainOuterReply\)\)\n      popServer chainSc popClient \(some popOuter\)" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "popHeadOf st. == some \(some chainOuterReply\)" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "popBindingOf st. popClient == some \(\.donated chainSc popOuter\)" tests/SmpIpcSuite.lean'
+# OD3.2: the store chain is the ONE derivation every field frame is a corollary
+# of, and it now names four object writes.  Relation, not presence: the head
+# clear must be a link of the chain, not merely mentioned in the file.
+run_check "INVARIANT" bash -lc 'rg -U -n "storeDonationHeadClear \(head\?\.map Prod\.fst\) s1 = \.ok s2 ∧" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# NEGATIVE: `returnDonatedSchedContext_walk` was the same question with a second,
+# weaker answer.  It is retired; a re-introduction is the drift this refuses.
+run_negative_check "INVARIANT" rg -n 'theorem returnDonatedSchedContext_walk' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+# The shared frames the sixteen retired copies became.
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_objects_backward_of_kind' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_objects_forward_of_kind' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_tcb_rewrite_backward' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_tcb_binding_cases' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_post_schedContext' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_post_scReply' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The kind set the frames are stated over is NAMED, so a store of a fifth kind is
+# one edit here and a failing proof at every frame, rather than a silent hole in
+# each copy of the same three inequalities.
+run_check "INVARIANT" rg -n '^def donationReturnWritesKind' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The pop writes a Reply, so exact Reply preservation became a Reply FRAME.  The
+# `caller` the reply-freshness and stash invariants read still agrees exactly.
+run_check "INVARIANT" rg -n '^def replyStackRewrite' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem replyStackRewrite\.caller_eq' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_reply_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_negative_check "INVARIANT" rg -n 'theorem returnDonatedSchedContext_preserves_reply' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# ...and the two reusable frames dropped to the field they are about, because
+# both asserted whole-object Reply identity while the conjunct they serve
+# (`replyCallerLinkageReciprocal`) reads only `caller`.
+run_check "INVARIANT" rg -n '^  replyCallerAgree : ∀ \(rid : SeLe4n\.ReplyId\)' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem callerAgree_of_objectAgree' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem replyCallerAgree_of_objectAgree' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+# The head validation's own obligation is NAMED and has both discharges: the
+# chain invariant itself, and any step writing no chain object.
+run_check "INVARIANT" rg -n '^def donationHeadResolves' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationHeadResolves_of_chainWellFormed' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationHeadResolves_of_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_donationChainFrame' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+# The depth-≥ 2 obligation is stated in the row that widens the binding, not in
+# the row that first produces a `some` — a live transition whose preservation is
+# conditioned on an arm it can take is the shape the plan's numbering rule names.
+run_check "INVARIANT" rg -n '^structure donationReturnOuterValid' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationReturnOuterValid_none' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_donationOwnerValid_at_target' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# OD3.4: the pre-state resolver, and the three answers it distinguishes.  A
+# resolver that conflated "no link" with "a link that does not validate" would
+# read a corrupt stack as an empty one and settle a context still owed outward,
+# so the shape is `Except _ (Option _)` and not `Option _`.
+run_check "INVARIANT" rg -n '^def replyStackOuterCaller\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyStackOuterCaller\?[^\n]*(\n([ \t][^\n]*)?)*Except KernelError \(Option SeLe4n\.ThreadId\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# It walks exactly ONE link past the head — the pop consumes one frame, so it
+# needs one frame of lookahead.  Relation, not presence: the mutation keeps the
+# resolver and makes it read the head's own caller instead of the frame below.
+run_check "INVARIANT" bash -lc 'rg -U -n "match head\.prev with[^\n]*(\n([ \t][^\n]*)?)*\| some below =>" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyStackOuterCaller\?[^\n]*(\n([ \t][^\n]*)?)*\.ok head\.caller" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# ...and it VALIDATES that frame (plan §3.4, the confused deputy).  A reused
+# Reply keeps its `caller`; what it loses is the donation, so the check is on
+# `donatedSc` and refusing is the only safe verdict.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyStackOuterCaller\?[^\n]*(\n([ \t][^\n]*)?)*if b\.donatedSc != some scId then \.error \.invalidArgument" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyStackOuterCaller\?[^\n]*(\n([ \t][^\n]*)?)*if b\.donatedSc != some scId then \.ok none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# The resolution obligation is named, discharged from the chain invariant, and
+# framed — the same pair the head validation has, for the same reason.
+run_check "INVARIANT" rg -n '^def replyStackOuterCallerResolves' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerResolves_of_chainWellFormed' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerResolves_of_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The fourth state the resolver can meet -- a validated frame below the head
+# whose caller has been consumed (a cancelled middle caller) -- is answered by a
+# THEOREM and a runtime witness, not by the pass-through of `Reply.caller`: plan
+# §3.4 reserves that decision for OD5.2 and forbids inheriting it by omission,
+# and a stated answer is what a later row changes deliberately.  The witness
+# pins both halves, the resolver's answer and the pop's result.
+run_check "INVARIANT" rg -n '^theorem replyStackOuterCaller\?_of_consumed_frame' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n 'the resolver answers .none. on a validated frame whose caller was consumed' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'the pop over a consumed frame binds the target outright' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'and leaves the consumed frame heading the stack' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem replyStackOuterCaller\?_of_no_stack' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+
+# OD3.4: **the pop validates its donee, because it mints a donation.**  The
+# donating operation checks its donor side; the pop mints `.donated scId outer`
+# and checked nothing, which is why the depth-≥ 2 obligation was undischargeable
+# on the reply path.  The guard is O(1) and fail-closed.
+run_check "INVARIANT" rg -n '^def outerCallerAcceptable' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "if !outerCallerAcceptable st serverTid originalOwner newOwner\? then\n      \.error \.invalidArgument" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# All three clauses, each load-bearing: the donor shape, and the two threads the
+# pop rewrites (a claim about their pre-state shape would not survive the step).
+run_check "INVARIANT" bash -lc 'rg -U -n "outer != originalOwner && outer != serverTid" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "outerTcb\.schedContextBinding == \.unbound &&[^\n]*(\n([ \t][^\n]*)?)*\| \.blockedOnReply _ _ => true" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# The guard is part of the ONE decomposition, not beside it: that theorem already
+# carries the context lookup and the head validation, neither of which is a
+# store, so it is "what a successful pop tells you" and an incomplete one would
+# license conclusions the operation does not earn.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem returnDonatedSchedContext_ok_storeChain[^\n]*(\n([ \t][^\n]*)?)*outerCallerAcceptable st serverTid originalOwner newOwner\? = true ∧" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_outerAcceptable' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# ...and it is free at the bottom of the stack, which is what keeps every call
+# site in the tree passing `none` without a new hypothesis.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem outerCallerAcceptable_none' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The guard's negatives are RUN, and each varies one clause of the donor shape
+# while keeping the whole depth-2 chain — a suite that deleted the outer caller
+# instead would pass a check that only asked whether one exists.
+run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that is not blocked on a reply is refused" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that still holds a binding is refused" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that IS the rebound thread is refused" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that IS the server is refused" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: a frame below the head donating another context is refused" tests/SmpIpcSuite.lean'
+
+# ============================================================================
+# WS-OD OD3.5 — the arm-selected cancellation footprint, and the two members
+# `.replyRecv` was missing
+# ============================================================================
+#
+# The victim's splice neighbours were the ONE resolver in the cancellation
+# family that did not key on `tcb.ipcState`: every other member selected an arm
+# and the neighbour pair was summed over all of them.  Derived from
+# `cancelBlockedEndpoint?` rather than re-matching the state, so the arm question
+# is asked once.  Relation, not presence: the mutation keeps the definition and
+# makes it unconditional, which every "the resolver exists" check survives.
+run_check "INVARIANT" rg -n '^def cancelArmSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelArmSpliceNeighbors\?[^\n]*(\n([ \t][^\n]*)?)*if \(cancelBlockedEndpoint\? tcb\)\.isSome then queueSpliceNeighbors\? tcb" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelArmSpliceNeighbors\?_of_blockedEndpoint' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelArmSpliceNeighbors\?_of_not_blockedEndpoint' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# ...and the resolved footprint reads the arm-selected pair, not the summed one.
+run_check "INVARIANT" bash -lc 'rg -U -n "\(\(cancelArmSpliceNeighbors\? tcb\)\.1\.map \(fun p => \(tcbLock p, \.write\)\)\)\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\(\(queueSpliceNeighbors\? tcb\)\.1\.map \(fun p => \(tcbLock p, \.write\)\)\)\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The payoff, stated in both directions: the reply arm declares NO neighbour
+# member (as an equation, since a `∉` would be false for the accidental reason
+# that a neighbour may *be* the donation holder), and the arm that splices keeps
+# both.
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_eq' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_ten' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+# ...and the frames that license the narrowing — an arm that declares no
+# neighbour must write none, and that is checked rather than read off the shape.
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_tcb_frame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_noDonation_tcb_frame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem consumeReplyLink_other_tcb_eq' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+# ...and the general form, with the reclaim live: the four frames that state a
+# step's effect OUTSIDE its write set, and the composite over them.  A frame that
+# says only "some TCB is still there" (`_tcb_lookup`, `_tcb_rewrite`) does not
+# license a footprint narrowing, which is why these are separate statements.
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_objects_ne' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_other_tcb_eq' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_other_tcb_eq' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_other_tcb_eq' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_tcb_frame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+# The removal's two link patches ARE `queueNeighbourPatch`, so the third inlined
+# copy of that shape cannot come back silently.  Stated on the splicing arm --
+# the endpoint resolved, the thread resolved -- and reading the store through
+# `getEndpoint?`: an equation that re-opened the raw discriminator would be a
+# second raw read site for a question the operation has already asked, which is
+# what the AK7 cascade floor counts.  The two error arms are
+# `endpointQueueRemove_ok_getEndpoint?`'s subject, not this theorem's.
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_ok_getEndpoint\?' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*\(hEp : st\.getEndpoint\? endpointId = some ep\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*queueNeighbourPatch[^\n]*(\n([ \t][^\n]*)?)*queueNeighbourPatch" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+# ...and it must not re-open the raw discriminator: an equation restating the
+# whole body is a second raw read site for a question the operation already asked.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*match st\.objects\[" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+
+# OD3.5: **`.replyRecv` performs two SchedContext hand-offs and declared one.**
+# `replyRecvReturnDonation` runs `applyCallDonationOnCore nextThread tid` when the
+# receive leg dequeues a queued `Call`, and `donateSchedContext` writes the NEW
+# caller's context — provably not the returned one.  The member is resolved
+# through the resolver `.call` uses for the same question, applied to the
+# send-queue head the `newSenderTid` member beside it already reads.
+run_check "INVARIANT" rg -n '^def receiveRendezvousDonatedSc\?' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The resolver is DERIVED from `receiveRendezvousSender?` -- the resolver
+# `receiveInstallsCaps` and the `newSenderTid` member already use for "which
+# thread does this receive dequeue" -- rather than re-reading `sendQ.head`.  One
+# question, one answer: a second copy of that read can drift from the one the
+# transition branches on.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def receiveRendezvousDonatedSc\?[^\n]*(\n([ \t][^\n]*)?)*\(receiveRendezvousSender\? st endpointObjId\)\.bind \(endpointCallDonatedSc\? st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def receiveRendezvousDonatedSc\?[^\n]*(\n([ \t][^\n]*)?)*sendQ\.head" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(receiveRendezvousDonatedSc\? st endpointObjId\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_redonated_sc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_redonation' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# ...and the recorded server's own TCB, which is what the delegated case needs.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(recordedReplyServer\? st target\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_donation_server_tcb_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The entry resolver no longer REFUSES a delegated reply — it declares one.  A
+# negative on the retired refusal, because a theorem concluding `none` there
+# would now be false, and a positive on what replaced it.
+run_negative_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated\b' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated_declares' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated_covers_server' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv =>[^\n]*(\n([ \t][^\n]*)?)*if \(recordedReplyServer\? st prevCaller\)\.getD ops\.caller = ops\.caller then" SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean'
+
+# OD3.5: **`scThreadIndex` is an `RHTable`, so a donation takes the state-level
+# lock.**  Its insert may rehash and back-shift the whole table, exactly as the
+# CDT maps do (RR7.9/RR7.11) — it does not decompose by object, so no per-object
+# member can cover it.  Declared on every footprint whose transition donates or
+# returns a donation, conditioned on that footprint's own SchedContext resolver
+# so the two cannot disagree about whether a donation happens.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReply[^\n]*(\n([ \t][^\n]*)?)*if donatedScId\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointCall[^\n]*(\n([ \t][^\n]*)?)*if destCnodeObjId\.isSome \|\| donatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome \|\| redonatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_tcbSuspend[^\n]*(\n([ \t][^\n]*)?)*if bindingScId\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelIpcBlocking[^\n]*(\n([ \t][^\n]*)?)*if returnedDonationSc\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelDonation[^\n]*(\n([ \t][^\n]*)?)*if bindingScId\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The bind and the unbind take it UNCONDITIONALLY — the index write is not
+# optional on their success path, which is the `lockSet_cspaceMint` shape.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_schedContextBind[^\n]*(\n([ \t][^\n]*)?)*\(stateLevelLock, \.write\)\]\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*\(stateLevelLock, \.write\)\]\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# ...and `.schedContextConfigure` is split out rather than widened with them: it
+# writes the SchedContext and the bound thread and touches no index.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind \| \.schedContextUnbind =>\n      \[\.tcb, \.cnode, \.schedContext, \.endpoint, \.notification, \.objStore\]\n  \| \.schedContextConfigure =>\n      \[\.tcb, \.cnode, \.schedContext, \.endpoint, \.notification\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# The kind inventories that admit it.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.reply =>\n      \[\.tcb, \.cnode, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.tcbSuspend =>\n      \[\.tcb, \.cnode, \.endpoint, \.notification, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+
+# ============================================================================
+# WS-OD OD3.6 -- seL4-MCS's `maybeDonateSchedContext`: the receive side donates
+# ============================================================================
+#
+# `.receive` performed NO scheduling-context donation at all.  seL4-MCS's
+# `receiveIPC` hands a dequeued `Call` caller's context to a passive receiver
+# (`reply_push` -> `schedContext_donate`); `.replyRecv` did exactly that here
+# and `.receive` did not -- so a passive server taking its FIRST request with
+# `seL4_Recv` ran on no reservation while the same server taking its second and
+# later requests with `seL4_ReplyRecv` was charged correctly.  One condition,
+# two API paths, and the asymmetric one silently defeating the budget
+# enforcement the whole CBS surface exists to provide.
+#
+# The step is ONE definition, shared by both receiving arms -- the fix for the
+# asymmetry cannot itself be a second copy.
+run_check "INVARIANT" rg -n '^def applyRendezvousCallDonation' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def rendezvousDequeuedCall' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def applyReceiveRendezvousDonation' SeLe4n/Kernel/IPC/Operations/Donation.lean
+# Both `.receive` dispatch arms run it -- the unchecked one and the
+# flow-checked one, with the same definition and behind no extra gate.  Anchored
+# on each arm's own call rather than on a count of occurrences: a cardinality
+# says how many, and the property is which.  The unchecked arm binds `dequeued`
+# from the WithCaps receive and stages from the donation's post-state; the
+# checked arm is pinned by the delegation theorem and the `syscallDelegates`
+# obligation below, both of which NAME the step -- a delegation claim that omits
+# a step is a claim about a different program.
+run_check "INVARIANT" rg -n 'applyReceiveRendezvousHandoff st. tid dequeued' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchWithCapChecked_receive_delegates[^\n]*(\n([ \t][^\n]*)?)*applyReceiveRendezvousHandoff st. tid dequeued" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \u2200 \(ctx : LabelingContext\)[^\n]*(\n([ \t][^\n]*)?)*applyReceiveRendezvousHandoff st. tid dequeued" SeLe4n/Kernel/API.lean'
+# NEGATIVE: and the unchecked arm must not stage from the RECEIVE's post-state,
+# which is what it did before OD3.6 -- a token-preserving mutation that keeps the
+# donation call in the file while staging around it.
+run_negative_check "INVARIANT" rg -n 'stageWokenSendCompletion st. wokenSender' SeLe4n/Kernel/API.lean
+# ...and `replyRecvReturnDonation` runs the SAME step rather than its own copy.
+# The negative refuses the inlined `applyCallDonationOnCore` the arm used to
+# carry: keeping the call while un-sharing it is how the two would drift apart
+# again, and it is a mutation that leaves every name in the file present.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvReturnDonation[^\n]*(\n([ \t][^\n]*)?)*applyRendezvousCallDonation st1 tid nextThread" SeLe4n/Kernel/API.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvReturnDonation[^\n]*(\n([ \t][^\n]*)?)*applyCallDonationOnCore st1 nextV tidV" SeLe4n/Kernel/API.lean'
+# The guard IS the donation's caller-blocked obligation, not a second reading
+# of it: a receiving arm discharges the hypothesis from the predicate it
+# branches on, so the two cannot disagree about which states donate.
+run_check "INVARIANT" rg -n '^theorem rendezvousDequeuedCall_blockedOnReply' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*rendezvousDequeuedCall_blockedOnReply st dequeued hCall" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# The step's own lifted obligations, so no arm re-derives the `toValid?` split.
+run_check "INVARIANT" rg -n '^theorem applyRendezvousCallDonation_ok_decompose' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_preserves_replenishQueueAffinityConsistent_smp' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_preserves_objects_invExt' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The footprint declares what the arm now writes: the donated SchedContext, and
+# the state-level lock `SystemState.scThreadIndex` needs.  The state-level
+# member is a DISJUNCTION -- conditioning it on `installsCaps` alone would omit
+# it on exactly the passive-server path, which installs nothing.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReceive[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+
+# ============================================================================
+# WS-OD OD3.14 -- the receive rendezvous' PRIORITY hand-off
+# ============================================================================
+#
+# The donation OD3.6 added carries a caller's scheduling context, hence its
+# BASE priority; `resolveEffectivePrioDeadline` is `max basePrio pipBoost`, so
+# the inherited BOOST travelled by no route at all on this arm.  A chain
+# `D -> C -> S` (D blocked on C, C dequeued into `.blockedOnReply` on the
+# passive server S) therefore left D's priority stopping dead at C: unbounded
+# priority inversion, on the arm `.call` and `.replyRecv` both propagate from.
+# It bites with NO donation too -- `applyCallDonation` is the identity for an
+# already-`.bound` receiver, which still gains the waiter.
+#
+# The action is ONE definition; the guarded pair reads its guard ONCE.
+run_check "INVARIANT" rg -n '^def applyReceiverPipHandoff' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def applyReceiveRendezvousHandoff' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def applyReceiveLegPipHandoff' SeLe4n/Kernel/IPC/Operations/Donation.lean
+# The guard is read from the PRE-state, inside the hand-off, so the donation and
+# the boost provably fire on the same states.  Region-bounded to the definition:
+# a Lean declaration header sits at column 0, so the gap cannot leave it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReceiveRendezvousHandoff[^\n]*(\n([ \t][^\n]*)?)*if rendezvousDequeuedCall st dequeued then" SeLe4n/Kernel/IPC/Operations/Donation.lean'
+# NEGATIVE: and NOT from the post-donation state, which would be a second answer
+# to the question the first `if` already asks -- a mutation that keeps every
+# name in the file and silently owes an `ipcState` frame lemma nothing supplies.
+run_negative_check "INVARIANT" rg -n 'rendezvousDequeuedCall stDon dequeued' SeLe4n/Kernel/IPC/Operations/Donation.lean
+# NEGATIVE: no dispatch arm may match on the donation alone.  The token stays in
+# the tree (the hand-off is defined over it), so this refuses the RELATION --
+# an arm that donates and does not walk -- rather than the name.
+run_negative_check "INVARIANT" rg -n 'match applyReceiveRendezvousDonation st. tid dequeued with' SeLe4n/Kernel/API.lean
+# `replyRecvBody` runs the SAME step for its receive leg, gated on the equality
+# that makes the reply leg's walk BE the receiver's.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBody[^\n]*(\n([ \t][^\n]*)?)*applyReceiveLegPipHandoff st3 tid nextThread recordedServer" SeLe4n/Kernel/API.lean'
+# NEGATIVE: passing the RECEIVER as the already-walked thread would make the step
+# unconditionally inert -- every name present, the fix disabled.
+run_negative_check "INVARIANT" rg -n 'applyReceiveLegPipHandoff st3 tid nextThread tid' SeLe4n/Kernel/API.lean
+# NEGATIVE: and the body must not inline the walk instead of sharing the step.
+run_negative_check "INVARIANT" rg -n 'PriorityInheritance.propagatePipChainCrossCore st3' SeLe4n/Kernel/API.lean
+# The obligation set the live transition owes, composed from the donation's and
+# the walk's rather than re-derived.
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_ok_decompose' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_preserves_objects_invExt' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_preserves_replenishQueueAffinityConsistent_smp' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveLegPipHandoff_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveLegPipHandoff_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The walk is not per-core silent, so `.replyRecv`'s declared write set gains a
+# FOURTH leg, read at the state that leg runs at -- the discipline the module
+# states for the other three.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBodyWriteSet[^\n]*(\n([ \t][^\n]*)?)*receiveLegPipHandoffWriteSet st3 receiver nextThread" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+# The SM3.C walker's obligation list grows with the walks, not with the
+# syscalls: `.replyRecv` declares TWO chain starts because it performs two.
+run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_endpointReceive' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_replyRecvReceiveLeg' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# ...and the reply leg's marker names the RECORDED SERVER, which is where the
+# live `replyRecvReturnDonation` actually walks from.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def pipChainStart_replyRecv\b[^\n]*(\n([ \t][^\n]*)?)*some recordedServerTid" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# NEGATIVE: naming the receiver there would send the walker up a different chain
+# on a delegated reply -- the superseded spelling, refused.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def pipChainStart_replyRecv\b[^\n]*(\n([ \t][^\n]*)?)*some callerTid" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSetTheorems_chainStart_count[^\n]*(\n([ \t][^\n]*)?)*\.chainStart\)\)\.length = 6" SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean'
+
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*\(receiveRendezvousDonatedSc\? st endpointId\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_donated_sc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_donation_stateLevel_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_donatedSc' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_donationIndex' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# `.receive` reaches the donation primitive, so `.schedContext` joins its kinds.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# ...and the size bound is restated at the NEW arity.  A bound left at the old
+# one still elaborates (the trailing argument would take a default) while
+# saying nothing about the shape the live arm declares -- the silent-unbounding
+# shape RR7.18's census exists to catch.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReceive_size_le[^\n]*(\n([ \t][^\n]*)?)*\(g : Option SchedContextId\)" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
+run_check "INVARIANT" bash -lc 'rg -n "lockSet_endpointReceive a b c d e f g h\)\.size" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
+# The runtime witnesses: a `.receive` resolved against a fixture whose send-queue
+# head is a `.bound` caller, with the passive-server case (donates, installs
+# nothing) asserted positively and an inert rendezvous asserted to declare
+# neither member -- so both track the write rather than being unconditionally
+# present.
+run_check "INVARIANT" rg -n 'a donating .\.receive. declares the donated SchedContext write' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'a capless donating .\.receive. declares the state-level write' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a non-donating capless .\.receive. declares no SchedContext' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'lockSet_endpointReceive \(caps \+ donation\) size = 7' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'lockSet_endpointReceive \(donation, no caps\) size = 7' tests/DeadlockFreedomSuite.lean
+
+# OD3.5: the ceiling, and the figure derived from it.  `maxLockSetSize` is the
+# WCRT headline's first factor, so a cut that widens a footprint pays here —
+# visibly, as a theorem rather than a paragraph.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 14$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 23 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+
+# The projection result got STRONGER: every field the return writes is stripped,
+# so no observability hypothesis on the server is needed at all.  The gap is
+# bounded to the declaration's OWN signature — its header at column 0 followed by
+# indented continuation lines — because `(.|\n)*` is not a region: an unbounded
+# gap reaches `hReceiverObjHigh` in the next theorem that has one (three do), so
+# the negative fired on a file where the hypothesis had been removed exactly as
+# intended.  A region-scoped presence check is still a presence check, and an
+# unscoped one is not even that.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private theorem returnDonatedSchedContext_preserves_projection( *\n +[^\n]*)*hReceiverObjHigh : objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_stackLinks_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_donationWrite_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+
 # PR #892 review: a refused current-thread record CLEARS the mirror rather than
 # leaving it naming the previous thread.  `switchToThreadHw` refuses a tid at or
 # above the `u64::MAX` sentinel *without touching the HAL*, so discarding that
@@ -1179,14 +1821,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlockingOnCore_reply_
 # the "restore into a descheduled frame" hazard the verb's own docstring names.
 # Relation, not presence: the mutation keeps `clearCurrentThreadHw` in the file
 # and drops the guard, so an anchor on the call alone would still pass.
-run_check "INVARIANT" bash -lc 'rg -U -n "def recordCommittedCurrentThreadHw(.|\n)*let status ← recordCurrentThreadHw cur\? c\n      if status == switchToThreadHwRejected then\n        let _ ← clearCurrentThreadHw c" SeLe4n/Kernel/Concurrency/Runtime.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def recordCommittedCurrentThreadHw[^\n]*(\n([ \t][^\n]*)?)*let status ← recordCurrentThreadHw cur\? c\n      if status == switchToThreadHwRejected then\n        let _ ← clearCurrentThreadHw c" SeLe4n/Kernel/Concurrency/Runtime.lean'
 # PR #892 review: the RAM-top walk accepts its accumulated total only from a
 # parse that reached a top-level FDT_END with every node closed.  It
 # *accumulates* where its `find_bootargs_in_dtb` twin *searches*, so an early
 # exit is fail-open here and fail-closed there — which is why only this one
 # needs the flag.  Without it a truncated blob handed `init_mmu` a RAM ceiling
 # read out of a prefix the walk never validated.
-run_check "INVARIANT" bash -lc 'rg -U -n "fn find_ram_top_in_dtb(.|\n)*let mut terminated = false;(.|\n)*if !terminated \|\| depth != 0 \{\n        return None;\n    \}\n    if extents.is_empty\(\) \{\n        return None;\n    \}\n    Some\(contiguous_ram_top\(&extents\)\)" rust/sele4n-hal/src/cmdline.rs'
+run_check "INVARIANT" bash -lc 'rg -U -n "fn find_ram_top_in_dtb[^\n]*(\n([ \t][^\n]*)?)*let mut terminated = false;[^\n]*(\n([ \t][^\n]*)?)*if !terminated \|\| depth != 0 \{\n        return None;\n    \}\n    if extents.is_empty\(\) \{\n        return None;\n    \}\n    Some\(contiguous_ram_top\(&extents\)\)" rust/sele4n-hal/src/cmdline.rs'
 # PR #892 review round 3: the RAM top is the end of the CONTIGUOUS run of
 # reported extents from address 0, decided over all of them at once, and the
 # peripheral window is the one gap the walk may cross — only from a cursor that
@@ -1245,8 +1887,8 @@ run_negative_check "INVARIANT" rg -n 'let rounds = fifo_acquisitions\(\) / THREA
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.
-run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSpliceHigh(.|\n)*queuePPrev = some \(\.tcbNext p\)" SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSpliceHigh(.|\n)*tcb\.queueNext = some n" SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSpliceHigh[^\n]*(\n([ \t][^\n]*)?)*queuePPrev = some \(\.tcbNext p\)" SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSpliceHigh[^\n]*(\n([ \t][^\n]*)?)*tcb\.queueNext = some n" SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean'
 run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
@@ -1558,17 +2200,19 @@ run_check "INVARIANT" rg -n -U 'match memoryRegionsFromNodes root with\n      \|
 # non-specification size-cell default.
 run_negative_check "INVARIANT" rg -n 'fdtRegionsToMemoryRegions \(extractMemoryRegions regBytes\)' SeLe4n/Platform/DeviceTree.lean
 run_negative_check "INVARIANT" rg -n '^def fdtDefaultSizeCells : Nat := 2$' SeLe4n/Platform/DeviceTree.lean
-# PR #892 review round 6: `.replyRecv` declares a footprint only for a
-# non-delegated reply, and resolves its donation from the RECORDED SERVER — the
-# resolver `lockSet_endpointReplyOnCore` has used since PR #822's review.  The
-# transition returns `(recordedReplyServer? st prevCaller).getD tid`'s donation,
-# so a delegate-derived footprint named a donation the transition does not touch
-# and omitted the one it does; the server's own TCB lock has no room under
-# `maxLockSetSize`, so the arm refuses rather than declaring a false footprint.
-run_check "INVARIANT" rg -n -U 'if \(recordedReplyServer\? st prevCaller\)\.getD ops\.caller = ops\.caller then\n                some \(lockSet_endpointReplyRecvOnCore' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# PR #892 review round 6: `.replyRecv` resolves its donation from the RECORDED
+# SERVER — the resolver `lockSet_endpointReplyOnCore` has used since PR #822's
+# review.  The transition returns `(recordedReplyServer? st prevCaller).getD
+# tid`'s donation, so a delegate-derived footprint named a donation the
+# transition does not touch and omitted the one it does.
+#
+# **WS-OD OD3.5** retired the round-6 *refusal* that sat beside this: the arm no
+# longer declines a delegated reply, it declares the recorded server's own TCB.
+# The resolution anchor stays — it is the half that was right — and the refusal's
+# anchors moved to the OD3.5 block above, stated as a negative on the retired
+# theorem and a positive on what replaced it.
 run_check "INVARIANT" rg -n -U 'lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender\?\n    \(\(endpointReplyServerDonation\? st target\)\.map \(·\.1\)\)\n    \(\(endpointReplyServerDonation\? st target\)\.map \(·\.2\)\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
-# NEGATIVE: the delegate-derived donation, and an unconditional declaration.
+# NEGATIVE: the delegate-derived donation.
 run_negative_check "INVARIANT" rg -n -U '\(\(endpointReplyDonation\? st replier\)\.map \(·\.1\)\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # PR #892 review round 6: a peripheral's `reg` is a LIST of blocks (a GIC node
 # carries its distributor and CPU interface in one), and a block is reported
@@ -1968,10 +2612,10 @@ run_negative_check "INVARIANT" rg -n -U 'let irqs ← perCoreIrqCount core\n  le
 # the other still carries `Release`.
 run_check "INVARIANT" rg -n -U 'pub fn record_timer_tick\(\) -> u64 \{\n    current_per_cpu_stats\(\)\n        \.timer_tick_count\n        \.fetch_add\(1, Ordering::Release\)' rust/sele4n-hal/src/per_cpu_stats.rs
 run_check "INVARIANT" rg -n -U 'pub fn record_sgi_dispatch\(\) -> u64 \{\n    current_per_cpu_stats\(\)\n        \.sgi_count\n        \.fetch_add\(1, Ordering::Release\)' rust/sele4n-hal/src/per_cpu_stats.rs
-run_check "INVARIANT" rg -n -U 'pub fn record_timer_tick_in_slice\(slots: &\[PerCpuStats\], core_id: usize\) -> u64 \{(.|\n)*?\.timer_tick_count\n        \.fetch_add\(1, Ordering::Release\)' rust/sele4n-hal/src/per_cpu_stats.rs
-run_check "INVARIANT" rg -n -U 'pub fn record_sgi_dispatch_in_slice\(slots: &\[PerCpuStats\], core_id: usize\) -> u64 \{(.|\n)*?\.sgi_count\n        \.fetch_add\(1, Ordering::Release\)' rust/sele4n-hal/src/per_cpu_stats.rs
-run_check "INVARIANT" rg -n -U 'pub fn timer_tick_count_for\(core_id: usize\) -> u64 \{(.|\n)*?\.timer_tick_count\n        \.load\(Ordering::Acquire\)' rust/sele4n-hal/src/per_cpu_stats.rs
-run_check "INVARIANT" rg -n -U 'pub fn sgi_count_for\(core_id: usize\) -> u64 \{(.|\n)*?\.sgi_count\.load\(Ordering::Acquire\)' rust/sele4n-hal/src/per_cpu_stats.rs
+run_check "INVARIANT" rg -n -U 'pub fn record_timer_tick_in_slice\(slots: &\[PerCpuStats\], core_id: usize\) -> u64 \{[^\n]*(\n([ \t][^\n]*)?)*?\.timer_tick_count\n        \.fetch_add\(1, Ordering::Release\)' rust/sele4n-hal/src/per_cpu_stats.rs
+run_check "INVARIANT" rg -n -U 'pub fn record_sgi_dispatch_in_slice\(slots: &\[PerCpuStats\], core_id: usize\) -> u64 \{[^\n]*(\n([ \t][^\n]*)?)*?\.sgi_count\n        \.fetch_add\(1, Ordering::Release\)' rust/sele4n-hal/src/per_cpu_stats.rs
+run_check "INVARIANT" rg -n -U 'pub fn timer_tick_count_for\(core_id: usize\) -> u64 \{[^\n]*(\n([ \t][^\n]*)?)*?\.timer_tick_count\n        \.load\(Ordering::Acquire\)' rust/sele4n-hal/src/per_cpu_stats.rs
+run_check "INVARIANT" rg -n -U 'pub fn sgi_count_for\(core_id: usize\) -> u64 \{[^\n]*(\n([ \t][^\n]*)?)*?\.sgi_count\.load\(Ordering::Acquire\)' rust/sele4n-hal/src/per_cpu_stats.rs
 # NEGATIVE: a subtype increment that publishes nothing.
 run_negative_check "INVARIANT" rg -n -U '\.(timer_tick_count|sgi_count)\n\s+\.fetch_add\(1, Ordering::Relaxed\)' rust/sele4n-hal/src/per_cpu_stats.rs
 run_check "INVARIANT" rg -n '^def tlbiLocalFullFlush' SeLe4n/Kernel/Concurrency/Runtime.lean
@@ -3563,7 +4207,7 @@ run_check "INVARIANT" rg -n 'ref\.cnode' SeLe4n/Kernel/InformationFlow/FineLockF
 # queue-owning-object umbrella) — the seventh member of a coverage family that
 # stopped at six, exactly where the umbrella began.
 run_check "INVARIANT" rg -n '^theorem suspendFootprint_splice_neighbors_under_endpoint_lock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n 'cancelSpliceNeighbors\?' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'queueSpliceNeighbors\?' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The suite exercises the declared path POSITIVELY and demonstrates the refusal;
 # before round 5 every declared-footprint result in the group was `none`.
 run_check "INVARIANT" rg -n 'NEGATIVE: a capability replaced under the growing phase is refused' tests/SmpInformationFlowSuite.lean
@@ -4216,10 +4860,10 @@ run_check "INVARIANT" rg -n '^theorem foldBlock_changes_state_needs_a_write' SeL
 run_check "INVARIANT" rg -n '^theorem ticketFoldBlock_eq_foldBlock' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
 run_check "INVARIANT" rg -n '^theorem concreteFoldBlock_eq_foldBlock' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
 run_check "INVARIANT" rg -n '^theorem queuedFoldBlock_eq_foldBlock' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRegister(.|\n)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRevoke(.|\n)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceQuery(.|\n)*stateLevelLock, .read" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_lifecycleRetype(.|\n)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRegister[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRevoke[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceQuery[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .read" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_lifecycleRetype[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" rg -n '^theorem stateLevelLock_objId_irrelevant' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 run_prose_negative_check "INVARIANT" rg -n 'serialise implicitly via the table-level' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 
@@ -5298,17 +5942,38 @@ EOF'
 # key conventions warn about.  The load-bearing pin is the pair of membership
 # theorems above -- they are proved from the outermost extension, so deleting it
 # fails the build -- and these are the structural seconds.
-run_check "INVARIANT" rg -nU 'def lockSet_endpointReceive \(callerTid[\s\S]*?if installsCaps then some \(stateLevelLock, AccessMode.write\) else none' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -nU 'def lockSet_replyRecv \(callerTid[\s\S]*?if installsCaps then some \(stateLevelLock, AccessMode.write\) else none' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '\[\.tcb, \.cnode, \.endpoint, \.reply, \.objStore\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# WS-OD OD3.6: the receive's state-level member is now a DISJUNCTION too --
+# the CDT write the install performs, or the `scThreadIndex` write the
+# rendezvous donation performs.  Anchored on the disjunction: pinning only
+# `installsCaps` would leave the member deletable on the passive-server path,
+# which donates and installs nothing.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReceive \(callerTid[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# WS-OD OD3.5: `.replyRecv`'s state-level member is a DISJUNCTION -- the receive
+# leg's CDT writes, the donation return's `scThreadIndex` write, and the
+# re-donation's -- because all three touch state the per-object locks cannot
+# decompose.  Anchored on the disjunction, not on the caps conjunct alone: the
+# arm that returns a donation without installing capabilities is precisely the
+# passive-server steady state, and pinning only `installsCaps` would leave the
+# member deletable on exactly that path.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv \(callerTid[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome \|\| redonatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# WS-OD OD3.6: `.receive` gained `.schedContext` -- the rendezvous donation
+# reaches the same primitive `.call` does.  Anchored on the `.receive` arm
+# itself rather than on the bare list, which said only that SOME arm carried
+# those kinds.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" rg -n '\[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-# NEGATIVE: the pre-RR7.11 constant cannot come back.  `maxLockSetSize` is 9
-# because the widest declared footprint -- a `.replyRecv` that both returns a
-# donation and installs capabilities -- is nine members, and the ninth is that
-# state-level write.  Reverting the constant without reverting the member makes
-# a footprint the bounded-wait argument does not cover.
+# NEGATIVE: no superseded constant can come back.  `maxLockSetSize` was 8 before
+# RR7.11, 9 before WS-OD OD3.5 and 11 before WS-OD OD3.7; it is 13 because the
+# widest declared footprint -- a delegated `.replyRecv` that returns a donation,
+# re-donates, installs capabilities and reads the two objects below its
+# reply-stack head -- is thirteen members.  Reverting the constant without
+# reverting the members makes a footprint the bounded-wait argument does not
+# cover.  The positive pin is the single `:= 13` anchor above; stating it twice
+# is one question with two answers, and the second copy is the one that goes
+# stale.
 run_negative_check "INVARIANT" rg -n 'def maxLockSetSize : Nat := 8' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
-run_check "INVARIANT" rg -n 'def maxLockSetSize : Nat := 9' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_negative_check "INVARIANT" rg -n 'def maxLockSetSize : Nat := 9' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_negative_check "INVARIANT" rg -n 'def maxLockSetSize : Nat := 11' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 # NEGATIVE: and a `_size_le_maxLockSetSize` theorem must state the CONSTANT, not
 # the numeral it happens to hold.  Five in the scheduler pinned `≤ 8` literally,
 # so each was a claim about a number while its name promised a relation -- the
@@ -5324,7 +5989,10 @@ run_negative_check "INVARIANT" rg -n 'match reply.caller with' SeLe4n/Kernel/API
 # capless send's asserted absent.
 run_check "INVARIANT" rg -n 'runIpcDeclaredFootprintChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'a caps-installing .\.receive. declares the state-level write' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'lockSet_replyRecv \(all options\) size = 9' tests/DeadlockFreedomSuite.lean
+# WS-OD OD3.7: the label names the CONSTANT, not the numeral it holds -- this
+# anchor pinned `= 11` and went stale the moment the ceiling moved, which is the
+# same defect the `_size_le_maxLockSetSize` negative below refuses in Lean.
+run_check "INVARIANT" rg -n 'lockSet_replyRecv \(all options\) size = maxLockSetSize \(the bound, exactly\)' tests/DeadlockFreedomSuite.lean
 # WS-RR RR7.12: the declared footprint is ACQUIRED at the live syscall seam.
 # Before this row exactly one live export bracketed (the raw
 # `suspend_thread_cross_core`), so "per-object reader-writer fine locks"
@@ -5545,6 +6213,29 @@ run_check "INVARIANT" rg -n 'found NO footprints' SeLe4n/Testing/LockFootprintBo
 # The four the hand-written conjunction had missed…
 run_check "INVARIANT" rg -n '^theorem lockSet_mintReplyCap_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbBindNotification_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+
+# WS-OD OD3.18: the module header's two hand-written inventories of which
+# footprints need a SchedContext member were a THIRD copy of `permittedKinds`,
+# which sits in the same file and is tied to the actual pairs by the
+# `lockSet_consistent_<arm>` family -- stated at each footprint's FULL arity, so
+# a member added without the kind being permitted fails to elaborate.  The
+# lists now defer to it rather than restating it, and this cut deliberately
+# added no new checker: a second derivation of an already-proven fact is the
+# very defect the cut is about, one level up.
+run_check "INVARIANT" rg -n 'def permittedKinds \(sid : SyscallId\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n 'permittedKinds \.receive' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n 'permittedKinds \.tcbSetPriority' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_prose_check "INVARIANT" rg -n 'the canonical inventory is' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+
+# The three corrected claims.  Each negative keeps the surrounding list and
+# refuses the retired sentence, so re-adding the claim is what fires it.
+run_prose_negative_check "INVARIANT" rg -Un 'lockSet_endpointReceive`\*\*: receive blocks waiting' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_prose_negative_check "INVARIANT" rg -Un 'Same as reply \(the receive phase doesn.t\n  initiate donation' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_prose_negative_check "INVARIANT" rg -Un 'SetMCPriority/SetIPCBuffer`\*\*:\n  TCB-only config ops' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# …and the corrections themselves, so a revert is a failure rather than a
+# silent return to the prior text.
+run_prose_check "INVARIANT" rg -n 'The 5 affected syscalls and their donation extensions' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_prose_check "INVARIANT" rg -n 'These two lists are a reading aid' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbUnbindNotification_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetAffinity_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # …and the fifth defect beneath them: the reply footprint's bound was stated at
@@ -5618,7 +6309,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : endpointReceiveDual endpoint
 # is the one place `scThreadIndex` is written.
 run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preservesFieldsOutside' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOutside _ _ _ hClean' SeLe4n/Kernel/CrossSubsystem.lean
-run_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ hStep' SeLe4n/Kernel/CrossSubsystem.lean
+# WS-OD OD3.1: the application names `none` explicitly, so this anchor pins the
+# composition *and* the phase's inertness at the same site — a call site that
+# started resolving a real outer caller would have to change this line.  The
+# underscore run is the arity, so an argument added to the pop is caught here
+# rather than being absorbed silently.
+run_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
 run_check "INVARIANT" rg -n 'StateField enum has 27 variants' tests/InformationFlowSuite.lean
 # The medium-severity sweep's plan names these eight artefacts by name and the
@@ -5647,7 +6343,7 @@ run_check "INVARIANT" rg -n 'runModifiedFieldsChecks' tests/CrossSubsystemPerCor
 # The fine-lock plan's status header says what actually landed.  It read
 # "2 of 12 PRs" and "Tracks B, C and D are entirely unstarted" for ten cuts
 # after Track B started landing.
-run_prose_check "INVARIANT" rg -n '9 of 12 PRs landed' docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
+run_prose_check "INVARIANT" rg -n '9 of 13 PRs landed' docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
 run_prose_check "INVARIANT" rg -n 'Fine-lock migration Tracks B and C' docs/planning/SMP_RELEASE_CLOSURE_PLAN.md
 
 # WS-RR RR7.20: the SM7 deferrals get owners.  These are PROSE checks, and
@@ -6633,7 +7329,7 @@ run_check "INVARIANT" rg -n '^def isApprovedBootApplication' SeLe4n/Testing/Boot
 # recursion limit on every `bind`-headed witness once the boot's configuration
 # binding reached the RAM-variant selection, and which would have accepted an
 # inlined copy of the wrapper's body.
-run_check "INVARIANT" rg -n -U 'match ← Meta\.whnfUntil body approvedBootCall with\n\s+\| none => pure false\n\s+\| some reduced =>(.|\n)*?Meta\.withReducible <\| Meta\.isDefEq reduced \(mkApp \(mkConst approvedBootCall\) config\)' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n -U 'match ← Meta\.whnfUntil body approvedBootCall with\n\s+\| none => pure false\n\s+\| some reduced =>[^\n]*(\n([ \t][^\n]*)?)*?Meta\.withReducible <\| Meta\.isDefEq reduced \(mkApp \(mkConst approvedBootCall\) config\)' SeLe4n/Testing/BootEntryContract.lean
 run_negative_check "INVARIANT" rg -nF 'Meta.isDefEq body (mkApp (mkConst approvedBootCall) config)' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundConfig' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundHalt' SeLe4n/Testing/BootEntryContract.lean
@@ -6880,7 +7576,10 @@ run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_tcbSuspend' SeLe4n/K
 # unbind path can key its guard on it; `Suspend.lean` re-exports the name.
 run_check "INVARIANT" rg -n '^def runningCoreOf\?' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^theorem currentScan_boot_of_single_core' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n '^def cancelSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# WS-OD OD3.10: the splice's neighbour resolver is the neutral
+# `queueSpliceNeighbors?`, in the model beside the link fields it reads, since
+# the bound-notification delivery asks the same question.
+run_check "INVARIANT" rg -n '^def queueSpliceNeighbors\?' SeLe4n/Model/Object/Types.lean
 # Audit closure (v0.32.66): running-core footprint triple, EDF deadline rules,
 # current-uniqueness invariant slice, donation-side observer capstone.
 # WS-RR RR2.10 (v0.34.42): the triple moved to `Scheduler/Operations/PerCoreChooseThread.lean`
@@ -8536,7 +9235,7 @@ import SeLe4n.Kernel.Concurrency.LockSet
 -- cite in the shell comment introducing this block -- a heredoc body is script
 -- content to the identifier-naming gate, not prose.)
 #check @SeLe4n.Kernel.Concurrency.lockSet_endpointSend_capless
-#check @SeLe4n.Kernel.Concurrency.lockSet_endpointCall_capless
+#check @SeLe4n.Kernel.Concurrency.lockSet_endpointCall_capless_donationless
 -- SM3.B.4: permittedKinds + per-transition lockSet_consistent_*.
 #check @SeLe4n.Kernel.Concurrency.permittedKinds
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_send
@@ -11155,5 +11854,151 @@ run_negative_check "INVARIANT" rg -n '// Skip off_mem_rsvmap at 16\.' rust/sele4
 run_check "INVARIANT" rg -n 'fails header validation' tests/*PlatformSuite.lean
 run_check "INVARIANT" rg -n 'validate_fdt_header_rejects_each_layout_violation' rust/sele4n-hal/src/cmdline.rs
 run_check "INVARIANT" rg -n 'validate_fdt_header_requires_the_version_carrying_size_dt_struct' rust/sele4n-hal/src/cmdline.rs
+
+# ============================================================================
+# WS-OD OD3.7 -- the two objects the donation return reads BELOW the stack head
+# ============================================================================
+#
+# `returnDonatedSchedContext` at call depth >= 2 walks one link past the
+# reply-stack head to find the outer caller (`replyStackOuterCaller?`) and then
+# reads that caller's TCB to validate it (`outerCallerAcceptable`).  Neither is
+# covered by another member: the head Reply IS the answered caller's own
+# `replyObject`, and `outerCallerAcceptable`'s first two conjuncts prove the
+# outer caller is neither thread the pop rewrites.  The second read is a
+# validate-then-commit, so an unlocked read is a time-of-check/time-of-use
+# window on exactly the thread about to receive a scheduling context.
+#
+# The two are ONE resolver, because it is one question.  The plan row named only
+# the first read; the second is derived from the operation, which is the
+# enumeration-versus-derivation rule applied to a footprint.
+run_check "INVARIANT" rg -n '^def replyStackBelowHeadReads\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem replyStackBelowHeadReads\?_of_no_stack' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem replyStackBelowHeadReads\?_of_bottom_head' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The declared caller IS the resolver's answer -- so the lock is on the thread
+# `outerCallerAcceptable` will actually read, not on one that merely sits below
+# the head.  Without this the footprint and the walk could drift, which is the
+# shape OD3.5 spent a whole row closing on the delegated reply.
+run_check "INVARIANT" rg -n '^theorem replyStackBelowHeadReads\?_snd_eq_outerCaller' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# Both members are READ mode: the pop inspects these objects and writes neither.
+# A write here would serialise unrelated pops against each other for nothing.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReply[^\n]*(\n([ \t][^\n]*)?)*belowHeadReplyId\.map \(fun rid => \(replyLock rid, AccessMode\.read\)\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReply[^\n]*(\n([ \t][^\n]*)?)*outerCallerTid\.map \(fun ot => \(tcbLock ot, AccessMode\.read\)\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][^\n]*)?)*belowHeadReplyId\.map \(fun rid => \(replyLock rid, AccessMode\.read\)\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][^\n]*)?)*outerCallerTid\.map \(fun ot => \(tcbLock ot, AccessMode\.read\)\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# NEGATIVE: a WRITE-mode below-head member is refused -- token-preserving, since
+# it keeps both member names and changes only the relation they declare.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "belowHeadReplyId\.map \(fun rid => \(replyLock rid, AccessMode\.write\)\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "outerCallerTid\.map \(fun ot => \(tcbLock ot, AccessMode\.write\)\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# The cancellation reply arm reads them too -- its reclaim runs the same pop --
+# and its resolver is DERIVED from `cancelledCallerDonation?`, the reclaim's own
+# answer to which SchedContext is handed back.  One question, one answer.
+run_check "INVARIANT" rg -n '^def cancelBelowHeadReads\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelBelowHeadReads\?[^\n]*(\n([ \t][^\n]*)?)*replyStackBelowHeadReads\? st scId" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelBelowHeadReads\?_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# The three resolved footprints supply them from the pre-state.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*replyStackBelowHeadReads\? st scId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*replyStackBelowHeadReads\? st scId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelIpcBlockingOnCore[^\n]*(\n([ \t][^\n]*)?)*cancelBelowHeadReads\? st victimTid tcb" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The bounds, restated at the new arity.  Only `.replyRecv` needed the ceiling
+# raise: the reply arm reaches nine and the cancellation reply arm ten.
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_ten' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem size_le_11' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_base_plus_eleven_opts' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The admissible per-lock cost moved with the ceiling, as a derived figure.  The
+# POSITIVE pin lives once, at the theorem itself (see the `:= by decide` anchor
+# above); repeating it here would be one question with two answers.  What this
+# block adds is the negative: no superseded figure may come back while the
+# ceiling stands at fourteen.
+#
+# The list must gain the figure each raise supersedes.  OD3.13 moved the ceiling
+# 13 -> 14 and the cost 25 -> 23 and did NOT add `= 25` here, so for four cuts
+# the value it had just retired was the one figure that could come back
+# unrefused -- an enumeration that has to be extended by hand, extended at every
+# raise but the latest (PR #893 review).
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 25" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 30" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+
+# WS-OD OD3.7 (the sharp bound): how much of the ceiling is slack, stated rather
+# than left for a reader to re-derive.  Thirteen is the union over ALL argument
+# values; no reachable state supplies them all distinctly, because the returned
+# donation's owner IS the answered caller.  `ipcInvariantFull` does not entail
+# that -- it admits `.blockedOnReply epId rt` for any `rt` and relates `rt` to no
+# donation -- so it is a STATED hypothesis, the reply-side twin of WS-RR RR7.22's
+# `donationHolderIsReplyTarget`, not a derived one.
+run_check "INVARIANT" rg -n '^def replyDonationOwnerIsAnsweredCaller' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_thirteen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_thirteen_of_owner_eq_target' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+# The mechanism: a key already present costs nothing, which is what lets a
+# RESOLVED footprint be sharper than the parametric bound it is measured by.
+run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_containsKey' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_not_containsKey' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+# NEGATIVE: the sharp bound must NOT be stated as the ceiling.  `maxLockSetSize`
+# is what `boundedWait_under_2pl` and the WCRT surface consume and must stay true
+# of every argument value; a cut that lowered the constant to the reachable
+# figure would make the parametric footprint unbounded.  Token-preserving: it
+# keeps the theorem and changes only the number it concludes.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "lockSet_endpointReplyRecvOnCore_size_le_thirteen[^\n]*(\n([ \t][^\n]*)?)*≤ maxLockSetSize" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
+# The runtime witness executes the merge, and pins that the sharpening is ONE
+# member: the recorded server merges only on a non-delegated reply, which is a
+# case split rather than an invariant.
+run_check "INVARIANT" rg -n 'a \.replyRecv whose donation owner is the answered caller declares 13' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the sharpening is one member, not two' tests/DeadlockFreedomSuite.lean
+
+# ============================================================================
+# WS-OD OD3.8 -- the pop preserves the donation chain
+# ============================================================================
+#
+# Every other transition in the tree discharges `donationChainWellFormed`
+# through `donationChainFrame`: it writes no `Reply.donatedSc`, no `Reply.prev`
+# and no `SchedContext.scReply`, so the two projections the walk reads are
+# fixed.  The pop is the exception the frame family was designed against, so it
+# carries a preservation theorem instead -- and that theorem is what makes
+# OD2.4's predicate an obligation rather than a decoration.
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem donationHeadPop_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+# The two-store lemma is about the head that MOVES.  A version stated for a
+# store that leaves `scReply` where it is would be a corollary of
+# `donationChainFrame_of_storeObject_schedContext` and would say nothing about
+# the pop -- token-preserving, since it keeps the lemma and its name.  Bounded to
+# the declaration's own signature: an unbounded gap is not a region.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationHeadPop_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*scReply := head\?\.bind \(fun p => p\.2\.prev\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# ...and it is UNCONDITIONAL in `newOwner?`.  The pop's third and fourth stores
+# rewrite `schedContextBinding`, which is not chain data at any depth, so unlike
+# the `ipcInvariantFull` composite nothing here is `hBottom`-conditioned.  The
+# mutation keeps the theorem and adds the hypothesis, so a name anchor alone
+# would still pass.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem returnDonatedSchedContext_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*newOwner\? = none" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# Acyclicity is DERIVED from the invariant's own termination clause, not added to
+# it as a conjunct.  A `NoDup` field would be an enumeration standing in for a
+# derivation: the walk is a function of its starting point, so a head appearing
+# again below itself makes the walk from that occurrence return the whole chain,
+# which is strictly longer than the suffix it must equal.
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_head_not_mem_tail' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_suffix_walk' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_deterministic' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_mono_le' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_length_le' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# NEGATIVE: the predicate did not gain an acyclicity conjunct.  Bounded to the
+# structure's own declaration, so the anchor cannot be satisfied or tripped by a
+# `NoDup` anywhere else in a 5700-line file.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^structure donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*NoDup" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The congruence the pop consumes is CHAIN-scoped.  `donationChainFrom_congr`
+# asks agreement at every key and is useless here -- the pop changes one key's
+# links -- so the sharper form asks it only at the chain's own members, which is
+# exactly what the walk reads.
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_congr_on_chain' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The `some`-head refinement of the head clear: a caller that already knows there
+# IS a head should not have to refute "the step did nothing" before it can say
+# what the step wrote.
+run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_some_ok' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The theorem is EXERCISED on the `some` arm.  Discharged only where the context
+# heads no stack, it would be indistinguishable from one whose writing arm is
+# wrong -- the shape OD2.4's witness exists to refuse, one phase on.  So the
+# depth-2 witness is popped, and the state the pop leaves heads exactly the TAIL
+# of the stack it started with.
+run_check "INVARIANT" rg -n '^theorem donationChainWitness_pop_wellFormed' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWitness_pop_chain' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationChainWitness_pop_chain[^\n]*(\n([ \t][^\n]*)?)*= some \[donationChainWitnessOuter\]" tests/SmpCrossCoreCallSuite.lean'
 
 finalize_report

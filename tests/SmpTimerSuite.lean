@@ -338,11 +338,23 @@ private def runLockSetChecks : IO Unit := do
   assertBool "tick lock-set keys are duplicate-free"
     (decide (((timerTickOnCoreLockSet bootCoreId).map (·.1)).Nodup))
 
-/-- §3.2 SM5.D.7: the tick is in the bounded-WCRT class (lock-set size ≤ 8). -/
+/-- §3.2 SM5.D.7: the tick is in the bounded-WCRT class — its footprint is
+inside `maxLockSetSize`.
+
+The bound **names the constant**.  It was written `≤ 8`, the ceiling's value when
+this witness was authored, so it asserted nothing about the premise
+`boundedWait_under_2pl` and the WCRT surface actually take — and it would have
+gone on passing had the tick's footprint grown past a *lowered* ceiling.  A
+theorem or witness whose subject is `maxLockSetSize` states `maxLockSetSize`
+(`CLAUDE.md`, the RR7.11 note on `_size_le_maxLockSetSize`).  The tick's own
+size is pinned separately, as the stable fact it is. -/
 private def runWcrtChecks : IO Unit := do
   IO.println "--- §3.2 SM5.D.7 WCRT-bounded tick ---"
-  assertBool "tick lock-set size ≤ maxLockSetSize (8)"
-    (decide ((timerTickOnCoreLockSet bootCoreId).length ≤ 8))
+  assertBool "tick lock-set size ≤ maxLockSetSize"
+    (decide ((timerTickOnCoreLockSet bootCoreId).length ≤ maxLockSetSize))
+  assertBool "…and the tick's own footprint is the three-member per-core set"
+    (decide ((timerTickOnCoreLockSet bootCoreId).length
+      = 3))  -- `timerTickOnCoreLockSet_length`, executed
   assertBool "object-domain locks acquired before run-queue locks (level 9 < 10)"
     (decide (RunQueueLockId.runQueueLockLevel < ReplenishQueueLockId.replenishQueueLockLevel))
 

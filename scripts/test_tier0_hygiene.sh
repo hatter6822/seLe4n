@@ -345,11 +345,27 @@ run_check "HYGIENE" "${SCRIPT_DIR}/test_gate_skip_accounting.sh"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_consistency.py"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_consistency.py" --self-test
 
-# AN10-D: AK7 cascade monotonicity gate. Reads docs/dev_history/audits/AL0_baseline.txt
-# and rejects regressions on any AK7 cascade metric (raw-match site count,
-# typed-helper adoption, storeObjectKindChecked adoption, sentinel guard
-# coverage, AN10 regression test count).
+# AN10-D: AK7 cascade monotonicity gate. Reads scripts/store_reader_hygiene_baseline.txt
+# and rejects regressions on any AK7 cascade metric (the raw-read site
+# inventory, typed-helper adoption, storeObjectKindChecked adoption, sentinel
+# guard coverage, AN10 regression test count).
+#
+# WS-OD OD3.5: the binding floor is the per-(file, variant) inventory, not the
+# whole-tree cardinality it used to be -- a count answers "how many" when the
+# property is "which", so a raw read moving between files passed unseen.  The
+# self-test runs beside it because a gate whose fixtures mutate by DELETION
+# proves nothing about a cardinality check; all four of its rejecting cases are
+# token-preserving and leave every scalar total identical, which is the
+# statement that the old gate admitted them.
 run_check "HYGIENE" "${SCRIPT_DIR}/ak7_cascade_check_monotonic.sh"
+run_check "HYGIENE" "${SCRIPT_DIR}/ak7_cascade_check_monotonic.sh" --self-test
+# ...and the scanner the floors are computed FROM (PR #893 review round 4).  The
+# monotonic gate's own self-test synthesizes baseline files, so it exercises the
+# comparison and never the measurement; a scanner that under-reaches therefore
+# produced floors that were simply lower, and both gates reported PASS.  This
+# runs the shared `RAW_MATCH_AWK` program against Lean fixtures, the one-line
+# discriminator among them.
+run_check "HYGIENE" "${SCRIPT_DIR}/ak7_cascade_baseline.sh" --self-test
 
 # WS-RC R12.B (closes DEEP-ARCH-01 false positive structurally): verify
 # the production/staged module partition. The gate computes the transitive
@@ -440,5 +456,20 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py"
 # scanner that under-reaches reports PASS.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_ipc_invariant_dethreading.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_ipc_invariant_dethreading.py"
+
+# WS-OD OD3.15: hold every prose claim about the lock-set ceiling to the value
+# Lean derives.  `maxLockSetSize` is the WCRT headline's first factor and two
+# further published figures are functions of it, so every raise left a
+# hand-maintained copy behind somewhere -- four consecutive review rounds each
+# found one the previous round's sweep had missed, which is the
+# enumeration-standing-in-for-a-derivation shape at the scale of a whole
+# document set.  Both axes are derived (the constants and the formula from the
+# Lean sources; the sites from the tracked tree), the live claim has a canonical
+# spelling so narrative naming an old value is free, a near-miss is a gate
+# defect rather than a skip, and five documents are pinned to carry the
+# statement so deleting the sentence does not satisfy it.  Self-test first, and
+# its harness refuses a check whose only rejecting fixture deletes a token.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py"
 
 finalize_report

@@ -2968,7 +2968,9 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let stRet := { st1 with
     objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
       serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
-  match SeLe4n.Kernel.returnDonatedSchedContext stRet serverTid scId callerTid with
+  -- WS-OD OD3.1: the bottom-of-stack return — `callerTid` is the donation's
+  -- original owner and no reply stack exists, so the context goes back `.bound`.
+  match SeLe4n.Kernel.returnDonatedSchedContext stRet serverTid scId callerTid none with
   | .error err =>
     IO.println s!"[Z7D-002] returnDonatedSchedContext: error {reprStr err}"
   | .ok stReturned =>

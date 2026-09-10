@@ -111,10 +111,14 @@ cosmetic refactor with no correctness impact):
   the file). DEF-F-L9 retained as a post-v1.0 cosmetic refactor with
   no correctness impact.
 - `AUDIT_v0.29.0_ERRATA.md` — errata for the v0.29.0 audit (E-1..E-6).
-- `AL0_baseline.txt` — AL0 monotonicity baseline (re-anchored at every
-  WS-AN AN10 commit; the AK7 cascade gate
-  `scripts/ak7_cascade_check_monotonic.sh` reads it from the archived
-  path until the next workstream cuts a fresh baseline).
+- `AL0_baseline.txt` — **retired at v0.34.128 (WS-OD OD3.5).**  The AK7
+  cascade floor is a live Tier 0 gate, and this project reserves
+  `docs/dev_history/` for material retained only for historical
+  traceability that contributors are instructed not to read; a live
+  floor is neither.  The baseline now lives beside the gate that reads
+  it, at `scripts/store_reader_hygiene_baseline.txt`, and its binding content is
+  the per-(file, variant) raw-read inventory rather than the whole-tree
+  cardinality this file carried.
 
 ## Archival policy
 

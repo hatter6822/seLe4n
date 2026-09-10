@@ -436,6 +436,141 @@ theorem SpliceShape.carry {P : SystemState → Prop}
     obtain ⟨c3, p3⟩ := step c2 hStore p2
     exact (link c3 hClear p3).2
 
+-- ============================================================================
+-- §2b  WS-OD OD3.9 — the dual removal writes the *shared* unlink updates
+-- ============================================================================
+
+/-- **WS-OD OD3.9**: `storeTcbQueueLinks` on a resolvable thread **is** the
+`storeObject` of that thread's link-updated TCB.
+
+Peeling the lookup once, here, is what lets the two pins below talk about the
+*value* the dual removal stores rather than about the arguments it passes. -/
+theorem storeTcbQueueLinks_as_storeObject
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hTcb : lookupTcb st tid = some tcb)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st
+      = .ok ((), st') := by
+  unfold storeTcbQueueLinks at hStep
+  simp only [hTcb] at hStep
+  cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+  | error e => simp [hStore] at hStep
+  | ok pair =>
+    simp only [hStore] at hStep
+    have hEq := Except.ok.inj hStep
+    subst hEq
+    obtain ⟨u, s2⟩ := pair
+    cases u
+    rfl
+
+/-- **WS-OD OD3.9**: the link write a removal makes to its successor *is* the
+shared `queueUnlinkSuccessor`.  `rfl` — the two record updates elaborate to the
+same constructor application, because `next.queueNext` is what the successor
+already holds. -/
+theorem tcbWithQueueLinks_eq_queueUnlinkSuccessor (removed next : TCB) :
+    tcbWithQueueLinks next removed.queuePrev removed.queuePPrev next.queueNext
+      = queueUnlinkSuccessor removed next := rfl
+
+/-- **WS-OD OD3.9**: and the write it makes to its predecessor is
+`queueUnlinkPredecessor`. -/
+theorem tcbWithQueueLinks_eq_queueUnlinkPredecessor (removed prev : TCB) :
+    tcbWithQueueLinks prev prev.queuePrev prev.queuePPrev removed.queueNext
+      = queueUnlinkPredecessor removed prev := rfl
+
+/-- **WS-OD OD3.9: the dual removal stores the shared successor update.**
+
+`endpointQueueRemove` and `spliceOutMidQueueNode` name `queueUnlinkSuccessor`
+outright; `endpointQueueRemoveDual` spells its link write through
+`storeTcbQueueLinks`, so nothing tied the third removal to the definition the
+other two share.  This does, at the level of the object the operation actually
+stores — a change to either side stops it elaborating.
+
+Why it matters: `queuePPrev` is the field this very operation validates
+(`pprevConsistent`), and the three removals disagreeing about it is precisely
+the defect OD1.1 found in one copy and OD3.9 found in the third. -/
+theorem endpointQueueRemoveDual_stores_queueUnlinkSuccessor
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid nextTid : SeLe4n.ThreadId) (tcb : TCB)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
+    (hTcb : lookupTcb st tid = some tcb)
+    (hNext : tcb.queueNext = some nextTid) :
+    ∃ (s1 s2 : SystemState) (nextTcb : TCB),
+      lookupTcb s1 nextTid = some nextTcb ∧
+      storeObject nextTid.toObjId (.tcb (queueUnlinkSuccessor tcb nextTcb)) s1
+        = .ok ((), s2) := by
+  cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
+  | headLast _ tcb₀ _ _ _ hTcb₀ _ _ _ _ hNext₀ _ _ _ =>
+      have hEq : tcb₀ = tcb := Option.some.inj (hTcb₀.symm.trans hTcb)
+      subst hEq; rw [hNext₀] at hNext; cases hNext
+  | midLast _ tcb₀ _ _ _ _ _ hTcb₀ _ _ _ _ _ hNext₀ _ _ _ _ _ =>
+      have hEq : tcb₀ = tcb := Option.some.inj (hTcb₀.symm.trans hTcb)
+      subst hEq; rw [hNext₀] at hNext; cases hNext
+  | headMore _ tcb₀ nextTcb nextTid₀ s1 s2 _ _ hTcb₀ hPPrev hPrevNone _ _ hNext₀
+      _ hNextTcb hRelink _ _ =>
+      have hEq : tcb₀ = tcb := Option.some.inj (hTcb₀.symm.trans hTcb)
+      subst hEq
+      have hTid : nextTid₀ = nextTid := Option.some.inj (hNext₀.symm.trans hNext)
+      rw [hTid] at hNextTcb hRelink
+      refine ⟨s1, s2, nextTcb, hNextTcb, ?_⟩
+      have hStore := storeTcbQueueLinks_as_storeObject s1 s2 nextTid nextTcb none
+        (some .endpointHead) nextTcb.queueNext hNextTcb hRelink
+      rw [← hPrevNone, ← hPPrev, tcbWithQueueLinks_eq_queueUnlinkSuccessor] at hStore
+      exact hStore
+  | midMore _ tcb₀ _ nextTcb prevTid nextTid₀ s1 s2 _ _ hTcb₀ hPPrev hPrev _ _ _
+      hNext₀ _ _ _ hNextTcb hRelinkNext _ _ =>
+      have hEq : tcb₀ = tcb := Option.some.inj (hTcb₀.symm.trans hTcb)
+      subst hEq
+      have hTid : nextTid₀ = nextTid := Option.some.inj (hNext₀.symm.trans hNext)
+      rw [hTid] at hNextTcb hRelinkNext
+      refine ⟨s1, s2, nextTcb, hNextTcb, ?_⟩
+      have hStore := storeTcbQueueLinks_as_storeObject s1 s2 nextTid nextTcb (some prevTid)
+        (some (.tcbNext prevTid)) nextTcb.queueNext hNextTcb hRelinkNext
+      rw [← hPrev, ← hPPrev, tcbWithQueueLinks_eq_queueUnlinkSuccessor] at hStore
+      exact hStore
+
+/-- **WS-OD OD3.9**: and the predecessor half, for the same reason. -/
+theorem endpointQueueRemoveDual_stores_queueUnlinkPredecessor
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid prevTid : SeLe4n.ThreadId) (tcb : TCB)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
+    (hTcb : lookupTcb st tid = some tcb)
+    (hPrev : tcb.queuePrev = some prevTid) :
+    ∃ (s1 : SystemState) (prevTcb : TCB),
+      lookupTcb st prevTid = some prevTcb ∧
+      storeObject prevTid.toObjId (.tcb (queueUnlinkPredecessor tcb prevTcb)) st
+        = .ok ((), s1) := by
+  cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
+  | headLast _ tcb₀ _ _ _ hTcb₀ _ hPrevNone _ _ _ _ _ _ =>
+      have hEq : tcb₀ = tcb := Option.some.inj (hTcb₀.symm.trans hTcb)
+      subst hEq; rw [hPrevNone] at hPrev; cases hPrev
+  | headMore _ tcb₀ _ _ _ _ _ _ hTcb₀ _ hPrevNone _ _ _ _ _ _ _ _ =>
+      have hEq : tcb₀ = tcb := Option.some.inj (hTcb₀.symm.trans hTcb)
+      subst hEq; rw [hPrevNone] at hPrev; cases hPrev
+  | midLast _ tcb₀ prevTcb prevTid₀ s1 _ _ hTcb₀ _ hPrev₀ _ _ _ hNext hPrevTcb _
+      hRelink _ _ =>
+      have hEq : tcb₀ = tcb := Option.some.inj (hTcb₀.symm.trans hTcb)
+      subst hEq
+      have hTid : prevTid₀ = prevTid := Option.some.inj (hPrev₀.symm.trans hPrev)
+      rw [hTid] at hPrevTcb hRelink
+      refine ⟨s1, prevTcb, hPrevTcb, ?_⟩
+      have hStore := storeTcbQueueLinks_as_storeObject st s1 prevTid prevTcb
+        prevTcb.queuePrev prevTcb.queuePPrev none hPrevTcb hRelink
+      rw [← hNext, tcbWithQueueLinks_eq_queueUnlinkPredecessor] at hStore
+      exact hStore
+  | midMore _ tcb₀ prevTcb _ prevTid₀ nextTid s1 _ _ _ hTcb₀ _ hPrev₀ _ _ _
+      hNext hPrevTcb _ hRelinkPrev _ _ _ _ =>
+      have hEq : tcb₀ = tcb := Option.some.inj (hTcb₀.symm.trans hTcb)
+      subst hEq
+      have hTid : prevTid₀ = prevTid := Option.some.inj (hPrev₀.symm.trans hPrev)
+      rw [hTid] at hPrevTcb hRelinkPrev
+      refine ⟨s1, prevTcb, hPrevTcb, ?_⟩
+      have hStore := storeTcbQueueLinks_as_storeObject st s1 prevTid prevTcb
+        prevTcb.queuePrev prevTcb.queuePPrev (some nextTid) hPrevTcb hRelinkPrev
+      rw [← hNext, tcbWithQueueLinks_eq_queueUnlinkPredecessor] at hStore
+      exact hStore
+
 /-- WS-RR RR7.22: the carrier, applied straight to the operation. -/
 theorem endpointQueueRemoveDual_carry {P : SystemState → Prop}
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
@@ -2866,6 +3001,8 @@ theorem endpointQueueRemove_ok_headLast
           tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none)))) := by
   unfold spliceQueue at hHead hTail
   unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects
+  -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
+  unfold queueUnlinkPredecessor queueUnlinkSuccessor
   simp only [hEp, hTcb, hPrevNone, hNext, hHead, hTail, if_pos]
 
 /-- WS-OD OD1.3: the single removal on the **head, with successor** branch. -/
@@ -2890,6 +3027,8 @@ theorem endpointQueueRemove_ok_headMore
   have hNextRaw := (SystemState.getTcb?_eq_some_iff st nextTid nextTcb).mp hNextTcb
   unfold spliceQueue at hHead hTailNe ⊢
   unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects
+  -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
+  unfold queueUnlinkPredecessor queueUnlinkSuccessor
   simp only [hEp, hTcb, hPrevNone, hNext, hHead, hNextRaw, if_pos, if_neg hTailNe]
 
 /-- WS-OD OD1.3: the single removal on the **mid-queue, no successor** branch. -/
@@ -2914,6 +3053,8 @@ theorem endpointQueueRemove_ok_midLast
   have hPrevRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevTcb
   unfold spliceQueue at hHeadNe hTail ⊢
   unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects
+  -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
+  unfold queueUnlinkPredecessor queueUnlinkSuccessor
   simp only [hEp, hTcb, hPrev, hNext, hTail, hPrevRaw, if_pos, if_neg hHeadNe]
 
 /-- WS-OD OD1.3: the single removal on the **mid-queue, with successor** branch. -/
@@ -2951,6 +3092,8 @@ theorem endpointQueueRemove_ok_midMore
   unfold tcbWithQueueLinks at hLk
   unfold spliceQueue at hHeadNe hTailNe ⊢
   unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects
+  -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
+  unfold queueUnlinkPredecessor queueUnlinkSuccessor
   simp only [hEp, hTcb, hPrev, hNext, hPrevRaw, hLk, if_neg hHeadNe, if_neg hTailNe]
 
 /-- WS-OD OD1.3: a TCB key and an endpoint key are distinct — the store holds

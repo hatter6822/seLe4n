@@ -148,6 +148,8 @@ open SeLe4n.Kernel.Concurrency
 #check @pipChainStart_endpointCall
 #check @pipChainStart_endpointReply
 #check @pipChainStart_replyRecv
+#check @pipChainStart_replyRecvReceiveLeg
+#check @pipChainStart_endpointReceive
 
 /-! ## SM3.B.4 — Per-transition consistency theorems -/
 
@@ -343,7 +345,7 @@ example :
 a single (TCB, write) entry. -/
 
 example :
-    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none
+    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none
     S.size = 2 := by decide
 
 -- ============================================================================
@@ -387,7 +389,11 @@ example :
     LockSet.lockAcquireSequence
       (lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
         (some ⟨8⟩) (some ⟨100⟩)) =
-    [(⟨.cnode, ObjId.ofNat 10⟩, .read),
+    -- WS-OD OD3.5: a donating call also holds the state-level lock, for the
+    -- `scThreadIndex` maintenance `donateSchedContext` ends in.  It is level 0,
+    -- so the ladder puts it first.
+    [(⟨.objStore, ObjId.ofNat 0⟩, .write),
+     (⟨.cnode, ObjId.ofNat 10⟩, .read),
      (⟨.tcb, ObjId.ofNat 5⟩, .write),
      (⟨.tcb, ObjId.ofNat 8⟩, .write),
      (⟨.endpoint, ObjId.ofNat 20⟩, .write),
@@ -404,19 +410,20 @@ example :
 example :
     (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none none none).size = 3 := by decide
 
-/-! ### tcbSuspend with `.donated` binding: 5 locks (caller TCB +
-cnode + suspended TCB + donated SC + original owner). -/
+/-! ### tcbSuspend with `.donated` binding: 6 locks (caller TCB +
+cnode + suspended TCB + donated SC + original owner + — WS-OD OD3.5 — the
+state-level lock the donation cancellation's `scThreadIndex` write takes). -/
 
 example :
     (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-      (some ⟨50⟩) (some ⟨7⟩)).size = 5 := by decide
+      (some ⟨50⟩) (some ⟨7⟩)).size = 6 := by decide
 
-/-! ### tcbSuspend with `.bound` binding: 4 locks (caller TCB +
-cnode + suspended TCB + bound SC). -/
+/-! ### tcbSuspend with `.bound` binding: 5 locks (caller TCB +
+cnode + suspended TCB + bound SC + the state-level lock). -/
 
 example :
     (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-      (some ⟨50⟩) none).size = 4 := by decide
+      (some ⟨50⟩) none).size = 5 := by decide
 
 /-! ### WS-SM SM6.E — tcbSuspend of a `.blockedOnReply` target: 4 locks
 (caller TCB + cnode + suspended TCB + consumed Reply object). -/
@@ -513,12 +520,19 @@ example : permittedKinds .send = [.tcb, .cnode, .endpoint, .objStore] := by deci
 -- under the per-object reply write-lock).
 -- WS-RR RR7.11: `.objStore` — the receive leg installs through the same
 -- `ipcTransferSingleCap` the send does, and writes the same CDT maps.
-example : permittedKinds .receive = [.tcb, .cnode, .endpoint, .reply, .objStore] := by decide
+-- WS-OD OD3.6: `.schedContext` — a receive that dequeues a queued `Call`
+-- donates that caller's scheduling context to the receiver (seL4-MCS's
+-- `receiveIPC`), reaching the same donation primitive `.call` does.
+example : permittedKinds .receive
+    = [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore] := by decide
 -- Audit-pass-3: `.call`/`.reply`/`.replyRecv` include `.schedContext` for the
 -- donation extension.  WS-SM SM6.D: they also gain `.reply` — each links or
 -- consumes a first-class Reply object under the per-object reply write-lock.
 example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore] := by decide
-example : permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply] := by decide
+-- WS-OD OD3.5: `.objStore` joins `.reply` — the donation return maintains
+-- `scThreadIndex`, an `RHTable` whose insert may rehash the whole table.
+example : permittedKinds .reply =
+    [.tcb, .cnode, .schedContext, .reply, .objStore] := by decide
 example : permittedKinds .replyRecv =
     [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore] := by decide
 -- WS-SM SM6.B: `.notificationSignal` gains `.endpoint` for the bound-delivery
@@ -556,15 +570,20 @@ example : permittedKinds .serviceQuery = [.tcb, .cnode, .objStore] := by decide
 -- failure here.
 example : permittedKinds .schedContextConfigure =
     [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
+-- WS-OD OD3.5: the bind and the unbind gain `.objStore` for their
+-- `scThreadIndex` maintenance; `.schedContextConfigure` writes no index and is
+-- deliberately not widened with them.
 example : permittedKinds .schedContextBind =
-    [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
+    [.tcb, .cnode, .schedContext, .endpoint, .notification, .objStore] := by decide
 example : permittedKinds .schedContextUnbind =
-    [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
+    [.tcb, .cnode, .schedContext, .endpoint, .notification, .objStore] := by decide
 -- Audit-pass-3: `.tcbSuspend` now includes `.schedContext` to cover
 -- the donation-cancel extension.  WS-SM SM6.E: + `.reply` to cover the
 -- `.blockedOnReply` reply-link teardown (`consumeReplyLink`).
+-- WS-OD OD3.5: + `.objStore`, for the donation cancellation's `scThreadIndex`
+-- maintenance — the same reason `.reply` gained it.
 example : permittedKinds .tcbSuspend =
-    [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply] := by decide
+    [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply, .objStore] := by decide
 example : permittedKinds .tcbResume = [.tcb, .cnode, .endpoint, .notification] := by decide
 example : permittedKinds .tcbSetPriority =
     [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
@@ -747,15 +766,49 @@ example :
     pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
       (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩ := by decide
 
-/-! ### pipChainStart_replyRecv always emits revertPIP at caller. -/
+/-! ### pipChainStart_replyRecv emits revertPIP at the **recorded server**.
+
+WS-OD OD3.14: the reply leg's walk starts at the thread whose waiter set it
+shrank, which is the recorded server — the receiver itself on a non-delegated
+reply, and a different thread when the reply capability was delegated.  Naming
+the receiver there would send the SM3.C walker up a different chain. -/
 
 example :
     pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
-      none none none = some ⟨5⟩ := by decide
+      none none none ⟨5⟩ = some ⟨5⟩ := by decide
 
 example :
     pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
-      (some ⟨11⟩) (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩ := by decide
+      (some ⟨11⟩) (some ⟨42⟩) (some ⟨7⟩) ⟨9⟩ = some ⟨9⟩ := by decide
+
+/-! ### pipChainStart_replyRecvReceiveLeg (WS-OD OD3.14) — the SECOND walk.
+
+`none` on a non-delegated reply, because the reply leg's own walk started at the
+receiver and **is** this walk; `none` when the receive leg dequeued nothing;
+and the receiver otherwise. -/
+
+example :
+    pipChainStart_replyRecvReceiveLeg ⟨5⟩ ⟨5⟩ (some ⟨11⟩) = none := by decide
+
+example :
+    pipChainStart_replyRecvReceiveLeg ⟨5⟩ ⟨9⟩ none = none := by decide
+
+example :
+    pipChainStart_replyRecvReceiveLeg ⟨5⟩ ⟨9⟩ (some ⟨11⟩) = some ⟨5⟩ := by decide
+
+/-! ### pipChainStart_endpointReceive (WS-OD OD3.14) — the walk `.receive`
+gained when the priority inversion on its rendezvous path was closed.
+
+Mirrors the dequeued caller exactly: a receive that blocked, and a plain `Send`
+rendezvous, invoke no walk. -/
+
+example :
+    pipChainStart_endpointReceive ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) none
+      = none := by decide
+
+example :
+    pipChainStart_endpointReceive ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (some ⟨11⟩)
+      = some ⟨5⟩ := by decide
 
 /-! ### pipChainStart_tcbSuspend (SM6.E) walks only when the victim was
 reply-blocked — the signal is exactly the G2-precaptured blocking server. -/
@@ -770,7 +823,7 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 111 := by decide
+example : lockSetTheorems.length = 113 := by decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
@@ -787,7 +840,7 @@ example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length 
 example : (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 4 := by
+example : (lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 6 := by
   decide
 
 -- ============================================================================
@@ -834,18 +887,25 @@ private def runLockSetAcquireSortChecks : IO Unit := do
   assertBool "endpointCall lockAcquireSequence matches plan §4.5 expected order"
     (decide (seq = expected))
   -- Audit-pass-3: with donation, the SC is added and sorts last (level 7).
+  -- **WS-OD OD3.5**: and the state-level lock joins it, because
+  -- `donateSchedContext` maintains `SystemState.scThreadIndex` -- an `RHTable`
+  -- whose insert may rehash, so no per-object lock decomposes it.  Six members,
+  -- and the `.objStore` singleton sorts FIRST (`LockKind` level 0), which is
+  -- what keeps the by-kind ladder acyclic: the state-level lock is taken before
+  -- any per-object one.
   let sDon := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
                 (some ⟨8⟩) (some ⟨100⟩)
   let seqDon := sDon.lockAcquireSequence
-  assertBool "endpointCall (with donation) lock-set size = 5"
-    (decide (sDon.size = 5))
+  assertBool "endpointCall (with donation) lock-set size = 6"
+    (decide (sDon.size = 6))
   let expectedDon : List (LockId × AccessMode) :=
-    [(⟨.cnode, ObjId.ofNat 10⟩, .read),
+    [(stateLevelLock, .write),
+     (⟨.cnode, ObjId.ofNat 10⟩, .read),
      (⟨.tcb, ObjId.ofNat 5⟩, .write),
      (⟨.tcb, ObjId.ofNat 8⟩, .write),
      (⟨.endpoint, ObjId.ofNat 20⟩, .write),
      (⟨.schedContext, ObjId.ofNat 100⟩, .write)]
-  assertBool "endpointCall (with donation) lockAcquireSequence: SC sorts last"
+  assertBool "endpointCall (with donation) lockAcquireSequence: objStore first, SC last"
     (decide (seqDon = expectedDon))
 
 private def runAccessModeAlgebraChecks : IO Unit := do
@@ -909,22 +969,27 @@ private def runPermittedKindsChecks : IO Unit := do
       decide (p.fst = notificationLock (ObjId.ofNat 40) ∧ p.snd = AccessMode.write)))
   -- Audit-pass-3: .tcbSuspend now includes .schedContext (donation-cancel).
   -- WS-SM SM6.E: + .reply (the `.blockedOnReply` reply-link teardown).
+  -- WS-OD OD3.5: `.objStore` — a suspend that cancels a donation maintains
+  -- `SystemState.scThreadIndex`, an `RHTable` whose insert may rehash.
   assertBool "permittedKinds .tcbSuspend"
     (decide (permittedKinds .tcbSuspend =
-      [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply]))
+      [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply, .objStore]))
   -- WS-RR RR7.38: `.endpoint` and `.notification` — the queue owner's lock, on
   -- every arm that can write a queued TCB.
+  -- WS-OD OD3.5: `.objStore` — the bind and the unbind maintain
+  -- `SystemState.scThreadIndex`, an `RHTable` whose insert may rehash.
   assertBool "permittedKinds .schedContextBind"
     (decide (permittedKinds .schedContextBind =
-      [.tcb, .cnode, .schedContext, .endpoint, .notification]))
+      [.tcb, .cnode, .schedContext, .endpoint, .notification, .objStore]))
   -- Audit-pass-3: .call, .reply, .replyRecv include .schedContext (donation).
   -- WS-SM SM6.D: they also include .reply (per-object reply write-lock).
   -- WS-RR RR7.7: and `.objStore`, for the same CDT write `.send` declares.
   assertBool "permittedKinds .call (donation + reply-object + CDT kinds)"
     (decide (permittedKinds .call
       = [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]))
-  assertBool "permittedKinds .reply (donation-return + reply-object kind)"
-    (decide (permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply]))
+  -- WS-OD OD3.5: `.objStore` — the donation return maintains `scThreadIndex`.
+  assertBool "permittedKinds .reply (donation-return + reply-object + index kinds)"
+    (decide (permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply, .objStore]))
   assertBool "permittedKinds .replyRecv (donation-return + reply-object kind)"
     (decide (permittedKinds .replyRecv =
       [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]))
@@ -1032,18 +1097,27 @@ private def runPerTransitionShapeChecks : IO Unit := do
     (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
               none none).size = 3))
   -- Audit-pass-3: TCB suspend with .bound binding (SC only): 4 locks.
-  assertBool "tcbSuspend size (.bound binding, SC only) = 4"
+  -- **WS-OD OD3.5**: 5 — the donation cancellation maintains
+  -- `SystemState.scThreadIndex`, so a suspend that resolves a SchedContext
+  -- also declares the state-level lock.
+  assertBool "tcbSuspend size (.bound binding, SC + index) = 5"
     (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-              (some ⟨50⟩) none).size = 4))
+              (some ⟨50⟩) none).size = 5))
+  assertBool "a SchedContext-resolving tcbSuspend declares the state-level lock"
+    (decide ((stateLevelLock, AccessMode.write)
+      ∈ (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
+           (some ⟨50⟩) none).pairs))
   -- Audit-pass-3: TCB suspend with .donated binding (SC + owner): 5 locks.
-  assertBool "tcbSuspend size (.donated binding, SC + originalOwner) = 5"
+  -- **WS-OD OD3.5**: 6, with the state-level lock the index write needs.
+  assertBool "tcbSuspend size (.donated binding, SC + originalOwner + index) = 6"
     (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-              (some ⟨50⟩) (some ⟨7⟩)).size = 5))
+              (some ⟨50⟩) (some ⟨7⟩)).size = 6))
   -- Audit-pass-3: TCB suspend with ALL options (block ep + nti + .donated): 7 locks.
-  assertBool "tcbSuspend size (full: blocks + .donated + originalOwner) = 7"
+  -- **WS-OD OD3.5**: 8, same reason.
+  assertBool "tcbSuspend size (full: blocks + .donated + originalOwner + index) = 8"
     (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
               (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
-              (some ⟨50⟩) (some ⟨7⟩)).size = 7))
+              (some ⟨50⟩) (some ⟨7⟩)).size = 8))
   -- Audit-pass-6 P1: tcbSetPriority with unbound target = 3 locks
   -- (caller TCB read, CNode read, target TCB write — no SC).
   assertBool "tcbSetPriority size (unbound target, no SC) = 3"
@@ -1099,27 +1173,85 @@ private def runLubMergeChecks : IO Unit := do
       [(⟨.cnode, ObjId.ofNat 10⟩, .read),
        (⟨.tcb, ObjId.ofNat 5⟩, .write)]))
   -- endpointReply(caller=replyTarget) collapses.
-  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none
+  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none
   assertBool "endpointReply(caller=replyTarget) collapses to 2 locks"
     (decide (selfReply.size = 2))
   -- Audit-pass-3+4: endpointReply with donation-return.
   -- Under invariant, originalOwner == replyTarget so the duplicate TCB
   -- entry collapses via lub-merge — 4 locks total.
+  -- WS-OD OD3.5: five, not four — a reply that returns a donation also holds
+  -- the state-level lock, for the `scThreadIndex` maintenance the return ends in.
   let donReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                    (some ⟨42⟩) (some ⟨7⟩)
-  assertBool "endpointReply(caller=5, target=7, donatedSc=42, owner=7=target) has 4 locks (lub-collapse)"
-    (decide (donReply.size = 4))
+                    (some ⟨42⟩) (some ⟨7⟩) none none none
+  assertBool "endpointReply(caller=5, target=7, donatedSc=42, owner=7=target) has 5 locks (lub-collapse)"
+    (decide (donReply.size = 5))
   -- Audit-pass-4: under hypothetical invariant violation where
   -- originalOwner ≠ replyTarget, the lockSet correctly covers both.
   let donReplyDrift := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                         (some ⟨42⟩) (some ⟨9⟩)
-  assertBool "endpointReply(caller=5, target=7, owner=9≠target) has 5 locks (drift case)"
-    (decide (donReplyDrift.size = 5))
+                         (some ⟨42⟩) (some ⟨9⟩) none none none
+  assertBool "endpointReply(caller=5, target=7, owner=9≠target) has 6 locks (drift case)"
+    (decide (donReplyDrift.size = 6))
+  -- WS-OD OD3.5: a reply that returns *nothing* holds no state-level lock — the
+  -- member is conditioned on the donation, not unconditional, and a check that
+  -- only ever saw the donating shape could not tell the two apart.
+  let bareReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ none none none none none
+  assertBool "endpointReply with no donation has 3 locks (no state-level member)"
+    (decide (bareReply.size = 3))
   -- Audit-pass-3+4: replyRecv with full donation extension.
+  -- WS-OD OD3.5: seven, not six — the state-level lock joins for the same reason.
   let donReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                       (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩)
-  assertBool "replyRecv (sender + donation + owner=target=7 collapse) has 6 locks"
-    (decide (donReplyRecv.size = 6))
+                       (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
+                       none none none none
+  assertBool "replyRecv (sender + donation + owner=target=7 collapse) has 7 locks"
+    (decide (donReplyRecv.size = 7))
+  -- WS-OD OD3.5: a **non-delegated** reply names its recorded server, and that
+  -- is the invoking thread, so the member merges and the size does not move.
+  let selfServedReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                              (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
+                              (some ⟨5⟩) none none none
+  assertBool "replyRecv with a non-delegated recorded server still has 7 locks (lub-collapse)"
+    (decide (selfServedReplyRecv.size = 7))
+  -- ...and a **delegated** one names a third thread, which is the member PR #892
+  -- review round 6 had no room for and OD3.5 declares.
+  let delegatedReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                             (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
+                             (some ⟨9⟩) none none none
+  assertBool "replyRecv with a delegated recorded server has 8 locks"
+    (decide (delegatedReplyRecv.size = 8))
+  -- ...and the second SchedContext hand-off — the member whose absence made this
+  -- footprint false — is a ninth, distinct from the returned context.
+  let redonatingReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                              (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
+                              (some ⟨9⟩) (some ⟨43⟩) none none
+  assertBool "replyRecv that also re-donates has 9 locks (the second hand-off's SC)"
+    (decide (redonatingReplyRecv.size = 9))
+  -- WS-OD OD3.7: and the two objects the donation return reads *below* the
+  -- reply-stack head are a twelfth and thirteenth — the reason the ceiling moved
+  -- again.  Each is asserted on its own, since a member that merged would make
+  -- the raise look unnecessary while the footprint stayed false.
+  let belowHeadReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                             (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
+                             (some ⟨9⟩) (some ⟨43⟩) (some ⟨44⟩) none
+  assertBool "replyRecv that reads the Reply below the head has 10 locks"
+    (decide (belowHeadReplyRecv.size = 10))
+  let outerCallerReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                               (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
+                               (some ⟨9⟩) (some ⟨43⟩) none (some ⟨12⟩)
+  assertBool "replyRecv that also validates the outer caller's TCB has 10 locks"
+    (decide (outerCallerReplyRecv.size = 10))
+  -- The widest shape the arm can declare: a delegated, re-donating, caps-carrying
+  -- `.replyRecv` with a distinct original owner, reading both objects below its
+  -- reply-stack head, and relinking the queue-structure TCB its receive leg
+  -- writes (WS-OD OD3.13) — fourteen, which is what `maxLockSetSize` is measured
+  -- against.
+  let widestReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                          (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
+                          (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
+                          (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
+  assertBool "the widest declarable .replyRecv has 14 locks (= maxLockSetSize)"
+    (decide (widestReplyRecv.size = 14))
+  assertBool "...and that is exactly maxLockSetSize"
+    (decide (widestReplyRecv.size = maxLockSetSize))
 
 private def runUnionChecks : IO Unit := do
   IO.println "--- §10 LockSet.union semantics ---"
@@ -1201,8 +1333,11 @@ private def runConsistencyRuntimeChecks : IO Unit := do
   assertBool "lockSet_endpointCall (with donation): all kinds in permittedKinds .call"
     allOk_callDon
   -- Audit-pass-3+4: donation-return extension on .reply (full args).
+  -- WS-OD OD3.7: taken with both below-head reads resolved, so the kind check
+  -- covers the shape the live arm declares at call depth ≥ 2 rather than the
+  -- chain-free one.
   let replyDon := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                    (some ⟨42⟩) (some ⟨7⟩)
+                    (some ⟨42⟩) (some ⟨7⟩) none (some ⟨44⟩) (some ⟨12⟩)
   let allOk_replyDon := replyDon.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .reply))
   assertBool "lockSet_endpointReply (with donation + owner): all kinds in permittedKinds .reply"
@@ -1440,8 +1575,8 @@ private def runLookupFixtureChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 111"
-    (decide (lockSetTheorems.length = 111))
+  assertBool "lockSetTheorems.length = 113"
+    (decide (lockSetTheorems.length = 113))
   assertBool "projection category count = 22"
     (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
   assertBool "lockSet category count = 35 (one per SyscallId variant)"
@@ -1452,8 +1587,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6))
   assertBool "algebra category count = 9"
     (decide ((lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9))
-  assertBool "chainStart category count = 4 (audit-pass-5 PIP-chain markers + SM6.E suspend)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 4))
+  assertBool "chainStart category count = 6 (audit-pass-5 markers + SM6.E suspend + WS-OD OD3.14's two)"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 6))
   assertBool "category-partition sum = total"
     (decide
       ((lockSetTheorems.filter (fun t => t.category == .projection)).length +
@@ -1483,13 +1618,28 @@ private def runPipChainStartChecks : IO Unit := do
   assertBool "pipChainStart_endpointReply: donation args do not affect chain-start"
     (decide (pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
               (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩))
-  -- pipChainStart_replyRecv mirrors endpointReply.
-  assertBool "pipChainStart_replyRecv: always = some callerTid (no extras)"
+  -- pipChainStart_replyRecv names the RECORDED SERVER (WS-OD OD3.14): the reply
+  -- leg walks from the thread whose waiter set it shrank, which is the receiver
+  -- only when the reply capability was not delegated.
+  assertBool "pipChainStart_replyRecv: non-delegated ⇒ the receiver"
     (decide (pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
-              none none none = some ⟨5⟩))
-  assertBool "pipChainStart_replyRecv: full args do not affect chain-start"
+              none none none ⟨5⟩ = some ⟨5⟩))
+  assertBool "pipChainStart_replyRecv: DELEGATED ⇒ the recorded server, not the receiver"
     (decide (pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
-              (some ⟨11⟩) (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩))
+              (some ⟨11⟩) (some ⟨42⟩) (some ⟨7⟩) ⟨9⟩ = some ⟨9⟩))
+  -- WS-OD OD3.14: `.replyRecv`'s SECOND walk, and `.receive`'s new one.
+  assertBool "pipChainStart_replyRecvReceiveLeg: non-delegated ⇒ none (the reply leg covered it)"
+    (decide (pipChainStart_replyRecvReceiveLeg ⟨5⟩ ⟨5⟩ (some ⟨11⟩) = none))
+  assertBool "pipChainStart_replyRecvReceiveLeg: delegated but no Call dequeued ⇒ none"
+    (decide (pipChainStart_replyRecvReceiveLeg ⟨5⟩ ⟨9⟩ none = none))
+  assertBool "pipChainStart_replyRecvReceiveLeg: delegated with a dequeued Call ⇒ the receiver"
+    (decide (pipChainStart_replyRecvReceiveLeg ⟨5⟩ ⟨9⟩ (some ⟨11⟩) = some ⟨5⟩))
+  assertBool "pipChainStart_endpointReceive: no Call dequeued ⇒ none"
+    (decide (pipChainStart_endpointReceive ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              none = none))
+  assertBool "pipChainStart_endpointReceive: a dequeued Call ⇒ the receiver"
+    (decide (pipChainStart_endpointReceive ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (some ⟨11⟩) = some ⟨5⟩))
   -- Defense-in-depth: the chain-start TCB equals the receiver in `.call`
   -- handshake mode, so the static lockSet (which includes receiverTid in
   -- its `tcbLock receiverTid .write` entry) already covers the chain
@@ -1506,7 +1656,7 @@ private def runPipChainStartChecks : IO Unit := do
     (let st := pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                  none none
      let ls := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                 none none
+                 none none none none none
      match st with
      | none => true
      | some tid => decide (ls.containsKey ⟨.tcb, ObjId.ofNat tid.toNat⟩ = true))

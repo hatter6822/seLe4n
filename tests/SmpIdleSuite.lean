@@ -860,6 +860,31 @@ private def runBootValidationParityChecks : IO Unit := do
        (.schedContext (SchedContext.empty (SeLe4n.SchedContextId.ofNat idle0Obj.toNat))) == true &&
      SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
        (.schedContext (SchedContext.empty ⟨9⟩)) == false)
+  -- WS-OD OD2.1: `SchedContext.scReply` is a Reply **object id**, so the
+  -- reservation reads it too; and a boot SchedContext may head no reply stack
+  -- at all, because every admissible boot Reply is inert (`bootSafeReplyCheck`
+  -- requires `donatedSc = none`), so a config-supplied head could only dangle —
+  -- a `donationChainWellFormed` violation installed before the first
+  -- instruction runs.
+  assertBool "NEGATIVE: a boot SchedContext's reply-stack head is read"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.schedContext { SchedContext.empty ⟨9⟩ with scReply := some idleReplyId }) == true &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.schedContext { SchedContext.empty ⟨9⟩ with scReply := some ⟨9⟩ }) == false)
+  assertBool "NEGATIVE: ...and a boot SchedContext heading ANY reply stack fails boot safety"
+    (SeLe4n.Platform.Boot.bootSafeObjectCheck
+       (.schedContext { SchedContext.empty ⟨9⟩ with scReply := some ⟨9⟩ }) == false &&
+     SeLe4n.Platform.Boot.bootSafeObjectCheck
+       (.schedContext (SchedContext.empty ⟨9⟩)) == true)
+  let stackHeadCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects :=
+        [ { id := ⟨9⟩,
+            obj := .schedContext { SchedContext.empty ⟨9⟩ with scReply := some ⟨9⟩ },
+            hSlots := fun _ h => KernelObject.noConfusion h,
+            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  assertBool "NEGATIVE: ...so the checked boot refuses a config SchedContext that heads a stack"
+    ((SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads stackHeadCfg).toOption.isNone)
   -- Round 8: the identity relation covers every object that carries its own id.
   let scAliasCfg : SeLe4n.Platform.Boot.PlatformConfig :=
     { irqTable := [],

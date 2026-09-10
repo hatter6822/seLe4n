@@ -939,8 +939,16 @@ private def runCSpaceWalkFootprintChecks : IO Unit := do
   assertBool "the failed root's one-member footprint is within the ceiling and declared"
     (SeLe4n.Kernel.declaredLockSetForCSpaceWalk root addr 32 st |>.isSome)
   -- A chain of CNodes, each one bit wide and each slot 0 naming the next: a walk
-  -- of `n` bits from the head reads `n` CNodes, so ten levels is one more than
-  -- the ceiling and nine sits exactly at it.
+  -- of `n` bits from the head reads `n` CNodes, so a walk of `maxLockSetSize + 1`
+  -- levels is one past the ceiling and one of `maxLockSetSize` sits exactly at
+  -- it.  Both depths and the chain's length are DERIVED from the ceiling rather
+  -- than written as numerals: this witness was authored at a ceiling of 9 with
+  -- the depths spelled `10` and `9`, and WS-OD OD3.5's raise to 11 turned it
+  -- from a statement about the refusal into a statement about a walk well inside
+  -- the bound, which is a false pass rather than a failure.  A witness whose
+  -- subject is a constant names the constant.
+  let ceiling : Nat := SeLe4n.Kernel.Concurrency.maxLockSetSize
+  let overCeiling : Nat := ceiling + 1
   let chainId : Nat → SeLe4n.ObjId := fun k => SeLe4n.ObjId.ofNat (100 + k)
   let link : Nat → SeLe4n.Model.CNode := fun k =>
     { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1,
@@ -948,22 +956,27 @@ private def runCSpaceWalkFootprintChecks : IO Unit := do
         { target := .object (chainId (k + 1)),
           rights := SeLe4n.Model.AccessRightSet.empty, badge := none } }
   let stChain : SeLe4n.Model.SystemState :=
-    (List.range 10).foldl (fun s k => { s with
+    (List.range overCeiling).foldl (fun s k => { s with
       objects := s.objects.insert (chainId k) (.cnode (link k)) }) st
-  assertBool "a ten-level walk reads ten CNodes"
-    (decide ((SeLe4n.Kernel.cspaceWalkPath (chainId 0) addr 10 stChain).length = 10))
+  assertBool "a walk one level past the ceiling reads one key per level"
+    (decide ((SeLe4n.Kernel.cspaceWalkPath (chainId 0) addr overCeiling stChain).length
+      = overCeiling))
   assertBool "…every key before the last of which holds a CNode"
-    ((SeLe4n.Kernel.cspaceWalkPath (chainId 0) addr 10 stChain).dropLast.all
+    ((SeLe4n.Kernel.cspaceWalkPath (chainId 0) addr overCeiling stChain).dropLast.all
       (fun k => (stChain.getCNode? k).isSome))
   assertBool "…and its footprint is one member past the ceiling"
-    (decide ((SeLe4n.Kernel.cspaceWalkLockSet (chainId 0) addr 10 stChain).size
-      = SeLe4n.Kernel.Concurrency.maxLockSetSize + 1))
+    (decide ((SeLe4n.Kernel.cspaceWalkLockSet (chainId 0) addr overCeiling stChain).size
+      = ceiling + 1))
   assertBool "…so the declaration is REFUSED rather than stated past the bound"
-    (SeLe4n.Kernel.declaredLockSetForCSpaceWalk (chainId 0) addr 10 stChain |>.isNone)
-  assertBool "a nine-level walk sits at the ceiling and is declared"
-    (SeLe4n.Kernel.declaredLockSetForCSpaceWalk (chainId 0) addr 9 stChain |>.isSome)
+    (SeLe4n.Kernel.declaredLockSetForCSpaceWalk (chainId 0) addr overCeiling stChain
+      |>.isNone)
+  assertBool "a walk at the ceiling declares, and its footprint is exactly the bound"
+    (decide ((SeLe4n.Kernel.cspaceWalkLockSet (chainId 0) addr ceiling stChain).size
+      = ceiling))
+  assertBool "…and that is the walk the declaration accepts"
+    (SeLe4n.Kernel.declaredLockSetForCSpaceWalk (chainId 0) addr ceiling stChain |>.isSome)
   assertBool "NEGATIVE: a refused walk is never handed a footprint of any size"
-    (match SeLe4n.Kernel.declaredLockSetForCSpaceWalk (chainId 0) addr 10 stChain with
+    (match SeLe4n.Kernel.declaredLockSetForCSpaceWalk (chainId 0) addr overCeiling stChain with
      | some _ => false
      | none => true)
   -- 3. The delete's side of the conflict: `cspaceDelete` takes the target

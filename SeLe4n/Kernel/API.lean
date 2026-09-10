@@ -825,7 +825,8 @@ def replyRecvReturnDonation (tid recordedServer : SeLe4n.ThreadId)
         | .donated oldScId owner =>
             match recordedServer.toValid?, owner.toValid? with
             | some srvV, some ownerV =>
-                match returnDonatedSchedContextValid st srvV oldScId ownerV with
+                -- WS-OD OD4.4: blocked on OD4.3 — see `applyReplyDonation`.
+                match returnDonatedSchedContextValid st srvV oldScId ownerV none with
                 | .error e => .error e
                 | .ok st1' =>
                     -- WS-RR RR2.20: the return moved the SC's binding from the
@@ -836,27 +837,23 @@ def replyRecvReturnDonation (tid recordedServer : SeLe4n.ThreadId)
                     let st1 := migrateSchedContextReplenishment st1' oldScId
                       (determineTargetCore st recordedServer) (determineTargetCore st owner)
                     -- Did the receive leg rendezvous with a queued `Call`?
-                    match lookupTcb st1 nextThread with
-                    | some nextTcb =>
-                        match nextTcb.ipcState with
-                        | .blockedOnReply _ _ =>
-                            -- New Call: donate to the RECEIVER `tid`, not the (possibly
-                            -- delegated) recorded server.  WS-RR RR2.20: via the
-                            -- cross-core form, so the new client's replenishments
-                            -- migrate to the receiver's home core as well.
-                            match nextThread.toValid?, tid.toValid? with
-                            | some nextV, some tidV =>
-                                match applyCallDonationOnCore st1 nextV tidV
-                                    (determineTargetCore st1 nextThread)
-                                    (determineTargetCore st1 tid) with
-                                | .error e => .error e
-                                | .ok st2 =>
-                                    .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer serverCore).1)
-                            | _, _ => .error .invalidArgument
-                        | _ =>
-                            .ok ((), (PriorityInheritance.propagatePipChainCrossCore
-                              (removeRunnableOnCore st1 recordedServer serverCore) recordedServer serverCore).1)
-                    | none =>
+                    -- **WS-OD OD3.6**: the hand-off is `applyRendezvousCallDonation`,
+                    -- the step `.receive` performs too.  It used to be written out
+                    -- here, and `.receive` performed no donation at all -- two
+                    -- receiving arms dequeuing a `Call` the same way and handing
+                    -- its scheduling context over in only one of them.
+                    -- `rendezvousDequeuedCall` is the guard, asked of `st1`
+                    -- exactly as the inline match asked it.
+                    if rendezvousDequeuedCall st1 nextThread then
+                        -- New Call: donate to the RECEIVER `tid`, not the (possibly
+                        -- delegated) recorded server.  WS-RR RR2.20: via the
+                        -- cross-core form, so the new client's replenishments
+                        -- migrate to the receiver's home core as well.
+                        match applyRendezvousCallDonation st1 tid nextThread with
+                        | .error e => .error e
+                        | .ok st2 =>
+                            .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer serverCore).1)
+                    else
                         .ok ((), (PriorityInheritance.propagatePipChainCrossCore
                           (removeRunnableOnCore st1 recordedServer serverCore) recordedServer serverCore).1)
             | _, _ => .error .invalidArgument
@@ -928,16 +925,16 @@ theorem replyRecvReturnDonation_preserves_replenishQueueAffinityConsistent_smp
             SeLe4n.ThreadId.toValid?_some_val_eq recordedServer srvV hSrvV
           have hOwnerEq : ownerV.val = owner :=
             SeLe4n.ThreadId.toValid?_some_val_eq owner ownerV hOwnerV
-          cases hRet : returnDonatedSchedContext st recordedServer oldScId owner with
+          cases hRet : returnDonatedSchedContext st recordedServer oldScId owner none with
           | error e =>
-              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV
-                    = returnDonatedSchedContext st recordedServer oldScId owner by
+              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV none
+                    = returnDonatedSchedContext st recordedServer oldScId owner none by
                   simp only [returnDonatedSchedContextValid, hSrvEq, hOwnerEq], hRet] at h
               simp only [] at h
               cases h
           | ok st1' =>
-              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV
-                    = returnDonatedSchedContext st recordedServer oldScId owner by
+              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV none
+                    = returnDonatedSchedContext st recordedServer oldScId owner none by
                   simp only [returnDonatedSchedContextValid, hSrvEq, hOwnerEq], hRet] at h
               simp only [] at h
               -- Stage 1: the return plus its RR2.20 migration.
@@ -945,51 +942,35 @@ theorem replyRecvReturnDonation_preserves_replenishQueueAffinityConsistent_smp
                   (migrateSchedContextReplenishment st1' oldScId
                     (determineTargetCore st recordedServer) (determineTargetCore st owner)) :=
                 returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
-                  st st1' recordedServer oldScId owner _ _ hObjInv hCons rfl rfl hRet
+                  st st1' recordedServer oldScId owner _ _ hObjInv hCons rfl rfl none hRet
               have hInv1 : (migrateSchedContextReplenishment st1' oldScId
                   (determineTargetCore st recordedServer)
                   (determineTargetCore st owner)).objects.invExt := by
                 rw [migrateSchedContextReplenishment_objects]
                 exact returnDonatedSchedContext_preserves_objects_invExt st st1' recordedServer
-                  oldScId owner hObjInv hRet
+                  oldScId owner hObjInv none hRet
               -- Stages 2-4 run on the migrated state; name it once.
               generalize hM : migrateSchedContextReplenishment st1' oldScId
                 (determineTargetCore st recordedServer) (determineTargetCore st owner) = st1 at *
-              cases hNext : lookupTcb st1 nextThread with
-              | none =>
-                  rw [hNext] at h; simp only [] at h; cases h
+              -- WS-OD OD3.6: the hand-off is the shared step, so its two
+              -- obligations are the step's own lifted lemmas rather than a
+              -- second `toValid?` case split here.
+              cases hCall : rendezvousDequeuedCall st1 nextThread with
+              | false =>
+                  rw [hCall] at h; simp only [Bool.false_eq_true, if_false] at h; cases h
                   exact hPip _ (hDeschedInv _ hInv1) (hDesched _ hCons1)
-              | some nextTcb =>
-                rw [hNext] at h; simp only [] at h
-                cases hIpc : nextTcb.ipcState with
-                | blockedOnReply _ _ =>
-                    rw [hIpc] at h; simp only [] at h
-                    cases hNextV : nextThread.toValid? with
-                    | none => rw [hNextV] at h; simp only [] at h; cases h
-                    | some nextV =>
-                      cases hTidV : tid.toValid? with
-                      | none => rw [hNextV, hTidV] at h; simp only [] at h; cases h
-                      | some tidV =>
-                        rw [hNextV, hTidV] at h; simp only [] at h
-                        have hNVEq : nextV.val = nextThread :=
-                          SeLe4n.ThreadId.toValid?_some_val_eq nextThread nextV hNextV
-                        have hTVEq : tidV.val = tid :=
-                          SeLe4n.ThreadId.toValid?_some_val_eq tid tidV hTidV
-                        cases hDon : applyCallDonationOnCore st1 nextV tidV
-                            (determineTargetCore st1 nextThread) (determineTargetCore st1 tid) with
-                        | error e => rw [hDon] at h; simp only [] at h; cases h
-                        | ok st2 =>
-                            rw [hDon] at h; simp only [] at h; cases h
-                            refine hPip _ ?_ ?_
-                            · exact applyCallDonationOnCore_preserves_objects_invExt st1 st2
-                                nextV tidV _ _ hInv1 hDon
-                            · exact
-                                applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
-                                  st1 st2 nextV tidV _ _ hInv1 hCons1 (by rw [hNVEq]) (by rw [hTVEq])
-                                  hDon
-                | _ =>
-                    rw [hIpc] at h; simp only [] at h; cases h
-                    exact hPip _ (hDeschedInv _ hInv1) (hDesched _ hCons1)
+              | true =>
+                  rw [hCall] at h; simp only [if_true] at h
+                  cases hDon : applyRendezvousCallDonation st1 tid nextThread with
+                  | error e => rw [hDon] at h; simp only [] at h; cases h
+                  | ok st2 =>
+                      rw [hDon] at h; simp only [] at h; cases h
+                      refine hPip _ ?_ ?_
+                      · exact applyRendezvousCallDonation_preserves_objects_invExt st1 st2
+                          tid nextThread hInv1 hDon
+                      · exact
+                          applyRendezvousCallDonation_preserves_replenishQueueAffinityConsistent_smp
+                            st1 st2 tid nextThread hInv1 hCons1 hDon
 /-- **WS-RR RR7.34**: the three live SchedContext hand-offs, as one relation.
 
 `SMP_CROSS_CORE_IPC_PLAN` §4.3 and §10 and `SMP_PER_CORE_SCHEDULER_PLAN` §PIP
@@ -1123,16 +1104,16 @@ theorem replyRecvReturnDonation_preserves_ipcInvariantFull
             SeLe4n.ThreadId.toValid?_some_val_eq recordedServer srvV hSrvV
           have hOwnerEq : ownerV.val = owner :=
             SeLe4n.ThreadId.toValid?_some_val_eq owner ownerV hOwnerV
-          cases hRet : returnDonatedSchedContext st recordedServer oldScId owner with
+          cases hRet : returnDonatedSchedContext st recordedServer oldScId owner none with
           | error e =>
-              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV
-                    = returnDonatedSchedContext st recordedServer oldScId owner by
+              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV none
+                    = returnDonatedSchedContext st recordedServer oldScId owner none by
                   simp only [returnDonatedSchedContextValid, hSrvEq, hOwnerEq], hRet] at h
               simp only [] at h
               cases h
           | ok st1' =>
-              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV
-                    = returnDonatedSchedContext st recordedServer oldScId owner by
+              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV none
+                    = returnDonatedSchedContext st recordedServer oldScId owner none by
                   simp only [returnDonatedSchedContextValid, hSrvEq, hOwnerEq], hRet] at h
               simp only [] at h
               -- The witnessed return, and what it did to every binding.
@@ -1144,8 +1125,8 @@ theorem replyRecvReturnDonation_preserves_ipcInvariantFull
                   hRetW
               obtain ⟨⟨oTcb0, hOPre0, hOPost⟩, ⟨pTcb0, hPPre0, hPPost⟩, hOther⟩ :=
                 returnDonatedSchedContext_getTcb?_char st st1' recordedServer oldScId owner
-                  hObjInv hNe hRet
-              have hRetV : returnDonatedSchedContext st srvV.val oldScId owner = .ok st1' := by
+                  hObjInv hNe none hRet
+              have hRetV : returnDonatedSchedContext st srvV.val oldScId owner none = .ok st1' := by
                 rw [hSrvEq]; exact hRet
               have hRetWV : replyDonationReturn? st srvV.val = some (oldScId, owner) := by
                 rw [hSrvEq]; exact hRetW
@@ -1154,10 +1135,10 @@ theorem replyRecvReturnDonation_preserves_ipcInvariantFull
                 returnDonatedSchedContext_preserves_ipcInvariantFull st st1' srvV oldScId owner
                   hObjInv hInv hRetWV
                   (by intro tcb hTcb; rw [hSrvEq] at hTcb; exact hServerIdleAllowed tcb hTcb)
-                  hRetV
+                  none rfl hRetV
               have hObjInv1' : st1'.objects.invExt :=
                 returnDonatedSchedContext_preserves_objects_invExt st st1' recordedServer
-                  oldScId owner hObjInv hRet
+                  oldScId owner hObjInv none hRet
               -- Stage 2: the migration is invisible to every bundle reading.
               have hObjsM : (migrateSchedContextReplenishment st1' oldScId
                   (determineTargetCore st recordedServer)
@@ -1206,91 +1187,51 @@ theorem replyRecvReturnDonation_preserves_ipcInvariantFull
                     (determineTargetCore st recordedServer) (determineTargetCore st owner))
                   recordedServer serverCore).objects.invExt := by
                 rw [removeRunnableOnCore_preserves_objects]; exact hObjInvM
-              cases hNext : lookupTcb (migrateSchedContextReplenishment st1' oldScId
+              -- WS-OD OD3.6: one hypothesis instead of the branch's two.  The
+              -- shared step's own bundle lemma discharges the donor-blocked
+              -- obligation FROM the guard the arm branches on
+              -- (`rendezvousDequeuedCall_blockedOnReply`), so the six-way
+              -- `ipcState` case split collapses to the Bool the operation reads.
+              cases hCall : rendezvousDequeuedCall (migrateSchedContextReplenishment st1' oldScId
                   (determineTargetCore st recordedServer) (determineTargetCore st owner))
                   nextThread with
-              | none =>
-                  rw [hNext] at h; simp only [] at h; cases h
+              | false =>
+                  rw [hCall] at h; simp only [Bool.false_eq_true, if_false] at h; cases h
                   exact propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
                     serverCore _ hDeschedInvExt hDesched
-              | some nextTcb =>
-                rw [hNext] at h; simp only [] at h
-                cases hIpc : nextTcb.ipcState with
-                | blockedOnReply ep rt =>
-                    rw [hIpc] at h; simp only [] at h
-                    cases hNextV : nextThread.toValid? with
-                    | none => rw [hNextV] at h; simp only [] at h; cases h
-                    | some nextV =>
-                      cases hTidV : tid.toValid? with
-                      | none => rw [hNextV, hTidV] at h; simp only [] at h; cases h
-                      | some tidV =>
-                        rw [hNextV, hTidV] at h; simp only [] at h
-                        have hNVEq : nextV.val = nextThread :=
-                          SeLe4n.ThreadId.toValid?_some_val_eq nextThread nextV hNextV
-                        have hTVEq : tidV.val = tid :=
-                          SeLe4n.ThreadId.toValid?_some_val_eq tid tidV hTidV
-                        cases hDon : applyCallDonationOnCore
-                            (migrateSchedContextReplenishment st1' oldScId
-                              (determineTargetCore st recordedServer)
-                              (determineTargetCore st owner)) nextV tidV
-                            (determineTargetCore (migrateSchedContextReplenishment st1' oldScId
-                              (determineTargetCore st recordedServer)
-                              (determineTargetCore st owner)) nextThread)
-                            (determineTargetCore (migrateSchedContextReplenishment st1' oldScId
-                              (determineTargetCore st recordedServer)
-                              (determineTargetCore st owner)) tid) with
-                        | error e => rw [hDon] at h; simp only [] at h; cases h
-                        | ok st2 =>
-                            rw [hDon] at h; simp only [] at h; cases h
-                            -- Stage 3a: the re-donation, its two preconditions derived
-                            -- from the branch and transported across the return.
-                            have hNextGet : (migrateSchedContextReplenishment st1' oldScId
-                                (determineTargetCore st recordedServer)
-                                (determineTargetCore st owner)).getTcb? nextThread
-                                = some nextTcb :=
-                              (SystemState.getTcb?_eq_some_iff _ nextThread nextTcb).mpr
-                                (lookupTcb_some_objects _ nextThread nextTcb hNext)
-                            have hInv2 : ipcInvariantFull st2 := by
-                              refine applyCallDonationOnCore_preserves_ipcInvariantFull _ st2
-                                nextV tidV _ _ hObjInvM hInvM ?_ ?_ hDon
-                              · intro tcb hTcb
-                                rw [hNVEq, hNextGet] at hTcb
-                                exact ⟨ep, rt, by rw [← Option.some.inj hTcb]; exact hIpc⟩
-                              · intro tid' tcb scId' hTcb
-                                rw [hGetM] at hTcb
-                                rw [hTVEq]
-                                rcases returnDonatedSchedContext_binding_trichotomy st st1'
-                                    recordedServer owner oldScId pTcb0 oTcb0 hOPost hPPost
-                                    hOther tid' tcb hTcb with
-                                  ⟨_, hBnd⟩ | ⟨_, hBnd⟩ | ⟨_, _, hPre⟩
-                                · rw [hBnd]; intro hAbs; cases hAbs
-                                · rw [hBnd]; intro hAbs; cases hAbs
-                                · exact hReceiverNotOwner tid' tcb scId' hPre
-                            have hObjInv2 : st2.objects.invExt :=
-                              applyCallDonationOnCore_preserves_objects_invExt _ st2 nextV tidV
-                                _ _ hObjInvM hDon
-                            exact propagatePipChainCrossCore_preserves_ipcInvariantFull st2
-                              recordedServer serverCore _ hObjInv2 hInv2
-                | ready =>
-                    rw [hIpc] at h; simp only [] at h; cases h
-                    exact propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
-                      serverCore _ hDeschedInvExt hDesched
-                | blockedOnSend epId =>
-                    rw [hIpc] at h; simp only [] at h; cases h
-                    exact propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
-                      serverCore _ hDeschedInvExt hDesched
-                | blockedOnReceive epId =>
-                    rw [hIpc] at h; simp only [] at h; cases h
-                    exact propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
-                      serverCore _ hDeschedInvExt hDesched
-                | blockedOnCall epId =>
-                    rw [hIpc] at h; simp only [] at h; cases h
-                    exact propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
-                      serverCore _ hDeschedInvExt hDesched
-                | blockedOnNotification nId =>
-                    rw [hIpc] at h; simp only [] at h; cases h
-                    exact propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
-                      serverCore _ hDeschedInvExt hDesched
+              | true =>
+                  rw [hCall] at h; simp only [if_true] at h
+                  cases hDon : applyRendezvousCallDonation
+                      (migrateSchedContextReplenishment st1' oldScId
+                        (determineTargetCore st recordedServer)
+                        (determineTargetCore st owner)) tid nextThread with
+                  | error e => rw [hDon] at h; simp only [] at h; cases h
+                  | ok st2 =>
+                      rw [hDon] at h; simp only [] at h; cases h
+                      have hStep : applyReceiveRendezvousDonation
+                          (migrateSchedContextReplenishment st1' oldScId
+                            (determineTargetCore st recordedServer)
+                            (determineTargetCore st owner)) tid nextThread = .ok st2 := by
+                        unfold applyReceiveRendezvousDonation
+                        rw [hCall]
+                        simpa using hDon
+                      have hInv2 : ipcInvariantFull st2 := by
+                        refine applyReceiveRendezvousDonation_preserves_ipcInvariantFull _ st2
+                          tid nextThread hObjInvM hInvM ?_ hStep
+                        intro tid' tcb scId' hTcb
+                        rw [hGetM] at hTcb
+                        rcases returnDonatedSchedContext_binding_trichotomy st st1'
+                            recordedServer owner oldScId none pTcb0 oTcb0 hOPost hPPost
+                            hOther tid' tcb hTcb with
+                          ⟨_, hBnd⟩ | ⟨_, hBnd⟩ | ⟨_, _, hPre⟩
+                        · rw [hBnd]; intro hAbs; cases hAbs
+                        · rw [hBnd]; intro hAbs; cases hAbs
+                        · exact hReceiverNotOwner tid' tcb scId' hPre
+                      have hObjInv2 : st2.objects.invExt :=
+                        applyReceiveRendezvousDonation_preserves_objects_invExt _ st2 tid
+                          nextThread hObjInvM hStep
+                      exact propagatePipChainCrossCore_preserves_ipcInvariantFull st2
+                        recordedServer serverCore _ hObjInv2 hInv2
 
 /-- WS-SM SM6.D (faithful seL4-MCS `ReplyRecv`): the *unchecked* reply-and-receive
 body, shared by both dispatch arms (so the checked arm = a flow-gated wrapper over
@@ -1366,8 +1307,21 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
                 -- built `caps := #[]` by both `.reply`-shaped arms and the
                 -- reply path runs no unwrap (PR #866 round-2).  The receive
                 -- leg's own count is the returned `summary`, staged by the arm.
+                -- **WS-OD OD3.14: the receive leg's priority hand-off.**  The
+                -- return donation's walk starts at `recordedServer`, which is the
+                -- receiver `tid` on every NON-delegated reply and covers both
+                -- legs there; on a *delegated* one they differ and the receiver
+                -- has just completed a rendezvous, so `blockingServer` does not
+                -- relate them and the reply leg's walk never reaches `tid`.  The
+                -- newly dequeued caller's priority would be lost exactly as it
+                -- was on `.receive` before OD3.14 -- the same defect at a sibling
+                -- site.  Gated on the equality that makes the earlier walk BE
+                -- this one, so the non-delegated arm is unchanged.
                 .ok (summary, Architecture.stageWokenSendCompletion
-                          (Architecture.stageDeliveredMessage st3 prevCaller 0)
+                          (Architecture.stageDeliveredMessage
+                            (applyReceiveLegPipHandoff st3 tid nextThread recordedServer
+                              executingCore)
+                            prevCaller 0)
                           wokenSender?)
 
 -- ============================================================================
@@ -3064,20 +3018,51 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           -- orderings agree rather than merely both do something.
           match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
               decoded.capRecvSlot executingCore st with
-          | (st', .ok (_, summary, _sgi)) =>
-              -- WS-RA RA.B.6: a non-blocking consume delivered into the caller's
-              -- own `pendingMessage`; stage it as the return frame (badge → x0,
-              -- synthesized MessageInfo → x1, inline window → x2-x5).  A caller
-              -- that blocked stages nothing (the `.ready` guard inside) — its
-              -- frame is owed by the unblocking transition per plan §3.5.
-              -- PR #866 round-2 / PR #873 round 6: the `extraCaps` count is the
-              -- transfer summary's INSTALLED count, the same honest figure the
-              -- send and call paths report.  It was hardcoded to zero while the
-              -- receive installed nothing; now it says what actually arrived, so
-              -- a grant-denied or slot-exhausted transfer still reports zero.
-              .ok ((), Architecture.stageDeliveredMessage
-                        (Architecture.stageWokenSendCompletion st' wokenSender?) tid
-                        summary.installedCount)
+          | (st', .ok (dequeued, summary, _sgi)) =>
+              -- **WS-OD OD3.6: seL4-MCS's `maybeDonateSchedContext`.**  A receive
+              -- that rendezvoused with a queued `Call` hands the caller's
+              -- scheduling context to this receiver, so a passive server runs the
+              -- request on the client's own reservation.  This arm performed no
+              -- donation at all: a passive server taking its FIRST request with
+              -- `seL4_Recv` got no budget, while the same server taking its second
+              -- and later requests with `seL4_ReplyRecv` was charged correctly —
+              -- one condition, two API paths, and the asymmetric one silently
+              -- defeating the budget enforcement the CBS surface exists to
+              -- provide.  Literally the step `replyRecvReturnDonation`'s third
+              -- stage runs, so the two arms cannot drift.
+              --
+              -- Guarded and total: `rendezvousDequeuedCall` is false for a receive
+              -- that blocked (the returned id is the receiver itself, which is
+              -- `.blockedOnReceive`) and for a plain `Send` rendezvous (the woken
+              -- sender is `.ready`), and `applyCallDonation` is itself the
+              -- identity unless the receiver is `.unbound` and the donor `.bound`.
+              --
+              -- **WS-OD OD3.14: and the priority the donation does not carry.**
+              -- The dequeued caller is `.blockedOnReply _ (some tid)`, and
+              -- `resolveEffectivePrioDeadline` is `max basePrio pipBoost` -- the
+              -- donation moves the SchedContext, hence the *base* priority, and
+              -- moves no boost at all, so a chain blocked behind that caller
+              -- stopped dead at it.  This arm ran no chain walk while `.call`
+              -- (`endpointCallCrossCoreDispatch`) and `.replyRecv` both did:
+              -- one condition, three API paths, and the two that dequeue a
+              -- parked `Call` disagreeing about it.  `applyReceiveRendezvousHandoff`
+              -- is the donation and the walk under ONE reading of the guard.
+              match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
+              | .error e => .error e
+              | .ok stDon =>
+                -- WS-RA RA.B.6: a non-blocking consume delivered into the caller's
+                -- own `pendingMessage`; stage it as the return frame (badge → x0,
+                -- synthesized MessageInfo → x1, inline window → x2-x5).  A caller
+                -- that blocked stages nothing (the `.ready` guard inside) — its
+                -- frame is owed by the unblocking transition per plan §3.5.
+                -- PR #866 round-2 / PR #873 round 6: the `extraCaps` count is the
+                -- transfer summary's INSTALLED count, the same honest figure the
+                -- send and call paths report.  It was hardcoded to zero while the
+                -- receive installed nothing; now it says what actually arrived, so
+                -- a grant-denied or slot-exhausted transfer still reports zero.
+                .ok ((), Architecture.stageDeliveredMessage
+                          (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
+                          summary.installedCount)
           | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
@@ -3518,16 +3503,34 @@ def dispatchWithCapChecked (ctx : LabelingContext)
             -- here for the same reason the bare one was.
             match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
                 decoded.capRecvSlot executingCore st with
-            | (st', .ok (_, summary, _sgi)) =>
-                -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
-                -- checked twin of the unchecked arm's staging; the endpoint
-                -- flow gate above governs the consumed message).  PR #873
-                -- round 6: `extraCaps` is the summary's INSTALLED count, the
-                -- same honest figure the send and call paths report — it was
-                -- hardcoded to zero while the receive installed nothing.
-                .ok ((), Architecture.stageDeliveredMessage
-                          (Architecture.stageWokenSendCompletion st' wokenSender?) tid
-                          summary.installedCount)
+            | (st', .ok (dequeued, summary, _sgi)) =>
+                -- **WS-OD OD3.6**: the checked twin of the unchecked arm's
+                -- `maybeDonateSchedContext` step, and the *same* definition.  No
+                -- extra flow gate is owed: the donation writes only
+                -- `schedContextBinding` and `SchedContext.boundThread`, both of
+                -- which `projectKernelObject` erases, so it is invisible to every
+                -- observer (`returnDonatedSchedContext_preserves_projection` makes
+                -- the same argument for the hand-off's other direction); and the
+                -- endpoint→receiver flow this donation follows is gated above.
+                --
+                -- **WS-OD OD3.14**: likewise the priority half, and for the same
+                -- reason no extra gate is owed -- `projectKernelObject` strips
+                -- `pipBoost` (AJ2-B), and the run-queue re-bucketing the walk
+                -- performs is bounded by `receiveRendezvousHandoffWriteSet`,
+                -- exactly as the flow-checked `.call` arm's own walk is bounded
+                -- by `endpointCallLiveWriteSet`.
+                match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
+                | .error e => .error e
+                | .ok stDon =>
+                  -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
+                  -- checked twin of the unchecked arm's staging; the endpoint
+                  -- flow gate above governs the consumed message).  PR #873
+                  -- round 6: `extraCaps` is the summary's INSTALLED count, the
+                  -- same honest figure the send and call paths report — it was
+                  -- hardcoded to zero while the receive installed nothing.
+                  .ok ((), Architecture.stageDeliveredMessage
+                            (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
+                            summary.installedCount)
             | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
@@ -5227,7 +5230,7 @@ writes only the *sender's* saved context). -/
 theorem dispatchArm_receive_matches_returnShape
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId)
-    (replyIdOpt : Option SeLe4n.ReplyId) (st st' : SystemState)
+    (replyIdOpt : Option SeLe4n.ReplyId) (st st' stDon : SystemState)
     (next : SeLe4n.ThreadId) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
     (summary : CapTransferSummary) (msg : IpcMessage) (tcb : TCB)
     (hSyscall : decoded.syscallId = .receive)
@@ -5239,11 +5242,22 @@ theorem dispatchArm_receive_matches_returnShape
     (hDispatch : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
         decoded.capRecvSlot (determineExecutingCore st tid) st
         = (st', .ok (next, summary, sgi)))
-    (hTcb : (Architecture.stageWokenSendCompletion st'
+    -- WS-OD OD3.6: the arm's `maybeDonateSchedContext` step runs between the
+    -- receive and the staging, so the boundary read is of the state it leaves.
+    -- It writes only `schedContextBinding` and `SchedContext.boundThread` and so
+    -- cannot disturb a return frame; naming it here rather than assuming it away
+    -- is what keeps this theorem a statement about the arm the kernel runs.
+    -- WS-OD OD3.14: and the priority half runs with it, under one guard, so the
+    -- hypothesis names the hand-off rather than the donation alone -- the chain
+    -- walk writes `pipBoost` and run-queue buckets, neither of which is a
+    -- register context, so the frame conclusion is unchanged.
+    (hDon : applyReceiveRendezvousHandoff st' tid next (determineExecutingCore st tid)
+        = .ok stDon)
+    (hTcb : (Architecture.stageWokenSendCompletion stDon
         ((st.getEndpoint? epId).bind (·.sendQ.head))).getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)
-    (hObjInv : (Architecture.stageWokenSendCompletion st'
+    (hObjInv : (Architecture.stageWokenSendCompletion stDon
         ((st.getEndpoint? epId).bind (·.sendQ.head))).objects.invExt) :
     Architecture.syscallReturnShape .receive = .message ∧
     ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
@@ -5251,10 +5265,10 @@ theorem dispatchArm_receive_matches_returnShape
         = Architecture.returnFrameOfMessage msg summary.installedCount := by
   refine ⟨rfl,
     Architecture.stageDeliveredMessage
-      (Architecture.stageWokenSendCompletion st'
+      (Architecture.stageWokenSendCompletion stDon
         ((st.getEndpoint? epId).bind (·.sendQ.head))) tid summary.installedCount,
     ?_, ?_⟩
-  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hReply, hDispatch]
+  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hReply, hDispatch, hDon]
   · exact Architecture.blockedReturn_staged_in_waiter_frame _ tid tcb msg
       summary.installedCount hTcb hReady hMsg hObjInv
 
@@ -6697,13 +6711,20 @@ theorem dispatchWithCapChecked_receive_delegates
       -- PR #873 round 6: the arm routes through the WithCaps per-core receive, so
       -- a send that parked before its receiver arrived delivers its capabilities
       -- too, and the staged `extraCaps` is the summary's installed count.
+      -- WS-OD OD3.6: including the rendezvous donation, which the checked arm
+      -- performs with the *same* definition and behind no extra gate -- the
+      -- delegation claim is about the whole arm, so it names every step of it.
       (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
               decoded.capRecvSlot (determineExecutingCore st tid) st with
-       | (st', .ok (_, summary, _)) =>
-           .ok ((), Architecture.stageDeliveredMessage
-                     (Architecture.stageWokenSendCompletion st'
-                       ((st.getEndpoint? epId).bind (·.sendQ.head))) tid
-                     summary.installedCount)
+       | (st', .ok (dequeued, summary, _)) =>
+           (match applyReceiveRendezvousHandoff st' tid dequeued
+                    (determineExecutingCore st tid) with
+            | .error e => .error e
+            | .ok stDon =>
+                .ok ((), Architecture.stageDeliveredMessage
+                          (Architecture.stageWokenSendCompletion stDon
+                            ((st.getEndpoint? epId).bind (·.sendQ.head))) tid
+                          summary.installedCount))
        | (_, .error e) => .error e) := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
     endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply]
@@ -6934,11 +6955,19 @@ def syscallDelegates : SyscallId → Prop
            -- into the caller's return frame.  PR #873 round 6: with the receive
            -- routed through the WithCaps transition, the staged `extraCaps` is
            -- the transfer summary's installed count rather than a hardcoded 0.
-           | (st', .ok (_, summary, _)) =>
-               .ok ((), Architecture.stageDeliveredMessage
-                         (Architecture.stageWokenSendCompletion st'
-                           ((st.getEndpoint? epId).bind (·.sendQ.head))) tid
-                         summary.installedCount)
+           -- WS-OD OD3.6: and the rendezvous donation runs between them, in the
+           -- checked arm as in the unchecked one and behind no extra gate.  The
+           -- obligation names it: a delegation claim that omitted a step would
+           -- be a claim about a different program.
+           | (st', .ok (dequeued, summary, _)) =>
+               (match applyReceiveRendezvousHandoff st' tid dequeued
+                        (determineExecutingCore st tid) with
+                | .error e => .error e
+                | .ok stDon =>
+                    .ok ((), Architecture.stageDeliveredMessage
+                              (Architecture.stageWokenSendCompletion stDon
+                                ((st.getEndpoint? epId).bind (·.sendQ.head))) tid
+                              summary.installedCount))
            | (_, .error e) => .error e)
   | .tcbSuspend =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)

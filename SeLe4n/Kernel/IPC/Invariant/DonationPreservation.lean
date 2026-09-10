@@ -120,73 +120,6 @@ theorem donateSchedContext_walk
                     by simpa using hBne, hS1, hLC, hS2, hL, hS3, rfl, rfl⟩
     | _ => simp only []; intro h; cases h
 
-/-- WS-RR RR2.5: a successful `returnDonatedSchedContext` exposes its three
-stores and their inputs — the mirror of `donateSchedContext_walk`, with the
-`sc.boundThread = some serverTid` witness RR2.8's guard added. -/
-theorem returnDonatedSchedContext_walk
-    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
-    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
-    ∃ (sc : SchedContext) (ownerTcb serverTcb : TCB) (s1 s2 s3 : SystemState),
-      st.getSchedContext? scId = some sc ∧
-      sc.boundThread = some serverTid ∧
-      storeObject scId.toObjId
-        (.schedContext { sc with boundThread := some originalOwner }) st = .ok ((), s1) ∧
-      lookupTcb s1 originalOwner = some ownerTcb ∧
-      storeObject originalOwner.toObjId
-        (.tcb { ownerTcb with schedContextBinding := .bound scId }) s1 = .ok ((), s2) ∧
-      lookupTcb s2 serverTid = some serverTcb ∧
-      storeObject serverTid.toObjId
-        (.tcb { serverTcb with schedContextBinding := .unbound }) s2 = .ok ((), s3) ∧
-      st'.objects = s3.objects ∧ st'.scheduler = s3.scheduler := by
-  unfold returnDonatedSchedContext at h
-  revert h
-  cases hObj : st.objects[scId.toObjId]? with
-  | none => intro h; cases h
-  | some obj =>
-    cases obj with
-    | schedContext sc =>
-      simp only []
-      cases hBne : (sc.boundThread != some serverTid) with
-      | true => simp only [if_true]; intro h; cases h
-      | false =>
-        simp only [Bool.false_eq_true, if_false]
-        cases hS1 : storeObject scId.toObjId
-            (.schedContext { sc with boundThread := some originalOwner }) st with
-        | error _ => intro h; cases h
-        | ok p1 =>
-          simp only []
-          cases hL1 : lookupTcb p1.2 originalOwner with
-          | none => intro h; cases h
-          | some ownerTcb =>
-            simp only []
-            cases hS2 : storeObject originalOwner.toObjId
-                (.tcb { ownerTcb with schedContextBinding := .bound scId }) p1.2 with
-            | error _ => intro h; cases h
-            | ok p2 =>
-              simp only []
-              cases hL2 : lookupTcb p2.2 serverTid with
-              | none => intro h; cases h
-              | some serverTcb =>
-                simp only []
-                cases hS3 : storeObject serverTid.toObjId
-                    (.tcb { serverTcb with schedContextBinding := .unbound }) p2.2 with
-                | error _ => intro h; cases h
-                | ok p3 =>
-                  simp only [Except.ok.injEq]
-                  intro hEq; subst hEq
-                  obtain ⟨u1, s1⟩ := p1; cases u1
-                  obtain ⟨u2, s2⟩ := p2; cases u2
-                  obtain ⟨u3, s3⟩ := p3; cases u3
-                  exact ⟨sc, ownerTcb, serverTcb, s1, s2, s3,
-                    (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hObj,
-                    by simpa using hBne, hS1, hL1, hS2, hL2, hS3, rfl, rfl⟩
-    | _ => simp only []; intro h; cases h
-
--- ============================================================================
--- §2  The derived readings
--- ============================================================================
-
 /-- WS-RR RR2.5: what `donateSchedContext` does to every thread's TCB, pointwise.
 
 The donor's binding is cleared, the donee's becomes `.donated`, every other
@@ -259,32 +192,44 @@ theorem returnDonatedSchedContext_getTcb?_char
     (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (hNe : originalOwner ≠ serverTid)
-    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    (newOwner? : Option SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     (∃ ownerTcb, st.getTcb? originalOwner = some ownerTcb ∧
-        st'.getTcb? originalOwner = some { ownerTcb with schedContextBinding := .bound scId }) ∧
+        st'.getTcb? originalOwner =
+          some { ownerTcb with schedContextBinding := donationReturnBinding scId newOwner? }) ∧
     (∃ serverTcb, st.getTcb? serverTid = some serverTcb ∧
         st'.getTcb? serverTid = some { serverTcb with schedContextBinding := .unbound }) ∧
     (∀ tid, tid ≠ originalOwner → tid ≠ serverTid → st'.getTcb? tid = st.getTcb? tid) := by
-  obtain ⟨sc, ownerTcb, serverTcb, s1, s2, s3, hSc, _, hS1, hL1, hS2, hL2, hS3, hObjEq, _⟩ :=
-    returnDonatedSchedContext_walk st st' serverTid scId originalOwner h
+  -- WS-OD OD3.2: read off `returnDonatedSchedContext_ok_storeChain`, the shared
+  -- derivation, rather than off a second copy of the operation's case analysis.
+  obtain ⟨sc, head?, ownerTcb, serverTcb, s1, s2, s3, s4,
+    hScObj, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
-  have hFinal : ∀ t : SeLe4n.ThreadId, st'.getTcb? t = s3.getTcb? t := by
-    intro t; unfold SystemState.getTcb?; rw [hObjEq]
+  have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have hFinal : ∀ t : SeLe4n.ThreadId, st'.getTcb? t = s4.getTcb? t := by
+    intro t; rw [hEq]; rfl
   have hSc1 : s1.getSchedContext? scId =
-      some { sc with boundThread := some originalOwner } := by
+      some { sc with boundThread := some originalOwner,
+                     scReply := head?.bind (fun p => p.2.prev) } := by
     unfold SystemState.getSchedContext?
     rw [storeObject_objects_eq st s1 _ _ hObjInv hS1]
-  have hOwner1 : s1.getTcb? originalOwner = some ownerTcb :=
-    getTcb?_of_lookupTcb s1 originalOwner ownerTcb hL1
-  have hServer2 : s2.getTcb? serverTid = some serverTcb :=
-    getTcb?_of_lookupTcb s2 serverTid serverTcb hL2
+  have hOwner2 : s2.getTcb? originalOwner = some ownerTcb :=
+    getTcb?_of_lookupTcb s2 originalOwner ownerTcb hL1
+  have hServer3 : s3.getTcb? serverTid = some serverTcb :=
+    getTcb?_of_lookupTcb s3 serverTid serverTcb hL2
   have hNeOS : originalOwner.toObjId ≠ serverTid.toObjId := fun he =>
     hNe (SeLe4n.ThreadId.toObjId_injective _ _ he)
+  have hServer2 : s2.getTcb? serverTid = some serverTcb := by
+    rw [← storeObject_getTcb?_ne s2 s3 originalOwner.toObjId _ serverTid (Ne.symm hNeOS)
+      hInv2 hS3]
+    exact hServer3
+  -- The head clear writes a Reply, so it is invisible to every typed TCB read.
+  have hOwner1 : s1.getTcb? originalOwner = some ownerTcb := by
+    rw [← storeDonationHeadClear_getTcb?_eq hInv1 hClear originalOwner]; exact hOwner2
   have hServer1 : s1.getTcb? serverTid = some serverTcb := by
-    rw [← storeObject_getTcb?_ne s1 s2 originalOwner.toObjId _ serverTid (Ne.symm hNeOS)
-      hInv1 hS2]
-    exact hServer2
+    rw [← storeDonationHeadClear_getTcb?_eq hInv1 hClear serverTid]; exact hServer2
   have hNeScOwner : originalOwner.toObjId ≠ scId.toObjId :=
     getTcb?_getSchedContext?_key_ne s1 originalOwner scId _ _ hOwner1 hSc1
   have hNeScServer : serverTid.toObjId ≠ scId.toObjId :=
@@ -292,22 +237,22 @@ theorem returnDonatedSchedContext_getTcb?_char
   refine ⟨⟨ownerTcb, ?_, ?_⟩, ⟨serverTcb, ?_, ?_⟩, ?_⟩
   · rw [← storeObject_getTcb?_ne st s1 scId.toObjId _ originalOwner hNeScOwner hObjInv hS1]
     exact hOwner1
-  · rw [hFinal, storeObject_getTcb?_ne s2 s3 serverTid.toObjId _ originalOwner hNeOS hInv2 hS3]
-    exact storeObject_getTcb?_self s1 s2 originalOwner _ hInv1 hS2
+  · rw [hFinal, storeObject_getTcb?_ne s3 s4 serverTid.toObjId _ originalOwner hNeOS hInv3 hS4]
+    exact storeObject_getTcb?_self s2 s3 originalOwner _ hInv2 hS3
   · rw [← storeObject_getTcb?_ne st s1 scId.toObjId _ serverTid hNeScServer hObjInv hS1]
     exact hServer1
-  · rw [hFinal]; exact storeObject_getTcb?_self s2 s3 serverTid _ hInv2 hS3
+  · rw [hFinal]; exact storeObject_getTcb?_self s3 s4 serverTid _ hInv3 hS4
   · intro tid hNeO hNeS
     have h1 : tid.toObjId ≠ originalOwner.toObjId := fun he =>
       hNeO (SeLe4n.ThreadId.toObjId_injective _ _ he)
     have h2 : tid.toObjId ≠ serverTid.toObjId := fun he =>
       hNeS (SeLe4n.ThreadId.toObjId_injective _ _ he)
-    rw [hFinal, storeObject_getTcb?_ne s2 s3 serverTid.toObjId _ tid h2 hInv2 hS3,
-      storeObject_getTcb?_ne s1 s2 originalOwner.toObjId _ tid h1 hInv1 hS2]
+    rw [hFinal, storeObject_getTcb?_ne s3 s4 serverTid.toObjId _ tid h2 hInv3 hS4,
+      storeObject_getTcb?_ne s2 s3 originalOwner.toObjId _ tid h1 hInv2 hS3,
+      storeDonationHeadClear_getTcb?_eq hInv1 hClear tid]
     by_cases hScEq : tid.toObjId = scId.toObjId
     · unfold SystemState.getTcb?
-      rw [hScEq, storeObject_objects_eq st s1 _ _ hObjInv hS1,
-        (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hSc]
+      rw [hScEq, storeObject_objects_eq st s1 _ _ hObjInv hS1, hScObj]
     · rw [storeObject_getTcb?_ne st s1 scId.toObjId _ tid hScEq hObjInv hS1]
 
 -- ============================================================================
@@ -717,10 +662,21 @@ structure donationReadAgreement (st st' : SystemState) : Prop where
       tx.queuePPrev = ty.queuePPrev ∧
       tx.timeoutBudget = ty.timeoutBudget ∧ tx.replyObject = ty.replyObject ∧
       tx.pendingReceiveReply = ty.pendingReceiveReply
-  /-- endpoints, notifications, replies, CNodes and untypeds are identical -/
+  /-- endpoints, notifications, CNodes and untypeds are identical -/
   otherKind : ∀ (oid : SeLe4n.ObjId) (k : KernelObject),
-    (∀ t, k ≠ .tcb t) → (∀ sc, k ≠ .schedContext sc) →
+    (∀ t, k ≠ .tcb t) → (∀ sc, k ≠ .schedContext sc) → (∀ r, k ≠ .reply r) →
     (st'.objects[oid]? = some k ↔ st.objects[oid]? = some k)
+  /-- WS-OD OD3.2: a Reply survives with the same `caller`.
+
+  Replies left `otherKind` when the donation return gained its reply-stack pop:
+  the pop clears the popped Reply's `donatedSc` and `prev`, so whole-object
+  agreement is false there.  Every conjunct this agreement transports reads a
+  Reply's `caller` and nothing else, so that is what is stated, and every
+  transition with full Reply identity supplies it through
+  `replyCallerAgree_of_objectAgree`. -/
+  replyCallerAgree : ∀ (rid : SeLe4n.ReplyId) (caller : Option SeLe4n.ThreadId),
+    (∃ r : Reply, st'.objects[rid.toObjId]? = some (.reply r) ∧ r.caller = caller) ↔
+    (∃ r : Reply, st.objects[rid.toObjId]? = some (.reply r) ∧ r.caller = caller)
   /-- a SchedContext that existed still exists -/
   scExists : ∀ (oid : SeLe4n.ObjId) (sc : SchedContext),
     st.objects[oid]? = some (.schedContext sc) →
@@ -732,7 +688,8 @@ namespace donationReadAgreement
 theorem refl (st : SystemState) : donationReadAgreement st st :=
   ⟨fun _ tx h => ⟨tx, h, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩,
    fun _ ty h => ⟨ty, h, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩,
-   fun _ _ _ _ => Iff.rfl,
+   fun _ _ _ _ _ => Iff.rfl,
+   fun _ _ => Iff.rfl,
    fun _ sc h => ⟨sc, h⟩⟩
 
 /-- Transitivity — chain two donation stores. -/
@@ -751,7 +708,10 @@ theorem trans {st st' st'' : SystemState}
     obtain ⟨tz, hz, f1, f2, f3, f4, f5, f6, f7, f8⟩ := h2.tcbFwd oid tx hx
     exact ⟨tz, hz, f1.trans e1, f2.trans e2, f3.trans e3, f4.trans e4, f5.trans e5,
       f6.trans e6, f7.trans e7, f8.trans e8⟩
-  otherKind := fun oid k hk hsc => (h2.otherKind oid k hk hsc).trans (h1.otherKind oid k hk hsc)
+  otherKind := fun oid k hk hsc hr =>
+    (h2.otherKind oid k hk hsc hr).trans (h1.otherKind oid k hk hsc hr)
+  replyCallerAgree := fun rid c =>
+    (h2.replyCallerAgree rid c).trans (h1.replyCallerAgree rid c)
   scExists := by
     intro oid sc h
     obtain ⟨sc', h'⟩ := h1.scExists oid sc h
@@ -771,7 +731,7 @@ theorem donationReadAgreement_of_schedContextStore
   have hAt := storeObject_objects_eq st st' scKey _ hObjInv hStore
   have hNe : ∀ (oid : SeLe4n.ObjId), oid ≠ scKey → st'.objects[oid]? = st.objects[oid]? :=
     fun oid h => storeObject_objects_ne st st' scKey oid _ h hObjInv hStore
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · intro oid tx hx
     by_cases hEq : oid = scKey
     · rw [hEq, hAt] at hx; cases hx
@@ -780,7 +740,7 @@ theorem donationReadAgreement_of_schedContextStore
     by_cases hEq : oid = scKey
     · rw [hEq, hPre] at hy; cases hy
     · exact ⟨ty, by rw [hNe oid hEq]; exact hy, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-  · intro oid k _ hsc
+  · intro oid k _ hsc _
     by_cases hEq : oid = scKey
     · subst hEq
       rw [hAt, hPre]
@@ -788,6 +748,13 @@ theorem donationReadAgreement_of_schedContextStore
       · intro h; exact absurd (Option.some.inj h).symm (hsc scNew)
       · intro h; exact absurd (Option.some.inj h).symm (hsc scOld)
     · rw [hNe oid hEq]
+  · intro rid c
+    by_cases hEq : rid.toObjId = scKey
+    · rw [hEq, hAt, hPre]
+      constructor
+      · rintro ⟨r, hr, _⟩; cases hr
+      · rintro ⟨r, hr, _⟩; cases hr
+    · rw [hNe _ hEq]
   · intro oid sc h
     by_cases hEq : oid = scKey
     · exact ⟨scNew, by rw [hEq, hAt]⟩
@@ -814,7 +781,7 @@ theorem donationReadAgreement_of_tcbFieldUpdate
     (hReply : newTcb.replyObject = oldTcb.replyObject)
     (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply) :
     donationReadAgreement st st' := by
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · intro oid tx hx
     by_cases hEq : oid = key
     · rw [hEq, hAt] at hx
@@ -831,7 +798,7 @@ theorem donationReadAgreement_of_tcbFieldUpdate
       exact ⟨newTcb, by rw [hEq]; exact hAt, hIpc, hMsg, hNext, hPrev, hPPrev, hBudget,
         hReply, hStash⟩
     · exact ⟨ty, by rw [hFrame oid hEq]; exact hy, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-  · intro oid k hk _
+  · intro oid k hk _ _
     by_cases hEq : oid = key
     · subst hEq
       rw [hAt, hPre]
@@ -839,6 +806,13 @@ theorem donationReadAgreement_of_tcbFieldUpdate
       · intro h; exact absurd (Option.some.inj h).symm (hk newTcb)
       · intro h; exact absurd (Option.some.inj h).symm (hk oldTcb)
     · rw [hFrame oid hEq]
+  · intro rid c
+    by_cases hEq : rid.toObjId = key
+    · rw [hEq, hAt, hPre]
+      constructor
+      · rintro ⟨r, hr, _⟩; cases hr
+      · rintro ⟨r, hr, _⟩; cases hr
+    · rw [hFrame _ hEq]
   · intro oid sc h
     by_cases hEq : oid = key
     · rw [hEq, hPre] at h; cases h
@@ -860,6 +834,54 @@ theorem donationReadAgreement_of_tcbBindingStore
     rfl rfl rfl rfl rfl rfl rfl rfl
 
 
+/-- WS-OD OD3.2: the caller-level Reply agreement from **exact** Reply agreement —
+the shape every transition but the donation return has. -/
+theorem replyCallerAgree_of_objectAgree {st st' : SystemState}
+    (h : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      st'.objects[rid.toObjId]? = some (.reply r) ↔ st.objects[rid.toObjId]? = some (.reply r)) :
+    ∀ (rid : SeLe4n.ReplyId) (caller : Option SeLe4n.ThreadId),
+      (∃ r : Reply, st'.objects[rid.toObjId]? = some (.reply r) ∧ r.caller = caller) ↔
+      (∃ r : Reply, st.objects[rid.toObjId]? = some (.reply r) ∧ r.caller = caller) :=
+  fun rid _ => ⟨fun ⟨r, hr, hc⟩ => ⟨r, (h rid r).mp hr, hc⟩,
+                fun ⟨r, hr, hc⟩ => ⟨r, (h rid r).mpr hr, hc⟩⟩
+
+/-- WS-OD OD3.2: the donation return's reply-stack head clear establishes the read
+agreement.  It writes one Reply, resetting its stack links and leaving its
+`caller`, and touches no TCB and no SchedContext. -/
+theorem donationReadAgreement_of_headClear
+    {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (hObjInv : st.objects.invExt)
+    (h : storeDonationHeadClear head? st = .ok st') :
+    donationReadAgreement st st' := by
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · exact fun oid tx hx =>
+      ⟨tx, storeDonationHeadClear_tcb_backward hObjInv h oid tx hx,
+        rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · exact fun oid ty hy =>
+      ⟨ty, storeDonationHeadClear_tcb_eq hObjInv h oid ty hy,
+        rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · intro oid k _ _ hr
+    rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
+    · exact Iff.rfl
+    · by_cases hEq : oid = rid.toObjId
+      · rw [hEq, storeObject_objects_eq' st rid.toObjId _ _ hObjInv hS, hRead]
+        exact ⟨fun hc => absurd (Option.some.inj hc).symm (hr _),
+               fun hc => absurd (Option.some.inj hc).symm (hr r)⟩
+      · rw [storeObject_objects_ne st st' rid.toObjId oid _ hEq hObjInv hS]
+  · intro rid' c
+    rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
+    · exact Iff.rfl
+    · by_cases hEq : rid'.toObjId = rid.toObjId
+      · rw [hEq, storeObject_objects_eq' st rid.toObjId _ _ hObjInv hS, hRead]; simp
+      · rw [storeObject_objects_ne st st' rid.toObjId rid'.toObjId _ hEq hObjInv hS]
+  · intro oid sc hSc
+    refine ⟨sc, ?_⟩
+    rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
+    · exact hSc
+    · by_cases hEq : oid = rid.toObjId
+      · rw [hEq, hRead] at hSc; cases hSc
+      · rw [storeObject_objects_ne st st' rid.toObjId oid _ hEq hObjInv hS]; exact hSc
+
 /-- WS-RR RR2.5: a state that shares an object store with one that agrees, agrees.
 `donationReadAgreement` reads nothing but `objects`, and the primitives' walk
 lemmas expose `st'.objects = s3.objects` rather than `st' = s3`. -/
@@ -870,7 +892,8 @@ theorem donationReadAgreement_of_objects_eq {st s s' : SystemState}
   tcbFwd := fun oid ty hy => by
     obtain ⟨tx, hx, rest⟩ := h.tcbFwd oid ty hy
     exact ⟨tx, by rw [hObjs]; exact hx, rest⟩
-  otherKind := fun oid k hk hsc => by rw [hObjs]; exact h.otherKind oid k hk hsc
+  otherKind := fun oid k hk hsc hr => by rw [hObjs]; exact h.otherKind oid k hk hsc hr
+  replyCallerAgree := fun rid c => by rw [hObjs]; exact h.replyCallerAgree rid c
   scExists := fun oid sc hSc => by
     obtain ⟨sc', hSc'⟩ := h.scExists oid sc hSc
     exact ⟨sc', by rw [hObjs]; exact hSc'⟩
@@ -906,23 +929,31 @@ theorem returnDonatedSchedContext_donationReadAgreement
     (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    (newOwner? : Option SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     donationReadAgreement st st' := by
-  obtain ⟨sc, ownerTcb, serverTcb, s1, s2, s3, hSc, _, hS1, hL1, hS2, hL2, hS3, hObjEq, _⟩ :=
-    returnDonatedSchedContext_walk st st' serverTid scId originalOwner h
+  -- WS-OD OD3.2: off the shared store chain, with the reply-stack head clear as
+  -- one extra hop — it writes a Reply, and the read agreement is about
+  -- SchedContexts and bindings.
+  obtain ⟨sc, head?, ownerTcb, serverTcb, s1, s2, s3, s4,
+    hScObj, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
+  have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   have a1 : donationReadAgreement st s1 :=
-    donationReadAgreement_of_schedContextStore st s1 scId.toObjId sc _
-      ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc) hObjInv hS1
+    donationReadAgreement_of_schedContextStore st s1 scId.toObjId sc _ hScObj hObjInv hS1
   have a2 : donationReadAgreement s1 s2 :=
-    donationReadAgreement_of_tcbBindingStore s1 s2 originalOwner.toObjId ownerTcb (.bound scId)
-      (lookupTcb_some_objects s1 originalOwner ownerTcb hL1) hInv1 hS2
+    donationReadAgreement_of_headClear hInv1 hClear
   have a3 : donationReadAgreement s2 s3 :=
-    donationReadAgreement_of_tcbBindingStore s2 s3 serverTid.toObjId serverTcb .unbound
-      (lookupTcb_some_objects s2 serverTid serverTcb hL2) hInv2 hS3
-  exact donationReadAgreement_of_objects_eq hObjEq
-    ((a1.trans a2).trans a3)
+    donationReadAgreement_of_tcbBindingStore s2 s3 originalOwner.toObjId ownerTcb
+      (donationReturnBinding scId newOwner?)
+      (lookupTcb_some_objects s2 originalOwner ownerTcb hL1) hInv2 hS3
+  have a4 : donationReadAgreement s3 s4 :=
+    donationReadAgreement_of_tcbBindingStore s3 s4 serverTid.toObjId serverTcb .unbound
+      (lookupTcb_some_objects s3 serverTid serverTcb hL2) hInv3 hS4
+  exact donationReadAgreement_of_objects_eq (by rw [hEq])
+    (((a1.trans a2).trans a3).trans a4)
 
 -- ============================================================================
 -- §5  The bundle transports across a read agreement
@@ -948,7 +979,7 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
     (hPassiveIdle : passiveServerIdle st') (hBudgetTransfer : donationBudgetTransfer st')
     (hOwnerUnique : donationOwnerUnique st') :
     ipcInvariantFull st' := by
-  obtain ⟨hBwd, hFwd, hNT, hSC⟩ := hAgree
+  obtain ⟨hBwd, hFwd, hNT, hRC, hSC⟩ := hAgree
   -- The core driver reads a strictly narrower agreement than the one above.
   have hCore : ipcInvariantCore st' := by
     refine ipcInvariantCore_of_nonBindingAgreements st st'
@@ -966,13 +997,12 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
     obtain ⟨ty, hTy, _, _, _, _, _, _, hRO, _⟩ := hBwd tid.toObjId tcb hTcb
     obtain ⟨r, hR, hCaller⟩ :=
       hInv.replyCallerLinkage.1.1 tid ty rid hTy (hRO ▸ hReplyObj)
-    exact ⟨r, (hNT rid.toObjId (.reply r) (fun _ => by exact KernelObject.noConfusion)
-      (fun _ => by exact KernelObject.noConfusion)).mpr hR, hCaller⟩
+    exact (hRC rid (some tid)).mpr ⟨r, hR, hCaller⟩
   -- 16b. replyCallerLinkageReciprocal, Reply → TCB.
   · intro rid r tid hR hCaller
-    have hRPre := (hNT rid.toObjId (.reply r) (fun _ => by exact KernelObject.noConfusion)
-      (fun _ => by exact KernelObject.noConfusion)).mp hR
-    obtain ⟨ty, hTy, hRO, ep, rt, hIpc⟩ := hInv.replyCallerLinkage.1.2 rid r tid hRPre hCaller
+    obtain ⟨r0, hRPre, hCaller0⟩ := (hRC rid (some tid)).mp ⟨r, hR, hCaller⟩
+    obtain ⟨ty, hTy, hRO, ep, rt, hIpc⟩ :=
+      hInv.replyCallerLinkage.1.2 rid r0 tid hRPre hCaller0
     obtain ⟨tx, hTx, hIS, _, _, _, _, _, hROeq, _⟩ := hFwd tid.toObjId ty hTy
     exact ⟨tx, hTx, hROeq ▸ hRO, ep, rt, hIS ▸ hIpc⟩
   -- 16c. blockedOnReplyHasReplyObject.
@@ -986,10 +1016,9 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
     obtain ⟨ty, hTy, hIS, _, _, _, _, _, _, hPRR⟩ := hBwd tid.toObjId tcb hTcb
     obtain ⟨⟨ep, hEp⟩, r, hR, hCaller⟩ := hInv.pendingReceiveReplyWellFormed.1 tid ty rid
       ((getTcb?_eq_some_iff st tid ty).mpr hTy) (hPRR ▸ hStash)
-    refine ⟨⟨ep, hIS ▸ hEp⟩, r, ?_, hCaller⟩
-    rw [getReply?_eq_some_iff] at hR ⊢
-    exact (hNT rid.toObjId (.reply r) (fun _ => by exact KernelObject.noConfusion)
-      (fun _ => by exact KernelObject.noConfusion)).mpr hR
+    rw [getReply?_eq_some_iff] at hR
+    obtain ⟨r', hR', hCaller'⟩ := (hRC rid r.caller).mpr ⟨r, hR, rfl⟩
+    exact ⟨⟨ep, hIS ▸ hEp⟩, r', (getReply?_eq_some_iff _ rid r').mpr hR', hCaller' ▸ hCaller⟩
   -- 17b. pendingReceiveReplyWellFormed, the stash is injective.
   · intro tid₁ tid₂ tcb₁ tcb₂ rid hTcb₁ hTcb₂ hS₁ hS₂
     rw [getTcb?_eq_some_iff] at hTcb₁ hTcb₂
@@ -1001,6 +1030,7 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
   -- 19. endpointQueueTailBlockedConsistent.
   · intro epId ep tl tcb hEp hTcb
     have hEpPre := (hNT epId (.endpoint ep) (fun _ => by exact KernelObject.noConfusion)
+      (fun _ => by exact KernelObject.noConfusion)
       (fun _ => by exact KernelObject.noConfusion)).mp hEp
     obtain ⟨ty, hTy, hIS, _⟩ := hBwd tl.toObjId tcb hTcb
     obtain ⟨hRecv, hSend⟩ := hInv.endpointQueueTailBlockedConsistent epId ep tl ty hEpPre hTy
@@ -1333,7 +1363,7 @@ theorem applyReplyDonation_ok_decompose
     (replyDonationReturn? st replierVtid.val = none ∧ st'' = st) ∨
     ∃ (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId) (st' : SystemState),
       replyDonationReturn? st replierVtid.val = some (scId, owner) ∧
-      returnDonatedSchedContext st replierVtid.val scId owner = .ok st' ∧
+      returnDonatedSchedContext st replierVtid.val scId owner none = .ok st' ∧
       st'' = removeRunnable st' replierVtid.val := by
   rw [applyReplyDonation_characterisation] at h
   cases hRet : replyDonationReturn? st replierVtid.val with
@@ -1347,7 +1377,7 @@ theorem applyReplyDonation_ok_decompose
     | some ownerVtid =>
       rw [hV] at h
       simp only [] at h
-      cases hR : returnDonatedSchedContextValid st replierVtid scId ownerVtid with
+      cases hR : returnDonatedSchedContextValid st replierVtid scId ownerVtid none with
       | error e => rw [hR] at h; simp only [] at h; cases h
       | ok st' =>
         rw [hR] at h
@@ -1363,17 +1393,19 @@ reads every other thread through.  Stated on the intermediate state `st'`,
 before the deschedule, which touches no object. -/
 theorem returnDonatedSchedContext_binding_trichotomy
     (st st' : SystemState) (replier owner : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (newOwner? : Option SeLe4n.ThreadId)
     (pTcb oTcb : TCB)
-    (hOPost : st'.getTcb? owner = some { oTcb with schedContextBinding := .bound scId })
+    (hOPost : st'.getTcb? owner
+      = some { oTcb with schedContextBinding := donationReturnBinding scId newOwner? })
     (hPPost : st'.getTcb? replier = some { pTcb with schedContextBinding := .unbound })
     (hOther : ∀ tid, tid ≠ owner → tid ≠ replier → st'.getTcb? tid = st.getTcb? tid)
     (tid : SeLe4n.ThreadId) (tcb' : TCB) (hTcb' : st'.getTcb? tid = some tcb') :
-    (tid = owner ∧ tcb'.schedContextBinding = .bound scId) ∨
+    (tid = owner ∧ tcb'.schedContextBinding = donationReturnBinding scId newOwner?) ∨
     (tid = replier ∧ tcb'.schedContextBinding = .unbound) ∨
     (tid ≠ owner ∧ tid ≠ replier ∧ st.getTcb? tid = some tcb') := by
   by_cases hO : tid = owner
   · rw [hO] at hTcb'
-    have hEq : { oTcb with schedContextBinding := .bound scId } = tcb' :=
+    have hEq : { oTcb with schedContextBinding := donationReturnBinding scId newOwner? } = tcb' :=
       Option.some.inj (hOPost.symm.trans hTcb')
     exact Or.inl ⟨hO, by rw [← hEq]⟩
   · by_cases hP : tid = replier
@@ -1401,7 +1433,22 @@ The one genuine precondition is `hReplierIdleAllowed`, and it is about the
 *deschedule*, not the return: `applyReplyDonation` takes the replier off the run
 queue, so a thread that `passiveServerIdle` had no obligation for acquires one.
 The reply path leaves the replier `.ready` (`.reply`) or `.blockedOnReceive`
-(`.replyRecv`), both of which `passiveServerIdleAllowed` admits. -/
+(`.replyRecv`), both of which `passiveServerIdleAllowed` admits.
+
+**WS-OD OD3.2 — `hBottom`.**  The pop's `newOwner? = some outer` arm hands the
+scheduling context back to a thread that is itself a donor, and the five
+binding-reading conjuncts then need the outer caller's own shape, which is
+`donationReturnOuterValid`.  The three levers that consume it are already
+general — `returnDonatedSchedContext_donationOwnerValid_at_target`,
+`returnDonatedSchedContext_preserves_donationOwnerUnique`,
+`returnDonatedSchedContext_preserves_donationBudgetTransfer` — and this
+*composite* is not, because its case analysis discharges the target's arm by
+`cases` on a `.bound` binding at four places.  The arm is unreachable while
+nothing writes a reply stack, so the hypothesis costs no live behaviour, and
+**WS-OD OD4.3 removes it** in the row whose subject is exactly the five conjunct
+preservations under the widened arm — the same row that must run before OD4.1's
+push makes the arm reachable.  New code must not read this theorem as covering a
+depth-≥ 2 return. -/
 theorem returnDonatedSchedContext_establishes_ipcInvariantFull_of_except
     (st st' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
     (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
@@ -1410,26 +1457,29 @@ theorem returnDonatedSchedContext_establishes_ipcInvariantFull_of_except
     (hRet : replyDonationReturn? st replierVtid.val = some (scId, owner))
     (hReplierIdleAllowed : ∀ tcb, st.getTcb? replierVtid.val = some tcb →
         passiveServerIdleAllowed tcb.ipcState)
-    (h : returnDonatedSchedContext st replierVtid.val scId owner = .ok st') :
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hBottom : newOwner? = none)
+    (h : returnDonatedSchedContext st replierVtid.val scId owner newOwner? = .ok st') :
     ipcInvariantFull st' := by
+  subst hBottom
   obtain ⟨pTcb, hPPre, hPB, oTcb, hOPre, hNe⟩ :=
     replyDonationReturn?_some_char st replierVtid.val scId owner
       hInv.donationOwnerValidExcept hRet
   obtain ⟨⟨oTcb0, hOPre0, hOPost⟩, ⟨pTcb0, hPPre0, hPPost⟩, hOther⟩ :=
-    returnDonatedSchedContext_getTcb?_char st st' replierVtid.val scId owner hObjInv hNe h
+    returnDonatedSchedContext_getTcb?_char st st' replierVtid.val scId owner hObjInv hNe none h
   have hOEq : oTcb0 = oTcb := Option.some.inj (hOPre0.symm.trans hOPre)
   have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
   rw [hOEq] at hOPost
   rw [hPEq] at hPPost
-  have hSched := returnDonatedSchedContext_scheduler_eq st st' replierVtid.val scId owner h
+  have hSched := returnDonatedSchedContext_scheduler_eq st st' replierVtid.val scId owner none h
   have hAgree := returnDonatedSchedContext_donationReadAgreement st st' replierVtid.val scId
-    owner hObjInv h
+    owner hObjInv none h
   have hScNe : ∀ scId', scId' ≠ scId →
       st'.getSchedContext? scId' = st.getSchedContext? scId' := fun scId' hne =>
     returnDonatedSchedContext_getSchedContext?_ne st st' replierVtid.val scId scId' owner
-      hne hObjInv h
+      hne hObjInv none h
   have hTri := returnDonatedSchedContext_binding_trichotomy st st' replierVtid.val owner scId
-    pTcb oTcb hOPost hPPost hOther
+    none pTcb oTcb hOPost hPPost hOther
   -- (1) `donationOwnerValid` on the intermediate state.
   have hDOV' : donationOwnerValid st' := by
     intro tid tcb' scId' owner' hTcb' hBind'
@@ -1549,11 +1599,13 @@ theorem returnDonatedSchedContext_preserves_ipcInvariantFull
     (hRet : replyDonationReturn? st replierVtid.val = some (scId, owner))
     (hReplierIdleAllowed : ∀ tcb, st.getTcb? replierVtid.val = some tcb →
         passiveServerIdleAllowed tcb.ipcState)
-    (h : returnDonatedSchedContext st replierVtid.val scId owner = .ok st') :
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hBottom : newOwner? = none)
+    (h : returnDonatedSchedContext st replierVtid.val scId owner newOwner? = .ok st') :
     ipcInvariantFull st' :=
   returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' replierVtid scId
     owner hObjInv (ipcInvariantFullExceptDonationOwner_of_full owner hInv) hRet
-    hReplierIdleAllowed h
+    hReplierIdleAllowed newOwner? hBottom h
 
 
 /-- WS-RR RR2.5: the replier's deschedule preserves the bundle, given the replier
@@ -1598,12 +1650,12 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
   · rw [hEq]; exact hInv
   · have hFull' : ipcInvariantFull st' :=
       returnDonatedSchedContext_preserves_ipcInvariantFull st st' replierVtid scId owner
-        hObjInv hInv hRet hReplierIdleAllowed hR
+        hObjInv hInv hRet hReplierIdleAllowed none rfl hR
     obtain ⟨pTcb, hPPre, hPB, _, _, hNe⟩ :=
       replyDonationReturn?_some_char st replierVtid.val scId owner
         (donationOwnerValidExcept_of_donationOwnerValid owner hInv.donationOwnerValid) hRet
     obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-      returnDonatedSchedContext_getTcb?_char st st' replierVtid.val scId owner hObjInv hNe hR
+      returnDonatedSchedContext_getTcb?_char st st' replierVtid.val scId owner hObjInv hNe none hR
     have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
     rw [hPEq] at hPPost
     rw [hEq]
@@ -1677,9 +1729,9 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
           hInv.donationOwnerValidExcept hRet
       have hFull' : ipcInvariantFull st' :=
         returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' replierVtid
-          sc0 woken hObjInv hInv hRet hReplierIdleAllowed hR
+          sc0 woken hObjInv hInv hRet hReplierIdleAllowed none rfl hR
       obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-        returnDonatedSchedContext_getTcb?_char st st' replierVtid.val sc0 woken hObjInv hNe hR
+        returnDonatedSchedContext_getTcb?_char st st' replierVtid.val sc0 woken hObjInv hNe none hR
       have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
       rw [hPEq] at hPPost
       rw [hEq]
@@ -1710,7 +1762,7 @@ theorem applyReplyDonation_preserves_objects_invExt
   · rw [hEq, show (removeRunnable st' replierVtid.val).objects = st'.objects from
       removeRunnable_preserves_objects st' replierVtid.val]
     exact returnDonatedSchedContext_preserves_objects_invExt st st' replierVtid.val scId owner
-      hObjInv hR
+      hObjInv none hR
 
 
 -- ============================================================================
@@ -1790,5 +1842,428 @@ theorem propagatePipChainCrossCore_preserves_ipcInvariantFull (st : SystemState)
     | some nextServer => exact ih _ nextServer hObj' hInv'
 
 
+
+/-! ### WS-OD OD3.6 — the receive rendezvous hand-off's invariant surface
+
+`applyReceiveRendezvousDonation` is the step both receiving arms run, so its
+obligations are discharged once here rather than at each arm.  The
+caller-blocked obligation is discharged **from the guard**
+(`rendezvousDequeuedCall_blockedOnReply`), which is the point of making the
+guard a definition: the arm cannot fire the donation on a state the invariant
+argument does not cover, because the same predicate decides both. -/
+
+/-- WS-OD OD3.6: the rendezvous hand-off preserves the object-store extension
+invariant. -/
+theorem applyRendezvousCallDonation_preserves_objects_invExt
+    (st st'' : SystemState) (receiver donor : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') :
+    st''.objects.invExt := by
+  obtain ⟨donorV, receiverV, _, _, hDon⟩ :=
+    applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
+  exact applyCallDonationOnCore_preserves_objects_invExt st st'' donorV receiverV _ _ hObjInv hDon
+
+/-- WS-OD OD3.6: and so does the guarded form, whose other arm changes nothing. -/
+theorem applyReceiveRendezvousDonation_preserves_objects_invExt
+    (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
+    st''.objects.invExt := by
+  unfold applyReceiveRendezvousDonation at h
+  cases hCall : rendezvousDequeuedCall st dequeued with
+  | false => rw [hCall] at h; simp only [Bool.false_eq_true, if_false] at h; cases h; exact hObjInv
+  | true =>
+    rw [hCall] at h
+    simp only [if_true] at h
+    exact applyRendezvousCallDonation_preserves_objects_invExt st st'' receiver dequeued hObjInv h
+
+/-- **WS-OD OD3.6: the receive rendezvous hand-off preserves `ipcInvariantFull`.**
+
+One hypothesis, not two.  `applyCallDonationOnCore_preserves_ipcInvariantFull`
+asks that the donor be `.blockedOnReply` and that no thread already holds a
+donation naming the receiver as owner; the first is exactly what the guard
+decides, so only `hReceiverNotOwner` -- a whole-store fact no local step can
+establish -- survives as a caller obligation. -/
+theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull
+    (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hReceiverNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+        st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId receiver)
+    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
+    ipcInvariantFull st'' := by
+  unfold applyReceiveRendezvousDonation at h
+  cases hCall : rendezvousDequeuedCall st dequeued with
+  | false => rw [hCall] at h; simp only [Bool.false_eq_true, if_false] at h; cases h; exact hInv
+  | true =>
+    rw [hCall] at h
+    simp only [if_true] at h
+    obtain ⟨donorV, receiverV, hDv, hRv, hDon⟩ :=
+      applyRendezvousCallDonation_ok_decompose st st'' receiver dequeued h
+    refine applyCallDonationOnCore_preserves_ipcInvariantFull st st'' donorV receiverV _ _
+      hObjInv hInv ?_ ?_ hDon
+    · rw [hDv]
+      exact rendezvousDequeuedCall_blockedOnReply st dequeued hCall
+    · rw [hRv]
+      exact hReceiverNotOwner
+
+/-! ### WS-OD OD3.14 — and the priority hand-off that runs beside it
+
+`applyReceiveRendezvousHandoff` is OD3.6's donation plus the PIP chain walk from
+the receiver, under one reading of the guard.  Each obligation below is the two
+existing ones composed: the donation's, and the walk's frame — no new argument,
+which is the point of expressing the step over the two rather than inlining it. -/
+
+/-- WS-OD OD3.14: the hand-off preserves the object-store extension invariant —
+the donation does (OD3.6) and the chain walk does (SM5.F.2). -/
+theorem applyReceiveRendezvousHandoff_preserves_objects_invExt
+    (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hObjInv : st.objects.invExt)
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    st''.objects.invExt := by
+  obtain ⟨stDon, hDon, hEq⟩ :=
+    applyReceiveRendezvousHandoff_ok_decompose st st'' receiver dequeued executingCore h
+  have hObjDon : stDon.objects.invExt :=
+    applyReceiveRendezvousDonation_preserves_objects_invExt st stDon receiver dequeued
+      hObjInv hDon
+  subst hEq
+  split
+  · exact propagatePipChainCrossCore_preserves_objects_invExt stDon receiver executingCore _
+      hObjDon
+  · exact hObjDon
+
+/-- **WS-OD OD3.14: the hand-off preserves `ipcInvariantFull`.**
+
+The caller obligation is OD3.6's and no more: the walk writes `pipBoost` and
+run-queue buckets, which the bundle reads nowhere, so it contributes a frame
+rather than a hypothesis. -/
+theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull
+    (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hReceiverNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+        st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId receiver)
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    ipcInvariantFull st'' := by
+  obtain ⟨stDon, hDon, hEq⟩ :=
+    applyReceiveRendezvousHandoff_ok_decompose st st'' receiver dequeued executingCore h
+  have hObjDon : stDon.objects.invExt :=
+    applyReceiveRendezvousDonation_preserves_objects_invExt st stDon receiver dequeued
+      hObjInv hDon
+  have hInvDon : ipcInvariantFull stDon :=
+    applyReceiveRendezvousDonation_preserves_ipcInvariantFull st stDon receiver dequeued
+      hObjInv hInv hReceiverNotOwner hDon
+  subst hEq
+  split
+  · exact propagatePipChainCrossCore_preserves_ipcInvariantFull stDon receiver executingCore _
+      hObjDon hInvDon
+  · exact hInvDon
+
+/-- WS-OD OD3.14: the hand-off keeps SM5.H's replenish-queue affinity — the
+`hObjInvDon` hypothesis `Donation.lean` had to leave open (it sits below the
+module that proves the donation preserves `invExt`) is discharged here. -/
+theorem applyReceiveRendezvousHandoff_preserves_replenishAffinity_smp
+    (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st)
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    replenishQueueAffinityConsistent_smp st'' :=
+  applyReceiveRendezvousHandoff_preserves_replenishQueueAffinityConsistent_smp
+    st st'' receiver dequeued executingCore hObjInv
+    (fun stDon hDon => applyReceiveRendezvousDonation_preserves_objects_invExt st stDon
+      receiver dequeued hObjInv hDon)
+    hCons h
+
+/-- WS-OD OD3.14: the receive leg's hand-off preserves the object-store extension
+invariant — the identity arm trivially, the walk arm by SM5.F.2. -/
+theorem applyReceiveLegPipHandoff_preserves_objects_invExt (st : SystemState)
+    (receiver dequeued alreadyWalked : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hObjInv : st.objects.invExt) :
+    (applyReceiveLegPipHandoff st receiver dequeued alreadyWalked executingCore).objects.invExt := by
+  rcases applyReceiveLegPipHandoff_cases st receiver dequeued alreadyWalked executingCore with
+    hEq | hEq <;> rw [hEq]
+  · exact hObjInv
+  · exact propagatePipChainCrossCore_preserves_objects_invExt st receiver executingCore _ hObjInv
+
+/-- WS-OD OD3.14: and it preserves `ipcInvariantFull`, with no caller obligation
+at all — unlike the donation half, a chain walk writes only `pipBoost` and
+run-queue buckets, which the bundle reads nowhere. -/
+theorem applyReceiveLegPipHandoff_preserves_ipcInvariantFull (st : SystemState)
+    (receiver dequeued alreadyWalked : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull
+      (applyReceiveLegPipHandoff st receiver dequeued alreadyWalked executingCore) := by
+  rcases applyReceiveLegPipHandoff_cases st receiver dequeued alreadyWalked executingCore with
+    hEq | hEq <;> rw [hEq]
+  · exact hInv
+  · exact propagatePipChainCrossCore_preserves_ipcInvariantFull st receiver executingCore _
+      hObjInv hInv
+
+
+-- ============================================================================
+-- §6  WS-OD OD3.8 — the pop preserves the donation chain
+-- ============================================================================
+
+/-! ## §6 — the first transition that writes the chain
+
+Every other transition in the tree discharges `donationChainWellFormed` through
+`donationChainFrame`: it writes no `Reply.donatedSc`, no `Reply.prev` and no
+`SchedContext.scReply`, so the two projections the walk reads are fixed and
+`donationChainWellFormed_of_frame` needs no case analysis.  The donation pop is
+the exception it was designed against — it writes all three — so it carries a
+preservation theorem instead, and the theorem is what makes OD2.4's predicate an
+obligation rather than a decoration.
+
+**What the argument turns on** is that the popped head is not reachable from
+below itself.  Clearing `rid`'s links is sound for the *rest* of `scId`'s stack
+only if none of those frames links back to `rid`, and for every *other* context's
+stack only if `rid` is on none of them.  The second is
+`not_mem_donationChainFrom_of_not_donating` — `rid` donates `scId`, so it is on
+no other context's chain.  The first is acyclicity, which the invariant carries
+as *termination*: `donationChainFrom_head_not_mem_tail` derives it from the walk
+being a function of its starting point, so a head appearing again below itself
+would make the walk from that occurrence return the whole chain, which is
+strictly longer than the suffix it must equal. -/
+
+/-- WS-OD OD3.8: **the pop's two chain writes preserve the chain invariant.**
+
+The prefix of `returnDonatedSchedContext`'s store chain that touches chain data:
+the SchedContext's stack head moves down one frame, and the frame it moved off is
+cleared.  Everything after this is TCB rewrites and an index refresh, which frame
+the chain outright — so the whole operation's preservation is this lemma plus
+`donationChainWellFormed_of_frame`.
+
+Stated over the two stores rather than over the operation, because that is the
+shape OD4's push will need on the other side: the push adds a frame and this
+removes one, and both have to be provable against the same two-store surface. -/
+theorem donationHeadPop_preserves_donationChainWellFormed
+    {st s1 s2 : SystemState} {scId : SeLe4n.SchedContextId} {sc : SchedContext}
+    {originalOwner : SeLe4n.ThreadId} {head? : Option (SeLe4n.ReplyId × Reply)}
+    (hObjInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st)
+    (hSc : st.getSchedContext? scId = some sc)
+    (hHead : donationHeadOf? st scId sc = .ok head?)
+    (hS1 : storeObject scId.toObjId
+      (.schedContext { sc with boundThread := some originalOwner,
+                               scReply := head?.bind (fun p => p.2.prev) }) st = .ok ((), s1))
+    (hClear : storeDonationHeadClear (head?.map Prod.fst) s1 = .ok s2) :
+    donationChainWellFormed s2 := by
+  -- Two views of one read.  The typed accessor is what the operation and the
+  -- chain walk use -- a raw object-store lookup would be a second reading of the
+  -- same field, which the AK7 cascade counts as debt -- and the store-level view
+  -- below is derived from it once, because the `storeObject` frames and the
+  -- invariant's own conjuncts are keyed by `ObjId` and cannot be otherwise.
+  have hScStore := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
+  cases head? with
+  | none =>
+    -- No stack: the context's head stays `none` and the clear is the identity,
+    -- so the prefix frames the chain and nothing has to be re-derived.
+    have hNoHead : sc.scReply = none := by
+      have hKey := donationHeadOf?_ok_key st scId sc none hHead
+      simpa using hKey.symm
+    have hFrame : donationChainFrame st s1 :=
+      donationChainFrame_of_storeObject_schedContext hObjInv hScStore (by simp [hNoHead]) hS1
+    have hs2 : s1 = s2 := by
+      have hC : (Except.ok s1 : Except KernelError SystemState) = .ok s2 := by
+        simpa using hClear
+      exact Except.ok.inj hC
+    subst hs2
+    exact donationChainWellFormed_of_frame hFrame hChain
+  | some pr =>
+    obtain ⟨rid, r⟩ := pr
+    obtain ⟨hRobj, hRdon⟩ := donationHeadOf?_ok_resolves st scId sc rid r hHead
+    have hScReply : sc.scReply = some rid := by
+      have hKey := donationHeadOf?_ok_key st scId sc (some (rid, r)) hHead
+      simpa using hKey.symm
+    -- The two written keys are distinct: `st` holds a Reply at one and a
+    -- SchedContext at the other.
+    have hKeyNe : rid.toObjId ≠ scId.toObjId := by
+      intro hEq; rw [hEq, hScStore] at hRobj; cases hRobj
+    -- §6.1  The post-state's object store, at the two written keys and off them.
+    have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+    have hS1Ne : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → s1.objects[k]? = st.objects[k]? :=
+      fun k hk => SeLe4n.Model.storeObject_objects_ne st s1 _ k _ hk hObjInv hS1
+    obtain ⟨r0, hR0, hS2⟩ := storeDonationHeadClear_some_ok (st := s1) (by simpa using hClear)
+    have hr0 : r0 = r := by
+      have hR0Store := (SystemState.getReply?_eq_some_iff s1 rid r0).mp hR0
+      rw [hS1Ne rid.toObjId hKeyNe, hRobj] at hR0Store
+      exact (KernelObject.reply.inj (Option.some.inj hR0Store)).symm
+    subst hr0
+    have hS2Rid : s2.getReply? rid = some { r0 with donatedSc := none, prev := none } :=
+      (SystemState.getReply?_eq_some_iff s2 rid _).mpr
+        (SeLe4n.Model.storeObject_objects_eq s1 s2 _ _ hInv1 hS2)
+    have hS2RidStore := (SystemState.getReply?_eq_some_iff s2 rid _).mp hS2Rid
+    have hS2Ne : ∀ k : SeLe4n.ObjId, k ≠ rid.toObjId → s2.objects[k]? = s1.objects[k]? :=
+      fun k hk => SeLe4n.Model.storeObject_objects_ne s1 s2 _ k _ hk hInv1 hS2
+    have hS2Sc : s2.getSchedContext? scId =
+        some { sc with boundThread := some originalOwner, scReply := r0.prev } := by
+      refine (SystemState.getSchedContext?_eq_some_iff s2 scId _).mpr ?_
+      rw [hS2Ne scId.toObjId (fun hx => hKeyNe hx.symm)]
+      simpa using SeLe4n.Model.storeObject_objects_eq st s1 _ _ hObjInv hS1
+    have hS2ScStore := (SystemState.getSchedContext?_eq_some_iff s2 scId _).mp hS2Sc
+    have hS2Other : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → k ≠ rid.toObjId →
+        s2.objects[k]? = st.objects[k]? :=
+      fun k hkSc hkRid => by rw [hS2Ne k hkRid, hS1Ne k hkSc]
+    -- §6.2  Off the cleared frame, the walk reads the same links it read before.
+    have hAgreeOff : ∀ q : SeLe4n.ReplyId, q ≠ rid →
+        (∃ rq : Reply, st.getReply? q = some rq) →
+        replyStackLinksAt? s2 q = replyStackLinksAt? st q := by
+      intro q hqNe hEx
+      obtain ⟨rq, hqT⟩ := hEx
+      have hq := (SystemState.getReply?_eq_some_iff st q rq).mp hqT
+      have h1 : q.toObjId ≠ scId.toObjId := by intro hx; rw [hx, hScStore] at hq; cases hq
+      have h2 : q.toObjId ≠ rid.toObjId :=
+        fun hx => hqNe (SeLe4n.ReplyId.toObjId_injective q rid hx)
+      unfold replyStackLinksAt?
+      rw [hS2Other q.toObjId h1 h2]
+    -- §6.3  The popped context's own stack, decomposed at the head being cleared.
+    obtain ⟨fuel, chain, hWalk0, hComplete⟩ := hChain.headHoldsWholeChain scId sc hScStore
+    rw [hScReply] at hWalk0
+    obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := by
+      cases fuel with
+      | zero => exact absurd hWalk0 (by simp)
+      | succ f => exact ⟨f, rfl⟩
+    have hLinksRid : replyStackLinksAt? st rid = some (r0.donatedSc, r0.prev) := by
+      unfold replyStackLinksAt?; rw [hRobj]; rfl
+    have hWalk := hWalk0
+    rw [donationChainFrom_succ, hLinksRid] at hWalk
+    simp only at hWalk
+    rw [if_pos hRdon] at hWalk
+    obtain ⟨rest, hRest, rfl⟩ :
+        ∃ rest, donationChainFrom st scId f r0.prev = some rest ∧ chain = rid :: rest := by
+      cases hRec : donationChainFrom st scId f r0.prev with
+      | none => rw [hRec] at hWalk; exact absurd hWalk (by simp)
+      | some rest =>
+        rw [hRec] at hWalk
+        exact ⟨rest, rfl, (Option.some.inj (by simpa using hWalk)).symm⟩
+    have hHeadNotInRest : rid ∉ rest :=
+      donationChainFrom_head_not_mem_tail st scId hWalk0
+    -- §6.4  The three conjuncts at the post-state.
+    refine ⟨?_, ?_, ?_⟩
+    · -- `replyWellFormed`: the cleared frame carries neither field.
+      intro q rq hq
+      by_cases hqRid : q.toObjId = rid.toObjId
+      · rw [hqRid, hS2RidStore] at hq
+        obtain rfl := KernelObject.reply.inj (Option.some.inj hq)
+        intro _; rfl
+      · by_cases hqSc : q.toObjId = scId.toObjId
+        · rw [hqSc, hS2ScStore] at hq; cases hq
+        · rw [hS2Other q.toObjId hqSc hqRid] at hq
+          exact hChain.replyWellFormed q rq hq
+    · -- `donatedContextResolves`: the cleared frame names nothing, and the one
+      -- context this rewrites is still a SchedContext.
+      intro q rq c hq hDon
+      by_cases hqRid : q.toObjId = rid.toObjId
+      · rw [hqRid, hS2RidStore] at hq
+        obtain rfl := KernelObject.reply.inj (Option.some.inj hq)
+        exact absurd hDon (by simp)
+      · by_cases hqSc : q.toObjId = scId.toObjId
+        · rw [hqSc, hS2ScStore] at hq; cases hq
+        · rw [hS2Other q.toObjId hqSc hqRid] at hq
+          obtain ⟨sc0, hsc0⟩ := hChain.donatedContextResolves q rq c hq hDon
+          by_cases hcSc : c.toObjId = scId.toObjId
+          · exact ⟨_, by rw [hcSc, hS2ScStore]⟩
+          · by_cases hcRid : c.toObjId = rid.toObjId
+            · rw [hcRid, hRobj] at hsc0; cases hsc0
+            · exact ⟨sc0, by rw [hS2Other c.toObjId hcSc hcRid]; exact hsc0⟩
+    · -- `headHoldsWholeChain`: the popped context walks the tail it kept, every
+      -- other context walks a chain the cleared frame was never on.
+      intro c sc' hsc'
+      by_cases hcRid : c.toObjId = rid.toObjId
+      · rw [hcRid, hS2RidStore] at hsc'; cases hsc'
+      · by_cases hcSc : c.toObjId = scId.toObjId
+        · -- The popped context: its head is now the frame below the one cleared.
+          obtain rfl : c = scId := SeLe4n.SchedContextId.toObjId_injective c scId hcSc
+          rw [hS2ScStore] at hsc'
+          obtain rfl := KernelObject.schedContext.inj (Option.some.inj hsc')
+          refine ⟨f, rest, ?_, ?_⟩
+          · exact donationChainFrom_congr_on_chain c f r0.prev rest hRest
+              (fun q hq => hAgreeOff q
+                (fun hEq => hHeadNotInRest (by rw [← hEq]; exact hq))
+                (by
+                  obtain ⟨rq, hrq, _⟩ :=
+                    donationChainFrom_mem st c f r0.prev rest hRest q hq
+                  exact ⟨rq, (SystemState.getReply?_eq_some_iff st q rq).mpr hrq⟩))
+          · intro q rq hq hDon
+            by_cases hqRid : q.toObjId = rid.toObjId
+            · rw [hqRid, hS2RidStore] at hq
+              obtain rfl := KernelObject.reply.inj (Option.some.inj hq)
+              exact absurd hDon (by simp)
+            · by_cases hqSc : q.toObjId = c.toObjId
+              · rw [hqSc, hS2ScStore] at hq; cases hq
+              · rw [hS2Other q.toObjId hqSc hqRid] at hq
+                have hMem := hComplete q rq hq hDon
+                rcases List.mem_cons.mp hMem with hHeadEq | hTail
+                · exact absurd (by rw [hHeadEq] : q.toObjId = rid.toObjId) hqRid
+                · exact hTail
+        · -- Every other context: the cleared frame donated `scId`, so it was on
+          -- none of this context's stack, and the walk is unchanged.
+          rw [hS2Other c.toObjId hcSc hcRid] at hsc'
+          obtain ⟨fuel', chain', hWalk', hComplete'⟩ := hChain.headHoldsWholeChain c sc' hsc'
+          have hNotDon : r0.donatedSc ≠ some c := by
+            rw [hRdon]
+            intro hx
+            exact hcSc (by rw [Option.some.inj hx])
+          have hRidNotIn : rid ∉ chain' :=
+            not_mem_donationChainFrom_of_not_donating hWalk' hRobj hNotDon
+          refine ⟨fuel', chain', ?_, ?_⟩
+          · exact donationChainFrom_congr_on_chain c fuel' sc'.scReply chain' hWalk'
+              (fun q hq => hAgreeOff q (fun hEq => hRidNotIn (by rw [← hEq]; exact hq))
+                (by
+                  obtain ⟨rq, hrq, _⟩ :=
+                    donationChainFrom_mem st c fuel' sc'.scReply chain' hWalk' q hq
+                  exact ⟨rq, (SystemState.getReply?_eq_some_iff st q rq).mpr hrq⟩))
+          · intro q rq hq hDon
+            by_cases hqRid : q.toObjId = rid.toObjId
+            · rw [hqRid, hS2RidStore] at hq
+              obtain rfl := KernelObject.reply.inj (Option.some.inj hq)
+              exact absurd hDon (by simp)
+            · by_cases hqSc : q.toObjId = scId.toObjId
+              · rw [hqSc, hS2ScStore] at hq; cases hq
+              · rw [hS2Other q.toObjId hqSc hqRid] at hq
+                exact hComplete' q rq hq hDon
+
+/-- WS-OD OD3.8: **`returnDonatedSchedContext` preserves the donation chain.**
+
+The payoff, and the theorem the whole predicate was stated for: the pop is the
+only transition in the tree that moves a `SchedContext.scReply` or clears a
+`Reply.donatedSc` / `Reply.prev`, so it is the only one that cannot reach
+`donationChainWellFormed_of_frame`.  With this, `donationChainWellFormed` is
+preserved by every kernel transition — the frame family covers the rest — and
+`ipcReachable` carries it rather than assuming it.
+
+**Unconditional in `newOwner?`.**  The pop's third and fourth stores rewrite two
+TCBs' `schedContextBinding`, which is not chain data at any depth, so the
+argument is the same at `none` (the inert shape every call site passes today) and
+at a resolved outer caller (the shape OD4.4 threads).  Nothing here is
+`hBottom`-conditioned, unlike the bundle composite. -/
+theorem returnDonatedSchedContext_preserves_donationChainWellFormed
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    donationChainWellFormed st' := by
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+    hSc, _, hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have hChain2 : donationChainWellFormed s2 :=
+    donationHeadPop_preserves_donationChainWellFormed hObjInv hChain
+      ((SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hSc) hHead hS1 hClear
+  -- The two TCB rewrites and the index refresh carry no chain data.
+  have hFrame23 : donationChainFrame s2 s3 :=
+    donationChainFrame_of_tcb_rewrite hInv2
+      (lookupTcb_some_objects s2 originalOwner clientTcb hL1) hS3
+  have hFrame34 : donationChainFrame s3 s4 :=
+    donationChainFrame_of_tcb_rewrite hInv3
+      (lookupTcb_some_objects s3 serverTid serverTcb hL2) hS4
+  have hFrame4' : donationChainFrame s4 st' :=
+    donationChainFrame.of_objects_eq (by rw [hEq])
+  exact donationChainWellFormed_of_frame
+    ((hFrame23.trans hFrame34).trans hFrame4') hChain2
 
 end SeLe4n.Kernel

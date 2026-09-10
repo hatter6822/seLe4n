@@ -383,6 +383,35 @@ def insertOrMerge (l : LockId) (m : AccessMode) (S : LockSet) : LockSet :=
             (fun a' ha' hEq => hNotMem (hEq ▸ ha')) S.hUniqueKeys
       }
 
+/-- **WS-OD OD3.7: extending with a key already present does not grow the set.**
+
+`insertOrMerge` maps over `pairs` when the key is present — same length, lub'd
+mode — and prepends only on a fresh key.  Trivial to prove and load-bearing for
+one thing: it is what lets a *resolved* footprint carry a bound strictly sharper
+than its parametric one.  A member whose resolver provably answers a key another
+member already holds costs nothing, so the ceiling a footprint is measured
+against (the union over *all* argument values) can exceed what any reachable
+state actually declares.
+
+Stated as an equation rather than `≤`: the merge changes the mode, never the
+cardinality, and a `≤` would leave "did it shrink?" unanswered. -/
+theorem size_insertOrMerge_of_containsKey (S : LockSet) (l : LockId) (m : AccessMode)
+    (h : S.containsKey l = true) :
+    (S.insertOrMerge l m).size = S.size := by
+  unfold insertOrMerge size
+  split
+  · simp only [List.length_map]
+  · next heq => rw [h] at heq; exact absurd heq (by simp)
+
+/-- WS-OD OD3.7: and the complementary case — a fresh key adds exactly one. -/
+theorem size_insertOrMerge_of_not_containsKey (S : LockSet) (l : LockId) (m : AccessMode)
+    (h : S.containsKey l = false) :
+    (S.insertOrMerge l m).size = S.size + 1 := by
+  unfold insertOrMerge size
+  split
+  · next heq => rw [h] at heq; exact absurd heq (by simp)
+  · simp only [List.length_cons]
+
 /-- WS-SM SM3.B: union of two `LockSet`s — fold `insertOrMerge` over
 the right-hand argument's pairs.
 
@@ -852,42 +881,98 @@ end LockSet
 -- WS-SM SM3.D.6 / WS-RR RR7.11 — the static lock-set cardinality bound
 -- ============================================================================
 
-/-- WS-SM SM3.D.6 (plan §5.4): the static worst-case lock-set size.  Per
-plan §5.4, most transitions touch ≤ 4 locks; the worst-case IPC paths
-(call/reply with donation) stay ≤ 8.  Every SM3.B `lockSet_<τ>`
-declaration respects this bound (exercised in `DeadlockFreedomSuite`).
+/-- WS-SM SM3.D.6 (plan §5.4): the static worst-case lock-set size.  Most
+transitions touch ≤ 4 locks; the widest is the `.replyRecv` shape the two
+paragraphs below describe, and it sits at the constant exactly.  Every SM3.B
+`lockSet_<τ>` declaration respects this bound (exercised in
+`DeadlockFreedomSuite`).  Plan §5.4's own figure was `≤ 8` for the worst-case
+IPC paths; it has moved twice since, so the sentence states the relation and the
+paragraphs below carry the history.
 
-**WS-RR RR7.11: 8 → 9.**  The widest footprint is
-`lockSet_replyRecv` on the path that both returns a donation and installs
-capabilities, and it is nine keys: the four-member base (replier TCB, the
-replier's CSpace root, the answered caller's TCB, the endpoint) plus the
-rendezvous sender's TCB, the returned SchedContext, the donation's original
-owner, the Reply object, and — RR7.11's addition — the state-level lock the
-capability install's CDT write needs.
+**WS-RR RR7.11: 8 → 9**, for the state-level lock a capability install's CDT
+write needs on a `.replyRecv` that also returns a donation.
 
-Three considerations, since raising this constant widens the WCRT headline
-`maxLockSetSize · (numCores − 1) · tCs` by an eighth.
+**WS-OD OD3.5: 9 → 11**, and the two members are the same defect RR7.11 fixed,
+found on the same footprint.  `lockSet_replyRecv` declared **one**
+`schedContextLock` — the donation the reply leg *returns* — while
+`replyRecvBody` performs **two** SchedContext hand-offs: after the return it
+runs `applyCallDonationOnCore nextThread tid`, whose `donateSchedContext` writes
+the *new* caller's SchedContext (`boundThread := tid`).  That object is provably
+not the returned one (two threads cannot be bound to one context), and it is not
+an edge case: the receiver is `.unbound` at that point precisely because the
+return just made it so, which is the passive-server loop's steady state.  The
+eleventh member is the **recorded server's** own TCB, which the return writes
+`.unbound`; it merges with the replier's on a non-delegated reply and is a
+distinct key exactly when the reply capability was delegated.
 
-*The ninth member is real.*  `ipcTransferSingleCap` mints a derivation node and
-adds an edge whichever arm reaches it, and RR7.7 declared that on the two
-sending arms.  A receiving arm that installs through the same call and does not
-declare it is a false footprint — the failure mode this whole family exists to
-exclude — so the choice was never "nine members or eight", it was "nine members
-or a footprint that does not cover its own writes".
+The three considerations RR7.11 recorded hold verbatim, and are why the answer
+is a wider ceiling rather than a narrower declaration.
+
+*The members are real.*  `.call` declares the donated SchedContext for this
+exact write and says why (`lockSet_endpointCall_donation_extension`: "so the SC
+migration runs under a held SC write lock, serialised against every other
+core").  `.replyRecv` runs the same primitive.  One question, two answers —
+and the wrong answer was a footprint that does not cover its own writes, which
+is the failure mode this family exists to exclude.  Concretely: a `.replyRecv`
+on one core and a `.tcbSuspend` of the queued caller on another had **provably
+disjoint** footprints while both writing that SchedContext.
 
 *Taking the lock outside the set is not the cheaper option.*  A lock acquired
 outside the declared set is invisible to the deadlock-freedom and
 serializability theorems, which is the same reasoning the hierarchical-CBS
 plan's D21 records for its own move of this constant.
 
-*The ninth member is only reachable on an invariant-violating state* — the
-donation discipline makes the original owner the answered caller, where
-`insertOrMerge`'s key merge collapses the two into one — but a declared
-footprint bounds the union over **all** argument values, not over the reachable
-ones, so the honest constant is the one the definition can produce.
+*Some members are only distinct on states the invariants exclude* — the
+donation discipline makes the original owner the answered caller, and a
+non-delegated reply makes the recorded server the replier, in both cases where
+`insertOrMerge`'s key merge collapses two into one — but a declared footprint
+bounds the union over **all** argument values, not over the reachable ones, so
+the honest constant is the one the definition can produce.
 
-`lockSet_tcbSuspend` and `lockSet_endpointCall` remain eight at their widest;
-this constant is not tight for them. -/
-def maxLockSetSize : Nat := 9
+**The cost, stated rather than implied.**  This constant is the WCRT headline's
+first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrows the
+per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at eleven,
+25 µs at thirteen, and 23 µs at fourteen
+(`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
+proportion each time.
+
+At the value above, the declared lock-set ceiling is **14**, the RPi5 tick admits **23 µs** per lock, and the uniform 60 µs envelope is **2520 µs** —
+the canonical spelling `scripts/check_lock_ceiling_figures.py` holds to the Lean
+sources, so a raise that leaves a copy of any of the three behind is a build
+failure on the cut that makes it stale rather than on the cut that notices.  The figure is *derived* from this constant and must be
+read off that theorem rather than from this paragraph: at fourteen the tick
+admits `14 · 3 · 23 = 966 µs ≤ 1000`, and quoting a superseded per-lock cost
+beside the current ceiling states a budget the constant does not satisfy.  Every
+raise is the maintainer's decision, taken against the same alternative — refusing
+to declare `.replyRecv` on the arms that do not fit — which would leave the
+tree's most-travelled IPC path under the coarse serialisation while the model
+claimed a footprint for it.
+
+**WS-OD OD3.7: 11 → 13**, and again on that same arm.  The donation return walks
+one link past the reply-stack head to find the outer caller
+(`replyStackOuterCaller?`) and then reads that caller's TCB to validate it
+(`outerCallerAcceptable`) — two objects no other member covers, since the head is
+the answered caller's own `replyObject` and the outer caller is provably neither
+thread the pop rewrites.  Both are **read**-mode members, and the second is a
+validate-then-commit, so leaving it undeclared is a time-of-check/time-of-use
+window on exactly the thread about to be handed a scheduling context.
+
+*Only `.replyRecv` needed the raise.*  `lockSet_endpointReply` takes the same two
+members and reaches nine; the arm-selected cancellation footprint reaches ten;
+`lockSet_tcbSuspend` and `lockSet_endpointCall` remain eight at their widest.
+This constant is not tight for any of them, and is tight only for the one arm
+that fuses a reply leg, a receive leg and a donation return into one syscall.
+
+**WS-OD OD3.13: 13 → 14**, on that same arm once more.  `.receive` and
+`.replyRecv` pop the endpoint's send queue or block on its receive queue through
+the two primitives every rendezvous-or-block uses, and each writes one further
+TCB — the popped thread's successor promoted to head, or the queue's old tail
+(`receiveSideQueueStructureNeighbor?`).  `.replyRecv` was at thirteen of
+thirteen, so the object its receive leg writes had nowhere to go.  A footprint
+that omits a written object is **false**, and every statement built on
+`lockSetForSyscall` was silent about that TCB rather than conservative; two
+microseconds of admissible critical section is what the true footprint costs.
+With this raise all eight declared syscall arms name every object they write. -/
+def maxLockSetSize : Nat := 14
 
 end SeLe4n.Kernel.Concurrency

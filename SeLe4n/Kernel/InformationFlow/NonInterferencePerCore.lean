@@ -1218,11 +1218,12 @@ SchedContext; it touches neither the scheduler nor the machine. -/
 theorem returnDonatedSchedContext_confinedToCore (st st' : SystemState)
     (receiver : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
     (originalOwner : SeLe4n.ThreadId) (c₀ : CoreId)
-    (hStep : returnDonatedSchedContext st receiver scId originalOwner = .ok st') :
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hStep : returnDonatedSchedContext st receiver scId originalOwner newOwner? = .ok st') :
     observableSlotsConfinedToCore st st' c₀ :=
   observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
-    (returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner hStep)
-    (returnDonatedSchedContext_machine_eq st st' receiver scId originalOwner hStep)
+    (returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner newOwner? hStep)
+    (returnDonatedSchedContext_machine_eq st st' receiver scId originalOwner newOwner? hStep)
 
 /-- The checked pre-receive donation cleanup is either the identity or a
 `returnDonatedSchedContext`, so it is confined to every core. -/
@@ -1240,7 +1241,7 @@ theorem cleanupPreReceiveDonationChecked_confinedToCore (st st' : SystemState)
     cases hBind : recvTcb.schedContextBinding with
     | donated scId originalOwner =>
       simp only [hBind] at hStep
-      exact returnDonatedSchedContext_confinedToCore st st' receiver scId originalOwner c₀ hStep
+      exact returnDonatedSchedContext_confinedToCore st st' receiver scId originalOwner c₀ none hStep
     | unbound | bound _ =>
       simp only [hBind, Except.ok.injEq] at hStep
       exact observableSlotsConfinedToCore_of_eq c₀ hStep.symm

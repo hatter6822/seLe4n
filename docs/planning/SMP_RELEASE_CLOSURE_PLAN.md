@@ -224,26 +224,39 @@ lives in the plan that owns the work.
   read it as covering the scheduler path.
 - **Fine-lock migration Track D — commit partitioning**
   ([`SMP_FINE_LOCK_MIGRATION_PLAN.md`](SMP_FINE_LOCK_MIGRATION_PLAN.md) §4,
-  PRs 10–12), registered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
-  table B.  That plan **seam-gates Track D to SM10.1 itself**, so it is the one
-  part of the fine-lock work WS-RR cannot land: PR 12 replaces
-  `modifyGetKernelState`'s read-then-write with a compute-from-snapshot CAS
-  commit and retires SM5.I's global kernel-entry ticket lock behind a flag, and
-  a commit model may only flip after the hardware validation SM10.1 produces.
-  **Three obligations SM10.1 inherits.**  (1) **The runtime object-store
-  representation**: Track A's key-local reading of the object-store lock is
-  sound only once `SystemState.objects` is realised as per-object storage —
-  the obligation `storeObject` already carries, and the premise PR 10's
-  `OBJECT_STRIPE_POOL` and `objid_stripe` hash exist to serve.  (2) **The
-  measured WCRT claim**: while the entry lock stands, every kernel entry is
-  serialised system-wide, so the live worst-case response time is the
+  PRs 10–13), registered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
+  table B.  **Re-pointed at `v0.34.133`**, when the track was restructured: it
+  is **not** gated on SM10.1 as a whole.  Its first two rows are Lean —
+  `transition_footprint_local` and the representation obligation derived from
+  the write-set lists — and are gated on **nothing**, which the numbering rule
+  requires, since the runtime rows rely on them.  Only PRs 12 and 13 are
+  seam-gated, and to **BP6** (per-core readiness, the point at which more than
+  one PE executes kernel code) with validation at **BP8**.  PR 13 commits under
+  the acquired footprint and retires SM5.I's global kernel-entry ticket lock
+  behind a flag; the whole-state optimistic CAS the old PR 12 described is a
+  stated **non-goal**, because it serialises every commit exactly as the entry
+  lock does while trading that lock's bounded FIFO wait for an unbounded retry
+  count.
+  **Two obligations this release inherits, not three.**  (1) **The runtime
+  state representation**, which is a *set* of structures rather than
+  `SystemState.objects` alone: `storeObject`'s declared write set is five
+  fields and the IPC list seven, every one replaced whole by the model, and
+  `RHTable.insert` tests the load factor before it knows whether the key is
+  resident — so even a store at a resident key rebuilds the table at
+  three-quarters load.  Track D PR 11 derives that set from the write-set lists
+  and registers its residue in `UncoveredLockDomain`; PR 13 closes it.  (2)
+  **The measured WCRT claim**: while the entry lock stands, every kernel entry
+  is serialised system-wide, so the live worst-case response time is the
   global-lock bound and `PerCoreWcrt.lean`'s fine-lock bound remains a
   statement about the *intended* discipline (CLAUDE.md standing constraint).
   SM10.4's performance rows and any v1.0.0 latency claim must quote the bound
-  the shipped image actually realises.  (3) **The named follow-on
-  `SM3.C.9.b`** — the timer tick's `SchedLockId` `withLockSet` bracket, which
-  Track D's own PR 12 step 4 defers to WS-RR **RR7.39**; SM10.1 must not read
-  Track D's completion as covering it.
+  the shipped image actually realises — and no bound in that surface converts to
+  a *time* until `tCs` is measured on the board, which BP8 is the first point
+  that can happen.  The third obligation this block used to name — the
+  `SM3.C.9.b` timer-tick bracket — is **closed**: WS-RR RR7.39 landed it at
+  `v0.34.89`.  What survives of the scheduler domain is the syscall seam's own
+  wake targets (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8),
+  and Track D's completion must not be read as covering that either.
 - Tier 0..5 tests green at HEAD.
 
 ## 3. Sub-tasks

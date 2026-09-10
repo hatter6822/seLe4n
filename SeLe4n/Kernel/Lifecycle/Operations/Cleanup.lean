@@ -172,15 +172,33 @@ def spliceOutMidQueueNode (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSta
       | some prevTid =>
         match objs[prevTid.toObjId]? with
         | some (.tcb prevTcb) =>
-          objs.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+          objs.insert prevTid.toObjId (.tcb (queueUnlinkPredecessor tcb prevTcb))
         | _ => objs
-    -- Patch successor's queuePrev to skip over tid (reads patched objs)
+    -- Patch successor's `queuePrev` **and `queuePPrev`** to skip over tid
+    -- (reads patched objs).
+    --
+    -- WS-OD OD3.9: `queuePPrev` was omitted here, and that stranded the
+    -- successor -- the same defect OD1.1 closed in `endpointQueueRemove`, live
+    -- on this third removal for eight more cuts.  A successor left carrying
+    -- `.tcbNext tid` fails `endpointQueueRemoveDual`'s `pprevConsistent` check
+    -- in *every* case it has a successor at all (as the new head, because that
+    -- arm requires `q.head != some it`; as an interior node, because its
+    -- `queuePrev` now names its new predecessor and not `tid`), so it can never
+    -- leave the endpoint queue again and every later bound-notification
+    -- delivery to it fails `.illegalState`.  `.tcbSuspend` of the thread ahead
+    -- of a passive server was therefore an authority-crossing denial of service
+    -- on that server, and no `ipcInvariantFull` conjunct reads `queuePPrev`, so
+    -- nothing caught it.
+    --
+    -- Both patches are now `queueUnlinkPredecessor` / `queueUnlinkSuccessor`,
+    -- the definitions the other two removals use, so the three cannot disagree
+    -- about what unlinking writes (`spliceOutMidQueueNode_successor_agrees_with_removals`).
     let objs := match tcb.queueNext with
       | none => objs
       | some nextTid =>
         match objs[nextTid.toObjId]? with
         | some (.tcb nextTcb) =>
-          objs.insert nextTid.toObjId (.tcb { nextTcb with queuePrev := tcb.queuePrev })
+          objs.insert nextTid.toObjId (.tcb (queueUnlinkSuccessor tcb nextTcb))
         | _ => objs
     { st with objects := objs }
 
@@ -264,7 +282,14 @@ def cleanupDonatedSchedContext (st : SystemState) (tid : SeLe4n.ThreadId)
   | some tcb =>
     match tcb.schedContextBinding with
     | .donated scId originalOwner =>
-      returnDonatedSchedContext st tid scId originalOwner
+      -- WS-OD OD3.4 built the resolver this site will use; OD4.4 cannot thread
+      -- it here yet.  This site's invariant surface goes through
+      -- `returnDonatedSchedContext_preserves_ipcInvariantFull`, which OD3.2
+      -- states under `hBottom : newOwner? = none` and which **OD4.3**
+      -- generalises — so the resolver arrives with OD4.3, and until then this is
+      -- the bottom-of-stack answer that resolver computes on every reachable
+      -- state (`replyStackOuterCaller?_of_no_stack`).
+      returnDonatedSchedContext st tid scId originalOwner none
     | _ => .ok st
 
 /-- Z7-P / AJ1-A (M-14): cleanupDonatedSchedContext preserves the scheduler
@@ -278,7 +303,7 @@ theorem cleanupDonatedSchedContext_scheduler_eq
   · injection h with h; subst h; rfl
   · split at h <;> first
       | (injection h with h; subst h; rfl)
-      | exact returnDonatedSchedContext_scheduler_eq st st' tid _ _ h
+      | exact returnDonatedSchedContext_scheduler_eq st st' tid _ _ none h
 
 /-- WS-SM SM8.B: `cleanupDonatedSchedContext` never touches the machine state
 either — the register banks included.  Added beside the scheduler frame for the
@@ -295,7 +320,7 @@ theorem cleanupDonatedSchedContext_machine_eq
   · injection h with h; subst h; rfl
   · split at h <;> first
       | (injection h with h; subst h; rfl)
-      | exact returnDonatedSchedContext_machine_eq st st' tid _ _ h
+      | exact returnDonatedSchedContext_machine_eq st st' tid _ _ none h
 
 /-- WS-SM SM7.B: `cleanupDonatedSchedContext` never touches the
 TLB-shootdown state (mirrors `cleanupDonatedSchedContext_scheduler_eq`;
@@ -310,7 +335,7 @@ theorem cleanupDonatedSchedContext_tlbShootdown_eq
   · injection h with h; subst h; rfl
   · split at h <;> first
       | (injection h with h; subst h; rfl)
-      | exact returnDonatedSchedContext_tlbShootdown_eq st st' tid _ _ h
+      | exact returnDonatedSchedContext_tlbShootdown_eq st st' tid _ _ none h
 
 
 /-- WS-H2/H-05, R4-A.3 (M-12): Clean up external references to a TCB being retyped away.

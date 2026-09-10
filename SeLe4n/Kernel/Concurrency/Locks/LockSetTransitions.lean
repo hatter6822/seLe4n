@@ -84,7 +84,17 @@ the gap by adding pre-resolved `Option SchedContextId` and
 `Option ThreadId` arguments to the affected `lockSet_<τ>`
 functions.
 
-The 4 affected syscalls and their donation extensions:
+**WS-OD OD3.6 made it 5.**  `.receive` was listed below as a
+syscall needing no donation extension, on the reasoning that a
+donation is always caller-initiated; OD3.6 found that seL4-MCS
+donates on the *receive* side too (`receiveIPC` → `reply_push`
+→ `schedContext_donate`), so a passive server taking its first
+request with `seL4_Recv` ran the client's work charged to no
+reservation.  `applyReceiveRendezvousDonation` implements it and
+`lockSet_endpointReceive` carries the members, so the entry has
+moved up into this list.
+
+The 5 affected syscalls and their donation extensions:
 
 * **`lockSet_endpointCall`** — adds `donatedScId : Option
   SchedContextId`.  When the caller has an active SC and the
@@ -100,10 +110,34 @@ The 4 affected syscalls and their donation extensions:
   client), so the origin-owner TCB is already in the lockSet.
   Only the SC is a new lock.
 
-* **`lockSet_replyRecv`** — adds `donatedScId : Option
-  SchedContextId`.  Same as reply (the receive phase doesn't
-  initiate donation — donation is caller-initiated via
-  `endpointCall`, not receiver-initiated).
+* **`lockSet_replyRecv`** — adds **two** SchedContext
+  arguments, because the arm performs two hand-offs.
+  `donatedScId` is the reply leg's return, exactly as
+  `lockSet_endpointReply`.  `redonatedScId` (WS-OD OD3.5) is the
+  receive leg's re-donation: `replyRecvBody` runs
+  `applyCallDonationOnCore nextThread tid` whenever its receive
+  leg dequeues a queued `Call`, writing the **new** caller's
+  SchedContext — provably not the returned one.  This bullet
+  used to say the receive phase does not initiate donation; that
+  was true of the single-core transition it was written for and
+  false of `replyRecvBody`, and the same sentence at the
+  declaration site was corrected at OD3.17.  See
+  `lockSet_replyRecv`'s own docstring for the full contract.
+
+* **`lockSet_endpointReceive`** (WS-OD OD3.6) — adds
+  `donatedScId : Option SchedContextId`.  A `.receive` that
+  dequeues a queued `Call` donates the dequeued caller's
+  scheduling context to the receiver
+  (`applyReceiveRendezvousDonation` →
+  `applyCallDonationOnCore dequeued receiver`), which writes the
+  SC's `boundThread`, both threads' `schedContextBinding` and
+  `SystemState.scThreadIndex`.  Receiver (`callerTid`) and donor
+  (`senderTid`) TCBs are already in the lockSet; the SC and the
+  state-level lock are the new members.  This entry used to sit
+  in the list below, on the reasoning that a donation is always
+  caller-initiated — which is what OD3.6 found to be false, and
+  is why a passive server taking its first request with
+  `seL4_Recv` ran the client's work charged to no reservation.
 
 * **`lockSet_tcbSuspend`** — adds `bindingScId : Option
   SchedContextId` AND `donatedOriginalOwnerTid : Option
@@ -136,11 +170,50 @@ donation paths.
 
 ### Syscalls that do NOT need donation extension
 
-* **`lockSet_endpointSend`**: send is asynchronous, no
-  donation.
-* **`lockSet_endpointReceive`**: receive blocks waiting; if a
-  caller arrives and donates, the donation is initiated from
-  the caller's `endpointCall` syscall — handled there.
+**These two lists are a reading aid; the canonical inventory is
+`permittedKinds`.**  A footprint that names a SchedContext lock
+**must** have `.schedContext ∈ permittedKinds <arm>`, and that is
+not a parallel claim someone has to keep in step: the
+`lockSet_consistent_<arm>` family *proves* it, each stating
+`∀ p ∈ (lockSet_<arm> …).pairs, p.fst.kind ∈ permittedKinds <arm>`
+at the footprint's **full arity**, so a member added without the
+kind being permitted fails to elaborate.  Read `permittedKinds`
+below; it also carries the reason each kind is there.
+
+Two things it does **not** say, stated because a reader will
+otherwise assume them.  The relation is `⊆`, not `=`: a kind may
+be permitted and never used, so `permittedKinds` is an upper
+bound and a listed kind is not evidence that some argument
+produces it — over-declaring is sound here and costs only
+precision.  And the enforcement is per *consistency theorem*: the
+`*OnCore`, `WithCaps` and cancellation-composite footprints carry
+none of their own and inherit the property definitionally from
+the base they delegate to, so a refactor that stopped them
+delegating would be unchecked.  A kind-consistency census in the
+shape of `SeLe4n/Testing/LockFootprintBoundCensus.lean` — one
+canonical statement per footprint, decided by `isDefEq`, no
+traversal — would close that; it is not this cut's subject.
+
+WS-OD OD3.18 found that these lists had drifted three ways, and
+that all three were the same mistake: the lists are a *third*
+copy of `permittedKinds`, written in prose, checked by nothing.
+`.receive` sat under "does NOT need donation extension" for
+twelve cuts after OD3.6 gave it a `donatedScId` and gave
+`permittedKinds .receive` its `.schedContext`; the `replyRecv`
+entry repeated a sentence corrected at the declaration site one
+cut earlier; and `tcbSetPriority`/`tcbSetMCPriority`/
+`tcbSetAffinity` were called "TCB-only" while all three permit
+`.schedContext` and name one.  Each drift came from a cut that
+correctly extended a footprint, its own docstring **and**
+`permittedKinds`, without knowing a fourth statement existed.
+The remedy is deletion of the duplicate, not a checker over it:
+a second derivation of an already-proven fact is the same defect
+one level up.
+
+* **`lockSet_endpointSend`**: a plain `Send` carries no reply
+  object, so nothing is donated.  (Not because it is
+  "asynchronous" — `.send` blocks; what rules out a donation is
+  the absent reply link, which is what `applyCallDonation` needs.)
 * **`lockSet_notificationSignal/Wait`**: notifications don't
   donate.
 * **`lockSet_cspaceMint/Copy/Move/Delete`**: capability ops
@@ -157,8 +230,17 @@ donation paths.
 * **`lockSet_schedContextUnbind`**: unbinds the SC's bound
   thread; the bound thread is already in lockSet as
   `targetTcbTid`.
-* **`lockSet_tcbResume/SetPriority/SetMCPriority/SetIPCBuffer`**:
-  TCB-only config ops, no donation.
+* **`lockSet_tcbResume`**: TCB-only config op, no donation.
+* **`lockSet_tcbSetPriority/SetMCPriority/SetAffinity`**: no
+  donation — but **not** TCB-only, which this entry claimed until
+  WS-OD OD3.18.  Priority and home core live on the bound
+  SchedContext, so each of the three writes the *target's own*
+  binding and each footprint carries a `boundSchedContextId`
+  member.  It is a subject write, not a hand-off: resolved from
+  the target's binding, never from a donor's.
+* **`lockSet_tcbSetIPCBuffer`**: no donation; it names the
+  target's VSpaceRoot in **read** mode for the buffer-address
+  validation, so it is not TCB-only either.
 
 ### PIP-chain TCB locks
 
@@ -172,6 +254,26 @@ TCBs are all at hierarchy level `.tcb` (3) and are acquired in
 invariant.  SM3.C's `withLockSet` combinator will handle PIP
 acquisition via a sub-call pattern (acquire-walk-extend) that
 preserves 2PL.
+
+**What a walking arm declares is its chain *start*.**  The
+`pipChainStart_<τ>` family below is the declaration mechanism:
+each returns the `Option ThreadId` the arm passes to
+`propagatePipChainCrossCore`, which is the one thread the walk
+begins at and therefore the only member the arm can name
+statically — the deferred SM3.C walker takes it and follows
+`blockingServer` upward under the ladder above.  A `LockSet` is
+capped at `maxLockSetSize` and a blocking chain is not, so the
+markers are *not* footprint members and no size bound counts
+them.  Six arms walk and so declare one:
+`endpointCall`, `endpointReply`, `replyRecv` (the reply leg's
+reversion), `replyRecvReceiveLeg` and `endpointReceive` (WS-OD
+OD3.14's receive-side hand-off, added when `.receive` and the
+delegated `.replyRecv` were found to donate a scheduling
+context without propagating the donor's inherited priority),
+and `tcbSuspend`.  A new arm that calls the walk adds a marker
+in the same cut; the marker must name the thread the arm
+actually passes, since a marker naming a different thread sends
+the walker up a different chain.
 -/
 
 namespace SeLe4n.Kernel.Concurrency
@@ -391,17 +493,27 @@ existed survives by `rfl`. -/
 def lockSet_endpointSend (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId)
     (receiverTid : Option ThreadId)
-    (destCnodeObjId : Option ObjId := none) : LockSet :=
+    (destCnodeObjId : Option ObjId := none)
+    -- **WS-OD OD3.11**: the queue-structure neighbour.  A rendezvous pops the
+    -- receive queue, which relinks the popped receiver's successor into the
+    -- head; a block enqueues on the send queue, which relinks its old tail.
+    -- Exactly one of the two, and neither was declared -- so a `.send` on one
+    -- core and a `.tcbSuspend` of that neighbour on another had provably
+    -- disjoint footprints while both writing it.  Defaulted, so a call site
+    -- that has not been re-resolved is unchanged.
+    (queueNeighbour : Option ThreadId := none) : LockSet :=
   lockSetExtendOpt
     (lockSetExtendOpt
       (lockSetExtendOpt
-        (lockSetOfList
-          [(tcbLock callerTid, .write),
-           (cnodeLock cnodeRootObjId, .read),
-           (endpointLock endpointObjId, .write)])
-        (receiverTid.map (fun rt => (tcbLock rt, .write))))
-      (destCnodeObjId.map (fun r => (cnodeLock r, AccessMode.write))))
-    (destCnodeObjId.map (fun _ => (stateLevelLock, AccessMode.write)))
+        (lockSetExtendOpt
+          (lockSetOfList
+            [(tcbLock callerTid, .write),
+             (cnodeLock cnodeRootObjId, .read),
+             (endpointLock endpointObjId, .write)])
+          (receiverTid.map (fun rt => (tcbLock rt, .write))))
+        (destCnodeObjId.map (fun r => (cnodeLock r, AccessMode.write))))
+      (destCnodeObjId.map (fun _ => (stateLevelLock, AccessMode.write))))
+    (queueNeighbour.map (fun q => (tcbLock q, AccessMode.write)))
 
 /-- **WS-RR RR7.7**: the capless send is definitionally the pre-RR7.7
 footprint, so every statement taken over the four-argument form survives
@@ -424,7 +536,12 @@ def lockSet_endpointReceive (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId)
     (senderTid : Option ThreadId)
     (replyId : Option ReplyId := none)
-    (installsCaps : Bool := false) : LockSet :=
+    (installsCaps : Bool := false)
+    (donatedScId : Option SchedContextId)
+    -- **WS-OD OD3.12**: the queue-structure neighbour, as `lockSet_endpointSend`
+    -- declares it and for the same reason -- this arm pops the **send** queue
+    -- and blocks on the **receive** queue, through the same two primitives.
+    (queueNeighbour : Option ThreadId := none) : LockSet :=
   -- WS-SM SM6.D: a `Call` rendezvous on receive links a server-supplied Reply
   -- object (`linkCallerReply` writes `reply.caller`) under the per-object reply
   -- write-lock — folded in as an outermost optional.  `none` ⇒ the set is
@@ -459,24 +576,53 @@ def lockSet_endpointReceive (callerTid : ThreadId)
   -- same `installsCaps` flag as the root's write upgrade because it is the same
   -- write: no install, no CDT edge.  At `false` the extension is `none` and
   -- reduces definitionally, so every pin taken before this survives.
+  --
+  -- **WS-OD OD3.6 — and the SchedContext the rendezvous donates.**  seL4-MCS's
+  -- `receiveIPC` hands the dequeued `Call` caller's scheduling context to a
+  -- passive receiver, and this arm performed no donation at all until OD3.6 --
+  -- so the footprint had nothing to declare and the arm had nothing to write.
+  -- Now both: `donateSchedContext`'s first store writes that context's
+  -- `boundThread`, under this member's write lock, and its `scThreadIndex`
+  -- maintenance takes the state-level lock below.
+  --
+  -- Resolved by `receiveRendezvousDonatedSc?`, over the same
+  -- `receiveRendezvousSender?` the `senderTid` member and `receiveInstallsCaps`
+  -- read -- one resolution of "which thread does this receive dequeue", so the
+  -- three members cannot disagree about it.
   lockSetExtendOpt
     (lockSetExtendOpt
       (lockSetExtendOpt
-        (lockSetOfList
-          [(tcbLock callerTid, .write),
-           (cnodeLock cnodeRootObjId, if installsCaps then .write else .read),
-           (endpointLock endpointObjId, .write)])
-        (senderTid.map (fun st => (tcbLock st, .write))))
-      (replyId.map (fun rid => (replyLock rid, .write))))
-    (if installsCaps then some (stateLevelLock, AccessMode.write) else none)
+        (lockSetExtendOpt
+          (lockSetExtendOpt
+            (lockSetOfList
+              [(tcbLock callerTid, .write),
+               (cnodeLock cnodeRootObjId, if installsCaps then .write else .read),
+               (endpointLock endpointObjId, .write)])
+            (senderTid.map (fun st => (tcbLock st, .write))))
+          (replyId.map (fun rid => (replyLock rid, .write))))
+        (donatedScId.map (fun sc => (schedContextLock sc, AccessMode.write))))
+      -- **WS-OD OD3.6**: the state-level member is now a disjunction, for the
+      -- same reason `lockSet_replyRecv`'s is: `SystemState.scThreadIndex` is an
+      -- `RHTable` whose insert may rehash, so a donation writes state no
+      -- per-object lock decomposes.  Declaring it only under `installsCaps`
+      -- would omit it on exactly the passive-server path OD3.6 makes work.
+      (if installsCaps || donatedScId.isSome then
+         some (stateLevelLock, AccessMode.write) else none))
+    (queueNeighbour.map (fun q => (tcbLock q, AccessMode.write)))
 
-/-- **WS-RR RR7.11**: a receive that installs nothing is definitionally the
-pre-RR7.11 footprint, so every statement and fixture taken over the capless
-shape survives unchanged. -/
+/-- **WS-RR RR7.11**: a receive that installs nothing — and, since **WS-OD
+OD3.6**, that donates nothing — is definitionally the pre-RR7.11 footprint, so
+every statement and fixture taken over the capless shape survives unchanged.
+Both hypotheses are load-bearing: either write alone makes the state-level member
+live, so dropping one would make the equation false rather than merely weaker. -/
 @[simp] theorem lockSet_endpointReceive_no_caps (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (senderTid : Option ThreadId)
     (replyId : Option ReplyId) :
-    lockSet_endpointReceive callerTid cnodeRootObjId endpointObjId senderTid replyId false
+    lockSet_endpointReceive callerTid cnodeRootObjId endpointObjId senderTid replyId false none
+        -- **WS-OD OD3.12**: "no caps" is about the *message*; a receive that
+        -- installs nothing still pops or blocks, so the neighbour is a third
+        -- hypothesis here rather than a defaulted argument.
+        none
       = lockSetExtendOpt
           (lockSetExtendOpt
             (lockSetOfList
@@ -519,7 +665,11 @@ def lockSet_endpointCall (callerTid : ThreadId)
     -- here is what lets `lockSet_endpointCallWithCaps` *be* this footprint
     -- at `some` rather than a second definition that has to be kept in
     -- step with it.
-    (destCnodeObjId : Option ObjId := none) : LockSet :=
+    (destCnodeObjId : Option ObjId := none)
+    -- **WS-OD OD3.11**: the queue-structure neighbour, declared exactly as
+    -- `lockSet_endpointSend` declares it and for the same reason -- `.call`
+    -- takes the identical two branches through the identical two primitives.
+    (queueNeighbour : Option ThreadId := none) : LockSet :=
   let withReceiver := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
@@ -533,19 +683,34 @@ def lockSet_endpointCall (callerTid : ThreadId)
   -- unchanged).
   let withReply := lockSetExtendOpt withSc
     (replyId.map (fun rid => (replyLock rid, .write)))
-  lockSetExtendOpt
+  -- **WS-OD OD3.5**: the state-level lock is no longer conditioned on the
+  -- capability transfer alone.  A Call that donates runs `donateSchedContext`,
+  -- whose final step writes `SystemState.scThreadIndex` — an `RHTable`, so an
+  -- insert may rehash and back-shift the whole table, exactly as the CDT maps
+  -- do.  RR7.7 declared this lock for the CDT write and the donation write went
+  -- undeclared beside it.  Conditioned on the same resolver as the SchedContext
+  -- member, so the two cannot disagree about whether a donation happens.
+  let withState := lockSetExtendOpt
     (lockSetExtendOpt withReply
       (destCnodeObjId.map (fun r => (cnodeLock r, AccessMode.write))))
-    (destCnodeObjId.map (fun _ => (stateLevelLock, AccessMode.write)))
+    (if destCnodeObjId.isSome || donatedScId.isSome then
+       some (stateLevelLock, AccessMode.write) else none)
+  lockSetExtendOpt withState
+    (queueNeighbour.map (fun q => (tcbLock q, AccessMode.write)))
 
 /-- **WS-RR RR7.7**: the capless call is definitionally the pre-RR7.7
 footprint, so every statement taken over the six-argument form survives
-unchanged. -/
-@[simp] theorem lockSet_endpointCall_capless (callerTid : ThreadId)
+unchanged.
+
+**WS-OD OD3.5**: and *donation-less*, since the state-level member now also
+covers the donation's `scThreadIndex` write.  A capless call that donates holds
+`stateLevelLock`; naming this lemma `_capless` while it silently assumed no
+donation would be the presence-check shape this project keeps finding. -/
+@[simp] theorem lockSet_endpointCall_capless_donationless (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
-    (donatedScId : Option SchedContextId) (replyId : Option ReplyId) :
+    (replyId : Option ReplyId) :
     lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
-        donatedScId replyId none
+        none replyId none
       = lockSetExtendOpt
           (lockSetExtendOpt
             (lockSetExtendOpt
@@ -554,7 +719,7 @@ unchanged. -/
                  (cnodeLock cnodeRootObjId, .read),
                  (endpointLock endpointObjId, .write)])
               (receiverTid.map (fun rt => (tcbLock rt, .write))))
-            (donatedScId.map (fun sc => (schedContextLock sc, .write))))
+            (none : Option (LockId × AccessMode)))
           (replyId.map (fun rid => (replyLock rid, .write))) := rfl
 
 /-- WS-SM SM3.B.3: `lockSet` for `endpointReply` (syscall `.reply`).
@@ -590,7 +755,9 @@ def lockSet_endpointReply (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
     (donatedScId : Option SchedContextId)
     (donatedOriginalOwnerTid : Option ThreadId)
-    (replyId : Option ReplyId := none) : LockSet :=
+    (replyId : Option ReplyId := none)
+    (belowHeadReplyId : Option ReplyId)
+    (outerCallerTid : Option ThreadId) : LockSet :=
   let withSc := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
@@ -601,9 +768,28 @@ def lockSet_endpointReply (callerTid : ThreadId)
     (donatedOriginalOwnerTid.map (fun ot => (tcbLock ot, .write)))
   -- WS-SM SM6.D: the reply consumes the first-class Reply object
   -- (`consumeReply` writes `reply.caller := none`) under the per-object reply
-  -- write-lock (outermost optional; `none` ⇒ definitionally unchanged).
-  lockSetExtendOpt withOwner
+  -- write-lock (`none` ⇒ definitionally unchanged).
+  let withReply := lockSetExtendOpt withOwner
     (replyId.map (fun rid => (replyLock rid, .write)))
+  -- **WS-OD OD3.7**: the two objects the pop reads *below* the head, in READ
+  -- mode — it inspects them and writes neither.  `replyStackOuterCaller?` reads
+  -- the Reply one frame down to find the outer caller, and
+  -- `outerCallerAcceptable` reads that caller's TCB to check it is a waiting
+  -- donor before the pop binds it.  Both are `none` at every depth this tree
+  -- reaches today (`replyStackBelowHeadReads?_of_no_stack`), so this declares
+  -- ahead of OD4.4's code rather than widening a live footprint.
+  let withBelow := lockSetExtendOpt withReply
+    (belowHeadReplyId.map (fun rid => (replyLock rid, AccessMode.read)))
+  let withOuter := lockSetExtendOpt withBelow
+    (outerCallerTid.map (fun ot => (tcbLock ot, AccessMode.read)))
+  -- **WS-OD OD3.5**: and the state-level lock when the reply returns a
+  -- donation, because `returnDonatedSchedContext` maintains
+  -- `SystemState.scThreadIndex` — an `RHTable` whose insert may rehash, so it
+  -- does not decompose by object.  Conditioned on the SchedContext member's own
+  -- resolver: no donation, no index write, and the extension is `none` and
+  -- reduces definitionally.
+  lockSetExtendOpt withOuter
+    (if donatedScId.isSome then some (stateLevelLock, AccessMode.write) else none)
 
 /-- WS-SM SM3.B.3: `lockSet` for `replyRecv` (syscall `.replyRecv`).
 
@@ -617,11 +803,31 @@ waiting).
 Audit-pass-3 (donation-return extension, audit-pass-4 refinement):
 the reply phase may return a donated SC from the caller (replier)
 to the original owner — same shape as `lockSet_endpointReply`.
-The receive phase does NOT initiate donation (donation is
-caller-initiated from `endpointCall`, not receiver-initiated).
 
-The caller pre-resolves the donation pair by inspecting the
-replier's own TCB binding:
+**And the receive phase initiates one too** (WS-OD OD3.5, corrected
+here at OD3.17).  This docstring used to say the opposite — "the
+receive phase does NOT initiate donation (donation is
+caller-initiated from `endpointCall`, not receiver-initiated)" —
+which was true of the single-core transition it was written for and
+false of `replyRecvBody`: its receive leg runs
+`applyCallDonationOnCore nextThread tid` whenever it dequeues a
+queued `Call`, writing the **new** caller's SchedContext, provably
+not the returned one.  That is the passive-server steady state, not
+an edge case, and it is exactly why `redonatedScId` and the
+disjunctive state-level member exist.  A contract that denies a
+hand-off the footprint declares invites the next caller to omit the
+members it needs, so it is corrected rather than qualified.
+
+So the arm carries **two** SchedContext arguments: `donatedScId`
+(the reply leg's return, resolved from the replier's own binding)
+and `redonatedScId` (the receive leg's re-donation, resolved from
+the send-queue head through `receiveRendezvousDonatedSc?`).  The
+state-level lock is taken when *either* fires, because
+`SystemState.scThreadIndex` is an `RHTable` whose insert may rehash
+the whole table.
+
+The caller pre-resolves the reply leg's donation pair by inspecting
+the replier's own TCB binding:
 
 * If `replierTcb.schedContextBinding = .donated scId originalOwner`:
   pass `donatedScId := some scId` AND
@@ -636,7 +842,19 @@ def lockSet_replyRecv (callerTid : ThreadId)
     (donatedScId : Option SchedContextId)
     (donatedOriginalOwnerTid : Option ThreadId)
     (replyId : Option ReplyId := none)
-    (installsCaps : Bool := false) : LockSet :=
+    (installsCaps : Bool := false)
+    (donationServerTid : Option ThreadId)
+    (redonatedScId : Option SchedContextId)
+    (belowHeadReplyId : Option ReplyId)
+    (outerCallerTid : Option ThreadId)
+    -- **WS-OD OD3.13**: the queue-structure neighbour of this arm's **receive
+    -- leg**, which pops or enqueues like any other -- see `lockSet_endpointSend`.
+    -- This is the member `maxLockSetSize` was raised to 14 for: `.replyRecv` was
+    -- already at 13 of 13, so declaring the object its receive leg writes cost
+    -- `admissibleCriticalSection` two microseconds on the 1 ms tick.  A wide
+    -- footprint costs contention; a *false* one costs soundness, and this
+    -- project rates the second worse.
+    (queueNeighbour : Option ThreadId := none) : LockSet :=
   -- PR #873 round 8: `.replyRecv`'s receive leg installs capabilities too (it
   -- runs the same WithCaps transition `.receive` does), so the caller's own
   -- CSpace root takes the same write upgrade, in the same size- and
@@ -656,24 +874,69 @@ def lockSet_replyRecv (callerTid : ThreadId)
   -- next caller (one-object reuse) under the per-object reply write-lock.
   let withReply := lockSetExtendOpt withOwner
     (replyId.map (fun rid => (replyLock rid, .write)))
+  -- **WS-OD OD3.5 — the recorded server's own TCB.**  The donation this arm
+  -- returns is the *recorded* server's, resolved through `recordedReplyServer?`
+  -- (PR #892 review round 6), and `replyRecvReturnDonation` writes that thread's
+  -- `schedContextBinding := .unbound`.  On a non-delegated reply the recorded
+  -- server *is* `callerTid` and `insertOrMerge`'s key merge collapses the two;
+  -- it is a distinct key exactly when the reply capability was delegated, which
+  -- is the case this arm previously could not declare at all.
+  let withServer := lockSetExtendOpt withReply
+    (donationServerTid.map (fun srv => (tcbLock srv, .write)))
+  -- **WS-OD OD3.5 — the *second* SchedContext hand-off.**  `replyRecvReturnDonation`
+  -- does not stop at the return: when the receive leg dequeues a queued `Call`
+  -- it runs `applyCallDonationOnCore nextThread callerTid`, and
+  -- `donateSchedContext`'s first store writes the **new** caller's SchedContext
+  -- (`boundThread := callerTid`).  That object is provably not `donatedScId` —
+  -- two threads cannot be bound to one context — so one `schedContextLock` never
+  -- covered both, and this arm wrote a SchedContext under no declared lock while
+  -- `.call` declared exactly this member for exactly this write
+  -- (`lockSet_endpointCall_donation_extension`).  It is the passive-server
+  -- steady state, not an edge case: the receiver is `.unbound` at that point
+  -- precisely because the return just made it so.
+  let withRedonation := lockSetExtendOpt withServer
+    (redonatedScId.map (fun sc => (schedContextLock sc, .write)))
+  -- **WS-OD OD3.7 — the two objects the pop reads *below* the head**, in READ
+  -- mode.  This is the arm the ceiling was raised for: at call depth ≥ 2 the
+  -- return walks one link past the head (`replyStackOuterCaller?`) and then
+  -- reads that frame's caller's TCB to validate it (`outerCallerAcceptable`),
+  -- and neither object is covered by any member above — the head Reply is
+  -- `replyId`, and the outer caller is provably neither of the two threads the
+  -- pop rewrites.  The second is a validate-then-commit, so declaring it in
+  -- read mode is what closes the time-of-check/time-of-use window on the thread
+  -- about to receive a scheduling context.
+  let withBelow := lockSetExtendOpt withRedonation
+    (belowHeadReplyId.map (fun rid => (replyLock rid, AccessMode.read)))
+  let withOuter := lockSetExtendOpt withBelow
+    (outerCallerTid.map (fun ot => (tcbLock ot, AccessMode.read)))
   -- **WS-RR RR7.11**: and the CDT maps, for the reason spelled out at
   -- `lockSet_endpointReceive` — this arm's receive leg runs the same WithCaps
   -- receive, so it installs through the same `ipcTransferSingleCap` and writes
-  -- the same `SystemState`-level derivation structure.  Conditioned on the same
-  -- `installsCaps` flag as the root's write upgrade, because it is the same
-  -- write; at `false` it is `none` and reduces definitionally.
-  lockSetExtendOpt withReply
-    (if installsCaps then some (stateLevelLock, AccessMode.write) else none)
+  -- the same `SystemState`-level derivation structure.
+  -- **WS-OD OD3.5**: the same lock also covers `SystemState.scThreadIndex`,
+  -- which *both* hand-offs maintain — an `RHTable` whose insert may rehash, so
+  -- it does not decompose by object either.  Hence the disjunction: the write
+  -- happens if the receive installs capabilities, or if either donation runs.
+  -- All three conditions read the same resolvers the members above do, so the
+  -- footprint cannot disagree with itself about what the arm does.
+  let withState := lockSetExtendOpt withOuter
+    (if installsCaps || donatedScId.isSome || redonatedScId.isSome then
+       some (stateLevelLock, AccessMode.write) else none)
+  lockSetExtendOpt withState
+    (queueNeighbour.map (fun q => (tcbLock q, AccessMode.write)))
 
-/-- **WS-RR RR7.11**: a `.replyRecv` whose receive leg installs nothing is
-definitionally the pre-RR7.11 footprint. -/
+/-- **WS-RR RR7.11**: a `.replyRecv` whose receive leg installs nothing — and,
+since **WS-OD OD3.5**, that also returns no donation, re-donates nothing and
+resolves no separate recorded server — is definitionally the pre-RR7.11
+footprint.  The three added hypotheses are the three writes OD3.5 declared: drop
+any one of them and the state-level member is live, so the equation would be
+false rather than merely weaker. -/
 @[simp] theorem lockSet_replyRecv_no_caps (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
     (endpointObjId : ObjId) (newSenderTid : Option ThreadId)
-    (donatedScId : Option SchedContextId)
     (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId) :
     lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId newSenderTid
-        donatedScId donatedOriginalOwnerTid replyId false
+        none donatedOriginalOwnerTid replyId false none none none none
       = lockSetExtendOpt
           (lockSetExtendOpt
             (lockSetExtendOpt
@@ -684,7 +947,7 @@ definitionally the pre-RR7.11 footprint. -/
                    (tcbLock replyTargetTid, .write),
                    (endpointLock endpointObjId, .write)])
                 (newSenderTid.map (fun st => (tcbLock st, .write))))
-              (donatedScId.map (fun sc => (schedContextLock sc, .write))))
+              (none : Option (LockId × AccessMode)))
             (donatedOriginalOwnerTid.map (fun ot => (tcbLock ot, .write))))
           (replyId.map (fun rid => (replyLock rid, .write))) := rfl
 
@@ -701,7 +964,15 @@ def lockSet_notificationSignal (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (notificationObjId : ObjId)
     (waiterTid : Option ThreadId)
     (boundEndpoint : Option ObjId := none)
-    (boundTcb : Option ThreadId := none) : LockSet :=
+    (boundTcb : Option ThreadId := none)
+    -- **WS-OD OD3.10**: the bound TCB's queue neighbours.  The bound delivery
+    -- dequeues that TCB with `endpointQueueRemoveDual`, which relinks its
+    -- predecessor and its successor -- two TCB *objects* this footprint did not
+    -- name, so a `.notificationSignal` on one core and a `.tcbSuspend` of a
+    -- queue-mate on another had provably disjoint footprints while both writing
+    -- it.  Defaulted, so every non-bound call site is unchanged and reduces
+    -- definitionally to the pre-OD3.10 footprint.
+    (spliceNeighbors : Option ThreadId × Option ThreadId := (none, none)) : LockSet :=
   -- WS-SM SM6.B/SM6.D (PR #822 Codex review): a notification bound to a TCB
   -- blocked on receive takes the bound-delivery path (`notificationSignalBoundOnCore`):
   -- it dequeues the bound TCB from its endpoint (`endpointQueueRemoveDual` — an
@@ -720,8 +991,31 @@ def lockSet_notificationSignal (callerTid : ThreadId)
     (waiterTid.map (fun wt => (tcbLock wt, .write)))
   let withEp := lockSetExtendOpt withWaiter
     (boundEndpoint.map (fun ep => (endpointLock ep, .write)))
-  lockSetExtendOpt withEp
+  let withBound := lockSetExtendOpt withEp
     (boundTcb.map (fun bt => (tcbLock bt, .write)))
+  let withPrev := lockSetExtendOpt withBound
+    (spliceNeighbors.1.map (fun p => (tcbLock p, AccessMode.write)))
+  lockSetExtendOpt withPrev
+    (spliceNeighbors.2.map (fun n => (tcbLock n, AccessMode.write)))
+
+/-- **WS-OD OD3.10**: a signal that splices nothing is definitionally the
+pre-OD3.10 footprint, so every statement and fixture taken over the
+five-argument form survives unchanged. -/
+@[simp] theorem lockSet_notificationSignal_no_splice (callerTid : ThreadId)
+    (cnodeRootObjId notificationObjId : ObjId) (waiterTid : Option ThreadId)
+    (boundEndpoint : Option ObjId) (boundTcb : Option ThreadId) :
+    lockSet_notificationSignal callerTid cnodeRootObjId notificationObjId waiterTid
+        boundEndpoint boundTcb (none, none)
+      = lockSetExtendOpt
+          (lockSetExtendOpt
+            (lockSetExtendOpt
+              (lockSetOfList
+                [(tcbLock callerTid, .read),
+                 (cnodeLock cnodeRootObjId, .read),
+                 (notificationLock notificationObjId, .write)])
+              (waiterTid.map (fun wt => (tcbLock wt, .write))))
+            (boundEndpoint.map (fun ep => (endpointLock ep, .write))))
+          (boundTcb.map (fun bt => (tcbLock bt, .write))) := rfl
 
 /-- WS-SM SM3.B.3: `lockSet` for `notificationWait`.
 
@@ -1321,34 +1615,37 @@ the caller has to discharge for nothing. -/
 blocks when no receiver is waiting and is descheduled from its core. -/
 theorem lockSet_endpointSend_caller_tcb_write_mem (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
-    (destCnodeObjId : Option ObjId) :
+    (destCnodeObjId : Option ObjId)
+    -- **WS-OD OD3.11**: stated at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
     (tcbLock callerTid, AccessMode.write)
       ∈ (lockSet_endpointSend callerTid cnodeRootObjId endpointObjId receiverTid
-          destCnodeObjId).pairs := by
+          destCnodeObjId queueNeighbour).pairs := by
   unfold lockSet_endpointSend lockSetOfList
   simp only [List.foldl]
-  exact mem_write_lockSetExtendOpt _ _ _
-    (mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _
-        (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-          (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-            (LockSet.mem_insertOrMerge_write_self _ _)))))
-
+  -- The optional extensions are peeled by count rather than by a hand-nested
+  -- tower, so a member added to this footprint cannot leave a nesting depth
+  -- silently wrong (WS-OD OD3.7).
+  repeat apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+              (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                (LockSet.mem_insertOrMerge_write_self _ _))
 /-- **WS-RR RR7.11**: and the endpoint itself — the queue mutation that *is* the
 rendezvous. -/
 theorem lockSet_endpointSend_endpoint_write_mem (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
-    (destCnodeObjId : Option ObjId) :
+    (destCnodeObjId : Option ObjId)
+    (queueNeighbour : Option ThreadId) :
     (endpointLock endpointObjId, AccessMode.write)
       ∈ (lockSet_endpointSend callerTid cnodeRootObjId endpointObjId receiverTid
-          destCnodeObjId).pairs := by
+          destCnodeObjId queueNeighbour).pairs := by
   unfold lockSet_endpointSend lockSetOfList
   simp only [List.foldl]
-  exact mem_write_lockSetExtendOpt _ _ _
-    (mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _
-        (LockSet.mem_insertOrMerge_write_self _ _)))
-
+  -- The optional extensions are peeled by count rather than by a hand-nested
+  -- tower, so a member added to this footprint cannot leave a nesting depth
+  -- silently wrong (WS-OD OD3.7).
+  repeat apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
 /-- **WS-RR RR7.11**: the caller's TCB is a declared write of `.call`.
 
 The generalisation of `lockSet_endpointCall_caller_tcb_write_mem`, which took a
@@ -1359,146 +1656,168 @@ proved from this one, because it is cited. -/
 theorem lockSet_endpointCall_caller_tcb_write_mem_unconditional (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
     (donatedScId : Option SchedContextId) (replyId : Option ReplyId)
-    (destCnodeObjId : Option ObjId) :
+    (destCnodeObjId : Option ObjId)
+    -- **WS-OD OD3.11**: stated at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
     (tcbLock callerTid, AccessMode.write)
       ∈ (lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
-          donatedScId replyId destCnodeObjId).pairs := by
+          donatedScId replyId destCnodeObjId queueNeighbour).pairs := by
   unfold lockSet_endpointCall lockSetOfList
   simp only [List.foldl]
-  exact mem_write_lockSetExtendOpt _ _ _
-    (mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _
-        (mem_write_lockSetExtendOpt _ _ _
-          (mem_write_lockSetExtendOpt _ _ _
-            (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-              (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-                (LockSet.mem_insertOrMerge_write_self _ _)))))))
-
+  -- The optional extensions are peeled by count rather than by a hand-nested
+  -- tower, so a member added to this footprint cannot leave a nesting depth
+  -- silently wrong (WS-OD OD3.7).
+  repeat apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                  (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                    (LockSet.mem_insertOrMerge_write_self _ _))
 /-- **WS-RR RR7.11**: and `.call`'s endpoint. -/
 theorem lockSet_endpointCall_endpoint_write_mem (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
     (donatedScId : Option SchedContextId) (replyId : Option ReplyId)
-    (destCnodeObjId : Option ObjId) :
+    (destCnodeObjId : Option ObjId)
+    (queueNeighbour : Option ThreadId) :
     (endpointLock endpointObjId, AccessMode.write)
       ∈ (lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
-          donatedScId replyId destCnodeObjId).pairs := by
+          donatedScId replyId destCnodeObjId queueNeighbour).pairs := by
   unfold lockSet_endpointCall lockSetOfList
   simp only [List.foldl]
-  exact mem_write_lockSetExtendOpt _ _ _
-    (mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _
-        (mem_write_lockSetExtendOpt _ _ _
-          (mem_write_lockSetExtendOpt _ _ _
-            (LockSet.mem_insertOrMerge_write_self _ _)))))
-
+  -- The optional extensions are peeled by count rather than by a hand-nested
+  -- tower, so a member added to this footprint cannot leave a nesting depth
+  -- silently wrong (WS-OD OD3.7).
+  repeat apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
 /-- **WS-RR RR7.11**: the receiver's own TCB is a declared write of `.receive` —
 it blocks when no sender is waiting, and takes the delivered message when one
 is. -/
 theorem lockSet_endpointReceive_caller_tcb_write_mem (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (senderTid : Option ThreadId)
-    (replyId : Option ReplyId) (installsCaps : Bool) :
+    (replyId : Option ReplyId) (installsCaps : Bool)
+    (donatedScId : Option SchedContextId)
+    -- **WS-OD OD3.12**: at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
     (tcbLock callerTid, AccessMode.write)
       ∈ (lockSet_endpointReceive callerTid cnodeRootObjId endpointObjId senderTid
-          replyId installsCaps).pairs := by
+          replyId installsCaps donatedScId queueNeighbour).pairs := by
   unfold lockSet_endpointReceive lockSetOfList
   simp only [List.foldl]
-  exact mem_write_lockSetExtendOpt _ _ _
-    (mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _
-        (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-          (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-            (LockSet.mem_insertOrMerge_write_self _ _)))))
-
+  -- The optional extensions are peeled by count rather than by a hand-nested
+  -- tower, so a member added to this footprint cannot leave a nesting depth
+  -- silently wrong (WS-OD OD3.7).
+  repeat apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                  (LockSet.mem_insertOrMerge_write_self _ _))
 /-- **WS-RR RR7.11**: and `.receive`'s endpoint. -/
 theorem lockSet_endpointReceive_endpoint_write_mem (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (senderTid : Option ThreadId)
-    (replyId : Option ReplyId) (installsCaps : Bool) :
+    (replyId : Option ReplyId) (installsCaps : Bool)
+    (donatedScId : Option SchedContextId)
+    (queueNeighbour : Option ThreadId) :
     (endpointLock endpointObjId, AccessMode.write)
       ∈ (lockSet_endpointReceive callerTid cnodeRootObjId endpointObjId senderTid
-          replyId installsCaps).pairs := by
+          replyId installsCaps donatedScId queueNeighbour).pairs := by
   unfold lockSet_endpointReceive lockSetOfList
   simp only [List.foldl]
-  exact mem_write_lockSetExtendOpt _ _ _
-    (mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _
-        (LockSet.mem_insertOrMerge_write_self _ _)))
-
+  -- The optional extensions are peeled by count rather than by a hand-nested
+  -- tower, so a member added to this footprint cannot leave a nesting depth
+  -- silently wrong (WS-OD OD3.7).
+  repeat apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
 /-- **WS-RR RR7.11**: the replier's own TCB is a declared write of `.reply` — it
 is descheduled on its executing core when the answered caller is woken. -/
 theorem lockSet_endpointReply_caller_tcb_write_mem (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
     (donatedScId : Option SchedContextId) (donatedOriginalOwnerTid : Option ThreadId)
-    (replyId : Option ReplyId) :
+    (replyId : Option ReplyId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId) :
     (tcbLock callerTid, AccessMode.write)
       ∈ (lockSet_endpointReply callerTid cnodeRootObjId replyTargetTid donatedScId
-          donatedOriginalOwnerTid replyId).pairs := by
+          donatedOriginalOwnerTid replyId belowHeadReplyId outerCallerTid).pairs := by
   unfold lockSet_endpointReply lockSetOfList
   simp only [List.foldl]
-  exact mem_write_lockSetExtendOpt _ _ _
-    (mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _
-        (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-          (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-            (LockSet.mem_insertOrMerge_write_self _ _)))))
-
+  -- WS-OD OD3.5: a fourth optional extension on the outside — the state-level
+  -- lock the donation return's `scThreadIndex` write takes.
+  -- The optional extensions are peeled by count rather than by a hand-nested
+  -- tower, so a member added to this footprint cannot leave a nesting depth
+  -- silently wrong (WS-OD OD3.7).
+  repeat apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                  (LockSet.mem_insertOrMerge_write_self _ _))
 /-- **WS-RR RR7.11**: `.replyRecv`'s own TCB — it replies, then receives, and
 either blocks or takes the next message. -/
 theorem lockSet_replyRecv_caller_tcb_write_mem (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
     (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
     (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
-    (installsCaps : Bool) :
+    (installsCaps : Bool) (donationServerTid : Option ThreadId)
+    (redonatedScId : Option SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
     (tcbLock callerTid, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
-          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps).pairs := by
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
+          donationServerTid redonatedScId belowHeadReplyId outerCallerTid
+          queueNeighbour).pairs := by
   unfold lockSet_replyRecv lockSetOfList
   simp only [List.foldl]
-  exact mem_write_lockSetExtendOpt _ _ _
-    (mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _
-        (mem_write_lockSetExtendOpt _ _ _
-          (mem_write_lockSetExtendOpt _ _ _
-            (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-              (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-                (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-                  (LockSet.mem_insertOrMerge_write_self _ _))))))))
-
+  -- WS-OD OD3.5: two further optional extensions on the outside — the recorded
+  -- server's TCB and the re-donated SchedContext.
+  -- The optional extensions are peeled by count rather than by a hand-nested
+  -- tower, so a member added to this footprint cannot leave a nesting depth
+  -- silently wrong (WS-OD OD3.7).
+  repeat apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                      (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                        (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                          (LockSet.mem_insertOrMerge_write_self _ _)))
 /-- **WS-RR RR7.11**: the answered caller's TCB, which the reply leg wakes. -/
 theorem lockSet_replyRecv_target_tcb_write_mem (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
     (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
     (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
-    (installsCaps : Bool) :
+    (installsCaps : Bool) (donationServerTid : Option ThreadId)
+    (redonatedScId : Option SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
     (tcbLock replyTargetTid, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
-          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps).pairs := by
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
+          donationServerTid redonatedScId belowHeadReplyId outerCallerTid
+          queueNeighbour).pairs := by
   unfold lockSet_replyRecv lockSetOfList
   simp only [List.foldl]
-  exact mem_write_lockSetExtendOpt _ _ _
-    (mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _
-        (mem_write_lockSetExtendOpt _ _ _
-          (mem_write_lockSetExtendOpt _ _ _
-            (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-              (LockSet.mem_insertOrMerge_write_self _ _))))))
-
+  -- The optional extensions are peeled by count rather than by a hand-nested
+  -- tower, so a member added to this footprint cannot leave a nesting depth
+  -- silently wrong (WS-OD OD3.7).
+  repeat apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                      (LockSet.mem_insertOrMerge_write_self _ _)
 /-- **WS-RR RR7.11**: and `.replyRecv`'s endpoint, for the receive leg. -/
 theorem lockSet_replyRecv_endpoint_write_mem (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
     (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
     (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
-    (installsCaps : Bool) :
+    (installsCaps : Bool) (donationServerTid : Option ThreadId)
+    (redonatedScId : Option SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
     (endpointLock endpointObjId, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
-          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps).pairs := by
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
+          donationServerTid redonatedScId belowHeadReplyId outerCallerTid
+          queueNeighbour).pairs := by
   unfold lockSet_replyRecv lockSetOfList
   simp only [List.foldl]
-  exact mem_write_lockSetExtendOpt _ _ _
-    (mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _
-        (mem_write_lockSetExtendOpt _ _ _
-          (mem_write_lockSetExtendOpt _ _ _
-            (LockSet.mem_insertOrMerge_write_self _ _)))))
+  -- The optional extensions are peeled by count rather than by a hand-nested
+  -- tower: `repeat` states "every extension above the base", so a member added
+  -- to this footprint does not silently make a nesting depth wrong.
+  repeat apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RR RR7.11**: `.notificationWait`'s caller TCB — it blocks, or consumes
 a pending badge into its own message field. -/
@@ -1539,25 +1858,164 @@ branches on (`receiveInstallsCaps`, read from the same pre-state), so the
 declared footprint carries the member exactly when the write happens. -/
 theorem lockSet_endpointReceive_stateLevel_write_mem (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (senderTid : Option ThreadId)
-    (replyId : Option ReplyId) :
+    (replyId : Option ReplyId) (donatedScId : Option SchedContextId)
+    -- **WS-OD OD3.12**: at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
     (stateLevelLock, AccessMode.write)
       ∈ (lockSet_endpointReceive callerTid cnodeRootObjId endpointObjId senderTid
-          replyId true).pairs := by
+          replyId true donatedScId queueNeighbour).pairs := by
   unfold lockSet_endpointReceive
-  exact LockSet.mem_insertOrMerge_write_self _ _
+  -- WS-OD OD3.12: one further extension outside (the queue-structure neighbour).
+  exact mem_write_lockSetExtendOpt _ _ _
+    (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **WS-OD OD3.6**: and a receive that donates declares the state-level lock
+even when it installs nothing — the passive-server path, where the arm writes
+`SystemState.scThreadIndex` and installs no capability at all.  Stated
+separately from the caps case because the two are different writes reached by
+different conditions; a single statement over `installsCaps = true` would leave
+the donating-only arm undeclared, which is the shape this row exists to fix. -/
+theorem lockSet_endpointReceive_donation_stateLevel_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (senderTid : Option ThreadId)
+    (replyId : Option ReplyId) (installsCaps : Bool) (scId : SchedContextId)
+    -- **WS-OD OD3.12**: at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_endpointReceive callerTid cnodeRootObjId endpointObjId senderTid
+          replyId installsCaps (some scId) queueNeighbour).pairs := by
+  unfold lockSet_endpointReceive
+  simp only [Option.isSome_some, Bool.or_true, if_true]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **WS-OD OD3.6**: and the donated SchedContext itself — the object
+`donateSchedContext`'s first store writes. -/
+theorem lockSet_endpointReceive_donated_sc_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (senderTid : Option ThreadId)
+    (replyId : Option ReplyId) (installsCaps : Bool) (scId : SchedContextId)
+    -- **WS-OD OD3.12**: at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
+    (schedContextLock scId, AccessMode.write)
+      ∈ (lockSet_endpointReceive callerTid cnodeRootObjId endpointObjId senderTid
+          replyId installsCaps (some scId) queueNeighbour).pairs := by
+  unfold lockSet_endpointReceive
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (LockSet.mem_insertOrMerge_write_self _ _))
 
 /-- **WS-RR RR7.11**: and `.replyRecv`'s, whose receive leg is the same
 WithCaps receive. -/
 theorem lockSet_replyRecv_stateLevel_write_mem (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
     (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
-    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId) :
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (donationServerTid : Option ThreadId) (redonatedScId : Option SchedContextId) :
     (stateLevelLock, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
-          newSenderTid donatedScId donatedOriginalOwnerTid replyId true).pairs := by
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId true
+          donationServerTid redonatedScId belowHeadReplyId outerCallerTid
+          queueNeighbour).pairs := by
   unfold lockSet_replyRecv
+  -- WS-OD OD3.13: one extension outside (the queue-structure neighbour).
+  exact mem_write_lockSetExtendOpt _ _ _
+    (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **WS-OD OD3.5**: and it is declared for the *donations* too, not only for a
+capability install.
+
+`replyRecvReturnDonation` maintains `SystemState.scThreadIndex` on both
+hand-offs, and that field is an `RHTable` whose insert may rehash the whole
+table.  Stated at `installsCaps = false` precisely so it cannot be read as a
+restatement of the theorem above: this is the arm that installs nothing and
+still writes state-level structure. -/
+theorem lockSet_replyRecv_donation_stateLevel_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (donationServerTid : Option ThreadId) (redonatedScId : Option SchedContextId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid (some donatedScId) donatedOriginalOwnerTid replyId false
+          donationServerTid redonatedScId belowHeadReplyId outerCallerTid
+          queueNeighbour).pairs := by
+  unfold lockSet_replyRecv
+  -- WS-OD OD3.13: one extension outside (the queue-structure neighbour).
+  exact mem_write_lockSetExtendOpt _ _ _
+    (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **WS-OD OD3.5**: the state-level lock is declared for the **second**
+hand-off too, not only the return — `applyCallDonation`'s `donateSchedContext`
+ends in the same `scThreadIndex` maintenance. -/
+theorem lockSet_replyRecv_redonation_stateLevel_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (installsCaps : Bool) (donationServerTid : Option ThreadId)
+    (redonatedScId : SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
+          donationServerTid (some redonatedScId) belowHeadReplyId outerCallerTid
+          queueNeighbour).pairs := by
+  unfold lockSet_replyRecv
+  simp only [Option.isSome_some, Bool.or_true, if_true]
+  -- WS-OD OD3.13: one extension outside (the queue-structure neighbour).
+  exact mem_write_lockSetExtendOpt _ _ _
+    (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **WS-OD OD3.5**: the **second** SchedContext hand-off's own write lock — the
+member whose absence made this footprint false.  `replyRecvReturnDonation`'s
+`applyCallDonationOnCore nextThread callerTid` writes the new caller's
+SchedContext, which is never the returned one. -/
+theorem lockSet_replyRecv_redonated_sc_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (installsCaps : Bool) (donationServerTid : Option ThreadId)
+    (redonatedScId : SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
+    (schedContextLock redonatedScId, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
+          donationServerTid (some redonatedScId) belowHeadReplyId outerCallerTid
+          queueNeighbour).pairs := by
+  unfold lockSet_replyRecv
+  -- Peeled by an EXACT count, not `repeat`: this member is introduced by an
+  -- extension rather than by the base list, so peeling one layer too far would
+  -- discard the very lock being proved present.  Three layers sit above it —
+  -- the state-level lock and WS-OD OD3.7's two below-head reads -- and, since
+  -- WS-OD OD3.13, the queue-structure neighbour outside all three.
+  iterate 4 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
+/-- **WS-OD OD3.5**: and the **recorded server's** own TCB, which the return
+writes `.unbound`.  Distinct from `callerTid` exactly on a delegated reply —
+the case this arm previously refused to declare at all. -/
+theorem lockSet_replyRecv_donation_server_tcb_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (installsCaps : Bool) (donationServerTid : ThreadId)
+    (redonatedScId : Option SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    (queueNeighbour : Option ThreadId) :
+    (tcbLock donationServerTid, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
+          (some donationServerTid) redonatedScId belowHeadReplyId
+          outerCallerTid queueNeighbour).pairs := by
+  unfold lockSet_replyRecv
+  -- An exact count for the same reason as the redonation member above: four
+  -- layers sit over the recorded server's own extension — the state-level lock,
+  -- WS-OD OD3.7's two below-head reads, the re-donated SchedContext, and
+  -- WS-OD OD3.13's queue-structure neighbour.
+  iterate 5 apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
 /-- **WS-RR RR7.11, the capstone: no two capability-installing IPC arms are
 ever disjoint.**
 
@@ -1573,22 +2031,27 @@ theorem capsCarryingIpcArms_footprints_share_serialization
     (receiverTid : Option ThreadId) (senderTid : Option ThreadId)
     (replyIdA replyIdB : Option ReplyId) :
     ((stateLevelLock, AccessMode.write)
-        ∈ (lockSet_endpointSend sender cnRootA epA receiverTid (some destRoot)).pairs ∧
+        ∈ (lockSet_endpointSend sender cnRootA epA receiverTid (some destRoot) none).pairs ∧
       (stateLevelLock, AccessMode.write)
-        ∈ (lockSet_endpointReceive receiver cnRootB epB senderTid replyIdA true).pairs) ∧
+        ∈ (lockSet_endpointReceive receiver cnRootB epB senderTid replyIdA true none
+             none).pairs) ∧
     ((stateLevelLock, AccessMode.write)
         ∈ (lockSet_endpointCall sender cnRootA epA receiverTid none replyIdB
-             (some destRoot)).pairs ∧
+             (some destRoot) none).pairs ∧
       (stateLevelLock, AccessMode.write)
         ∈ (lockSet_replyRecv receiver cnRootB receiver epB senderTid none none
-             replyIdA true).pairs) :=
+             replyIdA true none none none none).pairs) :=
   ⟨⟨by unfold lockSet_endpointSend
-       exact LockSet.mem_insertOrMerge_write_self _ _,
-    lockSet_endpointReceive_stateLevel_write_mem receiver cnRootB epB senderTid replyIdA⟩,
+       -- WS-OD OD3.11: one further extension outside (the queue neighbour).
+       exact mem_write_lockSetExtendOpt _ _ _
+         (LockSet.mem_insertOrMerge_write_self _ _),
+    lockSet_endpointReceive_stateLevel_write_mem receiver cnRootB epB senderTid replyIdA
+      none none⟩,
    ⟨by unfold lockSet_endpointCall
-       exact LockSet.mem_insertOrMerge_write_self _ _,
+       exact mem_write_lockSetExtendOpt _ _ _
+         (LockSet.mem_insertOrMerge_write_self _ _),
     lockSet_replyRecv_stateLevel_write_mem receiver cnRootB receiver epB senderTid
-      none none replyIdA⟩⟩
+      none none replyIdA none none⟩⟩
 
 /-- WS-SM SM8.C.9 (PR #870 round 7): the declassification's trail append is a
 declared **write** on the state-level lock. -/
@@ -1885,15 +2348,25 @@ def lockSet_schedContextBind (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (scid : SchedContextId)
     (targetTcbTid : ThreadId)
     (queueOwner : Option QueueOwner) : LockSet :=
+  -- **WS-OD OD3.5**: `stateLevelLock`, unconditionally — a successful bind ends
+  -- in `scThreadIndexAdd`, and `SystemState.scThreadIndex` is an `RHTable`
+  -- whose insert may rehash and back-shift the whole table.  Unconditional
+  -- because the index write is not optional on the success path, which is the
+  -- same shape `lockSet_cspaceMint` uses for the CDT.
   lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .read),
        (cnodeLock cnodeRootObjId, .read),
        (schedContextLock scid, .write),
-       (tcbLock targetTcbTid, .write)])
+       (tcbLock targetTcbTid, .write),
+       (stateLevelLock, .write)])
     (queueOwnerMember queueOwner)
 
-/-- WS-SM SM3.B.3: `lockSet` for `schedContextUnbind`. -/
+/-- WS-SM SM3.B.3: `lockSet` for `schedContextUnbind`.
+
+**WS-OD OD3.5**: with `stateLevelLock`, for the reason given at
+`lockSet_schedContextBind` — the unbind's `scThreadIndexRemove` writes the same
+`RHTable`. -/
 def lockSet_schedContextUnbind (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (scid : SchedContextId)
     (targetTcbTid : ThreadId)
@@ -1903,7 +2376,8 @@ def lockSet_schedContextUnbind (callerTid : ThreadId)
       [(tcbLock callerTid, .read),
        (cnodeLock cnodeRootObjId, .read),
        (schedContextLock scid, .write),
-       (tcbLock targetTcbTid, .write)])
+       (tcbLock targetTcbTid, .write),
+       (stateLevelLock, .write)])
     (queueOwnerMember queueOwner)
 
 /-- WS-SM SM6.B: `lockSet` for `tcbBindNotification`.  The bound TCB (write —
@@ -1965,30 +2439,40 @@ an optional **reply write lock**.  The caller pre-resolves
 `none` so pre-SM6.E call sites (no reply-blocked target) are
 unchanged.
 
-**Size, and why this set cannot grow (PR #864 review round 5).**  Three
-base members plus five optional ones is 8 at full resolution, and
-`maxLockSetSize` is 8 — this set sits at the cap exactly.  That constant
-is the WCRT headline (`maxLockSetSize · (numCores − 1) · tCs`, the figure
-the 1 ms tick fit rests on), so a new member does not cost a slot, it
-breaks `lockSetTransitions_within_bound` and re-opens SM3.D's timing
-numbers.
+**Size (PR #864 review round 5, restated at WS-OD OD3.5).**  Three base
+members plus six optional ones is 9 at full resolution, against a
+`maxLockSetSize` of 11.  When this paragraph was written the two numbers
+were both 8 and the set sat at the cap, so "this set cannot grow" was an
+arithmetic fact; OD3.5 raised the ceiling to declare the members
+`.replyRecv` was missing, and the sixth optional here — the state-level
+lock the donation cancellation's `scThreadIndex` write takes — is the one
+member this set has grown since.  Two slots of headroom is not an
+invitation: the constant is the WCRT headline
+(`maxLockSetSize · (numCores − 1) · tCs`, and `admissibleCriticalSection`
+reads 30 µs off it for the 1 ms tick), so a member added here still costs
+every syscall that acquires this footprint.
 
 The question comes up because suspending a victim that sits *inside* an
 endpoint queue splices it out and patches its **neighbours'** queue links,
 and this set carries no `tcbLock` for either neighbour — whereas the
 sub-operation footprint `lockSet_cancelIpcBlockingOnCore` names both
-(via `cancelSpliceNeighbors?`).  The two are reconciled by the
-queue-owning-object discipline, not by a missing member: an endpoint owns
-its queue, so its **write** lock — which this set does declare whenever
-the victim is endpoint-blocked — authorizes the link writes of every TCB
-in that queue.  The sub-operation form names the neighbours because it is
-the finer-grained authority the runtime bracket acquires; this one sits
-under the coarser umbrella.  Both are sound at their own granularity.
+(via `cancelArmSpliceNeighbors?`, which since OD3.5 resolves them on the
+splicing arm alone).  The two are reconciled by the queue-owning-object
+discipline, not by a missing member: an endpoint owns its queue, so its
+**write** lock — which this set does declare whenever the victim is
+endpoint-blocked — authorizes the link writes of every TCB in that queue,
+and WS-RR RR7.38 made that authorization an *exclusion* by requiring the
+same lock of every footprint that can write a queued TCB.  The
+sub-operation form names the neighbours because it is the finer-grained
+authority the runtime bracket acquires; this one sits under the coarser
+umbrella.  Both are sound at their own granularity, and the two members
+would now fit — see `suspendFootprint_splice_neighbors_under_endpoint_lock`
+for why fitting is not the reason to add them.
 
 That is a checked fact rather than a convention:
 `suspendFootprint_splice_neighbors_under_endpoint_lock` (SM8.D) proves it
 over the *resolved* footprint and names the neighbours through the same
-`cancelSpliceNeighbors?`, extending the `lockSet_tcbSuspend_*_write_mem`
+`queueSpliceNeighbors?`, extending the `lockSet_tcbSuspend_*_write_mem`
 family past the six members that stopped exactly where the umbrella
 began.  See `IPC/CrossCore/Cancellation.lean` §"Neighbour-lock convention
 bridge". -/
@@ -2011,8 +2495,15 @@ def lockSet_tcbSuspend (callerTid : ThreadId)
     (bindingScId.map (fun sc => (schedContextLock sc, .write)))
   let withOwner := lockSetExtendOpt withSc
     (donatedOriginalOwnerTid.map (fun ot => (tcbLock ot, .write)))
-  lockSetExtendOpt withOwner
+  let withReply := lockSetExtendOpt withOwner
     (consumedReplyId.map (fun r => (replyLock r, .write)))
+  -- **WS-OD OD3.5**: a suspend that cancels a donation runs `cancelDonation`
+  -- (or, on a `.blockedOnReply` victim, `returnDonationToCancelledCaller`), and
+  -- both maintain `SystemState.scThreadIndex` — an `RHTable` whose insert may
+  -- rehash the whole table, so it does not decompose by object.  Conditioned on
+  -- the SchedContext member's own resolver, so the two answer one question.
+  lockSetExtendOpt withReply
+    (if bindingScId.isSome then some (stateLevelLock, AccessMode.write) else none)
 
 /-- WS-SM SM3.B.3: `lockSet` for `tcbResume`.
 
@@ -2210,9 +2701,9 @@ def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
 
 /-! ## Dynamic priority-inheritance chain locking
 
-Three user syscalls (`.call`, `.reply`, `.replyRecv`) invoke a
+Four user syscalls (`.call`, `.reply`, `.replyRecv`, `.receive`) invoke a
 priority-inheritance chain walk after their core IPC mutation
-completes:
+completes, and `.replyRecv` invokes **two** (WS-OD OD3.14):
 
 * `endpointCallWithDonation`: calls `propagatePriorityInheritance
   receiverTid` on the handshake path (only when the endpoint had a
@@ -2220,7 +2711,15 @@ completes:
 * `endpointReplyWithDonation`: calls `revertPriorityInheritance
   callerTid` after the base reply.
 * `endpointReplyRecvWithDonation`: calls `revertPriorityInheritance
-  callerTid` after the base replyRecv.
+  callerTid` after the base replyRecv.  The live `replyRecvReturnDonation`
+  walks from the **recorded server** instead, and **WS-OD OD3.14** adds a
+  second walk from the receiver on a *delegated* reply, where the first
+  does not reach it.
+* `applyReceiveRendezvousHandoff` (**WS-OD OD3.14**): calls
+  `propagatePipChainCrossCore receiverTid` when the receive leg dequeued a
+  queued `Call`, so the caller now blocked on this receiver can lend it its
+  priority.  Before OD3.14 the `.receive` arm performed no walk and the
+  caller's inherited priority stopped dead at it.
 
 The chain walk visits each TCB in the blocking graph reachable from
 the start point via the `blockingServer` relation, updating each
@@ -2324,19 +2823,65 @@ edge cases where the replier is itself blocked, the chain extends. -/
     (_donatedOriginalOwnerTid : Option ThreadId) : Option ThreadId :=
   some callerTid
 
-/-- WS-SM SM3.B.3 audit-pass-5: chain-start hint for `.replyRecv`.
+/-- WS-SM SM3.B.3 audit-pass-5: chain-start hint for `.replyRecv`'s **reply
+leg**.
 
-`endpointReplyRecvWithDonation` invokes
-`revertPriorityInheritance callerTid` (== the receiver, who's
-also the replier in the combined transition) after the base
-replyRecv succeeds.  Symmetric to `pipChainStart_endpointReply`. -/
+The reply leg's walk reverts the boost at the thread whose waiter set it just
+shrank, which is the **recorded server** — the thread the answered caller
+donated to.  On a non-delegated reply that is the receiver itself (and so is
+`recordedReplyServer?`'s `.getD` default when the reply records no server at
+all), which is the case the single-core `endpointReplyRecvWithDonation` this
+marker was first written for could only reach; **WS-OD OD3.14** made the
+distinction load-bearing, since the live `replyRecvReturnDonation` walks from
+`recordedServerTid` and a hint naming the receiver would send the SM3.C walker
+up a different chain on a delegated reply.
+
+Symmetric to `pipChainStart_endpointReply`, and paired with
+`pipChainStart_replyRecvReceiveLeg` below: the arm runs **two** legs, each
+changing a different thread's waiter set, so it declares two chain starts. -/
 @[inline] def pipChainStart_replyRecv
-    (callerTid : ThreadId) (_cnodeRootObjId : ObjId)
+    (_callerTid : ThreadId) (_cnodeRootObjId : ObjId)
     (_replyTargetTid : ThreadId) (_endpointObjId : ObjId)
     (_newSenderTid : Option ThreadId)
     (_donatedScId : Option SchedContextId)
-    (_donatedOriginalOwnerTid : Option ThreadId) : Option ThreadId :=
-  some callerTid
+    (_donatedOriginalOwnerTid : Option ThreadId)
+    (recordedServerTid : ThreadId) : Option ThreadId :=
+  some recordedServerTid
+
+/-- **WS-OD OD3.14**: chain-start hint for `.replyRecv`'s **receive leg**.
+
+The receive leg adds the newly dequeued `Call` caller to the *receiver*'s waiter
+set, so the receiver's own boost must be recomputed.  A single walk from the
+recorded server covers that exactly when the two threads coincide — every
+non-delegated reply — which is why this marker is `none` there: the reply leg's
+own walk **is** this one, and declaring a second chain start would ask the SM3.C
+walker to acquire the same chain twice.
+
+`newSenderTid` is the dequeued caller when the receive leg rendezvoused with a
+queued `Call` and `none` otherwise, so it carries the same fact
+`rendezvousDequeuedCall` decides at the transition. -/
+@[inline] def pipChainStart_replyRecvReceiveLeg
+    (receiverTid : ThreadId) (recordedServerTid : ThreadId)
+    (newSenderTid : Option ThreadId) : Option ThreadId :=
+  if recordedServerTid == receiverTid then none
+  else newSenderTid.map (fun _ => receiverTid)
+
+/-- **WS-OD OD3.14**: chain-start hint for `.receive`.
+
+`applyReceiveRendezvousHandoff` invokes `propagatePipChainCrossCore receiverTid`
+**only on the rendezvous path** — when the receive dequeued a queued `Call`, so
+that caller is now `.blockedOnReply` on this receiver and its priority must
+reach the scheduler through the receiver's `pipBoost`.  A receive that blocked,
+and a plain `Send` rendezvous, invoke no walk, so the chain-start signal mirrors
+`dequeuedCallerTid` exactly — the same shape `pipChainStart_endpointCall` uses
+for its own handshake path.
+
+Before OD3.14 this arm invoked no walk at all and therefore had no marker; that
+absence was the priority-inversion defect, not a property of the transition. -/
+@[inline] def pipChainStart_endpointReceive
+    (receiverTid : ThreadId) (_cnodeRootObjId _endpointObjId : ObjId)
+    (dequeuedCallerTid : Option ThreadId) : Option ThreadId :=
+  dequeuedCallerTid.map (fun _ => receiverTid)
 
 /-- WS-SM SM6.E (suspend PIP-revert ordering fix): chain-start hint for
 `.tcbSuspend`.
@@ -2387,14 +2932,25 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- WS-RR RR7.11: `.objStore` for the reason it joins `.send` and `.call` — the
   -- receive leg installs through the same `ipcTransferSingleCap` and writes the
   -- same CDT maps, whose declared subject is `stateLevelLock`.
+  -- **WS-OD OD3.6**: `.schedContext` — a receive that rendezvouses with a queued
+  -- `Call` donates the caller's scheduling context to the receiver (seL4-MCS's
+  -- `receiveIPC`), so this arm reaches the same donation primitive `.call` does;
+  -- and `.objStore` covers that donation's `scThreadIndex` write as well as the
+  -- CDT maps.
   | .receive =>
-      [.tcb, .cnode, .endpoint, .reply, .objStore]
+      [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]
   -- WS-RR RR7.7: `.objStore` for the same reason it joins `.send` — a Call
   -- that carries capabilities writes the CDT maps.
   | .call =>
       [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]
+  -- **WS-OD OD3.5**: `.objStore` — the donation return
+  -- (`returnDonatedSchedContext`) writes `SystemState.scThreadIndex`, and that
+  -- field is an `RHTable`, so an insert may rehash and back-shift the whole
+  -- table.  It does not decompose by object, which is the same reason the CDT
+  -- maps take this lock (RR7.9/RR7.11), so the declared subject is
+  -- `stateLevelLock`.  Level 0, acquired first, ladder unaffected.
   | .reply =>
-      [.tcb, .cnode, .schedContext, .reply]
+      [.tcb, .cnode, .schedContext, .reply, .objStore]
   -- WS-RR RR7.11: `.objStore` for the same reason — this arm's receive leg is
   -- the WithCaps receive.
   | .replyRecv =>
@@ -2504,8 +3060,14 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- admit-everything shape.  The by-kind ladder is unaffected for the reason
   -- given there: acquisition order is `LockKind.level`, a total order over all
   -- ten kinds, so a wider admission cannot introduce a cycle.
-  -- SchedContext syscalls
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind =>
+  -- SchedContext syscalls.  **WS-OD OD3.5**: the bind and the unbind maintain
+  -- `SystemState.scThreadIndex` (`scThreadIndexAdd` / `scThreadIndexRemove`),
+  -- an `RHTable` whose insert may rehash, so both declare `stateLevelLock`.
+  -- `.schedContextConfigure` writes the SchedContext and the bound thread and
+  -- touches no index, so it is split out rather than widened with them.
+  | .schedContextBind | .schedContextUnbind =>
+      [.tcb, .cnode, .schedContext, .endpoint, .notification, .objStore]
+  | .schedContextConfigure =>
       [.tcb, .cnode, .schedContext, .endpoint, .notification]
   -- TCB lifecycle/config.  `.tcbSuspend` may traverse a donation
   -- cancellation path (per audit-pass-3 extension).
@@ -2520,8 +3082,12 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- reply-link teardown would mutate the Reply object outside the
   -- acquired 2PL set, racing a concurrent `.receive`/`.reply` that
   -- holds the same Reply's `replyLock` on another core.
+  -- **WS-OD OD3.5**: `.objStore` — a suspend that cancels a donation runs
+  -- `cancelDonation` / `returnDonationToCancelledCaller`, both of which
+  -- maintain `SystemState.scThreadIndex`; see `.reply` above for why an
+  -- `RHTable` write takes the state-level lock.
   | .tcbSuspend =>
-      [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply]
+      [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply, .objStore]
   | .tcbResume =>
       [.tcb, .cnode, .endpoint, .notification]
   | .tcbSetPriority | .tcbSetMCPriority =>
@@ -2807,6 +3373,51 @@ theorem lockSet_consistent_base_plus_five_opts
     (lockSet_consistent_base_plus_four_opts base opt₁ opt₂ opt₃ opt₄ permitted
       hBase hOpt₁ hOpt₂ hOpt₃ hOpt₄) hOpt₅
 
+/-- WS-OD OD3.5 builder: six optional extensions — the arity `lockSet_tcbSuspend`
+reaches once the donation cancellation's `scThreadIndex` write declares the
+state-level lock. -/
+theorem lockSet_consistent_base_plus_six_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ : Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₅ : ∀ pp, opt₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₆ : ∀ pp, opt₆ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList base) opt₁) opt₂) opt₃)
+              opt₄) opt₅) opt₆).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_five_opts base opt₁ opt₂ opt₃ opt₄ opt₅ permitted
+      hBase hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅) hOpt₆
+
+/-- WS-OD OD3.5 builder: seven optional extensions — the arity `lockSet_replyRecv`
+reaches once it declares the recorded server's TCB and the second SchedContext
+hand-off. -/
+theorem lockSet_consistent_base_plus_seven_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ : Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₅ : ∀ pp, opt₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₆ : ∀ pp, opt₆ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₇ : ∀ pp, opt₇ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList base)
+              opt₁) opt₂) opt₃) opt₄) opt₅) opt₆) opt₇).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_six_opts base opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ permitted
+      hBase hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅ hOpt₆) hOpt₇
+
 /-- WS-OD OD1.5 builder: combine with eight optional extensions — the arity the
 state-resolved cancellation footprint reaches once the reclaim's abort prefix
 declares the holder's endpoint and its two queue neighbours. -/
@@ -2833,6 +3444,85 @@ theorem lockSet_consistent_base_plus_eight_opts
       (lockSet_consistent_extendOpt _ _ _
         (lockSet_consistent_base_plus_five_opts base opt₁ opt₂ opt₃ opt₄ opt₅ permitted
           hBase hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅) hOpt₆) hOpt₇) hOpt₈
+
+/-- WS-OD OD3.5 builder: nine optional extensions — the arity the state-resolved
+cancellation footprint reaches once the donation hand-back's `scThreadIndex`
+write declares the state-level lock. -/
+theorem lockSet_consistent_base_plus_nine_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ : Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₅ : ∀ pp, opt₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₆ : ∀ pp, opt₆ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₇ : ∀ pp, opt₇ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₈ : ∀ pp, opt₈ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₉ : ∀ pp, opt₉ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetOfList base) opt₁) opt₂) opt₃) opt₄) opt₅)
+              opt₆) opt₇) opt₈) opt₉).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_eight_opts base opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈
+      permitted hBase hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅ hOpt₆ hOpt₇ hOpt₈) hOpt₉
+
+/-- WS-OD OD3.7: ten optionals — the cancellation footprint's arity once the two
+below-head reads join it. -/
+theorem lockSet_consistent_base_plus_ten_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ : Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₅ : ∀ pp, opt₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₆ : ∀ pp, opt₆ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₇ : ∀ pp, opt₇ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₈ : ∀ pp, opt₈ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₉ : ∀ pp, opt₉ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₀ : ∀ pp, opt₁₀ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList base) opt₁) opt₂) opt₃) opt₄)
+              opt₅) opt₆) opt₇) opt₈) opt₉) opt₁₀).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_nine_opts base opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉
+      permitted hBase hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅ hOpt₆ hOpt₇ hOpt₈ hOpt₉) hOpt₁₀
+
+/-- WS-OD OD3.7: eleven optionals — the arity `lockSet_cancelIpcBlocking` reaches
+once the reclaim's two below-head reads are declared. -/
+theorem lockSet_consistent_base_plus_eleven_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ : Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₅ : ∀ pp, opt₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₆ : ∀ pp, opt₆ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₇ : ∀ pp, opt₇ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₈ : ∀ pp, opt₈ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₉ : ∀ pp, opt₉ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₀ : ∀ pp, opt₁₀ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₁ : ∀ pp, opt₁₁ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList base)
+              opt₁) opt₂) opt₃) opt₄) opt₅) opt₆) opt₇) opt₈) opt₉) opt₁₀) opt₁₁).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_ten_opts base opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉
+      opt₁₀ permitted hBase hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅ hOpt₆ hOpt₇ hOpt₈ hOpt₉ hOpt₁₀) hOpt₁₁
 
 -- ============================================================================
 -- SM3.B.4 — lockSet_consistent per-transition theorems
@@ -2887,10 +3577,13 @@ checked against one argument value while a fine-lock consumer acquires the
 footprint carrying the other. -/
 theorem lockSet_consistent_send (callerTid : ThreadId)
     (cnRoot epId : ObjId) (rTid : Option ThreadId)
-    (destCnode : Option ObjId := none) :
-    ∀ p ∈ (lockSet_endpointSend callerTid cnRoot epId rTid destCnode).pairs,
+    (destCnode : Option ObjId := none)
+    -- **WS-OD OD3.11**: stated at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId := none) :
+    ∀ p ∈ (lockSet_endpointSend callerTid cnRoot epId rTid destCnode
+             queueNeighbour).pairs,
       p.fst.kind ∈ permittedKinds .send :=
-  lockSet_consistent_base_plus_three_opts _ _ _ _ _
+  lockSet_consistent_base_plus_four_opts _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -2911,6 +3604,10 @@ theorem lockSet_consistent_send (callerTid : ThreadId)
         cases destCnode with
         | none => simp at hpp
         | some _ => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide)
+    (by intro pp hpp
+        cases queueNeighbour with
+        | none => simp at hpp
+        | some q => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.receive`.
 
@@ -2920,10 +3617,14 @@ consistency claim checked against one of the argument values while the resolved
 footprint a fine-lock consumer acquires carries the other. -/
 theorem lockSet_consistent_receive (callerTid : ThreadId)
     (cnRoot epId : ObjId) (sTid : Option ThreadId)
-    (replyId : Option ReplyId := none) (installsCaps : Bool := false) :
-    ∀ p ∈ (lockSet_endpointReceive callerTid cnRoot epId sTid replyId installsCaps).pairs,
+    (replyId : Option ReplyId := none) (installsCaps : Bool := false)
+    (donatedScId : Option SchedContextId)
+    -- **WS-OD OD3.12**: stated at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId := none) :
+    ∀ p ∈ (lockSet_endpointReceive callerTid cnRoot epId sTid replyId installsCaps
+             donatedScId queueNeighbour).pairs,
       p.fst.kind ∈ permittedKinds .receive :=
-  lockSet_consistent_base_plus_three_opts _ _ _ _ _
+  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -2941,9 +3642,20 @@ theorem lockSet_consistent_receive (callerTid : ThreadId)
         | none => simp at hpp
         | some rid => simp at hpp; rw [← hpp]; simp; decide)
     (by intro pp hpp
+        cases donatedScId with
+        | none => simp at hpp
+        | some sc => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
         cases installsCaps with
-        | false => simp at hpp
+        | false =>
+          cases donatedScId with
+          | none => simp at hpp
+          | some _ => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide
         | true => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide)
+    (by intro pp hpp
+        cases queueNeighbour with
+        | none => simp at hpp
+        | some q => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.call` (audit-pass-3: donation extension).
 
@@ -2953,11 +3665,13 @@ theorem lockSet_consistent_call (callerTid : ThreadId)
     (cnRoot epId : ObjId) (rTid : Option ThreadId)
     (donatedScId : Option SchedContextId)
     (replyId : Option ReplyId := none)
-    (destCnode : Option ObjId := none) :
+    (destCnode : Option ObjId := none)
+    -- **WS-OD OD3.11**: stated at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId := none) :
     ∀ p ∈ (lockSet_endpointCall callerTid cnRoot epId rTid donatedScId replyId
-             destCnode).pairs,
+             destCnode queueNeighbour).pairs,
       p.fst.kind ∈ permittedKinds .call :=
-  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
+  lockSet_consistent_base_plus_six_opts _ _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -2982,10 +3696,18 @@ theorem lockSet_consistent_call (callerTid : ThreadId)
         cases destCnode with
         | none => simp at hpp
         | some r => simp at hpp; rw [← hpp]; simp; decide)
+    -- WS-OD OD3.5: the state-level member now fires on the transfer *or* the
+    -- donation, so the obligation is discharged from the `if` rather than from
+    -- one optional's `some`.
     (by intro pp hpp
-        cases destCnode with
+        by_cases hc : destCnode.isSome || donatedScId.isSome
+        · rw [if_pos hc] at hpp
+          simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide
+        · rw [if_neg hc] at hpp; simp at hpp)
+    (by intro pp hpp
+        cases queueNeighbour with
         | none => simp at hpp
-        | some _ => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide)
+        | some q => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.reply` (audit-pass-3 + audit-pass-4: donation-
 return extension with separate `donatedOriginalOwnerTid` arg). -/
@@ -2993,11 +3715,12 @@ theorem lockSet_consistent_reply (callerTid : ThreadId)
     (cnRoot : ObjId) (rTid : ThreadId)
     (donatedScId : Option SchedContextId)
     (donatedOriginalOwnerTid : Option ThreadId)
-    (replyId : Option ReplyId := none) :
+    (replyId : Option ReplyId := none)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId) :
     ∀ p ∈ (lockSet_endpointReply callerTid cnRoot rTid donatedScId
-              donatedOriginalOwnerTid replyId).pairs,
+              donatedOriginalOwnerTid replyId belowHeadReplyId outerCallerTid).pairs,
       p.fst.kind ∈ permittedKinds .reply :=
-  lockSet_consistent_base_plus_three_opts _ _ _ _ _
+  lockSet_consistent_base_plus_six_opts _ _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -3018,20 +3741,43 @@ theorem lockSet_consistent_reply (callerTid : ThreadId)
         cases replyId with
         | none => simp at hpp
         | some rid => simp at hpp; rw [← hpp]; simp; decide)
+    -- WS-OD OD3.7: the Reply below the stack head, read to find the outer
+    -- caller — a `.reply` kind, which this arm already admits.
+    (by intro pp hpp
+        cases belowHeadReplyId with
+        | none => simp at hpp
+        | some rid => simp at hpp; rw [← hpp]; simp; decide)
+    -- WS-OD OD3.7: …and that caller's own TCB, read to validate it.
+    (by intro pp hpp
+        cases outerCallerTid with
+        | none => simp at hpp
+        | some ot => simp at hpp; rw [← hpp]; simp; decide)
+    -- WS-OD OD3.5: the donation return's `scThreadIndex` write.
+    (by intro pp hpp
+        cases donatedScId with
+        | none => simp at hpp
+        | some _ => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide)
 
 /-- WS-SM SM3.B.4 for `.replyRecv` (audit-pass-3 + audit-pass-4:
 donation-return extension with separate `donatedOriginalOwnerTid`
-arg). -/
+arg).  **WS-OD OD3.5**: seven optionals — the recorded server's TCB and the
+second SchedContext hand-off join the five it already carried. -/
 theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
     (cnRoot : ObjId) (rTid : ThreadId) (epId : ObjId)
     (newSenderTid : Option ThreadId)
     (donatedScId : Option SchedContextId)
     (donatedOriginalOwnerTid : Option ThreadId)
-    (replyId : Option ReplyId := none) (installsCaps : Bool := false) :
+    (replyId : Option ReplyId := none) (installsCaps : Bool := false)
+    (donationServerTid : Option ThreadId) (redonatedScId : Option SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
     ∀ p ∈ (lockSet_replyRecv callerTid cnRoot rTid epId newSenderTid
-              donatedScId donatedOriginalOwnerTid replyId installsCaps).pairs,
+              donatedScId donatedOriginalOwnerTid replyId installsCaps
+              donationServerTid redonatedScId belowHeadReplyId outerCallerTid
+              queueNeighbour).pairs,
       p.fst.kind ∈ permittedKinds .replyRecv :=
-  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
+  lockSet_consistent_base_plus_ten_opts _ _ _ _ _ _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -3058,18 +3804,51 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
         cases replyId with
         | none => simp at hpp
         | some rid => simp at hpp; rw [← hpp]; simp; decide)
+    -- WS-OD OD3.5: the recorded server's TCB…
     (by intro pp hpp
-        cases installsCaps with
-        | false => simp at hpp
-        | true => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide)
+        cases donationServerTid with
+        | none => simp at hpp
+        | some srv => simp at hpp; rw [← hpp]; simp; decide)
+    -- …the second hand-off's SchedContext…
+    (by intro pp hpp
+        cases redonatedScId with
+        | none => simp at hpp
+        | some sc => simp at hpp; rw [← hpp]; simp; decide)
+    -- …WS-OD OD3.7's two below-head reads — the Reply one frame down and that
+    -- frame's caller's TCB, both kinds this arm already admits…
+    (by intro pp hpp
+        cases belowHeadReplyId with
+        | none => simp at hpp
+        | some rid => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases outerCallerTid with
+        | none => simp at hpp
+        | some ot => simp at hpp; rw [← hpp]; simp; decide)
+    -- …and the state-level lock, now fired by a capability install *or* either
+    -- donation's `scThreadIndex` write.
+    (by intro pp hpp
+        by_cases hc : installsCaps || donatedScId.isSome || redonatedScId.isSome
+        · rw [if_pos hc] at hpp
+          simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide
+        · rw [if_neg hc] at hpp; simp at hpp)
+    (by intro pp hpp
+        cases queueNeighbour with
+        | none => simp at hpp
+        | some q => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.notificationSignal`. -/
 theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)
     (cnRoot nId : ObjId) (wTid : Option ThreadId)
-    (boundEndpoint : Option ObjId := none) (boundTcb : Option ThreadId := none) :
-    ∀ p ∈ (lockSet_notificationSignal callerTid cnRoot nId wTid boundEndpoint boundTcb).pairs,
+    (boundEndpoint : Option ObjId := none) (boundTcb : Option ThreadId := none)
+    -- **WS-OD OD3.10**: stated at the splice-neighbour arity too.  A consistency
+    -- proof stated at fewer arguments is a different proposition, and the
+    -- default would fill the new one in silently -- the shape RR7.18's census
+    -- exists to refuse for the *size* bounds, asked here of the kind check.
+    (spliceNeighbors : Option ThreadId × Option ThreadId := (none, none)) :
+    ∀ p ∈ (lockSet_notificationSignal callerTid cnRoot nId wTid boundEndpoint boundTcb
+             spliceNeighbors).pairs,
       p.fst.kind ∈ permittedKinds .notificationSignal :=
-  lockSet_consistent_base_plus_three_opts _ _ _ _ _
+  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -3090,6 +3869,16 @@ theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)
         cases boundTcb with
         | none => simp at hpp
         | some bt => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        obtain ⟨pv?, nx?⟩ := spliceNeighbors
+        cases pv? with
+        | none => simp at hpp
+        | some pv => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        obtain ⟨pv?, nx?⟩ := spliceNeighbors
+        cases nx? with
+        | none => simp at hpp
+        | some nx => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.declassifySignal` (SM9.C.8).
 
@@ -3516,6 +4305,8 @@ theorem lockSet_consistent_schedContextBind (callerTid : ThreadId)
     (queueOwner : Option QueueOwner) :
     ∀ p ∈ (lockSet_schedContextBind callerTid cnRoot scid targetTcb queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .schedContextBind :=
+  -- WS-OD OD3.5: five base members now — the state-level lock the
+  -- `scThreadIndex` maintenance takes joined the four object members.
   lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_of_extended_base _ _
       (by intro p hMem
@@ -3527,6 +4318,8 @@ theorem lockSet_consistent_schedContextBind (callerTid : ThreadId)
           · rw [h]; simp; decide
           rcases List.mem_cons.mp hMem with h | hMem
           · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp [stateLevelLock]; decide
           exact absurd hMem (by intro h; cases h)))
     (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
@@ -3536,6 +4329,8 @@ theorem lockSet_consistent_schedContextUnbind (callerTid : ThreadId)
     (queueOwner : Option QueueOwner) :
     ∀ p ∈ (lockSet_schedContextUnbind callerTid cnRoot scid targetTcb queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .schedContextUnbind :=
+  -- WS-OD OD3.5: five base members now — the state-level lock the
+  -- `scThreadIndex` maintenance takes joined the four object members.
   lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_of_extended_base _ _
       (by intro p hMem
@@ -3547,6 +4342,8 @@ theorem lockSet_consistent_schedContextUnbind (callerTid : ThreadId)
           · rw [h]; simp; decide
           rcases List.mem_cons.mp hMem with h | hMem
           · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp [stateLevelLock]; decide
           exact absurd hMem (by intro h; cases h)))
     (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
@@ -3602,7 +4399,7 @@ theorem lockSet_consistent_tcbSuspend (callerTid : ThreadId)
     ∀ p ∈ (lockSet_tcbSuspend callerTid cnRoot targetTcb blEp blN
               bindingScId donatedOriginalOwnerTid consumedReplyId).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
-  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
+  lockSet_consistent_base_plus_six_opts _ _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -3631,6 +4428,11 @@ theorem lockSet_consistent_tcbSuspend (callerTid : ThreadId)
         cases consumedReplyId with
         | none => simp at hpp
         | some r => simp at hpp; rw [← hpp]; simp; decide)
+    -- WS-OD OD3.5: the donation cancellation's `scThreadIndex` write.
+    (by intro pp hpp
+        cases bindingScId with
+        | none => simp at hpp
+        | some _ => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide)
 
 /-- WS-SM SM3.B.4 for `.tcbResume`. -/
 theorem lockSet_consistent_tcbResume (callerTid : ThreadId)

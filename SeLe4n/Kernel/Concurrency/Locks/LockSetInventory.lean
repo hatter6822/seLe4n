@@ -37,7 +37,11 @@ The inventory has six categories matching the plan §5.2 sub-tasks:
   LockSet.fst_inj_at_pairs, LockSet.union_mem_inv).
 * `.chainStart` — SM3.B.3 audit-pass-5 PIP-chain-walk start
   markers (`pipChainStart_endpointCall`, `pipChainStart_endpointReply`,
-  `pipChainStart_replyRecv`, and SM6.E's `pipChainStart_tcbSuspend`).
+  `pipChainStart_replyRecv`, SM6.E's `pipChainStart_tcbSuspend`, and
+  WS-OD OD3.14's `pipChainStart_replyRecvReceiveLeg` /
+  `pipChainStart_endpointReceive` — the second walk a `.replyRecv` performs
+  on a delegated reply, and the walk `.receive` gained when the
+  priority-inversion defect on its rendezvous path was closed).
   Structural signal to SM3.C that a
   transition invokes a dynamic priority-inheritance chain walk
   whose length is state-discovered.  See SM3.C.11 in
@@ -347,18 +351,26 @@ def lockSetTheorems : List LockSetTheorem :=
       LockSet.union_mem_inv .algebra,
     lkst! "LockSet.containsKey_iff: key membership iff exists mode"
       LockSet.containsKey_iff .algebra,
-    -- §6 chainStart — PIP-chain-walk start markers (4 entries — SM3.B.3
-    -- audit-pass-5; SM6.E added the suspend marker)
+    -- §6 chainStart — PIP-chain-walk start markers (6 entries — SM3.B.3
+    -- audit-pass-5; SM6.E added the suspend marker; WS-OD OD3.14 added the
+    -- replyRecv receive leg and the receive arm)
     lkst! "pipChainStart for endpointCall (handshake path only when receiverTid = some _)"
       pipChainStart_endpointCall .chainStart,
     lkst! "pipChainStart for endpointReply (always emits revertPIP at caller)"
       pipChainStart_endpointReply .chainStart,
-    lkst! "pipChainStart for replyRecv (always emits revertPIP at caller)"
+    lkst! "pipChainStart for replyRecv's reply leg (revertPIP at the recorded server)"
       pipChainStart_replyRecv .chainStart,
+    lkst! "pipChainStart for replyRecv's receive leg (the receiver, on a delegated reply only)"
+      pipChainStart_replyRecvReceiveLeg .chainStart,
+    lkst! "pipChainStart for endpointReceive (the receiver, when the rendezvous dequeued a Call)"
+      pipChainStart_endpointReceive .chainStart,
     lkst! "pipChainStart for tcbSuspend (revert from the captured blocking server when reply-blocked)"
       pipChainStart_tcbSuspend .chainStart]
 
-/-- WS-SM SM3.B: the inventory has exactly 111 entries (the PR #887 review
+/-- WS-SM SM3.B: the inventory has exactly 113 entries (WS-OD OD3.14's two
+new chain-start markers — the second walk a `.replyRecv` performs on a
+delegated reply and the walk `.receive` gained when its rendezvous-path
+priority inversion was closed — on top of the PR #887 review
 round's `tcbSetFaultHandler` lockSet + consistency pair — the fault-handler
 configuration syscall, whose footprint is the caller's and target's TCBs plus
 the target's CNode root in *read* mode, because set-time validation resolves
@@ -382,7 +394,7 @@ PR #822 Phase H's `mintReplyCap` pair, and SM6.B's `tcbBindNotification` /
 A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 111 := by decide
+    lockSetTheorems.length = 113 := by decide
 
 /-- WS-SM SM3.B: 22 entries in the `projection` category
 (lockKind def + 7 per-variant simp lemmas + lockKind_eq_of_objectType
@@ -414,11 +426,18 @@ theorem lockSetTheorems_algebra_count :
     (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9 := by
   decide
 
-/-- WS-SM SM3.B: 4 entries in the `chainStart` category
-(SM3.B.3 audit-pass-5: pipChainStart for the 4 PIP-invoking transitions —
-SM6.E added `pipChainStart_tcbSuspend`). -/
+/-- WS-SM SM3.B: 6 entries in the `chainStart` category — **five** PIP-invoking
+transitions, one of which declares two walks.
+
+SM3.B.3 audit-pass-5 registered three; SM6.E added `pipChainStart_tcbSuspend`;
+WS-OD OD3.14 added `pipChainStart_endpointReceive` (the walk `.receive` gained
+when the priority inversion on its rendezvous path was closed) and
+`pipChainStart_replyRecvReceiveLeg` (the second walk `.replyRecv` performs when
+its reply is delegated, which the reply leg's walk from the recorded server does
+not reach).  The count is per *marker*, not per syscall, because it is the
+SM3.C walker's obligation list. -/
 theorem lockSetTheorems_chainStart_count :
-    (lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 4 := by
+    (lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 6 := by
   decide
 
 /-- WS-SM SM3.B: per-category counts sum to the total. -/
