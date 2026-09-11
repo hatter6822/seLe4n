@@ -858,16 +858,19 @@ def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
     boundThread.any SeLe4n.Kernel.isIdleThreadId ||
     scReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId)
 
-/-- PR #889 review round 8: a boot **Reply**'s own id, its blocked caller, its
-    donated SchedContext and its `prev` link — a reply object id the round-6
-    arm did not read. -/
+/-- PR #889 review round 8: a boot **Reply**'s own id, its blocked caller and its
+    two reply-stack links — `prev` (a reply object id the round-6 arm did not
+    read) and, since WS-OD `v0.35.4`, `next`, which names either the frame above
+    (a reply object id) or the scheduling context this frame heads. -/
 def replyReferencesReservedIdleSlot (r : Reply) : Bool :=
   match r with
-  | ⟨replyId, caller, donatedSc, prev, _lock⟩ =>
+  | ⟨replyId, caller, prev, next, _lock⟩ =>
     SeLe4n.Kernel.isIdleObjId replyId.toObjId ||
     caller.any SeLe4n.Kernel.isIdleThreadId ||
-    donatedSc.any (fun sc => SeLe4n.Kernel.isIdleObjId sc.toObjId) ||
-    prev.any (fun p => SeLe4n.Kernel.isIdleObjId p.toObjId)
+    prev.any (fun p => SeLe4n.Kernel.isIdleObjId p.toObjId) ||
+    next.any (fun
+      | .frame above => SeLe4n.Kernel.isIdleObjId above.toObjId
+      | .head sc => SeLe4n.Kernel.isIdleObjId sc.toObjId)
 
 /-- PR #889 review round 2: does a boot object **reference** a reserved idle
     slot?  A config entry at an ordinary id can still name an idle thread in
@@ -1420,8 +1423,8 @@ def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
     and `isActive` are the deployment's.
 
     `scReply` is refused for the same reason `bootSafeReplyCheck` refuses a
-    boot Reply's `donatedSc`: a head names a Reply that must be *on* this
-    context's stack (`Reply.donatedSc = some scId`), and every admissible boot
+    boot Reply's stack links: a head names a Reply that must be *on* this
+    context's stack (`Reply.next = some (.head scId)`), and every admissible boot
     Reply is inert — so a config-supplied head could only dangle, installing a
     `donationChainWellFormed` violation before the first instruction runs. -/
 def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
@@ -1453,11 +1456,10 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     `PlatformConfig.wellFormed`. -/
 def bootSafeReplyCheck (r : Reply) : Bool :=
   match r with
-  | ⟨_replyId, _caller, _donatedSc, _prev, _lock⟩ =>
-    r.caller.isNone && r.donatedSc.isNone && r.prev.isNone
+  | ⟨_replyId, _caller, _prev, _next, _lock⟩ => r.isFree
 
 @[simp] theorem bootSafeReplyCheck_def (r : Reply) :
-    bootSafeReplyCheck r = (r.caller.isNone && r.donatedSc.isNone && r.prev.isNone) := rfl
+    bootSafeReplyCheck r = (r.caller.isNone && r.prev.isNone && r.next.isNone) := rfl
 
 /-- AJ3-C (M-16): Bool-valued runtime check for boot-safe objects.
     Validates structural boot safety constraints that can be checked at
@@ -1525,10 +1527,10 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
     -- reply stack
     (∀ sc, obj = .schedContext sc →
       schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none) ∧
-    -- WS-SM SM6.D / PR #822: a boot Reply is inert — no blocked caller,
-    -- donated SC, or prev link.
+    -- WS-SM SM6.D / PR #822: a boot Reply is inert — no blocked caller and no
+    -- reply-stack link in either direction.
     (∀ r, obj = .reply r →
-      r.caller = none ∧ r.donatedSc = none ∧ r.prev = none) := by
+      r.caller = none ∧ r.prev = none ∧ r.next = none) := by
   -- Discharge each constructor case. Non-matching constructors produce absurd
   -- injection hypotheses, discharged by `intro _ h; cases h`.
   cases obj with
@@ -4573,9 +4575,10 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- so a config-supplied `scReply` could only dangle.
   (∀ sc, obj = .schedContext sc →
     schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none) ∧
-  -- WS-SM SM6.D: a boot Reply is inert — no blocked caller, donated SC, or prev link.
+  -- WS-SM SM6.D: a boot Reply is inert — no blocked caller and no reply-stack
+  -- link in either direction.
   (∀ r, obj = .reply r →
-    r.caller = none ∧ r.donatedSc = none ∧ r.prev = none)
+    r.caller = none ∧ r.prev = none ∧ r.next = none)
 
 /-- V4-A4: A PlatformConfig is boot-safe if all initial objects satisfy
     boot safety constraints. This is the standard precondition for

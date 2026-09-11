@@ -2993,11 +2993,11 @@ def wellFormed (obj : KernelObject)
   | .untyped _ => True
   | .schedContext _ => True
   -- WS-SM SM6.D (PR #822 review): a retyped/created Reply must start INERT — no
-  -- caller, donated SC, or previous-reply link — mirroring the boot-safe Reply
+  -- caller and no reply-stack link in either direction — mirroring the boot-safe Reply
   -- requirement.  Otherwise `lifecycleRetypeWithCleanup` (which only checks
   -- `newObj.wellFormed`) could install a Reply that bypasses the
   -- `linkCallerReply` / `replyCallerLinkage` setup path and seed a stale/in-use link.
-  | .reply r => r.caller = none ∧ r.donatedSc = none ∧ r.prev = none
+  | .reply r => r.caller = none ∧ r.prev = none ∧ r.next = none
 
 /-- T5-C: `wellFormed` is decidable for all object kinds, enabling runtime validation. -/
 instance (obj : KernelObject)

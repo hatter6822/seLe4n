@@ -138,18 +138,22 @@ theorem sendSideQueueStructureNeighbor?_block (st : SystemState)
       = (st.getEndpoint? endpointId).bind (·.sendQ.tail) := by
   unfold sendSideQueueStructureNeighbor?; rw [hNone]; rfl
 
-/-- WS-SM SM6.A.5: the SchedContext the caller would donate on this call — its
-own bound SC (a `.bound scId` binding), if any. A caller that is `.unbound` or
-already holds a `.donated _ _` binding donates nothing on this call (matching
-`applyCallDonation`), so the SC write lock is in the footprint iff the caller
-has an active SC of its own to donate. -/
+/-- WS-SM SM6.A.5: the SchedContext the caller would donate on this call — the
+context it *effectively holds*, bound or donated, if any.  Only an `.unbound`
+caller donates nothing, so the SC write lock is in the footprint exactly when the
+caller has a context to hand on.
+
+**WS-OD OD4.2**: the `.donated` arm used to answer `none`, matching the
+pre-OD4 `applyCallDonation`, which donated only from a `.bound` caller.  With
+the guard widened to the effective context the footprint follows in the same
+cut — a footprint narrower than its transition is *false*, and this one would
+have omitted the SchedContext the push rebinds at every call depth ≥ 2.  Both
+sides now read `SchedContextBinding.scId?`, so neither can widen without the
+other. -/
 def endpointCallDonatedSc? (st : SystemState) (caller : SeLe4n.ThreadId) :
     Option SeLe4n.SchedContextId :=
   match st.getTcb? caller with
-  | some tcb =>
-      match tcb.schedContextBinding with
-      | .bound scId => some scId
-      | _ => none
+  | some tcb => tcb.schedContextBinding.scId?
   | none => none
 
 /-- WS-SM SM6.D (PR #822 review): the server-first stashed Reply object this call
@@ -195,6 +199,11 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- **WS-OD OD3.11**: and the queue-structure neighbour, resolved from the
     -- same branch the transition takes.
     (sendSideQueueStructureNeighbor? st endpointId)
+    -- **WS-OD (`v0.35.4`)**: and the old head of the donated context -- the
+    -- frame the push rewrites below the one it adds -- read off the very
+    -- context `endpointCallDonatedSc?` resolves, so the footprint and the push
+    -- cannot disagree about which stack is extended.
+    ((endpointCallDonatedSc? st caller).bind (replyStackHead? st))
 
 /-- **WS-RR RR7.8**: the capless resolved call footprint is definitionally the
 pre-RR7.8 one, so every statement and fixture taken over the four-argument form
@@ -209,7 +218,9 @@ theorem lockSet_endpointCallOnCore_capless (st : SystemState)
           -- **WS-OD OD3.11**: "capless" is about the *message*, not about the
           -- queue.  A call that carries no capabilities still pops or enqueues,
           -- so the neighbour member is resolved here rather than `none`.
-          (sendSideQueueStructureNeighbor? st endpointId) := rfl
+          (sendSideQueueStructureNeighbor? st endpointId)
+          -- **WS-OD (`v0.35.4`)**: and the old head, for the same reason.
+          ((endpointCallDonatedSc? st caller).bind (replyStackHead? st)) := rfl
 
 /-- **WS-RR RR7.8**: the concrete lock-set a cross-core caps-carrying `.send`
 acquires. The send side had no resolved footprint at all — its capless shape
@@ -261,9 +272,11 @@ def lockSet_endpointCallWithCaps (callerTid : SeLe4n.ThreadId)
     -- **WS-OD OD3.11**: and the queue-structure neighbour, threaded through for
     -- the same reason -- the caps footprint *is* the base footprint at `some
     -- destCnodeObjId`, so every member the base declares it declares too.
-    (queueNeighbour : Option SeLe4n.ThreadId := none) : LockSet :=
+    (queueNeighbour : Option SeLe4n.ThreadId := none)
+    -- **WS-OD (`v0.35.4`)**: and the old head the donation push rewrites.
+    (donationOldHeadReplyId : Option SeLe4n.ReplyId := none) : LockSet :=
   lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid donatedScId
-    replyId (some destCnodeObjId) queueNeighbour
+    replyId (some destCnodeObjId) queueNeighbour donationOldHeadReplyId
 
 /-- **WS-RR RR7.7**: the caps footprint *is* the base footprint at `some`, by
 `rfl`. A refactor that reintroduces a second definition breaks this marker at
@@ -273,11 +286,13 @@ theorem lockSet_endpointCallWithCaps_eq_call_some (callerTid : SeLe4n.ThreadId)
     (receiverTid : Option SeLe4n.ThreadId)
     (donatedScId : Option SeLe4n.SchedContextId)
     (replyId : Option SeLe4n.ReplyId)
-    (queueNeighbour : Option SeLe4n.ThreadId) :
+    (queueNeighbour : Option SeLe4n.ThreadId)
+    (donationOldHeadReplyId : Option SeLe4n.ReplyId) :
     lockSet_endpointCallWithCaps callerTid cnodeRootObjId destCnodeObjId endpointObjId
-        receiverTid donatedScId replyId queueNeighbour
+        receiverTid donatedScId replyId queueNeighbour donationOldHeadReplyId
       = lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
-          donatedScId replyId (some destCnodeObjId) queueNeighbour := rfl
+          donatedScId replyId (some destCnodeObjId) queueNeighbour
+          donationOldHeadReplyId := rfl
 
 -- ============================================================================
 -- §4 The cross-core endpoint-call transition (plan §3.2)
@@ -514,6 +529,7 @@ theorem lockSet_endpointCallOnCore_correct
     (endpointCallServerFirstReply? st endpointId)
     (rendezvousCapsDestination? st endpointId msg)
     (sendSideQueueStructureNeighbor? st endpointId)
+    ((endpointCallDonatedSc? st caller).bind (replyStackHead? st))
 
 /-- **WS-RR RR7.8**: the send footprint's kinds are permitted too, over every
 message — the send side's first resolved-footprint correctness statement. -/
@@ -610,6 +626,91 @@ theorem lockSet_endpointCallOnCore_covers_queueNeighbour
   unfold lockSet_endpointCallOnCore lockSet_endpointCall
   rw [hq]
   exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-OD OD4.7 / `v0.35.4`: the resolved `.call` footprint declares every
+object the donation push writes.**
+
+OD4.1 gave `donateSchedContext` two more stores than it had: the scheduling
+context also carries the stack head `scReply`, and the Reply the new frame *is*
+gets its links.  OD4.7 found the push's four keys were declared members already:
+
+* the scheduling context, by `endpointCallDonatedSc?` -- declared since SM6.A.5,
+  and (OD4.2) widened to the caller's *effective* context, so it names the right
+  one at every chain depth.  The old head the push reads is read out of that same
+  object, under that same write lock.
+* the Reply, by `endpointCallServerFirstReply?` -- declared since SM6.D for the
+  rendezvous's own `linkServerStashedReply` write.  `endpointCall`'s rendezvous
+  arm fails closed unless the woken server stashed a Reply and links it to *this*
+  caller, so the Reply the push then finds in `TCB.replyObject` is that one.
+* the caller's TCB and the receiver's TCB, which the rendezvous writes anyway.
+
+OD4.7 concluded that a push adds no member.  That was true of the singly linked
+push and is **false** of the doubly linked one (`v0.35.4`):
+`storeDonationFramePush` also rewrites the *old head* -- the frame below the one
+it adds now points up at it (`next := .frame pushRid`) -- and that Reply was
+named by no member.  It is declared as the fifth key
+(`lockSet_endpointCallOnCore_covers_donationOldHead`, below), resolved by
+`replyStackHead?` on the very context `endpointCallDonatedSc?` names, and it is
+one of the two members the ceiling moved for at that cut.  The four OD4.7 named
+are stated here as they were. -/
+theorem lockSet_endpointCallOnCore_covers_donationPush
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage)
+    (scId : SeLe4n.SchedContextId) (rid : SeLe4n.ReplyId) (receiver : SeLe4n.ThreadId)
+    (hSc : endpointCallDonatedSc? st caller = some scId)
+    (hRid : endpointCallServerFirstReply? st endpointId = some rid)
+    (hRecv : endpointCallReceiver? st endpointId = some receiver) :
+    (schedContextLock scId, AccessMode.write)
+        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs ∧
+    (replyLock rid, AccessMode.write)
+        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs ∧
+    (tcbLock caller, AccessMode.write)
+        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs ∧
+    (tcbLock receiver, AccessMode.write)
+        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+  unfold lockSet_endpointCallOnCore
+  rw [hSc, hRid, hRecv]
+  exact ⟨lockSet_endpointCall_donatedSc_write_mem _ _ _ _ _ _ _ _ _,
+    lockSet_endpointCall_reply_write_mem _ _ _ _ _ _ _ _ _,
+    lockSet_endpointCall_caller_tcb_write_mem_unconditional _ _ _ _ _ _ _ _ _,
+    lockSet_endpointCall_receiver_tcb_write_mem _ _ _ _ _ _ _ _ _⟩
+
+/-- **WS-OD (`v0.35.4`)**: the fifth key of the push -- the donated context's
+old head, rewritten by `storeDonationFramePush` -- is a declared write of the
+resolved `.call` footprint whenever the context heads a frame.  Stated over the
+two resolvers the member is derived from, so it is a statement about the arm
+rather than about an argument value. -/
+theorem lockSet_endpointCallOnCore_covers_donationOldHead
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage)
+    (scId : SeLe4n.SchedContextId) (oldHead : SeLe4n.ReplyId)
+    (hSc : endpointCallDonatedSc? st caller = some scId)
+    (hOld : replyStackHead? st scId = some oldHead) :
+    (replyLock oldHead, AccessMode.write)
+        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+  unfold lockSet_endpointCallOnCore
+  rw [hSc]
+  have h2 : Option.bind (some scId) (replyStackHead? st) = some oldHead := hOld
+  rw [h2]
+  exact lockSet_endpointCall_donationOldHead_write_mem _ _ _ _ _ _ _ _ _
+
+/-- **WS-OD OD4.7**: and the widened resolver names the *effective* context at
+every depth, so the member above is the one a depth-≥ 2 push writes.
+
+`endpointCallDonatedSc?` reads `SchedContextBinding.scId?`, which answers for a
+`.donated` caller exactly as it does for a `.bound` one.  Before OD4.2 it
+answered `none` there -- a footprint narrower than its transition, which is
+*false* -- so this is the statement that the two widened together. -/
+theorem endpointCallDonatedSc?_of_donated (st : SystemState) (caller : SeLe4n.ThreadId)
+    (tcb : TCB) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (hT : st.getTcb? caller = some tcb)
+    (hB : tcb.schedContextBinding = .donated scId owner) :
+    endpointCallDonatedSc? st caller = some scId := by
+  unfold endpointCallDonatedSc?
+  rw [hT]
+  simp only []
+  rw [hB]
+  rfl
 
 /-- **WS-OD OD3.11**: and on the send arm -- the same two primitives, so the
 same neighbour and the same declaration. -/
@@ -1026,7 +1127,7 @@ theorem lockSet_endpointCall_caller_tcb_write_mem
     (tcbLock caller, AccessMode.write)
       ∈ (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?).pairs :=
   lockSet_endpointCall_caller_tcb_write_mem_unconditional caller cnRoot endpointId
-    receiver? donatedSc? none none none
+    receiver? donatedSc? none none none none
 
 -- ============================================================================
 -- §9 WS-RR RR2.4 — the scheduler-domain footprint of the cross-core `.call`

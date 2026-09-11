@@ -10,6 +10,13 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
 -- The bound-delivery coverage witnesses for `lockSet_notificationSignalOnCore`
 -- live above `NotificationSignal` in the import graph.
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBind
+-- **WS-OD (`v0.35.4`)**: the `.tcbSuspend` footprint is `lockSet_tcbSuspendOnCore`,
+-- defined over the state-resolved cancellation footprint it is rooted at, and
+-- living beside it.  It replaces the parametric `lockSet_tcbSuspend`, which
+-- resolved the donation cancellation's members from the victim's *pre-state*
+-- binding while the suspend pipeline runs that cancellation on the binding the
+-- teardown leaves.
+import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 /-!
 # WS-SM SM3.C.9 — the syscall → lock-set dispatcher
 
@@ -62,37 +69,33 @@ namespace SeLe4n.Kernel.Concurrency
 open SeLe4n
 open SeLe4n.Model
 
-/-- **WS-SM SM3.C.9**: resolve `tcbSuspend`'s state-dependent footprint
-arguments from the pre-state.
+/-- **WS-SM SM3.C.9 / WS-OD (`v0.35.4`)**: the footprint a `.tcbSuspend` acquires,
+resolved from the pre-state.
 
-The five optional members are exactly the writes the suspend pipeline
-can make beyond the victim's own TCB, and each is read here from the
-same field the transition branches on:
-
-* the endpoint it is blocked on (`blockedOnSend` / `blockedOnReceive` /
-  `blockedOnCall` / `blockedOnReply` all name one) — the cancellation
-  sweep unlinks the victim from its queue;
-* the notification it is blocked on — same, for the notification queue;
-* the Reply object consumed when the victim is `blockedOnReply`;
-* its bound or donated SchedContext — the donation teardown writes it;
-* the original owner a donated SchedContext returns to.
+`lockSet_tcbSuspendOnCore` (`IPC/CrossCore/Cancellation.lean` §8) is the
+footprint; what this function adds is the *operand* resolution the dispatcher
+needs — the caller's CSpace root, and the two `none` answers that send an
+unresolvable operand back to the coarse serialisation.
 
 The CNode member is the **caller's** CSpace root, not the victim's.
-`cnodeRootObjId` is the cap-resolution root — the CNode the syscall
-actually reads to turn the caller's capability pointer into the target
-capability (`syscallLookupCap` builds its gate from the *caller's*
-`tcb.cspaceRoot`), which is why it is paired with the caller's TCB read
-in every `lockSet_*` that has one. An earlier cut passed
-`victim.cspaceRoot`, so whenever caller and victim held different
-CSpace roots the declared set locked a CNode the syscall never touches
-and omitted the one it reads — a coverage hole in exactly the direction
-a declared footprint exists to prevent. Not a live defect (SM3.C.9
-still defers `withLockSet` at the `@[export]` bodies), but the whole
-value of the declaration is that it covers the operation's accesses.
+`cnodeRootObjId` is the cap-resolution root — the CNode the syscall actually
+reads to turn the caller's capability pointer into the target capability
+(`syscallLookupCap` builds its gate from the *caller's* `tcb.cspaceRoot`), which
+is why it is paired with the caller's TCB read in every `lockSet_*` that has one.
+An earlier cut passed `victim.cspaceRoot`, so whenever caller and victim held
+different CSpace roots the declared set locked a CNode the syscall never touches
+and omitted the one it reads.
 
-`none` for the whole set when **either** thread fails to resolve to a
-TCB: with no victim there is no transition to bound, and with no caller
-there is no CSpace root to name. -/
+`none` for the whole set in three cases.  **Either thread fails to resolve to a
+TCB**: with no victim there is no transition to bound, and with no caller there
+is no CSpace root to name.  And (WS-OD `v0.35.4`) **a victim owed a reclaim that
+already holds a binding** — `cancelledCallerAlreadyBound`, which
+`donationOwnerValid` excludes from every reachable state.  On such a state the
+reclaim would overwrite the binding, so the footprint would have to declare both
+what the reclaim leaves and what the pre-state binding's cancellation would
+touch if the reclaim were refused; neither alone is honest and the union does not
+fit the ceiling.  Refusing falls back to the coarse serialisation, which is
+always sound. -/
 def suspendFootprintOf (st : SystemState) (callerTid targetTid : ThreadId) :
     Option LockSet :=
   -- Read through the AL2-A typed accessor, not a raw `objects[...]?`
@@ -101,30 +104,8 @@ def suspendFootprintOf (st : SystemState) (callerTid targetTid : ThreadId) :
   -- un-migrated raw access.
   match st.getTcb? callerTid, st.getTcb? targetTid with
   | some caller, some victim =>
-      let blockedEndpoint : Option ObjId :=
-        match victim.ipcState with
-        | .blockedOnSend ep => some ep
-        | .blockedOnReceive ep => some ep
-        | .blockedOnCall ep => some ep
-        | .blockedOnReply ep _ => some ep
-        | _ => none
-      let blockedNotification : Option ObjId :=
-        match victim.ipcState with
-        | .blockedOnNotification n => some n
-        | _ => none
-      let consumedReply : Option ReplyId :=
-        match victim.ipcState with
-        | .blockedOnReply _ _ => victim.replyObject
-        | _ => none
-      let bindingSc : Option SchedContextId :=
-        victim.schedContextBinding.scId?
-      let donatedOwner : Option ThreadId :=
-        match victim.schedContextBinding with
-        | .donated _ owner => some owner
-        | _ => none
-      some (lockSet_tcbSuspend callerTid caller.cspaceRoot targetTid
-              blockedEndpoint blockedNotification bindingSc
-              donatedOwner consumedReply)
+      if SeLe4n.Kernel.cancelledCallerAlreadyBound st targetTid victim then none
+      else some (SeLe4n.Kernel.lockSet_tcbSuspendOnCore st callerTid caller.cspaceRoot targetTid)
   | _, _ => none
 
 /-- **WS-RR RR7.10**: the operands a declared footprint is resolved from.
@@ -474,7 +455,7 @@ theorem lockSetForSyscall_replyRecv_delegated_covers_server
       ∈ (lockSet_endpointReplyRecvOnCore st replier cnRoot prevCaller endpointId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
   rw [hServer]
-  exact lockSet_replyRecv_donation_server_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_replyRecv_donation_server_tcb_write_mem ..
 
 /-- **WS-OD OD3.5**: a **delegated** `.replyRecv` — one whose reply capability
 answers a caller whose recorded server is some *other* thread — now declares a
@@ -606,6 +587,10 @@ theorem lockSetForSyscall_isSome_implies_caller_resolves
       first
         | exact h
         | (cases hT : ops.targetThread <;> simp_all)
+        | (cases hT : ops.targetThread with
+           | none => simp_all
+           | some victim =>
+             cases hV : st.getTcb? victim <;> simp_all)
 
 /-! ## WS-RR RR7.11 — coverage: the declared footprint contains the writes
 
@@ -716,8 +701,8 @@ theorem lockSetForSyscall_call_covers_writes
     (endpointLock endpointId, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_call_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
   cases hDecl
-  exact ⟨lockSet_endpointCall_caller_tcb_write_mem_unconditional _ _ _ _ _ _ _ _,
-         lockSet_endpointCall_endpoint_write_mem _ _ _ _ _ _ _ _⟩
+  exact ⟨lockSet_endpointCall_caller_tcb_write_mem_unconditional ..,
+         lockSet_endpointCall_endpoint_write_mem ..⟩
 
 /-- **WS-RR RR7.11**: and `.call`'s capability-transfer writes. -/
 theorem lockSetForSyscall_call_covers_capsWrites
@@ -772,8 +757,8 @@ theorem lockSetForSyscall_receive_covers_writes
     (endpointLock endpointId, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
   cases hDecl
-  exact ⟨lockSet_endpointReceive_caller_tcb_write_mem _ _ _ _ _ _ _ _,
-         lockSet_endpointReceive_endpoint_write_mem _ _ _ _ _ _ _ _⟩
+  exact ⟨lockSet_endpointReceive_caller_tcb_write_mem ..,
+         lockSet_endpointReceive_endpoint_write_mem ..⟩
 
 /-- **WS-OD OD3.12**: and the queue-structure neighbour.
 
@@ -839,10 +824,10 @@ theorem lockSetForSyscall_reply_covers_writes
       (replyLock linked, AccessMode.write) ∈ S.pairs) := by
   rw [lockSetForSyscall_reply_eq ops st caller rid answered hTcb hRid hAns] at hDecl
   cases hDecl
-  refine ⟨lockSet_endpointReply_target_tcb_write_mem _ _ _ _ _ _ _ _, ?_⟩
+  refine ⟨lockSet_endpointReply_target_tcb_write_mem .., ?_⟩
   intro linked hLinked
   simp only [lockSet_endpointReplyOnCore, hLinked]
-  exact lockSet_endpointReply_reply_write_mem _ _ _ _ _ _ _ _
+  exact lockSet_endpointReply_reply_write_mem ..
 
 /-- **WS-RR RR7.11**: at resolved operands, `.replyRecv` declares the fused
 footprint.
@@ -878,9 +863,9 @@ theorem lockSetForSyscall_replyRecv_covers_writes
   rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
-  exact ⟨lockSet_replyRecv_caller_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _,
-         lockSet_replyRecv_target_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _,
-         lockSet_replyRecv_endpoint_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _⟩
+  exact ⟨lockSet_replyRecv_caller_tcb_write_mem ..,
+         lockSet_replyRecv_target_tcb_write_mem ..,
+         lockSet_replyRecv_endpoint_write_mem ..⟩
 
 /-- **WS-RR RR7.11**: and its receive leg's capability install, which writes the
 same CDT structure a send's does. -/
@@ -900,7 +885,7 @@ theorem lockSetForSyscall_replyRecv_covers_capsWrites
   cases hDecl
   refine ⟨?_, lockSet_endpointReplyRecvOnCore_covers_cdt _ _ _ _ _ hCaps⟩
   simp only [lockSet_endpointReplyRecvOnCore, hCaps]
-  exact lockSet_replyRecv_capsInstall_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_replyRecv_capsInstall_write_mem ..
 
 /-- **WS-OD OD3.13**: and the receive leg's queue-structure neighbour.
 
@@ -951,8 +936,8 @@ theorem lockSetForSyscall_replyRecv_covers_redonation
   cases hDecl
   unfold lockSet_endpointReplyRecvOnCore
   rw [hNew]
-  exact ⟨lockSet_replyRecv_redonated_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _,
-         lockSet_replyRecv_redonation_stateLevel_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _⟩
+  exact ⟨lockSet_replyRecv_redonated_sc_write_mem ..,
+         lockSet_replyRecv_redonation_stateLevel_write_mem ..⟩
 
 /-- **WS-RR RR7.11**: at resolved operands, `.notificationSignal` declares the
 bound-delivery-aware signal footprint. -/
@@ -1208,25 +1193,120 @@ theorem declaredFootprintSyscall_declared_set :
   refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_⟩
   decide
 
-/-- **WS-SM SM3.C.9**: the suspend footprint resolves exactly when the
-target names a TCB.
+/-- **WS-SM SM3.C.9 / WS-OD (`v0.35.4`)**: the suspend footprint resolves exactly
+when both threads name TCBs and the victim is not the one shape the footprint
+refuses.
 
-`none` is not a failure mode here — a target that is not a TCB has no
-suspend transition to bound, so there is no footprint to declare and the
-caller correctly falls back. -/
+`none` is not a failure mode here — a target that is not a TCB has no suspend
+transition to bound, and the refused shape is one `donationOwnerValid` excludes;
+in both cases the caller correctly falls back to the coarse serialisation.
+
+Stated as an `↔` at the **full** condition rather than at the two resolutions
+alone: a characterisation that omitted the refusal would be false in the
+direction a caller consumes it (`isSome` ⇒ both resolve is still true; both
+resolve ⇒ `isSome` is not). -/
 theorem suspendFootprintOf_isSome_iff
     (st : SystemState) (callerTid targetTid : ThreadId) :
     (suspendFootprintOf st callerTid targetTid).isSome
       ↔ (∃ caller, st.getTcb? callerTid = some caller) ∧
-        ∃ victim, st.getTcb? targetTid = some victim := by
+        ∃ victim, st.getTcb? targetTid = some victim ∧
+          SeLe4n.Kernel.cancelledCallerAlreadyBound st targetTid victim = false := by
   unfold suspendFootprintOf
   constructor
   · intro h
     split at h
-    · next caller victim hc hv => exact ⟨⟨caller, hc⟩, victim, hv⟩
+    · next caller victim hc hv =>
+        refine ⟨⟨caller, hc⟩, victim, hv, ?_⟩
+        by_cases hB : SeLe4n.Kernel.cancelledCallerAlreadyBound st targetTid victim
+        · rw [hB] at h; simp at h
+        · simpa using hB
     · simp at h
-  · rintro ⟨⟨caller, hc⟩, victim, hv⟩
-    rw [hc, hv]
-    simp
+  · rintro ⟨⟨caller, hc⟩, victim, hv, hB⟩
+    -- `simp only`, not `rw`: the refusal's condition is invisible until the
+    -- two-scrutinee match iota-reduces, which a rewrite does not perform.
+    simp only [hc, hv, hB, Bool.false_eq_true, if_false, Option.isSome_some]
+
+/-- **WS-OD (`v0.35.4`)**: and where it resolves, it is the state-resolved
+suspend footprint at the caller's own CSpace root — the pin that a later edit
+cannot redirect the arm at a different footprint without failing here. -/
+theorem suspendFootprintOf_eq (st : SystemState) (callerTid targetTid : ThreadId)
+    (caller victim : TCB)
+    (hc : st.getTcb? callerTid = some caller)
+    (hv : st.getTcb? targetTid = some victim)
+    (hB : SeLe4n.Kernel.cancelledCallerAlreadyBound st targetTid victim = false) :
+    suspendFootprintOf st callerTid targetTid
+      = some (SeLe4n.Kernel.lockSet_tcbSuspendOnCore st callerTid caller.cspaceRoot
+                targetTid) := by
+  unfold suspendFootprintOf
+  simp only [hc, hv, hB, Bool.false_eq_true, if_false]
+
+/-- **WS-OD (`v0.35.4`)**: **what a resolved suspend footprint is** — the
+extraction every consumer crosses, so that none of them re-does the resolver's
+case analysis and none can drift from it. -/
+theorem suspendFootprintOf_eq_lockSet {st : SystemState} {callerTid targetTid : ThreadId}
+    {S : LockSet} (h : suspendFootprintOf st callerTid targetTid = some S) :
+    ∃ caller, st.getTcb? callerTid = some caller ∧
+      S = SeLe4n.Kernel.lockSet_tcbSuspendOnCore st callerTid caller.cspaceRoot targetTid := by
+  unfold suspendFootprintOf at h
+  split at h
+  · next caller victim hc hv =>
+      split at h
+      · exact absurd h (by simp)
+      · exact ⟨caller, hc, (Option.some.inj h).symm⟩
+  · exact absurd h (by simp)
+
+/-- **WS-OD (`v0.35.4`)**: and the dispatcher's arm, at a supplied thread target,
+composed with that extraction — the form the consumers below use. -/
+theorem lockSetForSyscall_tcbSuspend_eq_lockSet {ops : SyscallLockOperands}
+    {st : SystemState} {targetTid : ThreadId} {S : LockSet}
+    (hT : ops.targetThread = some targetTid)
+    (hDecl : lockSetForSyscall .tcbSuspend ops st = some S) :
+    ∃ caller, st.getTcb? ops.caller = some caller ∧
+      S = SeLe4n.Kernel.lockSet_tcbSuspendOnCore st ops.caller caller.cspaceRoot targetTid := by
+  rw [lockSetForSyscall_tcbSuspend ops st, hT] at hDecl
+  simp only [Option.bind_some] at hDecl
+  exact suspendFootprintOf_eq_lockSet hDecl
+
+/-- **WS-OD (`v0.35.4`)**: the victim's own TCB write lock — the one member every
+`.tcbSuspend` needs — is a declared write of whatever the arm resolves to. -/
+theorem lockSetForSyscall_tcbSuspend_covers_victim
+    (ops : SyscallLockOperands) (st : SystemState) (targetTid : ThreadId) (S : LockSet)
+    (hT : ops.targetThread = some targetTid)
+    (hDecl : lockSetForSyscall .tcbSuspend ops st = some S) :
+    (tcbLock targetTid, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_tcbSuspend ops st, hT] at hDecl
+  simp only [Option.bind_some] at hDecl
+  unfold suspendFootprintOf at hDecl
+  split at hDecl
+  · next caller victim hc hv =>
+      split at hDecl
+      · cases hDecl
+      · cases hDecl
+        exact SeLe4n.Kernel.lockSet_tcbSuspendOnCore_covers_victim _ _ _ _
+  · cases hDecl
+
+/-- **WS-OD (`v0.35.4`)**: and every write the *teardown* declares is a write the
+arm declares, by construction — the suspend footprint is built over the
+cancellation footprint, so the coverage crosses one lift rather than a
+member-by-member family. -/
+theorem lockSetForSyscall_tcbSuspend_covers_cancellation
+    (ops : SyscallLockOperands) (st : SystemState) (targetTid : ThreadId) (S : LockSet)
+    (l : LockId)
+    (hT : ops.targetThread = some targetTid)
+    (hDecl : lockSetForSyscall .tcbSuspend ops st = some S)
+    (hMem : (l, AccessMode.write)
+      ∈ (SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore st targetTid).pairs) :
+    (l, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_tcbSuspend ops st, hT] at hDecl
+  simp only [Option.bind_some] at hDecl
+  unfold suspendFootprintOf at hDecl
+  split at hDecl
+  · next caller victim hc hv =>
+      split at hDecl
+      · cases hDecl
+      · cases hDecl
+        exact SeLe4n.Kernel.lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore
+          _ _ _ _ _ hMem
+  · cases hDecl
 
 end SeLe4n.Kernel.Concurrency

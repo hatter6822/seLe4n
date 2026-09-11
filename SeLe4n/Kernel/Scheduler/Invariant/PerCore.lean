@@ -277,11 +277,16 @@ def effectiveParamsMatchRunQueueOnCore (st : SystemState) (c : CoreId) : Prop :=
       match tcb.schedContextBinding with
       | .unbound =>
         (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some tcb.priority
-      | .bound scId | .donated scId _ =>
+      | .bound scId =>
         match st.getSchedContext? scId with
         | some sc =>
           (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some sc.priority
         | none => True
+      -- WS-OD (v0.35.3): a donee is bucketed at its **own** base priority, so
+      -- its recorded bucket is the `.unbound` arm's.  Mirrors the boot-core
+      -- `effectiveParamsMatchRunQueue`.
+      | .donated _ _ =>
+        (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some tcb.priority
     | none => True
 
 -- ============================================================================
@@ -519,8 +524,8 @@ theorem effectiveParamsMatchRunQueueOnCore_bootCore_iff (st : SystemState) :
       | donated scId _owner =>
         unfold SystemState.getSchedContext?
         cases h2 : (st.objects[scId.toObjId]? : Option KernelObject) with
-        | none => simp [h2]
-        | some objSc => cases objSc <;> simp [h2]
+        | none => simp
+        | some objSc => cases objSc <;> simp
     | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
       simp
 
@@ -1874,13 +1879,25 @@ private theorem default_getTcb?_none (tid : SeLe4n.ThreadId) :
 
 /-- SM5.I (AK2-B carrier).  A SchedContext-bound or -donated thread's base
 priority agrees with its bound SchedContext's base priority.  System-wide (an
-object-store property, core-independent); covers both `.bound` and `.donated`
-via `SchedContextBinding.scId?` because `resolveEffectivePrioDeadline` reads the
-SchedContext base priority for both.  Uses the typed `getTcb?` /
-`getSchedContext?` accessors. -/
+object-store property, core-independent).  Uses the typed `getTcb?` /
+`getSchedContext?` accessors.
+
+**WS-OD (v0.35.3) — scoped by `ownScId?`, not `scId?`.**  It ranges
+over exactly the bindings whose base priority *is* read from a SchedContext,
+which since the donee-priority split is `.bound` alone.  Quantifying over
+`scId?` covered `.donated` too, and **the donation falsifies that**: the
+reservation's `priority` must equal the donor's base priority before the
+hand-off and the donee's after, while `donateSchedContext` writes neither
+field — so any hand-off between threads of different bands broke it.  Nothing
+carried it across either, since `boundThreadPriorityConsistent_frame` requires
+`schedContextBinding` unchanged, which is exactly what the hand-off rewrites.  Narrowing it is not a weakening of the
+guarantee — `resolveEffectivePrioDeadline` no longer reads `sc.priority` on the
+`.donated` arm, so there is nothing left for the donated case to reconcile
+(`resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree` now
+discharges that arm outright). -/
 def boundThreadPriorityConsistent (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb →
-    ∀ scId, tcb.schedContextBinding.scId? = some scId →
+    ∀ scId, tcb.schedContextBinding.ownScId? = some scId →
       ∀ sc, st.getSchedContext? scId = some sc → sc.priority = tcb.priority
 
 /-- Audit closure (PR #831 review 4 follow-up): **a thread is current on at

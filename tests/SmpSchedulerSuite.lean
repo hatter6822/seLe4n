@@ -273,10 +273,10 @@ private def runWcrtScenarios : IO Unit := do
   -- < 1 ms tick budget" -- true arithmetic, and the exact framing CLAUDE.md
   -- retracts: 4 is a typical footprint size, not `maxLockSetSize`, so it
   -- reassured about a case the declared ceiling does not meet.  At 60 µs the
-  -- 1 ms tick does NOT admit 14 locks; what it admits is
+  -- 1 ms tick does NOT admit 21 locks; what it admits is
   -- `admissibleCriticalSection`, and that is the figure worth pinning.
   assertBool s!"RPi5 1 ms tick admits {admissibleCriticalSection rpi5TickBudgetMicros} µs per lock at the declared ceiling"
-    (decide (admissibleCriticalSection rpi5TickBudgetMicros = 23))
+    (decide (admissibleCriticalSection rpi5TickBudgetMicros = 15))
   assertBool "RPi5 1 ms tick refuses 60 µs sections at the declared ceiling"
     (decide (¬ (maxLockSetSize * (3 * 60) ≤ rpi5TickBudgetMicros)))
 

@@ -287,17 +287,33 @@ when SchedContext lookup fails is safe because:
 (2) Bound threads with a missing SchedContext are rejected by
     `schedContextStoreConsistent` (part of `crossSubsystemInvariant`), so the
     fallback path is unreachable under invariants.
-(3) Domain check in `schedule` (Core.lean) uses static `tcb.domain` which is
-    safe under `boundThreadDomainConsistent` (AE3-A: `sc.domain = tcb.domain`
-    for bound threads). -/
+(3) Domain check in `schedule` (Core.lean) uses static `tcb.domain`, which for
+    a `.bound` thread agrees with `sc.domain` under `boundThreadDomainConsistent`
+    (AE3-A) and for a `.donated` one is simply the donee's own — see the WS-OD
+    note below.
+
+**WS-OD (v0.35.3) — the donee's priority is its own.**  The `.donated` arm
+takes the donor's *deadline* and the thread's **own** base priority, which is
+`SystemState.threadBasePriority`'s classification
+(`resolveEffectivePrioDeadline_fst_eq_threadBasePriority` is the pin).  A
+donation moves a reservation, and a reservation carries budget, period and
+deadline — not the right to be scheduled at the donor's band.  Reading
+`sc.priority` here made a passive server inherit its client's priority for the
+duration of the call *and*, through `updatePrioritySource`, let a
+`.tcbSetPriority` on that server rewrite the client's reservation. -/
 @[inline] def resolveEffectivePrioDeadline (st : SystemState) (tcb : TCB)
     : SeLe4n.Priority × SeLe4n.Deadline :=
   let (basePrio, dl) := match tcb.schedContextBinding with
     | .unbound => (tcb.priority, tcb.deadline)
-    | .bound scId | .donated scId _ =>
+    | .bound scId =>
       -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
       match st.getSchedContext? scId with
       | some sc => (sc.priority, sc.deadline)
+      | none    => (tcb.priority, tcb.deadline)
+    | .donated scId _ =>
+      -- WS-OD (v0.35.3): the donor's deadline, the donee's own priority.
+      match st.getSchedContext? scId with
+      | some sc => (tcb.priority, sc.deadline)
       | none    => (tcb.priority, tcb.deadline)
   -- D4-B: Apply PIP boost
   match tcb.pipBoost with
@@ -321,11 +337,19 @@ specialised to this thread — the SchedContext-aware effective priority
 This is the bridge that lets the SchedContext-priced run-queue inserts
 (`resolveInsertPriority`, used by `updatePipBoostOnCore` and the bound budget
 re-enqueue) preserve `schedulerPriorityMatchOnCore`.  Generalises
-`effectiveRunQueuePriority_eq_resolve_unbound` to the `.bound` / `.donated`
-cases under the agreement hypothesis. -/
+`effectiveRunQueuePriority_eq_resolve_unbound` to the `.bound` case under the
+agreement hypothesis.
+
+**WS-OD (v0.35.3).**  The hypothesis is stated over
+`SchedContextBinding.ownScId?` — the classifier — rather than over
+`scId?`, and so ranges over `.bound` alone; the `.donated` arm needs no
+agreement at all, because since the donee-priority split it reads
+`tcb.priority` directly.  This is a *strictly weaker* hypothesis for the same
+conclusion: a caller holding the old `scId?`-shaped fact still discharges it
+through `SchedContextBinding.ownScId?_eq_scId?_of_isSome`. -/
 theorem resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree
     (st : SystemState) (tcb : TCB)
-    (h : ∀ scId, tcb.schedContextBinding.scId? = some scId →
+    (h : ∀ scId, tcb.schedContextBinding.ownScId? = some scId →
           ∀ sc, st.getSchedContext? scId = some sc → sc.priority = tcb.priority) :
     (resolveEffectivePrioDeadline st tcb).1 = effectiveRunQueuePriority tcb := by
   cases hb : tcb.schedContextBinding with
@@ -342,14 +366,49 @@ theorem resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree
       cases hboost : tcb.pipBoost <;>
         simp [resolveEffectivePrioDeadline, effectiveRunQueuePriority, hb, hsc, hboost, hp]
   | donated scId owner =>
-    cases hsc : st.getSchedContext? scId with
-    | none =>
+    -- WS-OD (v0.35.3): unconditional — the arm reads `tcb.priority`.
+    cases hsc : st.getSchedContext? scId <;>
       cases hboost : tcb.pipBoost <;>
         simp [resolveEffectivePrioDeadline, effectiveRunQueuePriority, hb, hsc, hboost]
-    | some sc =>
-      have hp : sc.priority = tcb.priority := h scId (by rw [hb]; rfl) sc hsc
+
+/-- WS-OD (v0.35.3): the base-priority half of `resolveEffectivePrioDeadline`
+**is** `SystemState.threadBasePriority`, unconditionally.  This is the pin that
+`Selection.lean`'s resolver and `Model/State.lean`'s canonical answer to "what
+priority does this thread run at" cannot diverge: a site that classified
+`.donated` the other way would fail to elaborate here. -/
+theorem resolveEffectivePrioDeadline_fst_eq_threadBasePriority
+    (st : SystemState) (tcb : TCB) :
+    (resolveEffectivePrioDeadline st tcb).1 =
+      (match tcb.pipBoost with
+       | none => st.threadBasePriority tcb
+       | some boostPrio => ⟨Nat.max (st.threadBasePriority tcb).val boostPrio.val⟩) := by
+  cases hb : tcb.schedContextBinding with
+  | unbound =>
+    cases hboost : tcb.pipBoost <;>
+      simp [resolveEffectivePrioDeadline, SystemState.threadBasePriority, hb, hboost]
+  | bound scId =>
+    cases hsc : st.getSchedContext? scId <;>
       cases hboost : tcb.pipBoost <;>
-        simp [resolveEffectivePrioDeadline, effectiveRunQueuePriority, hb, hsc, hboost, hp]
+        simp [resolveEffectivePrioDeadline, SystemState.threadBasePriority, hb, hsc, hboost]
+  | donated scId owner =>
+    cases hsc : st.getSchedContext? scId <;>
+      cases hboost : tcb.pipBoost <;>
+        simp [resolveEffectivePrioDeadline, SystemState.threadBasePriority, hb, hsc, hboost]
+
+/-- WS-OD (v0.35.3): the donee's effective priority is its own effective
+priority — `effectiveRunQueuePriority`, the TCB-only reading the run queue
+records — with no hypothesis about the donor's reservation.  The payoff of the
+split, stated where the scheduler reads it. -/
+theorem resolveEffectivePrioDeadline_fst_of_donated
+    (st : SystemState) (tcb : TCB)
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    (hDonated : tcb.schedContextBinding = .donated scId owner) :
+    (resolveEffectivePrioDeadline st tcb).1 = effectiveRunQueuePriority tcb := by
+  refine resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree
+    st tcb ?_
+  intro scId' hSrc
+  rw [hDonated] at hSrc
+  exact absurd hSrc (by simp)
 
 -- ============================================================================
 -- R5.C (DEEP-SCH-02): Total effective-scheduling-parameter resolution
@@ -377,11 +436,19 @@ theorem resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree
 
 /-- R5.C (DEEP-SCH-02): Total effective-scheduling-parameter resolution.
 
-Returns `(priority, deadline, domain)` unconditionally:
-- For bound/donated threads with a resolvable SchedContext, the SC fields
-  are used.
+Returns `(priority, deadline, domain)` unconditionally, and **which object
+supplies each component is the WS-OD (v0.35.3) split**:
+- `deadline` is **reservation-owned** and comes from the SchedContext the thread
+  *runs on* (`SchedContextBinding.scId?`) at every binding, `.donated` included:
+  being charged to a reservation and answering to its deadline is what a
+  donation is.
+- `priority` and `domain` are **thread-owned** and come from the SchedContext
+  the thread *owns* (`ownScId?`), which is `.bound` alone, and otherwise from
+  the TCB.  A donee therefore keeps its own scheduling band and its own
+  partition — the latter matching what the scheduler actually does, since every
+  live domain filter reads `tcb.domain`.
 - For unbound threads or threads whose SC lookup fails (unreachable under
-  `schedContextStoreConsistent`), the TCB fields are used.
+  `schedContextStoreConsistent`), the TCB fields are used throughout.
 - PIP boost (`tcb.pipBoost`) is applied via `Nat.max` against the base
   priority, mirroring `resolveEffectivePrioDeadline`'s composition.
 
@@ -396,12 +463,30 @@ R5.C.1 retired that variant in favour of this total form. -/
     match tcb.pipBoost with
     | none => (tcb.priority, tcb.deadline, tcb.domain)
     | some boost => (⟨Nat.max tcb.priority.val boost.val⟩, tcb.deadline, tcb.domain)
-  | .bound scId | .donated scId _ =>
+  | .bound scId =>
     match st.getSchedContext? scId with
     | some sc =>
       match tcb.pipBoost with
       | none => (sc.priority, sc.deadline, sc.domain)
       | some boost => (⟨Nat.max sc.priority.val boost.val⟩, sc.deadline, sc.domain)
+    | none =>
+      match tcb.pipBoost with
+      | none => (tcb.priority, tcb.deadline, tcb.domain)
+      | some boost => (⟨Nat.max tcb.priority.val boost.val⟩, tcb.deadline, tcb.domain)
+  | .donated scId _ =>
+    -- WS-OD (v0.35.3): the donor's **deadline** — the reservation-owned
+    -- parameter a donee is charged against — and the donee's own priority and
+    -- domain, which are thread-owned (`SchedContextBinding.ownScId?`).  Domain
+    -- is not cosmetic here: `chooseBestRunnableInDomainEffective` and every
+    -- other live domain filter read `tcb.domain`, so reporting `sc.domain` for
+    -- a donee described a partition the scheduler never puts it in.
+    -- `effectiveSchedParams_priority_deadline_eq_resolve` pins the priority and
+    -- deadline against `resolveEffectivePrioDeadline`.
+    match st.getSchedContext? scId with
+    | some sc =>
+      match tcb.pipBoost with
+      | none => (tcb.priority, sc.deadline, tcb.domain)
+      | some boost => (⟨Nat.max tcb.priority.val boost.val⟩, sc.deadline, tcb.domain)
     | none =>
       match tcb.pipBoost with
       | none => (tcb.priority, tcb.deadline, tcb.domain)

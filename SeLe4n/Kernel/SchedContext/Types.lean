@@ -175,8 +175,9 @@ structure SchedContext where
   boundThread : Option SeLe4n.ThreadId := none
   /-- WS-OD OD2.1: the head of this SchedContext's MCS reply stack — seL4-MCS's
       `sc->scReply`.  A `Call` that donates this context pushes the donor's
-      Reply object here (`Reply.donatedSc = some scId`, `Reply.prev` = the
-      previous head), and the donation return pops it; the stack is what makes
+      Reply object here (`Reply.next = some (.head scId)`, `Reply.prev` = the
+      previous head, whose own `next` becomes `.frame` of the pushed Reply since
+      `v0.35.4`), and the donation return pops it; the stack is what makes
       donation *transitive*, so a passive server can itself Call and pass the
       context on.  `Reply.wellFormed`'s docstring has named this field since
       SM6.D — it is built rather than designed around, and building it is also
@@ -282,11 +283,99 @@ deriving Repr, DecidableEq
 
 namespace SchedContextBinding
 
+/-- `v0.35.4`: is this binding a donation?  The one-word form of the question
+`schedContextUnbind` asks (a donated holder is not unbound in place), so the
+transition and every proof about it read one predicate. -/
+def isDonated : SchedContextBinding → Bool
+  | .donated _ _ => true
+  | _ => false
+
+@[simp] theorem isDonated_unbound : isDonated .unbound = false := rfl
+@[simp] theorem isDonated_bound (scId : SeLe4n.SchedContextId) :
+    isDonated (.bound scId) = false := rfl
+@[simp] theorem isDonated_donated (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId) :
+    isDonated (.donated scId owner) = true := rfl
+
 /-- Extract the SchedContextId if bound or donated, `none` if unbound. -/
 @[inline] def scId? : SchedContextBinding → Option SeLe4n.SchedContextId
   | .unbound => none
   | .bound scId => some scId
   | .donated scId _ => some scId
+
+/-- The SchedContext this binding **owns**, `none` when the thread owns none.
+
+This is the counterpart to `scId?`, and the difference is the whole of
+seL4-MCS's donation semantics: `scId?` is the reservation a thread **runs on**
+(`.bound` *or* `.donated`), while `ownScId?` is the one it **owns** (`.bound`
+alone).  The two govern different halves of a thread's scheduling parameters:
+
+* **Reservation-owned** — budget, period and deadline — come from `scId?` at
+  every binding.  A donee is charged to the donor's reservation and answers to
+  its deadline; that is what a donation *is*.
+* **Thread-owned** — base priority and domain — come from the thread's own
+  `TCB` fields, mirrored onto `ownScId?`'s SchedContext by the AK2-B
+  propagation convention and read back from it there.  A donee keeps its own
+  scheduling band and its own domain, and rises to the client's band only
+  through priority inheritance.  In seL4 these two live on the TCB
+  (`tcb->tcbPriority`, `tcb->tcbDomain`) and the scheduling context carries
+  budget and period; `schedContext_donate` moves the reservation and touches
+  neither.
+
+Reading the donor's SchedContext for a donee's thread-owned parameters is an
+authority crossing in both directions, and both were live before WS-OD
+(v0.35.3): `.tcbSetPriority` / `.tcbSetMCPriority` on a passive server rewrote
+the **client's** reservation, and `schedContextConfigure` on the client's
+reservation rewrote the **server's** own priority and domain.  Neither syscall's
+authority says anything about the other principal.
+
+Every reader and writer of a thread-owned parameter classifies through this
+function rather than matching the binding itself, so a binding constructor added
+later (WS-CB's hierarchical servers) must be classified here before it compiles
+— the enumeration-standing-in-for-a-derivation shape `CLAUDE.md` forbids.
+`SystemState.threadBasePriority` (`Model/State.lean`) is the state-level
+resolver built on it. -/
+@[inline] def ownScId? : SchedContextBinding → Option SeLe4n.SchedContextId
+  | .unbound => none
+  | .bound scId => some scId
+  | .donated _ _ => none
+
+/-- A thread's own reservation is always one it runs on: `ownScId?` is a
+*narrowing* of `scId?` rather than a second, independent resolution, so the two
+can never name different contexts. -/
+theorem ownScId?_eq_scId?_of_isSome (b : SchedContextBinding)
+    {scId : SeLe4n.SchedContextId} (h : b.ownScId? = some scId) :
+    b.scId? = some scId := by
+  cases b <;> simp_all [ownScId?, scId?]
+
+/-- A thread owns its reservation exactly on `.bound`. -/
+@[simp] theorem ownScId?_bound (scId : SeLe4n.SchedContextId) :
+    (SchedContextBinding.bound scId).ownScId? = some scId := rfl
+
+/-- A donee owns no reservation: it runs on one it was lent, so its
+thread-owned parameters stay its own — the seL4-MCS split. -/
+@[simp] theorem ownScId?_donated
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId) :
+    (SchedContextBinding.donated scId owner).ownScId? = none := rfl
+
+/-- An unbound thread owns no reservation. -/
+@[simp] theorem ownScId?_unbound :
+    SchedContextBinding.unbound.ownScId? = none := rfl
+
+/-- The classifier's exact characterisation: owning a reservation *is* being
+`.bound` to it.  Consumers that hold a fact about the binding shape and need
+the classifier's form — or the reverse — go through this rather than re-casing,
+so a later constructor cannot be handled at one site and forgotten at
+another. -/
+theorem eq_bound_of_ownScId? {b : SchedContextBinding}
+    {scId : SeLe4n.SchedContextId} (h : b.ownScId? = some scId) :
+    b = .bound scId := by
+  cases b <;> simp_all [ownScId?]
+
+/-- The converse reading, as an `iff`. -/
+theorem ownScId?_eq_some_iff (b : SchedContextBinding)
+    (scId : SeLe4n.SchedContextId) :
+    b.ownScId? = some scId ↔ b = .bound scId :=
+  ⟨eq_bound_of_ownScId?, fun h => by subst h; rfl⟩
 
 /-- Check if the binding references any SchedContext. -/
 @[inline] def isBound : SchedContextBinding → Bool

@@ -243,16 +243,76 @@ def checkAdmission (st : SystemState) (candidate : SchedContext)
 -- Z5-F3: schedContextConfigure
 -- ============================================================================
 
+/-- WS-OD (v0.35.3): may a reconfiguration of SchedContext `scId` propagate its
+**thread-owned** parameters — base priority and domain — into `boundTcb`?
+
+Exactly when `boundTcb` **owns** that reservation.  One predicate for both
+halves of `schedContextConfigureBoundPropagate`, so they provably gate on the
+same fact: a domain gate that asked the question a second way would be the
+"one question, two answers" shape `CLAUDE.md` forbids, and the two halves
+disagreeing is how half a fix reads as a whole one. -/
+def schedContextConfigurePropagates (boundTcb : TCB)
+    (scId : SeLe4n.SchedContextId) : Prop :=
+  boundTcb.schedContextBinding.ownScId? = some scId
+
+instance (boundTcb : TCB) (scId : SeLe4n.SchedContextId) :
+    Decidable (schedContextConfigurePropagates boundTcb scId) := by
+  unfold schedContextConfigurePropagates; infer_instance
+
+/-- A donee's thread-owned parameters are never propagated to: it owns no
+reservation, so no reconfiguration of the one it runs on reaches its TCB. -/
+@[simp] theorem schedContextConfigurePropagates_donated (boundTcb : TCB)
+    {scId held : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    (h : boundTcb.schedContextBinding = .donated held owner) :
+    ¬ schedContextConfigurePropagates boundTcb scId := by
+  simp [schedContextConfigurePropagates, h]
+
+/-- A thread that owns the reconfigured reservation is propagated to — the
+`.bound` case, so neither half of the propagation is dead code. -/
+@[simp] theorem schedContextConfigurePropagates_bound (boundTcb : TCB)
+    {scId : SeLe4n.SchedContextId}
+    (h : boundTcb.schedContextBinding = .bound scId) :
+    schedContextConfigurePropagates boundTcb scId := by
+  simp [schedContextConfigurePropagates, h]
+
 /-- The bound-thread propagation tail of `schedContextConfigure`, factored so
 the invariant surface can speak about it by name: rewrite the bound TCB's
-priority (when it moved), re-bucket the thread on its home core (when
-queued), then align its domain (when it moved).  The body is the verbatim
-propagation tower `schedContextConfigure` carried inline. -/
+priority (when it moved), re-bucket the thread on its home core (when queued),
+then align its domain (when it moved) — **all of it gated on
+`schedContextConfigurePropagates`**, one predicate over
+`SchedContextBinding.ownScId?` that both halves consult.
+
+**WS-OD (v0.35.3) — the mirror authority crossing.**  `sc.boundThread` is the
+thread the reservation is *charged to*, which after a donation is the **donee**,
+not the owner: `donateSchedContext` writes `boundThread := some serverTid`.
+Propagating a reconfiguration there unconditionally let a caller holding a
+capability on the **client's** reservation rewrite the **server's** own
+`TCB.priority` *and* `TCB.domain` — the mirror of the crossing
+`updatePrioritySource` had, and permanent, since the donee keeps both fields
+after the donation returns.  Neither is the caller's to set: `.tcbSetPriority`
+answers to a TCB-write right over the target plus an MCP ceiling, and the domain
+is the partition the thread runs in.
+
+Both halves are propagations of the **thread-owned** parameters onto the
+reservation the thread owns — the AK2-B convention — and the invariants they
+maintain (`boundThreadPriorityConsistent`, `boundThreadDomainConsistent`) are
+both `.bound`-only, so gating on ownership is the exact relation rather than a
+weakening: it fires on every state those invariants constrain.  `scId?` would be
+the wrong classifier here, and the wrong one is what the crossing was.  Both
+halves consult the **one** predicate, so a later cut cannot gate one and not the
+other.
+
+Budget, period and deadline are **reservation-owned** and are written by
+`schedContextConfigure` itself, on the SchedContext, where a donee reads them
+at every depth.  A reconfiguration therefore still retunes the donee's budget
+and deadline, which is correct: that is the reservation the caller holds. -/
 def schedContextConfigureBoundPropagate (stStored : SystemState)
+    (scId : SeLe4n.SchedContextId)
     (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
     (priority domain : Nat) : SystemState :=
   let stProp : SystemState :=
-    if boundTcb.priority.val = priority then
+    if boundTcb.priority.val = priority ∨
+       ¬ schedContextConfigurePropagates boundTcb scId then
       stStored
     else
       let newPri : SeLe4n.Priority := ⟨priority⟩
@@ -271,7 +331,8 @@ def schedContextConfigureBoundPropagate (stStored : SystemState)
       else stWithTcb
   match stProp.getTcb? boundTid with
   | some currentTcb =>
-    if currentTcb.domain.val = domain then stProp
+    if currentTcb.domain.val = domain ∨
+       ¬ schedContextConfigurePropagates boundTcb scId then stProp
     else
       let newDom : SeLe4n.DomainId := ⟨domain⟩
       let currentTcb2 : TCB := { currentTcb with domain := newDom }
@@ -359,8 +420,8 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
               -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
               match stStored.getTcb? boundTid with
               | some boundTcb =>
-                .ok ((), schedContextConfigureBoundPropagate stStored boundTid boundTcb
-                  priority domain)
+                .ok ((), schedContextConfigureBoundPropagate stStored scIdTyped boundTid
+                  boundTcb priority domain)
               | none => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
         else
           .error .resourceExhausted
@@ -369,6 +430,44 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
 -- ============================================================================
 -- Z5-G1/G2/G3: schedContextBind
 -- ============================================================================
+
+/-- WS-OD (`v0.35.4`): does this thread's reply link name a frame that is on a
+live reply stack — one whose upward link is **answered** by what it names?  Such
+a thread is owed a scheduling context by the pop that reaches its frame.
+
+**The test is reciprocity, not `next.isSome`** (PR #894 review).  `severAtCut`
+leaves the frame *below* the cut with a **stale** upward link: cancelling the
+middle caller of `B → M → H` detaches `H` (`prev := none`) and consumes `M`, but
+`B.next` still reads `some (.frame M)`.  `B` is then on no live stack and is owed
+nothing, so refusing its bind refuses an operation `schedContextBind` documents as
+supported (binding a *blocked* thread).  Presence of the link is not the property;
+the property is that the frame or context above answers this frame.
+
+That is the same question `donationChainWalk` validates on the way down — a link
+is validated by the target's own upward link, never by its `caller`, because a
+re-linked Reply carries no answer back — and the one `detachReplyFrameAbove`
+checks before it writes.  Asking it one step is **exact** rather than
+approximate: under `donationChainWellFormed`, `prevLinkReciprocal` and
+`headTerminates` make a reciprocated link a link to a frame that is itself on the
+stack, so no walk is needed and the guard stays `O(1)`.  A frame that really is
+live still answers `true`, so the fail-closed direction is unchanged. -/
+def replyFrameOnLiveStack (st : SystemState) (tcb : TCB) : Bool :=
+  match tcb.replyObject with
+  | none => false
+  | some rid =>
+    match st.getReply? rid with
+    | none => false
+    | some r =>
+      match r.next with
+      | none => false
+      | some (.frame above) =>
+        match st.getReply? above with
+        | none => false
+        | some a => a.prev == some rid
+      | some (.head scId) =>
+        match st.getSchedContext? scId with
+        | none => false
+        | some sc => sc.scReply == some rid
 
 /-- Z5-G1/G2/G3: Bind a thread to a SchedContext.
 1. Precondition: SchedContext has no bound thread, TCB is unbound
@@ -389,6 +488,11 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
     | some sc =>
       -- Z5-G1: Precondition check — SchedContext must not already have a bound thread
       if sc.boundThread.isSome then .error .illegalState
+      -- WS-OD (`v0.35.4`): a context that heads a reply stack is on loan down a
+      -- call chain and owed back along it; binding it elsewhere would give it a
+      -- second claimant the pop then displaces.  Refused until the chain unwinds
+      -- (or its callers are cancelled, which reclaims it).
+      else if sc.scReply.isSome then .error .illegalState
       else
         match st.getTcb? vThreadId.val with
         | some tcb =>
@@ -398,6 +502,13 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
           -- cause a thread to pass the domain filter by TCB domain but be prioritized
           -- by SchedContext domain.
           if tcb.domain != sc.domain then .error .invalidArgument
+          -- WS-OD (`v0.35.4`): a thread blocked on a reply whose frame is on a
+          -- live stack (`next.isSome`) is owed a context by the pop that reaches
+          -- that frame, and the pop writes its binding; giving it a second
+          -- context now would be overwritten by that pop, orphaning this one.
+          -- Refused while the frame is on a stack; a frame the detach cut off
+          -- (`next = none`) is owed nothing, and binding is allowed.
+          else if replyFrameOnLiveStack st tcb then .error .illegalState
           else
           -- Z5-G1: Precondition check — TCB must be unbound.
           -- AI6-D (L-13): `schedContextBind` checks `tcb.schedContextBinding`
@@ -493,6 +604,17 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
       | some tid =>
         match st.getTcb? tid with
         | some tcb =>
+          -- WS-OD (`v0.35.4`): a holder that received the context by donation
+          -- is not unbound here.  The donation pop is keyed on the recorded
+          -- server's `.donated` binding; erasing that binding while the
+          -- context's stack still names the caller left the caller's frame
+          -- dead on the stack when the server later replied (the Reply and the
+          -- context could never be retyped again).  The context's owner
+          -- reclaims it by cancelling the blocked caller, which returns it and
+          -- unbinds the holder.  (seL4 allows the unbind and re-donates at the
+          -- pop because its pop is keyed on the reply object; this kernel keys
+          -- the pop on the binding and refuses the unbind instead — fail closed.)
+          if tcb.schedContextBinding.isDonated then .error .illegalState else
           -- Z5-H1: Preemption guard — if the bound thread is current, clear
           -- current to force rescheduling.  Under dequeue-on-dispatch the
           -- current thread is not in the RunQueue, so clearing current is

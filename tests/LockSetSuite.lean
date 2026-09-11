@@ -135,7 +135,7 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_schedContextConfigure
 #check @lockSet_schedContextBind
 #check @lockSet_schedContextUnbind
-#check @lockSet_tcbSuspend
+#check @SeLe4n.Kernel.lockSet_tcbSuspendOnCore
 #check @lockSet_tcbResume
 #check @lockSet_tcbSetPriority
 #check @lockSet_tcbSetMCPriority
@@ -174,7 +174,7 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_consistent_schedContextConfigure
 #check @lockSet_consistent_schedContextBind
 #check @lockSet_consistent_schedContextUnbind
-#check @lockSet_consistent_tcbSuspend
+#check @SeLe4n.Kernel.lockSet_tcbSuspendOnCore_correct
 #check @lockSet_consistent_tcbResume
 #check @lockSet_consistent_tcbSetPriority
 #check @lockSet_consistent_tcbSetMCPriority
@@ -301,7 +301,7 @@ example : threeTcbLockSet.lockAcquireSequence =
 
 Audit-pass-1 addition: `insertOrMerge` must collapse duplicate keys
 via `AccessMode.lub`.  This is a real correctness scenario for
-`lockSet_tcbSuspend` when `callerTid = targetTcbTid` (self-suspend).
+`lockSet_tcbSuspendOnCore` when `callerTid = targetTcbTid` (self-suspend).
 
 Order should not matter — read+write = write regardless of which
 is inserted first. -/
@@ -324,16 +324,22 @@ example :
 
 /-! ### Self-suspend (`callerTid = targetTcbTid`) collapses TCB locks.
 
-The base list contains (tcb caller, read) and (tcb target, write).
-With caller=target, the lub-merge produces (tcb caller, write).
-Total size = 2 (caller-TCB merged + cnode-root). -/
+The cancellation root contributes (tcb target, write) and the suspend footprint
+adds (tcb caller, read) and (cnode root, read).  With caller=target, the lub-merge
+produces (tcb caller, write), so the total is 2.
+
+**WS-OD (`v0.35.4`)**: taken over `lockSet_tcbSuspendOnCore` at the *default*
+state, where the target resolves to no TCB — the arm that declares the victim's
+lock and nothing else, which is exactly the shape this merge is about.  The
+parametric `lockSet_tcbSuspend` this used to read is retired; its members are
+now resolved from the state the pipeline runs on. -/
 
 example :
-    let S := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none
-    S.size = 2 := by decide
+    let S := SeLe4n.Kernel.lockSet_tcbSuspendOnCore default ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩
+    S.size = 2 := by native_decide
 
 example :
-    let S := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none
+    let S := SeLe4n.Kernel.lockSet_tcbSuspendOnCore default ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩
     S.lockAcquireSequence =
       [(⟨.cnode, ObjId.ofNat 10⟩, .read),
        (⟨.tcb, ObjId.ofNat 5⟩, .write)] := by native_decide
@@ -399,38 +405,58 @@ example :
      (⟨.endpoint, ObjId.ofNat 20⟩, .write),
      (⟨.schedContext, ObjId.ofNat 100⟩, .write)] := by native_decide
 
-/-! ### tcbSuspend with both blocked endpoint and blocked notification: 5 locks. -/
+/-! ### The suspend's optional members, at the two footprints that own them.
+
+**WS-OD (`v0.35.4`)**: the parametric `lockSet_tcbSuspend` carried the victim's
+blocked object, its consumed Reply and its SchedContext binding as its own
+arguments; it is retired, and those members now belong to the two footprints the
+pipeline's sub-operations declare — the teardown's
+(`lockSet_cancelIpcBlocking`, which the suspend footprint is *built over*) and
+the donation cancellation's (`lockSet_cancelDonation`).  The sizes below are the
+same members counted where they now live: the suspend footprint adds the
+caller's TCB read and the CSpace root read on top of the teardown's. -/
+
+/-! ### Teardown with both a blocked endpoint and a blocked notification: 3. -/
 
 example :
-    (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
-      (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) none none).size = 5 := by decide
+    (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
+      (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) none none none none
+      (none, none) none none none none).size = 3 := by decide
 
-/-! ### tcbSuspend with no blocked objects: 3 locks. -/
-
-example :
-    (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none none none).size = 3 := by decide
-
-/-! ### tcbSuspend with `.donated` binding: 6 locks (caller TCB +
-cnode + suspended TCB + donated SC + original owner + — WS-OD OD3.5 — the
-state-level lock the donation cancellation's `scThreadIndex` write takes). -/
+/-! ### Teardown with no blocked objects: the victim's TCB alone. -/
 
 example :
-    (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-      (some ⟨50⟩) (some ⟨7⟩)).size = 6 := by decide
+    (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none none none none none
+      (none, none) none none none none).size = 1 := by decide
 
-/-! ### tcbSuspend with `.bound` binding: 5 locks (caller TCB +
-cnode + suspended TCB + bound SC + the state-level lock). -/
-
-example :
-    (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-      (some ⟨50⟩) none).size = 5 := by decide
-
-/-! ### WS-SM SM6.E — tcbSuspend of a `.blockedOnReply` target: 4 locks
-(caller TCB + cnode + suspended TCB + consumed Reply object). -/
+/-! ### Donation cancellation of a `.donated` binding: 4 (victim + donated SC +
+original owner + — WS-OD OD3.5 — the state-level lock the `scThreadIndex` write
+takes).  The pop's three stack members are `none` on a context heading no
+stack. -/
 
 example :
-    (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none none none
-      (some ⟨60⟩)).size = 4 := by decide
+    (SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
+      none none none).size = 4 := by decide
+
+/-! ### …of a `.bound` binding: 3 (victim + bound SC + the state-level lock). -/
+
+example :
+    (SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) none
+      none none none).size = 3 := by decide
+
+/-! ### WS-SM SM6.E — teardown of a `.blockedOnReply` target: 2 (the victim and
+the Reply object its reply link is consumed from). -/
+
+example :
+    (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none (some ⟨60⟩) none none none
+      (none, none) none none none none).size = 2 := by decide
+
+/-! ### WS-OD (`v0.35.4`) — …and the pop's own three stack objects, on the
+donated arm that performs it: 7. -/
+
+example :
+    (SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
+      (some ⟨60⟩) (some ⟨61⟩) (some ⟨9⟩)).size = 7 := by decide
 
 -- ============================================================================
 -- §5 — LockId.fromObject + LockId.lookup with fixture states
@@ -686,23 +712,34 @@ example :
   lockSet_consistent_call ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
     (some ⟨8⟩) (some ⟨100⟩) (some ⟨7⟩) (some (ObjId.ofNat 42))
 
+-- **WS-OD (`v0.35.4`)**: the `.tcbSuspend` kinds are checked at the two
+-- footprints that declare them — the teardown's, at its widest arm, and the
+-- donation cancellation's — plus the state-resolved suspend footprint the
+-- dispatcher actually hands the bracket.
 example :
-    ∀ p ∈ (lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
-              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
-              none none).pairs,
+    ∀ p ∈ (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
+              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
+              (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
+              (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
+              (some ⟨62⟩) (some ⟨63⟩)).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
-  lockSet_consistent_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
-    (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) none none
+  SeLe4n.Kernel.lockSet_consistent_cancelIpcBlocking ⟨3⟩
+    (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
+    (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
+    (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩) (some ⟨62⟩) (some ⟨63⟩)
 
--- Audit-pass-3: with donation cancel args (.donated case with all 4 Options).
 example :
-    ∀ p ∈ (lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
-              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
-              (some ⟨50⟩) (some ⟨7⟩)).pairs,
+    ∀ p ∈ (SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
+              (some ⟨60⟩) (some ⟨61⟩) (some ⟨9⟩)).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
-  lockSet_consistent_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
-    (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
-    (some ⟨50⟩) (some ⟨7⟩)
+  SeLe4n.Kernel.lockSet_consistent_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
+    (some ⟨60⟩) (some ⟨61⟩) (some ⟨9⟩)
+
+example :
+    ∀ p ∈ (SeLe4n.Kernel.lockSet_tcbSuspendOnCore default ⟨5⟩ (ObjId.ofNat 10)
+              ⟨3⟩).pairs,
+      p.fst.kind ∈ permittedKinds .tcbSuspend :=
+  SeLe4n.Kernel.lockSet_tcbSuspendOnCore_correct default ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
 
 example :
     ∀ p ∈ (lockSet_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩ none).pairs,
@@ -1087,37 +1124,44 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "lifecycleRetype size = 5"
     (decide ((lockSet_lifecycleRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
               (ObjId.ofNat 30)).size = 5))
-  -- TCB suspend with both Option-blocked (no donation): 5 locks.
-  assertBool "tcbSuspend size (block-options some, no donation) = 5"
-    (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
-              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
-              none none).size = 5))
-  -- TCB suspend with no Options: 3 locks.
-  assertBool "tcbSuspend size (no Options) = 3"
-    (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-              none none).size = 3))
-  -- Audit-pass-3: TCB suspend with .bound binding (SC only): 4 locks.
-  -- **WS-OD OD3.5**: 5 — the donation cancellation maintains
-  -- `SystemState.scThreadIndex`, so a suspend that resolves a SchedContext
-  -- also declares the state-level lock.
-  assertBool "tcbSuspend size (.bound binding, SC + index) = 5"
-    (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-              (some ⟨50⟩) none).size = 5))
-  assertBool "a SchedContext-resolving tcbSuspend declares the state-level lock"
+  -- **WS-OD (`v0.35.4`)**: the suspend's optional members, at the two footprints
+  -- that own them since the parametric `lockSet_tcbSuspend` was retired.
+  -- Teardown with both blocked objects: victim + endpoint + notification.
+  assertBool "cancelIpcBlocking size (block-options some, no donation) = 3"
+    (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
+              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) none none none none
+              (none, none) none none none none).size = 3))
+  -- Teardown with no options: the victim alone.
+  assertBool "cancelIpcBlocking size (no Options) = 1"
+    (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none none none none none
+              (none, none) none none none none).size = 1))
+  -- Donation cancellation of a `.bound` binding: victim + SC + index.
+  -- **WS-OD OD3.5**: the state-level lock, because `scThreadIndex` is an
+  -- `RHTable` no per-object lock decomposes.
+  assertBool "cancelDonation size (.bound binding, SC + index) = 3"
+    (decide ((SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) none
+              none none none).size = 3))
+  assertBool "a SchedContext-resolving donation cancellation declares the state-level lock"
     (decide ((stateLevelLock, AccessMode.write)
-      ∈ (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-           (some ⟨50⟩) none).pairs))
-  -- Audit-pass-3: TCB suspend with .donated binding (SC + owner): 5 locks.
-  -- **WS-OD OD3.5**: 6, with the state-level lock the index write needs.
-  assertBool "tcbSuspend size (.donated binding, SC + originalOwner + index) = 6"
-    (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
-              (some ⟨50⟩) (some ⟨7⟩)).size = 6))
-  -- Audit-pass-3: TCB suspend with ALL options (block ep + nti + .donated): 7 locks.
-  -- **WS-OD OD3.5**: 8, same reason.
-  assertBool "tcbSuspend size (full: blocks + .donated + originalOwner + index) = 8"
-    (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
-              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
-              (some ⟨50⟩) (some ⟨7⟩)).size = 8))
+      ∈ (SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) none
+           none none none).pairs))
+  -- …of a `.donated` binding: + the original owner.
+  assertBool "cancelDonation size (.donated binding, SC + originalOwner + index) = 4"
+    (decide ((SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
+              none none none).size = 4))
+  -- **WS-OD (`v0.35.4`)**: …and the pop the donated arm performs — the head it
+  -- clears, the frame below it re-heads and the outer caller it validates.
+  assertBool "cancelDonation size (.donated + the pop's three stack objects) = 7"
+    (decide ((SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
+              (some ⟨60⟩) (some ⟨61⟩) (some ⟨9⟩)).size = 7))
+  -- The widest teardown arm: a reply-arm victim owed a donation whose holder is
+  -- itself blocked, at reply-stack depth ≥ 3.
+  assertBool "cancelIpcBlocking size (full: every member some) = 14"
+    (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
+              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
+              (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
+              (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
+              (some ⟨62⟩) (some ⟨63⟩)).size = 14))
   -- Audit-pass-6 P1: tcbSetPriority with unbound target = 3 locks
   -- (caller TCB read, CNode read, target TCB write — no SC).
   assertBool "tcbSetPriority size (unbound target, no SC) = 3"
@@ -1165,7 +1209,7 @@ private def runLubMergeChecks : IO Unit := do
   assertBool "insertOrMerge read+read at same key gives single (read) entry"
     (decide (s3.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .read)]))
   -- Self-suspend (callerTid = targetTcbTid) collapses TCB locks.
-  let selfSuspend := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none
+  let selfSuspend := SeLe4n.Kernel.lockSet_tcbSuspendOnCore default ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩
   assertBool "tcbSuspend(caller=target) collapses to 2 locks (cnode + merged TCB)"
     (decide (selfSuspend.size = 2))
   assertBool "tcbSuspend(caller=target) merged TCB lock is write"
@@ -1240,18 +1284,52 @@ private def runLubMergeChecks : IO Unit := do
   assertBool "replyRecv that also validates the outer caller's TCB has 10 locks"
     (decide (outerCallerReplyRecv.size = 10))
   -- The widest shape the arm can declare: a delegated, re-donating, caps-carrying
-  -- `.replyRecv` with a distinct original owner, reading both objects below its
-  -- reply-stack head, and relinking the queue-structure TCB its receive leg
-  -- writes (WS-OD OD3.13) — fourteen, which is what `maxLockSetSize` is measured
-  -- against.
+  -- `.replyRecv` with a distinct original owner, reaching both objects below its
+  -- reply-stack head, relinking the queue-structure TCB its receive leg writes
+  -- (WS-OD OD3.13), WS-OD (`v0.35.4`)'s head its pop clears and old head its
+  -- re-donation's push rewrites, and — PR #894's review — the five objects the
+  -- INVOKING receiver's own pre-receive return touches: twenty-one, which is
+  -- what `maxLockSetSize` is measured against.
   let widestReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                           (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
                           (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
                           (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
-  assertBool "the widest declarable .replyRecv has 14 locks (= maxLockSetSize)"
-    (decide (widestReplyRecv.size = 14))
+                          (some ⟨45⟩) (some ⟨46⟩)
+                          (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
+                          (some ⟨15⟩)
+  assertBool "the widest declarable .replyRecv has 21 locks (= maxLockSetSize)"
+    (decide (widestReplyRecv.size = 21))
   assertBool "...and that is exactly maxLockSetSize"
     (decide (widestReplyRecv.size = maxLockSetSize))
+  -- **PR #894 review**: and no *reachable* state declares all twenty-one --
+  -- the re-donation members are live exactly when the endpoint has a queued
+  -- sender and the invoker's pre-receive return exactly when it does not.  The
+  -- widest reachable no-sender shape is eighteen; the widest rendezvous shape is
+  -- sixteen.  Both are exercised here at the same operands so the difference is
+  -- attributable to the mutual exclusion and nothing else.
+  let blockingReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                            (ObjId.ofNat 20) none (some ⟨42⟩) (some ⟨11⟩)
+                            (some ⟨60⟩) true (some ⟨9⟩) none
+                            (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
+                            none (some ⟨46⟩)
+                            (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
+                            (some ⟨15⟩)
+  assertBool "the widest reachable blocking .replyRecv has 18 locks"
+    (decide (blockingReplyRecv.size = 18))
+  let rendezvousReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                              (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
+                              (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
+                              (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
+                              (some ⟨45⟩) (some ⟨46⟩)
+                              none none none none none
+  assertBool "the widest reachable rendezvous .replyRecv has 16 locks"
+    (decide (rendezvousReplyRecv.size = 16))
+  -- NEGATIVE: neither reachable shape reaches the ceiling, which is the whole
+  -- content of `lockSet_endpointReplyRecvOnCore_size_le_eighteen` -- a witness
+  -- asserting only `≤ maxLockSetSize` would pass with the slack claim false.
+  assertBool "NEGATIVE: no reachable .replyRecv shape reaches maxLockSetSize"
+    (!decide (blockingReplyRecv.size = maxLockSetSize
+              || rendezvousReplyRecv.size = maxLockSetSize))
 
 private def runUnionChecks : IO Unit := do
   IO.println "--- §10 LockSet.union semantics ---"
@@ -1275,13 +1353,16 @@ private def runConsistencyRuntimeChecks : IO Unit := do
     decide (p.fst.kind ∈ permittedKinds .send))
   assertBool "lockSet_endpointSend (with receiver): all kinds in permittedKinds .send"
     allOk_send
-  -- A transition with 4 Optional args (.tcbSuspend, full) — all Some.
-  let susp := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
-                (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
-                (some ⟨50⟩) (some ⟨7⟩)
+  -- **WS-OD (`v0.35.4`)**: the `.tcbSuspend` kinds, at the teardown footprint the
+  -- suspend footprint is built over, with every optional member `some`.
+  let susp := SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
+                (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
+                (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
+                (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
+                (some ⟨62⟩) (some ⟨63⟩)
   let allOk_susp := susp.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSuspend))
-  assertBool "lockSet_tcbSuspend (full 4 Options some): all kinds in permittedKinds .tcbSuspend"
+  assertBool "lockSet_cancelIpcBlocking (every Option some): all kinds in permittedKinds .tcbSuspend"
     allOk_susp
   -- **WS-RR RR7.7**: the capability-transfer destination is *declared*, not
   -- merely admissible.  A consistency check asks whether every declared kind is
@@ -1408,6 +1489,46 @@ private def runQueueOwnerFootprintChecks : IO Unit := do
     (decide (queueOwnerOf? blockedTcb = some (.endpoint (ObjId.ofNat 20))))
   assertBool "NEGATIVE: a ready thread is in no object-owned queue"
     (decide (queueOwnerOf? readyTcb = none))
+
+/-- **WS-OD OD4.7 / OD6.3**: the `.call` footprint already declares every object
+the donation **push** writes, which is why the chain costs no ceiling.
+
+`donateSchedContext` writes **five** keys since the reply stack became doubly
+linked (WS-OD `v0.35.4`) -- the donated SchedContext (rebind *and* new stack
+head, one store), the pushed Reply (`prev := oldHead?`, `next := .head scId`),
+the **old head** the push links down to (`next := .frame pushRid`), the donor's
+TCB (`.unbound`) and the receiver's TCB (`.donated`) -- and each is a declared
+WRITE member here.  Relation, not presence: the negative keeps every other
+member and removes the *resolver's answer*, which is what a footprint that
+failed to resolve the donation would look like, and the size check is stated
+against `maxLockSetSize` rather than against a numeral (WS-OD OD3.19's rule:
+a figure interpolated from the constant cannot drift away from it). -/
+private def runDonationPushFootprintChecks : IO Unit := do
+  IO.println "--- §19 WS-OD OD4.7 the `.call` footprint covers the donation push ---"
+  let caller : ThreadId := ⟨5⟩
+  let receiver : ThreadId := ⟨6⟩
+  let scId : SchedContextId := ⟨70⟩
+  let rid : ReplyId := ⟨71⟩
+  let oldHead : ReplyId := ⟨72⟩
+  let donating := lockSet_endpointCall caller (ObjId.ofNat 10) (ObjId.ofNat 20)
+    (some receiver) (some scId) (some rid) none none (some oldHead)
+  let undonating := lockSet_endpointCall caller (ObjId.ofNat 10) (ObjId.ofNat 20)
+    (some receiver) none (some rid) none none none
+  assertBool "the donated SchedContext is a declared WRITE member"
+    (donating.pairs.any (fun p => decide (p = (schedContextLock scId, AccessMode.write))))
+  assertBool "...so is the Reply the pushed frame IS"
+    (donating.pairs.any (fun p => decide (p = (replyLock rid, AccessMode.write))))
+  assertBool "...so is the receiver's TCB, which the push rebinds `.donated`"
+    (donating.pairs.any (fun p => decide (p = (tcbLock receiver, AccessMode.write))))
+  assertBool "...and the donor's own TCB, which the push leaves `.unbound`"
+    (donating.pairs.any (fun p => decide (p = (tcbLock caller, AccessMode.write))))
+  assertBool "...and (WS-OD `v0.35.4`) the old head the push links down to"
+    (donating.pairs.any (fun p => decide (p = (replyLock oldHead, AccessMode.write))))
+  assertBool "NEGATIVE: with no donation resolved the SchedContext lock is absent"
+    (decide (undonating.pairs.all (fun p => p.fst.kind ≠ .schedContext)))
+  IO.println s!"    declared ceiling: maxLockSetSize = {maxLockSetSize}"
+  assertBool "the donating `.call` footprint fits the declared ceiling"
+    (decide (donating.size ≤ maxLockSetSize))
 
 /-- Audit-pass-6 P1/P2 runtime checks: per-syscall lock-set
 correctness against the actual kernel transitions traced. -/
@@ -1682,6 +1803,7 @@ def runLockSetChecks : IO Unit := do
   runPipChainStartChecks
   runAuditPass6FootprintChecks
   runQueueOwnerFootprintChecks
+  runDonationPushFootprintChecks
   IO.println "======================================"
   IO.println "All SM3.B LockSet checks PASS."
 

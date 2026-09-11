@@ -1,3 +1,728 @@
+## v0.35.5 — the `.replyRecv` footprint declares the invoker's own pre-receive return
+
+**One P1 and two P2 findings from an automated review of PR #894, all three
+verified against the code before being fixed — and verifying the P1 turned up a
+fourth defect the previous cut had introduced.**
+
+### 1. A delegated `.replyRecv` wrote four kernel objects under no declared lock
+
+`.replyRecv`'s receive leg **is** `.receive`'s transition. So when the endpoint
+has no queued sender it runs `cleanupPreReceiveDonationChecked` on the
+**invoking** thread — and the arm's own donation return runs *after* the receive
+leg, so the invoker still carries whatever `.donated` binding it entered with.
+That pre-receive return writes a SchedContext, the previous owner's TCB, the
+reply-stack head it clears and the frame below it re-heads, and reads the outer
+caller's TCB before validating it.
+
+`lockSet_endpointReplyRecvOnCore` named none of them. Every state-dependent
+member it declared resolved off the reply's *target* or the endpoint's
+send-queue head; `replier` was consumed exactly once in the whole body, as the
+footprint's first argument. On a **non-delegated** reply the recorded server
+*is* the invoker and the reply leg has just made it `.unbound`, so the second
+pop is inert — that coincidence is what delegation breaks, and two threads
+cannot be bound to one scheduling context, so the recorded server's members
+provably never alias the invoker's.
+
+A footprint that omits a written object is **false**, not conservative: a
+delegated `.replyRecv` on one core and a `.tcbSuspend` of the donation's
+previous owner on another had *provably disjoint* footprints while both writing
+that owner's TCB, and the outer-caller read is a validate-then-commit, so
+leaving it undeclared is a time-of-check/time-of-use window on the thread about
+to be handed a scheduling context. **Medium**, and latent rather than live:
+SM5.I's global kernel-entry ticket lock serialises every kernel entry and
+nothing boots yet, so this is a verification defect — everything built on
+`lockSetForSyscall` was *silent* about those objects rather than conservative.
+
+`lockSet_replyRecv` therefore takes the same five `preReturn*` optionals
+`lockSet_endpointReceive` has carried since `v0.35.4`, resolved through the same
+two resolvers on `replier`, with `lockSet_endpointReplyRecvOnCore_covers_preReturn`
+the statement that it does — the twin of the `.receive` theorem, and a twin
+rather than a corollary because a member declared on the other arm's footprint
+says nothing about this one's. The state-level member gains a **fourth**
+disjunct: on a delegated reply whose recorded server holds no donation the other
+three are all false, so without it the `scThreadIndex` write is undeclared on
+exactly the shape this exists for.
+
+#### …and the gap was excused by a theorem that does not exist
+
+The footprint carried a note saying the delegated shape was safe because "the
+entry resolver refuses the one shape where it does not
+(`lockSetForSyscall_replyRecv_refuses_donated_delegate`)". **No such theorem was
+ever written** — a whole-tree grep returned one hit, the citation itself, and
+`git log -S` shows the string entering with the commit that added the *citation*.
+The excuse was false in substance too: `lockSetForSyscall_replyRecv_isSome_iff`
+shows the declare condition has no delegation or donation conjunct, and WS-OD
+OD3.5 had already **retired** the refusal it named
+(`lockSetForSyscall_replyRecv_delegated`, concluding `none`), with a Tier 3
+*negative* now forbidding its return. So the coarse-serialisation fallback the
+gap would have needed was gone, while the gap stayed open behind a reference a
+reader would have trusted. The citation is deleted and replaced with what is
+now true.
+
+#### The ceiling moves, and that is the cost
+
+`maxLockSetSize` is **16 → 21** (`4 + 17`). It bounds the union over *all*
+argument values — that is what `boundedWait_under_2pl` and the WCRT surface
+consume — so the mutual exclusion below cannot be used to keep it lower. Every
+derived figure moves with it and each is a theorem, not a paragraph: the RPi5
+1 ms tick admits **15 µs** per lock (`1000 / 63`, from 20), the uniform 60 µs
+envelope is **3780 µs** (from 2880), and `rpi5Tick_refuses_sixty_micro_sections`
+still holds. `scripts/check_lock_ceiling_figures.py` held every prose copy of
+the three to the Lean sources and failed on each stale one, which is what it is
+for.
+
+**How much of that ceiling is slack is stated, not left to be re-derived** (the
+OD3.7 precedent). The re-donation members are live exactly when the endpoint has
+a queued sender, and the invoker's pre-receive return exactly when it does not,
+so no state carries both groups:
+`lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds **every** state at
+eighteen **with no hypothesis at all**, and the owner merge takes a reachable
+`.replyRecv` to seventeen (`…_size_le_seventeen`). Three of the twenty-one are
+slack no state can take up. Both are exercised at both reachable widths in
+`tests/LockSetSuite.lean`, with the negative that neither shape reaches the
+ceiling — a witness asserting only the parametric bound would pass with the
+slack claim false.
+
+#### One question, one answer: the send-queue head
+
+Verifying the above found a fourth defect, introduced by `v0.35.4`:
+`lockSet_endpointReplyRecvOnCore` resolved the send-queue head with an **inlined
+copy** of `receiveRendezvousSender?`'s body, while the queue-structure
+neighbour, the re-donated context and the pre-receive return in the *same
+footprint* all called the function. The two answers are definitionally equal, so
+nothing was ever wrong at runtime; what it cost is that no statement about the
+send queue could reach that member — which is why the reachable size bound could
+not be stated branch-wise until the duplicate went. Anchored in both directions
+at Tier 3.
+
+### 2. The bind guard refused frames that are on no stack
+
+`replyFrameOnLiveStack` asked `r.next.isSome` — a **presence** check standing in
+for a **relation**, the shape this project sweeps for. `severAtCut` deliberately
+leaves the frame *below* the cut with a stale upward link: on `B → M → H`,
+cancelling `M` detaches `H.prev` and consumes `M`, but `B.next` still reads
+`some (.frame M)`. `B` is on no live stack and is owed nothing, yet its
+`schedContextBind` was refused with `.illegalState` — on a path the transition
+explicitly supports, since it binds a **blocked** thread. The guard's own comment
+named the relation it meant ("a frame the detach cut off is owed nothing");
+`isSome` is not that relation.
+
+It now asks the one-step **reciprocity** question the tree already asks —
+`.frame above` counts only when `above.prev = some rid`, `.head sc` only when
+`sc.scReply = some rid`. That is `donationChainFrom`'s own test and
+`detachReplyFrameAbove`'s pre-write check, it is `O(1)`, and it is **exact**
+under `donationChainWellFormed`, where `prevLinkReciprocal` and `headTerminates`
+make one-step reciprocity equivalent to liveness. A live frame still reads
+`true`, so the fail-closed direction is unchanged.
+
+### 3. The frozen unbind did not mirror the live one
+
+`v0.35.4` gave `schedContextUnbind` an `isDonated` guard: a context whose holder
+still carries a `.donated` binding cannot be unbound, because clearing it builds
+the dead stack the whole cut exists to prevent. `frozenSchedContextUnbind`
+cleared `sc.boundThread` and the holder's binding **unconditionally**, while its
+own docstring opens *"Mirrors `schedContextUnbind` in frozen state."* One
+question, two answers — and the docstring described the better behaviour, so the
+code moved, not the docstring. Test-only surface, so this is model consistency
+rather than live security.
+
+### Mechanical notes
+
+* `size_le_14`..`size_le_17` and `size_le_10_over`..`size_le_14_over` join the
+  combinator family; `lockSet_consistent_replyRecv` is restated through
+  `…_base_plus_seventeen_opts`.
+* Every statement about `lockSet_replyRecv` is restated at the **new full
+  arity** — the two size bounds, the twelve write-membership lemmas, the
+  `lockSetTransitions_within_bound` conjunct, `KernelOperation.ofReplyRecv`, the
+  capless equation and both resolved bounds. A bound left at a new argument's
+  default is a different proposition, which `LockFootprintBoundCensus` refuses;
+  two membership lemmas were caught mid-cut in exactly that state.
+* `receivePreReturnStack?_of_sender` is the stack-level reading of the mutual
+  exclusion, stated beside the resolver rather than re-derived at each bound.
+* `docs/planning/REPLY_FRAME_REMOVAL_PLAN.md` §3.5 / RM3.4 are re-baselined: the
+  ceiling they assume WS-RM moves is 21 → 22, and the sharp reachable bound they
+  cite is no longer fifteen.
+* `scripts/store_reader_hygiene_baseline.txt` is re-anchored for the documented
+  refactor: `getendpoint_adoption` falls 180 → 179 because the duplicated
+  send-queue-head read went, and `getschedctx_adoption` rises 351 → 352 for the
+  bind guard's new `getSchedContext?` read.  `RAW_MATCH_ENDPOINT` is unmoved and
+  the per-(file, variant) inventory reports no new or grown site, which is what
+  says the drop is a deletion rather than a hygienic read turning raw.
+
+## v0.35.4 — the reply stack is doubly linked, and every pop and push is declared
+
+**Three findings, reported before being fixed.  The first two share one cause: a
+reply-stack frame that the kernel could reach but never take out.**
+
+### 1. A cancelled middle caller left a frame nothing could ever clear
+
+`Reply` carried `donatedSc` and `prev`: the scheduling context this frame
+donates, and the frame below it.  The stack was **singly** linked downward, and
+every frame carried the context — so taking a frame out of the *middle* of a
+stack was not an operation the structure supported.  `cancelIpcBlocking`'s reply
+arm did the only thing it could: it consumed the caller's reply link and left the
+frame where it was.  The later pop then met that frame below the head, bound the
+context outright (`severAtCut`) and left the **dead frame heading the stack**,
+with `donatedSc` set and no caller.
+
+From there nothing could clear it.  `linkReply` refuses a Reply that still
+donates (OD5), `lifecyclePreRetypeCleanup` refuses a context that still heads a
+stack (OD5) — both deliberately, because clearing either would take a frame off a
+stack the context still heads and stop the walk mid-chain.  So the Reply object
+and the SchedContext were **pinned for the lifetime of the system**: never
+retypeable, never re-linkable, and holding a `donationChainWellFormed` obligation
+against an object no operation could reach.  Reachable from an ordinary
+`.tcbSuspend` on a middle caller of a depth-≥ 2 chain — authority over one client,
+a permanent leak of two kernel objects per occurrence.  **Medium**: resource
+exhaustion under repetition, not privilege escalation and not a leak of data.
+
+**The remedy is seL4's own structure.**  `Reply.next : Option ReplyStackLink`
+replaces `donatedSc`, and `ReplyStackLink` is seL4's `call_stack_t` as a sum:
+`.frame above` names the frame pushed above this one, `.head sc` names the
+scheduling context whose stack this frame heads.  A sum rather than two fields,
+so *head*, *has a frame above* and *off every stack* (`none`) are three states of
+one value and no object can claim two at once.  **The context is recorded at the
+head only** — which is the whole point of the encoding: a frame taken out of the
+middle repairs its two neighbours and nothing else, where a per-frame context
+field would have to be cleared on every frame below the cut (an `O(depth)` walk,
+or, left undone, exactly the dead frame above).
+
+So `cancelIpcBlocking`'s reply arm now runs `detachCancelledCallerFrame` —
+seL4's `reply_remove_tcb`, non-head arm — which makes the frame above stop
+linking down to the cancelled one (`detachReplyFrameAbove`, `prev := none`).  The
+frame above becomes the bottom of the stack it heads, the next pop binds its
+caller outright, and the cancelled frame leaves the structure when its caller
+link is consumed one step later.  The `severAtCut` policy is unchanged: it is
+still seL4-MCS's answer and still costs the original owner's reservation to the
+innermost live caller.  What changed is that the cut no longer strands an object.
+
+Four things new code must respect.  (1) **The detach is the identity on a head
+and on an already-unlinked frame**, deliberately: a head is *popped* by the
+reclaim, never detached, and a reclaim that declined on a head is an invariant
+violation this step must not paper over by dropping a stack.  (2) **It is
+all-or-nothing**: a detach that cannot repair the frame above — a link that does
+not point back — commits nothing, since rewriting a frame on the strength of a
+stale upward link is the trust the structure withholds.  (3) **The pop is two
+stores, not one**: `storeDonationHeadPop` is `storeDonationHeadClear` followed by
+`storeReplyReHead`, because the frame below the popped head becomes the new head
+and must be told so (`next := .head scId`).  (4) **`Reply.wellFormed` is
+`r.caller = none → r.prev = none ∧ r.next = none`** — a consumed reply is off
+every stack in both directions, which is what makes `Reply.consumed` decidable
+locally.
+
+**The seL4 attribution is corrected where it was wrong.**  The `v0.34.97`
+reclaim's docstrings and `CLAUDE.md` called it "seL4-MCS's `reply_remove`".  It
+is not: `reply_remove` is the *reply path's* pop, which donates the context back;
+`cancelIPC` on a reply-blocked thread runs **`reply_remove_tcb`**, which takes the
+frame out and donates nothing.  This kernel's reclaim does both, because it is
+the innermost live caller's frame that is being cut; the middle-caller case is
+`reply_remove_tcb` alone, and that is the case that had no implementation.
+
+**The writing arm is witnessed, and so is the wedge it removes.**  Every
+`detachReplyFrameAbove` theorem is discharged on a state whose frame has nothing
+above it, where the step is the *identity* -- so a writing arm that stored the
+wrong field would satisfy all of them, which is the shape this project's own rule
+warns about (*a theorem discharged only where the arm does not fire is
+indistinguishable from one whose arm is wrong*).  `tests/SmpIpcSuite.lean` §3.18
+now runs the depth-2 push, severs the outer caller's frame and completes the pop
+that used to refuse, and its paired negative runs the **same** consume with the
+detach omitted -- every object still present, every field the consume writes
+identical, only the relation between the head and the frame below it broken.  A
+witness without that negative would have passed before the fix and after it.
+
+Two further pairs come with it.  The primitive's two fail-closed arms are told
+apart (a frame above that does not link back is `.invalidArgument`; one that
+resolves to no Reply is `.objectNotFound`), since a single `.error` assertion
+would pass with the two merged.  And the wrapper's fold of a refusal to the
+identity is checked *through its consequence*: the caller **below** a cut meets a
+frame whose upward link no longer reciprocates, so a propagating refusal there
+would wedge that second cancellation in turn -- which is why the fold is part of
+the design rather than defensive tidying.  Seven Tier 3 anchors pin the witness,
+because a fixture nothing names can be deleted silently.
+
+### 2. Four pops and two pushes wrote objects no footprint named
+
+Found while auditing the fix above, and reported separately because it is a
+*verification* defect rather than a live race — SM5.I's global entry lock
+serialises every kernel entry, and nothing boots yet.  A footprint that omits a
+written object is **false**, and everything built on `lockSetForSyscall` — the
+2PL serialisation results, `boundedWait_under_2pl`, the CC-5 contention bound —
+was *silent* about these objects rather than conservative.
+
+* **`.receive`'s pre-receive return.**  A `.donated` receiver that finds no sender
+  queued runs `cleanupPreReceiveDonationChecked` before it blocks: a full pop,
+  writing the context, the previous owner's TCB, the head Reply and the frame
+  below it, and reading the outer caller.  None of it was declared.  `.receive`'s
+  `donatedScId` is the *incoming* rendezvous donation, which is `none` on exactly
+  the arm where this pop runs.  Now `receivePreReturn?` / `receivePreReturnStack?`
+  resolve it from the two fields the transition branches on.
+* **The `.tcbSuspend` pipeline.**  `suspendFootprintOf` resolved the donation
+  cancellation's members from the victim's **pre-state** binding, while
+  `suspendThreadOnCore`'s G3 arm dispatches on the binding the *teardown* leaves —
+  and the `v0.34.97` reclaim rebinds a cancelled caller mid-teardown.  So the
+  reclaim itself, and at depth ≥ 2 the second pop it provokes, wrote objects the
+  footprint never named, on both live suspend seams.
+* **`lockSet_cancelDonation`** named none of the pop's three stack objects, while
+  its donated arm *is* `returnDonatedSchedContextResolved`.
+* **The push's old head.**  `storeDonationFramePush` rewrites the previous head
+  (`next := .frame pushRid`) — a fifth object `.call`, `.receive` and
+  `.replyRecv`'s re-donation all write and none declared.
+
+**The `.tcbSuspend` footprint is now rooted at the cancellation footprint.**
+`lockSet_tcbSuspendOnCore` (`IPC/CrossCore/Cancellation.lean` §8) is *defined
+over* `lockSet_cancelIpcBlockingOnCore` and adds only what the pipeline adds — the
+caller's two read locks, and the donation cancellation's members resolved on the
+binding the teardown leaves.  The teardown's coverage is one lift
+(`_covers_cancelIpcBlockingOnCore`) rather than a member-by-member family, so a
+member the cancellation gains reaches the syscall without being added twice.  The
+parametric `lockSet_tcbSuspend`, its consistency lemma, its six `_write_mem`
+theorems, its size bound and `KernelOperation.ofTcbSuspend` are **retired**: one
+question answered in two places, which is how the pre-state resolution drifted
+from the transition in the first place.
+
+**The ceiling is 16.**  `admissibleCriticalSection` for the 1 ms tick falls
+23 → **20 µs**, and the uniform 60 µs envelope moves 2520 → **2880 µs**.  Both are
+derived from the constant and move with it; `scripts/check_lock_ceiling_figures.py`
+holds the five prose copies to the Lean sources.  Two footprints reach it now, not
+one: the widest `.replyRecv` (base 4 + twelve optionals) and the widest
+`.tcbSuspendOnCore` — a reply-arm victim owed a donation at reply-stack depth ≥ 3,
+where the second pop's own members sit on top of the teardown's twelve.  Read the
+cost against the alternative, as every previous raise was: a footprint that omits
+a written object is false, and this project rates that worse than a wide one.
+
+One shape is **refused** rather than declared: a victim owed a reclaim that
+*already* holds a binding (`cancelledCallerAlreadyBound`), which
+`donationOwnerValid` excludes from every reachable state.  On such a state the
+reclaim would overwrite the binding the tail was resolved from, so no single
+footprint inside the ceiling describes both what the reclaim leaves and what a
+*refused* reclaim would then touch.  `suspendFootprintOf` answers `none` there and
+the seam falls back to the coarse serialisation, which is always sound.
+
+### 3. A nightly gate that could not build
+
+`tests/TraceSequenceProbe.lean` still passed `endpointSendDualChecked` the
+`senderCspaceRoot` argument WS-RR RR7.33 deleted at `v0.34.x`.  The probe is a
+Tier-4 executable, so no tier script from 0 to 3 builds it and the arity error
+survived every gate since.  One argument deleted; the lesson is recorded rather
+than the fix — a gate whose *build* is outside the tiers that run on every PR is
+a gate that is only checked when someone runs it.
+
+### 4. …and the same defect's remaining shape, registered rather than closed
+
+Found by auditing §1's own remedy.  The detach went into the **cancellation**
+path; the **reply** path still runs `SystemState.consumeCallerReply` with no
+detach, and `Reply.consumed` clears both links on any frame that is not a head.
+So a reply to a caller whose frame has a frame *above* it falsifies
+`donationChainWellFormed.prevLinkReciprocal` at that frame.
+
+Reachable, because the reply seam's own docstring records that authority flows
+from **holding** the reply capability and that a copied or minted one held by a
+different server is legitimate delegated authority: on a chain `C1 → C2 → S`, a
+delegate can answer `C1` out of order while `S` has pushed a frame above `C1`'s.
+
+**Fail-closed, not a corruption.**  The later pop's reciprocity test
+(`replyStackOuterCaller?`) refuses the stale link and returns `.invalidArgument`
+having written nothing, and the same test refuses a *re-linked* Reply — so there
+is no confused deputy and no privilege escalation.  The cost is a **wedge**: that
+reply fails permanently, the intermediate caller stays blocked, and the
+scheduling context stays with the server.  Medium, availability only, against the
+threads in one call chain and one reservation, and only to a party that already
+holds delegated reply authority over that chain.  Before this cut the same input
+produced §1's leak, so it is not a new exposure class.
+
+It is **registered, not patched**, because the honest remedy is seL4's
+`reply_remove` non-head branch on the reply path, and that needs one more
+declared footprint member on `.reply` and `.replyRecv` — which moves the declared
+ceiling to 17 — plus a re-proof of the reply spine's post-state characterisation
+and everything that funnels through it.  That is a coherent slice of its own, not
+a rider on this one.  A fail-closed `.illegalState` guard was written, measured
+and **reverted**: it would have traded a wedge for a capability the model
+documents as legitimate and seL4 supports.
+
+**WS-RM** carries it — `docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`, 26 sub-tasks
+across six phases, opening immediately after this cut and closing before WS-RR
+RR8 — and `Reply.consumed`'s docstring states the precondition at the definition
+that relies on it, so a reader meets the constraint where it binds.
+
+One consequence of registering it is worth recording, because it is the register
+working as designed: `scripts/check_identifier_naming.py` derives its family
+grammar from the **rows** of the workstream registry, so adding `WS-RM` made the
+gate read `Rm` as a phase code — and five pre-existing dual-queue removal
+fixtures in `tests/NegativeStateSuite.lean` (`stDualRm1`…`stDualRm5`) began to
+parse as one.  They are renamed to `stDualRemove1`…`stDualRemove5`, which
+internal-first naming wanted anyway: the abbreviation said less than the word.
+A hand-kept prefix list would have been silent here.
+
+## v0.35.3 — a donated scheduling context carries budget, not priority or domain
+
+**Reported while closing WS-OD at `v0.35.2`, fixed here.**  `updatePrioritySource`
+(`SeLe4n/Kernel/SchedContext/PriorityManagement.lean`) classified `.bound scId`
+and `.donated scId owner` identically, so `.tcbSetPriority` and
+`.tcbSetMCPriority` on a thread that was *holding* a donated context wrote the
+**donor's** `SchedContext.priority`.  Both arms are authorised by a TCB-write
+right over the **target** and the caller's MCP ceiling, and neither says anything
+about the donor — so a principal with authority over a passive server could
+retune the scheduling parameter of every client that had called it, and the
+effect outlived the call: `returnDonatedSchedContext` hands the reservation back
+with the rewritten field, so the client resumed in a band it never asked for.
+Medium–High **integrity** (an authority crossing), not a leak and not a denial of
+service; live at call depth 1 since donation landed, and widened by WS-OD OD4 to
+reach a thread several hops up a chain, in a third domain.
+
+**The remedy is seL4-MCS's own split, not a refusal.**  In seL4, priority and
+domain live on the TCB (`tcb->tcbPriority`, `tcb->tcbDomain`) and the scheduling
+context carries budget, period and deadline: a passive server runs at **its own**
+priority in **its own** partition on the **client's** budget, and rises to the
+client's band only through priority inheritance.  This model had put both
+parameters on the SchedContext, which is where the crossing came from.  So a
+donee now reads and writes its own priority and domain at every site, while
+budget, period and deadline still come from the donated reservation.
+
+**One classifier, one resolver, every reader pinned to it.**  Nine sites answered
+"whose priority is this" and the fix could have been nine independent edits that
+a later cut unpicks one at a time — the enumeration-standing-in-for-a-derivation
+shape `CLAUDE.md` warns about, and the shape that produced the defect in the
+first place.  Instead:
+
+* **`SchedContextBinding.ownScId?`** (`SchedContext/Types.lean`) is the
+  decision, on the binding itself: the SchedContext a thread **owns**, which is
+  `some scId` for `.bound` and `none` for `.unbound` and `.donated`.  It is the
+  counterpart to `scId?`, the reservation a thread **runs on**, and the two
+  govern different halves of a thread's scheduling parameters:
+  **reservation-owned** (budget, period, deadline) come from `scId?` at every
+  binding, because being charged to a reservation and answering to its deadline
+  is what a donation *is*; **thread-owned** (base priority and domain) come from
+  the thread's own TCB fields, mirrored onto its own reservation by the AK2-B
+  convention.  A binding constructor added later (WS-CB's hierarchical servers)
+  must be classified there before it compiles.
+  `ownScId?_eq_scId?_of_isSome` states that it *narrows* `scId?`
+  rather than resolving independently, so the two can never name different
+  contexts.
+* **`SystemState.threadBasePriority`** (`Model/State.lean`) is the state-level
+  answer, built on the classifier, with a congruence
+  (`threadBasePriority_congr`) over exactly the key the resolution reads.
+* `getCurrentPriority` **is** `threadBasePriority` (by `rfl`);
+  `getCurrentPriorityChecked`, `updatePrioritySource`, the frozen
+  `frozenSetPriority` and `schedContextConfigureBoundPropagate` classify through
+  the classifier directly; and the three scheduler resolvers that also need the
+  reservation's **deadline** split the arm and are tied back by theorem —
+  `resolveEffectivePrioDeadline_fst_eq_threadBasePriority` (new, unconditional),
+  `effectiveSchedParams_priority_deadline_eq_resolve` and
+  `effectiveBucketPriority_eq_resolveEffective`.
+
+The per-site outcome, `.donated` arm only:
+
+| Site | Before | After |
+|------|--------|-------|
+| `resolveEffectivePrioDeadline` | `(sc.priority, sc.deadline)` | `(tcb.priority, sc.deadline)` |
+| `effectiveSchedParams` | `(sc.priority, sc.deadline, sc.domain)` | `(tcb.priority, sc.deadline, tcb.domain)` |
+| `effectiveBucketPriority` | `sc.priority` | `tcb.priority` (no store read at all) |
+| `getCurrentPriority` / `…Checked` | `sc.priority` / can `.error` | `tcb.priority` / cannot fail |
+| `updatePrioritySource` | writes `SchedContext.priority` | writes `TCB.priority` |
+| `frozenSetPriority` | writes `SchedContext.priority` | writes `TCB.priority` |
+| `schedContextConfigureBoundPropagate` | writes `boundThread`'s priority **and domain** unconditionally | writes them only when `schedContextConfigurePropagates` — `boundThread` owns this reservation |
+| `effectiveParamsMatchRunQueue{,OnCore}` | bucket = `sc.priority` | bucket = `tcb.priority` |
+| `boundThreadPriorityConsistent` | `∀ scId, …scId? = some scId → …` | `∀ scId, …ownScId? = some scId → …` |
+
+`hasSufficientBudget` is unchanged, and so are `currentBudgetPositive{,OnCore}`,
+`budgetPositive{,OnCore}`, `maxBudgetInBand{,OnCore}`, `maxPeriodInBand{,OnCore}`
+and the two `RuntimeContract` budget checks: budget and period **are** the
+reservation's at every depth.  Tier 3 anchors both directions — the `.donated`
+arms are pinned to the TCB reading, the merged arm is refused **per
+declaration** (a file-wide negative would fire on `hasSufficientBudget`, which
+keeps it in the same file as `resolveEffectivePrioDeadline`), and five budget
+sites are pinned as *still merged*, so the split cannot leak into the budget
+question.
+
+**Three things this repairs beyond the two crossings.**
+
+1. **The carrier stops being falsified by every hand-off.**
+   `boundThreadPriorityConsistent` demanded `sc.priority = tcb.priority` for
+   `.donated` as well as `.bound`, because `resolveEffectivePrioDeadline` read
+   the SchedContext for both — so the reservation's `priority` had to equal the
+   donor's base priority before a hand-off and the donee's after, while
+   `donateSchedContext` writes neither field.  Any donation between threads of
+   different bands therefore broke it, and nothing carried it across:
+   `boundThreadPriorityConsistent_frame` requires `schedContextBinding`
+   unchanged, which is exactly what the hand-off rewrites.  The carrier was
+   **false on exactly the states WS-OD had just made reachable**, and every
+   scheduler result gated on it was silent there.  Narrowing it to the owned
+   reservation is not a weakening: there is nothing left for the donated case to
+   reconcile, so `resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree`
+   discharges that arm outright and takes a strictly weaker hypothesis for the
+   same conclusion.
+2. **A donee's priority read cannot fail.**  `getCurrentPriorityChecked`
+   returned `.error .objectNotFound` for a donee whose donor's SchedContext had
+   been retyped away — an error from a syscall with nothing to do with that
+   object.  It now cannot reach the lookup at all
+   (`getCurrentPriorityChecked_donated`), and `effectiveBucketPriority`'s
+   `.donated` arm reads no object store, which is why its frame lemmas lost
+   their hypothesis on that branch and `effectiveBucketPriority_of_donated` is
+   unconditional where `…_of_bound_sc_missing` needs a lookup premise.
+3. **Bounded inversion is unaffected, and that is why the fix is safe.**  A
+   high-priority client blocked on a low-priority passive server still raises
+   it, through `propagatePipChainCrossCore` — the route WS-OD OD3.14 completed
+   on the `.receive` arm at `v0.34.141`.  Own priority + inherited boost +
+   donated budget is the MCS combination.  Before this cut the donation carried
+   base priority **as well**, which is what the OD3.14 narrative described and
+   what this entry corrects: the chain walk is now the *only* priority route,
+   which is what makes OD3.14 load-bearing rather than redundant.
+
+**The mirror crossing, found while verifying this one, closed in the same cut —
+and it is the *domain*, not only the priority.**  `schedContextConfigure`
+propagates **both** thread-owned parameters into `sc.boundThread`'s TCB, and
+after a donation `boundThread` is the **donee**, because `donateSchedContext`
+writes `boundThread := some serverTid`.  So a caller holding a capability on the
+**client's** reservation could rewrite the **server's** own base priority *and
+migrate its scheduling domain* — permanently, since the donee keeps both fields
+after the donation returns.  Same class, opposite direction; a domain is the
+partition temporal isolation is defined over, so that half is the more serious
+of the two.  Leaving either would also have defeated this cut: with the read
+split, the propagation is the one remaining route by which a client's
+reservation can set a server's band.
+
+Both halves maintain a `.bound`-only invariant
+(`boundThreadPriorityConsistent`, `boundThreadDomainConsistent`), so
+`schedContextConfigureBoundPropagate` takes the SchedContext's id and gates both
+on the bound thread **owning** that context.  There is one predicate,
+`schedContextConfigurePropagates`, and both halves consult it — so a later cut
+cannot gate one and leave the other, which is exactly how this defect came to be
+the *mirror* of one already fixed.  That is the exact relation rather than a presence
+check: a thread that owns some *other* context is not propagated to either, and
+`scId?` would be the wrong classifier here — the wrong one is what the crossing
+was.  A reconfiguration still rewrites the reservation, including the
+**reservation-owned** budget, period and deadline a donee does read: that is the
+object the caller holds a capability for.
+
+The reading side follows.  `effectiveSchedParams`'s `.donated` arm reports the
+donee's own domain, because every live domain filter in the scheduler
+(`chooseBestRunnableInDomainEffective`, `schedule`'s current-thread check, the
+per-core selection guard) reads `tcb.domain` — so reporting `sc.domain` for a
+donee described a partition the scheduler never puts it in.  That component has
+no live consumer today, which is exactly why it had to be corrected rather than
+left: the first consumer would have inherited the discrepancy.
+
+**The footprint narrows with the write.**  `lockSet_tcbSetPriority` /
+`lockSet_tcbSetMCPriority` take their `boundSchedContextId` from
+`ownScId?` rather than `scId?`, since the operation no longer writes
+a donee's reservation; declaring a write lock on it would be a footprint wider
+than its transition — sound, but carrying contention (SM8.D's CC-5 channel) that
+says nothing about the operation.  `maxLockSetSize` is unmoved at **14** and the
+RPi5 tick still admits **23 µs** per lock: the members are the same or fewer.
+`lockSet_tcbSetAffinity` keeps `scId?` — a thread's home core *is* a property of
+the reservation it runs on.
+
+**Tests.**  Six scenarios in `tests/PriorityManagementSuite.lean`
+(`WS-OD-PRIO-01`…`06`): the classifier on all three constructors; every reader
+on a donee, asserting the donor's band appears in none of them while the donor's
+deadline and domain appear in the parameter triple; the security regression on
+`setPriorityOp` (the donee's TCB moves, the reservation is byte-identical, the
+donor's own TCB is untouched); the same through `setMCPriorityOp`'s capping
+branch, which reaches the write helper by a different route; the frozen mirror;
+and a `.bound` **control** that the reservation is still written and the TCB is
+not — so none of the five can be satisfied by the priority write having simply
+been removed.  Two more (`WS-OD-PRIO-07`, `08`) cover the configure gate in both
+directions: a reconfiguration of a **donated** reservation still rewrites the
+reservation — its budget and period included, since a donee reads those — and
+leaves the donee's own priority *and domain* alone, while a `.bound` thread's
+priority and domain are both still propagated.  The donated fixture puts the
+reservation in domain 3 and the donee in domain 0, so every domain assertion
+discriminates instead of passing by coincidence.
+
+## v0.35.2 — WS-OD OD4–OD6: the donation chain is transitive, and the workstream closes
+
+The row the workstream was opened for.  `applyCallDonation` donated only from a
+**`.bound`** caller, so a scheduling context stopped at the first passive server
+and seL4-MCS's passive-server pattern did not work at call depth ≥ 2: the callee
+stayed `.unbound`, was charged to no reservation, and ran on the legacy TCB
+priority fallback.  OD4 makes the donation transitive, OD5 makes every teardown
+path chain-aware, and OD6 states the payoff, tests it, traces it and closes the
+two register rows.  **Twenty sub-tasks, one cut, no behaviour left undeclared.**
+
+### OD4 — the push, and the resolver threaded through
+
+**The guard is the caller's *effective* context.**  `callDonationSchedContext?`
+and the call footprint's `endpointCallDonatedSc?` both answer
+`SchedContextBinding.scId?`, which is `some scId` for a `.bound` caller and for a
+`.donated` one alike — seL4-MCS's `maybeDonateSchedContext`, which reads
+`sender->tcbSchedContext` without asking how the sender came by it.  The two
+widened in one cut on purpose: a footprint narrower than its transition is
+*false*, and the pre-OD4 resolver would have omitted the SchedContext the push
+rebinds at every depth ≥ 2.
+
+**`donateSchedContext` is a four-store push.**  The context's rebind and new
+stack head as **one** store (`boundThread := some serverTid`,
+`scReply := some pushRid` — a frame over either half alone would be false of the
+operation), the pushed Reply's `donatedSc := some clientScId` and
+`prev := sc.scReply` read off the object the first store rewrites, then the
+donor's `.unbound` and the server's `.donated clientScId clientTid`.
+`donateSchedContext_ok_storeChain` is the one description of it; the six theorems
+that used to unfold the operation are corollaries of that chain now, because the
+fourth store stopped every hand-rolled copy compiling.
+
+**The push is fail-closed on its frame.**  `donationPushFrame?` refuses a donor
+with no reply object, one whose reply id resolves to nothing, and one whose reply
+already donates — three distinguishable refusals.  A donation with no stack frame
+is the defect the chain design exists to refuse: the next pop would clear an
+*outer* caller's frame and settle a scheduling context on the wrong thread,
+across a domain boundary.  The frame is the donor's **own** `replyObject`, which
+the `Call` rendezvous linked to it (`endpointCall` fails closed unless the woken
+server stashed a Reply), so the push writes nothing new
+(`lockSet_endpointCallOnCore_covers_donationPush`) and **`maxLockSetSize` does
+not move**.
+
+**The push preserves the chain** (OD4.5).  The dual of OD3.8, and with both
+`donationChainWellFormed` is preserved by *every* transition rather than by every
+transition but one.  Freshness is what makes the new frame safe and is checked
+rather than assumed: the refusal above puts the pushed Reply on **no** context's
+chain (`not_mem_donationChainFrom_of_not_donating`), so prepending it cannot
+revisit a member and the old walk transports verbatim.
+
+**The migration's source is the intermediate donor's home** (OD4.6).
+`replenishQueueAffinityConsistentOnCore` puts a context's replenishments on its
+**bound thread's** home core; at depth `n` that thread is the intermediate server
+making the call, which is what the dispatch already passes.  Proved rather than
+inherited from the depth-1 reading: a successful depth-≥ 2 donation exhibits the
+pre-state context with `boundThread = some caller`.
+
+**All six pop sites resolve their new owner** (OD4.4).  Each runs
+`returnDonatedSchedContextResolved`, which reads `replyStackOuterCaller?` on its
+own pre-state; at depth 1 the answer is `none` and the site is the pre-OD4
+behaviour, definitionally
+(`returnDonatedSchedContextResolved_eq_legacy_of_no_stack`).  The obligation the
+resolution carries is `replyStackOuterCallerValid`, with two call-shaped siblings
+for the sites that discover their donation inside the operation
+(`cleanupDonationStackValid`, `cancelDonationStackValid`), and OD3.2's
+`hBottom : newOwner? = none` is gone from the `ipcInvariantFull` composite.  One
+new obligation is stated rather than assumed away: at depth ≥ 2 the pop names the
+outer caller as the answered caller's donation *owner*, and `.replyRecv`'s
+receive leg then donates *to* its receiver — so the two must be distinct threads,
+which is why `replyRecvReturnDonation_preserves_ipcInvariantFull` now states that
+the receiver is not itself parked on a reply.
+
+### OD5 — chain-aware teardown, and the middle-caller decision
+
+**A Reply that still donates cannot be freshened** (OD5.1, plan §3.4's confused
+deputy).  `linkReply` refuses `donatedSc ≠ none`: such a Reply is a live frame of
+some context's stack, and re-linking it to a new caller would make the pop that
+later reaches it hand the original thread's context to an unrelated thread,
+driven by object reuse.  **Refused rather than cleared** — clearing takes the
+frame off a stack the context still heads, so the walk stops mid-chain and the
+store satisfies no chain at all.  The clear that *does* happen is the pop's own;
+`consumeReply` deliberately leaves the two stack fields alone, because the reply
+leg consumes the link **before** the pop reads them (plan §3.3).  Every caller of
+the link lemmas is unchanged: the second half of the guard is *derived* from the
+link succeeding rather than added as a hypothesis.
+
+**A cancelled *middle* caller severs the stack at the cut** (OD5.2).  Both
+candidate answers are named (`CancelledMiddleCallerPolicy`), one is chosen
+(`cancelledMiddleCallerPolicy = .severAtCut`) and the choice is proved:
+`cancelledMiddleCaller_severs_at_cut` binds the innermost live caller
+`.bound scId` **and leaves every other thread's TCB unchanged**, which is exactly
+what `reclaimToCancelledThread` would not do — a statement exhibiting only the
+target's new binding would be true of both policies.  Chosen because it is what
+the pop already does (one program, not two), because it is `O(1)` where the
+alternative walks a chain no `LockSet` can bound, and because it reaches the
+same owner seL4-MCS's `reply_remove` does -- by a different route, since seL4's
+doubly linked stack splices the middle frame out where this model's single `prev`
+link leaves it in place with its `caller` consumed.  Its cost is stated rather
+than hidden: the original owner's reservation ends up with the innermost live
+caller, and no later pop carries it below the cut.  From the cancellation end
+the same policy is two theorems — the reclaim fires for the thread the holder
+names as owner, and declines below the cut.
+
+**The suspend pipeline pops twice at depth ≥ 2** (OD5.3).  The G2 teardown's
+reply arm can rebind the victim `.donated scId outer`, and the arm selector below
+it re-reads the binding from the **post-teardown** TCB — so the `.donated` arm
+fires on a victim that entered `.unbound`, and its migration's destination is the
+*outer caller's* home core.  That core is not resolvable from the victim's
+pre-state binding, because at the pre-state the victim has none, so
+`suspendThreadOnCoreSchedLockSet`'s replenish segment is a **triple** and the
+ladder is re-proved over it.
+
+**Retype refuses both halves of a live stack** (OD5.4).  A Reply with
+`donatedSc ≠ none` is a frame; a SchedContext with `scReply ≠ none` is a head,
+and by the chain's own completeness clause that is exactly "some frame names this
+context".  Both are `.revocationRequired`, `O(1)`, fail-closed, and refused
+rather than repaired for the same reason `linkReply` is.
+
+**`.replyRecv` is the third live push site** (OD5.5), sharing the widened guard:
+`applyRendezvousCallDonation_donated_donor_pushes` exhibits the push on a
+`.donated` donor.  **Every teardown path frames the chain** (OD5.6) — the two
+link primitives, their bidirectional composites and the cancellation's reply-link
+sever all reach `donationChainWellFormed_of_frame`, so only the push and the pop
+carry their own preservation, because only they write chain data.
+
+### OD6 — the payoff, the tests, the trace and the closure
+
+`passiveServerHoldsDonatedContext_atCallDepthTwo` states what the workstream was
+opened to make true: a passive server reached at call depth ≥ 2 holds a
+scheduling context **and** that context's `boundThread` names it back — the first
+so `resolveEffectivePrioDeadline` reads a real reservation rather than the legacy
+TCB-priority fallback, the second so the CBS engine charges it.  The `onCore`
+instance adds the replenishment migration.
+
+The depth-2 push and its resolved pop are **executed**, not only proved about:
+`tests/SmpIpcSuite.lean` §3.18 runs the push, the four stores, the chain it
+leaves, the three fail-closed refusals, the freshening barrier in both
+directions, both retype guards and the middle-caller policy; the trace harness
+gains `SCN-DONATION-PUSH-DEPTH-TWO` and
+`SCN-DONATION-RETURN-RESOLVED-OUTER`, re-baselined with the fixture and its
+`.sha256`.  The two scenario ids are named after what they run rather than after
+the workstream, because the identifier-naming gate holds new ids to the
+internal-first rule and the grandfathered `Z7D-00n` family is closed.
+Two OD2-era assertions are **inverted rather than deleted** — they asserted that a
+live donating call writes none of the three reply-stack fields, and their own
+comment said they are the check that fails the day the push lands.  It did.
+
+**Two vacuous hypotheses and a duplicated theorem, caught by the full gate.**  The
+first OD4.4 threading left six `endpointReplyRecv` statements taking
+`∀ s : SystemState, cleanupDonationStackValid s receiver` — a hypothesis that is
+*false*, so every theorem carrying it asserted nothing.  Each is now keyed on the
+state the receive leg's cleanup actually runs on: the cross-core pair at
+`(endpointReplyOnCore …).1`, the single-core family at the reply leg's own
+`.ok ((), s)`.  `endpointReplyRecv_preserves_donationOwnerUnique` moved down the
+file to reach `endpointReplyRecv_eq_reply_then_receive`, because factoring the
+fold is what lets the hypothesis *name* a state at all.  And
+`lockSet_endpointCall_reply_write_mem` briefly existed twice — OD4.7 needed it in
+`EndpointCall.lean`, which cannot import the reply module that had it — so the
+statement moved to `LockSetTransitions.lean`, beside `lockSet_endpointCall` and
+its four sibling membership lemmas, with one merged docstring.
+
+Tier-3 anchors cover OD4 and OD5 with the relation-breaking mutations the project
+requires: a guard whose verdict is inverted, a frame that links to `none` instead
+of the old head, a resolver call site that goes back to a literal `none`, a
+replenish segment collapsed from a triple to a pair.
+
+**Store-reader hygiene held, not re-anchored around.**  The first full-gate run
+of this cut failed the AK7 cascade in three files — the chain proofs had
+re-introduced raw `st.objects[…]?` reads where a typed reader was available —
+and the answer was the reads, not the floor: the push's post-state facts are
+stated through `getReply?` / `getSchedContext?` and only then projected (the
+shape the pop's mirror already used), the two chain-frame call sites bridge
+through `getReply?_eq_some_iff` inline, and `outerCallerAcceptable_some_char`
+concludes in `getTcb?`.  One genuine duplicate went with it: `donationOuterUnowned`
+and `donationReturnOuterValid.outerUnowned` were the same proposition written
+twice, so the field now *is* the definition.  The re-anchored baseline moves
+every row in the hygienic direction — raw lookups 1609 → 1600, raw
+`schedContext` matches 23 → 22, `getTcb?` adoption 2092 → 2109,
+`getSchedContext?` 311 → 336.
+
+Also locked in: `scripts/identifier_naming_baseline.json` drops
+`TEST_COUNT_AK7` / `test_count_ak7`, retired by OD3.19's rewrite of
+`ak7_cascade_baseline.sh` and left in the floor by that cut.  A grandfathered
+count may fall without failing the gate, so the stale rows were silently
+permitting the names back.  The two new trace scenarios are named
+`SCN-DONATION-PUSH-DEPTH-TWO` and `SCN-DONATION-RETURN-RESOLVED-OUTER` for the
+same reason: the `Z7D-00n` family is grandfathered, and a new id must describe
+what it runs.
+
+Register: both section-A rows this workstream owns are closed — the
+onward-donation gap, and the `passiveServerIdle` break the `v0.34.97` reclaim
+introduced (OD1).
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md §5 (OD4..OD6)
+
 ## v0.35.1 — WS-OD OD3.19: two review findings, both a cardinality standing in for a set
 
 Review round 6 on `07db404e`, both P2, both verified against the code before

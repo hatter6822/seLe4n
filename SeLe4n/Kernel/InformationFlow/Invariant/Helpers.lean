@@ -591,7 +591,7 @@ theorem storeObject_projectionStable_preserves_projection
 /-- WS-OD OD3.2: **the donation return's reply-stack head clear is invisible to
 every observer.**
 
-The pop resets the popped Reply's `donatedSc` and `prev`, and
+The pop resets the popped Reply's `next` and `prev`, and
 `projectKernelObject` strips both (OD2.2), so the write is projection-stable
 whether or not the Reply is low-visible — the same reason the binding hand-off
 itself is invisible.  An instance of
@@ -610,6 +610,97 @@ theorem storeDonationHeadClear_preserves_projection
       _ (.reply r) hRead
       (projectKernelObject_reply_stackLinks_invariant ctx observer r none none)
       (hIdxComplete rid.toObjId (by rw [hRead]; intro hx; cases hx))
+      hObjInv hS
+
+/-- `v0.35.4`: the pop's re-head of the frame below preserves the projection for
+the same reason — it writes a Reply's `next`, which `projectKernelObject` strips. -/
+theorem storeReplyReHead_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    {scId : SeLe4n.SchedContextId} {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt)
+    (h : storeReplyReHead scId head? st = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
+  · rfl
+  · exact storeObject_projectionStable_preserves_projection ctx observer st st' rid.toObjId
+      _ (.reply r) hRead
+      (projectKernelObject_reply_next_invariant ctx observer r (some (.head scId)))
+      (hIdxComplete rid.toObjId (by rw [hRead]; intro hx; cases hx))
+      hObjInv hS
+
+/-- `v0.35.4`: the whole pop — the unlink and the re-head — preserves the
+projection, composed from its two stores.  The re-head reads the index
+completeness at the intermediate state, which the unlink store carries forward. -/
+theorem storeDonationHeadPop_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    {scId : SeLe4n.SchedContextId} {head? : Option (SeLe4n.ReplyId × Reply)}
+    {st st' : SystemState}
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hSetInv : st.objectIndexSet.table.invExt)
+    (hObjInv : st.objects.invExt)
+    (h : storeDonationHeadPop scId head? st = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  rcases storeDonationHeadPop_cases h with ⟨_, rfl⟩ | ⟨rid, r, s1, _, hClear, hReHead⟩
+  · rfl
+  · have hInv1 := storeDonationHeadClear_preserves_objects_invExt hObjInv hClear
+    have hC1 := storeDonationHeadClear_preserves_objectIndexSetComplete hObjInv hSetInv
+      hIdxComplete hClear
+    rw [storeReplyReHead_preserves_projection ctx observer hC1 hInv1 hReHead,
+      storeDonationHeadClear_preserves_projection ctx observer hIdxComplete hObjInv hClear]
+
+/-- `v0.35.4`: **the donation push's two Reply writes preserve the projection** —
+the pushed frame gains its stack links and the old head its upward link, and
+`projectKernelObject` strips both, so the push is unobservable through a
+low-visible Reply.  The old head's index membership is read at the intermediate
+state, which the first store carries forward. -/
+theorem storeDonationFramePush_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
+    {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hSetInv : st.objectIndexSet.table.invExt)
+    (hObjInv : st.objects.invExt)
+    (hPre : st.getReply? pushRid = some pushReply)
+    (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
+  have hPreObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hPre
+  have hP1 : projectState ctx observer s1 = projectState ctx observer st :=
+    storeObject_projectionStable_preserves_projection ctx observer st s1 pushRid.toObjId
+      _ (.reply pushReply) hPreObj
+      (projectKernelObject_reply_stackLinks_invariant ctx observer pushReply oldHead?
+        (some (.head scId)))
+      (hIdxComplete pushRid.toObjId (by rw [hPreObj]; intro hx; cases hx))
+      hObjInv hS1
+  rcases hRest with ⟨_, rfl⟩ | ⟨old, oldR, _, hOldR, hS2⟩
+  · exact hP1
+  · have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+    have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
+      hSetInv hIdxComplete hS1
+    have hOldObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hOldR
+    rw [storeObject_projectionStable_preserves_projection ctx observer s1 st' old.toObjId
+      _ (.reply oldR) hOldObj
+      (projectKernelObject_reply_next_invariant ctx observer oldR (some (.frame pushRid)))
+      (hC1 old.toObjId (by rw [hOldObj]; intro hx; cases hx))
+      hInv1 hS2, hP1]
+
+/-- `v0.35.4`: the cancellation's `O(1)` detach preserves the projection — its one
+write clears a Reply's `prev`, which `projectKernelObject` strips. -/
+theorem detachReplyFrameAbove_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt)
+    (h : detachReplyFrameAbove st rid = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  rcases detachReplyFrameAbove_cases h with rfl | ⟨_, above, a, _, _, hA, _, hS⟩
+  · rfl
+  · have hAObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hA
+    exact storeObject_projectionStable_preserves_projection ctx observer st st' above.toObjId
+      _ (.reply a) hAObj
+      (projectKernelObject_reply_prev_invariant ctx observer a none)
+      (hIdxComplete above.toObjId (by rw [hAObj]; intro hx; cases hx))
       hObjInv hS
 
 /-- WS-SM SM6.D (#7.1 fold): writing only a Reply object's `caller` back-link (the
@@ -709,8 +800,9 @@ theorem consumeCallerReply_preserves_projection
         rw [hGet] at hCons
         have hRidPrev : st.objects[rid.toObjId]? = some (.reply r) :=
           (SystemState.getReply?_eq_some_iff st rid r).mp hGet
-        exact storeObject_reply_caller_preserves_projection ctx observer st st1
-          rid.toObjId r none hRidPrev
+        exact storeObject_projectionStable_preserves_projection ctx observer st st1
+          rid.toObjId _ (.reply r) hRidPrev
+          (projectKernelObject_reply_consumed_invariant ctx observer r)
           (hIdxComplete rid.toObjId (by rw [hRidPrev]; exact Option.some_ne_none _)) hObjInv hCons
     cases hT : st1.getTcb? caller with
     | none =>

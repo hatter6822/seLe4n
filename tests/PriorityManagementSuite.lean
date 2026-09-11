@@ -677,6 +677,304 @@ private def pm_ak8d_03_setMCPriorityHardwareCeilingRejects : IO Unit := do
   | .ok _ => throw <| IO.userError "MCP 500 above hardware ceiling should be rejected"
   | .error e => expect "error is illegalAuthority" (e == .illegalAuthority)
 
+-- ============================================================================
+-- WS-OD (v0.35.3): a donated scheduling context does not carry the donor's
+-- priority
+-- ============================================================================
+--
+-- The finding: `updatePrioritySource` classified `.bound scId` and
+-- `.donated scId owner` alike, so `.tcbSetPriority` / `.tcbSetMCPriority` on a
+-- thread *holding* a donated context wrote the **donor's**
+-- `SchedContext.priority`.  The syscall is authorised by a TCB-write right over
+-- the target and the caller's MCP ceiling, neither of which says anything about
+-- the donor, so a principal with authority over a passive server could retune a
+-- client's scheduling parameter — and the client received it when the donation
+-- returned.
+--
+-- Every check below is written so it FAILS on the pre-fix kernel and cannot be
+-- satisfied by the write merely disappearing: each asserts *which* object moved
+-- and *which* did not, and `pm_od_06` is the `.bound` control that the write
+-- still happens where it should.
+
+/-- The donee's own base priority, distinct from the donor's band so the two
+readings are distinguishable. -/
+private def odDoneePriority : Nat := 30
+
+/-- The donor's band, carried by the reservation. -/
+private def odDonorPriority : Nat := 70
+
+/-- The donor's domain, carried by the reservation and deliberately **not** the
+donee's (`mkTcb` builds every thread in domain `0`), so every assertion about
+which domain a donee is reported in discriminates rather than passing by
+coincidence. -/
+private def odDonorDomain : Nat := 3
+
+/-- The donated reservation: the donor's priority, deadline and domain, held by
+the donee (`boundThread`), exactly as `donateSchedContext` leaves it — a
+donation crosses domains freely, unlike `schedContextBind`, which refuses a
+cross-domain bind. -/
+private def odDonatedSc (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    : SeLe4n.Kernel.SchedContext :=
+  { scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨odDonorPriority⟩, deadline := ⟨500⟩, domain := ⟨odDonorDomain⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some holder }
+
+/-- A caller (1) with authority, a passive server (2) holding a donated context,
+and the donor client (3) whose reservation it is. -/
+private def odDonationState (scId : SeLe4n.SchedContextId) : SystemState :=
+  mkState [
+    (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (⟨2⟩, .tcb (mkTcb 2 (prio := odDoneePriority)
+                  (binding := .donated scId ⟨3⟩))),
+    (⟨3⟩, .tcb (mkTcb 3 (prio := odDonorPriority))),
+    (scId.toObjId, .schedContext (odDonatedSc scId ⟨2⟩))
+  ]
+
+/-- WS-OD-PRIO-01: the classifier.  A `.bound` thread **owns** its reservation;
+an `.unbound` or `.donated` one owns none, so its thread-owned parameters (base
+priority and domain) stay on its own TCB.  This is the single decision every
+reader and writer of those parameters is built on, so it is checked directly
+rather than only through its consequences. -/
+private def pm_od_01_prioritySourceClassifier : IO Unit := do
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  expect "the classifier: a `.bound` thread owns its reservation"
+    ((SchedContextBinding.bound scId).ownScId? == some scId)
+  expect "the classifier: an `.unbound` thread owns none"
+    ((SchedContextBinding.unbound).ownScId? == none)
+  expect "the classifier: a `.donated` thread owns none — it runs on a lent one"
+    ((SchedContextBinding.donated scId ⟨3⟩).ownScId? == none)
+  -- ...while `scId?`, the reservation a thread RUNS ON, does name it: the two
+  -- questions are distinct, which is the whole of the donation semantics.
+  expect "the budget question still names the donor's reservation"
+    ((SchedContextBinding.donated scId ⟨3⟩).scId? == some scId)
+  -- ...and ownership never names a context the thread is not running on.
+  expect "the classifier narrows `scId?` rather than resolving independently"
+    (match (SchedContextBinding.bound scId).ownScId? with
+     | some s => (SchedContextBinding.bound scId).scId? == some s
+     | none   => false)
+
+/-- WS-OD-PRIO-02: every priority READER prefers the donee's own band, while the
+deadline and domain still come from the donated reservation.  A check on the
+priority alone would be satisfied by a kernel that had dropped the reservation
+entirely, so the deadline and domain are asserted in the same breath. -/
+private def pm_od_02_donatedReadsPreferTheTcb : IO Unit := do
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  let st := odDonationState scId
+  match st.getTcb? ⟨2⟩ with
+  | none => throw <| IO.userError "donee TCB not found"
+  | some donee =>
+    expect "getCurrentPriority reads the donee's own 30"
+      (getCurrentPriority st donee == ⟨odDoneePriority⟩)
+    expect "getCurrentPriorityChecked cannot fail on a donee, and reads 30"
+      (match getCurrentPriorityChecked st donee with
+       | .ok p => p == ⟨odDoneePriority⟩
+       | .error _ => false)
+    expect "resolveEffectivePrioDeadline: the donee's 30 on the donor's deadline 500"
+      (decide (resolveEffectivePrioDeadline st donee = (⟨odDoneePriority⟩, ⟨500⟩)))
+    -- The donor's DEADLINE (reservation-owned) with the donee's own priority
+    -- and domain (thread-owned).  The reservation sits in domain 3 and the
+    -- donee in 0, so the third component discriminates.
+    expect "effectiveSchedParams: the donee's own 30 and domain 0, the donor's deadline 500"
+      (decide (effectiveSchedParams st donee = (⟨odDoneePriority⟩, ⟨500⟩, ⟨0⟩)))
+    expect "NEGATIVE (the defect): the donee is not reported in the donor's domain 3"
+      (!((effectiveSchedParams st donee).2.2 == ⟨odDonorDomain⟩))
+    expect "effectiveBucketPriority is the TCB-only reading the run queue records"
+      (effectiveBucketPriority st donee == effectiveRunQueuePriority donee)
+    -- NEGATIVE (the defect): none of the readings is the donor's band.
+    expect "NEGATIVE (the defect): no reader returns the donor's 70"
+      (!(getCurrentPriority st donee == ⟨odDonorPriority⟩) &&
+       !((resolveEffectivePrioDeadline st donee).1 == ⟨odDonorPriority⟩) &&
+       !(effectiveBucketPriority st donee == ⟨odDonorPriority⟩))
+
+/-- WS-OD-PRIO-03: **the security regression.**  `setPriorityOp` on the donee
+writes the donee's TCB and leaves the donor's reservation — and the donor's own
+TCB — untouched.  Pre-fix this wrote `SchedContext.priority := 80`. -/
+private def pm_od_03_setPriorityOnDoneeSparesTheDonor : IO Unit := do
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  let st := odDonationState scId
+  match setPriorityOp st ⟨⟨1⟩, by decide⟩ ⟨⟨2⟩, by decide⟩ ⟨80⟩ with
+  | .error e => throw <| IO.userError s!"setPriority on a donee should succeed, got {repr e}"
+  | .ok st' =>
+    match st'.objects[(⟨2⟩ : SeLe4n.ThreadId).toObjId]? with
+    | some (.tcb donee') =>
+      expect "the donee's OWN priority is updated to 80" (donee'.priority == ⟨80⟩)
+      expect "...and the donation binding is untouched"
+        (decide (donee'.schedContextBinding = .donated scId ⟨3⟩))
+    | _ => throw <| IO.userError "donee TCB not found after setPriority"
+    match st'.objects[scId.toObjId]? with
+    | some (.schedContext sc') =>
+      expect "THE FIX: the donor's reservation keeps its own priority 70"
+        (sc'.priority == ⟨odDonorPriority⟩)
+      let scRef := odDonatedSc scId ⟨2⟩
+      expect "...and the reservation is otherwise untouched"
+        (sc'.budget == scRef.budget && sc'.period == scRef.period &&
+         sc'.deadline == scRef.deadline && sc'.domain == scRef.domain &&
+         sc'.budgetRemaining == scRef.budgetRemaining &&
+         sc'.boundThread == scRef.boundThread)
+    | _ => throw <| IO.userError "donated SchedContext not found after setPriority"
+    match st'.objects[(⟨3⟩ : SeLe4n.ThreadId).toObjId]? with
+    | some (.tcb donor') =>
+      expect "the donor thread's own priority is untouched"
+        (donor'.priority == ⟨odDonorPriority⟩)
+    | _ => throw <| IO.userError "donor TCB not found after setPriority"
+
+/-- WS-OD-PRIO-04: the same for the MCP-capping path, which reaches
+`updatePrioritySource` through `setMCPriorityOp`'s cap branch rather than
+directly.  Two syscall arms, one write helper — so the fix has to cover both,
+and this is the check that it does. -/
+private def pm_od_04_setMCPriorityCapOnDoneeSparesTheDonor : IO Unit := do
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  let st := odDonationState scId
+  -- The donee's current priority is 30; capping MCP to 20 must cap it.
+  match setMCPriorityOp st ⟨⟨1⟩, by decide⟩ ⟨⟨2⟩, by decide⟩ ⟨20⟩ with
+  | .error e => throw <| IO.userError s!"setMCPriority on a donee should succeed, got {repr e}"
+  | .ok st' =>
+    match st'.objects[(⟨2⟩ : SeLe4n.ThreadId).toObjId]? with
+    | some (.tcb donee') =>
+      expect "the donee's MCP ceiling is lowered to 20"
+        (donee'.maxControlledPriority == ⟨20⟩)
+      expect "...and its OWN priority is capped to 20" (donee'.priority == ⟨20⟩)
+    | _ => throw <| IO.userError "donee TCB not found after setMCPriority"
+    match st'.objects[scId.toObjId]? with
+    | some (.schedContext sc') =>
+      expect "THE FIX: the MCP cap does not reach the donor's reservation"
+        (sc'.priority == ⟨odDonorPriority⟩)
+    | _ => throw <| IO.userError "donated SchedContext not found after setMCPriority"
+
+/-- WS-OD-PRIO-05: the frozen mirror answers the same question the same way.
+`frozenSetPriority` is `updatePrioritySource`'s second implementation, and one
+question answered in two places is how this class of defect survives a fix. -/
+private def pm_od_05_frozenSetPriorityOnDoneeSparesTheDonor : IO Unit := do
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  let fst := mkFrozenState [
+    (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (⟨2⟩, .tcb (mkTcb 2 (prio := odDoneePriority)
+                  (binding := .donated scId ⟨3⟩))),
+    (scId.toObjId, .schedContext (odDonatedSc scId ⟨2⟩))
+  ]
+  match frozenSetPriority ⟨1⟩ ⟨2⟩ ⟨80⟩ fst with
+  | .error e => throw <| IO.userError s!"frozen setPriority on a donee should succeed, got {repr e}"
+  | .ok ((), fst') =>
+    match fst'.objects.get? (⟨2⟩ : SeLe4n.ThreadId).toObjId with
+    | some (.tcb donee') =>
+      expect "frozen: the donee's OWN priority is updated to 80"
+        (donee'.priority == ⟨80⟩)
+    | _ => throw <| IO.userError "frozen donee TCB not found"
+    match fst'.objects.get? scId.toObjId with
+    | some (.schedContext sc') =>
+      expect "frozen: the donor's reservation keeps its own priority 70"
+        (sc'.priority == ⟨odDonorPriority⟩)
+    | _ => throw <| IO.userError "frozen donated SchedContext not found"
+
+/-- WS-OD-PRIO-06: **the control.**  On a `.bound` thread the write still lands
+in the reservation and *not* in the TCB, so none of the checks above can be
+satisfied by the priority write having simply been removed.  This is the
+relation-preserving direction: the token (`updatePrioritySource` writing a
+SchedContext) is still there; only which binding reaches it has changed. -/
+private def pm_od_06_boundControlStillWritesTheReservation : IO Unit := do
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { odDonatedSc scId ⟨2⟩ with priority := ⟨odDoneePriority⟩ }
+  let st := mkState [
+    (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (⟨2⟩, .tcb (mkTcb 2 (prio := odDoneePriority) (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc)
+  ]
+  match setPriorityOp st ⟨⟨1⟩, by decide⟩ ⟨⟨2⟩, by decide⟩ ⟨80⟩ with
+  | .error e => throw <| IO.userError s!"setPriority on a bound thread should succeed, got {repr e}"
+  | .ok st' =>
+    match st'.objects[scId.toObjId]? with
+    | some (.schedContext sc') =>
+      expect "control: a BOUND thread's reservation is still written to 80"
+        (sc'.priority == ⟨80⟩)
+    | _ => throw <| IO.userError "bound SchedContext not found after setPriority"
+    match st'.objects[(⟨2⟩ : SeLe4n.ThreadId).toObjId]? with
+    | some (.tcb tcb') =>
+      expect "control: a BOUND thread's TCB priority is NOT the write target"
+        (tcb'.priority == ⟨odDoneePriority⟩)
+    | _ => throw <| IO.userError "bound TCB not found after setPriority"
+  -- ...and the reader agrees with the writer on that arm too.
+  match st.getTcb? ⟨2⟩ with
+  | some tcb =>
+    expect "control: a BOUND thread reads its reservation's priority"
+      (getCurrentPriority st tcb == ⟨odDoneePriority⟩)
+  | none => throw <| IO.userError "bound TCB not found"
+
+/-- WS-OD-PRIO-07: **the mirror crossing.**  `schedContextConfigure` propagates
+**both** thread-owned parameters — base priority and domain — into
+`sc.boundThread`'s TCB, and after a donation `boundThread` is the **donee**.  So
+a caller holding a capability on the *client's* reservation could rewrite the
+*server's* own base priority and migrate its scheduling domain, permanently:
+the donee keeps both fields after the donation returns.  Each propagation exists
+only to maintain a `.bound`-only invariant (`boundThreadPriorityConsistent`,
+`boundThreadDomainConsistent`), so both are gated on the bound thread **owning**
+this reservation (`schedContextConfigurePropagates`).  The reservation itself is
+still reconfigured — the caller does hold its capability — which is what
+distinguishes the gate from the operation failing, and its budget and period
+still reach the donee, which reads them. -/
+private def pm_od_07_configureOnDonatedReservationSparesTheDonee : IO Unit := do
+  let doneeTid : SeLe4n.ThreadId := ⟨42⟩
+  let scObjId : SeLe4n.ObjId := ⟨100⟩
+  let scId : SeLe4n.SchedContextId := ⟨100⟩
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some doneeTid
+  }
+  let st := mkState [
+    (doneeTid.toObjId, .tcb (mkTcb 42 (prio := odDoneePriority) (mcp := 200)
+      (binding := .donated scId ⟨7⟩))),
+    (scObjId, .schedContext sc)
+  ]
+  -- Reconfigure to priority 123 in domain 5 — both thread-owned parameters,
+  -- both different from the donee's own.
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 5 st with
+  | .error e => throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
+  | .ok ((), st') =>
+    match st'.objects[scObjId]? with
+    | some (.schedContext sc') =>
+      expect "the reservation IS reconfigured (the caller holds its capability)"
+        (sc'.priority == ⟨123⟩ && sc'.domain == ⟨5⟩)
+      expect "...including its reservation-owned parameters, which a donee does read"
+        (sc'.budget == ⟨100⟩ && sc'.period == ⟨200⟩)
+    | _ => throw <| IO.userError "SC not found after configure"
+    match st'.objects[doneeTid.toObjId]? with
+    | some (.tcb donee') =>
+      expect "THE FIX: the donee's own base priority is NOT rewritten"
+        (donee'.priority == ⟨odDoneePriority⟩)
+      expect "THE FIX: nor is its domain — a client cannot migrate a server's partition"
+        (donee'.domain == ⟨0⟩)
+    | _ => throw <| IO.userError "donee TCB not found after configure"
+
+/-- WS-OD-PRIO-08: the control for `pm_od_07`.  On a `.bound` thread the
+propagation still fires, so the gate cannot be satisfied by the propagation
+having been removed.  (`pm_ak2b_02` asserts the same equality; this restates it
+beside the negative it controls, where a reader can see the pair.) -/
+private def pm_od_08_configureBoundControlStillPropagates : IO Unit := do
+  let boundTid : SeLe4n.ThreadId := ⟨42⟩
+  let scObjId : SeLe4n.ObjId := ⟨100⟩
+  let scId : SeLe4n.SchedContextId := ⟨100⟩
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some boundTid
+  }
+  let st := mkState [
+    (boundTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
+      (binding := .bound scId))),
+    (scObjId, .schedContext sc)
+  ]
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 5 st with
+  | .error e => throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
+  | .ok ((), st') =>
+    match st'.objects[boundTid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "control: a BOUND thread's priority IS propagated (50 -> 123)"
+        (tcb'.priority == ⟨123⟩)
+      expect "control: ...and so is its domain (0 -> 5), so neither half is dead"
+        (tcb'.domain == ⟨5⟩)
+    | _ => throw <| IO.userError "bound TCB not found after configure"
+
 end SeLe4n.Testing.PriorityManagementSuite
 
 open SeLe4n.Testing.PriorityManagementSuite in
@@ -725,4 +1023,13 @@ def main : IO Unit := do
   pm_r5g_02_configureDomainNoopWhenEqual
   pm_r5g_03_configurePropagatesBothFields
   pm_r5g_04_substantive_invariant_preservation
-  IO.println "=== All D2 priority management tests passed (30 tests) ==="
+  IO.println "--- WS-OD (v0.35.3): a donee runs at its OWN priority ---"
+  pm_od_01_prioritySourceClassifier
+  pm_od_02_donatedReadsPreferTheTcb
+  pm_od_03_setPriorityOnDoneeSparesTheDonor
+  pm_od_04_setMCPriorityCapOnDoneeSparesTheDonor
+  pm_od_05_frozenSetPriorityOnDoneeSparesTheDonor
+  pm_od_06_boundControlStillWritesTheReservation
+  pm_od_07_configureOnDonatedReservationSparesTheDonee
+  pm_od_08_configureBoundControlStillPropagates
+  IO.println "=== All D2 priority management tests passed (38 tests) ==="

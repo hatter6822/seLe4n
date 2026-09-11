@@ -1241,6 +1241,16 @@ scenarios:
     function: runDonationTrace
     subsystem: SchedContext
     description: "Z7: cleanupPreReceiveDonation — stale donation cleaned up"
+  SCN-DONATION-PUSH-DEPTH-TWO:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDonationTrace
+    subsystem: SchedContext
+    description: "donateSchedContext at call depth 2 — a caller already holding a donation passes the context on, and the context's reply stack gains a frame linked to the previous head"
+  SCN-DONATION-RETURN-RESOLVED-OUTER:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDonationTrace
+    subsystem: SchedContext
+    description: "returnDonatedSchedContextResolved at call depth 2 — the context comes back as a donation owned by the outer caller the reply stack names, and the popped frame is cleared"
   IDLE-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runPerCoreIdleDispatchTrace

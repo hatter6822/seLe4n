@@ -76,6 +76,48 @@ def donationHolderIsReplyTarget (st : SystemState) (owner : SeLe4n.ThreadId) : P
         (∃ epId, ownerTcb.ipcState = .blockedOnReply epId (some holder)) ∧
         lookupTcb st holder = some holderTcb
 
+/-- **WS-OD OD4.4: the outer-caller obligation for the cancellation reclaim.**
+
+The reclaim resolves its scheduling context from the *holder's* binding rather
+than taking it as an argument, and it pops at the **post-abort** state -- so the
+obligation is stated over the victim: whatever donation the cancellation is
+reclaiming, the outer caller its reply stack names is a proper waiting donor and
+is owned by nobody.  Vacuous on every state where that context heads no reply
+stack (`cancelDonationStackValid_of_no_stacks`) — which was every state this tree
+reached until OD4.1 (`v0.35.2`), and is now every state below the first donating
+`Call`.
+
+Stated in the cancellation's own shape rather than at a resolved `(scId, holder)`
+pair, for the reason `cleanupDonationStackValid` is: a consumer holds the victim
+and its TCB, never the donation the arm is about to discover. -/
+def cancelDonationStackValid (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB) : Prop :=
+  ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+    Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder) →
+    replyStackOuterCallerValid (Lifecycle.Suspend.abortHolderPendingIpc st holder) scId holder v
+
+/-- `v0.35.4`: the cancelled caller's frame detach writes at most one Reply, so
+every binding reads through unchanged. -/
+theorem detachCancelledCallerFrame_sameSchedContextBindings (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    sameSchedContextBindings st (Lifecycle.Suspend.detachCancelledCallerFrame st tcb) :=
+  fun t tcb' hPost =>
+    ⟨tcb', Lifecycle.Suspend.detachCancelledCallerFrame_tcb_backward st tcb hInv t.toObjId tcb'
+      hPost, rfl⟩
+
+/-- WS-OD OD4.4: the reclaim's outer-caller obligation is discharged outright on
+a store where no scheduling context heads a reply stack -- the shape of every
+state the tree reached before OD4.1 (`v0.35.2`), which is why threading the
+resolver was a refactor rather than a behaviour change. -/
+theorem cancelDonationStackValid_of_no_stacks (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (hNoHeads : ∀ (holder : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+      (sc : SeLe4n.Kernel.SchedContext),
+      (Lifecycle.Suspend.abortHolderPendingIpc st holder).getSchedContext? scId = some sc →
+      sc.scReply = none) :
+    cancelDonationStackValid st v tcbV :=
+  fun scId holder _ =>
+    replyStackOuterCallerValid_of_no_stacks _ (hNoHeads holder) scId holder v
+
 theorem returnDonationToCancelledCaller_no_donation_to_victim
     (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
@@ -87,6 +129,11 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
     -- `abortHolderPendingIpc_donationChainFrame`.
     (hChain : donationChainWellFormed st)
     (hHolder : donationHolderIsReplyTarget st v)
+    -- **WS-OD OD4.4**: the reclaim's pop resolves its new owner from the context's
+    -- own reply stack; this is the obligation that resolution carries, and it is
+    -- what keeps the pop from *refusing* -- a refused reclaim leaves exactly the
+    -- donation this result denies.
+    (hStack : cancelDonationStackValid st v tcbV)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (hTcb : (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).objects[tid.toObjId]?
       = some (.tcb tcb)) :
@@ -139,23 +186,46 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
       donationHeadResolves_of_frame
         (Lifecycle.Suspend.abortHolderPendingIpc_donationChainFrame st holder hInv) scId0
         (donationHeadResolves_of_chainWellFormed st scId0 hChain)
+    -- **WS-OD OD4.4**: the pop resolves its new owner off the context's own reply
+    -- stack, at the post-abort state.  The chain invariant carries across the
+    -- abort (`abortHolderPendingIpc_donationChainFrame`), so the resolver
+    -- *answers*; what it answers is the caller's obligation.
+    have hChainA : donationChainWellFormed (Lifecycle.Suspend.abortHolderPendingIpc st holder) :=
+      donationChainWellFormed_of_frame
+        (Lifecycle.Suspend.abortHolderPendingIpc_donationChainFrame st holder hInv) hChain
+    obtain ⟨scA, hScA, _⟩ :=
+      (hOwnerA holder holderTcbA scId0 v hHolderAtA (hBindEqA.trans hBindH)).1
+    obtain ⟨n, hResN⟩ :=
+      replyStackOuterCallerResolves_of_chainWellFormed _ scId0 hChainA scA hScA
     obtain ⟨st', hOk⟩ := returnDonatedSchedContext_ok_under_invariants
       (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder holderTcbA
       scId0 v hInvA hOwnerA hHeadResA hLkHA (hBindEqA.trans hBindH)
       (lookupTcb_some_not_reserved st holder holderTcb hLkH)
-      (lookupTcb_some_not_reserved st v tcbV hLookup) none
-      -- WS-OD OD4.4: the pop's outer-caller guard is free at the bottom of the
-      -- reply stack, which is what this site passes.
-      (outerCallerAcceptable_none _ holder v)
-    rw [hOk] at hTcb
+      (lookupTcb_some_not_reserved st v tcbV hLookup) n
+      ((hStack scId0 holder hRes) n hResN).1
+    rw [returnDonatedSchedContextResolved_of_resolved hResN, hOk] at hTcb
     simp only at hTcb
     obtain ⟨hSrv, hOwn, hOther⟩ := returnDonatedSchedContext_tcb_schedContextBinding_backward
-      (Lifecycle.Suspend.abortHolderPendingIpc st holder) st' holder scId0 v hInvA none hOk
+      (Lifecycle.Suspend.abortHolderPendingIpc st holder) st' holder scId0 v hInvA n hOk
       tid.toObjId tcb hTcb
     by_cases hH : tid.toObjId = holder.toObjId
     · rw [hSrv hH] at hBind; cases hBind
     · by_cases hV : tid.toObjId = v.toObjId
-      · rw [hOwn hH hV] at hBind; cases hBind
+      · -- At the bottom of the stack the target is rebound `.bound`, and one level
+        -- up `.donated scId0 outer` -- where `outerCallerAcceptable` has already
+        -- decided `outer ≠ v` (`outerNeTarget`), so neither arm is a donation
+        -- naming the cancelled caller.
+        rw [hOwn hH hV] at hBind
+        cases hN : n with
+        | none => rw [hN] at hBind; cases hBind
+        | some outer =>
+            rw [hN] at hBind
+            simp only [donationReturnBinding, SchedContextBinding.donated.injEq] at hBind
+            exact absurd hBind.2
+              (((hStack scId0 holder hRes) n hResN).1
+                |> fun hAcc => by
+                    rw [hN] at hAcc
+                    exact (outerCallerAcceptable_some_char _ holder v outer hAcc).1)
       · obtain ⟨tA, hAtA, hEqA⟩ := hOther hH hV
         obtain ⟨t0, h0, hEqB⟩ :=
           Lifecycle.Suspend.abortHolderPendingIpc_binding_backward st holder hInv tid.toObjId
@@ -195,7 +265,7 @@ theorem clearReplyObjectCaller_sameSchedContextBindings (st : SystemState)
   · rename_i r hR
     by_cases hk : k.toObjId = rid.toObjId
     · exfalso
-      have hx : (st.objects.insert rid.toObjId (.reply { r with caller := none })).get?
+      have hx : (st.objects.insert rid.toObjId (.reply r.consumed)).get?
           k.toObjId = some (.tcb tcb') := hTcb'
       rw [hk, RHTable.getElem?_insert_self st.objects rid.toObjId _ hInv] at hx
       cases hx
@@ -282,7 +352,7 @@ theorem clearReplyObjectCaller_passiveServerIdleFrame (st : SystemState)
   · rename_i r hR
     by_cases hk : a.toObjId = rid.toObjId
     · exfalso
-      have hx : (st.objects.insert rid.toObjId (.reply { r with caller := none })).get?
+      have hx : (st.objects.insert rid.toObjId (.reply r.consumed)).get?
           a.toObjId = some (.tcb tcb') := hPost
       rw [hk, RHTable.getElem?_insert_self st.objects rid.toObjId _ hInv] at hx
       cases hx
@@ -303,6 +373,18 @@ theorem consumeReplyLink_passiveServerIdleFrame (st : SystemState)
     exact (clearTcbReplyObject_passiveServerIdleFrame st tid hInv).trans
       (clearReplyObjectCaller_passiveServerIdleFrame _ rid
         (Lifecycle.Suspend.clearTcbReplyObject_preserves_objects_invExt st tid hInv))
+
+/-- `v0.35.4`: the cancelled caller's frame detach frames `passiveServerIdle` —
+its one write lands on a `.reply` value, whose key can never hold a TCB, and it
+touches no scheduler slot. -/
+theorem detachCancelledCallerFrame_passiveServerIdleFrame (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    passiveServerIdleFrame st (Lifecycle.Suspend.detachCancelledCallerFrame st tcb) :=
+  passiveServerIdleFrame_of_backward
+    (fun t tcb' hPost =>
+      ⟨tcb', Lifecycle.Suspend.detachCancelledCallerFrame_tcb_backward st tcb hInv t.toObjId tcb'
+        hPost, rfl, rfl⟩)
+    (Lifecycle.Suspend.detachCancelledCallerFrame_scheduler_eq st tcb)
 
 /-- WS-OD OD1.5: the unblock-and-stage rewrite frames `passiveServerIdle`.
 
@@ -407,10 +489,11 @@ theorem returnDonationToCancelledCaller_passiveServerIdleFrame
     obtain ⟨_, holderTcb, hLkH, _⟩ := cancelledCallerDonation?_some st v tcbV scId holder hRes
     split
     · rename_i st' hOk
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
       refine (Lifecycle.Suspend.abortHolderPendingIpc_passiveServerIdleFrame st holder hInv).trans
         (returnDonatedSchedContext_passiveServerIdleFrame
           (Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
-          none hOk ?_)
+          n hPop ?_)
       intro t hAt
       exact Lifecycle.Suspend.abortHolderPendingIpc_holder_ipcState_allowed st holder holderTcb
         hInv hMem hLkH t hAt
@@ -456,20 +539,29 @@ theorem cancelIpcBlocking_passiveServerIdleFrame
     rw [show Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
         Lifecycle.Suspend.consumeReplyLink
           (Lifecycle.Suspend.restoreToReadyCancelled
-            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) v) v tcbV by
+            (Lifecycle.Suspend.detachCancelledCallerFrame
+              (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV by
       unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hIp]]
     have hF1 := returnDonationToCancelledCaller_passiveServerIdleFrame st v tcbV hInv hMem
     have hI1 := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
+    -- `v0.35.4`: the frame detach writes at most a Reply, which frames the conjunct.
+    have hFD := detachCancelledCallerFrame_passiveServerIdleFrame
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hI1
+    have hID := Lifecycle.Suspend.detachCancelledCallerFrame_preserves_objects_invExt
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hI1
     have hF2 := restoreToReadyStaging_passiveServerIdleFrame
-      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) v
-      (some Architecture.cancelledIpcFrame) hI1
+      (Lifecycle.Suspend.detachCancelledCallerFrame
+        (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v
+      (some Architecture.cancelledIpcFrame) hID
     have hI2 := Lifecycle.Suspend.restoreToReadyCancelled_invExt
-      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) v hI1
+      (Lifecycle.Suspend.detachCancelledCallerFrame
+        (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v hID
     have hF3 := consumeReplyLink_passiveServerIdleFrame
       (Lifecycle.Suspend.restoreToReadyCancelled
-        (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) v) v tcbV hI2
-    exact (hF1.trans hF2).trans hF3
+        (Lifecycle.Suspend.detachCancelledCallerFrame
+          (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV hI2
+    exact ((hF1.trans hFD).trans hF2).trans hF3
 
 /-- **WS-OD OD1.5 — the theorem OD1 exists to prove.**
 
@@ -514,6 +606,8 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
     (hOwner : donationOwnerValid st)
     (hChain : donationChainWellFormed st)
     (hHolder : donationHolderIsReplyTarget st v)
+    -- **WS-OD OD4.4**: see `returnDonationToCancelledCaller_no_donation_to_victim`.
+    (hStack : cancelDonationStackValid st v tcbV)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (hTcb : (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).objects[tid.toObjId]?
       = some (.tcb tcb)) :
@@ -521,23 +615,27 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
   have hArm : Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
       Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) v) v tcbV := by
+          (Lifecycle.Suspend.detachCancelledCallerFrame
+            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV := by
     unfold Lifecycle.Suspend.cancelIpcBlocking
     rw [hBlocked]
   rw [hArm] at hTcb
   have hInvR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt st v tcbV hInv
-  have hInvS := Lifecycle.Suspend.restoreToReadyCancelled_invExt _ v hInvR
+  have hInvD := Lifecycle.Suspend.detachCancelledCallerFrame_preserves_objects_invExt _ tcbV hInvR
+  have hInvS := Lifecycle.Suspend.restoreToReadyCancelled_invExt _ v hInvD
   have hSame :
       sameSchedContextBindings (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV)
         (Lifecycle.Suspend.consumeReplyLink
           (Lifecycle.Suspend.restoreToReadyCancelled
-            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) v) v tcbV) :=
-    (restoreToReadyStaging_sameSchedContextBindings _ v _ hInvR).trans
+            (Lifecycle.Suspend.detachCancelledCallerFrame
+              (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV) :=
+    ((detachCancelledCallerFrame_sameSchedContextBindings _ tcbV hInvR).trans
+      (restoreToReadyStaging_sameSchedContextBindings _ v _ hInvD)).trans
       (consumeReplyLink_sameSchedContextBindings _ v tcbV hInvS)
   obtain ⟨t0, h0, hEqB⟩ := hSame tid tcb hTcb
   intro hBind
   exact returnDonationToCancelledCaller_no_donation_to_victim st v tcbV hInv hLookup hOwner
-    hChain hHolder tid t0 scId h0 (by rw [hEqB]; exact hBind)
+    hChain hHolder hStack tid t0 scId h0 (by rw [hEqB]; exact hBind)
 
 -- ============================================================================
 -- WS-OD OD3.5 — the reply arm relinks no queue neighbour
@@ -602,15 +700,19 @@ theorem cancelIpcBlocking_replyArm_noDonation_tcb_frame (st : SystemState)
     (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).objects[k]? = some (.tcb t0) := by
   have hArm : Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
       Lifecycle.Suspend.consumeReplyLink
-        (Lifecycle.Suspend.restoreToReadyCancelled st v) v tcbV := by
+        (Lifecycle.Suspend.restoreToReadyCancelled
+          (Lifecycle.Suspend.detachCancelledCallerFrame st tcbV) v) v tcbV := by
     unfold Lifecycle.Suspend.cancelIpcBlocking
     rw [hBlocked, Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hNoDonation]
   rw [hArm]
+  -- `v0.35.4`: the frame detach writes at most a Reply, so every TCB is untouched.
+  have hInvD := Lifecycle.Suspend.detachCancelledCallerFrame_preserves_objects_invExt st tcbV hInv
   refine consumeReplyLink_other_tcb_eq _ v tcbV
-    (Lifecycle.Suspend.restoreToReadyCancelled_invExt st v hInv) k t0 hNe ?_
-  show (Lifecycle.Suspend.restoreToReadyStaging st v _).objects[k]? = some (.tcb t0)
-  rw [restoreToReadyStaging_objects_ne st v _ k hInv hNe]
-  exact hPre
+    (Lifecycle.Suspend.restoreToReadyCancelled_invExt _ v hInvD) k t0 hNe ?_
+  show (Lifecycle.Suspend.restoreToReadyStaging
+    (Lifecycle.Suspend.detachCancelledCallerFrame st tcbV) v _).objects[k]? = some (.tcb t0)
+  rw [restoreToReadyStaging_objects_ne _ v _ k hInvD hNe]
+  exact Lifecycle.Suspend.detachCancelledCallerFrame_tcb_eq st tcbV hInv k t0 hPre
 
 /-- **WS-OD OD3.5**: a successful `endpointQueueRemove` resolved its endpoint.
 
@@ -838,7 +940,8 @@ theorem cancelIpcBlocking_replyArm_tcb_frame (st : SystemState)
   have hArm : Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
       Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) v) v tcbV := by
+          (Lifecycle.Suspend.detachCancelledCallerFrame
+            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV := by
     unfold Lifecycle.Suspend.cancelIpcBlocking
     rw [hBlocked]
   rw [hArm]
@@ -858,22 +961,594 @@ theorem cancelIpcBlocking_replyArm_tcb_frame (st : SystemState)
           hkHolder hkPrev hkNext hPre
       have hInvA : (Lifecycle.Suspend.abortHolderPendingIpc st holder).objects.invExt :=
         Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv
-      cases hRet : returnDonatedSchedContext
-          (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder scId v none with
+      cases hRet : returnDonatedSchedContextResolved
+          (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder scId v with
       | error e => exact hPre
       | ok stRet =>
-        exact returnDonatedSchedContext_other_tcb_eq _ stRet holder scId v none hInvA hRet
+        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+        exact returnDonatedSchedContext_other_tcb_eq _ stRet holder scId v n hInvA hPop
           k t0 hkV hkHolder hAbort
   -- Stage 2: the restore writes the victim alone; stage 3: the reply consume
   -- writes the victim's TCB and a Reply object.
   have hInvR : (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).objects.invExt :=
     Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt st v tcbV hInv
+  -- `v0.35.4`: the frame detach between the reclaim and the restore writes at
+  -- most a Reply, so the TCB reads through it.
+  have hDetach : (Lifecycle.Suspend.detachCancelledCallerFrame
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV).objects[k]?
+        = some (.tcb t0) :=
+    Lifecycle.Suspend.detachCancelledCallerFrame_tcb_eq _ tcbV hInvR k t0 hReclaim
+  have hInvD := Lifecycle.Suspend.detachCancelledCallerFrame_preserves_objects_invExt _ tcbV hInvR
   refine consumeReplyLink_other_tcb_eq _ v tcbV
-    (Lifecycle.Suspend.restoreToReadyCancelled_invExt _ v hInvR) k t0 hkV ?_
+    (Lifecycle.Suspend.restoreToReadyCancelled_invExt _ v hInvD) k t0 hkV ?_
   show (Lifecycle.Suspend.restoreToReadyStaging
-    (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) v _).objects[k]?
+    (Lifecycle.Suspend.detachCancelledCallerFrame
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v _).objects[k]?
       = some (.tcb t0)
-  rw [restoreToReadyStaging_objects_ne _ v _ k hInvR hkV]
-  exact hReclaim
+  rw [restoreToReadyStaging_objects_ne _ v _ k hInvD hkV]
+  exact hDetach
+
+-- ============================================================================
+-- WS-OD OD5.2 — `.tcbSuspend` of a caller, at every chain depth
+-- ============================================================================
+
+/-- **WS-OD OD5.2: the cancelled caller gets its scheduling context back exactly
+when it is the immediate donor to the thread holding it.**
+
+The reclaim resolves through the victim's own recorded reply target and accepts
+the donation only when that thread's binding names the victim as its `owner` --
+which, because a push always records the *immediate* donor, is precisely the
+depth-1-below-the-victim case.  So on a chain `D → C → S`, cancelling `C`
+returns the context to `C` (and OD4.4's resolver then rebinds it
+`.donated sc D`, since the stack still names `D` below `C`'s frame).
+
+Stated so the *positive* half of the policy is visible beside the negative one
+below: `severAtCut` is not "a cancelled caller never gets its context back", it
+is "a cancelled caller gets back exactly the donation it made". -/
+theorem cancelledCallerDonation?_some_of_immediate_donee
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (ep : SeLe4n.ObjId) (holder : SeLe4n.ThreadId) (holderTcb : TCB)
+    (scId : SeLe4n.SchedContextId)
+    (hIpc : tcb.ipcState = .blockedOnReply ep (some holder))
+    (hLk : lookupTcb st holder = some holderTcb)
+    (hBind : holderTcb.schedContextBinding = .donated scId tid) :
+    Lifecycle.Suspend.cancelledCallerDonation? st tid tcb = some (scId, holder) := by
+  unfold Lifecycle.Suspend.cancelledCallerDonation?
+  rw [hIpc]
+  simp only []
+  rw [hLk]
+  simp only []
+  rw [hBind]
+  simp only [beq_self_eq_true, if_true]
+
+/-- **WS-OD OD5.2: below the cut the reclaim declines, and that is the policy.**
+
+At call depth ≥ 3 the victim's recorded reply target has already donated the
+context onward, so its own binding is `.unbound` and names nobody: the reclaim
+answers `none` and `returnDonationToCancelledCaller` is the identity.  The
+context stays where it is, and the pop that later reaches the victim's now
+caller-less frame binds the innermost live caller `.bound scId`
+(`cancelledMiddleCaller_severs_at_cut`).
+
+This is `severAtCut` seen from the cancellation end, and it is a decision rather
+than an omission: `reclaimToCancelledThread` would reach the real holder through
+`SchedContext.boundThread` and rewrite a binding this theorem says is untouched.
+Its cost is stated at `cancelledMiddleCallerPolicy` -- the original owner's
+reservation ends up with the innermost live caller. -/
+theorem cancelledCallerDonation?_none_below_the_cut
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (ep : SeLe4n.ObjId) (holder : SeLe4n.ThreadId) (holderTcb : TCB)
+    (hIpc : tcb.ipcState = .blockedOnReply ep (some holder))
+    (hLk : lookupTcb st holder = some holderTcb)
+    (hDonatedOnward : holderTcb.schedContextBinding = .unbound) :
+    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.severAtCut ∧
+    Lifecycle.Suspend.cancelledCallerDonation? st tid tcb = none ∧
+    Lifecycle.Suspend.returnDonationToCancelledCaller st tid tcb = st := by
+  have hNone : Lifecycle.Suspend.cancelledCallerDonation? st tid tcb = none := by
+    unfold Lifecycle.Suspend.cancelledCallerDonation?
+    rw [hIpc]
+    simp only []
+    rw [hLk]
+    simp only []
+    rw [hDonatedOnward]
+  exact ⟨rfl, hNone, Lifecycle.Suspend.returnDonationToCancelledCaller_none st tid tcb hNone⟩
+
+/-- **WS-OD OD5.2 / `v0.35.4`: and the whole cancellation arm reclaims nothing
+there.**
+
+The payoff for `.tcbSuspend`: below the cut the reply arm is the teardown -- the
+`O(1)` detach of the victim's frame from its stack, the `.ipcCancelled` restore
+and the reply-link consume -- with no donation write at all.  So the depth-≥ 3
+case needs no binding argument beyond the one the no-donation arm already has,
+which is what makes `severAtCut` cheap as well as seL4-shaped; what it does need
+is the chain argument, since the detach and the consume both write stack links
+(`consumeReplyLink_preserves_donationChainWellFormed`). -/
+theorem cancelIpcBlocking_reply_arm_below_the_cut
+    (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (ep : SeLe4n.ObjId) (holder : SeLe4n.ThreadId) (holderTcb : TCB)
+    (hIpc : tcbV.ipcState = .blockedOnReply ep (some holder))
+    (hLk : lookupTcb st holder = some holderTcb)
+    (hDonatedOnward : holderTcb.schedContextBinding = .unbound) :
+    Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
+      Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.restoreToReadyCancelled
+          (Lifecycle.Suspend.detachCancelledCallerFrame st tcbV) v) v tcbV := by
+  obtain ⟨_, _, hIdent⟩ :=
+    cancelledCallerDonation?_none_below_the_cut st v tcbV ep holder holderTcb hIpc hLk
+      hDonatedOnward
+  unfold Lifecycle.Suspend.cancelIpcBlocking
+  rw [hIpc, hIdent]
+
+-- ============================================================================
+-- WS-OD OD5.3 — the reclaim can leave the victim `.donated`
+-- ============================================================================
+
+/-- **WS-OD OD5.3: at call depth ≥ 2 the reclaim leaves the victim holding a
+donation, which is what makes the suspend pipeline pop a second time.**
+
+`donationReturnBinding scId (some outer)` is `.donated scId outer`, so a victim
+that entered `.tcbSuspend` `.unbound` -- a caller whose own context had been
+donated onward and reclaimed -- comes out of the G2 teardown `.donated`.  The
+pipeline's arm selector re-reads the binding from the **post-teardown** TCB, so
+the `.donated` arm then fires and runs a *second* SchedContext teardown with a
+*second* replenishment migration, whose destination is `outer`'s home core.
+
+That is the whole reason `suspendThreadOnCoreSchedLockSet`'s replenish segment is
+a triple rather than a pair: the third core is not resolvable from the victim's
+pre-state binding, because at the pre-state the victim has none. -/
+theorem returnDonationToCancelledCaller_leaves_donated_at_depth_two
+    (st st' : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (scId : SeLe4n.SchedContextId) (holder outer : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hNe : v ≠ holder)
+    (hDon : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder))
+    (hGetV : st.getTcb? v = some tcbV)
+    (hRes : replyStackOuterCaller? (Lifecycle.Suspend.abortHolderPendingIpc st holder) scId
+      = .ok (some outer))
+    (hPop : returnDonatedSchedContext (Lifecycle.Suspend.abortHolderPendingIpc st holder)
+      holder scId v (some outer) = .ok st') :
+    Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV = st' ∧
+    ∃ vTcb, st'.getTcb? v = some vTcb ∧
+      vTcb.schedContextBinding = .donated scId outer := by
+  have hResolved :
+      returnDonatedSchedContextResolved (Lifecycle.Suspend.abortHolderPendingIpc st holder)
+        holder scId v = .ok st' := by
+    rw [returnDonatedSchedContextResolved_of_resolved hRes]; exact hPop
+  have hEq : Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV = st' := by
+    unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+    rw [hDon, hGetV]
+    simp only []
+    rw [hResolved]
+  refine ⟨hEq, ?_⟩
+  have hInvA := Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hObjInv
+  obtain ⟨tA, hkA, _⟩ := Lifecycle.Suspend.abortHolderPendingIpc_tcb_lookup st holder hObjInv
+    v.toObjId tcbV ((SystemState.getTcb?_eq_some_iff st v tcbV).mp hGetV)
+  obtain ⟨t', hk', _⟩ := returnDonatedSchedContext_tcb_rewrite _ st' holder scId v hInvA
+    (some outer) hPop v.toObjId tA hkA
+  obtain ⟨_, hOwn, _⟩ := returnDonatedSchedContext_tcb_binding_cases _ st' holder scId v
+    (some outer) hInvA hPop v.toObjId t' hk'
+  refine ⟨t', (SystemState.getTcb?_eq_some_iff st' v t').mpr hk', ?_⟩
+  simpa [donationReturnBinding] using
+    hOwn (fun hx => hNe (SeLe4n.ThreadId.toObjId_injective v holder hx)) rfl
+
+-- ============================================================================
+-- WS-OD OD5.6 — the teardown paths frame the donation chain
+-- ============================================================================
+
+/-- **WS-OD OD5.6**: a single object-store insert frames the donation chain when
+the inserted object carries the same reply-stack data as the object it replaces
+and consumes no caller.  The cancellation's TCB writes below are direct inserts
+rather than `storeObject`, and stating the frame once here is what keeps the
+consumers below from re-deriving the same two-case lookup split. -/
+private theorem donationChainFrame_of_objects_insert
+    {st : SystemState} {k0 : SeLe4n.ObjId} {obj : KernelObject}
+    (hInv : st.objects.invExt)
+    (hLinks : replyStackLinks? (some obj) = replyStackLinks? st.objects[k0]?)
+    (hHead : schedContextStackHead? (some obj) = schedContextStackHead? st.objects[k0]?)
+    (hCaller : ∀ r' : Reply, obj = .reply r' → r'.caller = none →
+      ∃ r : Reply, st.objects[k0]? = some (.reply r) ∧ r.caller = none) :
+    donationChainFrame st { st with objects := st.objects.insert k0 obj } := by
+  have hPoint : ∀ k : SeLe4n.ObjId,
+      (st.objects.insert k0 obj)[k]? = if k = k0 then some obj else st.objects[k]? := by
+    intro k
+    by_cases hk : k = k0
+    · subst hk
+      rw [if_pos rfl]
+      exact RobinHood.RHTable.getElem?_insert_self st.objects k obj hInv
+    · rw [if_neg hk]
+      exact RobinHood.RHTable.getElem?_insert_ne st.objects k0 k obj
+        (by simpa using fun h => hk h.symm) hInv
+  refine ⟨fun k => ?_, fun k => ?_, fun k r' hR hC => ?_⟩
+  · show replyStackLinks? ((st.objects.insert k0 obj)[k]?) = _
+    rw [hPoint k]
+    by_cases hk : k = k0
+    · subst hk; rw [if_pos rfl]; exact hLinks
+    · rw [if_neg hk]
+  · show schedContextStackHead? ((st.objects.insert k0 obj)[k]?) = _
+    rw [hPoint k]
+    by_cases hk : k = k0
+    · subst hk; rw [if_pos rfl]; exact hHead
+    · rw [if_neg hk]
+  · have hR' : (st.objects.insert k0 obj)[k]? = some (.reply r') := hR
+    rw [hPoint k] at hR'
+    by_cases hk : k = k0
+    · subst hk
+      rw [if_pos rfl] at hR'
+      exact hCaller r' (Option.some.inj hR') hC
+    · rw [if_neg hk] at hR'
+      exact ⟨r', hR', hC⟩
+
+/-- **WS-OD OD5.6**: the TCB half of the sever carries no chain data at all. -/
+theorem clearTcbReplyObject_donationChainFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    donationChainFrame st (Lifecycle.Suspend.clearTcbReplyObject st tid) := by
+  unfold Lifecycle.Suspend.clearTcbReplyObject
+  cases hT : st.getTcb? tid with
+  | none => simp only []; exact donationChainFrame.refl st
+  | some t =>
+    simp only []
+    exact donationChainFrame_of_objects_insert hInv
+      (by rw [(SystemState.getTcb?_eq_some_iff st tid t).mp hT]; rfl)
+      (by rw [(SystemState.getTcb?_eq_some_iff st tid t).mp hT]; rfl)
+      (fun _ h => by cases h)
+
+/-- `v0.35.4`: the TCB half of the sever leaves every Reply where it was. -/
+theorem clearTcbReplyObject_reply_backward (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (r : Reply)
+    (h : (Lifecycle.Suspend.clearTcbReplyObject st tid).objects[k]? = some (.reply r)) :
+    st.objects[k]? = some (.reply r) := by
+  unfold Lifecycle.Suspend.clearTcbReplyObject at h
+  cases hT : st.getTcb? tid with
+  | none => rw [hT] at h; exact h
+  | some t =>
+    rw [hT] at h
+    by_cases hk : k = tid.toObjId
+    · rw [hk] at h
+      have hx : (st.objects.insert tid.toObjId (.tcb { t with replyObject := none })).get?
+          tid.toObjId = some (.reply r) := h
+      rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv] at hx
+      cases hx
+    · have hx : (st.objects.insert tid.toObjId _).get? k = some (.reply r) := h
+      rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId k _
+        (by simpa using fun h => hk h.symm) hInv] at hx
+      exact hx
+
+theorem clearTcbReplyObject_getReply?_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (rid : SeLe4n.ReplyId) :
+    (Lifecycle.Suspend.clearTcbReplyObject st tid).getReply? rid = st.getReply? rid := by
+  cases hPost : (Lifecycle.Suspend.clearTcbReplyObject st tid).getReply? rid with
+  | some r =>
+    exact ((SystemState.getReply?_eq_some_iff st rid r).mpr
+      (clearTcbReplyObject_reply_backward st tid hInv rid.toObjId r
+        ((SystemState.getReply?_eq_some_iff _ rid r).mp hPost))).symm
+  | none =>
+    cases hPre : st.getReply? rid with
+    | none => rfl
+    | some r =>
+      exfalso
+      have hObj := (SystemState.getReply?_eq_some_iff st rid r).mp hPre
+      have hPostObj : (Lifecycle.Suspend.clearTcbReplyObject st tid).objects[rid.toObjId]?
+          = some (.reply r) := by
+        unfold Lifecycle.Suspend.clearTcbReplyObject
+        cases hT : st.getTcb? tid with
+        | none => exact hObj
+        | some t =>
+          have hNe : rid.toObjId ≠ tid.toObjId := by
+            intro hx; rw [hx, (SystemState.getTcb?_eq_some_iff st tid t).mp hT] at hObj
+            cases hObj
+          show (st.objects.insert tid.toObjId _).get? rid.toObjId = some (.reply r)
+          rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId rid.toObjId _
+            (by simpa using fun h => hNe h.symm) hInv]
+          exact hObj
+      have hSome := (SystemState.getReply?_eq_some_iff _ rid r).mpr hPostObj
+      rw [hPost] at hSome
+      cases hSome
+
+-- ============================================================================
+-- `v0.35.4` — the cancellation's chain writes preserve the chain
+-- ============================================================================
+
+/-! With the doubly-linked stack the cancellation's reply arm is a chain
+**writer** on two counts, and neither reaches `donationChainWellFormed_of_frame`:
+
+* the `O(1)` detach (`detachReplyFrameAbove`, seL4's `reply_remove_tcb` on a
+  non-head frame) clears the `prev` of the frame above the cancelled caller's;
+* the reply-link consume (`clearReplyObjectCaller`, storing `Reply.consumed`)
+  clears the cancelled caller's own two links unless the frame heads a context.
+
+So each carries a preservation theorem.  The detach needs no hypothesis: it
+shortens one stack and repairs the only link that named the frame it cut
+(`donationChainWalk_exists_of_agree_or_cut`).  The consume needs two facts about
+the frame it clears, both established by the detach that runs first: the frame
+heads no context (a head is popped by the reclaim, never consumed in place), and
+no frame's `prev` still names it — which is exactly what the detach guarantees
+(`detachCancelledCallerFrame_unreferenced`).  The stale *upward* link the frame
+below the cut keeps (`next = .frame victim`) is one the invariant deliberately
+does not constrain: nothing trusts an upward link that is not answered from
+above, which is what lets the cut be `O(1)`. -/
+
+/-- `v0.35.4`: **the detach preserves the chain invariant** — one Reply store that
+clears the `prev` of a frame whose `next` is unchanged, so every reciprocity
+clause is either untouched or made vacuous, and the walk from the frame's head
+stops at it. -/
+theorem detachReplyFrameAbove_preserves_donationChainWellFormed {st st' : SystemState}
+    {rid : SeLe4n.ReplyId} (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
+    (h : detachReplyFrameAbove st rid = .ok st') : donationChainWellFormed st' := by
+  rcases detachReplyFrameAbove_cases h with rfl | ⟨_, above, a, _, _, hA, _, hS⟩
+  · exact hChain
+  · have hAObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hA
+    have hAbove : st'.objects[above.toObjId]? = some (.reply { a with prev := none }) :=
+      storeObject_objects_eq' st _ _ _ hInv hS
+    have hOther : ∀ k : SeLe4n.ObjId, k ≠ above.toObjId → st'.objects[k]? = st.objects[k]? :=
+      fun k hk => storeObject_objects_ne st st' above.toObjId k _ hk hInv hS
+    have hReplyCases : ∀ (q : SeLe4n.ReplyId) (rq : Reply),
+        st'.objects[q.toObjId]? = some (.reply rq) →
+        (q.toObjId = above.toObjId ∧ rq = { a with prev := none }) ∨
+        (q.toObjId ≠ above.toObjId ∧ st.objects[q.toObjId]? = some (.reply rq)) := by
+      intro q rq hq
+      by_cases hk : q.toObjId = above.toObjId
+      · left
+        rw [hk, hAbove] at hq
+        exact ⟨hk, (KernelObject.reply.inj (Option.some.inj hq)).symm⟩
+      · right
+        exact ⟨hk, by rw [← hOther q.toObjId hk]; exact hq⟩
+    have hScBack : ∀ (c : SeLe4n.SchedContextId) (sc : SchedContext),
+        st'.objects[c.toObjId]? = some (.schedContext sc) →
+        st.objects[c.toObjId]? = some (.schedContext sc) := by
+      intro c sc hc
+      have hk : c.toObjId ≠ above.toObjId := by intro hx; rw [hx, hAbove] at hc; cases hc
+      rw [← hOther c.toObjId hk]; exact hc
+    have hScFwd : ∀ (c : SeLe4n.SchedContextId) (sc : SchedContext),
+        st.objects[c.toObjId]? = some (.schedContext sc) →
+        st'.objects[c.toObjId]? = some (.schedContext sc) := by
+      intro c sc hc
+      have hk : c.toObjId ≠ above.toObjId := by intro hx; rw [hx, hAObj] at hc; cases hc
+      rw [hOther c.toObjId hk]; exact hc
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · intro q rq hq
+      rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, hqPre⟩
+      · intro hC
+        exact ⟨rfl, (hChain.replyWellFormed above a hAObj hC).2⟩
+      · exact hChain.replyWellFormed q rq hqPre
+    · intro c sc hc rid' hRid'
+      obtain ⟨r', hR', hNext'⟩ := hChain.headLinkReciprocal c sc (hScBack c sc hc) rid' hRid'
+      by_cases hk : rid'.toObjId = above.toObjId
+      · have hra : r' = a := by
+          rw [hk, hAObj] at hR'
+          exact (KernelObject.reply.inj (Option.some.inj hR')).symm
+        refine ⟨{ a with prev := none }, by rw [hk]; exact hAbove, ?_⟩
+        show a.next = some (.head c)
+        rw [← hra]; exact hNext'
+      · exact ⟨r', by rw [hOther rid'.toObjId hk]; exact hR', hNext'⟩
+    · intro rid' r' c hR' hNext'
+      rcases hReplyCases rid' r' hR' with ⟨hk, rfl⟩ | ⟨_, hPre⟩
+      · obtain ⟨sc, hSc, hHead⟩ := hChain.headLinkResolves above a c hAObj hNext'
+        refine ⟨sc, hScFwd c sc hSc, ?_⟩
+        rw [SeLe4n.ReplyId.toObjId_injective _ _ hk]
+        exact hHead
+      · obtain ⟨sc, hSc, hHead⟩ := hChain.headLinkResolves rid' r' c hPre hNext'
+        exact ⟨sc, hScFwd c sc hSc, hHead⟩
+    · intro rid' r' below hR' hPrev'
+      rcases hReplyCases rid' r' hR' with ⟨_, rfl⟩ | ⟨_, hPre⟩
+      · simp at hPrev'
+      · obtain ⟨b, hB, hBnext⟩ := hChain.prevLinkReciprocal rid' r' below hPre hPrev'
+        by_cases hk : below.toObjId = above.toObjId
+        · have hba : b = a := by
+            rw [hk, hAObj] at hB
+            exact (KernelObject.reply.inj (Option.some.inj hB)).symm
+          refine ⟨{ a with prev := none }, by rw [hk]; exact hAbove, ?_⟩
+          show a.next = some (.frame rid')
+          rw [← hba]; exact hBnext
+        · exact ⟨b, by rw [hOther below.toObjId hk]; exact hB, hBnext⟩
+    · intro c sc hc
+      obtain ⟨fuel, chain, hWalk⟩ := hChain.headTerminates c sc (hScBack c sc hc)
+      obtain ⟨chain', hWalk'⟩ :=
+        donationChainWalk_exists_of_agree_or_cut (st := st) (st' := st') fuel (.head c)
+          sc.scReply chain hWalk (by
+            intro q hq
+            by_cases hk : q.toObjId = above.toObjId
+            · right
+              exact ⟨a, { a with prev := none }, by rw [hk]; exact hAObj,
+                by rw [hk]; exact hAbove, rfl, rfl⟩
+            · left
+              unfold replyStackLinksAt?
+              rw [hOther q.toObjId hk])
+      exact ⟨fuel, chain', hWalk'⟩
+
+/-- `v0.35.4`: the cancelled caller's frame detach preserves the chain — the
+identity where there is nothing to detach, one `detachReplyFrameAbove` otherwise. -/
+theorem detachCancelledCallerFrame_preserves_donationChainWellFormed (st : SystemState)
+    (tcb : TCB) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st) :
+    donationChainWellFormed (Lifecycle.Suspend.detachCancelledCallerFrame st tcb) := by
+  rcases Lifecycle.Suspend.detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]; exact hChain
+  · exact detachReplyFrameAbove_preserves_donationChainWellFormed hInv hChain h
+
+/-- `v0.35.4`: **after the detach, no frame's `prev` names the cancelled caller's
+frame.**  Under `prevLinkReciprocal` the only frame that could is the one the
+caller's own `next` names, and that is the one the detach repaired — or one whose
+`prev` never pointed back, in which case nothing named the frame to begin with. -/
+theorem detachCancelledCallerFrame_unreferenced (st : SystemState) (tcb : TCB)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
+    (hRid : tcb.replyObject = some rid) (a : SeLe4n.ReplyId) (ra : Reply)
+    (hA : (Lifecycle.Suspend.detachCancelledCallerFrame st tcb).objects[a.toObjId]?
+      = some (.reply ra)) :
+    ra.prev ≠ some rid := by
+  intro hPrevA
+  -- The post-state frame at `a` is a pre-state frame with the same `prev`: the
+  -- detach's one write sets a `prev` to `none`, which `hPrevA` is not.
+  have hA0 : st.objects[a.toObjId]? = some (.reply ra) := by
+    rcases Lifecycle.Suspend.detachCancelledCallerFrame_cases st tcb with h | ⟨rid', hRid', h⟩
+    · rw [h] at hA; exact hA
+    · rcases detachReplyFrameAbove_cases h with h' | ⟨_, above, a', _, _, _, _, hS⟩
+      · rw [h'] at hA; exact hA
+      · by_cases hk : a.toObjId = above.toObjId
+        · rw [hk, storeObject_objects_eq' st _ _ _ hInv hS] at hA
+          have hEq := KernelObject.reply.inj (Option.some.inj hA)
+          rw [← hEq] at hPrevA
+          cases hPrevA
+        · rw [storeObject_objects_ne st _ above.toObjId a.toObjId _ hk hInv hS] at hA
+          exact hA
+  -- So in the pre-state `a` names `rid` below it, and `rid` answers with `.frame a`.
+  obtain ⟨r, hRObj, hRnext⟩ := hChain.prevLinkReciprocal a ra rid hA0 hPrevA
+  -- The detach therefore ran to completion at `a` and cleared its `prev`.
+  have hGetR : st.getReply? rid = some r := (SystemState.getReply?_eq_some_iff _ _ _).mpr hRObj
+  have hGetA : st.getReply? a = some ra := (SystemState.getReply?_eq_some_iff _ _ _).mpr hA0
+  obtain ⟨p, hP⟩ : ∃ p, storeObject a.toObjId (.reply { ra with prev := none }) st = .ok p :=
+    ⟨_, rfl⟩
+  obtain ⟨u, s'⟩ := p
+  cases u
+  have hDet : detachReplyFrameAbove st rid = .ok s' := by
+    unfold detachReplyFrameAbove
+    rw [hGetR]
+    simp only [hRnext]
+    rw [hGetA]
+    simp only [hPrevA, bne_self_eq_false, Bool.false_eq_true, if_false]
+    rw [hP]
+  have hPost : Lifecycle.Suspend.detachCancelledCallerFrame st tcb = s' := by
+    unfold Lifecycle.Suspend.detachCancelledCallerFrame
+    rw [hRid]
+    simp only [hDet]
+  rw [hPost, storeObject_objects_eq' st _ _ _ hInv hP] at hA
+  have hEq := KernelObject.reply.inj (Option.some.inj hA)
+  have hPrevEq : ({ ra with prev := none } : Reply).prev = ra.prev := by rw [hEq]
+  rw [hPrevA] at hPrevEq
+  cases hPrevEq
+
+/-- `v0.35.4`: **consuming a reply link preserves the chain** when the frame heads
+no context and no frame's `prev` names it — the two facts the detach establishes.
+The consumed frame leaves the structure with both links clear, every other object
+is untouched, and the frame was on no walk to begin with
+(`donationChainWalk_mem_prev`). -/
+theorem clearReplyObjectCaller_preserves_donationChainWellFormed (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
+    (hNotHead : ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
+      st.getReply? rid = some r → r.next ≠ some (.head sc))
+    (hUnreferenced : ∀ (a : SeLe4n.ReplyId) (ra : Reply),
+      st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid) :
+    donationChainWellFormed (Lifecycle.Suspend.clearReplyObjectCaller st rid) := by
+  unfold Lifecycle.Suspend.clearReplyObjectCaller
+  cases hR : st.getReply? rid with
+  | none => simp only []; exact hChain
+  | some r =>
+    simp only []
+    have hRObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
+    have hCons := Reply.consumed_of_not_head r (fun sc => hNotHead r sc hR)
+    have hConsPrev : r.consumed.prev = none := by rw [hCons]
+    have hConsNext : r.consumed.next = none := by rw [hCons]
+    show donationChainWellFormed { st with objects := st.objects.insert rid.toObjId (.reply r.consumed) }
+    generalize hS' : ({ st with objects := st.objects.insert rid.toObjId (.reply r.consumed) } :
+      SystemState) = s'
+    have hAt : s'.objects[rid.toObjId]? = some (.reply r.consumed) := by
+      rw [← hS']
+      exact RobinHood.RHTable.getElem?_insert_self st.objects rid.toObjId _ hInv
+    have hOther : ∀ k : SeLe4n.ObjId, k ≠ rid.toObjId → s'.objects[k]? = st.objects[k]? := by
+      intro k hk
+      rw [← hS']
+      exact RobinHood.RHTable.getElem?_insert_ne st.objects rid.toObjId k _
+        (by simpa using fun h => hk h.symm) hInv
+    have hReplyCases : ∀ (q : SeLe4n.ReplyId) (rq : Reply),
+        s'.objects[q.toObjId]? = some (.reply rq) →
+        (q = rid ∧ rq = r.consumed) ∨ (q ≠ rid ∧ st.objects[q.toObjId]? = some (.reply rq)) := by
+      intro q rq hq
+      by_cases hk : q.toObjId = rid.toObjId
+      · left
+        refine ⟨SeLe4n.ReplyId.toObjId_injective q rid hk, ?_⟩
+        rw [hk, hAt] at hq
+        exact (KernelObject.reply.inj (Option.some.inj hq)).symm
+      · right
+        exact ⟨fun hx => hk (by rw [hx]), by rw [← hOther q.toObjId hk]; exact hq⟩
+    have hScBack : ∀ (c : SeLe4n.SchedContextId) (sc : SchedContext),
+        s'.objects[c.toObjId]? = some (.schedContext sc) →
+        st.objects[c.toObjId]? = some (.schedContext sc) := by
+      intro c sc hc
+      have hk : c.toObjId ≠ rid.toObjId := by intro hx; rw [hx, hAt] at hc; cases hc
+      rw [← hOther c.toObjId hk]; exact hc
+    have hScFwd : ∀ (c : SeLe4n.SchedContextId) (sc : SchedContext),
+        st.objects[c.toObjId]? = some (.schedContext sc) →
+        s'.objects[c.toObjId]? = some (.schedContext sc) := by
+      intro c sc hc
+      have hk : c.toObjId ≠ rid.toObjId := by intro hx; rw [hx, hRObj] at hc; cases hc
+      rw [hOther c.toObjId hk]; exact hc
+    have hReplyFwd : ∀ (q : SeLe4n.ReplyId) (rq : Reply), q ≠ rid →
+        st.objects[q.toObjId]? = some (.reply rq) → s'.objects[q.toObjId]? = some (.reply rq) := by
+      intro q rq h1 hq
+      rw [hOther q.toObjId (fun hx => h1 (SeLe4n.ReplyId.toObjId_injective q rid hx))]
+      exact hq
+    -- The frame at `rid` heads no context: a context whose head it was would make
+    -- its `next` a `.head`, which `hNotHead` refuses.
+    have hRidNotHeadOf : ∀ (c : SeLe4n.SchedContextId) (sc : SchedContext),
+        st.objects[c.toObjId]? = some (.schedContext sc) → sc.scReply ≠ some rid := by
+      intro c sc hc hEq
+      obtain ⟨r', hR', hNext'⟩ := hChain.headLinkReciprocal c sc hc rid hEq
+      have hr' : r' = r := KernelObject.reply.inj (Option.some.inj (hR'.symm.trans hRObj))
+      rw [hr'] at hNext'
+      exact hNotHead r c hR hNext'
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · intro q rq hq
+      rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, hqPre⟩
+      · intro _; exact ⟨hConsPrev, hConsNext⟩
+      · exact hChain.replyWellFormed q rq hqPre
+    · intro c sc hc rid' hRid'
+      have hcPre := hScBack c sc hc
+      obtain ⟨r', hR', hNext'⟩ := hChain.headLinkReciprocal c sc hcPre rid' hRid'
+      have hNe : rid' ≠ rid := by
+        intro hx; rw [hx] at hRid'; exact hRidNotHeadOf c sc hcPre hRid'
+      exact ⟨r', hReplyFwd rid' r' hNe hR', hNext'⟩
+    · intro rid' r' c hR' hNext'
+      rcases hReplyCases rid' r' hR' with ⟨_, rfl⟩ | ⟨_, hPre⟩
+      · rw [hConsNext] at hNext'; cases hNext'
+      · obtain ⟨sc, hSc, hHead⟩ := hChain.headLinkResolves rid' r' c hPre hNext'
+        exact ⟨sc, hScFwd c sc hSc, hHead⟩
+    · intro rid' r' below hR' hPrev'
+      rcases hReplyCases rid' r' hR' with ⟨_, rfl⟩ | ⟨_, hPre⟩
+      · rw [hConsPrev] at hPrev'; cases hPrev'
+      · obtain ⟨b, hB, hBnext⟩ := hChain.prevLinkReciprocal rid' r' below hPre hPrev'
+        have hNeB : below ≠ rid := fun hx => hUnreferenced rid' r' hPre (hx ▸ hPrev')
+        exact ⟨b, hReplyFwd below b hNeB hB, hBnext⟩
+    · intro c sc hc
+      have hcPre := hScBack c sc hc
+      obtain ⟨fuel, chain, hWalk⟩ := hChain.headTerminates c sc hcPre
+      refine ⟨fuel, chain, ?_⟩
+      have hRidNotIn : rid ∉ chain := by
+        intro hMem
+        rcases donationChainWalk_mem_prev st fuel (.head c) sc.scReply chain hWalk rid hMem with
+          hEq | ⟨p, rp, _, hRp, hPrevP⟩
+        · exact hRidNotHeadOf c sc hcPre hEq
+        · exact hUnreferenced p rp hRp hPrevP
+      exact donationChainFrom_congr_on_chain c fuel sc.scReply chain hWalk (by
+        intro q hq
+        have hqNe : q ≠ rid := fun hx => hRidNotIn (hx ▸ hq)
+        obtain ⟨rq, hrq, _⟩ := donationChainFrom_mem st c fuel sc.scReply chain hWalk q hq
+        unfold replyStackLinksAt?
+        rw [hReplyFwd q rq hqNe hrq, hrq])
+
+/-- `v0.35.4`: **the cancellation's reply-link sever preserves the donation
+chain**, under the two facts the detach that precedes it establishes about the
+victim's frame.  The TCB half frames the chain outright; the Reply half is
+`clearReplyObjectCaller_preserves_donationChainWellFormed`, with both facts
+carried across the TCB write (which moves no Reply). -/
+theorem consumeReplyLink_preserves_donationChainWellFormed (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st)
+    (hNotHead : ∀ (rid : SeLe4n.ReplyId) (r : Reply) (sc : SeLe4n.SchedContextId),
+      tcb.replyObject = some rid → st.getReply? rid = some r → r.next ≠ some (.head sc))
+    (hUnreferenced : ∀ (rid a : SeLe4n.ReplyId) (ra : Reply), tcb.replyObject = some rid →
+      st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid) :
+    donationChainWellFormed (Lifecycle.Suspend.consumeReplyLink st tid tcb) := by
+  unfold Lifecycle.Suspend.consumeReplyLink
+  cases hR : tcb.replyObject with
+  | none => simp only []; exact hChain
+  | some rid =>
+    simp only []
+    have hInv1 := Lifecycle.Suspend.clearTcbReplyObject_preserves_objects_invExt st tid hInv
+    have hChain1 : donationChainWellFormed (Lifecycle.Suspend.clearTcbReplyObject st tid) :=
+      donationChainWellFormed_of_frame (clearTcbReplyObject_donationChainFrame st tid hInv) hChain
+    refine clearReplyObjectCaller_preserves_donationChainWellFormed _ rid hInv1 hChain1 ?_ ?_
+    · intro r sc hR1
+      rw [clearTcbReplyObject_getReply?_eq st tid hInv rid] at hR1
+      exact hNotHead rid r sc hR hR1
+    · intro a ra hA
+      exact hUnreferenced rid a ra hR (clearTcbReplyObject_reply_backward st tid hInv _ ra hA)
 
 end SeLe4n.Kernel

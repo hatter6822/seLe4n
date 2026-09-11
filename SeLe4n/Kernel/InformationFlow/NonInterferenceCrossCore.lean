@@ -1858,15 +1858,15 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
     (hStep : applyReplyDonationOnCore st replierVtid serverCore replierHome ownerHome = .ok st') :
     observableSlotsConfinedToCores st st' [serverCore] := by
   rcases applyReplyDonationOnCore_ok_decompose st st' replierVtid serverCore replierHome
-    ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, owner, stRet, _, hRet, hEq⟩
+    ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, owner, n, stRet, _, _, hRet, hEq⟩
   · exact observableSlotsConfinedToCores_of_eq _ hEq
   · rw [hEq]
     exact observableSlotsConfinedToCores_widen_cons
       (by
         simpa using observableSlotsConfinedToCores_trans
           (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-            (returnDonatedSchedContext_scheduler_eq st stRet _ _ _ none hRet)
-            (returnDonatedSchedContext_machine_eq st stRet _ _ _ none hRet))
+            (returnDonatedSchedContext_scheduler_eq st stRet _ _ _ n hRet)
+            (returnDonatedSchedContext_machine_eq st stRet _ _ _ n hRet))
           (migrateSchedContextReplenishment_confinedToCores stRet scId replierHome ownerHome))
       (removeRunnableOnCore_confinedToCores
         (migrateSchedContextReplenishment stRet scId replierHome ownerHome)
@@ -2026,9 +2026,10 @@ def replyRecvReturnDonationWriteSet (tid recordedServer nextThread : SeLe4n.Thre
     | .donated oldScId owner =>
       match recordedServer.toValid?, owner.toValid? with
       | some srvV, some ownerV =>
-        -- WS-OD OD3.1: the mirror passes the same bottom-of-stack answer the
-        -- transition it models passes; OD4.4 threads the resolver into both.
-        match returnDonatedSchedContextValid st srvV oldScId ownerV none with
+        -- **WS-OD OD4.4**: the mirror resolves the new owner exactly where the
+        -- transition resolves it -- a write set that mirrors a transition has to
+        -- branch where the transition branches, and the resolver is a branch.
+        match returnDonatedSchedContextResolved st srvV.val oldScId ownerV.val with
         | .error _ => []
         | .ok st1' =>
           -- WS-RR RR2.20: mirrors the transition, whose return is followed by the
@@ -2083,10 +2084,11 @@ theorem replyRecvReturnDonation_confinedToCores (tid recordedServer nextThread :
         · next e hRet => simp only [hRet] at hStep; exact absurd hStep (by simp)
         · next st1' hRet =>
           simp only [hRet] at hStep
+          obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
           have hReturn : observableSlotsConfinedToCores st st1' [] :=
             observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-              (returnDonatedSchedContext_scheduler_eq st st1' _ _ _ none hRet)
-              (returnDonatedSchedContext_machine_eq st st1' _ _ _ none hRet)
+              (returnDonatedSchedContext_scheduler_eq st st1' _ _ _ n hPopN)
+              (returnDonatedSchedContext_machine_eq st st1' _ _ _ n hPopN)
           -- WS-RR RR2.20: the migration is silent too, so the pair still is.
           have hSilent : observableSlotsConfinedToCores st
               (migrateSchedContextReplenishment st1' oldScId
@@ -3381,6 +3383,13 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
       simp only [hBound]
       split at hStep
       · next tcb hTcb =>
+        -- `v0.35.4`: a donated holder is refused, so a successful unbind saw a
+        -- binding that is not a donation.
+        have hNotDon : tcb.schedContextBinding.isDonated = false := by
+          cases hD : tcb.schedContextBinding.isDonated with
+          | false => rfl
+          | true => rw [hD] at hStep; simp at hStep
+        simp only [hNotDon, Bool.false_eq_true, if_false] at hStep
         rw [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨-, hs⟩ := hStep
         subst hs
@@ -3461,8 +3470,21 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
   · next sc hSc =>
     split at hStep
     · exact absurd hStep (by simp)
-    · split at hStep
+    · -- `v0.35.4`: a context heading a reply stack is refused, so a successful
+      -- bind saw none.
+      have hNoHead : sc.scReply.isSome = false := by
+        cases hH : sc.scReply.isSome with
+        | false => rfl
+        | true => rw [hH] at hStep; simp at hStep
+      simp only [hNoHead, Bool.false_eq_true, if_false] at hStep
+      split at hStep
       · next tcb hTcb =>
+        -- `v0.35.4`: and a thread whose reply frame is on a live stack is refused.
+        have hNoLive : SchedContextOps.replyFrameOnLiveStack st tcb = false := by
+          cases hL : SchedContextOps.replyFrameOnLiveStack st tcb with
+          | false => rfl
+          | true => rw [hL] at hStep; split at hStep <;> simp at hStep
+        simp only [hNoLive, Bool.false_eq_true, if_false] at hStep
         split at hStep
         · exact absurd hStep (by simp)
         · split at hStep
@@ -4546,9 +4568,15 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
-  | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+  | notification _ | vspaceRoot _ | untyped _ =>
     simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
     injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
+  | schedContext _ =>
+    -- WS-OD OD5.4: a context heading a reply stack is refused (vacuous on `.ok`).
+    simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
+    split at hOk
+    · cases hOk
+    · injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
 
 /-- SM8.B.2: the object-store replacement is scheduler- and machine-silent. -/
 private theorem lifecycleRetypeDirect_framed

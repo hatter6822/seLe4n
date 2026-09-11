@@ -1752,7 +1752,7 @@ private theorem returnDonatedSchedContext_preserves_projection
   -- WS-OD OD3.2: four projection-**stable** writes, composed off the operation's
   -- own store chain.  Every field the return touches is stripped by
   -- `projectKernelObject` — a SchedContext's `boundThread` and `scReply`, a
-  -- Reply's `donatedSc` and `prev`, a TCB's `schedContextBinding` — so the step
+  -- Reply's `next` and `prev`, a TCB's `schedContextBinding` — so the step
   -- is invisible to *any* observer, not merely to one for whom the server is
   -- high.  The `hReceiverObjHigh` hypothesis the pre-OD3 proof carried is gone:
   -- it was never needed, and demanding it made the result unusable wherever the
@@ -1761,14 +1761,14 @@ private theorem returnDonatedSchedContext_preserves_projection
     hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? hReturn
   have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
   have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hObjSetInv hS1
-  have hSet2 := storeDonationHeadClear_preserves_objectIndexSet_invExt hSet1 hClear
+  have hSet2 := storeDonationHeadPop_preserves_objectIndexSet_invExt hSet1 hClear
   have hSet3 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s2 s3 _ _ hSet2 hS3
   have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
     hObjSetInv hIdxComplete hS1
-  have hC2 := storeDonationHeadClear_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
+  have hC2 := storeDonationHeadPop_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
   have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
     hSet2 hC2 hS3
   have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
@@ -1776,7 +1776,7 @@ private theorem returnDonatedSchedContext_preserves_projection
     (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _)
     (hIdxComplete scId.toObjId (by rw [hSc]; intro hx; cases hx))
     hObjInv hS1
-  have hP2 := storeDonationHeadClear_preserves_projection ctx observer hC1 hInv1 hClear
+  have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
   have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
     originalOwner.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 originalOwner clientTcb hL1)
     (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _)
@@ -2117,14 +2117,18 @@ theorem endpointReceiveDual_preserves_projection
                   | bound _ => rfl
                   | donated scId originalOwner =>
                     simp only []
-                    cases hReturn : returnDonatedSchedContext st receiver scId originalOwner none with
+                    cases hReturn : returnDonatedSchedContextResolved st receiver scId
+                        originalOwner with
                     | error _ => rfl
                     | ok st' =>
                       -- WS-OD OD3.2: every field the return writes is stripped by
                       -- `projectKernelObject`, so no observability hypothesis on the
-                      -- receiver is needed at all.
+                      -- receiver is needed at all.  WS-OD OD4.4: and none on the
+                      -- resolver's answer either — the pop is invisible at every
+                      -- reply-stack depth.
+                      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
                       exact returnDonatedSchedContext_preserves_projection ctx observer
-                        st st' receiver scId originalOwner hObjInv none hReturn
+                        st st' receiver scId originalOwner hObjInv n hPop
                         hIdxComplete hObjSetInv
               -- Common tail: from st2 back to st (storeTcbIpcState → enqueue → cleanup).
               have hProjTail : projectState ctx observer st2 = projectState ctx observer st := by
@@ -3239,108 +3243,109 @@ theorem scrubObjectMemory_preserves_lowEquivalent
 -- AE1-F: Donation and PIP NI preservation theorems (U-04)
 -- ============================================================================
 
-/-- AE1-F1/F2: `applyCallDonation` preserves NI projection when caller and
-receiver objects (and any SchedContext involved) are non-observable.
+/-- **WS-OD OD4.1**: the donation push is invisible to **every** observer.
 
-`applyCallDonation` either returns the state unchanged (donation conditions
-not met) or calls `donateSchedContext` which modifies only the caller TCB,
-receiver TCB, and one SchedContext — all at non-observable ObjIds.
-On success, the scheduler is preserved (`applyCallDonation_scheduler_eq`). -/
+The mirror of `returnDonatedSchedContext_preserves_projection`, and for the same
+reason: every field the push writes is stripped by `projectKernelObject` — the
+SchedContext's `boundThread` and `scReply`, the pushed Reply's `next` and
+`prev`, the old head's `next`, and the two TCBs' `schedContextBinding`.  So the four stores are
+projection-**stable** rather than merely high, and the result needs no
+observability hypothesis at all.
+
+That matters beyond tidiness.  The pre-OD4 proof carried
+`objectObservable … clientScId.toObjId = false` as a hypothesis of the *caller's
+`.bound scId` binding*; with OD4.2 the donor may be `.donated scId owner`, so a
+hypothesis phrased over `.bound` would not even cover the arm being added.  The
+honest reading is that the observability was never needed — exactly the
+correction WS-RR RR7.22 made on the return side. -/
+private theorem donateSchedContext_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt)
+    (hDonate : donateSchedContext st clientTid serverTid clientScId = .ok st')
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
+        st.objectIndexSet.contains oid = true)
+    (hObjSetInv : st.objectIndexSet.table.invExt) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
+      hObj, _, _, hFrame, hS1, hS2, hL1, hS3, hL2, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId hDonate
+  have hRepPre : st.getReply? pushRid = some pushReply :=
+    (donationPushFrame?_ok st donorTcb pushRid pushReply hFrame).2.1
+  have hRepRaw := (SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hRepPre
+  -- WS-OD OD4.1: the two non-TCB stores land at different keys, off the shared
+  -- typed distinctness lemma rather than a fifth copy of its three-line proof.
+  have hKeyNe := getReply?_getSchedContext?_key_ne st pushRid clientScId pushReply sc
+    hRepPre hObj
+  have hScRaw := (SystemState.getSchedContext?_eq_some_iff st clientScId sc).mp hObj
+  have hRep1 : s1.objects[pushRid.toObjId]? = some (.reply pushReply) := by
+    rw [SeLe4n.Model.storeObject_objects_ne st s1 clientScId.toObjId pushRid.toObjId _
+      hKeyNe hObjInv hS1]
+    exact hRepRaw
+  have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
+  have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hObjSetInv hS1
+  have hSet2 := storeDonationFramePush_preserves_objectIndexSet_invExt hSet1 hS2
+  have hSet3 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s2 s3 _ _ hSet2 hS3
+  have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
+    hObjSetInv hIdxComplete hS1
+  have hC2 := storeDonationFramePush_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hS2
+  have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
+    hSet2 hC2 hS3
+  have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
+    clientScId.toObjId _ (.schedContext sc) hScRaw
+    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _)
+    (hIdxComplete clientScId.toObjId (by rw [hScRaw]; intro hx; cases hx))
+    hObjInv hS1
+  -- `v0.35.4`: the push is two Reply writes now (the pushed frame and the old
+  -- head's upward link); both are projection-stable for the same reason.
+  have hP2 := storeDonationFramePush_preserves_projection ctx observer hC1 hSet1 hInv1
+    ((SystemState.getReply?_eq_some_iff _ _ _).mpr hRep1) hS2
+  have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
+    clientTid.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 clientTid clientTcb hL1)
+    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _)
+    (hC2 clientTid.toObjId (by
+      rw [lookupTcb_some_objects s2 clientTid clientTcb hL1]; intro hx; cases hx))
+    hInv2 hS3
+  have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
+    serverTid.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 serverTid serverTcb hL2)
+    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _)
+    (hC3 serverTid.toObjId (by
+      rw [lookupTcb_some_objects s3 serverTid serverTcb hL2]; intro hx; cases hx))
+    hInv3 hS4
+  have hFinal : projectState ctx observer st' = projectState ctx observer s4 := by
+    rw [hEq]; rfl
+  rw [hFinal, hP4, hP3, hP2, hP1]
+
+/-- AE1-F1/F2 (**WS-OD OD4.1**, unconditional): `applyCallDonation` preserves the
+NI projection.
+
+The no-op arms change nothing; the donating arm is `donateSchedContext`, whose
+four writes are all projection-stable.  The three observability hypotheses the
+pre-OD4 statement carried are gone — see
+`donateSchedContext_preserves_projection` for why they were never needed and why
+one of them could not have survived OD4.2's widened guard. -/
 theorem applyCallDonation_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState)
     (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (st' : SystemState)
     (hOk : applyCallDonation st callerVtid receiverVtid = .ok st')
-    (hCallerObjHigh : objectObservable ctx observer callerVtid.val.toObjId = false)
-    (hReceiverObjHigh : objectObservable ctx observer receiverVtid.val.toObjId = false)
-    (hScHigh : ∀ tcb : TCB, lookupTcb st callerVtid.val = some tcb →
-      ∀ scId : SeLe4n.SchedContextId, tcb.schedContextBinding = .bound scId →
-        objectObservable ctx observer scId.toObjId = false)
-    (hObjInv : st.objects.invExt) :
+    (hObjInv : st.objects.invExt)
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
+        st.objectIndexSet.contains oid = true)
+    (hObjSetInv : st.objectIndexSet.table.invExt) :
     projectState ctx observer st' =
     projectState ctx observer st := by
-  -- AH2-D: applyCallDonation now returns Except. On success, either returns
-  -- st unchanged (no-op paths) or calls donateSchedContext (donation path).
-  -- F-3: donateSchedContext does three storeObject calls at non-observable
-  -- ObjIds (clientScId.toObjId, the donor callerVtid.toObjId, and the server
-  -- receiverVtid.toObjId). Chain storeObject_preserves_projection for each.
-  -- AN10-residual-1 deep-audit: signature now takes ValidThreadId; body
-  -- calls donateSchedContextValid directly (no toValid? case-split).
-  unfold applyCallDonation at hOk
-  cases hR : lookupTcb st receiverVtid.val with
-  | none => simp [hR] at hOk; cases hOk; simp
-  | some receiverTcb =>
-    simp only [hR] at hOk
-    cases hBinding : receiverTcb.schedContextBinding with
-    | bound _ => simp [hBinding] at hOk; cases hOk; simp
-    | donated _ _ => simp [hBinding] at hOk; cases hOk; simp
-    | unbound =>
-      simp only [hBinding] at hOk
-      cases hC : lookupTcb st callerVtid.val with
-      | none => simp [hC] at hOk; cases hOk; simp
-      | some callerTcb =>
-        simp only [hC] at hOk
-        cases hCBinding : callerTcb.schedContextBinding with
-        | unbound => simp [hCBinding] at hOk; cases hOk; simp
-        | donated _ _ => simp [hCBinding] at hOk; cases hOk; simp
-        | bound clientScId =>
-          -- AN10-residual-1 deep-audit: body now calls
-          -- `donateSchedContextValid` directly; reduce via `_eq` lemma.
-          simp only [hCBinding, donateSchedContextValid] at hOk
-          cases hDon : donateSchedContext st callerVtid.val receiverVtid.val clientScId with
-          | error _ => simp [hDon] at hOk
-          | ok stDon =>
-            simp [hDon] at hOk; cases hOk
-            -- F-3: donateSchedContext = storeObject(scId) → storeObject(donor)
-            -- → storeObject(serverId). All three ObjIds are non-observable,
-            -- chain storeObject_preserves_projection.
-            unfold donateSchedContext at hDon
-            revert hDon
-            cases hObj : st.objects[clientScId.toObjId]? with
-            | none => intro h; cases h
-            | some obj =>
-              cases obj with
-              | schedContext sc =>
-                simp only []
-                split
-                · intro h; cases h
-                · cases hS1 : storeObject clientScId.toObjId _ st with
-                  | error _ => intro h; cases h
-                  | ok p1 =>
-                    simp only []
-                    -- F-3: donor-clear store (caller/clientTid) before server store
-                    cases hLC : lookupTcb p1.2 callerVtid.val with
-                    | none => intro h; cases h
-                    | some _ =>
-                      simp only []
-                      cases hS2 : storeObject callerVtid.val.toObjId _ p1.2 with
-                      | error _ => intro h; cases h
-                      | ok p2 =>
-                        simp only []
-                        cases hL : lookupTcb p2.2 receiverVtid.val with
-                        | none => intro h; cases h
-                        | some serverTcb =>
-                          simp only []
-                          cases hS3 : storeObject receiverVtid.val.toObjId _ p2.2 with
-                          | error _ => intro h; cases h
-                          | ok p3 =>
-                            simp only [Except.ok.injEq]
-                            intro hEq; subst hEq
-                            -- SchedContext is non-observable by hypothesis
-                            have hScObjHigh := hScHigh callerTcb hC clientScId hCBinding
-                            have hInv1 := storeObject_preserves_objects_invExt
-                              st p1.2 clientScId.toObjId _ hObjInv hS1
-                            have hInv2 := storeObject_preserves_objects_invExt
-                              p1.2 p2.2 callerVtid.val.toObjId _ hInv1 hS2
-                            have hProj1 := storeObject_preserves_projection
-                              ctx observer st p1.2 clientScId.toObjId _ hScObjHigh hObjInv hS1
-                            have hProj2 := storeObject_preserves_projection
-                              ctx observer p1.2 p2.2 callerVtid.val.toObjId _ hCallerObjHigh hInv1 hS2
-                            have hProj3 := storeObject_preserves_projection
-                              ctx observer p2.2 p3.2 receiverVtid.val.toObjId _ hReceiverObjHigh hInv2 hS3
-                            rw [projectState_scThreadIndex_eq, hProj3, hProj2, hProj1]
-              | _ => simp only []; intro h; cases h
+  cases hSc : callDonationSchedContext? st callerVtid.val receiverVtid.val with
+  | none =>
+      rw [applyCallDonation_characterisation, hSc] at hOk; cases hOk; rfl
+  | some scId =>
+      rw [applyCallDonation_characterisation, hSc] at hOk
+      exact donateSchedContext_preserves_projection ctx observer st st'
+        callerVtid.val receiverVtid.val scId hObjInv hOk hIdxComplete hObjSetInv
 
 /-- AE1-F3: `propagatePriorityInheritance` preserves NI projection when
 the starting thread and its entire blocking chain are non-observable.
@@ -3602,16 +3607,23 @@ theorem objects_insert_preserves_projection_high
 -- ============================================================================
 
 /-- AK6-F.2c (helper): `updatePrioritySource` modifies only `st.objects` via
-    direct insert, at either the target TCB (unbound case) or the bound/donated
-    SchedContext. When the relevant object is non-observable, projection is
-    preserved by `objects_insert_preserves_projection_high`. -/
+    direct insert, at either the target TCB (no priority source) or the
+    SchedContext the binding's priority source names. When the written object is
+    non-observable, projection is preserved by
+    `objects_insert_preserves_projection_high`.
+
+    **WS-OD (v0.35.3)**: `hScHigh` is stated over
+    `SchedContextBinding.ownScId?`, so it ranges over `.bound` alone.
+    A `.donated` thread's priority write lands in its own TCB, which `hTcbHigh`
+    already covers, and demanding the *donor's* reservation be non-observable
+    would refuse a state where a low donee is retuned by a low principal while
+    the client is high — a case the operation no longer touches. -/
 theorem updatePrioritySource_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPriority : SeLe4n.Priority)
     (hTcbHigh : objectObservable ctx observer tid.toObjId = false)
-    (hScHigh : ∀ scId, (tcb.schedContextBinding = SchedContextBinding.bound scId ∨
-                         (∃ donor, tcb.schedContextBinding = SchedContextBinding.donated scId donor)) →
+    (hScHigh : ∀ scId, tcb.schedContextBinding.ownScId? = some scId →
                         objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer
@@ -3619,27 +3631,17 @@ theorem updatePrioritySource_preserves_projection
     projectState ctx observer st := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
   split
-  · -- .unbound
-    exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
-      hTcbHigh hObjInv
-  · -- .bound scId: match on st.objects[scId.toObjId]?
-    rename_i scId hBinding
+  · -- the priority source resolves (`.bound scId`)
+    rename_i scId hSrc
     split
     · -- some (.schedContext sc) — apply frame lemma
-      have hSc : objectObservable ctx observer scId.toObjId = false :=
-        hScHigh scId (Or.inl hBinding)
       exact objects_insert_preserves_projection_high ctx observer st scId.toObjId _
-        hSc hObjInv
-    · -- other: state unchanged
+        (hScHigh scId hSrc) hObjInv
+    · -- absent: state unchanged
       rfl
-  · -- .donated scId originalOwner: match on st.objects[scId.toObjId]?
-    rename_i scId originalOwner hBinding
-    split
-    · have hSc : objectObservable ctx observer scId.toObjId = false :=
-        hScHigh scId (Or.inr ⟨originalOwner, hBinding⟩)
-      exact objects_insert_preserves_projection_high ctx observer st scId.toObjId _
-        hSc hObjInv
-    · rfl
+  · -- no priority source (`.unbound` / `.donated`): the target's own TCB
+    exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
+      hTcbHigh hObjInv
 
 -- ============================================================================
 -- AK6-F.2h/i: VSpace checked+flush wrappers preservation
@@ -4267,8 +4269,7 @@ theorem setPriorityOp_preserves_projection
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
     (hScHigh : ∀ targetTcb, (st.objects[vTargetTid.val.toObjId]? : Option KernelObject)
                 = some (.tcb targetTcb) →
-                ∀ scId, (targetTcb.schedContextBinding = SchedContextBinding.bound scId ∨
-                         ∃ donor, targetTcb.schedContextBinding = SchedContextBinding.donated scId donor) →
+                ∀ scId, targetTcb.schedContextBinding.ownScId? = some scId →
                 objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hSchedProj : ∀ stMid stFinal,
@@ -4421,8 +4422,7 @@ theorem setPriorityOnCore_preserves_projection
     (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
     (hScHigh : ∀ targetTcb, st.getTcb? vTargetTid.val = some targetTcb →
-                ∀ scId, (targetTcb.schedContextBinding = SchedContextBinding.bound scId ∨
-                         ∃ donor, targetTcb.schedContextBinding = SchedContextBinding.donated scId donor) →
+                ∀ scId, targetTcb.schedContextBinding.ownScId? = some scId →
                 objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hReschedProj : ∀ stIn stOut c,
@@ -4476,8 +4476,7 @@ theorem setMCPriorityOp_preserves_projection
     (hScHighForUpdated : ∀ targetTcb, (st.objects[vTargetTid.val.toObjId]? : Option KernelObject)
                 = some (.tcb targetTcb) →
                 ∀ scId,
-                  (({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.bound scId ∨
-                   ∃ donor, ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.donated scId donor) →
+                  ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding.ownScId? = some scId →
                 objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hSchedProj : ∀ stMid stFinal,
@@ -4562,8 +4561,7 @@ theorem setMCPriorityOnCore_preserves_projection
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
     (hScHighForUpdated : ∀ targetTcb, st.getTcb? vTargetTid.val = some targetTcb →
                 ∀ scId,
-                  (({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.bound scId ∨
-                   ∃ donor, ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.donated scId donor) →
+                  ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding.ownScId? = some scId →
                 objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hReschedProj : ∀ stIn stOut c,

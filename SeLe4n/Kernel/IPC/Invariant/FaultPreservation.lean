@@ -534,7 +534,14 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
     (hTargetIdleAllowed : ∀ tcb : TCB,
       (endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st).1.getTcb? faulted
           = some tcb →
-      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
+      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState)
+    -- **WS-OD OD4.4**: the reply's donation return resolves its new owner from
+    -- the context's reply stack; this is the obligation that resolution carries,
+    -- stated at the state the pop runs at (the reply leg commits first).
+    (hStackValid : ∀ scId serverTid originalOwner,
+        replyStackOuterCallerValid
+          (endpointReplyOnCore replier faulted IpcMessage.empty c st).1
+          scId serverTid originalOwner) :
     ipcInvariantFull (faultReplyOnCore replier faulted mi regs c st).1 := by
   cases hTcb : st.getTcb? faulted with
   | none => simpa only [faultReplyOnCore, hTcb] using hInv
@@ -546,7 +553,7 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
             faulted IpcMessage.empty c st hInv hObjInv
             (fun t tcb' sc hS => hNoDonationOwnedBy t tcb' sc
               ((SystemState.getTcb?_eq_some_iff st t tcb').mpr hS))
-            hAllBudgetsNone hServerIdleAllowed
+            hAllBudgetsNone hServerIdleAllowed hStackValid
           have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
             faulted IpcMessage.empty c st hObjInv
           rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st

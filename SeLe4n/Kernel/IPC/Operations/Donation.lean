@@ -260,13 +260,43 @@ def callDonationSchedContext? (st : SystemState) (caller receiver : SeLe4n.Threa
       match receiverTcb.schedContextBinding with
       | .unbound =>
           match lookupTcb st caller with
-          | some callerTcb =>
-              match callerTcb.schedContextBinding with
-              | .bound scId => some scId
-              | _ => none
+          -- **WS-OD OD4.2**: the caller's *effective* context, bound or donated
+          -- (`SchedContextBinding.scId?`), so the resolver and the transition
+          -- widen in the same cut and cannot disagree about whether a call
+          -- donates.
+          | some callerTcb => callerTcb.schedContextBinding.scId?
           | none => none
       | _ => none
   | none => none
+
+/-- **WS-OD OD4.2/OD4.6: the guard fires at call depth ≥ 2.**
+
+The resolver reads the caller's *effective* context, so a caller that is itself
+holding a donation (`.donated scId owner` -- the intermediate server of a chain)
+names `scId` exactly as a `.bound` caller names its own.  This is the fact that
+makes the chain transitive at the resolver, stated rather than read off the
+definition at each of its three consumers.
+
+The receiver's `.unbound` premise is the other half of the guard and is what a
+passive server *is*; without it the call is a no-op at any depth. -/
+theorem callDonationSchedContext?_of_donated_caller
+    (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (cTcb rTcb : TCB)
+    (hR : lookupTcb st receiver = some rTcb)
+    (hRB : rTcb.schedContextBinding = .unbound)
+    (hC : lookupTcb st caller = some cTcb)
+    (hCB : cTcb.schedContextBinding = .donated scId owner) :
+    callDonationSchedContext? st caller receiver = some scId := by
+  unfold callDonationSchedContext?
+  rw [hR]
+  simp only []
+  rw [hRB]
+  simp only []
+  rw [hC]
+  simp only []
+  rw [hCB]
+  rfl
 
 /-- WS-RR RR2.1 (characterisation): the single-core call donation *is* the
 `callDonationSchedContext?` case split — `donateSchedContext` on the resolved
@@ -292,10 +322,9 @@ theorem applyCallDonation_characterisation
       | none => rfl
       | some callerTcb =>
         simp only []
-        cases callerTcb.schedContextBinding with
-        | unbound => rfl
-        | donated _ _ => rfl
-        | bound scId =>
+        cases callerTcb.schedContextBinding.scId? with
+        | none => rfl
+        | some scId =>
           simp only [donateSchedContextValid]
           cases donateSchedContext st callerVtid.val receiverVtid.val scId <;> rfl
 
@@ -350,7 +379,11 @@ theorem applyReplyDonation_characterisation
          | some (scId, owner) =>
              (match SeLe4n.ThreadId.toValid? owner with
               | some ownerVtid =>
-                  (match returnDonatedSchedContextValid st replierVtid scId ownerVtid none with
+                  -- WS-OD OD4.4: the resolved return — the model follows the
+                  -- operation onto the reply-stack resolver, or it is a model of
+                  -- a different program.
+                  (match returnDonatedSchedContextResolved st replierVtid.val scId
+                      ownerVtid.val with
                    | .error e => .error e
                    | .ok st' => .ok (removeRunnable st' replierVtid.val))
               | none => .error .invalidArgument)
@@ -369,7 +402,7 @@ theorem applyReplyDonation_characterisation
         | none => rfl
         | some ownerVtid =>
             simp only []
-            cases returnDonatedSchedContextValid st replierVtid _ ownerVtid none <;> rfl
+            cases returnDonatedSchedContextResolved st replierVtid.val _ ownerVtid.val <;> rfl
 
 /-- WS-RR RR2.1 / RR2.2 (operation): the cross-core `.call` SchedContext
 donation — the single-core `applyCallDonation` **plus** the SM5.H.4
@@ -675,6 +708,60 @@ def applyRendezvousCallDonation (st : SystemState)
       applyCallDonationOnCore st donorV receiverV
         (determineTargetCore st donor) (determineTargetCore st receiver)
   | _, _ => .error .invalidArgument
+
+/-- **WS-OD OD5.5: `.replyRecv`'s (and `.receive`'s) re-donation is a PUSH at
+every chain depth.**
+
+The rendezvous hand-off is the third live site that writes a reply-stack frame,
+after `.call` and the receive rendezvous.  Its donor is the thread the receive
+leg just dequeued, and OD4.2's widened guard makes it donate whether that thread
+holds its context `.bound` or `.donated` -- so a client that is itself an
+intermediate server of a longer chain passes the context on rather than stopping
+it, which is the whole point of the workstream.
+
+The statement exhibits the push: on a `.donated` donor and an `.unbound`
+receiver, the hand-off *is* `donateSchedContext` on the donor's effective context,
+followed by the SM5.H replenishment migration between the two threads' homes. -/
+theorem applyRendezvousCallDonation_donated_donor_pushes
+    (st st' : SystemState) (receiver donor : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (rTcb dTcb : TCB)
+    (hR : lookupTcb st receiver = some rTcb)
+    (hRB : rTcb.schedContextBinding = .unbound)
+    (hD : lookupTcb st donor = some dTcb)
+    (hDB : dTcb.schedContextBinding = .donated scId owner)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st') :
+    ∃ st1 : SystemState,
+      donateSchedContext st donor receiver scId = .ok st1 ∧
+      st' = migrateSchedContextReplenishment st1 scId
+        (determineTargetCore st donor) (determineTargetCore st receiver) := by
+  have hSc : callDonationSchedContext? st donor receiver = some scId :=
+    callDonationSchedContext?_of_donated_caller st donor receiver scId owner dTcb rTcb hR hRB
+      hD hDB
+  unfold applyRendezvousCallDonation at h
+  cases hDV : donor.toValid? with
+  | none => rw [hDV] at h; simp only [] at h; cases h
+  | some donorV =>
+    cases hRV : receiver.toValid? with
+    | none => rw [hDV, hRV] at h; simp only [] at h; cases h
+    | some receiverV =>
+      rw [hDV, hRV] at h
+      simp only [] at h
+      have hDEq : donorV.val = donor := SeLe4n.ThreadId.toValid?_some_val_eq donor donorV hDV
+      have hREq : receiverV.val = receiver :=
+        SeLe4n.ThreadId.toValid?_some_val_eq receiver receiverV hRV
+      obtain ⟨st1, hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st' donorV receiverV
+        (determineTargetCore st donor) (determineTargetCore st receiver) h
+      have hScV : callDonationSchedContext? st donorV.val receiverV.val = some scId := by
+        rw [hDEq, hREq]; exact hSc
+      have hPush : donateSchedContext st donor receiver scId = .ok st1 := by
+        rw [← hDEq, ← hREq]
+        exact (applyCallDonation_eq_donate_of_donation st donorV receiverV scId hScV).symm.trans
+          hDon
+      rcases harm with ⟨hNone, _⟩ | ⟨scId', hSome, hEq⟩
+      · exact absurd (hScV.symm.trans hNone) (by simp)
+      · obtain rfl : scId' = scId := Option.some.inj (hSome.symm.trans hScV)
+        exact ⟨st1, hPush, hEq⟩
 
 /-- **WS-OD OD3.6: did the receive leg dequeue a `Call`?**
 

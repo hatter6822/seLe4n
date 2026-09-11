@@ -863,7 +863,8 @@ theorem cleanupDonatedSchedContext_preserves_objects_invExt
     injection h with h; subst h; exact hInv
   · split at h
     · -- `.donated scId originalOwner`: delegate to returnDonatedSchedContext.
-      exact returnDonatedSchedContext_preserves_objects_invExt _ _ _ _ _ hInv none h
+      exact returnDonatedSchedContextResolved_lift h
+        (fun n s hs => returnDonatedSchedContext_preserves_objects_invExt _ _ _ _ _ hInv n hs)
     · -- `.bound` / `.unbound`: identity.
       injection h with h; subst h; exact hInv
 
@@ -880,9 +881,10 @@ theorem cleanupDonatedSchedContext_preserves_ipcInvariant
   split at h
   · injection h with h; subst h; exact hIpc
   · split at h
-    · intro oid ntfn hL
+    · obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
+      intro oid ntfn hL
       exact hIpc oid ntfn
-        (returnDonatedSchedContext_notification_backward _ _ _ _ _ hInv none h oid ntfn hL)
+        (returnDonatedSchedContext_notification_backward _ _ _ _ _ hInv n hPop oid ntfn hL)
     · injection h with h; subst h; exact hIpc
 
 /-- After cleanup, the cleaned thread is not in the run queue. -/
@@ -1044,7 +1046,20 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- sentinel on a freshly retyped object); a server-first receive stashes
     -- `pendingReceiveReply = some (ReplyId.ofNat target)`, so derive the id from
     -- `target` to avoid missing the stash and freeing a still-referenced Reply.
-    if r.caller.isSome || st.replyIsStashed (SeLe4n.ReplyId.ofNat target.toNat) then
+    --
+    -- **WS-OD OD5.4 / `v0.35.4`: and a third in-use form — a reply-stack frame.**
+    -- A Reply carrying a stack link in either direction (`prev` or `next`) is a
+    -- frame of some scheduling context's donation stack, or the top of a part
+    -- the detach cut off; freeing it would leave a context's `scReply` or a
+    -- neighbour's link naming a slot the retype has replaced.  The one spelling
+    -- of "this Reply may be linked or retyped" is `Reply.isFree` — no caller, no
+    -- links — shared with `linkReply`, `replyStashValid` and the boot check.
+    -- Under `donationChainWellFormed` a linked frame always has a blocked
+    -- caller, and a frame whose caller is gone has already left its stack (the
+    -- pop, the detach, `Reply.consumed`), so nothing is pinned by this guard
+    -- that a cancellation cannot free: the `v0.35.4` finding was exactly a frame
+    -- that stayed linked after its caller was consumed.
+    if !r.isFree || st.replyIsStashed (SeLe4n.ReplyId.ofNat target.toNat) then
       .error .revocationRequired
     else .ok st
   | .tcb tcb =>
@@ -1055,7 +1070,74 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- never consumes the Reply.  Mirrors the Reply reject + seL4 revoke-before-
     -- destroy: the outstanding reply must be replied-to / cancelled first.
     if tcb.replyObject.isSome then .error .revocationRequired else .ok st
+  | .schedContext sc =>
+    -- **WS-OD OD5.4: a scheduling context that heads a reply stack cannot be
+    -- retyped.**
+    --
+    -- `donationChainWellFormed.donatedContextResolves` says every Reply naming a
+    -- context resolves to a SchedContext object, so freeing one that frames
+    -- still name breaks the invariant outright -- and its completeness clause
+    -- makes `scReply = none` the exact `O(1)` test for "no frame names it": a
+    -- context whose stack is empty holds the whole (empty) chain, so no Reply may
+    -- carry its id.  The dual of the `.reply` guard above, and refused for the
+    -- same reason: repairing would mean clearing every frame of a stack reachable
+    -- only downward.
+    if sc.scReply.isSome then .error .revocationRequired else .ok st
   | _ => .ok st
+
+/-- **WS-OD OD5.4 / `v0.35.4`: a Reply that is a reply-stack frame cannot be
+retyped.**
+
+The guard, stated: a Reply that is not free — a caller still blocked on it, or a
+stack link in either direction — is in use, so destroying it would strand that
+caller or leave a stack naming a slot the retype has replaced.
+`.revocationRequired` is the error this path already uses for "clear this
+precondition first", and it reads correctly here as "let the outstanding call
+chain unwind, or cancel it, before freeing the Reply". -/
+theorem lifecyclePreRetypeCleanup_reply_refuses_live_stack_frame
+    (st : SystemState) (target : SeLe4n.ObjId) (r : Reply) (newObj : KernelObject)
+    (hNotFree : r.isFree = false) :
+    lifecyclePreRetypeCleanup st target (.reply r) newObj = .error .revocationRequired := by
+  unfold lifecyclePreRetypeCleanup
+  simp only [hNotFree, Bool.not_false, Bool.true_or, if_true]
+
+/-- The linked forms of the guard: a `prev` link alone, or a `next` link alone,
+each refuses the retype. -/
+theorem lifecyclePreRetypeCleanup_reply_refuses_prev_link
+    (st : SystemState) (target : SeLe4n.ObjId) (r : Reply) (newObj : KernelObject)
+    (hPrev : r.prev.isSome = true) :
+    lifecyclePreRetypeCleanup st target (.reply r) newObj = .error .revocationRequired :=
+  lifecyclePreRetypeCleanup_reply_refuses_live_stack_frame st target r newObj (by
+    unfold Reply.isFree
+    cases hp : r.prev with
+    | none => rw [hp] at hPrev; cases hPrev
+    | some _ => simp)
+
+theorem lifecyclePreRetypeCleanup_reply_refuses_next_link
+    (st : SystemState) (target : SeLe4n.ObjId) (r : Reply) (newObj : KernelObject)
+    (hNext : r.next.isSome = true) :
+    lifecyclePreRetypeCleanup st target (.reply r) newObj = .error .revocationRequired :=
+  lifecyclePreRetypeCleanup_reply_refuses_live_stack_frame st target r newObj (by
+    unfold Reply.isFree
+    cases hn : r.next with
+    | none => rw [hn] at hNext; cases hNext
+    | some _ => simp)
+
+/-- **WS-OD OD5.4: a scheduling context that heads a reply stack cannot be
+retyped either.**
+
+The dual of the Reply guard: `donatedContextResolves` requires every Reply naming
+a context to resolve, and `headHoldsWholeChain`'s completeness clause makes
+`scReply = none` exactly "no Reply names this context".  So `scReply.isSome` is
+the `O(1)` test for "frames still point here", and destroying such a context is
+refused rather than repaired. -/
+theorem lifecyclePreRetypeCleanup_schedContext_refuses_stack_head
+    (st : SystemState) (target : SeLe4n.ObjId) (sc : SchedContext) (newObj : KernelObject)
+    (hHead : sc.scReply.isSome = true) :
+    lifecyclePreRetypeCleanup st target (.schedContext sc) newObj
+      = .error .revocationRequired := by
+  unfold lifecyclePreRetypeCleanup
+  simp only [hHead, if_true]
 
 /-- AN4-G.2 (LIF-M02) — **named `lifecycleCleanupPipeline` wrapper** over
 `lifecyclePreRetypeCleanup`. The companion `RetypeTarget` subtype
@@ -1248,9 +1330,16 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk
     rw [cleanupEndpointServiceRegistrations_scheduler_eq] at h; exact h
-  | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+  | notification _ | vspaceRoot _ | untyped _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; exact h
+  | schedContext _ =>
+    -- WS-OD OD5.4: a context that heads a reply stack errors (vacuous on `.ok`);
+    -- one that heads none is a scheduler-identity cleanup like the kinds above.
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    split at hOk
+    · cases hOk
+    · injection hOk with hOk; subst hOk; exact h
   | reply r =>
     -- WS-SM SM6.D (PR #822 review): an in-use reply errors (vacuous on `.ok`);
     -- a free reply is a scheduler-identity cleanup like the kinds above.
@@ -1311,9 +1400,15 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk
     exact cleanupEndpointServiceRegistrations_tlbShootdown_eq st target
-  | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+  | notification _ | vspaceRoot _ | untyped _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; rfl
+  | schedContext _ =>
+    -- WS-OD OD5.4: the stack-head refusal is vacuous on `.ok`.
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    split at hOk
+    · cases hOk
+    · injection hOk with hOk; subst hOk; rfl
   | reply r =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     split at hOk

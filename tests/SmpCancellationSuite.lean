@@ -111,12 +111,35 @@ open SeLe4n.Testing
 #check @lockSet_cancelDonation_victim_tcb_write_mem
 #check @lockSet_cancelDonation_binding_sc_write_mem
 #check @lockSet_cancelDonation_donated_owner_tcb_write_mem
-#check @lockSet_tcbSuspend_victim_tcb_write_mem
-#check @lockSet_tcbSuspend_blocked_endpoint_write_mem
-#check @lockSet_tcbSuspend_blocked_notification_write_mem
-#check @lockSet_tcbSuspend_binding_sc_write_mem
-#check @lockSet_tcbSuspend_donated_owner_tcb_write_mem
-#check @lockSet_tcbSuspend_consumed_reply_write_mem
+-- **WS-OD (`v0.35.4`)**: the parametric `lockSet_tcbSuspend_*_write_mem` family
+-- is retired with the footprint it was about.  The syscall's footprint is
+-- `lockSet_tcbSuspendOnCore`, *defined over* the state-resolved cancellation
+-- footprint, so the teardown's coverage crosses one lift and the pipeline's own
+-- members have their own family.
+#check @lockSet_tcbSuspendOnCore
+#check @lockSet_tcbSuspendOnCore_correct
+#check @lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore
+#check @lockSet_tcbSuspendOnCore_covers_victim
+#check @lockSet_tcbSuspendOnCore_covers_tail
+#check @lockSet_tcbSuspendOnCore_covers_boundCancel
+#check @lockSet_tcbSuspendOnCore_covers_donatedCancel
+#check @lockSet_tcbSuspendOnCore_covers_reclaimSecondPop
+#check @suspendDonationCancelTail?
+#check @suspendDonationCancelTailOf?
+#check @cancelledCallerAlreadyBound
+-- WS-OD (`v0.35.4`): the teardown footprint's own new members.
+#check @cancelReclaimHead?
+#check @cancelDetachedFrameAbove?
+#check @cancelDonationPopMembers?
+#check @lockSet_cancelIpcBlocking_reclaim_head_write_mem
+#check @lockSet_cancelIpcBlocking_detached_frame_above_write_mem
+#check @lockSet_cancelIpcBlocking_below_head_write_mem
+#check @lockSet_cancelIpcBlocking_outer_caller_containsKey
+#check @lockSet_cancelDonation_head_write_mem
+#check @lockSet_cancelDonation_below_head_write_mem
+#check @lockSet_cancelDonation_outer_caller_containsKey
+#check @lockSet_cancelIpcBlockingOnCore_covers_reclaim
+#check @lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove
 
 -- SM6.E.2/.4 2PL atomicity (single-core + cross-core forms):
 #check @cancelIpcBlocking_atomic_under_lockSet
@@ -400,7 +423,11 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlockingOnCore_replyArm_eq
 #check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev
 #check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next
-#check @lockSet_cancelIpcBlockingOnCore_size_le_ten
+#check @lockSet_cancelIpcBlockingOnCore_size_le_twelve
+#check @lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation
+#check @lockSet_cancelIpcBlockingOnCore_size_le_of_donation
+#check @lockSet_tcbSuspendOnCore_size_le_sixteen
+#check @lockSet_tcbSuspendOnCore_size_le
 -- ...and the frames that license it: the arms that declare no neighbour write
 -- none.
 #check @cancelIpcBlocking_notificationArm_tcb_frame
@@ -446,8 +473,13 @@ variable (rdSc? : Option SeLe4n.SchedContextId) (dh? : Option SeLe4n.ThreadId)
 variable (hEp? : Option SeLe4n.ObjId)
 variable (hNb? : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
 -- WS-OD OD3.7: and two more — the Reply one frame below the reply-stack head and
--- that frame's caller's TCB, which the hand-back reads at call depth ≥ 2.
+-- that frame's caller's TCB, which the hand-back reaches at call depth ≥ 2.
 variable (bhR? : Option SeLe4n.ReplyId) (oc? : Option SeLe4n.ThreadId)
+-- WS-OD (`v0.35.4`): and two more again — the head the reclaim's pop clears, and
+-- the frame above a cancelled *middle* caller's own, which the detach unlinks.
+variable (rh? fa? : Option SeLe4n.ReplyId)
+-- WS-OD (`v0.35.4`): the donation cancellation's pop members.
+variable (dh1? dh2? : Option SeLe4n.ReplyId) (doc? : Option SeLe4n.ThreadId)
 
 /-- SM6.E.5: the flagship's remote-poke conjunct applies. -/
 example (h1 : st.getTcb? victim = some tcb0)
@@ -540,29 +572,29 @@ example (stPost : SystemState) (holder : SeLe4n.ThreadId) (t : TCB)
 
 /-- SM6.E.2: the single-core atomicity theorem applies (2PL bracket shape). -/
 example :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc?) ec
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa?) ec
         (fun st => (cancelIpcBlocking st victim tcb, ())) s
       = (unwindAll ec
-          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc?).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa?).lockAcquireSequence.reverse
           (cancelIpcBlocking
             (acquireAll ec
-              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc?).lockAcquireSequence s)
+              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa?).lockAcquireSequence s)
             victim tcb),
          ()) :=
   cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? hEp? hNb?
-    bhR? oc? s
+    bhR? oc? rh? fa? s
 
 /-- SM6.E.4: the donation atomicity companion applies (dispatcher form). -/
 example :
-    withLockSet (lockSet_cancelDonation victim sc? ot?) ec
+    withLockSet (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?) ec
         (cancelDonationOnCore victim tcb) s
       = (unwindAll ec
-          (lockSet_cancelDonation victim sc? ot?).lockAcquireSequence.reverse
+          (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?).lockAcquireSequence.reverse
           (cancelDonationOnCore victim tcb
-            (acquireAll ec (lockSet_cancelDonation victim sc? ot?).lockAcquireSequence s)).1,
+            (acquireAll ec (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?).lockAcquireSequence s)).1,
          (cancelDonationOnCore victim tcb
-            (acquireAll ec (lockSet_cancelDonation victim sc? ot?).lockAcquireSequence s)).2) :=
-  cancelDonationOnCore_atomic_under_lockSet victim tcb ec sc? ot? s
+            (acquireAll ec (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?).lockAcquireSequence s)).2) :=
+  cancelDonationOnCore_atomic_under_lockSet victim tcb ec sc? ot? dh1? dh2? doc? s
 
 /-- SM6.E.1: `objects.invExt` transports through the cross-core cancellation. -/
 example (hInv : st.objects.invExt) :
@@ -614,11 +646,16 @@ example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
     (hOwner : donationOwnerValid st)
     (hChain : donationChainWellFormed st)
     (hHolder : donationHolderIsReplyTarget st victim)
+    -- **WS-OD OD4.4**: the reclaim resolves its new owner off the holder's reply
+    -- stack at the post-abort state, so the arm carries that obligation in the
+    -- cancellation's own shape (`cancelDonationStackValid`, vacuous wherever the
+    -- context heads no stack).
+    (hStack : cancelDonationStackValid st victim tcb)
     (hTcb : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).objects[holder.toObjId]?
       = some (.tcb holderTcb)) :
     holderTcb.schedContextBinding ≠ .donated sc victim :=
   cancelIpcBlocking_reply_no_donation_to_victim st victim tcb ep rt hInv hLookup hBlocked
-    hOwner hChain hHolder holder holderTcb sc hTcb
+    hOwner hChain hHolder hStack holder holderTcb sc hTcb
 
 /-- WS-RR RR7.22 (residual): the swept thread holds no Reply object, derived from
 the bundle's own reciprocity rather than assumed. -/
@@ -834,11 +871,12 @@ private def runReplyCancelChecks : IO Unit := do
     (decide ((replyLock rId, AccessMode.write) ∈ ls.pairs))
   assertBool "reply-extended footprint kinds all permitted (.tcbSuspend now covers .reply)"
     (decide (∀ p ∈ ls.pairs, p.fst.kind ∈ permittedKinds .tcbSuspend))
-  -- The enclosing suspend footprint also covers the reply write.
+  -- **WS-OD (`v0.35.4`)**: the enclosing suspend footprint covers the reply write
+  -- *by construction* — it is defined over the state-resolved cancellation
+  -- footprint, so every write that one declares is a write it declares.
   assertBool "suspend footprint covers the consumed Reply write lock"
     (decide ((replyLock rId, AccessMode.write) ∈
-      (lockSet_tcbSuspend bystanderTid cnRoot victimTid none none none none
-        (some rId)).pairs))
+      (lockSet_tcbSuspendOnCore stReplyBlocked bystanderTid cnRoot victimTid).pairs))
   -- WS-OD OD3.5: **the arm-selected split, exercised on the shape it is about.**
   -- The victim below is reply-blocked *and* carries queue links — a stale pair,
   -- since a `.blockedOnReply` thread is on no endpoint queue.  The summed
@@ -1521,10 +1559,10 @@ private def runDisinheritanceSchedulingChecks : IO Unit := do
       -- the victim's home-core run-queue lock.
       assertBool "suspend sched footprint covers the executing core's run queue"
         (decide ((SchedLockId.runQueue ⟨bootCoreId⟩, Concurrency.AccessMode.write)
-          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1))
+          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 core1))
       assertBool "suspend sched footprint still covers the victim home run queue"
         (decide ((SchedLockId.runQueue ⟨core1⟩, Concurrency.AccessMode.write)
-          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1))
+          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 core1))
 
 -- ----------------------------------------------------------------------------
 -- Scenario O (PR #831 review 4, P1): an UNBOUND victim (home = boot) actually
@@ -1569,7 +1607,7 @@ private def runUnboundRunningSuspendChecks : IO Unit := do
           -- shape), and the running core's run-queue write lock is listed.
           assertBool "suspend sched footprint covers the RUNNING core's run queue"
             (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
-              ∈ suspendThreadOnCoreSchedLockSet bootCoreId bootCoreId bootCoreId core2))
+              ∈ suspendThreadOnCoreSchedLockSet bootCoreId bootCoreId bootCoreId bootCoreId core2))
       | .error _ => assertBool "unbound-running suspend succeeds" false
 
 -- ----------------------------------------------------------------------------
@@ -1778,6 +1816,38 @@ private def runUnblockFrameStagingChecks : IO Unit := do
                  ∧ b.registerContext.gpr ⟨1⟩ ≠ a.registerContext.gpr ⟨1⟩)
      | _, _ => false)
 
+/-- **WS-OD OD5.3 / OD6.3**: the suspend pipeline pops TWICE at call depth >= 2,
+so its scheduler-domain replenish segment is a **triple**.
+
+The G2 teardown's reply arm can rebind the victim `.donated scId outer`, and the
+arm selector below it re-reads the binding from the *post*-teardown TCB, so the
+`.donated` arm fires on a victim that entered `.unbound` and its migration's
+destination is the **outer caller's** home core -- a core not resolvable from
+the victim's pre-state binding, because at the pre-state the victim has none.
+Relation, not presence: the negative keeps every core in the call and moves the
+outer home onto the owner's, which is exactly the pair-shaped footprint the row
+replaced. -/
+private def runDonationDoublePopFootprintChecks : IO Unit := do
+  IO.println "--- §3.17 WS-OD OD5.3 the suspend replenish segment is a triple ---"
+  let core3 : CoreId := ⟨3, by decide⟩
+  assertBool "the victim's own home replenish lock is declared"
+    (decide ((SchedLockId.replenishQueue ⟨core1⟩, Concurrency.AccessMode.write)
+      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 core1))
+  assertBool "...so is the donation owner's home"
+    (decide ((SchedLockId.replenishQueue ⟨core2⟩, Concurrency.AccessMode.write)
+      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 core1))
+  assertBool "...and so is the OUTER caller's home, which the second pop migrates to"
+    (decide ((SchedLockId.replenishQueue ⟨core3⟩, Concurrency.AccessMode.write)
+      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 core1))
+  assertBool "NEGATIVE: a footprint whose outer home is the owner's declares no third"
+    (decide ((SchedLockId.replenishQueue ⟨core3⟩, Concurrency.AccessMode.write)
+      ∉ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core2 core1))
+  -- The segment is sorted, which is what the scheduler bracket acquires in
+  -- (WS-OD OD3's `lockAcquireSequence` correction, one domain over).
+  assertBool "the three replenish locks are declared without duplication"
+    (decide (((suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 core1).filter
+      (fun p => p.1 matches SchedLockId.replenishQueue _)).length = 3))
+
 def runSmpCancellationChecks : IO Unit := do
   IO.println "=== SmpCancellationSuite (WS-SM SM6.E cancellation across cores) ==="
   runEndpointCancelChecks
@@ -1798,6 +1868,7 @@ def runSmpCancellationChecks : IO Unit := do
   runUnboundRunningSuspendChecks
   runDiffSeamEdfChecks
   runUnblockFrameStagingChecks
+  runDonationDoublePopFootprintChecks
   IO.println "SmpCancellationSuite: all checks passed."
 
 end SeLe4n.Testing.SmpCancellation

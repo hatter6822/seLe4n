@@ -704,19 +704,20 @@ theorem returnDonationToCancelledCaller_preserves_projection
       -- between the SchedContext store and the client's binding, and is
       -- projection-stable for the same reason the other three are (every field
       -- the return touches is stripped by `projectKernelObject`).
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
       obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
         hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
-        returnDonatedSchedContext_ok_storeChain _ st' holder scId victim none h
+        returnDonatedSchedContext_ok_storeChain _ st' holder scId victim n hPop
       have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInvA hS1
-      have hInv2 := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+      have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
       have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
       have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt _ s1 _ _
         hObjSetInvA hS1
-      have hSet2 := storeDonationHeadClear_preserves_objectIndexSet_invExt hSet1 hClear
+      have hSet2 := storeDonationHeadPop_preserves_objectIndexSet_invExt hSet1 hClear
       have hSet3 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s2 s3 _ _ hSet2 hS3
       have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete _ s1 _ _ hObjInvA
         hObjSetInvA hIdxCompleteA hS1
-      have hC2 := storeDonationHeadClear_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
+      have hC2 := storeDonationHeadPop_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
       have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
         hSet2 hC2 hS3
       have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
@@ -724,7 +725,7 @@ theorem returnDonationToCancelledCaller_preserves_projection
         (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _)
         (hIdxCompleteA scId.toObjId (by rw [hSc]; intro hx; cases hx))
         hObjInvA hS1
-      have hP2 := storeDonationHeadClear_preserves_projection ctx observer hC1 hInv1 hClear
+      have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
       have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
         victim.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 victim clientTcb hL1)
         (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _)
@@ -748,6 +749,18 @@ theorem returnDonationToCancelledCaller_preserves_projection
       exact hAbortProj scId holder hRes
     · rfl
   · rfl
+
+/-- `v0.35.4`: the cancelled caller's frame detach preserves the projection — the
+identity where there is nothing to detach, one `detachReplyFrameAbove` otherwise. -/
+theorem detachCancelledCallerFrame_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) (tcb : TCB)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Lifecycle.Suspend.detachCancelledCallerFrame st tcb)
+      = projectState ctx observer st := by
+  rcases Lifecycle.Suspend.detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]
+  · exact detachReplyFrameAbove_preserves_projection ctx observer hIdxComplete hObjInv h
 
 /-- **WS-RR RR2.18: the teardown projection, discharged on the reply arm.**
 
@@ -787,20 +800,33 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
   -- one — the projection erases the binding fields it touches.
   have hInvR : (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb).objects.invExt :=
     returnDonationToCancelledCaller_preserves_objects_invExt st victim tcb hObjInv
+  -- `v0.35.4`: the arm's fifth write is the frame detach, invisible to every
+  -- observer for the same reason as the return — it writes a Reply's `prev`,
+  -- which the projection strips.  It reads the index completeness the return
+  -- carries forward.
+  have hCompR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objectIndexSetComplete
+    st victim tcb hObjInv hObjSetInv hIdxComplete
+  have hInvD : (Lifecycle.Suspend.detachCancelledCallerFrame
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb).objects.invExt :=
+    Lifecycle.Suspend.detachCancelledCallerFrame_preserves_objects_invExt _ tcb hInvR
   have h1 : projectState ctx observer
       (Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) victim) victim tcb)
+          (Lifecycle.Suspend.detachCancelledCallerFrame
+            (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb) victim)
+        victim tcb)
       = projectState ctx observer
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) victim) :=
+          (Lifecycle.Suspend.detachCancelledCallerFrame
+            (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb) victim) :=
     consumeReplyLink_preserves_projection_high ctx observer _ victim tcb hObjHigh
-      (restoreToReadyCancelled_preserves_objects_invExt _ victim hInvR)
+      (restoreToReadyCancelled_preserves_objects_invExt _ victim hInvD)
   exact h1.trans
     ((restoreToReadyCancelled_preserves_projection_high ctx observer _ victim hObjHigh
-      hInvR).trans
-      (returnDonationToCancelledCaller_preserves_projection ctx observer st victim tcb hObjInv
-        hIdxComplete hObjSetInv hAbortProj))
+      hInvD).trans
+      ((detachCancelledCallerFrame_preserves_projection ctx observer _ tcb hCompR hInvR).trans
+        (returnDonationToCancelledCaller_preserves_projection ctx observer st victim tcb hObjInv
+          hIdxComplete hObjSetInv hAbortProj)))
 
 
 /-- **WS-RR RR2.18 (boot-core form, fully substantive)**: cancelling a

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.1.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.5.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,51 +203,53 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~60990 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22597 lines)
+- `CHANGELOG.md` (~62040 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22688 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12165 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/API.lean` (~7239 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5940 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5919 lines)
-- `SeLe4n/Platform/Boot.lean` (~5861 lines)
-- `docs/spec/SELE4N_SPEC.md` (~5140 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5046 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4937 lines)
+- `SeLe4n/Kernel/API.lean` (~7294 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6415 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5968 lines)
+- `SeLe4n/Platform/Boot.lean` (~5864 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~5480 lines)
+- `docs/spec/SELE4N_SPEC.md` (~5365 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~5275 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5044 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5008 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4976 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4840 lines)
+- `SeLe4n/Model/State.lean` (~4838 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `SeLe4n/Model/State.lean` (~4708 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~4463 lines)
-- `SeLe4n/Kernel/CrossSubsystem.lean` (~4416 lines)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (~4438 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4213 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4220 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~4039 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3803 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
 - `SeLe4n/Platform/FFI.lean` (~3592 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~3412 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~3371 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~3332 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3259 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3260 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3247 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3172 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3106 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3107 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2884 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2976 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2714 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
+- `tests/SmpIpcSuite.lean` (~2582 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2565 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2535 lines)
@@ -256,28 +258,28 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2354 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
-- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2319 lines)
+- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2320 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2316 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~2269 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2281 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2254 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2187 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2186 lines)
-- `tests/SmpIpcSuite.lean` (~2146 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2136 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2051 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2043 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2034 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2033 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1972 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~1963 lines)
@@ -289,14 +291,14 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
-- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1849 lines)
+- `tests/SmpCancellationSuite.lean` (~1877 lines)
+- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1863 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1849 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1824 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
+- `tests/LockSetSuite.lean` (~1813 lines)
 - `tests/SyscallDispatchSuite.lean` (~1812 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1810 lines)
-- `tests/SmpCancellationSuite.lean` (~1806 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1795 lines)
@@ -305,46 +307,45 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
-- `tests/LockSetSuite.lean` (~1691 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1631 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1644 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1616 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1559 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~1554 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1425 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1444 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
+- `tests/SmpCrossCoreCallSuite.lean` (~1397 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1393 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1393 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1370 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
-- `tests/SmpCrossCoreCallSuite.lean` (~1355 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1346 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1340 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1312 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1295 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1278 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1264 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1239 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1232 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1229 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
@@ -353,28 +354,28 @@ To find files that need pagination today, run:
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1139 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
 - `SeLe4n/Machine.lean` (~1128 lines)
-- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1126 lines)
+- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1105 lines)
+- `tests/SmpIdleSuite.lean` (~1105 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
-- `tests/SmpIdleSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
-- `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~1054 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
+- `tests/PriorityManagementSuite.lean` (~1035 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1025 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
-- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1018 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
 - `tests/SmpCbsSuite.lean` (~1001 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
-- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~995 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~973 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
+- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~956 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~949 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~942 lines)
@@ -384,27 +385,28 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
+- `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~917 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
+- `tests/DeadlockFreedomSuite.lean` (~905 lines)
 - `tests/SmpTimerSuite.lean` (~904 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~879 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~871 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
+- `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~845 lines)
+- `tests/An10CascadeSuite.lean` (~842 lines)
 - `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~838 lines)
 - `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~833 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
-- `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~825 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
-- `tests/An10CascadeSuite.lean` (~816 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
@@ -1446,19 +1448,50 @@ fell into with the rule that closes each.
 
 Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
 
-### WS-OD SchedContext donation chains — IN FLIGHT (registered v0.34.98; OD1 closed v0.34.108, OD2 v0.34.125, OD3 v0.34.126→v0.35.1)
+### WS-OD SchedContext donation chains — COMPLETE (registered v0.34.98; OD1 v0.34.108, OD2 v0.34.125, OD3 v0.35.1, OD4–OD6 v0.35.2)
 
-`applyCallDonation` donates only from a **`.bound`** caller, and
+`applyCallDonation` donated only from a **`.bound`** caller, and
 `donateSchedContext` is the only operational construction site of a `.donated`
-binding — so a scheduling context stops at the first passive server and seL4's
-passive-server pattern does not work at call depth ≥ 2, where the callee stays
-`.unbound` and can never run.  seL4-MCS's `maybeDonateSchedContext` reads the
-sender's *effective* context, bound or donated, and passes it down the chain.
-Two register rows close here: that gap, and the `passiveServerIdle` break the
-`v0.34.97` reclaim introduced.  **53 sub-tasks across OD1..OD6.**  **OD1 is
-closed** (`v0.34.100` → `v0.34.108`), **OD2 is closed** (`v0.34.125`, one cut),
-and **OD3 is closed** (`v0.34.126` → `v0.35.1`); OD4..OD6 have not
-started.
+binding — so a scheduling context stopped at the first passive server and seL4's
+passive-server pattern did not work at call depth ≥ 2, where the callee stayed
+`.unbound` and could never run.  seL4-MCS's `maybeDonateSchedContext` reads the
+sender's *effective* context, bound or donated, and passes it down the chain; so
+does this kernel since **OD4** (`v0.35.2`).  Two register rows close here: that
+gap, and the `passiveServerIdle` break the `v0.34.97` reclaim introduced.
+**53 sub-tasks across OD1..OD6, all closed** — OD1 `v0.34.100` → `v0.34.108`,
+OD2 `v0.34.125`, OD3 `v0.34.126` → `v0.35.1`, OD4–OD6 `v0.35.2`.
+
+**The chain is transitive, and what new code must respect** (OD4–OD6, `v0.35.2`).
+Six things.  (1) **The guard is the caller's *effective* context**:
+`callDonationSchedContext?` and the footprint's `endpointCallDonatedSc?` both
+answer `SchedContextBinding.scId?`, so a `.donated` caller donates exactly as a
+`.bound` one does, and neither the transition nor its footprint can widen without
+the other.  (2) **`donateSchedContext` is a four-store *push*** whose frame is the
+donor's own `replyObject`, and it is **fail-closed** on that frame
+(`donationPushFrame?`: no reply object, an unresolvable one, or one that already
+donates are three refusals).  A donation with no stack frame is what lets the next
+pop clear an *outer* caller's frame and settle a context on the wrong thread.
+(3) **The `.call` footprint does not grow**
+(`lockSet_endpointCallOnCore_covers_donationPush`) and `maxLockSetSize` is
+unmoved: every key the push writes is a declared write member already.  (4)
+**Every pop resolves its new owner** — all six sites run
+`returnDonatedSchedContextResolved`, and the obligation that carries is
+`replyStackOuterCallerValid` (with `cleanupDonationStackValid` and
+`cancelDonationStackValid` as its two call-shaped siblings), vacuous wherever no
+context heads a stack.  (5) **A Reply that still donates cannot be freshened or
+retyped, and neither can a context that still heads a stack** — `linkReply` and
+`lifecyclePreRetypeCleanup` refuse rather than clear, because clearing takes a
+frame off a stack the context still heads and the walk would then stop mid-chain.
+(6) **A cancelled *middle* caller severs the stack at the cut**
+(`cancelledMiddleCallerPolicy = .severAtCut`, proved by
+`cancelledMiddleCaller_severs_at_cut`): the innermost live caller keeps the
+context and no thread below the cut is touched.  Its cost is stated rather than
+hidden — the original owner's reservation ends up with that caller — and it is
+seL4-MCS's own `reply_remove` answer.  One consequence for the suspend footprint:
+the teardown can rebind the victim `.donated`, and the arm selector re-reads the
+*post*-teardown binding, so the pipeline pops twice at depth ≥ 2 and
+`suspendThreadOnCoreSchedLockSet`'s replenish segment is a **triple**.  The payoff
+is `passiveServerHoldsDonatedContext_atCallDepthTwo`.
 
 Six things new code must respect once this lands, and each is a decision the plan
 records rather than a default it inherited.  (1) **The `passiveServerIdle` hole was
@@ -1472,8 +1505,8 @@ lands before the push, and lands inert**: with the push first, a depth-2 chain i
 serviced by the flat return, which writes `.bound` at the intermediate thread and
 moves a context across a domain boundary in a state that *breaks no conjunct*.
 (3) **`SchedContext.scReply` is built** — done at `v0.34.125`, because
-`Reply.wellFormed`'s docstring already required "`donatedSc.scReply` agrees with
-this reply" of a field that did not exist, and because without it the push must
+`Reply.wellFormed`'s docstring already required the context's head to agree
+with this reply, of a field that did not exist, and because without it the push must
 read the owner's TCB and the outer reply, taking `lockSet_endpointCall` to ten
 against a ceiling of nine.  Four things OD2 fixes about the surface new code
 writes against.  The field is **erased by `projectKernelObject`** in the same cut
@@ -1496,14 +1529,15 @@ clause included — of the store a depth-2 Call chain leaves, which is what stop
 an over-strong conjunct from hiding behind an obligation that never fires.
 (4) **The pop's new owner is an argument**, since the reply leg consumes the
 target's reply link before the donation return runs.  (5) **The pop validates the
-link it follows** — `Reply` has `prev` and no `next`, and Reply objects are
-re-linked to new callers, so a stale `prev` over a reused Reply would hand a
-thread's context to an unrelated thread in another domain.  Since `v0.34.125`
-that validation is *structural*: `donationChainFrom` follows a link only after
-checking the target's own `donatedSc`, never its `caller`, and a Reply carrying
-no donation is provably on no chain
-(`not_mem_donationChainFrom_of_not_donating` — the freshness fact the push
-consumes).  (6) **The binding's
+link it follows** — Reply objects are re-linked to new callers, so a stale
+`prev` over a reused Reply would hand a thread's context to an unrelated thread
+in another domain.  Since `v0.34.125` that validation is *structural*:
+`donationChainFrom` follows a link only after checking the target's own
+**upward** link against the frame that reached it, never its `caller`, and a
+Reply carrying no upward link is provably on no chain
+(`not_mem_donationChainFrom_of_unlinked` — the freshness fact the push
+consumes).  Relinking clears both links (`Reply.isFree`), so a reused Reply
+carries no answer back and the walk stops at it.  (6) **The binding's
 `owner` stays the immediate donor**, which is what keeps all five donation
 conjuncts true at depth `n` unchanged and leaves the *binding* graph chain-free —
 the chain lives entirely in the reply stack.
@@ -1524,19 +1558,25 @@ three ways (bottom of stack / the outer caller / a link that does not validate),
 and validates the frame below the head so a re-linked Reply cannot redirect a
 context.  **New code must not read the frame as fixing the resolver's answer** —
 `donationChainFrame` deliberately excludes `Reply.caller`, so it transports
-resolvability only.  **OD4.4 threads the resolver, not OD3**: every call site's
-invariant surface runs through
-`returnDonatedSchedContext_preserves_ipcInvariantFull`, which is
-`hBottom`-conditioned until OD4.3, so all six sites still pass the literal `none`
-that `replyStackOuterCaller?_of_no_stack` proves is the answer on every reachable
-state.
+resolvability only.  **All six call sites thread the resolver since OD4.4**
+(`v0.35.2`): each runs `returnDonatedSchedContextResolved` on its own pre-state,
+and the obligation that carries is `replyStackOuterCallerValid` — with
+`cleanupDonationStackValid` and `cancelDonationStackValid` as its two
+call-shaped siblings.  A site that passes a literal `none` is a site that has
+not been threaded; OD3's `hBottom` condition on
+`returnDonatedSchedContext_preserves_ipcInvariantFull` was removed by OD4.3,
+which is what made the threading possible.
 
 **And a receive rendezvous hands over the caller's *priority*, not only its
-budget** (OD3.14, `v0.34.141`).  OD3.6's donation moves a queued caller's
-scheduling context, hence its **base** priority; `resolveEffectivePrioDeadline`
-is `max basePrio pipBoost`, so the inherited **boost** travelled by no route at
+budget** (OD3.14, `v0.34.141`).  `resolveEffectivePrioDeadline` is
+`max basePrio pipBoost`, and the inherited **boost** travelled by no route at
 all on the `.receive` arm, which ran no `propagatePipChainCrossCore` while
-`.call` and `.replyRecv` both did.  A chain `D → C → S` — `D` blocked on `C`,
+`.call` and `.replyRecv` both did.  (At OD3.14 this row also read OD3.6's
+donation as moving the caller's *base* priority to the donee.  It no longer
+does: since `v0.35.3` a donee runs on the donor's budget, deadline and domain at
+**its own** priority, so the chain walk described here is the **only** priority
+route between a client and the server it calls — which makes this row
+load-bearing rather than a second-order correction.)  A chain `D → C → S` — `D` blocked on `C`,
 `C` dequeued into `.blockedOnReply` on the passive server `S` — therefore left
 `D`'s priority stopping dead at `C`: unbounded priority inversion, on the arm a
 passive server takes its *first* request with.  It bites with **no** donation
@@ -1821,13 +1861,20 @@ sharp bound is not the ceiling** — `maxLockSetSize` is what
 argument value, so a Tier 3 negative refuses restating it as such.
 
 **And the pop preserves the chain, which is what makes the predicate an
-obligation** (OD3.8, `v0.34.132`).  Every other transition in the tree discharges
-`donationChainWellFormed` through `donationChainFrame` — it writes no
-`Reply.donatedSc`, no `Reply.prev` and no `SchedContext.scReply`, so the two
+obligation** (OD3.8, `v0.34.132`).  Almost every transition in the tree
+discharges `donationChainWellFormed` through `donationChainFrame` — it writes no
+`Reply.prev`, no `Reply.next` and no `SchedContext.scReply`, so the two
 projections the walk reads are fixed — and the pop is the exception that family
 was designed against.  With
-`returnDonatedSchedContext_preserves_donationChainWellFormed` the predicate is
-preserved by **every** kernel transition rather than by every transition but one.
+`returnDonatedSchedContext_preserves_donationChainWellFormed` the pop stopped
+being that exception.  **The universal it established is not the state of the
+tree at HEAD**, and a reader must not take it for one: `v0.35.4` made the stack
+doubly linked, so the mid-stack *detach* is a second writer of chain data (it
+preserves the predicate, `detachReplyFrameAbove_preserves_donationChainWellFormed`),
+and the reply path's `consumeCallerReply` falsifies `prevLinkReciprocal` on a
+frame that is not a head — the WS-RM residual recorded two sections above.  New
+code must not assume `donationChainWellFormed` of a state reached by replying to
+a caller whose frame has a frame above it.
 Five things new code must respect.  (1) **Acyclicity is derived, not assumed**:
 clearing the popped head's links is sound for the rest of that context's stack
 only if no frame below links back to it, and `donationChainFrom_head_not_mem_tail`
@@ -1851,19 +1898,23 @@ discharged only where the context heads no stack is indistinguishable from one
 whose writing arm is wrong, so OD2.4's depth-2 witness is popped
 (`donationChainWitness_pop_wellFormed`) and the state the pop leaves is shown to
 head exactly the *tail* of the stack it started with
-(`donationChainWitness_pop_chain`).  The predicate is still vacuous on every
-state this tree reaches — the pop's writing arm needs a stack nothing yet
-constructs — and the prose that said "no transition writes" the three fields is
-corrected wherever it appeared.
+(`donationChainWitness_pop_chain`).  At the time of that cut the predicate was
+still vacuous on every state this tree reaches — the pop's writing arm needed a
+stack nothing yet constructed — and the prose that said "no transition writes"
+the three fields was corrected wherever it appeared.  **OD4.1 (`v0.35.2`) ends
+the vacuity**: a depth-2 Call builds a two-frame stack, so the pop's `some` arm
+is reachable and the exercised witness is the live shape rather than a
+construction.
 
 **The pop is live and inert** (OD3.1–OD3.3, `v0.34.126`).
 `returnDonatedSchedContext` takes a `newOwner? : Option ThreadId` and is four
-object writes — the SchedContext rebind **and** stack pop as one store, the head
-Reply's `donatedSc` / `prev` cleared (`storeDonationHeadClear`), the target's
+object writes — the SchedContext rebind **and** stack pop as one store, the pop
+itself (`storeDonationHeadPop`: the head's links cleared, then the frame below
+**re-headed** to this context), the target's
 `donationReturnBinding scId newOwner?`, the server's `.unbound` — and
 `returnDonatedSchedContext_eq_legacy_of_none` proves that at `newOwner? = none`
-over a context heading no stack it **is** the pre-OD3 body.  Every call site in
-the tree passes `none`; OD4.4 threads OD3.4's resolver.  Six things new code must
+over a context heading no stack it **is** the pre-OD3 body.  All six call sites
+thread OD3.4's resolver since OD4.4 (`v0.35.2`).  Six things new code must
 respect.  (1) **The head validation is fail-closed**: `donationHeadOf?` refuses a
 head resolving to no Reply, or to one donating a different context, rather than
 reading it as an empty stack — the same posture as RR2.8's `boundThread` guard,
@@ -1889,10 +1940,11 @@ outer caller is a TCB that gave up its binding and waits on its reply, and is
 neither the rebound thread nor the server — vacuous at `none`, and
 `donationOwnerValid`, `donationOwnerUnique` and `donationBudgetTransfer` are
 general under it.  The *composite*
-`returnDonatedSchedContext_establishes_ipcInvariantFull_of_except` is not, and
-says so: it takes `hBottom : newOwner? = none`, and **OD4.3 removes it**, before
-OD4.1's push makes the arm reachable.  New code must not read that theorem as
-covering a depth-≥ 2 return.  (6) **The return is invisible to every observer,
+`returnDonatedSchedContext_establishes_ipcInvariantFull_of_except` was not, and
+said so: it took `hBottom : newOwner? = none`.  **OD4.3 (`v0.35.2`) removed
+that**, before OD4.1's push made the arm reachable, so the composite now covers a
+depth-≥ 2 return under `donationReturnOuterValid` like every other statement in
+the family.  (6) **The return is invisible to every observer,
 not merely a high one**: every field it writes is stripped by
 `projectKernelObject`, so `returnDonatedSchedContext_preserves_projection` no
 longer carries an observability hypothesis on the server.
@@ -1924,6 +1976,161 @@ for text moves the class down a level and does not close it.  It was deleted
 before it shipped.  **Before writing a scanner, look for the fact the tree
 already proves.**  (3) **The remedy for a duplicated inventory is deleting the
 duplicate**, not adding a third artefact to reconcile the first two.
+
+**And a donation moves budget, deadline and domain — never priority** (`v0.35.3`,
+reported while closing this workstream).  `updatePrioritySource` classified
+`.bound scId` and `.donated scId owner` identically, so `.tcbSetPriority` /
+`.tcbSetMCPriority` on a thread *holding* a donated context wrote the **donor's**
+`SchedContext.priority` — an authority crossing, since both arms are gated on a
+TCB-write right over the *target* and the caller's MCP ceiling, and neither says
+anything about the donor; the rewritten field then travelled back with
+`returnDonatedSchedContext`.  The remedy is seL4-MCS's own split, not a refusal.
+Five things new code must respect.  (1) **The classifier is
+`SchedContextBinding.ownScId?`** — the SchedContext a thread *owns*, `some` on
+`.bound` and `none` on `.unbound` and `.donated` — and it is where a *new
+binding constructor* (WS-CB's hierarchical servers) must be classified.  It is
+the counterpart to `scId?`, the one a thread *runs on*, and the two split a
+thread's scheduling parameters: **reservation-owned** (budget, period, deadline)
+read `scId?` at every binding, **thread-owned** (base priority, domain) read the
+thread's own TCB fields, mirrored onto `ownScId?`'s SchedContext by the AK2-B
+convention.  It is a **narrowing** of `scId?`
+(`ownScId?_eq_scId?_of_isSome`), so the two can never name different contexts.  (2) **The one answer is
+`SystemState.threadBasePriority`**, and a new priority reader calls it rather
+than matching the binding.  The three scheduler resolvers also need the
+reservation's deadline or domain, so they split the arm and are tied back by
+theorem — `resolveEffectivePrioDeadline_fst_eq_threadBasePriority` (new,
+unconditional), `effectiveSchedParams_priority_deadline_eq_resolve`,
+`effectiveBucketPriority_eq_resolveEffective`, and
+`getCurrentPriority_eq_threadBasePriority` by `rfl`.  A Tier 3 negative refuses
+the merged arm **per declaration**, because `hasSufficientBudget` three lines
+above keeps it and a file-wide negative would fire on a clean tree; five budget
+predicates are pinned as *still merged*, so the split cannot leak into the budget
+question.  (3) **`boundThreadPriorityConsistent` ranges over `.bound` alone.**
+Quantified over `scId?` it covered `.donated` too, and **the donation falsifies
+it** whenever the donor's and the donee's base priorities differ: the
+reservation's `priority` must equal the donor's before the hand-off and the
+donee's after, and `donateSchedContext` writes neither field.  Nothing carries
+it across either — the frame that transports it requires `schedContextBinding`
+unchanged, which is precisely what the hand-off rewrites.  So it was false on
+exactly the states WS-OD had just made reachable, and every result gated on it
+was silent there.  (4) **The bucket invariants follow the read**: a donee's recorded
+run-queue bucket is its own base priority, so `effectiveParamsMatchRunQueue`'s
+`.donated` arm *is* its `.unbound` arm.  (5) **`propagatePipChainCrossCore` is
+now the only priority route** between a client and the server it calls, which is
+what keeps inversion bounded and what makes OD3.14's `.receive`-arm walk
+load-bearing rather than a second-order correction.
+
+**And the mirror crossing goes with it — the domain as well as the priority.**
+`schedContextConfigure` propagates **both** thread-owned parameters into
+`sc.boundThread`'s TCB, and after a donation `boundThread` is the **donee** — so
+a capability on the *client's* reservation could rewrite the *server's* own base
+priority and **migrate its scheduling domain**, permanently, since the donee
+keeps both fields after the donation returns.  A domain is the partition
+temporal isolation is defined over, which makes that half the more serious of
+the two, and either would have been the one remaining route by which a client's
+reservation sets a server's band.  Both halves maintain a `.bound`-only
+invariant (`boundThreadPriorityConsistent`, `boundThreadDomainConsistent`), so
+`schedContextConfigureBoundPropagate` takes the SchedContext's id and gates both
+on the bound thread **owning** it, through **one** predicate
+(`schedContextConfigurePropagates`) that both halves consult — so a later cut
+cannot gate one and leave the other.  A reconfiguration still rewrites the
+reservation itself, budget and period included: that is the object the caller
+holds a capability for.  The reading side follows —
+`effectiveSchedParams`'s `.donated` arm reports the donee's **own** domain,
+because every live domain filter reads `tcb.domain`, so reporting `sc.domain`
+described a partition the scheduler never puts a donee in; that component has no
+live consumer today, which is why it had to be corrected rather than left for
+the first one to inherit.  Registered debt closed;
+`docs/REGISTERED_DEBT.md`'s WS-OD section records the closure.
+
+**And the reply stack is doubly linked, so no frame is left on it with its caller
+gone** (`v0.35.4`, reported while closing this workstream).  `severAtCut` was
+implemented by *leaving a frame behind*: a cancelled middle caller's frame stayed
+on its stack with its `caller` consumed, the later pop read it as the bottom of
+the stack and bound the context outright, and that frame then **headed** the
+context forever — the Reply object and the SchedContext could never be retyped,
+and the Reply could never be linked to a new caller.  Reachable from an ordinary
+`.tcbSuspend` on a client at call depth >= 3, with no more authority than a TCB
+write right over a thread in one's own call chain.  Six things new code must
+respect.  (1) **`Reply.donatedSc` is gone**; the upward link is
+`Reply.next : ReplyStackLink`, a sum of `.frame above` and `.head sc`, so
+"heads a context", "has a frame above" and "off every stack" are three states of
+one value.  The context is recorded on the head frame **alone**, which is what
+makes a mid-stack removal an `O(1)` repair of two neighbours rather than a walk
+clearing a per-frame field below the cut.  (2) **`Reply.wellFormed` is
+`caller = none → prev = none ∧ next = none`** — seL4's `reply_unlink` invariant —
+and `Reply.isFree` is its decidable form, the one spelling of "this Reply may be
+linked or retyped", shared by the link guard, the stash admission, the retype
+guard and the boot check.  (3) **The walk validates reciprocity, not a donation**:
+`donationChainFrom` follows a `prev` only when the target's own `next` answers the
+frame that reached it, and the expectation **advances** (`.head scId` at the head,
+`.frame` of the previous frame thereafter), so a frame claiming to head the
+context at depth 2 is refused.  (4) **The pop writes the frame below the head**:
+`storeDonationHeadPop` clears the head's links and then **re-heads** that frame,
+so the below-head footprint member is a *write*, not a read.  (5) **The
+cancellation path detaches before it consumes** (`detachCancelledCallerFrame`
+over `detachReplyFrameAbove`, between the reclaim and `consumeReplyLink`), and a
+validated below-head frame whose caller was consumed is now an `.error`, never
+the bottom of the stack.  (6) **`maxLockSetSize` went to 16 at this cut** — the
+pop's new write plus the suspend pipeline's second pop; it is **21** at HEAD, and
+the per-lock cost and envelope it implies are stated once, in the canonical
+sentence this file carries above.
+
+**And a delegated `.replyRecv` declares the invoking receiver's own pre-receive
+return** (PR #894's review, `v0.35.5`).  That arm's receive leg **is**
+`.receive`'s transition, so when the endpoint has no queued sender it runs
+`cleanupPreReceiveDonationChecked` on the **invoker** — and the arm's own
+donation return runs *after* the receive leg, so the invoker still carries
+whatever `.donated` binding it entered with.  On a non-delegated reply the
+recorded server *is* the invoker and the reply leg has just made it `.unbound`,
+so that second pop is inert; **delegation is exactly what breaks the
+coincidence**, and WS-OD OD3.5 had already retired the refusal
+(`lockSetForSyscall_replyRecv_delegated`) that used to keep the delegated shape
+out of the declared set.  Two threads cannot be bound to one scheduling context,
+so the recorded server's members provably never alias the invoker's: a delegated
+`.replyRecv` wrote a SchedContext, the previous owner's TCB and two Reply objects
+under no declared lock, and read a third TCB it was about to hand a context to.
+Four things new code must respect.  (1) **The five members are the same five
+`lockSet_endpointReceive` declares**, resolved through the same two resolvers on
+`replier` (`lockSet_endpointReplyRecvOnCore_covers_preReturn`); a Tier 3 negative
+refuses resolving them on `target`.  (2) **The state-level member has a fourth
+disjunct** — on a delegated reply whose recorded server holds no donation the
+other three are all false, so without it the `scThreadIndex` write is undeclared
+on exactly the shape the member exists for.  (3) **`maxLockSetSize` is 21**, and
+that is the cost: `admissibleCriticalSection` falls to 15 µs on the 1 ms
+tick, down from 20.  (4) **No
+*reachable* state declares twenty-one**: the re-donation members fire exactly
+when the endpoint has a queued sender and the pre-receive return exactly when it
+does not, so `lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds every
+state at **eighteen** with no hypothesis, and the owner merge takes a reachable
+`.replyRecv` to seventeen.  Twenty-one is what the *definition* can produce,
+which is what `boundedWait_under_2pl` and the WCRT surface must consume.  The
+gap was excused by `lockSetForSyscall_replyRecv_refuses_donated_delegate`, **a
+theorem that was never written**; it is deleted.
+
+**And the bind guard asks reciprocity, not presence** (PR #894's review,
+`v0.35.5`).  `replyFrameOnLiveStack` asked `r.next.isSome`, and `severAtCut`
+deliberately leaves the frame *below* the cut with a stale upward link — so a
+thread on no live stack, owed nothing, had its `schedContextBind` refused with
+`.illegalState`, on a path the transition explicitly supports (it binds a
+**blocked** thread).  The guard now asks the walk's own test: `.frame above`
+counts only when `above.prev = some rid`, `.head sc` only when
+`sc.scReply = some rid`.  It is `O(1)` and **exact** under
+`donationChainWellFormed`, where `prevLinkReciprocal` and `headTerminates` make
+one-step reciprocity equivalent to liveness, and a live frame still reads `true`,
+so the fail-closed direction is unchanged.  In the same cut
+`frozenSchedContextUnbind` gained the `isDonated` refusal its live counterpart
+has carried since `v0.35.4` and its own docstring already claimed.
+
+**One residual is registered rather than closed** (WS-RM).  The **reply** path
+does not yet run the detach: it relies on the answered frame being the head,
+which every reply of the nested Call pattern satisfies but which a *delegated*
+reply capability answering its caller out of order does not.  The consequence is
+fail-closed — the later pop's reciprocity test refuses the stale link and the
+reply returns `.invalidArgument`, writing nothing — so it is a wedged call chain
+rather than a corrupted one.  New code must not assume the reply path takes the
+answered frame off its stack.  Plan:
+[`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 Plan: [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md).
 
@@ -2110,7 +2317,7 @@ code may assume:
   a budget admits at the declared ceiling, with
   `WCRT_lockSet_le_budget_of_admissible` the payoff and
   `rpi5Tick_refuses_sixty_micro_sections` the `decide`-checked negative.  At
-  HEAD, the declared lock-set ceiling is **14**, the RPi5 tick admits **23 µs** per lock, and the uniform 60 µs envelope is **2520 µs**.
+  HEAD, the declared lock-set ceiling is **21**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3780 µs**.
   Those three figures are **derived**, and since WS-OD OD3.15
   `scripts/check_lock_ceiling_figures.py` (Tier 0) holds every prose copy of them
   to the Lean sources: the constants and the formula that combines them are read
@@ -2206,13 +2413,16 @@ code may assume:
   does; RR7.7 declared that on the two sending arms and RR7.11 on the two
   receiving ones, and `capsCarryingIpcArms_footprints_share_serialization` is the
   statement that no two of the four are ever disjoint.  (3) **`maxLockSetSize` is
-  13** (WS-OD OD3.7; 11 at OD3.5, 9 at RR7.11, 8 before that): the widest declared
+  21** (PR #894's review; 16 at `v0.35.4`, 14 at OD3.13, 13 at OD3.7, 11 at OD3.5,
+  9 at RR7.11, 8 before that): the widest declared
   footprint is a `.replyRecv` that returns a donation, re-donates, installs
-  capabilities, was answered through a *delegated* reply capability, and reads the
-  two objects below its reply-stack head.  The WCRT headline
+  capabilities, was answered through a *delegated* reply capability, reads the
+  two objects below its reply-stack head, names the head its pop clears and the
+  old head its push rewrites, and declares the five objects the **invoking**
+  receiver's own pre-receive return touches.  The WCRT headline
   `maxLockSetSize · (numCores − 1) · tCs` is
-  parametric in it — `admissibleCriticalSection` reads **23 µs** off it for the
-  1 ms tick, down from 30 — and a theorem named `_size_le_maxLockSetSize` must
+  parametric in it — `admissibleCriticalSection` reads **15 µs** off it for the
+  1 ms tick, down from 20 — and a theorem named `_size_le_maxLockSetSize` must
   state the
   constant, never the numeral — five in the scheduler pinned `≤ 8` literally,
   which is why the constant now lives in `Locks/LockSet.lean` where every

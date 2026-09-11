@@ -1,19 +1,42 @@
 # WS-OD — SchedContext donation chains (onward donation)
 
-> **Status**: IN FLIGHT — registered at `v0.34.98`; OD1.1 landed at `v0.34.100`,
-> OD1.2 at `v0.34.101`, OD1.3 at `v0.34.103`, OD1.4 at `v0.34.104`, OD1.5 at
-> `v0.34.105`, OD1.6 at `v0.34.106`, OD1.7 at `v0.34.108` — **OD1 is closed**.
+> **Status**: COMPLETE — registered at `v0.34.98`, closed at `v0.35.2`.
+> **OD1 is closed** at `v0.34.108`: OD1.1 landed at `v0.34.100`, OD1.2 at
+> `v0.34.101`, OD1.3 at `v0.34.103`, OD1.4 at `v0.34.104`, OD1.5 at `v0.34.105`,
+> OD1.6 at `v0.34.106`, OD1.7 at `v0.34.108`.
 > **OD2 is closed** at `v0.34.125`: OD2.1–OD2.7 landed in one cut, because the
 > phase is additive and its rows do not compile apart — the field, its projection
 > erasure and the two exhaustive positional patterns are one arity change, and
 > the predicate, its frames and the pack conjunct are one elaboration.
-> **Opens**: beside WS-RR RR7, and must close **before RR8 closes** — RR8 is the
-> closure phase and cannot close over open work.
+> **OD3 is closed** at `v0.35.1`: OD3.1–OD3.8 landed at `v0.34.126`–`v0.34.132`,
+> and the eleven rows OD3.9–OD3.19 — every one of them unscheduled when this plan
+> was written, and each found by sweeping the row before it — at `v0.34.134`–
+> `v0.35.1`.
+> **OD4, OD5 and OD6 are closed** at `v0.35.2`, in one cut: the push
+> (OD4.1) and the widened guard (OD4.2) do not compile apart from the conjunct
+> preservations that cover them (OD4.3), the six call sites cannot thread a
+> resolved owner until those preservations exist (OD4.4), and the teardown rows
+> read the very stack the push writes — so the semantic half of the numbering
+> rule (*a transition goes live only after the proofs that cover it*) requires
+> the merge rather than an ordering.
 > **Predecessor findings**: the two Medium-severity model/specification gaps
 > recorded in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §A, reported while
 > proving the WS-RR RR7.22 residual at `v0.34.97` and `v0.34.98`.
 > **Sub-task count**: 53 across 6 phases (OD1..OD6), each phase numbered in the
 > order it is to be implemented
+>
+> **Closure audit (`v0.35.4`)**: reading the landed workstream back found two
+> defects in it and one residual.  `severAtCut` was implemented by *leaving a
+> frame behind*, so a cancelled middle caller pinned a Reply and a SchedContext
+> permanently; and four pops and two pushes wrote objects no footprint named.
+> Both are fixed at `v0.35.4` by making the reply stack **doubly linked**
+> (`Reply.next : ReplyStackLink` replaces `donatedSc`), which is why rows below
+> that name `donatedSc`, `storeDonationHeadClear` or
+> `not_mem_donationChainFrom_of_not_donating` describe the structure as it stood
+> when they landed rather than as it stands now.  The residual — the **reply**
+> path does not yet detach — is **WS-RM**
+> ([`REPLY_FRAME_REMOVAL_PLAN.md`](REPLY_FRAME_REMOVAL_PLAN.md)).  See
+> `CHANGELOG.md` at `v0.35.4`.
 
 ## 1. Phase goal
 
@@ -178,6 +201,37 @@ docstring presented `.ok none` as the bottom of the stack alone, which is exactl
 the inheritance this paragraph forbids.  OD5.2 therefore changes a theorem and a
 witness, whichever answer it picks.
 
+**Decided at `v0.35.2` (OD5.2): this kernel severs at the cut.**  The two
+candidates are named in Lean rather than in prose —
+`CancelledMiddleCallerPolicy.severAtCut` and `.reclaimToCancelledThread`
+(`SeLe4n/Kernel/IPC/Invariant/Defs.lean`) — and `cancelledMiddleCallerPolicy` is
+the constant that picks one, with `replyStackOuterCaller?_follows_policy` and
+`cancelledMiddleCaller_severs_at_cut` reading it, so a cut that changed the
+answer has to change a theorem.  Three reasons, in order of weight: it is what
+the pop already does, so the depth-1 head case and the depth-`n` middle case are
+one program rather than two; it is `O(1)`, where the alternative walks the frames
+between the cancelled thread and the holder and so could not be given a footprint
+at all (a `LockSet` is capped at `maxLockSetSize` and a chain is not — OD3.7's
+argument for the pop's single frame of lookahead); and it is seL4-MCS's
+`reply_remove` branch, so a component written against seL4's timeout semantics
+behaves the same here.
+
+**What that costs, stated rather than hidden.**  Neither the cancelled *middle*
+caller nor the chain's **original** owner gets the scheduling context back: it
+settles on the innermost live caller, bound `.bound scId` outright, and no later
+pop carries it below the cut.  seL4-MCS reaches the same owner by a different
+route — its reply stack is doubly linked, so `reply_remove` splices the middle
+frame out and repairs its neighbours, where this model's single `prev` link
+cannot find the frame above the cut in `O(1)` and leaves it in place with its
+`caller` consumed (§3.4's opening paragraph is where that asymmetry is recorded).
+Two things bound the cost.  Cancelling a middle caller requires authority to
+suspend that thread — a capability its callees do not hold by virtue of being
+callees — so this is not a privilege a chain participant gains; and the context
+is bound outright rather than left ownerless, so `donationOwnerValid` and
+`passiveServerIdle` are both true of the resulting state and no budget is lost to
+the system.  The divergence is from *fairness*, not from safety or from the
+invariant surface.
+
 ### 3.5 `passiveServerIdle` is closed by the reclaim, and not with `timeoutThread` itself
 
 `timeoutThread` writes the **scheduler**: its last step re-enqueues the thread.
@@ -332,7 +386,7 @@ dropped, and `donationChainWellFormed.replyWellFormedAt` is the bridge.
 | OD3.4 | `replyStackOuterCaller?` — the pre-state resolver and its correctness lemma, required because the reply leg consumes the target's link before the donation return runs (§3.3), on the same discipline as the two resolvers already beside it.  **Placement corrected at OD3.1**: it goes in `Endpoint.lean` beside `donationHeadOf?`, not in `EndpointReplyDispatch.lean`, because three of the six call sites that must resolve it (`cleanupDonatedSchedContext`, `applyReplyDonation`, `returnDonationToCancelledCaller`) are **upstream** of that module and none of them imports it | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | M |
 | OD3.5 | **The arm-selected cancellation footprint.**  Split the summed `Option` arguments into footprints chosen by the victim's `ipcState`: the arms are mutually exclusive, but the bound census measures at full arity, so the summed form reaches nine before the next row adds a member.  Every later footprint change consumes this one.  **Also recovers the `.replyRecv` headroom** (PR #892 review round 6): a *delegated* reply — one answered by a thread other than the one the Reply records as its server — needs that server's own TCB lock, and the arm is already at nine of nine, so `lockSetForSyscall` answers `none` there and the delegated case keeps the coarser serialisation.  With the arms selected rather than summed, declare it | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
 | OD3.6 | **seL4-MCS's `maybeDonateSchedContext`: the receive side donates.**  Unscheduled when this plan was written and found while threading OD3.5's resolvers: `.receive` performed *no* SchedContext donation at all, so a passive server taking its **first** request with `seL4_Recv` ran on no reservation while the same server taking its later requests with `seL4_ReplyRecv` was charged correctly — a budget-enforcement bypass, reported before being fixed.  One shared step (`applyReceiveRendezvousDonation`) called by both `.receive` arms **and** by `replyRecvReturnDonation`, whose inlined copy is retired; the guard discharges the donation's caller-blocked obligation, leaving only `hReceiverNotOwner` as a `recvStage` pack conjunct; `lockSet_endpointReceive` gains the donated SchedContext and a **disjunctive** state-level member (conditioning it on `installsCaps` alone omits it on exactly the passive-server path).  Bound restated at the new arity: `3 + 4 = 7 ≤ 11`  **LANDED v0.34.129** | `SeLe4n/Kernel/IPC/Operations/Donation.lean`, `SeLe4n/Kernel/API.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
-| OD3.7 | Footprints: the reply, replyRecv and cancellation-reply-arm sets gain the previous reply's **read**; re-prove the bound at full arity on each.  If any exceeds the ceiling, stop and escalate — raising it widens the published covert-channel bound.  **LANDED v0.34.130**, and the row named *one* read where the operation performs **two**: `replyStackOuterCaller?` reads the Reply one frame below the head, and `outerCallerAcceptable` then reads that frame's caller's TCB to validate it before the pop binds a context to it — a validate-then-commit, so an unlocked read is a time-of-check/time-of-use window.  Both are declared through one resolver (`replyStackBelowHeadReads?`), in **read** mode, and both are `none` on every state this tree reaches.  The escalation fired and was answered: **`maxLockSetSize` 11 → 13**, `admissibleCriticalSection` 30 µs → 25 µs, the envelope 1980 → 2340 µs.  Only `.replyRecv` needed it — the reply arm reaches nine and the cancellation reply arm ten, both asserted rather than described.  The pop stays **O(1)** at any chain depth, so this is a constant `+2`, not `O(depth)` | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
+| OD3.7 | Footprints: the reply, replyRecv and cancellation-reply-arm sets gain the previous reply's **read**; re-prove the bound at full arity on each.  If any exceeds the ceiling, stop and escalate — raising it widens the published covert-channel bound.  **LANDED v0.34.130**, and the row named *one* read where the operation performs **two**: `replyStackOuterCaller?` reads the Reply one frame below the head, and `outerCallerAcceptable` then reads that frame's caller's TCB to validate it before the pop binds a context to it — a validate-then-commit, so an unlocked read is a time-of-check/time-of-use window.  Both are declared through one resolver (`replyStackBelowHead?`), in **read** mode, and both are `none` on every state this tree reaches.  The escalation fired and was answered: **`maxLockSetSize` 11 → 13**, `admissibleCriticalSection` 30 µs → 25 µs, the envelope 1980 → 2340 µs.  Only `.replyRecv` needed it — the reply arm reaches nine and the cancellation reply arm ten, both asserted rather than described.  The pop stays **O(1)** at any chain depth, so this is a constant `+2`, not `O(depth)` | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
 | OD3.8 | Chain preservation for the pop; the projection result re-derived through the added store; the two Tier-3 name anchors; the family-size figure; version.  **LANDED v0.34.132.**  Two of the five deliverables were already discharged and are recorded rather than redone: the projection re-derivation landed at OD3.1/OD3.2, where the fourth store made every copy of the case analysis stop compiling, and the de-threading family size does not move — `_preserves_donationChainWellFormed` is not an `ipcInvariantFull` bundle, so the gate's own `len(bundles)` is unchanged at 170.  What the row actually cost is the **acyclicity** argument the plan did not name: clearing the popped head's links is sound only if no frame below links back to it, which is *termination* read as acyclicity (`donationChainFrom_head_not_mem_tail`, over a suffix-walk and a determinism lemma), and only if the head is on no other context's chain, which is `not_mem_donationChainFrom_of_not_donating`.  No conjunct was added to the predicate to obtain either — a `NoDup` field would have been an enumeration standing in for a derivation, and a Tier-3 negative refuses one.  The congruence the proof consumes is **chain-scoped** (`donationChainFrom_congr_on_chain`), since the whole-store `donationChainFrom_congr` is false of a step that rewrites a key's links.  Exercised on the `some` arm via the OD2.4 witness (`donationChainWitness_pop_wellFormed`, `_pop_chain`), because a theorem discharged only where the context heads no stack is indistinguishable from one whose writing arm is wrong | `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `SeLe4n/Kernel/IPC/Invariant/Reachability.lean`, `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `tests/SmpCrossCoreCallSuite.lean`, `scripts/test_tier3_invariant_surface.sh`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | L |
 
 **Acceptance**: every call site passes `none`, and OD3.3 witnesses that the tree's
@@ -406,39 +460,65 @@ arm.  The arm it excludes is unreachable until OD4.1 writes a reply stack.
 | OD3.19 | **Two review-round-6 findings, both a cardinality standing in for a set.**  (1) The raw-read inventory keyed on `(file, variant)`, so hygienizing a raw read in one declaration while a fresh one appeared in another declaration of the SAME file left the row and every scalar identical -- the cross-file case OD3.5f fixed, with *file B* replaced by *declaration e*, surviving the fix for it.  **22 of the 30 rows had a count above one**, so the exposed shape was the majority.  Keyed by the enclosing declaration the inventory is 102 rows and the swap becomes a key the baseline does not name, which fails outright; `check_inventory` splits on the LAST `|` so the comparison logic needed no change.  The refinement **stops** at declaration granularity, and the docstring says why: the declaration is the unit of hygienization, so a count-preserving swap inside one is not the movement the gate exists to catch, while finer keys (lines, ordinals) churn the baseline on unrelated edits.  (2) `SmpSchedulerSuite`'s WCRT labels read `≤ RPi5 bound (1980)` -- the value at ceiling **11** -- beneath a ceiling of 14, while the assertion checked `maxLockSetSize * (3 * 60)` = 2520, so a passing line claimed a bound 540 µs tighter than the one established, under a comment citing the 8 → 9 move.  The figure is now **interpolated from the constant**, which ends the class rather than correcting an instance; and the retired `typical 4-lock syscall (720 µs) < 1 ms tick` line -- true arithmetic, and the exact framing CLAUDE.md retracts -- is replaced by the property that is actually about the declared ceiling (`admissibleCriticalSection rpi5TickBudgetMicros = 23`, and that 60 µs sections are refused).  Self-tests grow to 10 (scanner) and 7 (monotonic gate), each new case token-preserving.  **LANDED v0.35.1** | `scripts/ak7_cascade_baseline.sh`, `scripts/ak7_cascade_check_monotonic.sh`, `scripts/store_reader_hygiene_baseline.txt`, `tests/SmpSchedulerSuite.lean` | M |
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| OD4.1 | `donateSchedContext` writes the reply's `donatedSc` and `prev` and pushes the context's head — `prev` read from an object the footprint already write-locks.  Four-store chain; the four theorems that unfold it re-derive in this row | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | XL |
-| OD4.2 | `applyCallDonation` accepts a `.donated` caller; the footprint resolver follows; the three characterisation theorems re-derive here, because they **are** the guard being widened | `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean`, `SeLe4n/Kernel/IPC/Operations/Donation.lean` | L |
-| OD4.3 | The five conjunct preservations under the new arm.  The caller-blocked and receiver-not-owner hypotheses already exist, so the shape carries; the new obligation is that the intermediate donor is `.unbound` ∧ `.blockedOnReply` at the donation site, which the dispatch's prior write supplies | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | XL |
-| OD4.4 | **Thread `newOwner?` through all six call sites**, each resolving from its own pre-state.  Moved here from OD3 at `v0.34.127`: every site's invariant surface runs through `returnDonatedSchedContext_preserves_ipcInvariantFull`, which OD3.2 states under `hBottom : newOwner? = none`, so a site that resolves its argument cannot use it until the row above generalises it.  Attempted at all six sites and reverted at all six for that one reason — the plan's numbering ascended while the proofs still arrived after the transition that needed them.  Consumes OD3.4 and OD4.3 | `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean`, `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Lifecycle/Suspend.lean`, `SeLe4n/Kernel/API.lean` | XL |
-| OD4.5 | Chain preservation for the push — the row that closes the loop OD2.4 opened.  Consumes OD2.4 and OD4.1 | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | L |
-| OD4.6 | The cross-core call donation and its replenishment migration at depth ≥ 2: the source core is the **intermediate** donor's home, which the dispatch already passes.  Proved rather than inherited | `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` | L |
-| OD4.7 | Prove the call footprint does **not** grow: the head is read under the SchedContext write lock the set already declares, and the reply under the reply write lock it already declares | `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` | M |
-| OD4.8 | The `.call` and `.replyRecv` dispatch-arm bundles under the generalised push; the donation primitive's own projection result through the two added stores; Tier-3 anchors; the family-size figure; version | `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, `SeLe4n/Kernel/InformationFlow/Projection.lean`, `scripts/test_tier3_invariant_surface.sh`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | XL |
+| OD4.1 | `donateSchedContext` writes the reply's `donatedSc` and `prev` and pushes the context's head — `prev` read from an object the footprint already write-locks.  Four-store chain; the four theorems that unfold it re-derive in this row  **LANDED v0.35.2** | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | XL |
+| OD4.2 | `applyCallDonation` accepts a `.donated` caller; the footprint resolver follows; the three characterisation theorems re-derive here, because they **are** the guard being widened  **LANDED v0.35.2** | `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean`, `SeLe4n/Kernel/IPC/Operations/Donation.lean` | L |
+| OD4.3 | The five conjunct preservations under the new arm.  The caller-blocked and receiver-not-owner hypotheses already exist, so the shape carries; the new obligation is that the intermediate donor is `.unbound` ∧ `.blockedOnReply` at the donation site, which the dispatch's prior write supplies  **LANDED v0.35.2** | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | XL |
+| OD4.4 | **Thread `newOwner?` through all six call sites**, each resolving from its own pre-state.  Moved here from OD3 at `v0.34.127`: every site's invariant surface runs through `returnDonatedSchedContext_preserves_ipcInvariantFull`, which OD3.2 states under `hBottom : newOwner? = none`, so a site that resolves its argument cannot use it until the row above generalises it.  Attempted at all six sites and reverted at all six for that one reason — the plan's numbering ascended while the proofs still arrived after the transition that needed them.  Consumes OD3.4 and OD4.3  **LANDED v0.35.2** | `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean`, `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Lifecycle/Suspend.lean`, `SeLe4n/Kernel/API.lean` | XL |
+| OD4.5 | Chain preservation for the push — the row that closes the loop OD2.4 opened.  Consumes OD2.4 and OD4.1  **LANDED v0.35.2** | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | L |
+| OD4.6 | The cross-core call donation and its replenishment migration at depth ≥ 2: the source core is the **intermediate** donor's home, which the dispatch already passes.  Proved rather than inherited  **LANDED v0.35.2** | `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` | L |
+| OD4.7 | Prove the call footprint does **not** grow: the head is read under the SchedContext write lock the set already declares, and the reply under the reply write lock it already declares  **LANDED v0.35.2** | `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` | M |
+| OD4.8 | The `.call` and `.replyRecv` dispatch-arm bundles under the generalised push; the donation primitive's own projection result through the two added stores; Tier-3 anchors; the family-size figure; version  **LANDED v0.35.2** | `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, `SeLe4n/Kernel/InformationFlow/Projection.lean`, `scripts/test_tier3_invariant_surface.sh`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | XL |
 
-**Acceptance**: a depth-2 Call donates, and both `ipcInvariantFull` and the chain
-invariant hold across it.
+**Acceptance** — **MET at `v0.35.2`**: a depth-2 Call donates
+(`applyRendezvousCallDonation_donated_donor_pushes`,
+`passiveServerHoldsDonatedContext_atCallDepthTwo`), `ipcInvariantFull` holds
+across it (`applyCallDonationOnCore_preserves_ipcInvariantFull` under the widened
+guard) and so does the chain invariant
+(`donateSchedContext_preserves_donationChainWellFormed`).  `tests/SmpIpcSuite.lean`
+§3.18 runs the push and reads the two-frame chain back.
 
 ### OD5 — chain-aware teardown and reply reuse
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| OD5.1 | **Closes the §3.4 confused deputy.**  Reply freshening and the reply consumption clear `donatedSc` and `prev`, and the pop validates the previous reply's own `donatedSc` before accepting its caller.  Without this a reused Reply redirects a SchedContext to an unrelated thread | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Model/State.lean`, `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | L |
-| OD5.2 | The cancelled **middle** caller: state both candidate answers of §3.4, pick one, and prove it — the seL4-shaped fallback at the target, or the O(1) reclaim to the cancelled thread through the context's head.  Whichever is chosen, `.tcbSuspend` preservation at depth ≥ 2 lands with it.  The interim answer is stated rather than inherited — `replyStackOuterCaller?_of_consumed_frame` (the seL4-shaped fallback, `v0.34.138`) and its runtime witness — so this row changes a theorem, not an accident.  Consumes OD5.1 | `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | XL |
-| OD5.3 | The **double pop**: cancelling a middle caller makes the donated-donation teardown reachable inside the same suspend, so two replenishment migrations run where the suspend's scheduler-domain footprint declares one pair.  Add the third core and re-prove the ladder and the bound | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
-| OD5.4 | Retype and revoke must not leave a live `prev` naming a deleted Reply, and must pop the context's head | `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean`, `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` | M |
-| OD5.5 | `.replyRecv` at depth ≥ 2 — the third live push site: its return leg uses OD3.4's resolver, and its re-donation fires when the next thread is itself `.donated` | `SeLe4n/Kernel/API.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | L |
-| OD5.6 | Bundles for the teardown paths; chain preservation for each; Tier-3 anchors; the family-size figure; version | `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, `scripts/test_tier3_invariant_surface.sh`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | L |
+| OD5.1 | **Closes the §3.4 confused deputy.**  Reply freshening and the reply consumption clear `donatedSc` and `prev`, and the pop validates the previous reply's own `donatedSc` before accepting its caller.  Without this a reused Reply redirects a SchedContext to an unrelated thread  **LANDED v0.35.2** | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Model/State.lean`, `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | L |
+| OD5.2 | The cancelled **middle** caller: state both candidate answers of §3.4, pick one, and prove it — the seL4-shaped fallback at the target, or the O(1) reclaim to the cancelled thread through the context's head.  Whichever is chosen, `.tcbSuspend` preservation at depth ≥ 2 lands with it.  The interim answer is stated rather than inherited — `replyStackOuterCaller?_of_consumed_frame` (the seL4-shaped fallback, `v0.34.138`) and its runtime witness — so this row changes a theorem, not an accident.  Consumes OD5.1  **LANDED v0.35.2** | `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | XL |
+| OD5.3 | The **double pop**: cancelling a middle caller makes the donated-donation teardown reachable inside the same suspend, so two replenishment migrations run where the suspend's scheduler-domain footprint declares one pair.  Add the third core and re-prove the ladder and the bound  **LANDED v0.35.2** | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
+| OD5.4 | Retype and revoke must not leave a live `prev` naming a deleted Reply, and must pop the context's head  **LANDED v0.35.2** | `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean`, `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` | M |
+| OD5.5 | `.replyRecv` at depth ≥ 2 — the third live push site: its return leg uses OD3.4's resolver, and its re-donation fires when the next thread is itself `.donated`  **LANDED v0.35.2** | `SeLe4n/Kernel/API.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | L |
+| OD5.6 | Bundles for the teardown paths; chain preservation for each; Tier-3 anchors; the family-size figure; version  **LANDED v0.35.2** | `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, `scripts/test_tier3_invariant_surface.sh`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | L |
+
+**Acceptance** — **MET at `v0.35.2`**: reply reuse cannot redirect a donation in
+either direction — `linkReply` refuses a Reply that still names a donated context
+(the freshening barrier, `linkReply_getReply?_caller_some`), and the pop refuses
+to read past a frame below the head whose `donatedSc` is a different context
+(`replyStackOuterCaller?`, negative-tested by keeping the link and breaking the
+relation).  The cancelled middle caller's answer is the `severAtCut` policy
+above, proved by `cancelledMiddleCaller_severs_at_cut`; the double pop OD5.3
+anticipated is reachable and its third replenish core is declared
+(`suspendThreadOnCoreSchedLockSet`); and retype refuses both halves of a live
+stack (`lifecyclePreRetypeCleanup_reply_refuses_live_stack_frame`,
+`…_schedContext_refuses_stack_head`).
 
 ### OD6 — payoff, census, tests, closure
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| OD6.1 | The defect's own closure theorem: a passive server reached at call depth ≥ 2 holds a SchedContext whose bound thread is itself.  The statement the workstream exists to make true, not merely the preservation of what was already true | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | L |
-| OD6.2 | Re-run the footprint bound census over every touched set; record the worst case, and if the ceiling moved, the recomputed covert-channel headline | `SeLe4n/Testing/LockFootprintBoundCensus.lean`, `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | M |
-| OD6.3 | Tests: depth-2 donation and depth-2 reply; middle-caller and outer-caller cancellation; reply-reuse-after-cancel as a **negative** that keeps the link and breaks the relation rather than deleting it; the new footprints | `tests/SmpIpcSuite.lean`, `tests/SmpCancellationSuite.lean`, `tests/LockSetSuite.lean`, `tests/SuspendResumeSuite.lean` | L |
-| OD6.4 | Trace harness: a depth-2 donation scenario and a cancel-at-depth-2 scenario, registered and re-baselined with rationale.  **Regenerate the fixture's `.sha256` companion in the same step** — every `.expected` has one, the Tier-2 drift check compares against it, and no other tier does, so a fixture updated without its hash passes Tier 0, Tier 1 and Tier 3 and fails only the full suite | `SeLe4n/Testing/MainTraceHarness.lean`, `tests/fixtures/scenario_registry.yaml`, `tests/fixtures/main_trace_smoke.expected` | M |
-| OD6.5 | Documentation: the specification's donation section, the GitBook chapters carrying the conjunct count, the claim-evidence index, the two register rows closed with their versions, the codebase map regenerated | `docs/spec/SELE4N_SPEC.md`, `docs/gitbook/`, `docs/CLAIM_EVIDENCE_INDEX.md`, `docs/REGISTERED_DEBT.md`, `docs/codebase_map.json` | M |
-| OD6.6 | Full-gate run and closure audit: the tier scripts, the de-threading report, the workstream-plan gate, the registry row, version | `scripts/`, `CHANGELOG.md`, `lakefile.toml` | S |
+| OD6.1 | The defect's own closure theorem: a passive server reached at call depth ≥ 2 holds a SchedContext whose bound thread is itself.  The statement the workstream exists to make true, not merely the preservation of what was already true  **LANDED v0.35.2** | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | L |
+| OD6.2 | Re-run the footprint bound census over every touched set; record the worst case, and if the ceiling moved, the recomputed covert-channel headline  **LANDED v0.35.2** | `SeLe4n/Testing/LockFootprintBoundCensus.lean`, `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | M |
+| OD6.3 | Tests: depth-2 donation and depth-2 reply; middle-caller and outer-caller cancellation; reply-reuse-after-cancel as a **negative** that keeps the link and breaks the relation rather than deleting it; the new footprints  **LANDED v0.35.2** | `tests/SmpIpcSuite.lean`, `tests/SmpCancellationSuite.lean`, `tests/LockSetSuite.lean`, `tests/SuspendResumeSuite.lean` | L |
+| OD6.4 | Trace harness: a depth-2 donation scenario and a cancel-at-depth-2 scenario, registered and re-baselined with rationale.  **Regenerate the fixture's `.sha256` companion in the same step** — every `.expected` has one, the Tier-2 drift check compares against it, and no other tier does, so a fixture updated without its hash passes Tier 0, Tier 1 and Tier 3 and fails only the full suite  **LANDED v0.35.2** | `SeLe4n/Testing/MainTraceHarness.lean`, `tests/fixtures/scenario_registry.yaml`, `tests/fixtures/main_trace_smoke.expected` | M |
+| OD6.5 | Documentation: the specification's donation section, the GitBook chapters carrying the conjunct count, the claim-evidence index, the two register rows closed with their versions, the codebase map regenerated  **LANDED v0.35.2** | `docs/spec/SELE4N_SPEC.md`, `docs/gitbook/`, `docs/CLAIM_EVIDENCE_INDEX.md`, `docs/REGISTERED_DEBT.md`, `docs/codebase_map.json` | M |
+| OD6.6 | Full-gate run and closure audit: the tier scripts, the de-threading report, the workstream-plan gate, the registry row, version  **LANDED v0.35.2** | `scripts/`, `CHANGELOG.md`, `lakefile.toml` | S |
+
+**Acceptance** — **MET at `v0.35.2`**: the closure theorem
+`passiveServerHoldsDonatedContext_atCallDepthTwo` states the defect's own
+negation; the footprint bound census passes with `maxLockSetSize` unmoved at 14,
+so no published figure is recomputed; `tests/SmpIpcSuite.lean` §3.18 and the two
+new trace scenarios `SCN-DONATION-PUSH-DEPTH-TWO` /
+`SCN-DONATION-RETURN-RESOLVED-OUTER` exercise the push, the barrier, the
+retype refusals and the cancellation policy; and §7's nine gate items are
+recorded below.
 
 ## 6. What every cut in this workstream must run, in order
 
@@ -500,6 +580,63 @@ The workstream closes when **all nine** hold and each is checkable:
 9. **`test_full.sh` green and the workstream-plan gate green**; every `OD` citation
    in the canonical index resolves; both register rows are closed with a version
    rather than a note.
+
+### 7.1 The gate, item by item — **CLOSED at `v0.35.2`**
+
+1. **MET.**  `applyCallDonation`'s guard reads the *effective* context, so a
+   `.donated` caller donates onward
+   (`callDonationSchedContext?_of_donated_caller`,
+   `applyRendezvousCallDonation_donated_donor_pushes`), and the improvement is
+   stated positively by `passiveServerHoldsDonatedContext_atCallDepthTwo` and its
+   cross-core form `passiveServerHoldsDonatedContext_onCore`: a passive server
+   reached at call depth ≥ 2 holds a SchedContext whose `boundThread` is itself.
+2. **MET.**  `Reply.donatedSc` and `Reply.prev` are written by
+   `donationHeadPush` on the live `.call` path and read by `donationHeadOf?` and
+   `replyStackOuterCaller?` on the live pop path; `SchedContext.scReply` is the
+   head both of them resolve through.  Each field also has an operational
+   *refusal* reading it — `linkReply` (freshening), `lifecyclePreRetypeCleanup`
+   (retype) — so no field is write-only.
+3. **MET.**  `donationChainWellFormed` is a conjunct of `ipcReachable`; the push
+   preserves it (`donateSchedContext_preserves_donationChainWellFormed`, over
+   `donationHeadPush_preserves_donationChainWellFormed`), the pop preserves it
+   (OD3.8), and every other Reply writer goes through a chain frame
+   (`linkReply_donationChainFrame`, `consumeReply_donationChainFrame`,
+   `linkCallerReply_donationChainFrame`, `consumeCallerReply_donationChainFrame`,
+   `clearReplyObjectCaller_donationChainFrame`, `clearTcbReplyObject_…`,
+   `consumeReplyLink_…`).  No theorem takes it on a post-state.
+4. **MET.**  Unchanged by this phase and re-checked: `ipcInvariantFull` has
+   exactly **twenty** conjuncts, `passiveServerIdle` among them, preserved by
+   `cancelIpcBlocking` on every arm since OD1.5.
+5. **MET.**  `SeLe4n.Testing.LockFootprintBoundCensus` reports *47 declared
+   `LockSet` footprints, every one bounded by `maxLockSetSize` at its full
+   arity*.  The constant did **not** move — the `.call` footprint already
+   write-locks every object the push writes (OD4.7,
+   `lockSet_endpointCallOnCore_covers_donationPush`) — so no published figure is
+   recomputed: the 1 ms tick still admits 23 µs per lock and the uniform 60 µs
+   envelope is still 2520 µs.
+6. **MET.**  `scripts/check_ipc_invariant_dethreading.py` prints
+   `[PASS] ipcInvariantFull is de-threaded end to end`, with *threaded
+   statements: 0 / 172; post-state bindings: 0*.  The family size is unchanged at
+   **172**, so the figure at every prose site is still correct — and the gate
+   enforces that rather than leaving it to a sweep.
+7. **MET.**  Two negatives, both keeping the token and breaking the relation.
+   At the resolver: *a frame below the head donating another context is refused*
+   — the below-head Reply is live and keeps its `caller`; what changes is that
+   its `donatedSc` names a different context, and `replyStackOuterCaller?`
+   refuses to read past it rather than handing the context to that caller.  At
+   the barrier: *a free Reply that still donates is refused* — `linkReply` will
+   not re-link a live stack frame to a new caller, and the companion assertion
+   pins that it does not silently *clear* the donation instead.
+8. **MET.**  `projectKernelObject_reply_donatedSc_invariant`,
+   `projectKernelObject_reply_prev_invariant` (jointly
+   `…_reply_stackLinks_invariant`) and `projectKernelObject_schedContext_scReply_invariant`
+   erase all three fields, and `donateSchedContext_preserves_projection` carries
+   the push's four stores through; the pop's clear is OD3.2's
+   `returnDonatedSchedContext_preserves_projection`.
+9. **MET.**  `./scripts/test_full.sh` green, `scripts/check_workstream_plan.py`
+   green, every `OD` citation in `CLAUDE.md`, `AGENTS.md`,
+   `docs/REGISTERED_DEBT.md` and `docs/planning/UNFINISHED_SMP_WORK.md` resolves,
+   and both §A register rows are closed with `v0.35.2` rather than with a note.
 
 ## 8. Registration
 
@@ -600,14 +737,42 @@ figures above.
 
 ## 9. Two things this plan deliberately does not fix
 
-* **Priority authority through a donation.**  `getCurrentPriority` and
-  `updatePrioritySource` treat `.bound` and `.donated` identically, so writing a
-  `.donated` thread's priority writes the *donor's* SchedContext.  That is already
-  true at depth 1; chains widen the blast radius to a third domain but do not
-  create the behaviour.  Recorded here so it is a known constraint rather than an
-  inherited surprise; it belongs with WS-CB's MCP-authority work.
+**Both were entered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §C at
+`v0.35.2`**, so they outlive this plan rather than dying with it — "registered
+rather than absorbed" is a claim about that table, and until the closure cut it
+was a claim about this paragraph.  **The first is closed at `v0.35.3`** and is
+no longer in that table; the second stands.
+
+* **Priority authority through a donation — CLOSED at `v0.35.3`.**
+  `getCurrentPriority` and `updatePrioritySource` treated `.bound` and
+  `.donated` identically, so writing a `.donated` thread's priority wrote the
+  *donor's* SchedContext — and `setPriorityOp` checks the **caller's** MCP
+  ceiling and the target's TCB-write right, neither of which says anything about
+  the donor.  A principal with authority over a passive server could therefore
+  rewrite a client's scheduling parameter, which the client received when the
+  donation returned.  Already true at depth 1; chains widened the blast radius
+  to a third domain but did not create the behaviour.  Reported as a possible
+  vulnerability at `v0.35.2` (Medium–High integrity, an authority crossing
+  rather than a leak or a denial of service).
+
+  The remedy is seL4-MCS's own split rather than a refusal: a donee runs on the
+  donor's budget, deadline and domain at **its own** priority.
+  `SchedContextBinding.ownScId?` is the one classifier,
+  `SystemState.threadBasePriority` the one resolver, and the five readers are
+  pinned to it by theorem.  Verifying it surfaced the **mirror** crossing —
+  `schedContextConfigure` propagates **both** thread-owned parameters into
+  `sc.boundThread`'s TCB, which after a donation is the *donee*, so a capability
+  on the client's reservation could rewrite the server's own priority and
+  migrate its scheduling domain — closed in the same cut by gating both halves
+  on the bound thread *owning* that reservation.  What remains with WS-CB
+  (CB0.3, CB1.6) is the *other* authority question on that path: that
+  `schedContextConfigure` answers to a SchedContext write right with no
+  caller-MCP check at all.
 * **`scThreadIndexConsistent` is prose only.**  The object-store index that tracks
   which threads reference a SchedContext has a documented consistency property and
   no Lean definition.  The push and pop maintain the index correctly at depth ≥ 2
-  — the donor is cleared either way — but nothing states it.  A separate
-  implement-the-improvement candidate, registered rather than absorbed.
+  — the donor is cleared either way, and `donationReturnBinding`'s two arms name
+  the same context (`donationReturnBinding_scId?`), so the index is insensitive to
+  stack depth — but nothing *states* it.  A separate implement-the-improvement
+  candidate: a `scThreadIndexConsistent` definition plus preservation at the four
+  writers, post-v1.0.0.

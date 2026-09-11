@@ -152,31 +152,88 @@ unsatisfiable pack field cannot hide. The state-shaped fields are collected in
 **The donation chain sits beside the bundle, not inside it.** WS-OD OD2
 (`v0.34.125`) added `SchedContext.scReply` — the head of a context's MCS reply
 stack — and `donationChainWellFormed`
-([`Defs.lean`](../../SeLe4n/Kernel/IPC/Invariant/Defs.lean)): every
-`Reply.donatedSc` resolves, and each context's head walks a **terminating**
-`prev`-chain (`donationChainFrom`, fuel-bounded) holding **exactly** the replies
-naming that context. It is a conjunct of `ipcReachable`, not of
+([`Defs.lean`](../../SeLe4n/Kernel/IPC/Invariant/Defs.lean)): the stack is
+**doubly linked** (`Reply.prev` down, `Reply.next` up, with the context recorded
+on the head frame alone), every `prev` link is answered by the frame it names,
+and each context's head walks a **terminating** chain (`donationChainFrom`,
+fuel-bounded). It is a conjunct of `ipcReachable`, not of
 `ipcInvariantFull`, which keeps its twenty; and it is *preserved* through
 `donationChainFrame` rather than assumed. The frame is stated over the two
 projections the walk actually reads (`replyStackLinks?`,
 `schedContextStackHead?`), so it **is** the read set rather than an
 over-approximation of it. The donation **pop** writes all three (WS-OD OD3.1,
-`v0.34.126`) and carries its own preservation theorem (OD3.8, `v0.34.132`), but
-its writing arm needs a stack nothing yet constructs, so the predicate is still
-vacuously true of every reachable state — deliberately: the invariant and its
-frames land before the transitions that must preserve them.
+`v0.34.126`) and carries its own preservation theorem (OD3.8, `v0.34.132`); the
+donation **push** writes the new frame's two links, the old head's upward link
+and the context's head (OD4.1, `v0.35.2`; five stores since `v0.35.4`) and
+carries `donateSchedContext_preserves_donationChainWellFormed`. The **detach**
+(`v0.35.4`) is the third writer: it cuts a frame out of the *middle* of a stack
+in `O(1)` by clearing the `prev` of the frame above it, which is what the upward
+link exists for and what stops a cancelled middle caller's frame from being left
+on a stack with its caller gone — pinning its Reply and its SchedContext against
+every retype.
+With the push live the predicate is no longer vacuous — a depth-2 Call leaves a
+two-frame stack — which is the order this workstream was numbered for: the
+invariant and its frames landed at OD2, before the transitions that must
+preserve them.
 
 OD3.1–OD3.3 (`v0.34.126`) landed the transition that **reads** it. The donation
-return is now a four-write reply-stack pop with a fail-closed head validation,
-and `returnDonatedSchedContext_eq_legacy_of_none` proves it is the pre-OD3 body
-at `newOwner? = none` over a context heading no stack — which every call site in
-the tree passes, so the behaviour is unchanged and OD4's push remains the only
-phase that changes it. Three statements moved with it, because three claims
-stopped being true: exact Reply preservation became a Reply **frame**, the
-binding trichotomy widened at the target, and the two reusable frames that
-asserted whole-object Reply identity dropped to the `caller` projection the
-conjunct they serve actually reads.
+return is a four-write reply-stack pop with a fail-closed head validation, and
+`returnDonatedSchedContext_eq_legacy_of_none` proves it is the pre-OD3 body at
+`newOwner? = none` over a context heading no stack. Three statements moved with
+it, because three claims stopped being true: exact Reply preservation became a
+Reply **frame**, the binding trichotomy widened at the target, and the two
+reusable frames that asserted whole-object Reply identity dropped to the
+`caller` projection the conjunct they serve actually reads.
+
+OD4–OD6 (`v0.35.2`) made the chain **live** and closed the workstream.
+`applyCallDonation`'s guard reads the caller's *effective* scheduling context, so
+a `.donated` caller donates onward and seL4-MCS's passive-server pattern works at
+call depth ≥ 2; all six pop sites resolve their new owner from their own
+pre-state through `replyStackOuterCaller?`; and the improvement is stated as a
+theorem rather than as the absence of a regression —
+`passiveServerHoldsDonatedContext_atCallDepthTwo` says a passive server reached
+at depth ≥ 2 holds a SchedContext bound to itself. Two refusals keep a reused
+Reply from redirecting a donation: `linkReply` will not re-link a Reply that
+still names a donated context, and the pop refuses to read past a below-head
+frame donating a *different* context. `maxLockSetSize` does not move — the
+`.call` footprint already write-locks every object the push writes — so no
+published WCRT or covert-channel figure is recomputed.
 See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.7 for the canonical text.
+
+**A donation moves budget, period and deadline — not priority or domain**
+(`v0.35.3`).  Closing WS-OD surfaced an authority crossing in both directions:
+`updatePrioritySource` classified `.bound` and `.donated` alike, so
+`.tcbSetPriority` on a thread *holding* a donated context wrote the **donor's**
+`SchedContext.priority` though the syscall is gated on a TCB-write right over
+the server alone; and `schedContextConfigure` propagated into `sc.boundThread`'s
+TCB, which after a donation is the *donee*, so a capability on the client's
+reservation rewrote the server's own priority **and migrated its scheduling
+domain**.  The remedy is seL4-MCS's own split — a donee runs its client's work
+on the client's reservation at **its own** priority and in its own partition,
+and rises to the client's band only through priority inheritance.  One
+classifier decides which SchedContext supplies a thread's thread-owned
+parameters — `SchedContextBinding.ownScId?`, the reservation a thread *owns*
+(`some` on `.bound`, `none` on `.unbound` and `.donated`), as against `scId?`,
+the one it *runs on* — one resolver answers
+(`SystemState.threadBasePriority`), and every reader is pinned to it by theorem
+— `resolveEffectivePrioDeadline_fst_eq_threadBasePriority`,
+`getCurrentPriority_eq_threadBasePriority` (by `rfl`),
+`effectiveSchedParams_priority_deadline_eq_resolve`,
+`effectiveBucketPriority_eq_resolveEffective` — so the split cannot be unpicked
+one site at a time.  Two invariants follow the read: a donee's recorded
+run-queue bucket is its own base priority
+(`effectiveParamsMatchRunQueue{,OnCore}`), and `boundThreadPriorityConsistent`
+ranges over `.bound` alone, where quantified over every binding **the donation
+falsified it** whenever the donor's and the donee's base priorities differed —
+the reservation's `priority` had to equal one before the hand-off and the other
+after, and the hand-off writes neither field.  Budget,
+period and deadline stay the reservation's at every depth, and the five budget
+predicates keep their merged arm — pinned as such, so the split cannot leak into
+the budget question.  `schedContextConfigureBoundPropagate` gates both
+propagations on the bound thread **owning** the reservation, through one
+predicate both halves consult so they cannot diverge, and `effectiveSchedParams` reports a donee's own
+domain, since every live domain filter reads `tcb.domain`.  `maxLockSetSize` is
+unmoved at **14**.
 
 ### 3.4 Lifecycle — `SeLe4n/Kernel/Lifecycle/Invariant/`
 
@@ -385,9 +442,20 @@ platform rather than with the lock.
 > now walk is state-discovered and unbounded, so its locks are declared through
 > the `pipChainStart_<τ>` markers the SM3.C walker consumes rather than through
 > `lockSet_<τ>` — which is what keeps the static footprint an honest declaration
-> of the *static* locks.
+> of the *static* locks. **PR #894's review (`v0.35.5`) moved it 16 → 21**, on
+> that same arm a fifth time: `.replyRecv`'s receive leg *is* `.receive`'s
+> transition, so with no queued sender it runs the pre-receive donation return on
+> the **invoking** thread — and the arm's own return runs after the receive leg,
+> so the invoker still carries the `.donated` binding it entered with. On a
+> non-delegated reply the recorded server *is* the invoker, which is the
+> coincidence delegation breaks; two threads cannot share a scheduling context,
+> so a delegated `.replyRecv` wrote four kernel objects under no declared lock.
+> **No reachable state takes up the whole ceiling**:
+> `lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds every state at
+> eighteen with no hypothesis, because the re-donation members and the
+> pre-receive return are mutually exclusive on the send queue.
 >
-> At HEAD, the declared lock-set ceiling is **14**, the RPi5 tick admits **23 µs** per lock, and the uniform 60 µs envelope is **2520 µs** —
+> At HEAD, the declared lock-set ceiling is **21**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3780 µs** —
 > the canonical spelling `scripts/check_lock_ceiling_figures.py` (Tier 0, WS-OD
 > OD3.15) holds to the Lean sources, so this chapter cannot go stale behind the
 > constant the way it did between OD3.7 and OD3.14. See

@@ -438,71 +438,62 @@ theorem insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull
       exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
   exact ipcInvariantFull_of_readViewAgreement hView hPsi hCap hInv
 
-/-- Reduction of `updatePrioritySource` at an unbound binding. -/
-private theorem updatePrioritySource_unbound_eq (st : SystemState)
+/-- Reduction of `updatePrioritySource` at a binding with **no** priority
+source — `.unbound` and, since WS-OD (v0.35.3), `.donated`.  Both write the
+thread's own TCB. -/
+private theorem updatePrioritySource_tcbTarget_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
-    (hB : tcb.schedContextBinding = .unbound) :
+    (hB : tcb.schedContextBinding.ownScId? = none) :
     SchedContext.PriorityManagement.updatePrioritySource st tid tcb p
       = { st with objects := st.objects.insert tid.toObjId (.tcb { tcb with priority := p }) } := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
   rw [hB]
 
-/-- Reduction of `updatePrioritySource` at a bound or donated binding, keyed on
-the projected SchedContext id. -/
+/-- Reduction of `updatePrioritySource` at a binding that **does** name a
+priority source — `.bound scId`, and only that since WS-OD (v0.35.3). -/
 private theorem updatePrioritySource_sc_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
     (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
-    (hB : tcb.schedContextBinding = .bound scId ∨
-          ∃ owner, tcb.schedContextBinding = .donated scId owner)
+    (hB : tcb.schedContextBinding.ownScId? = some scId)
     (hSc : st.getSchedContext? scId = some sc) :
     SchedContext.PriorityManagement.updatePrioritySource st tid tcb p
       = { st with objects :=
             st.objects.insert scId.toObjId (.schedContext { sc with priority := p }) } := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  rcases hB with hB | ⟨owner, hB⟩ <;> (rw [hB]; dsimp only []; rw [hSc])
+  rw [hB]; dsimp only []; rw [hSc]
 
 /-- Reduction of `updatePrioritySource` when the named SchedContext is absent. -/
 private theorem updatePrioritySource_sc_none_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
     (scId : SeLe4n.SchedContextId)
-    (hB : tcb.schedContextBinding = .bound scId ∨
-          ∃ owner, tcb.schedContextBinding = .donated scId owner)
+    (hB : tcb.schedContextBinding.ownScId? = some scId)
     (hSc : st.getSchedContext? scId = none) :
     SchedContext.PriorityManagement.updatePrioritySource st tid tcb p = st := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  rcases hB with hB | ⟨owner, hB⟩ <;> (rw [hB]; dsimp only []; rw [hSc])
+  rw [hB]; dsimp only []; rw [hSc]
 
-/-- `updatePrioritySource` writes a priority field — on the TCB when unbound,
-on the bound SchedContext otherwise — and priority is a field no conjunct
-reads. -/
+/-- `updatePrioritySource` writes a priority field — on the thread's own TCB
+unless the binding names a priority source, in which case on that SchedContext —
+and priority is a field no conjunct reads.  The case split is on the classifier
+rather than on the binding, so the two arms are exactly the operation's. -/
 theorem updatePrioritySource_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hPre : st.objects[tid.toObjId]? = some (.tcb tcb)) :
     ipcInvariantFull (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) := by
-  cases hB : tcb.schedContextBinding with
-  | unbound =>
-      rw [updatePrioritySource_unbound_eq st tid tcb p hB]
+  cases hB : tcb.schedContextBinding.ownScId? with
+  | none =>
+      rw [updatePrioritySource_tcbTarget_eq st tid tcb p hB]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
         { tcb with priority := p } hObjInv hInv hPre rfl rfl rfl rfl rfl rfl rfl rfl rfl
-  | bound scId =>
+  | some scId =>
       cases hSc : st.getSchedContext? scId with
       | some sc =>
-          rw [updatePrioritySource_sc_eq st tid tcb p scId sc (Or.inl hB) hSc]
+          rw [updatePrioritySource_sc_eq st tid tcb p scId sc hB hSc]
           exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st scId
             sc { sc with priority := p } hObjInv hInv
             ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc) rfl
-      | none => rw [updatePrioritySource_sc_none_eq st tid tcb p scId (Or.inl hB) hSc]; exact hInv
-  | donated scId owner =>
-      cases hSc : st.getSchedContext? scId with
-      | some sc =>
-          rw [updatePrioritySource_sc_eq st tid tcb p scId sc (Or.inr ⟨owner, hB⟩) hSc]
-          exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st scId
-            sc { sc with priority := p } hObjInv hInv
-            ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc) rfl
-      | none =>
-          rw [updatePrioritySource_sc_none_eq st tid tcb p scId (Or.inr ⟨owner, hB⟩) hSc]
-          exact hInv
+      | none => rw [updatePrioritySource_sc_none_eq st tid tcb p scId hB hSc]; exact hInv
 
 /-- `migrateRunQueueBucketOnCore` moves no object. -/
 theorem migrateRunQueueBucketOnCore_objects_eq (st : SystemState)
@@ -1286,12 +1277,16 @@ theorem ipcInvariantFull_of_runQueueReKey (st : SystemState) (c : CoreId)
 /-- Domain alignment over any base state: a no-op or a one-TCB rewrite of a
 field no conjunct reads. -/
 private theorem domainAlignStep_preserves_ipcInvariantFull (stP : SystemState)
-    (tid : SeLe4n.ThreadId) (tcbC : TCB) (domain : Nat)
+    (tid : SeLe4n.ThreadId) (tcbC : TCB) (domain : Nat) (gate : Prop) [Decidable gate]
     (hObjInv : stP.objects.invExt) (hInv : ipcInvariantFull stP)
     (hAt : stP.objects[tid.toObjId]? = some (.tcb tcbC)) :
-    ipcInvariantFull (if tcbC.domain.val = domain then stP
+    ipcInvariantFull (if tcbC.domain.val = domain ∨ gate then stP
       else { stP with objects := stP.objects.insert tid.toObjId (.tcb { tcbC with domain := ⟨domain⟩ }) }) := by
-  by_cases h : tcbC.domain.val = domain
+  -- WS-OD (v0.35.3): the domain write gained the ownership gate as a second
+  -- disjunct, and the bundle argument is indifferent to it — either disjunct
+  -- takes the no-write arm.  Stated over an opaque `gate` so this lemma cannot
+  -- drift from whatever the operation's condition is.
+  by_cases h : tcbC.domain.val = domain ∨ gate
   · rw [if_pos h]
     exact hInv
   · rw [if_neg h]
@@ -1302,15 +1297,20 @@ private theorem domainAlignStep_preserves_ipcInvariantFull (stP : SystemState)
 write and domain write touch fields no conjunct reads, and the re-bucket
 re-keys a queued thread in place. -/
 theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
-    (stStored : SystemState) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
+    (stStored : SystemState) (scId : SeLe4n.SchedContextId)
+    (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
     (priority domain : Nat)
     (hObjInv : stStored.objects.invExt) (hInv : ipcInvariantFull stStored)
     (hBT : stStored.getTcb? boundTid = some boundTcb) :
-    ipcInvariantFull (SchedContextOps.schedContextConfigureBoundPropagate stStored boundTid
+    ipcInvariantFull (SchedContextOps.schedContextConfigureBoundPropagate stStored scId boundTid
       boundTcb priority domain) := by
   have hBTRaw := (SystemState.getTcb?_eq_some_iff stStored boundTid boundTcb).mp hBT
   unfold SchedContextOps.schedContextConfigureBoundPropagate
-  by_cases hPrioEq : boundTcb.priority.val = priority
+  -- WS-OD (v0.35.3): both propagations are gated on the bound thread OWNING this
+  -- SchedContext, so the "no write" arms now also cover a donated binding.  The
+  -- bundle argument is unchanged on every arm.
+  by_cases hPrioEq : boundTcb.priority.val = priority ∨
+      ¬ SchedContextOps.schedContextConfigurePropagates boundTcb scId
   · rw [if_pos hPrioEq]
     dsimp only []
     split
@@ -1318,7 +1318,7 @@ theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
       have hCEq : boundTcb = currentTcb := Option.some.inj (hBT.symm.trans hCur)
       subst hCEq
       exact domainAlignStep_preserves_ipcInvariantFull stStored boundTid boundTcb domain
-        hObjInv hInv hBTRaw
+        _ hObjInv hInv hBTRaw
     · exact hInv
   · rw [if_neg hPrioEq]
     dsimp only []
@@ -1349,7 +1349,7 @@ theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
           Option.some.inj (hSomeW.symm.trans hCur)
         subst hCEq
         exact domainAlignStep_preserves_ipcInvariantFull _ boundTid _ domain
-          hObjInvW hInvR hAtW
+          _ hObjInvW hInvR hAtW
       · exact hInvR
     · rw [if_neg hMem]
       split
@@ -1358,7 +1358,7 @@ theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
           Option.some.inj (hSomeW.symm.trans hCur)
         subst hCEq
         exact domainAlignStep_preserves_ipcInvariantFull _ boundTid _ domain
-          hObjInvW hInvW hAtW
+          _ hObjInvW hInvW hAtW
       · exact hInvW
 
 /-- `.schedContextConfigure`: the SC rewrite keeps `boundThread`, the optional
@@ -1400,7 +1400,7 @@ theorem schedContextConfigure_preserves_ipcInvariantFull
             · rename_i boundTcb hBT
               cases hStep
               exact schedContextConfigureBoundPropagate_preserves_ipcInvariantFull stStored
-                boundTid boundTcb priority domain hObjInvStored hInvStored hBT
+                _ boundTid boundTcb priority domain hObjInvStored hInvStored hBT
             · cases hStep
               exact hInvStored
       · contradiction
@@ -1715,13 +1715,27 @@ theorem schedContextBind_preserves_ipcInvariantFull
     split at hStep
     · contradiction
     · rename_i hFreeGuard
+      -- `v0.35.4`: a context heading a reply stack is refused, so a successful
+      -- bind saw none — the guard is discharged here rather than split, which
+      -- keeps the arm structure below it what it was.
+      have hNoHead : sc.scReply.isSome = false := by
+        cases hH : sc.scReply.isSome with
+        | false => rfl
+        | true => rw [hH] at hStep; simp at hStep
+      simp only [hNoHead, Bool.false_eq_true, if_false] at hStep
       split at hStep
       · rename_i tcb hT
+        -- `v0.35.4`: and a thread whose reply frame is on a live stack is refused.
+        have hNoLive : SchedContextOps.replyFrameOnLiveStack st tcb = false := by
+          cases hL : SchedContextOps.replyFrameOnLiveStack st tcb with
+          | false => rfl
+          | true => rw [hL] at hStep; split at hStep <;> simp at hStep
+        simp only [hNoLive, Bool.false_eq_true, if_false] at hStep
         split at hStep
         · contradiction
         · split at hStep
           · rename_i hUnbound
-            dsimp only [] at hStep
+            try dsimp only [] at hStep
             cases hStep
             have hFree : sc.boundThread = none := by
               cases hB : sc.boundThread with
@@ -2214,6 +2228,13 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
       split at hStep
       · rename_i tcb hTcb
         dsimp only [] at hStep
+        -- `v0.35.4`: a donated holder is refused, so a successful unbind saw a
+        -- binding that is not a donation.
+        have hNotDon : tcb.schedContextBinding.isDonated = false := by
+          cases hD : tcb.schedContextBinding.isDonated with
+          | false => rfl
+          | true => rw [hD] at hStep; simp at hStep
+        simp only [hNotDon, Bool.false_eq_true, if_false] at hStep
         have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
           (SchedContextId.ofObjId vScId.val) sc).mp hSc
         have hTcbRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
@@ -3615,8 +3636,13 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
       cases hStep
       exact ⟨rfl, rfl⟩
   | schedContext sc =>
-      cases hStep
-      exact ⟨rfl, rfl⟩
+      -- WS-OD OD5.4: a context that heads a reply stack is refused, so the `.ok`
+      -- arm is the one that heads none.
+      simp only [] at hStep
+      split at hStep
+      · contradiction
+      · cases hStep
+        exact ⟨rfl, rfl⟩
 
 /-- The detachment pack transports across any objects- and scheduler-preserving
 step (the cleanup and scrub stages). -/
@@ -4374,6 +4400,11 @@ private theorem cancelDonatedDonationOnCore_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStored : st.getTcb? vtid.val = some tcb)
     (hAllowed : passiveServerIdleAllowed tcb.ipcState)
+    -- **WS-OD OD4.4**: destroying a thread that holds a donation hands the
+    -- context back through the reply-stack resolver; this is the obligation that
+    -- resolution carries.
+    (hStackValid : ∀ scId serverTid originalOwner,
+        replyStackOuterCallerValid st scId serverTid originalOwner)
     (hStep : cancelDonatedDonationOnCore st vtid.val tcb = .ok st') :
     ipcInvariantFull st' := by
   obtain ⟨tval, hprop⟩ := vtid
@@ -4403,6 +4434,7 @@ private theorem cancelDonatedDonationOnCore_preserves_ipcInvariantFull
           refine migrateSchedContextReplenishment_preserves_ipcInvariantFull st1 _ _ _ ?_
           unfold cleanupDonatedSchedContext at hCl
           simp only [hLk, hB] at hCl
+          obtain ⟨n, hRes, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hCl
           exact returnDonatedSchedContext_preserves_ipcInvariantFull st st1 ⟨tval, hprop⟩
             scId owner hObjInv hInv
             (by unfold replyDonationReturn?; rw [hLk]; simp [hB])
@@ -4410,7 +4442,7 @@ private theorem cancelDonatedDonationOnCore_preserves_ipcInvariantFull
               rw [hStored] at hX
               obtain rfl : tcb = tcbX := Option.some.inj hX
               exact hAllowed)
-            none rfl hCl
+            n (donationReturnOuterValid_of_stackValid (hStackValid scId tval owner) hRes) hPop
 
 /-- The bound-donation cancel touches only the victim's binding — every other
 bundle-read TCB field survives. -/
@@ -4540,8 +4572,9 @@ private theorem cancelDonatedDonationOnCore_victim_shape
             (SystemState.getTcb?_eq_some_iff st1 tval tcbX).mpr hXobj
           unfold cleanupDonatedSchedContext at hCl
           simp only [hLk, hB] at hCl
+          obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hCl
           exact returnDonatedSchedContext_victim_shape st st1 tval scId owner tcb hObjInv
-            ((SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored) none hCl tcbX hX1
+            ((SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored) n hPop tcbX hX1
 
 /-- The suspend tail's clear-and-deactivate stage: pending-state clear
 (pointwise inert on a quiescent victim) then the `threadState := .Inactive`
@@ -4625,6 +4658,11 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
     (hQ : threadIpcFieldsQuiescent st vtid.val)
     (hBidir : schedContextBindingBidirectional st)
     (hInv : ipcInvariantFull st)
+    -- **WS-OD OD4.4**: suspending a thread that holds a donation hands the
+    -- context back through the reply-stack resolver; this is the obligation that
+    -- resolution carries.
+    (hStackValid : ∀ scId serverTid originalOwner,
+        replyStackOuterCallerValid st scId serverTid originalOwner)
     (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid ec = .ok (st', sgi)) :
     ipcInvariantFull st' := by
   unfold Lifecycle.Suspend.suspendThreadOnCore at hStep
@@ -4777,13 +4815,14 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
                 rw [hDon] at hStep
                 dsimp only [] at hStep
                 have hInvD := cancelDonatedDonationOnCore_preserves_ipcInvariantFull st stD
-                  vtid tcb hObjInv hInv hLk (Or.inl hReady)
+                  vtid tcb hObjInv hInv hLk (Or.inl hReady) hStackValid
                   hDon
                 have hObjInvD := cancelDonatedDonationOnCore_preserves_objects_invExt st stD
                   vtid.val tcb hObjInv hDon
                 have hShapeD := hShapeOf stD
                   (cancelDonatedDonationOnCore_victim_shape st stD vtid tcb hObjInv hLk
                     hDon)
+
                 cases hRC : runningCoreOf? st vtid.val with
                 | none =>
                     simp only [hRC] at hStep

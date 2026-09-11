@@ -214,6 +214,8 @@
 [Z7D-006] applyReplyDonation non-donated: unchanged=true
 [Z7D-007] cleanupDonatedSchedContext: caller_recovered=true
 [Z7D-008] cleanupPreReceiveDonation: caller_back=true
+[SCN-DONATION-PUSH-DEPTH-TWO] depth-2 donateSchedContext: server_holds=true head_pushed=true frame_linked=true
+[SCN-DONATION-RETURN-RESOLVED-OUTER] depth-2 resolved return: mid_rebound_donated=true head_popped=true frame_cleared=true
 [Z8J-001] SchedContext create+configure: budget=5 period=100 remaining=5
 [Z8J-002] SchedContext bind: bound=true
 [Z8J-003] budget after 1 tick: remaining=4 preempted=false

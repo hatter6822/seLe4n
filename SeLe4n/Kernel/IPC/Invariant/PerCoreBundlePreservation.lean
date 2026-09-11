@@ -510,17 +510,19 @@ theorem cleanupPreReceiveDonation_passiveServerIdleFrameOnCore
     | bound scId => exact passiveServerIdleFrameOnCore.refl st
     | donated scId originalOwner =>
       simp only []
-      cases hRet : returnDonatedSchedContext st receiver scId originalOwner none with
+      cases hRet : returnDonatedSchedContextResolved st receiver scId originalOwner with
       | error _ => exact passiveServerIdleFrameOnCore.refl st
       | ok st' =>
         simp only []
+        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
         refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
         have hRaw' := (getTcb?_eq_some_iff st' tid tcb').mp hTcb'
         obtain ⟨tcbI, hTcbI, _, _, hIpcEq, _⟩ := returnDonatedSchedContext_tcb_queue_backward
-          st st' receiver scId originalOwner hObjInv none hRet tid.toObjId tcb' hRaw'
-        have hSched := returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner none hRet
+          st st' receiver scId originalOwner hObjInv n hPop tid.toObjId tcb' hRaw'
+        have hSched := returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner
+          n hPop
         have h3 := returnDonatedSchedContext_tcb_schedContextBinding_backward st st' receiver scId
-          originalOwner hObjInv none hRet tid.toObjId tcb' hRaw'
+          originalOwner hObjInv n hPop tid.toObjId tcb' hRaw'
         by_cases hRecv : tid.toObjId = receiver.toObjId
         · exfalso
           apply hNA
@@ -529,7 +531,8 @@ theorem cleanupPreReceiveDonation_passiveServerIdleFrameOnCore
             have := hRecv ▸ hTcbI
             exact this))
         · by_cases hOwner : tid.toObjId = originalOwner.toObjId
-          · rw [h3.2.1 hRecv hOwner] at hUnbound'; cases hUnbound'
+          · rw [h3.2.1 hRecv hOwner] at hUnbound'
+            exact absurd hUnbound' (donationReturnBinding_ne_unbound scId n)
           · obtain ⟨tcbB, hTcbB, hBindEq⟩ := h3.2.2 hRecv hOwner
             have hIdEq : tcbI = tcbB := KernelObject.tcb.inj (Option.some.inj (hTcbI.symm.trans hTcbB))
             exact ⟨tcbI, (getTcb?_eq_some_iff st tid tcbI).mpr hTcbI,
@@ -1225,6 +1228,9 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull_perCore
     (st st' : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
+    -- **WS-OD OD4.4**: the pre-receive cleanup's pop resolves its new owner from
+    -- the reply stack; this is the obligation that resolution carries.
+    (hStackValid : cleanupDonationStackValid st receiver)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1249,7 +1255,7 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDual_preserves_ipcInvariantFull endpointId receiver senderId replyId st st'
-      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone
+      (ipcInvariantFull_of_smp hInv) hObjInv hStackValid hAllBudgetsNone
       hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
       hStep)
@@ -1338,6 +1344,12 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore
     (replyId : Option SeLe4n.ReplyId)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
+    -- **WS-OD OD4.4**: see `endpointReplyRecv_preserves_ipcInvariantFull` — the
+    -- obligation is keyed on the reply leg's own post-state, not quantified over
+    -- every `SystemState`.
+    (hStackValid : ∀ s : SystemState,
+      endpointReply receiver replyTarget msg st = .ok ((), s) →
+      cleanupDonationStackValid s receiver)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     -- WS-RR RR3.12: replaces the threaded post-state `hDOV'`, which no state on the
     -- donating path satisfies. A pre-state condition, hence dischargeable.
@@ -1368,7 +1380,7 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointReplyRecv_preserves_ipcInvariantFull st st' endpointId receiver replyTarget msg replyId
-      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone hNoDonationOwnedBy
+      (ipcInvariantFull_of_smp hInv) hObjInv hStackValid hAllBudgetsNone hNoDonationOwnedBy
       hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
       hStep)
@@ -1754,6 +1766,8 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
+    -- **WS-OD OD4.4**: see `endpointReceiveDualWithCaps_preserves_ipcInvariantFull`.
+    (hStackValid : cleanupDonationStackValid st receiver)
     -- WS-RR RR3.11: replaces the threaded `hDualQueue'` / `hBadge'`. The base bundle
     -- now **establishes** both conjuncts; the in-flight badge invariant it needs
     -- instead is a property of the *pre*-state.
@@ -1783,7 +1797,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDualWithCaps_preserves_ipcInvariantFull endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary
-      (ipcInvariantFull_of_smp hInv) hObjInv hPendingCaps hAllBudgetsNone
+      (ipcInvariantFull_of_smp hInv) hObjInv hStackValid hPendingCaps hAllBudgetsNone
       hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
       hStep)

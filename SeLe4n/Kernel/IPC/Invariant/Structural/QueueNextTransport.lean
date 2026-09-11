@@ -877,7 +877,7 @@ theorem consumeCallerReply_preserves_dualQueueSystemInvariant
       | some r =>
         simp only [hGetR] at hConsume
         exact storeObject_reply_preserves_dualQueueSystemInvariant st st1 rid.toObjId
-          { r with caller := none } hObjInv hConsume
+          r.consumed hObjInv hConsume
           (Or.inl ⟨r, (getReply?_eq_some_iff st rid r).mp hGetR⟩) hInv
     simp only [hConsume] at hStep
     cases hT : st1.getTcb? caller with

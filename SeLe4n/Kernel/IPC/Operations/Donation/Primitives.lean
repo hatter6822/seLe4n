@@ -76,8 +76,19 @@ def applyCallDonation
       match lookupTcb st caller with
       | none => .ok st                      -- No-op: caller not found
       | some callerTcb =>
-        match callerTcb.schedContextBinding with
-        | .bound clientScId =>
+        -- **WS-OD OD4.2**: the caller's *effective* scheduling context, bound or
+        -- donated — seL4-MCS's `maybeDonateSchedContext`, which reads
+        -- `sender->tcbSchedContext` and does not care how the sender came to
+        -- hold it.  Before this the guard matched `.bound` alone, so a chain
+        -- stopped at the first passive server: at call depth ≥ 2 the callee
+        -- stayed `.unbound`, received no budget and was never selected.
+        --
+        -- The resolver is `SchedContextBinding.scId?` rather than a second
+        -- two-arm match, so "which context does this thread hold" is answered
+        -- in one place; `donationReturnBinding_scId?` already relies on that
+        -- single answer for the pop.
+        match callerTcb.schedContextBinding.scId? with
+        | some clientScId =>
           -- AH2-A: Propagate donation errors instead of swallowing them.
           -- AN10-residual-1 deep-audit (H5): direct call to the typed
           -- wrapper.  Type-level enforcement of the dispatch-boundary
@@ -85,7 +96,7 @@ def applyCallDonation
           match donateSchedContextValid st callerVtid receiverVtid clientScId with
           | .error e => .error e
           | .ok st' => .ok st'
-        | _ => .ok st                       -- No-op: caller has no SC to donate
+        | none => .ok st                    -- No-op: caller has no SC to donate
     | _ => .ok st  -- Receiver already has SC, no donation needed
 
 /-- Z7-B: storeObject preserves scheduler. -/
@@ -102,44 +113,18 @@ theorem donateSchedContext_scheduler_eq
     (clientScId : SeLe4n.SchedContextId)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
     st'.scheduler = st.scheduler := by
-  unfold donateSchedContext at h
-  revert h
-  cases hObj : st.objects[clientScId.toObjId]? with
-  | none => intro h; cases h
-  | some obj =>
-    cases obj with
-    | schedContext sc =>
-      simp only []
-      -- AUD-3b: Handle the boundThread validation branch
-      split
-      · intro h; cases h  -- boundThread != clientTid → error → contradiction
-      · cases hS1 : storeObject clientScId.toObjId _ st with
-        | error _ => intro h; cases h
-        | ok p1 =>
-          simp only []
-          -- F-3: donor-clear store between the SC store and the server store
-          cases hLC : lookupTcb p1.2 clientTid with
-          | none => intro h; cases h
-          | some _ =>
-            simp only []
-            cases hS2 : storeObject clientTid.toObjId _ p1.2 with
-            | error _ => intro h; cases h
-            | ok p2 =>
-              simp only []
-              cases hLookup : lookupTcb p2.2 serverTid with
-              | none => intro h; cases h
-              | some _ =>
-                simp only []
-                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
-                | error _ => intro h; cases h
-                | ok p3 =>
-                  simp only [Except.ok.injEq]
-                  intro hEq; subst hEq
-                  have h1 := storeObject_scheduler_eq_local st _ _ _ hS1
-                  have h2 := storeObject_scheduler_eq_local p1.2 _ _ _ hS2
-                  have h3 := storeObject_scheduler_eq_local p2.2 _ _ _ hS3
-                  exact h3.trans (h2.trans h1)
-    | _ => simp only []; intro h; cases h
+  -- WS-OD OD4.1: read off the operation's own decomposition rather than by a
+  -- second copy of its case analysis.  The fourth store made that copy
+  -- non-compiling, which is what the shared derivation exists to prevent.
+  obtain ⟨_, _, _, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hS2, _, hS3, _, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  have h1 := storeObject_scheduler_eq_local st _ _ _ hS1
+  have h2 := storeDonationFramePush_scheduler_eq hS2
+  have h3 := storeObject_scheduler_eq_local s2 _ _ _ hS3
+  have h4 := storeObject_scheduler_eq_local s3 _ _ _ hS4
+  rw [hEq]
+  show s4.scheduler = st.scheduler
+  exact h4.trans (h3.trans (h2.trans h1))
 
 /-- Z7-B/AH2-D: applyCallDonation preserves the scheduler exactly. -/
 theorem applyCallDonation_scheduler_eq
@@ -159,9 +144,11 @@ theorem applyCallDonation_scheduler_eq
       | none => simp [hCaller] at h; cases h; rfl
       | some callerTcb =>
         simp only [hCaller] at h
-        cases hCallerBinding : callerTcb.schedContextBinding with
-        | unbound => simp [hCallerBinding] at h; cases h; rfl
-        | bound clientScId =>
+        -- **WS-OD OD4.2**: the split is on the caller's *effective* context, the
+        -- one thing the widened guard reads.
+        cases hCallerBinding : callerTcb.schedContextBinding.scId? with
+        | none => simp [hCallerBinding] at h; cases h; rfl
+        | some clientScId =>
           -- AN10-residual-1 deep-audit: body now calls `donateSchedContextValid`
           -- directly with the typed arguments; reduce via `_eq` lemma.
           simp only [hCallerBinding, donateSchedContextValid] at h
@@ -170,7 +157,6 @@ theorem applyCallDonation_scheduler_eq
           | ok stDon =>
               simp [hDonate] at h; rw [← h]
               exact donateSchedContext_scheduler_eq st stDon callerVtid.val receiverVtid.val clientScId hDonate
-        | donated scId owner => simp [hCallerBinding] at h; cases h; rfl
     | bound scId => simp [hBinding] at h; cases h; rfl
     | donated scId owner => simp [hBinding] at h; cases h; rfl
 
@@ -207,13 +193,14 @@ def applyReplyDonation (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
       -- after promoting the stored `originalOwner` field via `toValid?`.
       match SeLe4n.ThreadId.toValid? originalOwner with
       | some ownerVtid =>
-          -- WS-OD OD4.4: this site cannot thread OD3.4's resolver yet.  Its
-          -- invariant surface goes through
-          -- `returnDonatedSchedContext_preserves_ipcInvariantFull`, which OD3.2
-          -- states under `hBottom : newOwner? = none` and which **OD4.3**
-          -- generalises; threading here first would make that composite
-          -- unusable at this site.  The resolver arrives with OD4.3.
-          match returnDonatedSchedContextValid st replierVtid scId ownerVtid none with
+          -- **WS-OD OD4.4**: the new owner is resolved off the scheduling
+          -- context's own reply stack, on this pop's pre-state.  At the bottom
+          -- of the stack that is `none` and the return rebinds `.bound scId`
+          -- exactly as before; one level up it names the outer caller, and the
+          -- context settles on the thread that is still owed it instead of on
+          -- the intermediate donor — which would otherwise acquire another
+          -- domain's reservation permanently (plan §3.2).
+          match returnDonatedSchedContextResolved st replierVtid.val scId ownerVtid.val with
           | .error e => .error e
           | .ok st' => .ok (removeRunnable st' replier)
       | none => .error .invalidArgument
@@ -233,50 +220,16 @@ theorem donateSchedContext_server_binding
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
     ∃ tcb', st'.objects[serverTid.toObjId]? = some (.tcb tcb') ∧
       tcb'.schedContextBinding = .donated clientScId clientTid := by
-  unfold donateSchedContext at h
-  revert h
-  cases hObj : st.objects[clientScId.toObjId]? with
-  | none => intro h; cases h
-  | some obj =>
-    cases obj with
-    | schedContext sc =>
-      simp only []
-      split
-      · intro h; cases h
-      · cases hS1 : storeObject clientScId.toObjId _ st with
-        | error _ => intro h; cases h
-        | ok p1 =>
-          simp only []
-          -- F-3: donor-clear store between the SC store and the server store
-          cases hLC : lookupTcb p1.2 clientTid with
-          | none => intro h; cases h
-          | some _ =>
-            simp only []
-            cases hS2 : storeObject clientTid.toObjId _ p1.2 with
-            | error _ => intro h; cases h
-            | ok p2 =>
-              simp only []
-              cases hL : lookupTcb p2.2 serverTid with
-              | none => intro h; cases h
-              | some serverTcb =>
-                simp only []
-                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
-                | error _ => intro h; cases h
-                | ok p3 =>
-                  simp only [Except.ok.injEq]
-                  intro hEq; subst hEq
-                  have hInvP1 : p1.2.objects.invExt := by
-                    unfold storeObject at hS1; cases hS1
-                    exact RHTable_insert_preserves_invExt _ _ _ hObjInv
-                  have hInvP2 : p2.2.objects.invExt := by
-                    unfold storeObject at hS2; cases hS2
-                    exact RHTable_insert_preserves_invExt _ _ _ hInvP1
-                  have : p3.2.objects[serverTid.toObjId]? =
-                    some (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) := by
-                    unfold storeObject at hS3; cases hS3
-                    exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInvP2
-                  exact ⟨_, this, rfl⟩
-    | _ => simp only []; intro h; cases h
+  obtain ⟨_, _, _, serverTcb, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hS2, _, hS3, _, hS4,
+      hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  refine ⟨{ serverTcb with schedContextBinding := .donated clientScId clientTid }, ?_, rfl⟩
+  rw [hEq]
+  show s4.objects[serverTid.toObjId]? = _
+  exact storeObject_objects_eq s3 s4 serverTid.toObjId _ hInv3 hS4
 
 /-- Z7-K2: After returnDonatedSchedContext, the server's binding is .unbound. -/
 theorem returnDonatedSchedContext_server_unbound
@@ -296,7 +249,7 @@ theorem returnDonatedSchedContext_server_unbound
   obtain ⟨_, _, _, serverTcb, s1, s2, s3, s4, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   refine ⟨{ serverTcb with schedContextBinding := .unbound }, ?_, rfl⟩
   rw [hEq]
@@ -393,43 +346,15 @@ theorem donateSchedContext_machine_eq
     (clientScId : SeLe4n.SchedContextId)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
     st'.machine = st.machine := by
-  unfold donateSchedContext at h
-  revert h
-  cases hObj : st.objects[clientScId.toObjId]? with
-  | none => intro h; cases h
-  | some obj =>
-    cases obj with
-    | schedContext sc =>
-      simp only []
-      split
-      · intro h; cases h
-      · cases hS1 : storeObject clientScId.toObjId _ st with
-        | error _ => intro h; cases h
-        | ok p1 =>
-          simp only []
-          -- F-3: donor-clear store between the SC store and the server store
-          cases hLC : lookupTcb p1.2 clientTid with
-          | none => intro h; cases h
-          | some _ =>
-            simp only []
-            cases hS2 : storeObject clientTid.toObjId _ p1.2 with
-            | error _ => intro h; cases h
-            | ok p2 =>
-              simp only []
-              cases hLookup : lookupTcb p2.2 serverTid with
-              | none => intro h; cases h
-              | some _ =>
-                simp only []
-                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
-                | error _ => intro h; cases h
-                | ok p3 =>
-                  simp only [Except.ok.injEq]
-                  intro hEq; subst hEq
-                  have h1 := storeObject_machine_eq_local st _ _ _ hS1
-                  have h2 := storeObject_machine_eq_local p1.2 _ _ _ hS2
-                  have h3 := storeObject_machine_eq_local p2.2 _ _ _ hS3
-                  exact h3.trans (h2.trans h1)
-    | _ => simp only []; intro h; cases h
+  obtain ⟨_, _, _, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hS2, _, hS3, _, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  have h1 := storeObject_machine_eq_local st _ _ _ hS1
+  have h2 := storeDonationFramePush_machine_eq hS2
+  have h3 := storeObject_machine_eq_local s2 _ _ _ hS3
+  have h4 := storeObject_machine_eq_local s3 _ _ _ hS4
+  rw [hEq]
+  show s4.machine = st.machine
+  exact h4.trans (h3.trans (h2.trans h1))
 
 /-- AG8-G: Donation is atomic — `donateSchedContext` preserves the
 interrupt-disabled state. Derives the post-condition from
@@ -472,7 +397,7 @@ theorem returnDonatedSchedContext_machine_eq
   show s4.machine = st.machine
   rw [SeLe4n.Model.storeObject_machine_eq s3 s4 _ _ h4,
     SeLe4n.Model.storeObject_machine_eq s2 s3 _ _ h3,
-    storeDonationHeadClear_machine_eq hClear,
+    storeDonationHeadPop_machine_eq hClear,
     SeLe4n.Model.storeObject_machine_eq st s1 _ _ h1]
 
 /-- AG8-G: Return donation is atomic — `returnDonatedSchedContext` preserves
@@ -517,18 +442,19 @@ theorem applyCallDonation_machine_eq
       | none => simp [hCaller] at h; cases h; rfl
       | some callerTcb =>
         simp only [hCaller] at h
-        cases hCallerBinding : callerTcb.schedContextBinding with
-        | unbound => simp [hCallerBinding] at h; cases h; rfl
-        | bound clientScId =>
+        -- **WS-OD OD4.2**: the split is on the caller's *effective* context, the
+        -- one thing the widened guard reads.
+        cases hCallerBinding : callerTcb.schedContextBinding.scId? with
+        | none => simp [hCallerBinding] at h; cases h; rfl
+        | some clientScId =>
           -- AN10-residual-1 deep-audit: body now calls `donateSchedContextValid`
-          -- directly with typed args; reduce via `_eq` lemma.
+          -- directly with the typed arguments; reduce via `_eq` lemma.
           simp only [hCallerBinding, donateSchedContextValid] at h
           cases hDonate : donateSchedContext st callerVtid.val receiverVtid.val clientScId with
           | error _ => simp [hDonate] at h
           | ok stDon =>
               simp [hDonate] at h; rw [← h]
               exact donateSchedContext_machine_eq st stDon callerVtid.val receiverVtid.val clientScId hDonate
-        | donated scId owner => simp [hCallerBinding] at h; cases h; rfl
     | bound scId => simp [hBinding] at h; cases h; rfl
     | donated scId owner => simp [hBinding] at h; cases h; rfl
 
@@ -567,12 +493,18 @@ theorem applyReplyDonation_machine_eq
       | some ownerVtid =>
           have hOEq : ownerVtid.val = originalOwner :=
             SeLe4n.ThreadId.toValid?_some_val_eq originalOwner ownerVtid hOV
-          simp only [hOV, returnDonatedSchedContextValid, hOEq] at h
-          cases hReturn : returnDonatedSchedContext st replierVtid.val scId originalOwner none with
+          simp only [hOV, hOEq] at h
+          -- WS-OD OD4.4: the split is on the *resolved* return, which is the
+          -- operation the arm now runs; the frame is lifted through its own
+          -- decomposition rather than restated at a fixed `newOwner?`.
+          cases hReturn : returnDonatedSchedContextResolved st replierVtid.val scId
+              originalOwner with
           | error _ => simp [hReturn] at h
           | ok st'' =>
             simp [hReturn] at h; cases h
-            have hMach := returnDonatedSchedContext_machine_eq st st'' replierVtid.val scId originalOwner none hReturn
+            obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
+            have hMach := returnDonatedSchedContext_machine_eq st st'' replierVtid.val scId
+              originalOwner n hPop
             have hRem := removeRunnable_machine_eq st'' replierVtid.val
             exact hRem.trans hMach
 
@@ -592,9 +524,11 @@ theorem cleanupPreReceiveDonation_machine_eq
     | bound scId => rfl
     | donated scId originalOwner =>
       simp only []
-      cases hReturn : returnDonatedSchedContext st receiver scId originalOwner none with
+      cases hReturn : returnDonatedSchedContextResolved st receiver scId originalOwner with
       | error _ => rfl
-      | ok st' => exact returnDonatedSchedContext_machine_eq st st' receiver scId originalOwner none hReturn
+      | ok st' =>
+        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
+        exact returnDonatedSchedContext_machine_eq st st' receiver scId originalOwner n hPop
 
 -- ============================================================================
 -- WS-RR RR2.3: donation object-store frames — what the SchedContext rebinding
@@ -734,66 +668,41 @@ theorem donateSchedContext_getTcb?_cpuAffinity_eq
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st')
     (tid : SeLe4n.ThreadId) :
     (st'.getTcb? tid).map (·.cpuAffinity) = (st.getTcb? tid).map (·.cpuAffinity) := by
-  unfold donateSchedContext at h
-  revert h
-  cases hObj : st.objects[clientScId.toObjId]? with
-  | none => intro h; cases h
-  | some obj =>
-    cases obj with
-    | schedContext sc =>
-      simp only []
-      split
-      · intro h; cases h
-      · cases hS1 : storeObject clientScId.toObjId (.schedContext { sc with boundThread := some serverTid }) st with
-        | error _ => intro h; cases h
-        | ok p1 =>
-          simp only []
-          cases hLC : lookupTcb p1.2 clientTid with
-          | none => intro h; cases h
-          | some clientTcb =>
-            simp only []
-            cases hS2 : storeObject clientTid.toObjId
-                (.tcb { clientTcb with schedContextBinding := .unbound }) p1.2 with
-            | error _ => intro h; cases h
-            | ok p2 =>
-              simp only []
-              cases hL : lookupTcb p2.2 serverTid with
-              | none => intro h; cases h
-              | some serverTcb =>
-                simp only []
-                cases hS3 : storeObject serverTid.toObjId
-                    (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) p2.2 with
-                | error _ => intro h; cases h
-                | ok p3 =>
-                  simp only [Except.ok.injEq]
-                  intro hEq; subst hEq
-                  obtain ⟨u1, s1⟩ := p1; cases u1
-                  obtain ⟨u2, s2⟩ := p2; cases u2
-                  obtain ⟨u3, s3⟩ := p3; cases u3
-                  have hInv1 : s1.objects.invExt :=
-                    storeObject_preserves_objects_invExt st _ _ _ hObjInv hS1
-                  have hInv2 : s2.objects.invExt :=
-                    storeObject_preserves_objects_invExt s1 _ _ _ hInv1 hS2
-                  have hRaw1 : s1.getTcb? clientTid = some clientTcb :=
-                    getTcb?_of_lookupTcb s1 clientTid clientTcb hLC
-                  have hRaw2 : s2.getTcb? serverTid = some serverTcb :=
-                    getTcb?_of_lookupTcb s2 serverTid serverTcb hL
-                  have hScPreT : st.getSchedContext? clientScId = some sc := by
-                    unfold SystemState.getSchedContext?; rw [hObj]
-                  have e1 := storeObject_schedContextAt_getTcb?_eq st s1 clientScId sc _ hScPreT hObjInv hS1 tid
-                  have e2 := storeObject_tcbAt_getTcb?_cpuAffinity_eq s1 s2 clientTid clientTcb
-                    { clientTcb with schedContextBinding := .unbound } hRaw1 rfl hInv1 hS2 tid
-                  have e3 := storeObject_tcbAt_getTcb?_cpuAffinity_eq s2 s3 serverTid serverTcb
-                    { serverTcb with schedContextBinding := .donated clientScId clientTid }
-                    hRaw2 rfl hInv2 hS3 tid
-                  -- The `scThreadIndex` re-keying at the end is not an object write.
-                  show ((({ s3 with scThreadIndex := _ } : SystemState)).getTcb? tid).map (·.cpuAffinity) = _
-                  rw [show (({ s3 with scThreadIndex :=
-                      (scThreadIndexRemove
-                        (scThreadIndexAdd s3.scThreadIndex clientScId serverTid)
-                        clientScId clientTid) } : SystemState)).getTcb? tid = s3.getTcb? tid from rfl]
-                  rw [e3, e2, e1]
-    | _ => simp only []; intro h; cases h
+  obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
+      hObj, _, _, hFrame, hS1, hS2, hLC, hS3, hL, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  -- The pushed Reply resolves at the state its own store runs on: it resolved in
+  -- `st` (that is what `donationPushFrame?` validated), and the SchedContext
+  -- store before it lands at a key holding a SchedContext, hence a different one.
+  have hRepPre : st.getReply? pushRid = some pushReply :=
+    (donationPushFrame?_ok st donorTcb pushRid pushReply hFrame).2.1
+  have hRepRaw := (SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hRepPre
+  -- WS-OD OD4.1: the two non-TCB stores land at different keys, off the shared
+  -- typed distinctness lemma rather than a fifth copy of its three-line proof.
+  have hKeyNe := getReply?_getSchedContext?_key_ne st pushRid clientScId pushReply sc
+    hRepPre hObj
+  have hRep1 : s1.getReply? pushRid = some pushReply := by
+    rw [SystemState.getReply?_eq_some_iff,
+      storeObject_objects_ne st s1 clientScId.toObjId pushRid.toObjId _ hKeyNe hObjInv hS1]
+    exact hRepRaw
+  have hRaw1 : s2.getTcb? clientTid = some clientTcb :=
+    getTcb?_of_lookupTcb s2 clientTid clientTcb hLC
+  have hRaw2 : s3.getTcb? serverTid = some serverTcb :=
+    getTcb?_of_lookupTcb s3 serverTid serverTcb hL
+  have e1 := storeObject_schedContextAt_getTcb?_eq st s1 clientScId sc _ hObj hObjInv hS1 tid
+  have e2 := storeDonationFramePush_getTcb?_eq hInv1 hRep1 hS2 tid
+  have e3 := storeObject_tcbAt_getTcb?_cpuAffinity_eq s2 s3 clientTid clientTcb
+    { clientTcb with schedContextBinding := .unbound } hRaw1 rfl hInv2 hS3 tid
+  have e4 := storeObject_tcbAt_getTcb?_cpuAffinity_eq s3 s4 serverTid serverTcb
+    { serverTcb with schedContextBinding := .donated clientScId clientTid }
+    hRaw2 rfl hInv3 hS4 tid
+  -- The `scThreadIndex` re-keying at the end is not an object write.
+  rw [hEq]
+  show (s4.getTcb? tid).map (·.cpuAffinity) = _
+  rw [e4, e3, e2, e1]
 
 /-- WS-RR RR2.3: `donateSchedContext` frames every SchedContext **other than**
 the one it rebinds. -/
@@ -805,64 +714,41 @@ theorem donateSchedContext_getSchedContext?_ne
     (hObjInv : st.objects.invExt)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
     st'.getSchedContext? scId = st.getSchedContext? scId := by
-  unfold donateSchedContext at h
-  revert h
-  cases hObj : st.objects[clientScId.toObjId]? with
-  | none => intro h; cases h
-  | some obj =>
-    cases obj with
-    | schedContext sc =>
-      simp only []
-      split
-      · intro h; cases h
-      · cases hS1 : storeObject clientScId.toObjId (.schedContext { sc with boundThread := some serverTid }) st with
-        | error _ => intro h; cases h
-        | ok p1 =>
-          simp only []
-          cases hLC : lookupTcb p1.2 clientTid with
-          | none => intro h; cases h
-          | some clientTcb =>
-            simp only []
-            cases hS2 : storeObject clientTid.toObjId
-                (.tcb { clientTcb with schedContextBinding := .unbound }) p1.2 with
-            | error _ => intro h; cases h
-            | ok p2 =>
-              simp only []
-              cases hL : lookupTcb p2.2 serverTid with
-              | none => intro h; cases h
-              | some serverTcb =>
-                simp only []
-                cases hS3 : storeObject serverTid.toObjId
-                    (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) p2.2 with
-                | error _ => intro h; cases h
-                | ok p3 =>
-                  simp only [Except.ok.injEq]
-                  intro hEq; subst hEq
-                  obtain ⟨u1, s1⟩ := p1; cases u1
-                  obtain ⟨u2, s2⟩ := p2; cases u2
-                  obtain ⟨u3, s3⟩ := p3; cases u3
-                  have hInv1 : s1.objects.invExt :=
-                    storeObject_preserves_objects_invExt st _ _ _ hObjInv hS1
-                  have hInv2 : s2.objects.invExt :=
-                    storeObject_preserves_objects_invExt s1 _ _ _ hInv1 hS2
-                  have hRaw1 : s1.getTcb? clientTid = some clientTcb :=
-                    getTcb?_of_lookupTcb s1 clientTid clientTcb hLC
-                  have hRaw2 : s2.getTcb? serverTid = some serverTcb :=
-                    getTcb?_of_lookupTcb s2 serverTid serverTcb hL
-                  have e1 := storeObject_schedContext_getSchedContext?_ne st s1 clientScId scId _
-                    hNe hObjInv hS1
-                  have e2 := storeObject_tcbAt_getSchedContext?_eq s1 s2 clientTid clientTcb
-                    { clientTcb with schedContextBinding := .unbound } hRaw1 hInv1 hS2 scId
-                  have e3 := storeObject_tcbAt_getSchedContext?_eq s2 s3 serverTid serverTcb
-                    { serverTcb with schedContextBinding := .donated clientScId clientTid }
-                    hRaw2 hInv2 hS3 scId
-                  rw [show (({ s3 with scThreadIndex :=
-                      (scThreadIndexRemove
-                        (scThreadIndexAdd s3.scThreadIndex clientScId serverTid)
-                        clientScId clientTid) } : SystemState)).getSchedContext? scId
-                      = s3.getSchedContext? scId from rfl]
-                  rw [e3, e2, e1]
-    | _ => simp only []; intro h; cases h
+  obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
+      hObj, _, _, hFrame, hS1, hS2, hLC, hS3, hL, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  -- The pushed Reply resolves at the state its own store runs on: it resolved in
+  -- `st` (that is what `donationPushFrame?` validated), and the SchedContext
+  -- store before it lands at a key holding a SchedContext, hence a different one.
+  have hRepPre : st.getReply? pushRid = some pushReply :=
+    (donationPushFrame?_ok st donorTcb pushRid pushReply hFrame).2.1
+  have hRepRaw := (SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hRepPre
+  -- WS-OD OD4.1: the two non-TCB stores land at different keys, off the shared
+  -- typed distinctness lemma rather than a fifth copy of its three-line proof.
+  have hKeyNe := getReply?_getSchedContext?_key_ne st pushRid clientScId pushReply sc
+    hRepPre hObj
+  have hRep1 : s1.getReply? pushRid = some pushReply := by
+    rw [SystemState.getReply?_eq_some_iff,
+      storeObject_objects_ne st s1 clientScId.toObjId pushRid.toObjId _ hKeyNe hObjInv hS1]
+    exact hRepRaw
+  have hRaw1 : s2.getTcb? clientTid = some clientTcb :=
+    getTcb?_of_lookupTcb s2 clientTid clientTcb hLC
+  have hRaw2 : s3.getTcb? serverTid = some serverTcb :=
+    getTcb?_of_lookupTcb s3 serverTid serverTcb hL
+  have e1 := storeObject_schedContext_getSchedContext?_ne st s1 clientScId scId _
+    hNe hObjInv hS1
+  have e2 := storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2 scId
+  have e3 := storeObject_tcbAt_getSchedContext?_eq s2 s3 clientTid clientTcb
+    { clientTcb with schedContextBinding := .unbound } hRaw1 hInv2 hS3 scId
+  have e4 := storeObject_tcbAt_getSchedContext?_eq s3 s4 serverTid serverTcb
+    { serverTcb with schedContextBinding := .donated clientScId clientTid }
+    hRaw2 hInv3 hS4 scId
+  rw [hEq]
+  show s4.getSchedContext? scId = _
+  rw [e4, e3, e2, e1]
 
 /-- WS-RR RR2.3: after `donateSchedContext`, the rebound SchedContext's
 `boundThread` is the **server** — the donee.  This is the post-state half of
@@ -876,67 +762,44 @@ theorem donateSchedContext_post_boundThread
     (hObjInv : st.objects.invExt)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
     ∃ sc', st'.getSchedContext? clientScId = some sc' ∧ sc'.boundThread = some serverTid := by
-  unfold donateSchedContext at h
-  revert h
-  cases hObj : st.objects[clientScId.toObjId]? with
-  | none => intro h; cases h
-  | some obj =>
-    cases obj with
-    | schedContext sc =>
-      simp only []
-      split
-      · intro h; cases h
-      · cases hS1 : storeObject clientScId.toObjId (.schedContext { sc with boundThread := some serverTid }) st with
-        | error _ => intro h; cases h
-        | ok p1 =>
-          simp only []
-          cases hLC : lookupTcb p1.2 clientTid with
-          | none => intro h; cases h
-          | some clientTcb =>
-            simp only []
-            cases hS2 : storeObject clientTid.toObjId
-                (.tcb { clientTcb with schedContextBinding := .unbound }) p1.2 with
-            | error _ => intro h; cases h
-            | ok p2 =>
-              simp only []
-              cases hL : lookupTcb p2.2 serverTid with
-              | none => intro h; cases h
-              | some serverTcb =>
-                simp only []
-                cases hS3 : storeObject serverTid.toObjId
-                    (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) p2.2 with
-                | error _ => intro h; cases h
-                | ok p3 =>
-                  simp only [Except.ok.injEq]
-                  intro hEq; subst hEq
-                  obtain ⟨u1, s1⟩ := p1; cases u1
-                  obtain ⟨u2, s2⟩ := p2; cases u2
-                  obtain ⟨u3, s3⟩ := p3; cases u3
-                  have hInv1 : s1.objects.invExt :=
-                    storeObject_preserves_objects_invExt st _ _ _ hObjInv hS1
-                  have hInv2 : s2.objects.invExt :=
-                    storeObject_preserves_objects_invExt s1 _ _ _ hInv1 hS2
-                  have hRaw1 : s1.getTcb? clientTid = some clientTcb :=
-                    getTcb?_of_lookupTcb s1 clientTid clientTcb hLC
-                  have hRaw2 : s2.getTcb? serverTid = some serverTcb :=
-                    getTcb?_of_lookupTcb s2 serverTid serverTcb hL
-                  have e1 : s1.getSchedContext? clientScId
-                      = some { sc with boundThread := some serverTid } := by
-                    unfold SystemState.getSchedContext?
-                    rw [storeObject_objects_eq st s1 clientScId.toObjId _ hObjInv hS1]
-                  have e2 := storeObject_tcbAt_getSchedContext?_eq s1 s2 clientTid clientTcb
-                    { clientTcb with schedContextBinding := .unbound } hRaw1 hInv1 hS2 clientScId
-                  have e3 := storeObject_tcbAt_getSchedContext?_eq s2 s3 serverTid serverTcb
-                    { serverTcb with schedContextBinding := .donated clientScId clientTid }
-                    hRaw2 hInv2 hS3 clientScId
-                  refine ⟨{ sc with boundThread := some serverTid }, ?_, rfl⟩
-                  rw [show (({ s3 with scThreadIndex :=
-                      (scThreadIndexRemove
-                        (scThreadIndexAdd s3.scThreadIndex clientScId serverTid)
-                        clientScId clientTid) } : SystemState)).getSchedContext? clientScId
-                      = s3.getSchedContext? clientScId from rfl]
-                  rw [e3, e2, e1]
-    | _ => simp only []; intro h; cases h
+  obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
+      hObj, _, _, hFrame, hS1, hS2, hLC, hS3, hL, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  -- The pushed Reply resolves at the state its own store runs on: it resolved in
+  -- `st` (that is what `donationPushFrame?` validated), and the SchedContext
+  -- store before it lands at a key holding a SchedContext, hence a different one.
+  have hRepPre : st.getReply? pushRid = some pushReply :=
+    (donationPushFrame?_ok st donorTcb pushRid pushReply hFrame).2.1
+  have hRepRaw := (SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hRepPre
+  -- WS-OD OD4.1: the two non-TCB stores land at different keys, off the shared
+  -- typed distinctness lemma rather than a fifth copy of its three-line proof.
+  have hKeyNe := getReply?_getSchedContext?_key_ne st pushRid clientScId pushReply sc
+    hRepPre hObj
+  have hRep1 : s1.getReply? pushRid = some pushReply := by
+    rw [SystemState.getReply?_eq_some_iff,
+      storeObject_objects_ne st s1 clientScId.toObjId pushRid.toObjId _ hKeyNe hObjInv hS1]
+    exact hRepRaw
+  have hRaw1 : s2.getTcb? clientTid = some clientTcb :=
+    getTcb?_of_lookupTcb s2 clientTid clientTcb hLC
+  have hRaw2 : s3.getTcb? serverTid = some serverTcb :=
+    getTcb?_of_lookupTcb s3 serverTid serverTcb hL
+  have e1 : s1.getSchedContext? clientScId
+      = some { sc with boundThread := some serverTid, scReply := some pushRid } := by
+    rw [SystemState.getSchedContext?_eq_some_iff,
+      storeObject_objects_eq st s1 clientScId.toObjId _ hObjInv hS1]
+  have e2 := storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2 clientScId
+  have e3 := storeObject_tcbAt_getSchedContext?_eq s2 s3 clientTid clientTcb
+    { clientTcb with schedContextBinding := .unbound } hRaw1 hInv2 hS3 clientScId
+  have e4 := storeObject_tcbAt_getSchedContext?_eq s3 s4 serverTid serverTcb
+    { serverTcb with schedContextBinding := .donated clientScId clientTid }
+    hRaw2 hInv3 hS4 clientScId
+  refine ⟨{ sc with boundThread := some serverTid, scReply := some pushRid }, ?_, rfl⟩
+  rw [hEq]
+  show s4.getSchedContext? clientScId = _
+  rw [e4, e3, e2, e1]
 
 -- ============================================================================
 -- WS-RR RR2.8/RR2.9: donation-**return** object-store frames — the mirrors of
@@ -996,7 +859,7 @@ theorem returnDonatedSchedContext_getTcb?_cpuAffinity_eq
     hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   have hScPre : st.getSchedContext? scId = some sc := by
     unfold SystemState.getSchedContext?; rw [hSc]
@@ -1005,7 +868,7 @@ theorem returnDonatedSchedContext_getTcb?_cpuAffinity_eq
   have hRaw2 : s3.getTcb? serverTid = some serverTcb :=
     getTcb?_of_lookupTcb s3 serverTid serverTcb hL2
   have e1 := storeObject_schedContextAt_getTcb?_eq st s1 scId sc _ hScPre hObjInv hS1 tid
-  have e2 := storeDonationHeadClear_getTcb?_eq hInv1 hClear tid
+  have e2 := storeDonationHeadPop_getTcb?_eq hInv1 hClear tid
   have e3 := storeObject_tcbAt_getTcb?_cpuAffinity_eq s2 s3 originalOwner clientTcb
     { clientTcb with schedContextBinding := donationReturnBinding scId newOwner? }
     hRaw1 rfl hInv2 hS3 tid
@@ -1035,14 +898,14 @@ theorem returnDonatedSchedContext_getSchedContext?_ne
     hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   have hRaw1 : s2.getTcb? originalOwner = some clientTcb :=
     getTcb?_of_lookupTcb s2 originalOwner clientTcb hL1
   have hRaw2 : s3.getTcb? serverTid = some serverTcb :=
     getTcb?_of_lookupTcb s3 serverTid serverTcb hL2
   have e1 := storeObject_schedContext_getSchedContext?_ne st s1 scId scId' _ hNe hObjInv hS1
-  have e2 := storeDonationHeadClear_getSchedContext?_eq hInv1 hClear scId'
+  have e2 := storeDonationHeadPop_getSchedContext?_eq hInv1 hClear scId'
   have e3 := storeObject_tcbAt_getSchedContext?_eq s2 s3 originalOwner clientTcb
     { clientTcb with schedContextBinding := donationReturnBinding scId newOwner? }
     hRaw1 hInv2 hS3 scId'

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.35.1-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.35.5-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -86,11 +86,11 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.35.1` |
+| **Version** | `0.35.5` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 362,103 across 328 files |
-| **Test Lean LoC** | 74,287 across 70 test suites |
-| **Proved declarations** | 12,106 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 370,721 across 328 files |
+| **Test Lean LoC** | 75,430 across 70 test suites |
+| **Proved declarations** | 12,428 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
@@ -269,19 +269,23 @@ under an explicit no-withdrawal window. The deployed lock cannot withdraw yet
 (LC2), neither two-phase-locking unwind emits one (LC3), and no bound on that
 surface is denominated in time (LC4).
 
-Registered beside RR7 is **WS-OD** (SchedContext donation chains,
+Closed beside RR7 is **WS-OD** (SchedContext donation chains,
 [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)):
-41 sub-tasks making donation transitive. Today a scheduling context is donated
-only from a thread that owns one outright, so it stops at the first passive
-server and seL4's passive-server pattern does not work at call depth 2 — the
-callee stays unbound and can never run. The plan wires the reply-stack fields
-the model already declares and never writes, lands the return before the
-donation so no chain is ever serviced by the flat return, and closes first the
-`passiveServerIdle` break the v0.34.97 cancellation reclaim introduced.
-**OD1 is closed** (v0.34.100 → v0.34.108): the reclaim now ends the holder's
-outstanding IPC before handing the context back, `passiveServerIdle` is
-preserved by every cancellation arm, and the unblocked holder is placed on its
-home core's run queue rather than stranded. OD2–OD6 have not started.
+53 sub-tasks making donation transitive, **complete at v0.35.2**
+(v0.34.98 → v0.35.2). Before it, a scheduling context was donated only from a
+thread that owned one outright, so it stopped at the first passive server and
+seL4's passive-server pattern did not work at call depth 2 — the callee stayed
+unbound and could never run. Donation now follows the caller's *effective*
+context, bound or donated, carried on an MCS reply stack built from the three
+fields the model declared and never wrote (`Reply.donatedSc`, `Reply.prev`,
+`SchedContext.scReply`); `passiveServerHoldsDonatedContext_atCallDepthTwo`
+states the result positively rather than as the absence of a regression. A
+reused Reply cannot redirect a donation — the freshening refuses a Reply that
+still names a donated context, and the pop refuses to read past a below-head
+frame donating a different one — and a cancelled middle caller severs the stack
+at the cut, seL4-MCS's own answer, recorded as a named policy constant with
+theorems reading it. The chain costs no lock-footprint ceiling: `maxLockSetSize`
+is unmoved at 14, so no published WCRT or contention figure is recomputed.
 
 Master plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 with per-phase plans in `docs/planning/SMP_*.md`. The canonical per-phase

@@ -1241,7 +1241,8 @@ theorem cleanupPreReceiveDonationChecked_confinedToCore (st st' : SystemState)
     cases hBind : recvTcb.schedContextBinding with
     | donated scId originalOwner =>
       simp only [hBind] at hStep
-      exact returnDonatedSchedContext_confinedToCore st st' receiver scId originalOwner c₀ none hStep
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hStep
+      exact returnDonatedSchedContext_confinedToCore st st' receiver scId originalOwner c₀ n hPop
     | unbound | bound _ =>
       simp only [hBind, Except.ok.injEq] at hStep
       exact observableSlotsConfinedToCore_of_eq c₀ hStep.symm
