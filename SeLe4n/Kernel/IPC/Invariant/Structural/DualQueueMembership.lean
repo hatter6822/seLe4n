@@ -5850,7 +5850,7 @@ theorem endpointQueueEnqueue_replyLinkageFrame
 
 open SeLe4n.Model.SystemState in
 /-- WS-OD OD3.2: the donation return's reply-stack head clear frames the reply
-linkage.  It resets the popped Reply's `donatedSc` and `prev` and leaves its
+linkage.  It resets the popped Reply's `next` and `prev` and leaves its
 `caller` — the only Reply field this frame is about — and it writes no TCB, so
 both link directions carry unchanged. -/
 theorem storeDonationHeadClear_replyLinkageFrame

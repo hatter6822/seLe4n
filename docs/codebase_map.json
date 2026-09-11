@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/gracious-bardeen-clqu7a",
-      "commit_sha": "0db4a46f78ec5897133c1f1d5086ac4e2164a95c",
-      "tree_sha": "aa77d41c1da29b9b81cbbc6fbe6e06de2bf45fea",
-      "committed_at_utc": "2026-09-11T19:04:43+00:00"
+      "commit_sha": "56c59412e964f29e2167bbf935ba11b98dcb935f",
+      "tree_sha": "5b34844e11e93564c465094644deeedec8e74266",
+      "committed_at_utc": "2026-09-11T19:43:39+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "33cae7b2b2e547ef00a747642d928a38689d4d1ee9a5223589a606f93d610d42"
+    "source_digest": "57f082628df6f1362c4120c330f9ca5818901f6b57d491a108e1609005551462"
   },
   "summary": {
     "module_count": 398,
-    "declaration_count": 21037
+    "declaration_count": 21039
   },
   "readme_sync": {
     "version": "0.35.4",
     "lean_toolchain": "v4.28.0",
     "production_files": 328,
-    "production_loc": 369809,
+    "production_loc": 369816,
     "test_files": 70,
-    "test_loc": 75158,
+    "test_loc": 75288,
     "proved_theorem_lemma_decls": 12402,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -108124,7 +108124,7 @@
         {
           "kind": "def",
           "name": "ipcReachable",
-          "line": 97,
+          "line": 99,
           "called": [
             "SystemState",
             "allTimeoutBudgetsNone",
@@ -108139,13 +108139,13 @@
         {
           "kind": "namespace",
           "name": "ipcReachable",
-          "line": 105,
+          "line": 107,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ipcInvariantFull",
-          "line": 107,
+          "line": 109,
           "called": [
             "SystemState",
             "ipcReachable",
@@ -108155,7 +108155,7 @@
         {
           "kind": "theorem",
           "name": "objects_invExt",
-          "line": 109,
+          "line": 111,
           "called": [
             "SystemState",
             "invExt",
@@ -108166,16 +108166,6 @@
         {
           "kind": "theorem",
           "name": "allTimeoutBudgetsNone",
-          "line": 111,
-          "called": [
-            "SystemState",
-            "ipcReachable",
-            "st"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "pendingMessageCapBadgesWellFormed",
           "line": 113,
           "called": [
             "SystemState",
@@ -108185,7 +108175,7 @@
         },
         {
           "kind": "theorem",
-          "name": "notificationWaiterConsistent",
+          "name": "pendingMessageCapBadgesWellFormed",
           "line": 115,
           "called": [
             "SystemState",
@@ -108195,8 +108185,18 @@
         },
         {
           "kind": "theorem",
+          "name": "notificationWaiterConsistent",
+          "line": 117,
+          "called": [
+            "SystemState",
+            "ipcReachable",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "donationChainWellFormed",
-          "line": 118,
+          "line": 120,
           "called": [
             "SystemState",
             "ipcReachable",
@@ -108206,7 +108206,7 @@
         {
           "kind": "theorem",
           "name": "readyThread_endpointQueueFresh",
-          "line": 138,
+          "line": 140,
           "called": [
             "Endpoint",
             "ObjId",
@@ -108225,7 +108225,7 @@
         {
           "kind": "theorem",
           "name": "readyThread_notBlockedOnReceive",
-          "line": 159,
+          "line": 161,
           "called": [
             "TCB"
           ]
@@ -108233,7 +108233,7 @@
         {
           "kind": "theorem",
           "name": "readyThread_notBlockedOnReply",
-          "line": 166,
+          "line": 168,
           "called": [
             "TCB"
           ]
@@ -108241,7 +108241,7 @@
         {
           "kind": "theorem",
           "name": "readyThread_ownsNoDonation",
-          "line": 177,
+          "line": 179,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -108256,7 +108256,7 @@
         {
           "kind": "theorem",
           "name": "sendTailCrossQueueFresh",
-          "line": 206,
+          "line": 208,
           "called": [
             "Endpoint",
             "ObjId",
@@ -108275,7 +108275,7 @@
         {
           "kind": "theorem",
           "name": "recvTailCrossQueueFresh",
-          "line": 245,
+          "line": 247,
           "called": [
             "Endpoint",
             "ObjId",
@@ -108294,7 +108294,7 @@
         {
           "kind": "theorem",
           "name": "ipcReachable_default",
-          "line": 291,
+          "line": 293,
           "called": [
             "SystemState",
             "default",
@@ -108311,7 +108311,7 @@
         {
           "kind": "def",
           "name": "donationChainWitnessContext",
-          "line": 349,
+          "line": 351,
           "called": [
             "SchedContextId"
           ]
@@ -108319,7 +108319,7 @@
         {
           "kind": "def",
           "name": "donationChainWitnessInner",
-          "line": 352,
+          "line": 354,
           "called": [
             "ReplyId"
           ]
@@ -108327,7 +108327,7 @@
         {
           "kind": "def",
           "name": "donationChainWitnessOuter",
-          "line": 355,
+          "line": 357,
           "called": [
             "ReplyId"
           ]
@@ -108335,7 +108335,7 @@
         {
           "kind": "def",
           "name": "donationChainWitnessOuterCaller",
-          "line": 360,
+          "line": 362,
           "called": [
             "ThreadId"
           ]
@@ -108343,7 +108343,7 @@
         {
           "kind": "def",
           "name": "donationChainWitnessInnerCaller",
-          "line": 363,
+          "line": 365,
           "called": [
             "ThreadId"
           ]
@@ -108351,7 +108351,7 @@
         {
           "kind": "def",
           "name": "witnessChainSchedContext",
-          "line": 369,
+          "line": 371,
           "called": [
             "SchedContext",
             "donationChainWitnessContext",
@@ -108362,7 +108362,7 @@
         {
           "kind": "def",
           "name": "witnessChainInnerReply",
-          "line": 375,
+          "line": 377,
           "called": [
             "Reply",
             "donationChainWitnessContext",
@@ -108376,7 +108376,7 @@
         {
           "kind": "def",
           "name": "witnessChainOuterReply",
-          "line": 384,
+          "line": 386,
           "called": [
             "Reply",
             "donationChainWitnessInner",
@@ -108389,7 +108389,7 @@
         {
           "kind": "def",
           "name": "chainWitnessSt1",
-          "line": 389,
+          "line": 391,
           "called": [
             "SystemState",
             "default",
@@ -108401,7 +108401,7 @@
         {
           "kind": "def",
           "name": "chainWitnessSt2",
-          "line": 394,
+          "line": 396,
           "called": [
             "SystemState",
             "chainWitnessSt1",
@@ -108413,7 +108413,7 @@
         {
           "kind": "def",
           "name": "donationChainWitness",
-          "line": 402,
+          "line": 404,
           "called": [
             "SystemState",
             "chainWitnessSt2",
@@ -108425,7 +108425,7 @@
         {
           "kind": "theorem",
           "name": "chainWitnessObjInv0",
-          "line": 407,
+          "line": 409,
           "called": [
             "SystemState",
             "default",
@@ -108437,7 +108437,7 @@
         {
           "kind": "theorem",
           "name": "chainWitnessObjInv1",
-          "line": 411,
+          "line": 413,
           "called": [
             "RHTable_insert_preserves_invExt",
             "chainWitnessObjInv0",
@@ -108447,7 +108447,7 @@
         {
           "kind": "theorem",
           "name": "chainWitnessObjInv2",
-          "line": 414,
+          "line": 416,
           "called": [
             "RHTable_insert_preserves_invExt",
             "chainWitnessObjInv1",
@@ -108457,7 +108457,7 @@
         {
           "kind": "theorem",
           "name": "chainWitnessSt1_lookup",
-          "line": 417,
+          "line": 419,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -108474,7 +108474,7 @@
         {
           "kind": "theorem",
           "name": "chainWitnessSt2_lookup",
-          "line": 428,
+          "line": 430,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -108487,7 +108487,7 @@
         {
           "kind": "theorem",
           "name": "donationChainWitness_lookup",
-          "line": 440,
+          "line": 442,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -108500,7 +108500,7 @@
         {
           "kind": "theorem",
           "name": "donationChainWitness_lookup_cases",
-          "line": 455,
+          "line": 457,
           "called": [
             "ObjId",
             "chainWitnessSt1_lookup",
@@ -108516,7 +108516,7 @@
         {
           "kind": "theorem",
           "name": "donationChainWitness_objects_invExt",
-          "line": 470,
+          "line": 472,
           "called": [
             "RHTable_insert_preserves_invExt",
             "chainWitnessObjInv2",
@@ -108526,7 +108526,7 @@
         {
           "kind": "theorem",
           "name": "donationChainWitness_chain",
-          "line": 476,
+          "line": 478,
           "called": [
             "donationChainFrom",
             "donationChainFrom_succ",
@@ -108550,7 +108550,7 @@
         {
           "kind": "theorem",
           "name": "donationChainWitness_wellFormed",
-          "line": 506,
+          "line": 508,
           "called": [
             "Kernel",
             "SchedContext",
@@ -186286,13 +186286,13 @@
         {
           "kind": "namespace",
           "name": "SchedContext",
-          "line": 208,
+          "line": 209,
           "called": []
         },
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 212,
+          "line": 213,
           "called": [
             "SchedContext",
             "isPositive",
@@ -186303,7 +186303,7 @@
         {
           "kind": "def",
           "name": "bandwidth",
-          "line": 223,
+          "line": 224,
           "called": [
             "Bandwidth",
             "SchedContext"
@@ -186312,7 +186312,7 @@
         {
           "kind": "def",
           "name": "utilizationPerMille",
-          "line": 227,
+          "line": 228,
           "called": [
             "SchedContext",
             "utilization"
@@ -186321,7 +186321,7 @@
         {
           "kind": "def",
           "name": "empty",
-          "line": 236,
+          "line": 237,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -186332,8 +186332,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:246>",
-          "line": 246,
+          "name": "<anonymous:instance:247>",
+          "line": 247,
           "called": [
             "SchedContext",
             "default",
@@ -186343,7 +186343,7 @@
         {
           "kind": "def",
           "name": "mkChecked",
-          "line": 251,
+          "line": 252,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -186354,7 +186354,7 @@
         {
           "kind": "inductive",
           "name": "SchedContextBinding",
-          "line": 277,
+          "line": 278,
           "called": [
             "SchedContextId",
             "ThreadId",
@@ -186364,13 +186364,13 @@
         {
           "kind": "namespace",
           "name": "SchedContextBinding",
-          "line": 283,
+          "line": 284,
           "called": []
         },
         {
           "kind": "def",
           "name": "isDonated",
-          "line": 288,
+          "line": 289,
           "called": [
             "SchedContextBinding"
           ]
@@ -186378,7 +186378,7 @@
         {
           "kind": "theorem",
           "name": "isDonated_unbound",
-          "line": 292,
+          "line": 293,
           "called": [
             "isDonated"
           ]
@@ -186386,7 +186386,7 @@
         {
           "kind": "theorem",
           "name": "isDonated_bound",
-          "line": 293,
+          "line": 294,
           "called": [
             "SchedContextId",
             "isDonated",
@@ -186396,7 +186396,7 @@
         {
           "kind": "theorem",
           "name": "isDonated_donated",
-          "line": 295,
+          "line": 296,
           "called": [
             "SchedContextId",
             "ThreadId",
@@ -186407,7 +186407,7 @@
         {
           "kind": "def",
           "name": "scId",
-          "line": 299,
+          "line": 300,
           "called": [
             "SchedContextBinding",
             "SchedContextId",
@@ -186417,7 +186417,7 @@
         {
           "kind": "def",
           "name": "ownScId",
-          "line": 336,
+          "line": 337,
           "called": [
             "SchedContextBinding",
             "SchedContextId",
@@ -186428,7 +186428,7 @@
         {
           "kind": "theorem",
           "name": "ownScId",
-          "line": 344,
+          "line": 345,
           "called": [
             "SchedContextBinding",
             "SchedContextId",
@@ -186438,7 +186438,7 @@
         {
           "kind": "theorem",
           "name": "ownScId",
-          "line": 350,
+          "line": 351,
           "called": [
             "SchedContextId",
             "scId"
@@ -186447,7 +186447,7 @@
         {
           "kind": "theorem",
           "name": "ownScId",
-          "line": 355,
+          "line": 356,
           "called": [
             "SchedContextId",
             "ThreadId",
@@ -186458,7 +186458,7 @@
         {
           "kind": "theorem",
           "name": "ownScId",
-          "line": 360,
+          "line": 361,
           "called": [
             "none"
           ]
@@ -186466,7 +186466,7 @@
         {
           "kind": "theorem",
           "name": "eq_bound_of_ownScId",
-          "line": 368,
+          "line": 369,
           "called": [
             "SchedContextBinding",
             "SchedContextId",
@@ -186477,7 +186477,7 @@
         {
           "kind": "theorem",
           "name": "ownScId",
-          "line": 374,
+          "line": 375,
           "called": [
             "SchedContextBinding",
             "SchedContextId",
@@ -186488,15 +186488,15 @@
         {
           "kind": "def",
           "name": "isBound",
-          "line": 380,
+          "line": 381,
           "called": [
             "SchedContextBinding"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:386>",
-          "line": 386,
+          "name": "<anonymous:instance:387>",
+          "line": 387,
           "called": [
             "SchedContextBinding",
             "default"
@@ -186504,16 +186504,16 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:389>",
-          "line": 389,
+          "name": "<anonymous:instance:390>",
+          "line": 390,
           "called": [
             "SchedContextBinding"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:410>",
-          "line": 410,
+          "name": "<anonymous:instance:411>",
+          "line": 411,
           "called": [
             "Kernel",
             "SchedContext",
@@ -230885,7 +230885,7 @@
         {
           "kind": "inductive",
           "name": "ReplyStackLink",
-          "line": 55,
+          "line": 56,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -230896,13 +230896,13 @@
         {
           "kind": "namespace",
           "name": "ReplyStackLink",
-          "line": 62,
+          "line": 63,
           "called": []
         },
         {
           "kind": "def",
           "name": "frame",
-          "line": 65,
+          "line": 66,
           "called": [
             "ReplyId",
             "ReplyStackLink",
@@ -230913,7 +230913,7 @@
         {
           "kind": "def",
           "name": "head",
-          "line": 70,
+          "line": 71,
           "called": [
             "ReplyStackLink",
             "SchedContextId",
@@ -230924,7 +230924,7 @@
         {
           "kind": "theorem",
           "name": "frame",
-          "line": 74,
+          "line": 75,
           "called": [
             "ReplyId"
           ]
@@ -230932,7 +230932,7 @@
         {
           "kind": "theorem",
           "name": "frame",
-          "line": 76,
+          "line": 77,
           "called": [
             "SchedContextId",
             "head",
@@ -230942,7 +230942,7 @@
         {
           "kind": "theorem",
           "name": "head",
-          "line": 78,
+          "line": 79,
           "called": [
             "ReplyId",
             "frame",
@@ -230952,7 +230952,7 @@
         {
           "kind": "theorem",
           "name": "head",
-          "line": 80,
+          "line": 81,
           "called": [
             "ReplyStackLink",
             "SchedContextId"
@@ -230961,7 +230961,7 @@
         {
           "kind": "structure",
           "name": "Reply",
-          "line": 86,
+          "line": 87,
           "called": [
             "ReplyId",
             "ReplyStackLink",
@@ -230976,13 +230976,13 @@
         {
           "kind": "namespace",
           "name": "Reply",
-          "line": 95,
+          "line": 96,
           "called": []
         },
         {
           "kind": "def",
           "name": "empty",
-          "line": 99,
+          "line": 100,
           "called": [
             "Reply",
             "ReplyId",
@@ -230991,8 +230991,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:102>",
-          "line": 102,
+          "name": "<anonymous:instance:103>",
+          "line": 103,
           "called": [
             "Reply",
             "default",
@@ -231002,8 +231002,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:109>",
-          "line": 109,
+          "name": "<anonymous:instance:110>",
+          "line": 110,
           "called": [
             "Reply",
             "lock",
@@ -231013,7 +231013,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 137,
+          "line": 141,
           "called": [
             "Reply",
             "none"
@@ -231022,7 +231022,7 @@
         {
           "kind": "def",
           "name": "isFree",
-          "line": 147,
+          "line": 151,
           "called": [
             "Reply"
           ]
@@ -231030,7 +231030,7 @@
         {
           "kind": "theorem",
           "name": "isFree_iff",
-          "line": 151,
+          "line": 155,
           "called": [
             "Reply",
             "isFree",
@@ -231040,7 +231040,7 @@
         {
           "kind": "theorem",
           "name": "isFree_of_unlinked",
-          "line": 157,
+          "line": 161,
           "called": [
             "Reply",
             "isFree",
@@ -231050,7 +231050,7 @@
         {
           "kind": "def",
           "name": "consumed",
-          "line": 198,
+          "line": 202,
           "called": [
             "Reply",
             "head",
@@ -231060,7 +231060,7 @@
         {
           "kind": "theorem",
           "name": "consumed_caller",
-          "line": 203,
+          "line": 207,
           "called": [
             "Reply",
             "consumed",
@@ -231070,7 +231070,7 @@
         {
           "kind": "theorem",
           "name": "consumed_replyId",
-          "line": 206,
+          "line": 210,
           "called": [
             "Reply",
             "consumed",
@@ -231080,7 +231080,7 @@
         {
           "kind": "theorem",
           "name": "consumed_lock",
-          "line": 209,
+          "line": 213,
           "called": [
             "Reply",
             "consumed",
@@ -231090,7 +231090,7 @@
         {
           "kind": "theorem",
           "name": "consumed_of_head",
-          "line": 213,
+          "line": 217,
           "called": [
             "Reply",
             "SchedContextId",
@@ -231102,7 +231102,7 @@
         {
           "kind": "theorem",
           "name": "consumed_of_not_head",
-          "line": 218,
+          "line": 222,
           "called": [
             "Reply",
             "consumed",
@@ -231114,7 +231114,7 @@
         {
           "kind": "theorem",
           "name": "consumed_of_unlinked",
-          "line": 231,
+          "line": 235,
           "called": [
             "Reply",
             "consumed",
@@ -231124,7 +231124,7 @@
         {
           "kind": "theorem",
           "name": "consumed_isFree_of_not_head",
-          "line": 236,
+          "line": 240,
           "called": [
             "Reply",
             "consumed_of_not_head",
@@ -231135,7 +231135,7 @@
         {
           "kind": "theorem",
           "name": "consumed_wellFormed_of_not_head",
-          "line": 242,
+          "line": 246,
           "called": [
             "Reply",
             "consumed_of_not_head",
@@ -231146,7 +231146,7 @@
         {
           "kind": "theorem",
           "name": "empty_wellFormed",
-          "line": 248,
+          "line": 252,
           "called": [
             "ReplyId",
             "empty",
@@ -231156,7 +231156,7 @@
         {
           "kind": "theorem",
           "name": "empty_isFree",
-          "line": 252,
+          "line": 256,
           "called": [
             "ReplyId",
             "empty",
@@ -231165,8 +231165,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:256>",
-          "line": 256,
+          "name": "<anonymous:instance:260>",
+          "line": 260,
           "called": [
             "Kernel",
             "Reply",
@@ -293254,7 +293254,7 @@
         {
           "kind": "def",
           "name": "runDeclaredCoreCountChecks",
-          "line": 939,
+          "line": 940,
           "called": [
             "PlatformConfig",
             "assertBool",
@@ -293269,7 +293269,7 @@
         {
           "kind": "def",
           "name": "runObjectBudgetChecks",
-          "line": 965,
+          "line": 966,
           "called": [
             "ObjectEntry",
             "PlatformConfig",
@@ -293298,7 +293298,7 @@
         {
           "kind": "def",
           "name": "runInactiveFlagChecks",
-          "line": 1042,
+          "line": 1043,
           "called": [
             "SystemState",
             "TCB",
@@ -293323,7 +293323,7 @@
         {
           "kind": "def",
           "name": "runSmpIdleChecks",
-          "line": 1082,
+          "line": 1083,
           "called": [
             "runAlwaysSucceedsChecks",
             "runBootIdleChecks",
@@ -293342,7 +293342,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1102,
+          "line": 1103,
           "called": [
             "runSmpIdleChecks"
           ]
@@ -303989,7 +303989,7 @@
     {
       "module": "tests.SmpIpcSuite",
       "path": "tests/SmpIpcSuite.lean",
-      "declaration_count": 168,
+      "declaration_count": 170,
       "declarations": [
         {
           "kind": "namespace",
@@ -306229,8 +306229,23 @@
         },
         {
           "kind": "def",
+          "name": "pushStackShape",
+          "line": 2137,
+          "called": [
+            "ReplyId",
+            "ReplyStackLink",
+            "SystemState",
+            "pushDonorReply",
+            "pushHeadOf",
+            "pushLinksOf",
+            "pushOuterReply",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runDonationPushChecks",
-          "line": 2133,
+          "line": 2143,
           "called": [
             "any",
             "applyCallDonation",
@@ -306270,8 +306285,43 @@
         },
         {
           "kind": "def",
+          "name": "runMiddleCallerDetachChecks",
+          "line": 2317,
+          "called": [
+            "TCB",
+            "assertBool",
+            "consumeReplyLink",
+            "detachCancelledCallerFrame",
+            "detachReplyFrameAbove",
+            "donateSchedContext",
+            "frame",
+            "getReply",
+            "head",
+            "isFree",
+            "mkTcb",
+            "none",
+            "ofNat",
+            "pushBindingOf",
+            "pushDonor",
+            "pushDonorReply",
+            "pushFreshHead",
+            "pushHeadOf",
+            "pushLinksOf",
+            "pushOuter",
+            "pushOuterReply",
+            "pushSc",
+            "pushServer",
+            "pushStackShape",
+            "pushStore",
+            "pushStoreShaped",
+            "replyStackOuterCaller",
+            "returnDonatedSchedContextResolved"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "scHandoffServer",
-          "line": 2311,
+          "line": 2437,
           "called": [
             "SchedContextId",
             "ofNat"
@@ -306280,7 +306330,7 @@
         {
           "kind": "def",
           "name": "handoffServerSc",
-          "line": 2313,
+          "line": 2439,
           "called": [
             "SchedContext",
             "donServer",
@@ -306291,7 +306341,7 @@
         {
           "kind": "def",
           "name": "stHandoffActiveBase",
-          "line": 2319,
+          "line": 2445,
           "called": [
             "SystemState",
             "c1",
@@ -306306,7 +306356,7 @@
         {
           "kind": "def",
           "name": "runReceivePriorityHandoffChecks",
-          "line": 2334,
+          "line": 2462,
           "called": [
             "applyReceiveLegPipHandoff",
             "applyReceiveRendezvousDonation",
@@ -306336,7 +306386,7 @@
         {
           "kind": "def",
           "name": "runSmpIpcChecks",
-          "line": 2423,
+          "line": 2551,
           "called": [
             "runCancellationCompositionChecks",
             "runCapTransferChecks",
@@ -306353,6 +306403,7 @@
             "runHandlerContentionChecks",
             "runLiveApiChecks",
             "runLockDisciplineChecks",
+            "runMiddleCallerDetachChecks",
             "runReceivePriorityHandoffChecks",
             "runReplyRecvLoopChecks",
             "runSendReceiveChecks",
@@ -306364,7 +306415,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2452,
+          "line": 2581,
           "called": [
             "runSmpIpcChecks"
           ]

@@ -97,8 +97,8 @@ Lean-4-Beweissystem ermöglicht werden:
 |-------------|------|
 | **Version** | `0.35.4` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 369.809 über 328 Dateien |
-| **Test-LoC (Lean)** | 75.158 über 70 Testsuiten |
+| **Produktions-LoC (Lean)** | 369.816 über 328 Dateien |
+| **Test-LoC (Lean)** | 75.288 über 70 Testsuiten |
 | **Bewiesene Deklarationen** | 12.402 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Kanonisches Audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — umfassendes Pre-1.0-Audit (202 Befunde; behoben durch WS-AK AK1–AK10; archiviert) |

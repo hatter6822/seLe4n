@@ -1752,7 +1752,7 @@ private theorem returnDonatedSchedContext_preserves_projection
   -- WS-OD OD3.2: four projection-**stable** writes, composed off the operation's
   -- own store chain.  Every field the return touches is stripped by
   -- `projectKernelObject` — a SchedContext's `boundThread` and `scReply`, a
-  -- Reply's `donatedSc` and `prev`, a TCB's `schedContextBinding` — so the step
+  -- Reply's `next` and `prev`, a TCB's `schedContextBinding` — so the step
   -- is invisible to *any* observer, not merely to one for whom the server is
   -- high.  The `hReceiverObjHigh` hypothesis the pre-OD3 proof carried is gone:
   -- it was never needed, and demanding it made the result unusable wherever the
@@ -3247,8 +3247,8 @@ theorem scrubObjectMemory_preserves_lowEquivalent
 
 The mirror of `returnDonatedSchedContext_preserves_projection`, and for the same
 reason: every field the push writes is stripped by `projectKernelObject` — the
-SchedContext's `boundThread` and `scReply`, the pushed Reply's `donatedSc` and
-`prev`, and the two TCBs' `schedContextBinding`.  So the four stores are
+SchedContext's `boundThread` and `scReply`, the pushed Reply's `next` and
+`prev`, the old head's `next`, and the two TCBs' `schedContextBinding`.  So the four stores are
 projection-**stable** rather than merely high, and the result needs no
 observability hypothesis at all.
 

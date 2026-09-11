@@ -175,8 +175,9 @@ structure SchedContext where
   boundThread : Option SeLe4n.ThreadId := none
   /-- WS-OD OD2.1: the head of this SchedContext's MCS reply stack — seL4-MCS's
       `sc->scReply`.  A `Call` that donates this context pushes the donor's
-      Reply object here (`Reply.donatedSc = some scId`, `Reply.prev` = the
-      previous head), and the donation return pops it; the stack is what makes
+      Reply object here (`Reply.next = some (.head scId)`, `Reply.prev` = the
+      previous head, whose own `next` becomes `.frame` of the pushed Reply since
+      `v0.35.4`), and the donation return pops it; the stack is what makes
       donation *transitive*, so a passive server can itself Call and pass the
       context on.  `Reply.wellFormed`'s docstring has named this field since
       SM6.D — it is built rather than designed around, and building it is also

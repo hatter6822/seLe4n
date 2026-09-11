@@ -49,7 +49,8 @@ two of them at once.
 
 Only the head carries the context.  That is the whole point of the encoding: a
 frame taken out of the middle of a stack repairs its two neighbours and nothing
-else (`unlinkReplyFrame`), where a per-frame context field would have to be
+else (`detachReplyFrameAbove` above the cut, `Reply.consumed` at the frame
+itself), where a per-frame context field would have to be
 cleared on every frame below the cut — an `O(depth)` walk, or, left undone, a
 frame that names a context forever and can never be retyped or linked again. -/
 inductive ReplyStackLink where
@@ -117,11 +118,14 @@ reply-stack discipline, seL4's `reply_unlink` invariant (`replyTCB == NULL ⟹
 replyPrev == replyNext == 0`, `src/object/reply.c`).
 
 Every stack link is put in place by a push that has just linked the frame to a
-blocked caller, and every operation that takes a frame off its stack — the pop
-at the head (`returnDonatedSchedContext`), the detach in the middle
-(`unlinkReplyFrame`) — clears both links **before** the caller link is consumed.
-So a Reply whose `caller` is `none` carries no link, and conversely a Reply that
-carries a link has a caller still blocked on it.  That is what makes
+blocked caller, and no operation leaves a link behind once the caller is gone.
+The pop at the head clears the popped frame's two links in its own store
+(`storeDonationHeadClear`), *before* the caller link is consumed; a frame cut out
+of the middle loses both of its own links in the very record that clears its
+caller (`Reply.consumed`, which is not the head arm), while the neighbour above
+it is repaired first by `detachReplyFrameAbove`.  Either way a Reply whose
+`caller` is `none` carries no link, and conversely a Reply that carries a link
+has a caller still blocked on it.  That is what makes
 `Reply.isFree` — no caller, no links — the exact `O(1)` test for "this object may
 be linked to a new caller or retyped": a linked frame always has a live caller,
 which `linkReply`'s single-use barrier already refuses, and a frame whose caller

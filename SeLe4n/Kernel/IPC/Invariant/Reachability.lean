@@ -84,9 +84,11 @@ capability transfer installs from, and `notificationWaiterConsistent` is the
 notification bundles' companion.
 
 **WS-OD OD2.6**: `donationChainWellFormed` joins them.  The SchedContext
-donation chain — `SchedContext.scReply` heading a `prev`-linked stack of Reply
-objects — is a state-shaped precondition of exactly this kind: the donation
-return validates the link it follows against the target's own `donatedSc`, and
+donation chain — `SchedContext.scReply` heading a doubly-linked stack of Reply
+objects (`Reply.prev` down, `Reply.next` up, since `v0.35.4`) — is a state-shaped
+precondition of exactly this kind: the donation return validates the link it
+follows against the frame's own **upward** link (`Reply.next = some (.frame …)`,
+`replyStackOuterCaller?`), and
 that validation is only *sound* if the stack is acyclic, every member names the
 same context, and the context's head is the whole of its stack.  It is a
 conjunct **here** rather than of `ipcInvariantFull`, which has exactly twenty

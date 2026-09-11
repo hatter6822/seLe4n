@@ -1440,7 +1440,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # caught in the first place, and how OD4.1's was.  Anchored between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runReceivePriorityHandoffChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerDetachChecks\n  runReceivePriorityHandoffChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -1577,6 +1577,28 @@ run_check "INVARIANT" rg -n 'NEGATIVE: a validated frame whose caller was consum
 run_check "INVARIANT" rg -n 'the resolved pop refuses rather than settling the context on nobody' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n 'the below-head Reply read is still declared on that frame' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem replyStackOuterCaller\?_of_no_stack' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+
+# `v0.35.4`: **the detach's writing arm, and the wedge it removes, are WITNESSED.**
+# Every `detachReplyFrameAbove` result proved elsewhere is discharged on a state
+# whose frame has nothing above it, where the step is the identity -- so a
+# writing arm that stored the wrong field would satisfy all of them.  The witness
+# runs a depth-2 push, severs the outer caller's frame, and then completes the
+# pop that used to refuse; the paired negative runs the SAME consume with the
+# detach omitted, keeping every object and every consumed field and breaking only
+# the relation between the head and the frame below it.  Without the negative the
+# witness would pass before the fix and after it.
+run_check "INVARIANT" rg -n 'the detach clears the .prev. of the frame ABOVE the cancelled one' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'PAYOFF: the pop after a severed middle caller succeeds' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: without the detach the head still links down to the consumed frame' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: \.\.\.so the pop wedges, writing nothing' tests/SmpIpcSuite.lean
+# ...and both fail-closed arms of the primitive are told apart, since a single
+# `.error` assertion would pass with the two refusals merged.
+run_check "INVARIANT" rg -n 'the detach refuses a frame above that does not link back' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'the detach refuses a frame above that resolves to no Reply' tests/SmpIpcSuite.lean
+# The wrapper's fold is what keeps a severed stack's LOWER frames cancellable:
+# the second cancellation meets a frame whose upward link no longer reciprocates,
+# and a propagating refusal there would wedge the cancellation itself.
+run_check "INVARIANT" rg -n 'so the caller below a cut can still be cancelled, and leaves cleanly' tests/SmpIpcSuite.lean
 
 # OD3.4: **the pop validates its donee, because it mints a donation.**  The
 # donating operation checks its donor side; the pop mints `.donated scId outer`

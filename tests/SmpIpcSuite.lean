@@ -2130,6 +2130,16 @@ private def pushLinksOf (st : SystemState) (rid : SeLe4n.ReplyId) :
   | some (.reply r) => some (r.prev, r.next)
   | _ => none
 
+/-- The whole of what a detach can write: both frames' links and the context's
+head.  `SystemState` has no `BEq`, and comparing this rather than asserting a
+single field is what lets "the step is the identity" be checked instead of
+described. -/
+private def pushStackShape (st : SystemState) :
+    Option (Option SeLe4n.ReplyId × Option ReplyStackLink) ×
+      Option (Option SeLe4n.ReplyId × Option ReplyStackLink) ×
+      Option (Option SeLe4n.ReplyId) :=
+  (pushLinksOf st pushDonorReply, pushLinksOf st pushOuterReply, pushHeadOf st)
+
 private def runDonationPushChecks : IO Unit := do
   IO.println "--- §3.18 the donation push at call depth ≥ 2 (WS-OD OD4/OD5/OD6) ---"
   -- OD4.1/OD4.2: a `.donated` donor passes the context on, and the push writes a
@@ -2297,6 +2307,122 @@ private def runDonationPushChecks : IO Unit := do
         (SeLe4n.ObjId.ofNat 0)).pairs.any
         (fun p => p.1 == schedContextLock pushSc && p.2 == AccessMode.write)))
 
+/-- **`v0.35.4`: the middle-caller detach, and the wedge it removes.**
+
+Its own runner rather than a tail of the push checks: the C code generator
+nests a `do`-block's statements, and a helper past roughly 150 Lean lines
+compiles to an `if`-tree that can exceed clang's bracket limit.  The boundary
+resets the nesting, and the concern is distinct anyway -- the push builds the
+stack these checks then cut. -/
+private def runMiddleCallerDetachChecks : IO Unit := do
+  IO.println "--- §3.19 the middle-caller detach, and the wedge it removes (`v0.35.4`) ---"
+  -- The state a depth-2 push leaves is exactly the one the pinning defect
+  -- needed: two frames, the outer caller's below the donor's.  Cancelling the
+  -- *outer* caller consumes a frame that is not the head, and before this cut
+  -- the head went on linking down to it.  Both directions are exercised below,
+  -- because a witness that ran only the repaired path would pass before the fix
+  -- and after it.
+  match donateSchedContext pushStore pushDonor pushServer pushSc with
+  | .error e =>
+    assertBool s!"the detach witness needs a depth-2 push (got {reprStr e})" false
+  | .ok pushed =>
+    -- The outer caller, carrying the reply object it is blocked on.  Built here
+    -- rather than in `pushStoreShaped`, whose `pushOuter` is shared with every
+    -- assertion above and whose `replyObject` none of them reads.
+    let outerTcb : TCB :=
+      { mkTcb 93 50 none with
+          ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
+          replyObject := some pushOuterReply }
+    -- Step one: the detach's WRITING arm.  Every `detachReplyFrameAbove` result
+    -- proved elsewhere is discharged on a state whose frame has nothing above
+    -- it, where the step is the identity; this is the arm that stores.
+    let detached := Lifecycle.Suspend.detachCancelledCallerFrame pushed outerTcb
+    assertBool "the detach clears the `prev` of the frame ABOVE the cancelled one"
+      (pushLinksOf detached pushDonorReply == some (none, some (.head pushSc)))
+    assertBool "...and writes nothing on the cancelled frame itself — the consume does that"
+      (pushLinksOf detached pushOuterReply == some (none, some (.frame pushDonorReply)))
+    assertBool "...and the context still heads the same frame"
+      (pushHeadOf detached == some (some pushDonorReply))
+    -- Step two: the consume, in the order the cancellation arm runs them.
+    let severed := Lifecycle.Suspend.consumeReplyLink detached pushOuter outerTcb
+    assertBool "the consumed frame leaves the structure entirely"
+      (pushLinksOf severed pushOuterReply == some (none, none))
+    assertBool "...with its caller gone, so `Reply.wellFormed` holds of it"
+      (match severed.getReply? pushOuterReply with
+       | some r => r.caller == none && r.isFree
+       | none => false)
+    -- The payoff: the later pop SUCCEEDS.  The head is now the bottom of its own
+    -- stack, so the outer-caller resolution answers `none` and the context
+    -- settles on the original owner.
+    assertBool "the pop resolves the severed stack to its bottom"
+      (match replyStackOuterCaller? severed pushSc with
+       | .ok none => true | _ => false)
+    assertBool "PAYOFF: the pop after a severed middle caller succeeds"
+      (match returnDonatedSchedContextResolved severed pushServer pushSc pushDonor with
+       | .ok _ => true | .error _ => false)
+    assertBool "...and hands the context back to the original owner"
+      (match returnDonatedSchedContextResolved severed pushServer pushSc pushDonor with
+       | .ok st' => pushBindingOf st' pushDonor == some (.bound pushSc)
+       | .error _ => false)
+    assertBool "...leaving no frame on the context's stack but the head"
+      (match returnDonatedSchedContextResolved severed pushServer pushSc pushDonor with
+       | .ok st' => pushHeadOf st' == some none
+       | .error _ => false)
+    -- NEGATIVE, and the reason this witness exists: the SAME consume with the
+    -- detach omitted.  Every object is still there and every field the consume
+    -- writes is identical; what changes is the relation between the head and the
+    -- frame below it.  That state is what wedged the chain — the pop refuses and
+    -- the context can never leave the server.
+    let wedged := Lifecycle.Suspend.consumeReplyLink pushed pushOuter outerTcb
+    assertBool "NEGATIVE: without the detach the head still links down to the consumed frame"
+      (pushLinksOf wedged pushDonorReply == some (some pushOuterReply, some (.head pushSc)))
+    assertBool "NEGATIVE: ...and the outer-caller resolution refuses it"
+      (match replyStackOuterCaller? wedged pushSc with
+       | .error e => e == KernelError.invalidArgument
+       | .ok _ => false)
+    assertBool "NEGATIVE: ...so the pop wedges, writing nothing"
+      (match returnDonatedSchedContextResolved wedged pushServer pushSc pushDonor with
+       | .error e => e == KernelError.invalidArgument
+       | .ok _ => false)
+    -- The detach is FAIL-CLOSED and the wrapper is TOTAL: a frame above that
+    -- does not link back is refused by the primitive, and the cancellation still
+    -- runs rather than failing — which is what keeps a severed stack's lower
+    -- frames cancellable.  Both halves, since the primitive's refusal and the
+    -- wrapper's fold are different facts.
+    -- The severed state is itself the shape that must be refused: the frame
+    -- below still links UP to the head, and the head no longer links down to it.
+    -- That is the state a second cancellation — of the caller below the cut —
+    -- meets, so the refusal and the wrapper's fold together are what keep a
+    -- severed stack's lower frames cancellable rather than wedged in turn.
+    assertBool "the detach refuses a frame above that does not link back"
+      (match detachReplyFrameAbove detached pushOuterReply with
+       | .error e => e == KernelError.invalidArgument
+       | .ok _ => false)
+    assertBool "...and the cancellation wrapper folds that refusal to the identity"
+      (pushStackShape (Lifecycle.Suspend.detachCancelledCallerFrame detached outerTcb)
+         == pushStackShape detached)
+    assertBool "...so the caller below a cut can still be cancelled, and leaves cleanly"
+      (match (Lifecycle.Suspend.consumeReplyLink
+                (Lifecycle.Suspend.detachCancelledCallerFrame detached outerTcb)
+                pushOuter outerTcb).getReply? pushOuterReply with
+       | some r => r.isFree
+       | none => false)
+    -- ...and a frame above that names no Reply at all is a different refusal,
+    -- so the two fail-closed arms are told apart rather than merged.
+    assertBool "the detach refuses a frame above that resolves to no Reply"
+      (match detachReplyFrameAbove
+          (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
+            { pushFreshHead with next := some (.frame ⟨98⟩) })
+          pushDonorReply with
+       | .error e => e == KernelError.objectNotFound
+       | .ok _ => false)
+    assertBool "the detach is the identity for a frame with nothing above it"
+      (pushStackShape (Lifecycle.Suspend.detachCancelledCallerFrame pushed
+         { outerTcb with replyObject := some pushDonorReply }) == pushStackShape pushed)
+    assertBool "...and for a thread holding no reply object at all"
+      (pushStackShape (Lifecycle.Suspend.detachCancelledCallerFrame pushed
+         { outerTcb with replyObject := none }) == pushStackShape pushed)
+
 -- ============================================================================
 -- WS-OD OD3.14 — the receive rendezvous' PRIORITY hand-off
 -- ============================================================================
@@ -2331,6 +2457,8 @@ it with `seL4_Recv`.  That is the shape `.call` never reaches — there the
 receiver is already waiting and the call arm propagates the chain itself — and
 it is the shape the `.receive` arm handled without any propagation at all until
 OD3.14, so a chain blocked behind the caller stopped dead at it. -/
+
+
 private def runReceivePriorityHandoffChecks : IO Unit := do
   IO.println "--- WS-OD OD3.14 the receive rendezvous' priority hand-off ---"
   match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
@@ -2442,6 +2570,7 @@ def runSmpIpcChecks : IO Unit := do
   runDonationChainStructureChecks
   runDonationReturnPopChecks
   runDonationPushChecks
+  runMiddleCallerDetachChecks
   runReceivePriorityHandoffChecks
   runTraceFixtureCheck
   IO.println "===================================="

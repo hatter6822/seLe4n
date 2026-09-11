@@ -616,7 +616,7 @@ structure donationReadAgreement (st st' : SystemState) : Prop where
   /-- WS-OD OD3.2: a Reply survives with the same `caller`.
 
   Replies left `otherKind` when the donation return gained its reply-stack pop:
-  the pop clears the popped Reply's `donatedSc` and `prev`, so whole-object
+  the pop clears the popped Reply's `next` and `prev`, so whole-object
   agreement is false there.  Every conjunct this agreement transports reads a
   Reply's `caller` and nothing else, so that is what is stated, and every
   transition with full Reply identity supplies it through

@@ -67,6 +67,28 @@ frame out and donates nothing.  This kernel's reclaim does both, because it is
 the innermost live caller's frame that is being cut; the middle-caller case is
 `reply_remove_tcb` alone, and that is the case that had no implementation.
 
+**The writing arm is witnessed, and so is the wedge it removes.**  Every
+`detachReplyFrameAbove` theorem is discharged on a state whose frame has nothing
+above it, where the step is the *identity* -- so a writing arm that stored the
+wrong field would satisfy all of them, which is the shape this project's own rule
+warns about (*a theorem discharged only where the arm does not fire is
+indistinguishable from one whose arm is wrong*).  `tests/SmpIpcSuite.lean` §3.18
+now runs the depth-2 push, severs the outer caller's frame and completes the pop
+that used to refuse, and its paired negative runs the **same** consume with the
+detach omitted -- every object still present, every field the consume writes
+identical, only the relation between the head and the frame below it broken.  A
+witness without that negative would have passed before the fix and after it.
+
+Two further pairs come with it.  The primitive's two fail-closed arms are told
+apart (a frame above that does not link back is `.invalidArgument`; one that
+resolves to no Reply is `.objectNotFound`), since a single `.error` assertion
+would pass with the two merged.  And the wrapper's fold of a refusal to the
+identity is checked *through its consequence*: the caller **below** a cut meets a
+frame whose upward link no longer reciprocates, so a propagating refusal there
+would wedge that second cancellation in turn -- which is why the fold is part of
+the design rather than defensive tidying.  Seven Tier 3 anchors pin the witness,
+because a fixture nothing names can be deleted silently.
+
 ### 2. Four pops and two pushes wrote objects no footprint named
 
 Found while auditing the fix above, and reported separately because it is a

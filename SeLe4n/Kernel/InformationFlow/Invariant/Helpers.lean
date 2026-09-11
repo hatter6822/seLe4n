@@ -591,7 +591,7 @@ theorem storeObject_projectionStable_preserves_projection
 /-- WS-OD OD3.2: **the donation return's reply-stack head clear is invisible to
 every observer.**
 
-The pop resets the popped Reply's `donatedSc` and `prev`, and
+The pop resets the popped Reply's `next` and `prev`, and
 `projectKernelObject` strips both (OD2.2), so the write is projection-stable
 whether or not the Reply is low-visible — the same reason the binding hand-off
 itself is invisible.  An instance of

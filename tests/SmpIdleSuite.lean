@@ -863,7 +863,8 @@ private def runBootValidationParityChecks : IO Unit := do
   -- WS-OD OD2.1: `SchedContext.scReply` is a Reply **object id**, so the
   -- reservation reads it too; and a boot SchedContext may head no reply stack
   -- at all, because every admissible boot Reply is inert (`bootSafeReplyCheck`
-  -- requires `donatedSc = none`), so a config-supplied head could only dangle —
+  -- requires `Reply.isFree`: no caller and no stack link in either direction),
+  -- so a config-supplied head could only dangle —
   -- a `donationChainWellFormed` violation installed before the first
   -- instruction runs.
   assertBool "NEGATIVE: a boot SchedContext's reply-stack head is read"
