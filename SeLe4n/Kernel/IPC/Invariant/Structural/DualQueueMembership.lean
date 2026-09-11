@@ -4441,14 +4441,19 @@ theorem linkCallerReply_pre (st st' : SystemState) (caller : SeLe4n.ThreadId)
     obtain ⟨_, st1⟩ := p1
     simp only [hLink] at hStep
     -- (1) reply free, extracted from `linkReply`'s success branch.
-    obtain ⟨r0, hGetR, hFree⟩ : ∃ r0, st.getReply? rid = some r0 ∧ r0.caller = none := by
+    -- **WS-OD OD5.1**: the guard is a conjunction now, and both halves are
+    -- consequences of the link succeeding.
+    obtain ⟨r0, hGetR, hFree, hNoDon⟩ :
+        ∃ r0, st.getReply? rid = some r0 ∧ r0.caller = none ∧ r0.donatedSc = none := by
       unfold linkReply at hLink
       cases hGetR : st.getReply? rid with
       | none => rw [hGetR] at hLink; simp at hLink
       | some r0 =>
         simp only [hGetR] at hLink
         split at hLink
-        · rename_i hF; exact ⟨r0, rfl, by simpa using hF⟩
+        · rename_i hF
+          obtain ⟨h1, h2⟩ : r0.caller = none ∧ r0.donatedSc = none := by simpa using hF
+          exact ⟨r0, rfl, h1, h2⟩
         · simp at hLink
     -- `linkReply` post: `rid` now holds `r0` with `caller := some caller`.
     have hR1 : st1.getReply? rid = some { r0 with caller := some caller } :=
@@ -4466,7 +4471,7 @@ theorem linkCallerReply_pre (st st' : SystemState) (caller : SeLe4n.ThreadId)
         have hFrame : st1.objects[caller.toObjId]? = st.objects[caller.toObjId]? := by
           unfold linkReply at hLink
           simp only [hGetR] at hLink
-          rw [if_pos (by simp [hFree])] at hLink
+          rw [if_pos (by simp [hFree, hNoDon])] at hLink
           exact storeObject_objects_ne st st1 rid.toObjId caller.toObjId _ hNe hObjInv hLink
         have hT0 : st.getTcb? caller = some tcb := by
           rw [getTcb?_eq_some_iff] at hT ⊢; rw [← hFrame]; exact hT
@@ -5913,8 +5918,9 @@ theorem cleanupPreReceiveDonation_replyLinkageFrame
     replyLinkageFrame st (cleanupPreReceiveDonation st receiver) :=
   cleanupPreReceiveDonation_frame_helper (P := fun s => replyLinkageFrame st s) st receiver
     (replyLinkageFrame.refl st)
-    (fun scId originalOwner st' hRet =>
-      returnDonatedSchedContext_replyLinkageFrame st st' receiver scId originalOwner hObjInv none hRet)
+    (fun scId originalOwner newOwner? st' hRet =>
+      returnDonatedSchedContext_replyLinkageFrame st st' receiver scId originalOwner hObjInv
+        newOwner? hRet)
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: a `storeTcbIpcState_fromTcb` whose new `ipcState` is not
@@ -8204,22 +8210,26 @@ theorem cleanupPreReceiveDonation_passiveServerIdleFrame
     | bound scId => exact passiveServerIdleFrame.refl st
     | donated scId originalOwner =>
       simp only []
-      cases hRet : returnDonatedSchedContext st receiver scId originalOwner none with
+      cases hRet : returnDonatedSchedContextResolved st receiver scId originalOwner with
       | error _ => exact passiveServerIdleFrame.refl st
       | ok st' =>
         simp only []
+        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
         refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
         obtain ⟨tcbI, hTcbI, _, _, hIpcEq, _⟩ := returnDonatedSchedContext_tcb_queue_backward
-          st st' receiver scId originalOwner hObjInv none hRet tid.toObjId tcb' hTcb'
-        have hSched := returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner none hRet
+          st st' receiver scId originalOwner hObjInv n hPop tid.toObjId tcb' hTcb'
+        have hSched := returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner
+          n hPop
         have h3 := returnDonatedSchedContext_tcb_schedContextBinding_backward st st' receiver scId
-          originalOwner hObjInv none hRet tid.toObjId tcb' hTcb'
+          originalOwner hObjInv n hPop tid.toObjId tcb' hTcb'
         by_cases hRecv : tid.toObjId = receiver.toObjId
         · -- receiver: running ⇒ `.ready` (allowed), contradicting `¬ allowed`.
           exfalso; apply hNA; rw [← hIpcEq]; exact hReceiverReady tcbI (hRecv ▸ hTcbI)
         · by_cases hOwner : tid.toObjId = originalOwner.toObjId
-          · -- owner: rebound `.bound scId`, contradicting `unbound`.
-            rw [h3.2.1 hRecv hOwner] at hUnbound'; cases hUnbound'
+          · -- owner: rebound to the context it is owed, which is never `.unbound`
+            -- on either arm of `donationReturnBinding` (WS-OD OD3.1).
+            rw [h3.2.1 hRecv hOwner] at hUnbound'
+            exact absurd hUnbound' (donationReturnBinding_ne_unbound scId n)
           · -- other: binding framed from the pre-state.
             obtain ⟨tcbB, hTcbB, hBindEq⟩ := h3.2.2 hRecv hOwner
             have hIdEq : tcbI = tcbB := KernelObject.tcb.inj (Option.some.inj (hTcbI.symm.trans hTcbB))
@@ -8245,13 +8255,14 @@ theorem cleanupPreReceiveDonation_timeoutBudgetFrame
     | bound scId => exact timeoutBudgetFrame.refl st
     | donated scId originalOwner =>
       simp only []
-      cases hRet : returnDonatedSchedContext st receiver scId originalOwner none with
+      cases hRet : returnDonatedSchedContextResolved st receiver scId originalOwner with
       | error _ => exact timeoutBudgetFrame.refl st
       | ok st' =>
         simp only []
+        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
         intro tid tcb' hTcb'
         exact returnDonatedSchedContext_tcb_timeoutBudget_backward st st' receiver scId
-          originalOwner hObjInv none hRet tid.toObjId tcb' hTcb'
+          originalOwner hObjInv n hPop tid.toObjId tcb' hTcb'
 
 open SeLe4n.Model.SystemState in
 /-- D6: `linkReply` frames the SchedContext/owner side forward — it stores only the `.reply`
@@ -8786,6 +8797,12 @@ theorem endpointReceiveDual_preserves_donationOwnerUnique
     (replyId : Option SeLe4n.ReplyId)
     (hInv : donationOwnerUnique st)
     (hObjInv : st.objects.invExt)
+    -- WS-OD OD4.4: the no-sender arm's pre-receive cleanup pops the receiver's
+    -- donation, and at reply-stack depth ≥ 2 that pop hands the context to the
+    -- outer caller the stack names.  This is what says that thread is a proper
+    -- waiting donor nobody else owns; vacuous on every state whose context heads
+    -- no stack.
+    (hStackValid : cleanupDonationStackValid st receiver)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     donationOwnerUnique st' := by
   unfold endpointReceiveDual at hStep
@@ -8866,7 +8883,8 @@ theorem endpointReceiveDual_preserves_donationOwnerUnique
           simp only [hHead, hChecked] at hStep
           rw [hBridge] at hStep
           have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
-          have hDClean := cleanupPreReceiveDonation_preserves_donationOwnerUnique st receiver hObjInv hInv
+          have hDClean := cleanupPreReceiveDonation_preserves_donationOwnerUnique st receiver
+            hObjInv hStackValid hInv
           cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
           | error e => simp [hEnq] at hStep
           | ok st1 =>
@@ -8931,6 +8949,8 @@ theorem endpointReceiveDual_preserves_donationOwnerValid
     (replyId : Option SeLe4n.ReplyId)
     (hInv : donationOwnerValid st)
     (hUnique : donationOwnerUnique st)
+    -- WS-OD OD4.4: see `endpointReceiveDual_preserves_donationOwnerUnique`.
+    (hStackValid : cleanupDonationStackValid st receiver)
     (hQHBC : queueHeadBlockedConsistent st)
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
@@ -9071,7 +9091,8 @@ theorem endpointReceiveDual_preserves_donationOwnerValid
           simp only [hHead, hChecked] at hStep
           rw [hBridge] at hStep
           have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
-          have hDClean := cleanupPreReceiveDonation_preserves_donationOwnerValid st receiver hObjInv hUnique hInv
+          have hDClean := cleanupPreReceiveDonation_preserves_donationOwnerValid st receiver
+            hObjInv hUnique hStackValid hInv
           -- The receiver stays `.ready` across the donation-return (`cleanup` preserves ipcState).
           have hReceiverReadyClean : ∀ (tcb : TCB),
               (cleanupPreReceiveDonation st receiver).objects[receiver.toObjId]? = some (.tcb tcb) →
@@ -9579,6 +9600,9 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerUnique
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : donationOwnerUnique st) (hObjInv : st.objects.invExt)
+    -- WS-OD OD4.4: carried through to `endpointReceiveDual`, whose no-sender arm
+    -- pops the receiver's donation.
+    (hStackValid : cleanupDonationStackValid st receiver)
     (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     donationOwnerUnique st' := by
@@ -9587,7 +9611,8 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerUnique
   | error e => simp [hRecv] at hStep
   | ok pair =>
     rcases pair with ⟨sid, stMid⟩
-    have hDMid := endpointReceiveDual_preserves_donationOwnerUnique st stMid endpointId receiver sid replyId hInv hObjInv hRecv
+    have hDMid := endpointReceiveDual_preserves_donationOwnerUnique st stMid endpointId receiver
+      sid replyId hInv hObjInv hStackValid hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
     -- PR #873 round 8: a receive that dequeued nothing returns the bare
@@ -9632,6 +9657,8 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerValid
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
     (hObjInv : st.objects.invExt)
+    -- WS-OD OD4.4: see `endpointReceiveDualWithCaps_preserves_donationOwnerUnique`.
+    (hStackValid : cleanupDonationStackValid st receiver)
     (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     donationOwnerValid st' := by
@@ -9640,8 +9667,8 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerValid
   | error e => simp [hRecv] at hStep
   | ok pair =>
     rcases pair with ⟨sid, stMid⟩
-    have hDMid := endpointReceiveDual_preserves_donationOwnerValid st stMid endpointId receiver sid replyId
-      hInv hUnique hQHBC hReceiverReady hObjInv hRecv
+    have hDMid := endpointReceiveDual_preserves_donationOwnerValid st stMid endpointId receiver
+      sid replyId hInv hUnique hStackValid hQHBC hReceiverReady hObjInv hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
     -- PR #873 round 8: a receive that dequeued nothing returns the bare
@@ -10004,81 +10031,6 @@ theorem endpointReplyRecv_preserves_blockedThreadTimeoutConsistent
     blockedThreadTimeoutConsistent st' :=
   blockedThreadTimeoutConsistent_of_frame
     (endpointReplyRecv_timeoutBudgetFrame st st' endpointId receiver replyTarget msg replyId hObjInv hStep) hAll
-
-open SeLe4n.Model.SystemState in
-/-- D6: `endpointReplyRecv` preserves `donationOwnerUnique` (reply leg unblocks `.ready`
-[`sameSchedContextBindings`]; receive leg is `endpointReceiveDual`). -/
-theorem endpointReplyRecv_preserves_donationOwnerUnique
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
-    (replyId : Option SeLe4n.ReplyId)
-    (hObjInv : st.objects.invExt) (hInv : donationOwnerUnique st)
-    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
-    donationOwnerUnique st' := by
-  unfold endpointReplyRecv at hStep
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  cases hLookup : lookupTcb st replyTarget with
-  | none => simp [hLookup] at hStep
-  | some tcb =>
-    simp only [hLookup] at hStep
-    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
-    cases hIpc : tcb.ipcState with
-    | ready => simp [hIpc] at hStep
-    | blockedOnSend _ => simp [hIpc] at hStep
-    | blockedOnReceive _ => simp [hIpc] at hStep
-    | blockedOnNotification _ => simp [hIpc] at hStep
-    | blockedOnCall _ => simp [hIpc] at hStep
-    | blockedOnReply epId expectedReplier =>
-      simp only [hIpc] at hStep
-      cases expectedReplier with
-      | none => simp at hStep
-      | some expected =>
-        simp only at hStep
-        split at hStep
-        · revert hStep
-          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
-          | error e => simp
-          | ok stReplied =>
-            simp only []
-            have hObjInvR := storeTcbIpcStateAndMessage_preserves_objects_invExt st stReplied replyTarget _ _ hObjInv hMsg
-            have hDR := donationOwnerUnique_of_sameSchedContextBindings
-              (storeTcbIpcStateAndMessage_sameSchedContextBindings st stReplied replyTarget .ready (some msg) hObjInv hMsg) hInv
-            have hObjInvE : (ensureRunnable stReplied replyTarget).objects.invExt := by rwa [ensureRunnable_preserves_objects]
-            have hDE := donationOwnerUnique_of_sameSchedContextBindings
-              (sameSchedContextBindings.of_objects_eq (ensureRunnable_preserves_objects stReplied replyTarget)) hDR
-            -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
-            cases hRO : tcb.replyObject with
-            | none =>
-              simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable stReplied replyTarget) with
-              | error e => simp
-              | ok pair =>
-                intro hStep
-                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-                obtain ⟨_, rfl⟩ := hStep
-                exact endpointReceiveDual_preserves_donationOwnerUnique
-                  (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId hDE hObjInvE hRecv
-            | some rid =>
-              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable stReplied replyTarget) with
-              | error e => simp [hCons]
-              | ok p3 =>
-                obtain ⟨⟨⟩, st3⟩ := p3
-                simp only [hCons]
-                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
-                have hD3 := donationOwnerUnique_of_sameSchedContextBindings
-                  (consumeCallerReply_sameSchedContextBindings _ _ replyTarget rid hObjInvE hCons) hDE
-                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
-                | error e => simp
-                | ok pair =>
-                  intro hStep
-                  simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-                  obtain ⟨_, rfl⟩ := hStep
-                  exact endpointReceiveDual_preserves_donationOwnerUnique
-                    st3 pair.2 endpointId receiver pair.1 replyId hD3 hObjInv3 hRecv
-        · simp at hStep
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointCall` preserves every TCB's `schedContextBinding` (rendezvous: pop + wake +
@@ -13389,10 +13341,12 @@ theorem linkReply_preserves_pendingReceiveReplyWellFormed
   | none => rw [hGet] at hStep; simp at hStep
   | some r =>
     rw [hGet] at hStep
-    cases hFree : r.caller.isNone with
+    -- **WS-OD OD5.1**: the freshening guard is a conjunction, so the split is on
+    -- it -- a split on the first half alone leaves the `if` unreduced.
+    cases hFree : (r.caller.isNone && r.donatedSc.isNone) with
     | false => simp [hFree] at hStep
     | true =>
-      simp only [hFree, if_true] at hStep
+      simp only [hFree] at hStep
       refine storeObject_reply_preserves_pendingReceiveReplyWellFormed st st' rid r
         { r with caller := some caller } hObjInv hGet hInv ?_ hStep
       intro hex
@@ -13591,8 +13545,12 @@ theorem linkServerStashedReply_preserves_pendingReceiveReplyWellFormed
               = .ok ((), stLR) := by
             unfold linkReply at hLR
             simp only [hGetR0] at hLR
-            rw [if_pos (by simp [hFreeR0])] at hLR
-            exact hLR
+            -- **WS-OD OD5.1**: both halves of the freshening guard are
+            -- consequences of the link succeeding, so the branch is decided from
+            -- `hLR` rather than from `hFreeR0` alone.
+            cases hc : (r0.caller.isNone && r0.donatedSc.isNone) with
+            | false => rw [if_neg (by simp [hc])] at hLR; cases hLR
+            | true => rw [if_pos hc] at hLR; exact hLR
           cases hT : stLR.getTcb? caller with
           | none => simp [hT] at hLink
           | some tcbLR =>
@@ -14672,7 +14630,9 @@ theorem linkReply_preserves_endpointQueueTailBlockedConsistent
   | none => simp [hGet] at hStep
   | some r =>
     simp only [hGet] at hStep
-    by_cases hFree : r.caller.isNone
+    -- **WS-OD OD5.1**: the freshening guard is a conjunction; splitting on its
+    -- first half alone leaves the `if` unreduced.
+    by_cases hFree : (r.caller.isNone && r.donatedSc.isNone) = true
     · simp only [hFree, if_true] at hStep
       exact storeObject_reply_preserves_endpointQueueTailBlockedConsistent st st' rid _ hObjInv hInv hStep
     · simp [hFree] at hStep
@@ -14804,7 +14764,9 @@ theorem linkReply_preserves_queueNextTargetBlocked
   | none => simp [hGet] at hStep
   | some r =>
     simp only [hGet] at hStep
-    by_cases hFree : r.caller.isNone
+    -- **WS-OD OD5.1**: the freshening guard is a conjunction; splitting on its
+    -- first half alone leaves the `if` unreduced.
+    by_cases hFree : (r.caller.isNone && r.donatedSc.isNone) = true
     · simp only [hFree, if_true] at hStep
       exact storeObject_reply_preserves_queueNextTargetBlocked st st' rid _ hObjInv hInv hStep
     · simp [hFree] at hStep
@@ -15604,7 +15566,9 @@ theorem linkReply_preserves_queueNextBlockingConsistent
   | none => simp [hGet] at hStep
   | some r =>
     simp only [hGet] at hStep
-    by_cases hFree : r.caller.isNone
+    -- **WS-OD OD5.1**: the freshening guard is a conjunction; splitting on its
+    -- first half alone leaves the `if` unreduced.
+    by_cases hFree : (r.caller.isNone && r.donatedSc.isNone) = true
     · simp only [hFree, if_true] at hStep
       exact storeObject_reply_preserves_queueNextBlockingConsistent st st' rid _ hObjInv hInv hStep
     · simp [hFree] at hStep
@@ -15975,14 +15939,16 @@ theorem cleanupPreReceiveDonation_preserves_queueNextBlockingConsistent
     cases hB : recvTcb.schedContextBinding with
     | donated scId originalOwner =>
       simp only []
-      cases hR : returnDonatedSchedContext st receiver scId originalOwner none with
+      cases hR : returnDonatedSchedContextResolved st receiver scId originalOwner with
       | error e => exact hInv
       | ok st' =>
         simp only []
+        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
         refine queueNextBlockingConsistent_of_tcb_links_backward st st' ?_ hInv
         intro y tcb' hY
         obtain ⟨tcb, hTcb, hQN, _, hIpc, _⟩ :=
-          returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv none hR y.toObjId tcb' hY
+          returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv
+            n hPop y.toObjId tcb' hY
         exact ⟨tcb, hTcb, hIpc, hQN⟩
     | unbound => exact hInv
     | bound _ => exact hInv
@@ -16031,14 +15997,16 @@ theorem cleanupPreReceiveDonation_preserves_queueNextTargetBlocked
     cases hB : recvTcb.schedContextBinding with
     | donated scId originalOwner =>
       simp only []
-      cases hR : returnDonatedSchedContext st receiver scId originalOwner none with
+      cases hR : returnDonatedSchedContextResolved st receiver scId originalOwner with
       | error e => exact hInv
       | ok st' =>
         simp only []
+        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
         refine queueNextTargetBlocked_of_tcb_links_backward st st' ?_ hInv
         intro y tcb' hY
         obtain ⟨tcb, hTcb, hQN, _, hIpc, _⟩ :=
-          returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv none hR
+          returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv
+            n hPop
             y.toObjId tcb' hY
         exact ⟨tcb, hTcb, hIpc, hQN⟩
     | unbound => exact hInv
@@ -17385,7 +17353,9 @@ theorem linkReply_preserves_queueHeadBlockedConsistent
   | none => simp [hGet] at hStep
   | some r =>
     simp only [hGet] at hStep
-    by_cases hFree : r.caller.isNone
+    -- **WS-OD OD5.1**: the freshening guard is a conjunction; splitting on its
+    -- first half alone leaves the `if` unreduced.
+    by_cases hFree : (r.caller.isNone && r.donatedSc.isNone) = true
     · simp only [hFree, if_true] at hStep
       exact storeObject_reply_preserves_queueHeadBlockedConsistent st st' rid _ hObjInv hInv hStep
     · simp [hFree] at hStep
@@ -19518,6 +19488,14 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
     (st st' : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
+    -- **WS-OD OD4.4**: the receive-block arm runs the pre-receive cleanup, whose
+    -- pop hands the receiver's donated context to the outer caller its reply
+    -- stack names once that stack is deeper than one frame.  This says that
+    -- thread is a proper waiting donor nobody else owns — the one clause of the
+    -- pop's outer-caller obligation no O(1) guard can decide.  Vacuous on every
+    -- state whose context heads no stack, which is every state before OD4.1's
+    -- push and every depth-1 state after it.
+    (hStackValid : cleanupDonationStackValid st receiver)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     -- IPC de-threading D4 Slice 2b: enqueue freshness (the running receiver is `.ready`, hence not a
     -- queue member, and the old receiveQ tail is not a cross-queue tail) — dischargeable, replacing the
@@ -19549,8 +19527,8 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
   -- receiver is `.ready` (`hReceiverReady`); the blocking branch returns the receiver's *own*
   -- donation (`cleanupPreReceiveDonation`, sound by `donationOwnerUnique`).
   have hDOVest := endpointReceiveDual_preserves_donationOwnerValid st st' endpointId receiver senderId
-    replyId hInv.donationOwnerValid hInv.donationOwnerUnique hInv.queueHeadBlockedConsistent
-    hReceiverReady hObjInv hStep
+    replyId hInv.donationOwnerValid hInv.donationOwnerUnique hStackValid
+    hInv.queueHeadBlockedConsistent hReceiverReady hObjInv hStep
   -- IPC de-threading D6: `passiveServerIdle` **established** — every rewritten thread lands in an
   -- allowed passive state; the blocking branch returns the receiver's own donation.
   have hPSIest := endpointReceiveDual_preserves_passiveServerIdle st st' endpointId receiver senderId
@@ -19593,7 +19571,7 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
      replyId hObjInv hInv.pendingReceiveReplyWellFormed hReplyIdValid hReceiverNotRecv
      hInv.queueHeadBlockedConsistent hStep,
    endpointReceiveDual_preserves_donationOwnerUnique st st' endpointId receiver senderId replyId
-     hInv.donationOwnerUnique hObjInv hStep,
+     hInv.donationOwnerUnique hObjInv hStackValid hStep,
    -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state via cores (a)+(c).
    endpointReceiveDual_preserves_endpointQueueTailBlockedConsistent endpointId receiver replyId st st'
      senderId hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
@@ -21367,6 +21345,15 @@ theorem endpointReplyRecv_establishes_donationOwnerValid_of_no_donation_owned_by
     (replyId : Option SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
+    -- **WS-OD OD4.4**: stated on the state the receive leg's pre-receive cleanup
+    -- actually runs on — the reply leg's own post-state, since by then the reply
+    -- leg has unblocked the target and consumed its reply link, so a pre-state
+    -- reading is a reading of a different store.  Keyed on `endpointReply`'s
+    -- result rather than quantified over every `SystemState`, which would be
+    -- vacuous: the predicate is false of some states.
+    (hStackValid3 : ∀ s : SystemState,
+      endpointReply receiver replyTarget msg st = .ok ((), s) →
+      cleanupDonationStackValid s receiver)
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
     (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -21406,7 +21393,54 @@ theorem endpointReplyRecv_establishes_donationOwnerValid_of_no_donation_owned_by
       simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
       obtain ⟨_, rfl⟩ := hStep
       exact endpointReceiveDual_preserves_donationOwnerValid st3 st4 endpointId receiver sid
-        replyId hDOV3 hUniq3 hQHBC3 hReady3 hObjInv3 hRecv
+        replyId hDOV3 hUniq3 (hStackValid3 st3 hReply) hQHBC3 hReady3 hObjInv3 hRecv
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointReplyRecv` preserves `donationOwnerUnique` (reply leg unblocks `.ready`
+[`sameSchedContextBindings`]; receive leg is `endpointReceiveDual`).
+
+**WS-OD OD4.4**: the receive leg's pre-receive cleanup pops the receiver's
+donation, and at reply-stack depth >= 2 hands the context to the outer caller
+its stack names -- so the obligation is stated at the state that cleanup
+actually runs on, which is the **reply leg's own post-state**.  Quantifying over
+every `SystemState` would be *vacuous* rather than general: the predicate is
+false of some states, so `forall s, ...` is a hypothesis no caller can discharge
+and a theorem taking it asserts nothing.
+
+Relocated here from the `donationOwnerUnique` block above so that the proof can
+factor through `endpointReplyRecv_eq_reply_then_receive` rather than re-walking
+the fold's inlined reply leg -- that factoring is what lets the hypothesis name
+a state at all, and it is the one
+`endpointReplyRecv_establishes_donationOwnerValid_of_no_donation_owned_by` uses
+one theorem up. -/
+theorem endpointReplyRecv_preserves_donationOwnerUnique
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : donationOwnerUnique st)
+    (hStackValidE : ∀ s : SystemState,
+      endpointReply receiver replyTarget msg st = .ok ((), s) →
+      cleanupDonationStackValid s receiver)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
+    donationOwnerUnique st' := by
+  rw [endpointReplyRecv_eq_reply_then_receive] at hStep
+  cases hReply : endpointReply receiver replyTarget msg st with
+  | error e => simp [hReply] at hStep
+  | ok pR =>
+    obtain ⟨⟨⟩, st3⟩ := pR
+    simp only [hReply] at hStep
+    have hObjInv3 := endpointReply_preserves_objects_invExt st st3 receiver replyTarget msg
+      hObjInv hReply
+    have hD3 := donationOwnerUnique_of_sameSchedContextBindings
+      (endpointReply_sameSchedContextBindings st st3 receiver replyTarget msg hObjInv hReply) hInv
+    cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+    | error e => simp [hRecv] at hStep
+    | ok pRecv =>
+      obtain ⟨sid, st4⟩ := pRecv
+      simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨_, rfl⟩ := hStep
+      exact endpointReceiveDual_preserves_donationOwnerUnique st3 st4 endpointId receiver sid
+        replyId hD3 hObjInv3 (hStackValidE st3 hReply) hRecv
 
 /-- IPC de-threading D2 (de-threaded): `endpointReplyRecv` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (the unblock frames it, the receive leg
@@ -21418,6 +21452,14 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     (replyId : Option SeLe4n.ReplyId)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
+    -- **WS-OD OD4.4**: the receive leg's pre-receive cleanup pops the receiver's
+    -- donation, and at reply-stack depth ≥ 2 hands the context to the outer
+    -- caller its stack names.  Stated at the reply leg's own post-state — the
+    -- store the cleanup runs on — rather than quantified over every
+    -- `SystemState`, which would be vacuous rather than general.
+    (hStackValid : ∀ s : SystemState,
+      endpointReply receiver replyTarget msg st = .ok ((), s) →
+      cleanupDonationStackValid s receiver)
     -- IPC de-threading D1: `blockedThreadsPendingMessageConsistent` remains threaded — establisher
     -- downstream in `PerOperation`; de-threaded at the D8 layer.
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
@@ -21492,9 +21534,11 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
    -- under `hNoDonationOwnedBy`, then the receive leg's own preservation).
    donationOwnerValid_implies_donationChainAcyclic st'
      (endpointReplyRecv_establishes_donationOwnerValid_of_no_donation_owned_by st st' endpointId
-       receiver replyTarget msg replyId hObjInv hInv hReceiverReady hNoDonationOwnedBy hStep),
+       receiver replyTarget msg replyId hObjInv hInv hStackValid hReceiverReady hNoDonationOwnedBy
+       hStep),
    endpointReplyRecv_establishes_donationOwnerValid_of_no_donation_owned_by st st' endpointId
-     receiver replyTarget msg replyId hObjInv hInv hReceiverReady hNoDonationOwnedBy hStep,
+     receiver replyTarget msg replyId hObjInv hInv hStackValid hReceiverReady hNoDonationOwnedBy
+     hStep,
    endpointReplyRecv_preserves_passiveServerIdle st st' endpointId receiver replyTarget msg replyId hReceiverReady hObjInv hInv.passiveServerIdle hStep,
    endpointReplyRecv_preserves_donationBudgetTransfer st st' endpointId receiver replyTarget msg replyId hObjInv hInv.donationBudgetTransfer hStep,
    endpointReplyRecv_preserves_blockedOnReplyHasTarget st st' endpointId receiver replyTarget msg replyId hObjInv hInv.blockedOnReplyHasTarget hStep,
@@ -21508,7 +21552,7 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
      msg replyId hObjInv hInv.pendingReceiveReplyWellFormed hReplyIdValid hReceiverNotRecv
      hInv.queueHeadBlockedConsistent hStep,
    endpointReplyRecv_preserves_donationOwnerUnique st st' endpointId receiver replyTarget msg replyId
-     hObjInv hInv.donationOwnerUnique hStep,
+     hObjInv hInv.donationOwnerUnique hStackValid hStep,
    -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state (reply phase frames
    -- endpoints; the receive-leg enqueue-establish discharges via cores (a)+(c)).
    endpointReplyRecv_preserves_endpointQueueTailBlockedConsistent endpointId receiver replyTarget msg
@@ -22374,6 +22418,14 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
+    -- **WS-OD OD4.4**: the receive-block arm runs the pre-receive cleanup, whose
+    -- pop hands the receiver's donated context to the outer caller its reply
+    -- stack names once that stack is deeper than one frame.  This says that
+    -- thread is a proper waiting donor nobody else owns — the one clause of the
+    -- pop's outer-caller obligation no O(1) guard can decide.  Vacuous on every
+    -- state whose context heads no stack, which is every state before OD4.1's
+    -- push and every depth-1 state after it.
+    (hStackValid : cleanupDonationStackValid st receiver)
     -- WS-RR RR3.11: the pre-state in-flight badge invariant. The caps this wrapper
     -- installs are the ones in the message the base receive just delivered, so the
     -- transfer's side condition is discharged by transporting a *pre*-state property
@@ -22410,7 +22462,8 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state (base receive
   -- establish + the cap-transfer frame — `ipcUnwrapCaps` writes only CNode caps).
   have hDOVest := endpointReceiveDualWithCaps_preserves_donationOwnerValid endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationOwnerValid
-    hInv.donationOwnerUnique hInv.queueHeadBlockedConsistent hReceiverReady hObjInv hStep
+    hInv.donationOwnerUnique hInv.queueHeadBlockedConsistent hReceiverReady hObjInv hStackValid
+    hStep
   -- IPC de-threading D6: `passiveServerIdle` **established** (base receive frame + cap-transfer frame).
   have hPSIest := endpointReceiveDualWithCaps_preserves_passiveServerIdle endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary hReceiverReady
     hObjInv hInv.passiveServerIdle hStep
@@ -22460,7 +22513,8 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
      hInv.pendingReceiveReplyWellFormed hReplyIdValid hReceiverNotRecv
      hInv.queueHeadBlockedConsistent hStep,
    endpointReceiveDualWithCaps_preserves_donationOwnerUnique endpointId receiver replyId
-     receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationOwnerUnique hObjInv hStep,
+     receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationOwnerUnique hObjInv
+     hStackValid hStep,
    -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state (base receive
    -- enqueue via cores (a)+(c); the cap-transfer leaves every endpoint + TCB byte-identical).
    endpointReceiveDualWithCaps_preserves_endpointQueueTailBlockedConsistent endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary

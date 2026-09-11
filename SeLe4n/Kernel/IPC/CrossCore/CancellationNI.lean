@@ -704,9 +704,10 @@ theorem returnDonationToCancelledCaller_preserves_projection
       -- between the SchedContext store and the client's binding, and is
       -- projection-stable for the same reason the other three are (every field
       -- the return touches is stripped by `projectKernelObject`).
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
       obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
         hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
-        returnDonatedSchedContext_ok_storeChain _ st' holder scId victim none h
+        returnDonatedSchedContext_ok_storeChain _ st' holder scId victim n hPop
       have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInvA hS1
       have hInv2 := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
       have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3

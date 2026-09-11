@@ -58,19 +58,25 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st)
     (hReplierIdleAllowed : ∀ tcb, st.getTcb? replierVtid.val = some tcb →
         passiveServerIdleAllowed tcb.ipcState)
+    -- **WS-OD OD4.4**: the pop resolves its new owner from the context's reply
+    -- stack, so at depth ≥ 2 it mints a `.donated` binding at the outer caller.
+    (hStackValid : ∀ scId serverTid originalOwner,
+        replyStackOuterCallerValid st scId serverTid originalOwner)
     (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
     ipcInvariantFull st'' := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
-    ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, st', hRet, hR, hEq⟩
+    ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, n, st', hRet, hRes, hR, hEq⟩
   · rw [hEq]; exact hInv
   · have hFull' : ipcInvariantFull st' :=
       returnDonatedSchedContext_preserves_ipcInvariantFull st st' replierVtid scId owner
-        hObjInv hInv hRet hReplierIdleAllowed none rfl hR
+        hObjInv hInv hRet hReplierIdleAllowed n
+        (donationReturnOuterValid_of_stackValid
+          (hStackValid scId replierVtid.val owner) hRes) hR
     obtain ⟨pTcb, hPPre, _, _, _, hNe⟩ :=
       replyDonationReturn?_some_char st replierVtid.val scId owner
         (donationOwnerValidExcept_of_donationOwnerValid owner hInv.donationOwnerValid) hRet
     obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-      returnDonatedSchedContext_getTcb?_char st st' replierVtid.val scId owner hObjInv hNe none hR
+      returnDonatedSchedContext_getTcb?_char st st' replierVtid.val scId owner hObjInv hNe n hR
     have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
     rw [hPEq] at hPPost
     -- The migration writes only per-core replenish queues.
@@ -115,6 +121,10 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
       replyDonationReturn? st replierVtid.val = some (sc, woken))
     (hReplierIdleAllowed : ∀ tcb, st.getTcb? replierVtid.val = some tcb →
         passiveServerIdleAllowed tcb.ipcState)
+    -- **WS-OD OD4.4**: the pop resolves its new owner from the context's reply
+    -- stack, so at depth ≥ 2 it mints a `.donated` binding at the outer caller.
+    (hStackValid : ∀ scId serverTid originalOwner,
+        replyStackOuterCallerValid st scId serverTid originalOwner)
     (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
     ipcInvariantFull st'' := by
   by_cases hAny : ∃ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
@@ -122,19 +132,21 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
   · obtain ⟨s0, sTcb0, sc0, hS0, hB0⟩ := hAny
     have hRetEq := hDonationReturned s0 sTcb0 sc0 hS0 hB0
     rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
-      ownerHome h with ⟨hNone, _⟩ | ⟨scId, owner, st', hRet, hR, hEq⟩
+      ownerHome h with ⟨hNone, _⟩ | ⟨scId, owner, n, st', hRet, hRes, hR, hEq⟩
     · rw [hRetEq] at hNone; cases hNone
     · obtain ⟨rfl, rfl⟩ : sc0 = scId ∧ woken = owner := by
         have := hRetEq.symm.trans hRet
         simpa using this
       have hFull' : ipcInvariantFull st' :=
         returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' replierVtid sc0
-          woken hObjInv hInv hRet hReplierIdleAllowed none rfl hR
+          woken hObjInv hInv hRet hReplierIdleAllowed n
+          (donationReturnOuterValid_of_stackValid
+            (hStackValid sc0 replierVtid.val woken) hRes) hR
       obtain ⟨pTcb, hPPre, _, _, _, hNe⟩ :=
         replyDonationReturn?_some_char st replierVtid.val sc0 woken
           hInv.donationOwnerValidExcept hRet
       obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-        returnDonatedSchedContext_getTcb?_char st st' replierVtid.val sc0 woken hObjInv hNe none hR
+        returnDonatedSchedContext_getTcb?_char st st' replierVtid.val sc0 woken hObjInv hNe n hR
       have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
       rw [hPEq] at hPPost
       let stM : SystemState := migrateSchedContextReplenishment st' sc0 replierHome ownerHome
@@ -158,7 +170,7 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
       (ipcInvariantFull_of_exceptDonationOwner hInv
         (donationOwnerValid_of_except_of_no_donation_owned_by hInv.donationOwnerValidExcept
           (fun tid tcb sc hTcb hBind => hAny ⟨tid, tcb, sc, hTcb, hBind⟩)))
-      hReplierIdleAllowed h
+      hReplierIdleAllowed hStackValid h
 
 -- ============================================================================
 -- §5  RR2.11 — the cross-core `.reply` chain
@@ -174,10 +186,10 @@ theorem applyReplyDonationOnCore_preserves_objects_invExt
     (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
     st''.objects.invExt := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
-    ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, st', _, hR, hEq⟩
+    ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, n, st', _, _, hR, hEq⟩
   · rw [hEq]; exact hObjInv
   · have hInv' := returnDonatedSchedContext_preserves_objects_invExt st st' replierVtid.val scId
-      owner hObjInv none hR
+      owner hObjInv n hR
     rw [hEq, removeRunnableOnCore_preserves_objects, migrateSchedContextReplenishment_objects]
     exact hInv'
 
@@ -215,7 +227,15 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hServerIdleAllowed : ∀ (expected : SeLe4n.ThreadId), recordedReplyServer? st target
         = some expected →
-      ∀ tcb, st.getTcb? expected = some tcb → passiveServerIdleAllowed tcb.ipcState) :
+      ∀ tcb, st.getTcb? expected = some tcb → passiveServerIdleAllowed tcb.ipcState)
+    -- **WS-OD OD4.4**: the donation return resolves its new owner from the
+    -- context's reply stack, so at depth ≥ 2 it mints a `.donated` binding at the
+    -- outer caller.  Stated at the state the pop actually runs at -- the reply leg
+    -- commits first -- which is a pre-state-computable expression, so the
+    -- de-threading discipline is respected.
+    (hStackValid : ∀ scId serverTid originalOwner,
+        replyStackOuterCallerValid (endpointReplyOnCore replier target msg executingCore st).1
+          scId serverTid originalOwner) :
     ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 := by
   have hReplyExc : ipcInvariantFullExceptDonationOwner
       (endpointReplyOnCore replier target msg executingCore st).1 target :=
@@ -231,7 +251,7 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
   unfold endpointReplyCrossCoreDispatch
   cases hRep : endpointReplyOnCore replier target msg executingCore st with
   | mk st1 res =>
-    rw [hRep] at hReplyExc hReplyInv hBack hBindBack hFrame
+    rw [hRep] at hReplyExc hReplyInv hBack hBindBack hFrame hStackValid
     cases res with
     | error e => exact hInv
     | ok replySgi =>
@@ -280,7 +300,7 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
             simp only
             have hDonFull : ipcInvariantFull st2 :=
               applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except st1 st2 expectedV
-                target _ _ _ hReplyInv hReplyExc hDonMid hAllowed hDon
+                target _ _ _ hReplyInv hReplyExc hDonMid hAllowed hStackValid hDon
             have hDonInv : st2.objects.invExt :=
               applyReplyDonationOnCore_preserves_objects_invExt st1 st2 expectedV _ _ _
                 hReplyInv hDon
@@ -307,9 +327,13 @@ theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hServerIdleAllowed : ∀ (expected : SeLe4n.ThreadId), recordedReplyServer? st target
         = some expected →
-      ∀ tcb, st.getTcb? expected = some tcb → passiveServerIdleAllowed tcb.ipcState) :
+      ∀ tcb, st.getTcb? expected = some tcb → passiveServerIdleAllowed tcb.ipcState)
+    -- **WS-OD OD4.4**: see `endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull`.
+    (hStackValid : ∀ scId serverTid originalOwner,
+        replyStackOuterCallerValid (endpointReplyOnCore replier target msg executingCore st).1
+          scId serverTid originalOwner) :
     ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 :=
   endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier target msg executingCore
     st hInv hObjInv
     (fun _ _ s sTcb sc hS hB => absurd hB (hNoDonationOwnedBy s sTcb sc hS))
-    hAllBudgetsNone hServerIdleAllowed
+    hAllBudgetsNone hServerIdleAllowed hStackValid

@@ -65,9 +65,6 @@
  "Sm5iAffinityAnchors": {
   "tests/SmpCbsSuite.lean": 2
  },
- "TEST_COUNT_AK7": {
-  "scripts/ak7_cascade_baseline.sh": 5
- },
  "TPI": {
   "scripts/test_tier0_hygiene.sh": 3
  },
@@ -800,9 +797,6 @@
  },
  "test_AK8_I_well_keyed_freeze_succeeds": {
   "tests/Ak8CoverageSuite.lean": 2
- },
- "test_count_ak7": {
-  "scripts/ak7_cascade_baseline.sh": 1
  },
  "vaddrAC4": {
   "tests/NegativeStateSuite.lean": 3

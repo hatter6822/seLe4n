@@ -313,16 +313,21 @@ theorem ipcReachable_default : ipcReachable (default : SystemState) := by
 -- §5  WS-OD OD2.4 — the chain predicate decides rather than refuses
 -- ============================================================================
 
-/-! `donationChainWellFormed` is *vacuously* true of every state this tree
-reaches today.  The one transition that writes `Reply.donatedSc`, `Reply.prev`
-and `SchedContext.scReply` is the donation pop, and its writing arm needs a
-context that already heads a reply stack — which nothing constructs until OD4's
-push.  So every discharge in the tree is one of the two vacuous
-constructors: `ipcReachable_default` uses
+/-! **When this section was written** (OD2.4, `v0.34.125`)
+`donationChainWellFormed` was *vacuously* true of every state the tree reached:
+the one transition writing `Reply.donatedSc`, `Reply.prev` and
+`SchedContext.scReply` was the donation pop, whose writing arm needs a context
+that already heads a reply stack, and nothing constructed one.  Every discharge
+was therefore one of the two vacuous constructors — `ipcReachable_default` uses
 `donationChainWellFormed_of_no_reply_or_schedContext` (the empty boot store holds
-neither kind), and the two dispatch-pack witnesses use
+neither kind) and the two dispatch-pack witnesses use
 `donationChainWellFormed_of_no_donations` (their store holds both kinds, and
-neither carries a link).
+neither carries a link).  **OD4.1 (`v0.35.2`) ended that**: `donationHeadPush`
+builds a frame on every donating `Call`, so a depth-2 chain is an ordinary
+reachable state and the completeness clause below fires on it.  The two vacuous
+discharges remain correct for the *states they are about* — a boot store and two
+link-free pack witnesses — and this section's argument is unchanged, which is the
+point of having made it before the push existed.
 
 A predicate discharged only vacuously is one nobody has checked against the
 structure it exists to constrain, and an **over-strong** conjunct looks exactly
@@ -334,9 +339,9 @@ So the witness below builds the state a depth-2 Call chain leaves — one
 scheduling context heading two `prev`-linked Reply objects, both naming it — and
 proves the **whole** predicate of it, the completeness clause included.  With
 `donationChainWellFormed_of_no_donations` on one side and this on the other, the
-predicate is known to admit both the state the tree has today and the state OD3
-and OD4 will produce, so neither the pop nor the push is walking into a
-conjunct that refuses its own subject. -/
+predicate is known to admit both the link-free state and the depth-2 state OD3's
+pop and OD4's push produce, so neither is walking into a conjunct that refuses
+its own subject. -/
 
 /-- The scheduling context donated down the witness chain. -/
 def donationChainWitnessContext : SeLe4n.SchedContextId := ⟨11⟩

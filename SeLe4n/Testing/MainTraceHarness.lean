@@ -2929,9 +2929,19 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let callerTid : SeLe4n.ThreadId := ⟨7001⟩
   let serverTid : SeLe4n.ThreadId := ⟨7002⟩
   let scId : SeLe4n.SchedContextId := ⟨7000⟩
+  -- WS-OD OD4.1: a donating caller is a *Call* caller, so it is
+  -- `.blockedOnReply` on its own reply object — that Reply is the frame the
+  -- donation pushes onto the context's stack.  The pre-OD4 fixture had none, a
+  -- state no live path produces; the donation now refuses it (`.replyCapInvalid`)
+  -- rather than minting a `.donated` binding the stack does not record.
+  let callerReplyId : SeLe4n.ReplyId := ⟨7003⟩
+  let callerReply : KernelObject := .reply
+    { SeLe4n.Kernel.Reply.empty callerReplyId with caller := some callerTid }
   let callerTcb : KernelObject := .tcb {
     tid := callerTid, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+    ipcState := .blockedOnReply ⟨7010⟩ (some serverTid),
+    replyObject := some callerReplyId,
     schedContextBinding := .bound scId }
   let serverTcb : KernelObject := .tcb {
     tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
@@ -2942,8 +2952,9 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     budget := ⟨1000⟩, budgetRemaining := ⟨800⟩,
     boundThread := some callerTid, priority := ⟨100⟩ }
   let stDon := { st1 with
-    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
-      serverTid.toObjId serverTcb).insert scId.toObjId (.schedContext sc) }
+    objects := (((st1.objects.insert callerTid.toObjId callerTcb).insert
+      serverTid.toObjId serverTcb).insert scId.toObjId (.schedContext sc)).insert
+      callerReplyId.toObjId callerReply }
   match SeLe4n.Kernel.donateSchedContext stDon callerTid serverTid scId with
   | .error err =>
     IO.println s!"[Z7D-001] donateSchedContext: error {reprStr err}"
@@ -2987,8 +2998,9 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
 
   -- Z7D-003: applyCallDonation — passive server gets SchedContext
   let stApply := { st1 with
-    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
-      serverTid.toObjId serverTcb).insert scId.toObjId (.schedContext sc) }
+    objects := (((st1.objects.insert callerTid.toObjId callerTcb).insert
+      serverTid.toObjId serverTcb).insert scId.toObjId (.schedContext sc)).insert
+      callerReplyId.toObjId callerReply }
   -- AN10-residual-1 deep-audit: applyCallDonation now requires ValidThreadId.
   let callerVtid : SeLe4n.ValidThreadId := ⟨callerTid, by decide⟩
   let serverVtid : SeLe4n.ValidThreadId := ⟨serverTid, by decide⟩
@@ -3054,6 +3066,74 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
     | _ => false
   IO.println s!"[Z7D-008] cleanupPreReceiveDonation: caller_back={callerBack}"
+
+  -- SCN-DONATION-PUSH-DEPTH-TWO (WS-OD OD4.1/OD4.2/OD6.4): the **depth-≥ 2
+  -- push**.  A caller that is itself holding a donation calls a passive server
+  -- and passes the context on,
+  -- leaving the context's reply stack one frame deeper.  This is the shape the
+  -- whole workstream exists for: before OD4 the guard read only a `.bound`
+  -- caller, so the chain stopped at the first passive server.
+  let outerTid : SeLe4n.ThreadId := ⟨7004⟩
+  let outerReplyId : SeLe4n.ReplyId := ⟨7005⟩
+  let outerReply : KernelObject := .reply
+    { SeLe4n.Kernel.Reply.empty outerReplyId with
+        caller := some outerTid, donatedSc := some scId }
+  let outerTcb : KernelObject := .tcb {
+    tid := outerTid, priority := ⟨120⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+    ipcState := .blockedOnReply ⟨7011⟩ (some callerTid),
+    replyObject := some outerReplyId,
+    schedContextBinding := .unbound }
+  let midTcb : KernelObject := .tcb {
+    tid := callerTid, priority := ⟨100⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+    ipcState := .blockedOnReply ⟨7010⟩ (some serverTid),
+    replyObject := some callerReplyId,
+    schedContextBinding := .donated scId outerTid }
+  let scDepth2 : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty scId with
+    budget := ⟨1000⟩, budgetRemaining := ⟨600⟩,
+    boundThread := some callerTid, scReply := some outerReplyId, priority := ⟨100⟩ }
+  let stChain2 := { st1 with
+    objects := (((((st1.objects.insert callerTid.toObjId midTcb).insert
+      serverTid.toObjId serverTcb).insert scId.toObjId (.schedContext scDepth2)).insert
+      callerReplyId.toObjId callerReply).insert outerTid.toObjId outerTcb).insert
+      outerReplyId.toObjId outerReply }
+  match SeLe4n.Kernel.donateSchedContext stChain2 callerTid serverTid scId with
+  | .error err =>
+    IO.println s!"[SCN-DONATION-PUSH-DEPTH-TWO] depth-2 donateSchedContext: error {reprStr err}"
+  | .ok stPushed =>
+    let serverHolds := match stPushed.objects[serverTid.toObjId]? with
+      | some (.tcb t) =>
+          t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.donated scId callerTid
+      | _ => false
+    let headPushed := match stPushed.objects[scId.toObjId]? with
+      | some (.schedContext s) => s.scReply == some callerReplyId
+      | _ => false
+    let frameLinked := match stPushed.objects[callerReplyId.toObjId]? with
+      | some (.reply r) => r.donatedSc == some scId && r.prev == some outerReplyId
+      | _ => false
+    IO.println s!"[SCN-DONATION-PUSH-DEPTH-TWO] depth-2 donateSchedContext: server_holds={serverHolds} head_pushed={headPushed} frame_linked={frameLinked}"
+
+    -- SCN-DONATION-RETURN-RESOLVED-OUTER (WS-OD OD3.4/OD4.4/OD6.4): ...and the
+    -- pop one level up hands the
+    -- context back to the intermediate caller as a **donation from the outer
+    -- caller**, with the new owner resolved off the stack rather than passed in.
+    match SeLe4n.Kernel.returnDonatedSchedContextResolved stPushed serverTid scId callerTid with
+    | .error err =>
+      IO.println s!"[SCN-DONATION-RETURN-RESOLVED-OUTER] depth-2 resolved return: error {reprStr err}"
+    | .ok stPopped =>
+      let midRebound := match stPopped.objects[callerTid.toObjId]? with
+        | some (.tcb t) =>
+            t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.donated scId outerTid
+        | _ => false
+      let headPopped := match stPopped.objects[scId.toObjId]? with
+        | some (.schedContext s) => s.scReply == some outerReplyId
+        | _ => false
+      let frameCleared := match stPopped.objects[callerReplyId.toObjId]? with
+        | some (.reply r) => r.donatedSc == none && r.prev == none
+        | _ => false
+      IO.println s!"[SCN-DONATION-RETURN-RESOLVED-OUTER] depth-2 resolved return: mid_rebound_donated={midRebound} head_popped={headPopped} frame_cleared={frameCleared}"
 
 -- ============================================================================
 -- Z8-J: SchedContext budget lifecycle trace

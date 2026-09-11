@@ -76,6 +76,39 @@ def donationHolderIsReplyTarget (st : SystemState) (owner : SeLe4n.ThreadId) : P
         (∃ epId, ownerTcb.ipcState = .blockedOnReply epId (some holder)) ∧
         lookupTcb st holder = some holderTcb
 
+/-- **WS-OD OD4.4: the outer-caller obligation for the cancellation reclaim.**
+
+The reclaim resolves its scheduling context from the *holder's* binding rather
+than taking it as an argument, and it pops at the **post-abort** state -- so the
+obligation is stated over the victim: whatever donation the cancellation is
+reclaiming, the outer caller its reply stack names is a proper waiting donor and
+is owned by nobody.  Vacuous on every state where that context heads no reply
+stack (`cancelDonationStackValid_of_no_stacks`) — which was every state this tree
+reached until OD4.1 (`v0.35.2`), and is now every state below the first donating
+`Call`.
+
+Stated in the cancellation's own shape rather than at a resolved `(scId, holder)`
+pair, for the reason `cleanupDonationStackValid` is: a consumer holds the victim
+and its TCB, never the donation the arm is about to discover. -/
+def cancelDonationStackValid (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB) : Prop :=
+  ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+    Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder) →
+    replyStackOuterCallerValid (Lifecycle.Suspend.abortHolderPendingIpc st holder) scId holder v
+
+/-- WS-OD OD4.4: the reclaim's outer-caller obligation is discharged outright on
+a store where no scheduling context heads a reply stack -- the shape of every
+state the tree reached before OD4.1 (`v0.35.2`), which is why threading the
+resolver was a refactor rather than a behaviour change. -/
+theorem cancelDonationStackValid_of_no_stacks (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (hNoHeads : ∀ (holder : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+      (sc : SeLe4n.Kernel.SchedContext),
+      (Lifecycle.Suspend.abortHolderPendingIpc st holder).getSchedContext? scId = some sc →
+      sc.scReply = none) :
+    cancelDonationStackValid st v tcbV :=
+  fun scId holder _ =>
+    replyStackOuterCallerValid_of_no_stacks _ (hNoHeads holder) scId holder v
+
 theorem returnDonationToCancelledCaller_no_donation_to_victim
     (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
@@ -87,6 +120,11 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
     -- `abortHolderPendingIpc_donationChainFrame`.
     (hChain : donationChainWellFormed st)
     (hHolder : donationHolderIsReplyTarget st v)
+    -- **WS-OD OD4.4**: the reclaim's pop resolves its new owner from the context's
+    -- own reply stack; this is the obligation that resolution carries, and it is
+    -- what keeps the pop from *refusing* -- a refused reclaim leaves exactly the
+    -- donation this result denies.
+    (hStack : cancelDonationStackValid st v tcbV)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (hTcb : (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).objects[tid.toObjId]?
       = some (.tcb tcb)) :
@@ -139,23 +177,46 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
       donationHeadResolves_of_frame
         (Lifecycle.Suspend.abortHolderPendingIpc_donationChainFrame st holder hInv) scId0
         (donationHeadResolves_of_chainWellFormed st scId0 hChain)
+    -- **WS-OD OD4.4**: the pop resolves its new owner off the context's own reply
+    -- stack, at the post-abort state.  The chain invariant carries across the
+    -- abort (`abortHolderPendingIpc_donationChainFrame`), so the resolver
+    -- *answers*; what it answers is the caller's obligation.
+    have hChainA : donationChainWellFormed (Lifecycle.Suspend.abortHolderPendingIpc st holder) :=
+      donationChainWellFormed_of_frame
+        (Lifecycle.Suspend.abortHolderPendingIpc_donationChainFrame st holder hInv) hChain
+    obtain ⟨scA, hScA, _⟩ :=
+      (hOwnerA holder holderTcbA scId0 v hHolderAtA (hBindEqA.trans hBindH)).1
+    obtain ⟨n, hResN⟩ :=
+      replyStackOuterCallerResolves_of_chainWellFormed _ scId0 hChainA scA hScA
     obtain ⟨st', hOk⟩ := returnDonatedSchedContext_ok_under_invariants
       (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder holderTcbA
       scId0 v hInvA hOwnerA hHeadResA hLkHA (hBindEqA.trans hBindH)
       (lookupTcb_some_not_reserved st holder holderTcb hLkH)
-      (lookupTcb_some_not_reserved st v tcbV hLookup) none
-      -- WS-OD OD4.4: the pop's outer-caller guard is free at the bottom of the
-      -- reply stack, which is what this site passes.
-      (outerCallerAcceptable_none _ holder v)
-    rw [hOk] at hTcb
+      (lookupTcb_some_not_reserved st v tcbV hLookup) n
+      ((hStack scId0 holder hRes) n hResN).1
+    rw [returnDonatedSchedContextResolved_of_resolved hResN, hOk] at hTcb
     simp only at hTcb
     obtain ⟨hSrv, hOwn, hOther⟩ := returnDonatedSchedContext_tcb_schedContextBinding_backward
-      (Lifecycle.Suspend.abortHolderPendingIpc st holder) st' holder scId0 v hInvA none hOk
+      (Lifecycle.Suspend.abortHolderPendingIpc st holder) st' holder scId0 v hInvA n hOk
       tid.toObjId tcb hTcb
     by_cases hH : tid.toObjId = holder.toObjId
     · rw [hSrv hH] at hBind; cases hBind
     · by_cases hV : tid.toObjId = v.toObjId
-      · rw [hOwn hH hV] at hBind; cases hBind
+      · -- At the bottom of the stack the target is rebound `.bound`, and one level
+        -- up `.donated scId0 outer` -- where `outerCallerAcceptable` has already
+        -- decided `outer ≠ v` (`outerNeTarget`), so neither arm is a donation
+        -- naming the cancelled caller.
+        rw [hOwn hH hV] at hBind
+        cases hN : n with
+        | none => rw [hN] at hBind; cases hBind
+        | some outer =>
+            rw [hN] at hBind
+            simp only [donationReturnBinding, SchedContextBinding.donated.injEq] at hBind
+            exact absurd hBind.2
+              (((hStack scId0 holder hRes) n hResN).1
+                |> fun hAcc => by
+                    rw [hN] at hAcc
+                    exact (outerCallerAcceptable_some_char _ holder v outer hAcc).1)
       · obtain ⟨tA, hAtA, hEqA⟩ := hOther hH hV
         obtain ⟨t0, h0, hEqB⟩ :=
           Lifecycle.Suspend.abortHolderPendingIpc_binding_backward st holder hInv tid.toObjId
@@ -407,10 +468,11 @@ theorem returnDonationToCancelledCaller_passiveServerIdleFrame
     obtain ⟨_, holderTcb, hLkH, _⟩ := cancelledCallerDonation?_some st v tcbV scId holder hRes
     split
     · rename_i st' hOk
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
       refine (Lifecycle.Suspend.abortHolderPendingIpc_passiveServerIdleFrame st holder hInv).trans
         (returnDonatedSchedContext_passiveServerIdleFrame
           (Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
-          none hOk ?_)
+          n hPop ?_)
       intro t hAt
       exact Lifecycle.Suspend.abortHolderPendingIpc_holder_ipcState_allowed st holder holderTcb
         hInv hMem hLkH t hAt
@@ -514,6 +576,8 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
     (hOwner : donationOwnerValid st)
     (hChain : donationChainWellFormed st)
     (hHolder : donationHolderIsReplyTarget st v)
+    -- **WS-OD OD4.4**: see `returnDonationToCancelledCaller_no_donation_to_victim`.
+    (hStack : cancelDonationStackValid st v tcbV)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (hTcb : (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).objects[tid.toObjId]?
       = some (.tcb tcb)) :
@@ -537,7 +601,7 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
   obtain ⟨t0, h0, hEqB⟩ := hSame tid tcb hTcb
   intro hBind
   exact returnDonationToCancelledCaller_no_donation_to_victim st v tcbV hInv hLookup hOwner
-    hChain hHolder tid t0 scId h0 (by rw [hEqB]; exact hBind)
+    hChain hHolder hStack tid t0 scId h0 (by rw [hEqB]; exact hBind)
 
 -- ============================================================================
 -- WS-OD OD3.5 — the reply arm relinks no queue neighbour
@@ -858,11 +922,12 @@ theorem cancelIpcBlocking_replyArm_tcb_frame (st : SystemState)
           hkHolder hkPrev hkNext hPre
       have hInvA : (Lifecycle.Suspend.abortHolderPendingIpc st holder).objects.invExt :=
         Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv
-      cases hRet : returnDonatedSchedContext
-          (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder scId v none with
+      cases hRet : returnDonatedSchedContextResolved
+          (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder scId v with
       | error e => exact hPre
       | ok stRet =>
-        exact returnDonatedSchedContext_other_tcb_eq _ stRet holder scId v none hInvA hRet
+        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+        exact returnDonatedSchedContext_other_tcb_eq _ stRet holder scId v n hInvA hPop
           k t0 hkV hkHolder hAbort
   -- Stage 2: the restore writes the victim alone; stage 3: the reply consume
   -- writes the victim's TCB and a Reply object.
@@ -875,5 +940,235 @@ theorem cancelIpcBlocking_replyArm_tcb_frame (st : SystemState)
       = some (.tcb t0)
   rw [restoreToReadyStaging_objects_ne _ v _ k hInvR hkV]
   exact hReclaim
+
+-- ============================================================================
+-- WS-OD OD5.2 — `.tcbSuspend` of a caller, at every chain depth
+-- ============================================================================
+
+/-- **WS-OD OD5.2: the cancelled caller gets its scheduling context back exactly
+when it is the immediate donor to the thread holding it.**
+
+The reclaim resolves through the victim's own recorded reply target and accepts
+the donation only when that thread's binding names the victim as its `owner` --
+which, because a push always records the *immediate* donor, is precisely the
+depth-1-below-the-victim case.  So on a chain `D → C → S`, cancelling `C`
+returns the context to `C` (and OD4.4's resolver then rebinds it
+`.donated sc D`, since the stack still names `D` below `C`'s frame).
+
+Stated so the *positive* half of the policy is visible beside the negative one
+below: `severAtCut` is not "a cancelled caller never gets its context back", it
+is "a cancelled caller gets back exactly the donation it made". -/
+theorem cancelledCallerDonation?_some_of_immediate_donee
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (ep : SeLe4n.ObjId) (holder : SeLe4n.ThreadId) (holderTcb : TCB)
+    (scId : SeLe4n.SchedContextId)
+    (hIpc : tcb.ipcState = .blockedOnReply ep (some holder))
+    (hLk : lookupTcb st holder = some holderTcb)
+    (hBind : holderTcb.schedContextBinding = .donated scId tid) :
+    Lifecycle.Suspend.cancelledCallerDonation? st tid tcb = some (scId, holder) := by
+  unfold Lifecycle.Suspend.cancelledCallerDonation?
+  rw [hIpc]
+  simp only []
+  rw [hLk]
+  simp only []
+  rw [hBind]
+  simp only [beq_self_eq_true, if_true]
+
+/-- **WS-OD OD5.2: below the cut the reclaim declines, and that is the policy.**
+
+At call depth ≥ 3 the victim's recorded reply target has already donated the
+context onward, so its own binding is `.unbound` and names nobody: the reclaim
+answers `none` and `returnDonationToCancelledCaller` is the identity.  The
+context stays where it is, and the pop that later reaches the victim's now
+caller-less frame binds the innermost live caller `.bound scId`
+(`cancelledMiddleCaller_severs_at_cut`).
+
+This is `severAtCut` seen from the cancellation end, and it is a decision rather
+than an omission: `reclaimToCancelledThread` would reach the real holder through
+`SchedContext.boundThread` and rewrite a binding this theorem says is untouched.
+Its cost is stated at `cancelledMiddleCallerPolicy` -- the original owner's
+reservation ends up with the innermost live caller. -/
+theorem cancelledCallerDonation?_none_below_the_cut
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (ep : SeLe4n.ObjId) (holder : SeLe4n.ThreadId) (holderTcb : TCB)
+    (hIpc : tcb.ipcState = .blockedOnReply ep (some holder))
+    (hLk : lookupTcb st holder = some holderTcb)
+    (hDonatedOnward : holderTcb.schedContextBinding = .unbound) :
+    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.severAtCut ∧
+    Lifecycle.Suspend.cancelledCallerDonation? st tid tcb = none ∧
+    Lifecycle.Suspend.returnDonationToCancelledCaller st tid tcb = st := by
+  have hNone : Lifecycle.Suspend.cancelledCallerDonation? st tid tcb = none := by
+    unfold Lifecycle.Suspend.cancelledCallerDonation?
+    rw [hIpc]
+    simp only []
+    rw [hLk]
+    simp only []
+    rw [hDonatedOnward]
+  exact ⟨rfl, hNone, Lifecycle.Suspend.returnDonationToCancelledCaller_none st tid tcb hNone⟩
+
+/-- **WS-OD OD5.2: and the whole cancellation arm reclaims nothing there.**
+
+The payoff for `.tcbSuspend`: below the cut the reply arm is the teardown alone
+-- the endpoint-queue purge, the `.ipcCancelled` restore and the reply-link
+consume -- with no donation write at all.  So the depth-≥ 3 case needs no bundle
+argument beyond the one the no-donation arm already has, which is what makes
+`severAtCut` cheap as well as seL4-shaped. -/
+theorem cancelIpcBlocking_reply_arm_below_the_cut
+    (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (ep : SeLe4n.ObjId) (holder : SeLe4n.ThreadId) (holderTcb : TCB)
+    (hIpc : tcbV.ipcState = .blockedOnReply ep (some holder))
+    (hLk : lookupTcb st holder = some holderTcb)
+    (hDonatedOnward : holderTcb.schedContextBinding = .unbound) :
+    Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
+      Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.restoreToReadyCancelled st v) v tcbV := by
+  obtain ⟨_, _, hIdent⟩ :=
+    cancelledCallerDonation?_none_below_the_cut st v tcbV ep holder holderTcb hIpc hLk
+      hDonatedOnward
+  unfold Lifecycle.Suspend.cancelIpcBlocking
+  rw [hIpc, hIdent]
+
+-- ============================================================================
+-- WS-OD OD5.3 — the reclaim can leave the victim `.donated`
+-- ============================================================================
+
+/-- **WS-OD OD5.3: at call depth ≥ 2 the reclaim leaves the victim holding a
+donation, which is what makes the suspend pipeline pop a second time.**
+
+`donationReturnBinding scId (some outer)` is `.donated scId outer`, so a victim
+that entered `.tcbSuspend` `.unbound` -- a caller whose own context had been
+donated onward and reclaimed -- comes out of the G2 teardown `.donated`.  The
+pipeline's arm selector re-reads the binding from the **post-teardown** TCB, so
+the `.donated` arm then fires and runs a *second* SchedContext teardown with a
+*second* replenishment migration, whose destination is `outer`'s home core.
+
+That is the whole reason `suspendThreadOnCoreSchedLockSet`'s replenish segment is
+a triple rather than a pair: the third core is not resolvable from the victim's
+pre-state binding, because at the pre-state the victim has none. -/
+theorem returnDonationToCancelledCaller_leaves_donated_at_depth_two
+    (st st' : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (scId : SeLe4n.SchedContextId) (holder outer : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hNe : v ≠ holder)
+    (hDon : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder))
+    (hGetV : st.getTcb? v = some tcbV)
+    (hRes : replyStackOuterCaller? (Lifecycle.Suspend.abortHolderPendingIpc st holder) scId
+      = .ok (some outer))
+    (hPop : returnDonatedSchedContext (Lifecycle.Suspend.abortHolderPendingIpc st holder)
+      holder scId v (some outer) = .ok st') :
+    Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV = st' ∧
+    ∃ vTcb, st'.getTcb? v = some vTcb ∧
+      vTcb.schedContextBinding = .donated scId outer := by
+  have hResolved :
+      returnDonatedSchedContextResolved (Lifecycle.Suspend.abortHolderPendingIpc st holder)
+        holder scId v = .ok st' := by
+    rw [returnDonatedSchedContextResolved_of_resolved hRes]; exact hPop
+  have hEq : Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV = st' := by
+    unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+    rw [hDon, hGetV]
+    simp only []
+    rw [hResolved]
+  refine ⟨hEq, ?_⟩
+  have hInvA := Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hObjInv
+  obtain ⟨tA, hkA, _⟩ := Lifecycle.Suspend.abortHolderPendingIpc_tcb_lookup st holder hObjInv
+    v.toObjId tcbV ((SystemState.getTcb?_eq_some_iff st v tcbV).mp hGetV)
+  obtain ⟨t', hk', _⟩ := returnDonatedSchedContext_tcb_rewrite _ st' holder scId v hInvA
+    (some outer) hPop v.toObjId tA hkA
+  obtain ⟨_, hOwn, _⟩ := returnDonatedSchedContext_tcb_binding_cases _ st' holder scId v
+    (some outer) hInvA hPop v.toObjId t' hk'
+  refine ⟨t', (SystemState.getTcb?_eq_some_iff st' v t').mpr hk', ?_⟩
+  simpa [donationReturnBinding] using
+    hOwn (fun hx => hNe (SeLe4n.ThreadId.toObjId_injective v holder hx)) rfl
+
+-- ============================================================================
+-- WS-OD OD5.6 — the teardown paths frame the donation chain
+-- ============================================================================
+
+/-- WS-OD OD5.6: a single-key object `insert` that preserves both chain
+projections at that key frames the donation chain.
+
+The raw-`insert` counterpart of `donationChainFrame_of_storeObject`: the
+cancellation's two reply-link clears write through `objects.insert` rather than
+`storeObject`, and stating the frame once here is what keeps the three consumers
+below from re-deriving the same two-case lookup split. -/
+private theorem donationChainFrame_of_objects_insert
+    {st : SystemState} {k0 : SeLe4n.ObjId} {obj : KernelObject}
+    (hInv : st.objects.invExt)
+    (hLinks : replyStackLinks? (some obj) = replyStackLinks? st.objects[k0]?)
+    (hHead : schedContextStackHead? (some obj) = schedContextStackHead? st.objects[k0]?) :
+    donationChainFrame st { st with objects := st.objects.insert k0 obj } := by
+  have hPoint : ∀ k : SeLe4n.ObjId,
+      (st.objects.insert k0 obj)[k]? = if k = k0 then some obj else st.objects[k]? := by
+    intro k
+    by_cases hk : k = k0
+    · subst hk
+      rw [if_pos rfl]
+      exact RobinHood.RHTable.getElem?_insert_self st.objects k obj hInv
+    · rw [if_neg hk]
+      exact RobinHood.RHTable.getElem?_insert_ne st.objects k0 k obj
+        (by simpa using fun h => hk h.symm) hInv
+  refine ⟨fun k => ?_, fun k => ?_⟩
+  · show replyStackLinks? ((st.objects.insert k0 obj)[k]?) = _
+    rw [hPoint k]
+    by_cases hk : k = k0
+    · subst hk; rw [if_pos rfl]; exact hLinks
+    · rw [if_neg hk]
+  · show schedContextStackHead? ((st.objects.insert k0 obj)[k]?) = _
+    rw [hPoint k]
+    by_cases hk : k = k0
+    · subst hk; rw [if_pos rfl]; exact hHead
+    · rw [if_neg hk]
+
+/-- **WS-OD OD5.6: the reply back-link clear frames the donation chain.**
+
+`clearReplyObjectCaller` rewrites one Reply's `caller` and nothing else, so both
+projections the chain walk reads -- `replyStackLinks?` and
+`schedContextStackHead?` -- are unchanged at every key.  Deliberately *not* a
+clear of `donatedSc` / `prev`: those come off the stack at the pop's own
+`storeDonationHeadClear`, and a cancellation that cleared them here would take a
+frame off a stack the context still heads (OD5.1's reasoning, at the other end of
+the same field). -/
+theorem clearReplyObjectCaller_donationChainFrame (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) :
+    donationChainFrame st (Lifecycle.Suspend.clearReplyObjectCaller st rid) := by
+  unfold Lifecycle.Suspend.clearReplyObjectCaller
+  cases hR : st.getReply? rid with
+  | none => simp only []; exact donationChainFrame.refl st
+  | some r =>
+    simp only []
+    -- The pre-state read goes through the typed reader, so this proof names no
+    -- raw object-store lookup (AK7 store-reader hygiene).
+    exact donationChainFrame_of_objects_insert hInv
+      (by rw [(SystemState.getReply?_eq_some_iff st rid r).mp hR]; rfl)
+      (by rw [(SystemState.getReply?_eq_some_iff st rid r).mp hR]; rfl)
+
+/-- **WS-OD OD5.6**: the TCB half of the sever carries no chain data at all. -/
+theorem clearTcbReplyObject_donationChainFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    donationChainFrame st (Lifecycle.Suspend.clearTcbReplyObject st tid) := by
+  unfold Lifecycle.Suspend.clearTcbReplyObject
+  cases hT : st.getTcb? tid with
+  | none => simp only []; exact donationChainFrame.refl st
+  | some t =>
+    simp only []
+    exact donationChainFrame_of_objects_insert hInv
+      (by rw [(SystemState.getTcb?_eq_some_iff st tid t).mp hT]; rfl)
+      (by rw [(SystemState.getTcb?_eq_some_iff st tid t).mp hT]; rfl)
+
+/-- **WS-OD OD5.6: the cancellation's reply-link sever frames the donation
+chain**, so `cancelIpcBlocking`'s reply arm reaches
+`donationChainWellFormed_of_frame` for everything except the reclaim -- whose own
+preservation is OD3.8's. -/
+theorem consumeReplyLink_donationChainFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) :
+    donationChainFrame st (Lifecycle.Suspend.consumeReplyLink st tid tcb) := by
+  unfold Lifecycle.Suspend.consumeReplyLink
+  cases hR : tcb.replyObject with
+  | none => simp only []; exact donationChainFrame.refl st
+  | some rid =>
+    simp only []
+    exact (clearTcbReplyObject_donationChainFrame st tid hInv).trans
+      (clearReplyObjectCaller_donationChainFrame _ rid
+        (Lifecycle.Suspend.clearTcbReplyObject_preserves_objects_invExt st tid hInv))
 
 end SeLe4n.Kernel

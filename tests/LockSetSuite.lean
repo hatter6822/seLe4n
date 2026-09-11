@@ -1409,6 +1409,41 @@ private def runQueueOwnerFootprintChecks : IO Unit := do
   assertBool "NEGATIVE: a ready thread is in no object-owned queue"
     (decide (queueOwnerOf? readyTcb = none))
 
+/-- **WS-OD OD4.7 / OD6.3**: the `.call` footprint already declares every object
+the donation **push** writes, which is why the chain costs no ceiling.
+
+`donateSchedContext` writes four keys -- the donated SchedContext (rebind *and*
+new stack head, one store), the pushed Reply (`donatedSc` / `prev`), the donor's
+TCB (`.unbound`) and the receiver's TCB (`.donated`) -- and each is a declared
+WRITE member here.  Relation, not presence: the negative keeps every other
+member and removes the *resolver's answer*, which is what a footprint that
+failed to resolve the donation would look like, and the size check is stated
+against `maxLockSetSize` rather than against a numeral (WS-OD OD3.19's rule:
+a figure interpolated from the constant cannot drift away from it). -/
+private def runDonationPushFootprintChecks : IO Unit := do
+  IO.println "--- §19 WS-OD OD4.7 the `.call` footprint covers the donation push ---"
+  let caller : ThreadId := ⟨5⟩
+  let receiver : ThreadId := ⟨6⟩
+  let scId : SchedContextId := ⟨70⟩
+  let rid : ReplyId := ⟨71⟩
+  let donating := lockSet_endpointCall caller (ObjId.ofNat 10) (ObjId.ofNat 20)
+    (some receiver) (some scId) (some rid)
+  let undonating := lockSet_endpointCall caller (ObjId.ofNat 10) (ObjId.ofNat 20)
+    (some receiver) none (some rid)
+  assertBool "the donated SchedContext is a declared WRITE member"
+    (donating.pairs.any (fun p => decide (p = (schedContextLock scId, AccessMode.write))))
+  assertBool "...so is the Reply the pushed frame IS"
+    (donating.pairs.any (fun p => decide (p = (replyLock rid, AccessMode.write))))
+  assertBool "...so is the receiver's TCB, which the push rebinds `.donated`"
+    (donating.pairs.any (fun p => decide (p = (tcbLock receiver, AccessMode.write))))
+  assertBool "...and the donor's own TCB, which the push leaves `.unbound`"
+    (donating.pairs.any (fun p => decide (p = (tcbLock caller, AccessMode.write))))
+  assertBool "NEGATIVE: with no donation resolved the SchedContext lock is absent"
+    (decide (undonating.pairs.all (fun p => p.fst.kind ≠ .schedContext)))
+  IO.println s!"    declared ceiling: maxLockSetSize = {maxLockSetSize}"
+  assertBool "the donating `.call` footprint fits the declared ceiling"
+    (decide (donating.size ≤ maxLockSetSize))
+
 /-- Audit-pass-6 P1/P2 runtime checks: per-syscall lock-set
 correctness against the actual kernel transitions traced. -/
 private def runAuditPass6FootprintChecks : IO Unit := do
@@ -1682,6 +1717,7 @@ def runLockSetChecks : IO Unit := do
   runPipChainStartChecks
   runAuditPass6FootprintChecks
   runQueueOwnerFootprintChecks
+  runDonationPushFootprintChecks
   IO.println "======================================"
   IO.println "All SM3.B LockSet checks PASS."
 

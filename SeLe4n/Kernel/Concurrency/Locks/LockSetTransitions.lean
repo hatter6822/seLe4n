@@ -1671,6 +1671,86 @@ theorem lockSet_endpointCall_caller_tcb_write_mem_unconditional (callerTid : Thr
   exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
                   (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
                     (LockSet.mem_insertOrMerge_write_self _ _))
+/-- **WS-OD OD4.7**: `.call`'s receiver TCB is a declared write.
+
+The server the push rebinds `.donated` is the endpoint's popped receiver, and the
+rendezvous writes that TCB anyway; the donation adds no member. -/
+theorem lockSet_endpointCall_receiver_tcb_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (receiverTid : ThreadId)
+    (donatedScId : Option SchedContextId) (replyId : Option ReplyId)
+    (destCnodeObjId : Option ObjId) (queueNeighbour : Option ThreadId) :
+    (tcbLock receiverTid, AccessMode.write)
+      ∈ (lockSet_endpointCall callerTid cnodeRootObjId endpointObjId (some receiverTid)
+          donatedScId replyId destCnodeObjId queueNeighbour).pairs := by
+  unfold lockSet_endpointCall
+  -- Five optional extensions sit outside the receiver's own: the donated
+  -- SchedContext, the Reply, the destination CNode, the state-level lock and the
+  -- queue-structure neighbour.
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (mem_write_lockSetExtendOpt _ _ _
+          (mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)))))
+
+/-- **WS-OD OD4.7**: the donated SchedContext is a declared **write** of `.call`.
+
+This is half of the row: OD4.1's push writes the scheduling context's
+`boundThread` *and* its new stack head `scReply`, and reads the old head out of
+the same object -- all three under the write lock the footprint has declared
+since SM6.A.5.  A push therefore costs the `.call` footprint nothing, and
+`maxLockSetSize` does not move. -/
+theorem lockSet_endpointCall_donatedSc_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
+    (scId : SchedContextId) (replyId : Option ReplyId)
+    (destCnodeObjId : Option ObjId) (queueNeighbour : Option ThreadId) :
+    (schedContextLock scId, AccessMode.write)
+      ∈ (lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
+          (some scId) replyId destCnodeObjId queueNeighbour).pairs := by
+  unfold lockSet_endpointCall
+  -- Four optional extensions sit outside it: the Reply, the destination CNode,
+  -- the state-level lock and the queue-structure neighbour.
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _))))
+
+/-- WS-SM SM6.D (PR #822 review 6J-NL9): the per-object reply **write** lock is a
+declared member of the `.call` lock-set footprint once the linked reply object is
+resolved (`replyId := some rid`).  A server-first `Call` rendezvous links the
+caller to the waiting server's stashed Reply object (the folded
+`linkServerStashedReply` → `linkCallerReply` writes `reply.caller`); that write
+is serialised under the per-object reply lock.
+
+**WS-RR RR7.7**: stated over every `destCnode`, so the same lemma serves the
+capless call and the capability-carrying one.  The reply member is not outermost
+— the transfer destination and the state-level lock extend past it — and a
+write-mode member survives any optional extension
+(`mem_write_lockSetExtendOpt`), so the extra layers cost one application of that
+each and nothing else.
+
+**WS-OD OD4.7**: and it is the other half of the push's write set: the frame
+OD4.1's push adds *is* the Reply the rendezvous linked to this caller, which the
+footprint has declared since SM6.D for that link's own write.  The push writes
+two more of its fields and declares nothing new.  The statement **moved here**
+from `IPC/CrossCore/EndpointReply.lean` in that row: OD4.7's
+`lockSet_endpointCallOnCore_covers_donationPush` needs it in `EndpointCall.lean`,
+which cannot import the reply module (the reply module imports it), and one
+question answered in two modules is what this project deletes rather than
+reconciles. -/
+theorem lockSet_endpointCall_reply_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
+    (donatedScId : Option SchedContextId) (rid : ReplyId)
+    (destCnodeObjId : Option ObjId) (queueNeighbour : Option ThreadId) :
+    (replyLock rid, AccessMode.write)
+      ∈ (lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
+          donatedScId (some rid) destCnodeObjId queueNeighbour).pairs := by
+  unfold lockSet_endpointCall
+  -- Three optional extensions sit outside it: the destination CNode, the
+  -- state-level lock and the queue-structure neighbour.
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)))
+
 /-- **WS-RR RR7.11**: and `.call`'s endpoint. -/
 theorem lockSet_endpointCall_endpoint_write_mem (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)

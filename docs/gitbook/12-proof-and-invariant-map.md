@@ -161,21 +161,36 @@ naming that context. It is a conjunct of `ipcReachable`, not of
 projections the walk actually reads (`replyStackLinks?`,
 `schedContextStackHead?`), so it **is** the read set rather than an
 over-approximation of it. The donation **pop** writes all three (WS-OD OD3.1,
-`v0.34.126`) and carries its own preservation theorem (OD3.8, `v0.34.132`), but
-its writing arm needs a stack nothing yet constructs, so the predicate is still
-vacuously true of every reachable state — deliberately: the invariant and its
-frames land before the transitions that must preserve them.
+`v0.34.126`) and carries its own preservation theorem (OD3.8, `v0.34.132`); the
+donation **push** writes the reply's two fields and the context's head (OD4.1,
+`v0.35.2`) and carries `donateSchedContext_preserves_donationChainWellFormed`.
+With the push live the predicate is no longer vacuous — a depth-2 Call leaves a
+two-frame stack — which is the order this workstream was numbered for: the
+invariant and its frames landed at OD2, before the transitions that must
+preserve them.
 
 OD3.1–OD3.3 (`v0.34.126`) landed the transition that **reads** it. The donation
-return is now a four-write reply-stack pop with a fail-closed head validation,
-and `returnDonatedSchedContext_eq_legacy_of_none` proves it is the pre-OD3 body
-at `newOwner? = none` over a context heading no stack — which every call site in
-the tree passes, so the behaviour is unchanged and OD4's push remains the only
-phase that changes it. Three statements moved with it, because three claims
-stopped being true: exact Reply preservation became a Reply **frame**, the
-binding trichotomy widened at the target, and the two reusable frames that
-asserted whole-object Reply identity dropped to the `caller` projection the
-conjunct they serve actually reads.
+return is a four-write reply-stack pop with a fail-closed head validation, and
+`returnDonatedSchedContext_eq_legacy_of_none` proves it is the pre-OD3 body at
+`newOwner? = none` over a context heading no stack. Three statements moved with
+it, because three claims stopped being true: exact Reply preservation became a
+Reply **frame**, the binding trichotomy widened at the target, and the two
+reusable frames that asserted whole-object Reply identity dropped to the
+`caller` projection the conjunct they serve actually reads.
+
+OD4–OD6 (`v0.35.2`) made the chain **live** and closed the workstream.
+`applyCallDonation`'s guard reads the caller's *effective* scheduling context, so
+a `.donated` caller donates onward and seL4-MCS's passive-server pattern works at
+call depth ≥ 2; all six pop sites resolve their new owner from their own
+pre-state through `replyStackOuterCaller?`; and the improvement is stated as a
+theorem rather than as the absence of a regression —
+`passiveServerHoldsDonatedContext_atCallDepthTwo` says a passive server reached
+at depth ≥ 2 holds a SchedContext bound to itself. Two refusals keep a reused
+Reply from redirecting a donation: `linkReply` will not re-link a Reply that
+still names a donated context, and the pop refuses to read past a below-head
+frame donating a *different* context. `maxLockSetSize` does not move — the
+`.call` footprint already write-locks every object the push writes — so no
+published WCRT or covert-channel figure is recomputed.
 See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.7 for the canonical text.
 
 ### 3.4 Lifecycle — `SeLe4n/Kernel/Lifecycle/Invariant/`

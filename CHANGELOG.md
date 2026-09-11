@@ -1,3 +1,197 @@
+## v0.35.2 — WS-OD OD4–OD6: the donation chain is transitive, and the workstream closes
+
+The row the workstream was opened for.  `applyCallDonation` donated only from a
+**`.bound`** caller, so a scheduling context stopped at the first passive server
+and seL4-MCS's passive-server pattern did not work at call depth ≥ 2: the callee
+stayed `.unbound`, was charged to no reservation, and ran on the legacy TCB
+priority fallback.  OD4 makes the donation transitive, OD5 makes every teardown
+path chain-aware, and OD6 states the payoff, tests it, traces it and closes the
+two register rows.  **Twenty sub-tasks, one cut, no behaviour left undeclared.**
+
+### OD4 — the push, and the resolver threaded through
+
+**The guard is the caller's *effective* context.**  `callDonationSchedContext?`
+and the call footprint's `endpointCallDonatedSc?` both answer
+`SchedContextBinding.scId?`, which is `some scId` for a `.bound` caller and for a
+`.donated` one alike — seL4-MCS's `maybeDonateSchedContext`, which reads
+`sender->tcbSchedContext` without asking how the sender came by it.  The two
+widened in one cut on purpose: a footprint narrower than its transition is
+*false*, and the pre-OD4 resolver would have omitted the SchedContext the push
+rebinds at every depth ≥ 2.
+
+**`donateSchedContext` is a four-store push.**  The context's rebind and new
+stack head as **one** store (`boundThread := some serverTid`,
+`scReply := some pushRid` — a frame over either half alone would be false of the
+operation), the pushed Reply's `donatedSc := some clientScId` and
+`prev := sc.scReply` read off the object the first store rewrites, then the
+donor's `.unbound` and the server's `.donated clientScId clientTid`.
+`donateSchedContext_ok_storeChain` is the one description of it; the six theorems
+that used to unfold the operation are corollaries of that chain now, because the
+fourth store stopped every hand-rolled copy compiling.
+
+**The push is fail-closed on its frame.**  `donationPushFrame?` refuses a donor
+with no reply object, one whose reply id resolves to nothing, and one whose reply
+already donates — three distinguishable refusals.  A donation with no stack frame
+is the defect the chain design exists to refuse: the next pop would clear an
+*outer* caller's frame and settle a scheduling context on the wrong thread,
+across a domain boundary.  The frame is the donor's **own** `replyObject`, which
+the `Call` rendezvous linked to it (`endpointCall` fails closed unless the woken
+server stashed a Reply), so the push writes nothing new
+(`lockSet_endpointCallOnCore_covers_donationPush`) and **`maxLockSetSize` does
+not move**.
+
+**The push preserves the chain** (OD4.5).  The dual of OD3.8, and with both
+`donationChainWellFormed` is preserved by *every* transition rather than by every
+transition but one.  Freshness is what makes the new frame safe and is checked
+rather than assumed: the refusal above puts the pushed Reply on **no** context's
+chain (`not_mem_donationChainFrom_of_not_donating`), so prepending it cannot
+revisit a member and the old walk transports verbatim.
+
+**The migration's source is the intermediate donor's home** (OD4.6).
+`replenishQueueAffinityConsistentOnCore` puts a context's replenishments on its
+**bound thread's** home core; at depth `n` that thread is the intermediate server
+making the call, which is what the dispatch already passes.  Proved rather than
+inherited from the depth-1 reading: a successful depth-≥ 2 donation exhibits the
+pre-state context with `boundThread = some caller`.
+
+**All six pop sites resolve their new owner** (OD4.4).  Each runs
+`returnDonatedSchedContextResolved`, which reads `replyStackOuterCaller?` on its
+own pre-state; at depth 1 the answer is `none` and the site is the pre-OD4
+behaviour, definitionally
+(`returnDonatedSchedContextResolved_eq_legacy_of_no_stack`).  The obligation the
+resolution carries is `replyStackOuterCallerValid`, with two call-shaped siblings
+for the sites that discover their donation inside the operation
+(`cleanupDonationStackValid`, `cancelDonationStackValid`), and OD3.2's
+`hBottom : newOwner? = none` is gone from the `ipcInvariantFull` composite.  One
+new obligation is stated rather than assumed away: at depth ≥ 2 the pop names the
+outer caller as the answered caller's donation *owner*, and `.replyRecv`'s
+receive leg then donates *to* its receiver — so the two must be distinct threads,
+which is why `replyRecvReturnDonation_preserves_ipcInvariantFull` now states that
+the receiver is not itself parked on a reply.
+
+### OD5 — chain-aware teardown, and the middle-caller decision
+
+**A Reply that still donates cannot be freshened** (OD5.1, plan §3.4's confused
+deputy).  `linkReply` refuses `donatedSc ≠ none`: such a Reply is a live frame of
+some context's stack, and re-linking it to a new caller would make the pop that
+later reaches it hand the original thread's context to an unrelated thread,
+driven by object reuse.  **Refused rather than cleared** — clearing takes the
+frame off a stack the context still heads, so the walk stops mid-chain and the
+store satisfies no chain at all.  The clear that *does* happen is the pop's own;
+`consumeReply` deliberately leaves the two stack fields alone, because the reply
+leg consumes the link **before** the pop reads them (plan §3.3).  Every caller of
+the link lemmas is unchanged: the second half of the guard is *derived* from the
+link succeeding rather than added as a hypothesis.
+
+**A cancelled *middle* caller severs the stack at the cut** (OD5.2).  Both
+candidate answers are named (`CancelledMiddleCallerPolicy`), one is chosen
+(`cancelledMiddleCallerPolicy = .severAtCut`) and the choice is proved:
+`cancelledMiddleCaller_severs_at_cut` binds the innermost live caller
+`.bound scId` **and leaves every other thread's TCB unchanged**, which is exactly
+what `reclaimToCancelledThread` would not do — a statement exhibiting only the
+target's new binding would be true of both policies.  Chosen because it is what
+the pop already does (one program, not two), because it is `O(1)` where the
+alternative walks a chain no `LockSet` can bound, and because it reaches the
+same owner seL4-MCS's `reply_remove` does -- by a different route, since seL4's
+doubly linked stack splices the middle frame out where this model's single `prev`
+link leaves it in place with its `caller` consumed.  Its cost is stated rather
+than hidden: the original owner's reservation ends up with the innermost live
+caller, and no later pop carries it below the cut.  From the cancellation end
+the same policy is two theorems — the reclaim fires for the thread the holder
+names as owner, and declines below the cut.
+
+**The suspend pipeline pops twice at depth ≥ 2** (OD5.3).  The G2 teardown's
+reply arm can rebind the victim `.donated scId outer`, and the arm selector below
+it re-reads the binding from the **post-teardown** TCB — so the `.donated` arm
+fires on a victim that entered `.unbound`, and its migration's destination is the
+*outer caller's* home core.  That core is not resolvable from the victim's
+pre-state binding, because at the pre-state the victim has none, so
+`suspendThreadOnCoreSchedLockSet`'s replenish segment is a **triple** and the
+ladder is re-proved over it.
+
+**Retype refuses both halves of a live stack** (OD5.4).  A Reply with
+`donatedSc ≠ none` is a frame; a SchedContext with `scReply ≠ none` is a head,
+and by the chain's own completeness clause that is exactly "some frame names this
+context".  Both are `.revocationRequired`, `O(1)`, fail-closed, and refused
+rather than repaired for the same reason `linkReply` is.
+
+**`.replyRecv` is the third live push site** (OD5.5), sharing the widened guard:
+`applyRendezvousCallDonation_donated_donor_pushes` exhibits the push on a
+`.donated` donor.  **Every teardown path frames the chain** (OD5.6) — the two
+link primitives, their bidirectional composites and the cancellation's reply-link
+sever all reach `donationChainWellFormed_of_frame`, so only the push and the pop
+carry their own preservation, because only they write chain data.
+
+### OD6 — the payoff, the tests, the trace and the closure
+
+`passiveServerHoldsDonatedContext_atCallDepthTwo` states what the workstream was
+opened to make true: a passive server reached at call depth ≥ 2 holds a
+scheduling context **and** that context's `boundThread` names it back — the first
+so `resolveEffectivePrioDeadline` reads a real reservation rather than the legacy
+TCB-priority fallback, the second so the CBS engine charges it.  The `onCore`
+instance adds the replenishment migration.
+
+The depth-2 push and its resolved pop are **executed**, not only proved about:
+`tests/SmpIpcSuite.lean` §3.18 runs the push, the four stores, the chain it
+leaves, the three fail-closed refusals, the freshening barrier in both
+directions, both retype guards and the middle-caller policy; the trace harness
+gains `SCN-DONATION-PUSH-DEPTH-TWO` and
+`SCN-DONATION-RETURN-RESOLVED-OUTER`, re-baselined with the fixture and its
+`.sha256`.  The two scenario ids are named after what they run rather than after
+the workstream, because the identifier-naming gate holds new ids to the
+internal-first rule and the grandfathered `Z7D-00n` family is closed.
+Two OD2-era assertions are **inverted rather than deleted** — they asserted that a
+live donating call writes none of the three reply-stack fields, and their own
+comment said they are the check that fails the day the push lands.  It did.
+
+**Two vacuous hypotheses and a duplicated theorem, caught by the full gate.**  The
+first OD4.4 threading left six `endpointReplyRecv` statements taking
+`∀ s : SystemState, cleanupDonationStackValid s receiver` — a hypothesis that is
+*false*, so every theorem carrying it asserted nothing.  Each is now keyed on the
+state the receive leg's cleanup actually runs on: the cross-core pair at
+`(endpointReplyOnCore …).1`, the single-core family at the reply leg's own
+`.ok ((), s)`.  `endpointReplyRecv_preserves_donationOwnerUnique` moved down the
+file to reach `endpointReplyRecv_eq_reply_then_receive`, because factoring the
+fold is what lets the hypothesis *name* a state at all.  And
+`lockSet_endpointCall_reply_write_mem` briefly existed twice — OD4.7 needed it in
+`EndpointCall.lean`, which cannot import the reply module that had it — so the
+statement moved to `LockSetTransitions.lean`, beside `lockSet_endpointCall` and
+its four sibling membership lemmas, with one merged docstring.
+
+Tier-3 anchors cover OD4 and OD5 with the relation-breaking mutations the project
+requires: a guard whose verdict is inverted, a frame that links to `none` instead
+of the old head, a resolver call site that goes back to a literal `none`, a
+replenish segment collapsed from a triple to a pair.
+
+**Store-reader hygiene held, not re-anchored around.**  The first full-gate run
+of this cut failed the AK7 cascade in three files — the chain proofs had
+re-introduced raw `st.objects[…]?` reads where a typed reader was available —
+and the answer was the reads, not the floor: the push's post-state facts are
+stated through `getReply?` / `getSchedContext?` and only then projected (the
+shape the pop's mirror already used), the two chain-frame call sites bridge
+through `getReply?_eq_some_iff` inline, and `outerCallerAcceptable_some_char`
+concludes in `getTcb?`.  One genuine duplicate went with it: `donationOuterUnowned`
+and `donationReturnOuterValid.outerUnowned` were the same proposition written
+twice, so the field now *is* the definition.  The re-anchored baseline moves
+every row in the hygienic direction — raw lookups 1609 → 1600, raw
+`schedContext` matches 23 → 22, `getTcb?` adoption 2092 → 2109,
+`getSchedContext?` 311 → 336.
+
+Also locked in: `scripts/identifier_naming_baseline.json` drops
+`TEST_COUNT_AK7` / `test_count_ak7`, retired by OD3.19's rewrite of
+`ak7_cascade_baseline.sh` and left in the floor by that cut.  A grandfathered
+count may fall without failing the gate, so the stale rows were silently
+permitting the names back.  The two new trace scenarios are named
+`SCN-DONATION-PUSH-DEPTH-TWO` and `SCN-DONATION-RETURN-RESOLVED-OUTER` for the
+same reason: the `Z7D-00n` family is grandfathered, and a new id must describe
+what it runs.
+
+Register: both section-A rows this workstream owns are closed — the
+onward-donation gap, and the `passiveServerIdle` break the `v0.34.97` reclaim
+introduced (OD1).
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md §5 (OD4..OD6)
+
 ## v0.35.1 — WS-OD OD3.19: two review findings, both a cardinality standing in for a set
 
 Review round 6 on `07db404e`, both P2, both verified against the code before

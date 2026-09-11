@@ -737,7 +737,7 @@ def returnDonationToCancelledCaller (st : SystemState) (tid : SeLe4n.ThreadId)
     -- at all (`abortHolderPendingIpc_unwritten_kind_backward`) — a fact strictly
     -- stronger than `donationChainFrame`, which is what this needs: the resolver
     -- reads `Reply.caller`, and that field is deliberately outside the frame.
-    match returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid none with
+    match returnDonatedSchedContextResolved (abortHolderPendingIpc st holder) holder scId tid with
     | .ok st' => st'
     -- All-or-nothing: the abort is discarded too.  `cancelledCallerDonation?`
     -- resolves through the *holder*, so it can answer `some` for a caller with

@@ -551,10 +551,12 @@ theorem returnDonationToCancelledCaller_scheduler_eq (st : SystemState)
   unfold returnDonationToCancelledCaller
   split
   · rename_i scId holder _ _ _
-    cases h : returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid none with
+    cases h : returnDonatedSchedContextResolved (abortHolderPendingIpc st holder) holder
+        scId tid with
     | error _ => rfl
     | ok st' =>
-      exact (returnDonatedSchedContext_scheduler_eq _ st' holder scId tid none h).trans
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
+      exact (returnDonatedSchedContext_scheduler_eq _ st' holder scId tid n hPop).trans
         (abortHolderPendingIpc_scheduler_eq st holder)
   · rfl
 
@@ -566,10 +568,12 @@ theorem returnDonationToCancelledCaller_machine_eq (st : SystemState)
   unfold returnDonationToCancelledCaller
   split
   · rename_i scId holder _ _ _
-    cases h : returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid none with
+    cases h : returnDonatedSchedContextResolved (abortHolderPendingIpc st holder) holder
+        scId tid with
     | error _ => rfl
     | ok st' =>
-      exact (returnDonatedSchedContext_machine_eq _ st' holder scId tid none h).trans
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
+      exact (returnDonatedSchedContext_machine_eq _ st' holder scId tid n hPop).trans
         (abortHolderPendingIpc_machine_eq st holder)
   · rfl
 
@@ -581,10 +585,12 @@ theorem returnDonationToCancelledCaller_serviceRegistry_eq (st : SystemState)
   unfold returnDonationToCancelledCaller
   split
   · rename_i scId holder _ _ _
-    cases h : returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid none with
+    cases h : returnDonatedSchedContextResolved (abortHolderPendingIpc st holder) holder
+        scId tid with
     | error _ => rfl
     | ok st' =>
-      exact (returnDonatedSchedContext_serviceRegistry_eq _ st' holder scId tid none h).trans
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
+      exact (returnDonatedSchedContext_serviceRegistry_eq _ st' holder scId tid n hPop).trans
         (abortHolderPendingIpc_serviceRegistry_eq st holder)
   · rfl
 
@@ -628,8 +634,9 @@ theorem returnDonationToCancelledCaller_tcb_lookup (st : SystemState)
     have hInvA := abortHolderPendingIpc_preserves_objects_invExt st holder hInv
     split
     · rename_i st' h
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
       obtain ⟨tB, hkB, hRw⟩ :=
-        returnDonatedSchedContext_tcb_rewrite _ st' holder scId tid hInvA none h k tA hkA
+        returnDonatedSchedContext_tcb_rewrite _ st' holder scId tid hInvA n hPop k tA hkA
       obtain ⟨sb, rfl⟩ := hRw
       exact ⟨_, hkB, hAffA⟩
     -- The refusal arm is all-or-nothing: it returns the *pre*-state, abort and
@@ -647,8 +654,9 @@ theorem returnDonationToCancelledCaller_preserves_objects_invExt (st : SystemSta
   · rename_i scId holder _ _ _
     split
     · rename_i st' h
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
       exact returnDonatedSchedContext_preserves_objects_invExt _ st' holder scId tid
-        (abortHolderPendingIpc_preserves_objects_invExt st holder hInv) none h
+        (abortHolderPendingIpc_preserves_objects_invExt st holder hInv) n hPop
     · exact hInv
   · exact hInv
 
@@ -808,7 +816,8 @@ private theorem cleanupDonatedSchedContext_serviceRegistry_eq
   · injection h with h; subst h; rfl
   · split at h <;> first
       | (injection h with h; subst h; rfl)
-      | exact returnDonatedSchedContext_serviceRegistry_eq st st' tid _ _ none h
+      | exact returnDonatedSchedContextResolved_lift h
+          (fun n s hs => returnDonatedSchedContext_serviceRegistry_eq st s tid _ _ n hs)
 
 /-- D1-I/R5.A: `cancelBoundDonation` preserves serviceRegistry. The bound
 arm only rewrites `objects`, `scheduler.replenishQueue`, and
@@ -2083,11 +2092,12 @@ theorem returnDonationToCancelledCaller_preserves_ipcInvariant (st : SystemState
   · rename_i scId holder _ _ _
     split
     · rename_i st' h
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
       intro oid ntfn hN
       refine hIpc oid ntfn
         (abortHolderPendingIpc_notification_backward st holder hInv oid ntfn ?_)
       exact returnDonatedSchedContext_notification_backward _ st' holder scId tid
-        (abortHolderPendingIpc_preserves_objects_invExt st holder hInv) none h oid ntfn hN
+        (abortHolderPendingIpc_preserves_objects_invExt st holder hInv) n hPop oid ntfn hN
     · exact hIpc
   · exact hIpc
 

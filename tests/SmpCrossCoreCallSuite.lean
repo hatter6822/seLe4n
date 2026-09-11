@@ -680,13 +680,15 @@ be vacuous: the failure shape de-threading exists to remove, one level up. -/
 example : ipcReachable (default : SystemState) := ipcReachable_default
 
 /-- WS-OD OD2.4: the donation-chain conjunct **decides** rather than refuses.
-Every reachable state discharges it vacuously today — the donation pop is the
-only transition that writes the three reply-stack fields, and its writing arm
-needs a stack nothing yet constructs — and a conjunct that only ever fires
-vacuously is one nobody has checked against the structure it constrains: an
-over-strong one would look identical from that side.  The witness is the state a
-depth-2 Call chain leaves, and it satisfies the predicate whole, completeness
-clause included. -/
+When this witness was written every reachable state discharged the conjunct
+vacuously — the donation pop was the only transition writing the three
+reply-stack fields, and its writing arm needs a stack nothing then constructed —
+and a conjunct that only ever fires vacuously is one nobody has checked against
+the structure it constrains: an over-strong one would look identical from that
+side.  The witness is the state a depth-2 Call chain leaves, and it satisfies the
+predicate whole, completeness clause included.  Since OD4.1 (`v0.35.2`) the push
+builds that shape on a live path, so this is the reachable state rather than a
+construction ahead of one — which is why the witness was worth having first. -/
 example : donationChainWellFormed donationChainWitness :=
   donationChainWitness_wellFormed
 
@@ -839,10 +841,18 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hServerIdleAllowed : ∀ (expected : SeLe4n.ThreadId), recordedReplyServer? st target
         = some expected →
-      ∀ tcb, st.getTcb? expected = some tcb → passiveServerIdleAllowed tcb.ipcState) :
+      ∀ tcb, st.getTcb? expected = some tcb → passiveServerIdleAllowed tcb.ipcState)
+    -- **WS-OD OD4.4**: the donation return resolves its new owner off the
+    -- context's reply stack, so the chain's shape at the state that return runs
+    -- on — the post-reply-leg store — is an obligation of the composite.  Stated
+    -- at that one state rather than at every `SystemState`, which would be
+    -- vacuous.
+    (hStackValid : ∀ scId serverTid originalOwner,
+      replyStackOuterCallerValid (endpointReplyOnCore replier target msg ec st).fst
+        scId serverTid originalOwner) :
     ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg ec st).1 :=
   endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier target msg ec st hInv
-    hObjInv hDonationReturned hAllBudgetsNone hServerIdleAllowed
+    hObjInv hDonationReturned hAllBudgetsNone hServerIdleAllowed hStackValid
 
 /-- WS-RR RR3.12: the donation return **upgrades** the relaxed invariant back to the
 full one — the other half of the reply chain's honest statement, and the reason the
@@ -852,7 +862,7 @@ WS-OD OD3.2: the upgrade holds at **both** arms of the widened binding, so the
 statement takes an arbitrary `newOwner?` and the depth-≥ 2 obligation
 (`donationReturnOuterValid`) rather than restricting itself to the bottom of the
 reply stack — a version quantified only over `none` would have said nothing about
-the arm OD4 makes reachable. -/
+the arm OD4.1 (`v0.35.2`) made reachable. -/
 example (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (stcb : TCB)
@@ -915,11 +925,16 @@ example (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
     (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
-        tcb.ipcState = .ready) :
+        tcb.ipcState = .ready)
+    -- **WS-OD OD4.4**: the receive leg's pre-receive cleanup pops the receiver's
+    -- donation, so the obligation is stated at the store that cleanup runs on —
+    -- the reply leg's own post-state.
+    (hStackValid : cleanupDonationStackValid
+      (endpointReplyOnCore receiver replyTarget msg ec st).1 receiver) :
     ipcInvariantFull_perCore
       (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1 c :=
   endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore endpointId receiver replyTarget
-    msg (some rid) ec st hInv hObjInv hNoDonationOwnedBy hAllBudgetsNone
+    msg (some rid) ec st hInv hObjInv hNoDonationOwnedBy hStackValid hAllBudgetsNone
     hFreshReceiver hRecvTailFresh
     (fun rid' hRid' => Or.inr (by
       obtain rfl : rid = rid' := Option.some.inj hRid'

@@ -60,6 +60,12 @@ private def mkEmptyEndpoint : Endpoint := {}
 private def mkEmptyNotification : Notification :=
   { state := NotificationState.idle, waitingThreads := SeLe4n.NoDupList.empty }
 
+/-- Helper: construct a Reply object linked to a caller — WS-OD OD4.1's
+donation push records the donation on the donor's own reply object, so a donating
+caller must carry one. -/
+private def mkLinkedReply (rid : Nat) (caller : ThreadId) : Kernel.Reply :=
+  { Kernel.Reply.empty (ReplyId.ofNat rid) with caller := some caller }
+
 /-- Helper: construct a minimal test SchedContext. -/
 private def mkEmptySchedContext (id : Nat := 200) : Kernel.SchedContext :=
   { scId := SchedContextId.ofNat id
@@ -602,20 +608,31 @@ def an10_e_donateSchedContextValid_reduces : IO Bool := do
           SeLe4n.Kernel.donateSchedContext (default : SystemState) clientVtid.val serverVtid.val scId with
     | Except.error e1, Except.error e2 => e1 == e2
     | _, _ => false
-  -- Success path: state with the bound SC + both TCBs present.
+  -- Success path: state with the bound SC + both TCBs present.  WS-OD OD4.1:
+  -- the donor also carries the reply object the donation pushes onto the
+  -- context's stack — without it the push refuses (`.replyCapInvalid`), which
+  -- would have made this "success" path a second error path agreeing with the
+  -- first, i.e. a test that asserts nothing.
+  let replyId : ReplyId := ReplyId.ofNat 101
   let sc : Kernel.SchedContext := { mkEmptySchedContext 100 with boundThread := some clientTid }
-  let clientTcb : TCB := { mkTcb 1 with schedContextBinding := .bound scId }
+  let clientTcb : TCB := { mkTcb 1 with schedContextBinding := .bound scId,
+                                        replyObject := some replyId }
   let serverTcb : TCB := mkTcb 2
   let stPop : SystemState := { (default : SystemState) with
     objects := ((default : SystemState).objects
       |>.insert scId.toObjId (.schedContext sc)
       |>.insert clientTid.toObjId (.tcb clientTcb)
-      |>.insert serverTid.toObjId (.tcb serverTcb)) }
+      |>.insert serverTid.toObjId (.tcb serverTcb)
+      |>.insert replyId.toObjId (.reply (mkLinkedReply 101 clientTid))) }
+  -- Both arms must genuinely *succeed*: an `.error`/`.error` agreement here
+  -- would be the reduction holding vacuously.
   let successOk : Bool :=
     match SeLe4n.Kernel.donateSchedContextValid stPop clientVtid serverVtid scId,
           SeLe4n.Kernel.donateSchedContext stPop clientVtid.val serverVtid.val scId with
-    | Except.ok _, Except.ok _ => true
-    | Except.error e1, Except.error e2 => e1 == e2
+    | Except.ok st1, Except.ok st2 =>
+      -- ...and the push really happened: the context now heads the donor's reply.
+      ((st1.getSchedContext? scId).bind (·.scReply) == some replyId) &&
+        ((st2.getReply? replyId).bind (·.donatedSc) == some scId)
     | _, _ => false
   return errorOk && successOk
 
@@ -688,15 +705,20 @@ def an10_e_applyCallDonation_wires_h5 : IO Bool := do
   let callerVtid : ValidThreadId := ⟨callerTid, by decide⟩
   let receiverVtid : ValidThreadId := ⟨receiverTid, by decide⟩
   let scId : SchedContextId := SchedContextId.ofNat 30
+  let replyId : ReplyId := ReplyId.ofNat 31
   let sc : Kernel.SchedContext := { mkEmptySchedContext 30 with boundThread := some callerTid }
-  let callerTcb : TCB := { mkTcb 10 with schedContextBinding := .bound scId }
+  -- WS-OD OD4.1: a donating caller is a `Call` caller, so it carries the reply
+  -- object the push records the donation on.
+  let callerTcb : TCB := { mkTcb 10 with schedContextBinding := .bound scId,
+                                         replyObject := some replyId }
   -- Receiver is passive (.unbound) — trigger the donation path.
   let receiverTcb : TCB := { mkTcb 20 with schedContextBinding := .unbound }
   let st : SystemState := { (default : SystemState) with
     objects := ((default : SystemState).objects
       |>.insert scId.toObjId (.schedContext sc)
       |>.insert callerTid.toObjId (.tcb callerTcb)
-      |>.insert receiverTid.toObjId (.tcb receiverTcb)) }
+      |>.insert receiverTid.toObjId (.tcb receiverTcb)
+      |>.insert replyId.toObjId (.reply (mkLinkedReply 31 callerTid))) }
   -- After applyCallDonation, the receiver's binding should be `.donated`.
   match SeLe4n.Kernel.applyCallDonation st callerVtid receiverVtid with
   | Except.ok st' =>

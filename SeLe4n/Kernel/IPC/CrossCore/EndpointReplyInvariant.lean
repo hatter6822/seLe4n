@@ -721,6 +721,9 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull
     (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
+    -- **WS-OD OD4.4**: the pre-receive cleanup's pop resolves its new owner from
+    -- the reply stack; this is the obligation that resolution carries.
+    (hStackValid : cleanupDonationStackValid st receiver)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -754,7 +757,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull
   · rw [hPre]; exact hInv
   · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
       (endpointReceiveDual_preserves_ipcInvariantFull endpointId receiver sender replyId st r1
-        hInv hObjInv
+        hInv hObjInv hStackValid
         hAllBudgetsNone
         hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
         (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
@@ -770,6 +773,9 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
     (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
+    -- **WS-OD OD4.4**: the pre-receive cleanup's pop resolves its new owner from
+    -- the reply stack; this is the obligation that resolution carries.
+    (hStackValid : cleanupDonationStackValid st receiver)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -794,7 +800,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId receiver replyId
-      executingCore st (ipcInvariantFull_of_smp hInv) hObjInv
+      executingCore st (ipcInvariantFull_of_smp hInv) hObjInv hStackValid
       hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       hReceiverReady)
     (passiveServerIdle_perCore_of_frameOnCore
@@ -1208,6 +1214,14 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
       (scId : SeLe4n.SchedContextId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
       tcb.schedContextBinding ≠ .donated scId replyTarget)
+    -- **WS-OD OD4.4**: stated at the state the receive leg's cleanup actually
+    -- runs on — the post-reply-leg store, since the reply leg rewrites the
+    -- store first.  Quantifying over *every* `SystemState` would be vacuous
+    -- rather than general: the predicate is false of some states, so `∀ s, …`
+    -- is a hypothesis no caller can discharge and a theorem taking it asserts
+    -- nothing.
+    (hStackValid : cleanupDonationStackValid
+      (endpointReplyOnCore receiver replyTarget msg executingCore st).1 receiver)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1244,6 +1258,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
       simp only
       have hStEq : (endpointReplyOnCore receiver replyTarget msg executingCore st).1 = st1 := by
         rw [hR]
+      rw [hStEq] at hStackValid
       have hObjInv1 := endpointReplyOnCore_preserves_objects_invExt receiver replyTarget msg
         executingCore st hObjInv
       rw [hStEq] at hObjInv1
@@ -1324,8 +1339,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
                 = st2 := by
             rw [hR2]
           have hFull2 := endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId
-            receiver replyId executingCore st1 hInv1 hObjInv1
-
+            receiver replyId executingCore st1 hInv1 hObjInv1 hStackValid
             hBudgets1 hFresh1 hTailFresh1 hReplyIdValid1 hNotRecv1 hReady1
           rwa [hStEq2] at hFull2
 
@@ -1347,6 +1361,10 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
       (scId : SeLe4n.SchedContextId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
       tcb.schedContextBinding ≠ .donated scId replyTarget)
+    -- **WS-OD OD4.4**: the same narrowed obligation the full-bundle theorem
+    -- above carries — the post-reply-leg state, not every state.
+    (hStackValid : cleanupDonationStackValid
+      (endpointReplyOnCore receiver replyTarget msg executingCore st).1 receiver)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1378,7 +1396,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (endpointReplyRecvOnCore_preserves_ipcInvariantFull endpointId receiver replyTarget msg
       replyId executingCore st (ipcInvariantFull_of_smp hInv) hObjInv
-      hNoDonationOwnedBy hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
+      hNoDonationOwnedBy hStackValid hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
       hReceiverNotRecv
       hReceiverReady)
     (passiveServerIdle_perCore_of_frameOnCore
@@ -1479,8 +1497,9 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
             cases hB : recvTcb.schedContextBinding with
             | donated scId originalOwner =>
                 rw [hB] at hClean
-                exact returnDonatedSchedContext_preserves_objects_invExt st stClean receiver
-                  scId originalOwner hObjInv none hClean
+                exact returnDonatedSchedContextResolved_lift hClean
+                  (fun n s hs => returnDonatedSchedContext_preserves_objects_invExt st s receiver
+                    scId originalOwner hObjInv n hs)
             | unbound => rw [hB] at hClean; cases hClean; exact hObjInv
             | bound scId => rw [hB] at hClean; cases hClean; exact hObjInv
         cases hEnq : endpointQueueEnqueue endpointId true receiver stClean with
@@ -1534,6 +1553,9 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
     (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
+    -- **WS-OD OD4.4**: the pre-receive cleanup's pop resolves its new owner from
+    -- the reply stack; this is the obligation that resolution carries.
+    (hStackValid : cleanupDonationStackValid st receiver)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1563,7 +1585,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
       (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
         receiverSlotBase executingCore st).1 := by
   have hBare := endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId receiver replyId
-    executingCore st hInv hObjInv hAllBudgetsNone hFreshReceiver
+    executingCore st hInv hObjInv hStackValid hAllBudgetsNone hFreshReceiver
     hRecvTailFresh hReplyIdValid hReceiverNotRecv hReceiverReady
   have hBareInv := endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver replyId
     executingCore st hObjInv
@@ -1659,6 +1681,9 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
     (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
+    -- **WS-OD OD4.4**: the pre-receive cleanup's pop resolves its new owner from
+    -- the reply stack; this is the obligation that resolution carries.
+    (hStackValid : cleanupDonationStackValid st receiver)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1691,7 +1716,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull endpointId receiver replyId
       receiverCspaceRoot receiverSlotBase executingCore st (ipcInvariantFull_of_smp hInv)
-      hObjInv hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
+      hObjInv hStackValid hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
       hReceiverNotRecv hReceiverReady hCapBadges)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReceiveDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId receiver

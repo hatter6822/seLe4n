@@ -851,19 +851,22 @@ private def runDonationChecks : IO Unit := do
       assertBool "donation return descheds the now-passive server from core 1"
         (stReply.scheduler.currentOnCore c1 != some donServer
           && !(stReply.scheduler.runQueueOnCore c1).contains donServer)
-      -- WS-OD OD2: the reply-stack fields are **inert** in this phase.  A live
-      -- donating call and its return leave `Reply.donatedSc`, `Reply.prev` and
-      -- `SchedContext.scReply` at `none`, which is why `donationChainWellFormed`
-      -- is vacuously true of every state this tree reaches today.  The push
-      -- (which writes all three) is a later phase; this check is what will fail
-      -- the day it lands without its chain-preservation theorem.
-      assertBool "OD2 inert: the donating call writes none of the three reply-stack fields"
+      -- **WS-OD OD4**: the reply-stack fields are *live* since the push landed.
+      -- At OD2 this check read the other way -- the three fields stayed `none`
+      -- through a whole donating call and its return, which is what made
+      -- `donationChainWellFormed` vacuously true of every reachable state -- and
+      -- the comment there said this is the check that fails the day the push
+      -- lands.  It did, and the push landed with its chain preservation
+      -- (`donateSchedContext_preserves_donationChainWellFormed`), so the
+      -- assertion is inverted rather than deleted: a *depth-1* call now pushes
+      -- one frame, and its return pops that frame back off.
+      assertBool "OD4: the donating call pushes the caller's Reply as the stack head"
         (match stCall.getReply? donReply, stCall.getSchedContext? scClient with
          | some r, some sc =>
-             decide (r.donatedSc = none) && decide (r.prev = none) &&
-             decide (sc.scReply = none)
+             decide (r.donatedSc = some scClient) && decide (r.prev = none) &&
+             decide (sc.scReply = some donReply)
          | _, _ => false)
-      assertBool "OD2 inert: the donation return writes none of the three reply-stack fields"
+      assertBool "OD4: the donation return pops it back off, clearing the frame"
         (match stReply.getReply? donReply, stReply.getSchedContext? scClient with
          | some r, some sc =>
              decide (r.donatedSc = none) && decide (r.prev = none) &&
@@ -944,12 +947,20 @@ private def donCaller2Sc : SchedContext :=
   { scId := scCaller2, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩, deadline := ⟨0⟩,
     domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThread := some donCaller2, isActive := true }
 
+/-- The queued caller's own reply object -- the frame **WS-OD OD4.1**'s push
+mounts on its context's stack when the receive leg hands that context on.  A
+`Call` caller always holds one (the rendezvous linked it), and since OD4 the
+donation refuses a donor that does not: a donation with no stack frame is what
+lets a later pop clear an outer caller's frame. -/
+private def donCaller2Reply : SeLe4n.ReplyId := ⟨849⟩
+
 /-- The queued caller as the endpoint left it: blocked awaiting a reply from the
-server, still holding its own SchedContext. -/
+server, still holding its own SchedContext, and linked to its own Reply. -/
 private def donCaller2Tcb : TCB :=
   { mkTcb 848 40 (some c3) with
       schedContextBinding := .bound scCaller2
       ipcState := .blockedOnReply donEp (some donServer)
+      replyObject := some donCaller2Reply
       threadState := ThreadState.Ready }
 
 private def replenishEntriesOn (st : SystemState) (c : CoreId) :
@@ -1056,9 +1067,10 @@ private def runDonationMigrationChecks : IO Unit := do
     -- independently and neither can stand in for the other.
     let stCallQ : SystemState :=
       { stCall with
-          objects := ((stCall.objects.insert donDelegate.toObjId (.tcb donDelegateTcb)).insert
+          objects := (((stCall.objects.insert donDelegate.toObjId (.tcb donDelegateTcb)).insert
             donCaller2.toObjId (.tcb donCaller2Tcb)).insert scCaller2.toObjId
-              (.schedContext donCaller2Sc)
+              (.schedContext donCaller2Sc)).insert donCaller2Reply.toObjId
+              (.reply { replyId := donCaller2Reply, caller := some donCaller2 })
           scheduler := stCall.scheduler.setReplenishQueueOnCore c3
             ((ReplenishQueue.empty.insert scCaller2 400).insert scCaller2 500) }
     assertBool "pre: the queued caller's SC holds both replenishments on its home core 3"
@@ -1755,10 +1767,10 @@ section runs it on both shapes it can meet: the bottom of the stack, where it
 must be the pre-OD3 return character for character, and one level up, where it
 pops the head and hands the context back `.donated`.
 
-The depth-≥ 2 case is deliberately exercised even though no transition in the
-tree produces it yet.  A pop that is only ever run at depth 1 is a pop whose
-generalisation nothing has evaluated — and the arm OD4 makes reachable would
-then arrive untested. -/
+The depth-≥ 2 case was deliberately exercised before any transition in the tree
+produced it.  A pop that is only ever run at depth 1 is a pop whose
+generalisation nothing has evaluated — and the arm OD4.1 (`v0.35.2`) made
+reachable would then have arrived untested. -/
 
 private def popServer : SeLe4n.ThreadId := ⟨81⟩
 private def popClient : SeLe4n.ThreadId := ⟨82⟩
@@ -1992,6 +2004,197 @@ private def runDonationReturnPopChecks : IO Unit := do
      | .ok _ => false)
 
 -- ============================================================================
+-- WS-OD OD4/OD5/OD6 — the donation PUSH, and the chain it builds
+-- ============================================================================
+
+/-- **OD6.3: the push at call depth ≥ 2, and the freshening barrier that keeps
+it honest.**
+
+The dual of the pop fixtures above, and the case the workstream exists for: a
+caller that is *itself* holding a donation calls a passive server and passes the
+context on, leaving the stack one frame deeper.  Exercised operationally, so the
+push's four stores are evaluated rather than only proved about. -/
+private def pushDonor : SeLe4n.ThreadId := ⟨91⟩
+private def pushServer : SeLe4n.ThreadId := ⟨92⟩
+private def pushOuter : SeLe4n.ThreadId := ⟨93⟩
+private def pushDonorReply : SeLe4n.ReplyId := ⟨94⟩
+private def pushOuterReply : SeLe4n.ReplyId := ⟨95⟩
+private def pushSc : SeLe4n.SchedContextId := ⟨96⟩
+
+/-- The pre-state a depth-2 push runs on: `pushSc` is bound to `pushDonor`, which
+holds it `.donated` from `pushOuter`, and the stack already carries the outer
+call's frame.  `donorBinding` and `donorReply?` are parameters so the negatives
+vary one field at a time. -/
+private def pushStoreShaped (donorBinding : SchedContextBinding)
+    (donorReply? : Option SeLe4n.ReplyId) (headReply : Reply) : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject pushSc.toObjId
+        (.schedContext { SchedContext.empty pushSc with
+                           boundThread := some pushDonor, scReply := some pushOuterReply })
+    |>.withObject pushOuterReply.toObjId
+        (.reply { replyId := pushOuterReply, caller := some pushOuter,
+                  donatedSc := some pushSc })
+    |>.withObject pushDonorReply.toObjId (.reply headReply)
+    |>.withObject pushDonor.toObjId
+        (.tcb { mkTcb 91 40 none with
+                  schedContextBinding := donorBinding, replyObject := donorReply? })
+    |>.withObject pushServer.toObjId (.tcb (mkTcb 92 30 none))
+    |>.withObject pushOuter.toObjId
+        (.tcb { mkTcb 93 50 none with
+                  ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor) })
+    |>.build)
+
+/-- The donor's own reply object, fresh: linked to the donor, donating nothing. -/
+private def pushFreshHead : Reply :=
+  { replyId := pushDonorReply, caller := some pushDonor }
+
+/-- The well-formed depth-2 pre-state. -/
+private def pushStore : SystemState :=
+  pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply) pushFreshHead
+
+private def pushBindingOf (st : SystemState) (tid : SeLe4n.ThreadId) :
+    Option SchedContextBinding :=
+  (st.getTcb? tid).map (·.schedContextBinding)
+
+private def pushHeadOf (st : SystemState) : Option (Option SeLe4n.ReplyId) :=
+  (st.getSchedContext? pushSc).map (·.scReply)
+
+private def pushLinksOf (st : SystemState) (rid : SeLe4n.ReplyId) :
+    Option (Option SeLe4n.SchedContextId × Option SeLe4n.ReplyId) :=
+  match st.objects[rid.toObjId]? with
+  | some (.reply r) => some (r.donatedSc, r.prev)
+  | _ => none
+
+private def runDonationPushChecks : IO Unit := do
+  IO.println "--- §3.18 the donation push at call depth ≥ 2 (WS-OD OD4/OD5/OD6) ---"
+  -- OD4.1/OD4.2: a `.donated` donor passes the context on, and the push writes a
+  -- new stack frame whose `prev` is the old head.
+  match donateSchedContext pushStore pushDonor pushServer pushSc with
+  | .error e => assertBool s!"depth-2 push must succeed (got {reprStr e})" false
+  | .ok st' =>
+    assertBool "depth-2 push: the server holds the context, donated from the donor"
+      (pushBindingOf st' pushServer == some (.donated pushSc pushDonor))
+    assertBool "depth-2 push: the intermediate donor is unbound"
+      (pushBindingOf st' pushDonor == some .unbound)
+    assertBool "depth-2 push: the context is bound to the server"
+      ((st'.getSchedContext? pushSc).map (·.boundThread) == some (some pushServer))
+    assertBool "depth-2 push: the donor's own reply is now the stack head"
+      (pushHeadOf st' == some (some pushDonorReply))
+    assertBool "depth-2 push: the new frame donates this context and links to the old head"
+      (pushLinksOf st' pushDonorReply == some (some pushSc, some pushOuterReply))
+    assertBool "depth-2 push: the frame below is untouched"
+      (pushLinksOf st' pushOuterReply == some (some pushSc, none))
+    -- OD4.5: the chain the push leaves is the two frames, in order.
+    assertBool "depth-2 push: the chain walks head-then-outer"
+      (donationChainFrom st' pushSc 4 (some pushDonorReply)
+         == some [pushDonorReply, pushOuterReply])
+  -- OD6.1: the payoff, read off the widened guard through the whole `.call`
+  -- donation rather than the raw push.
+  match pushDonor.toValid?, pushServer.toValid? with
+  | some donorV, some serverV =>
+    assertBool "OD4.2: the guard names the donor's EFFECTIVE context"
+      (callDonationSchedContext? pushStore pushDonor pushServer == some pushSc)
+    match applyCallDonation pushStore donorV serverV with
+    | .error e => assertBool s!"depth-2 call donation must succeed (got {reprStr e})" false
+    | .ok st' =>
+      assertBool "OD6.1: the passive server holds the donated context"
+        (pushBindingOf st' pushServer == some (.donated pushSc pushDonor))
+      assertBool "OD6.1: ...and the context's bound thread is that server"
+        ((st'.getSchedContext? pushSc).map (·.boundThread) == some (some pushServer))
+  | _, _ => assertBool "push fixture ids must be valid thread ids" false
+  -- NEGATIVE: the guard is the *effective* context, so an `.unbound` donor
+  -- donates nothing.  The token stays (the donor is still there); what changes
+  -- is the relation the guard reads.
+  assertBool "NEGATIVE: an unbound donor donates nothing"
+    (callDonationSchedContext?
+       (pushStoreShaped .unbound (some pushDonorReply) pushFreshHead)
+       pushDonor pushServer == none)
+  -- OD4.1 NEGATIVE: the push is FAIL-CLOSED on its frame.  Each mutation keeps
+  -- the whole depth-2 chain and breaks exactly one clause of the frame's shape.
+  assertBool "NEGATIVE: a donor holding no reply object cannot push"
+    (match donateSchedContext
+        (pushStoreShaped (.donated pushSc pushOuter) none pushFreshHead)
+        pushDonor pushServer pushSc with
+     | .error e => e == KernelError.replyCapInvalid
+     | .ok _ => false)
+  assertBool "NEGATIVE: a donor whose reply object names no Reply cannot push"
+    (match donateSchedContext
+        (pushStoreShaped (.donated pushSc pushOuter) (some ⟨98⟩) pushFreshHead)
+        pushDonor pushServer pushSc with
+     | .error e => e == KernelError.objectNotFound
+     | .ok _ => false)
+  assertBool "NEGATIVE: a donor whose reply already donates cannot push"
+    (match donateSchedContext
+        (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
+          { pushFreshHead with donatedSc := some pushSc })
+        pushDonor pushServer pushSc with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+  -- OD5.1: the freshening barrier.  A Reply that still names a donated context
+  -- is a live stack frame; re-linking it to a new caller is the confused deputy
+  -- of plan §3.4, and it is refused rather than cleared.
+  assertBool "OD5.1: a free, non-donating Reply may be linked to a new caller"
+    (match SystemState.linkReply pushDonorReply pushServer
+        (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
+          { pushFreshHead with caller := none }) with
+     | .ok _ => true | .error _ => false)
+  assertBool "OD5.1 NEGATIVE: a free Reply that still donates is refused"
+    (match SystemState.linkReply pushDonorReply pushServer
+        (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
+          { pushFreshHead with caller := none, donatedSc := some pushSc }) with
+     | .error e => e == KernelError.replyCapInvalid
+     | .ok _ => false)
+  assertBool "OD5.1: ...and the link never CLEARS the donation instead"
+    (match SystemState.linkReply pushOuterReply pushServer
+        (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
+          { pushFreshHead with caller := none }) with
+     | .error e => e == KernelError.replyCapInvalid
+     | .ok _ => false)
+  -- OD5.4: retype refuses both halves of a live stack -- the frame and the head.
+  assertBool "OD5.4 NEGATIVE: a Reply that is a live stack frame cannot be retyped"
+    (match lifecyclePreRetypeCleanup pushStore pushOuterReply.toObjId
+        (.reply { replyId := pushOuterReply, donatedSc := some pushSc })
+        (.reply (Reply.empty pushOuterReply)) with
+     | .error e => e == KernelError.revocationRequired
+     | .ok _ => false)
+  assertBool "OD5.4 NEGATIVE: a context heading a reply stack cannot be retyped"
+    (match lifecyclePreRetypeCleanup pushStore pushSc.toObjId
+        (.schedContext { SchedContext.empty pushSc with scReply := some pushOuterReply })
+        (.schedContext (SchedContext.empty pushSc)) with
+     | .error e => e == KernelError.revocationRequired
+     | .ok _ => false)
+  assertBool "OD5.4: ...and a free Reply heading no stack still retypes"
+    (match lifecyclePreRetypeCleanup pushStore pushDonorReply.toObjId
+        (.reply (Reply.empty pushDonorReply)) (.reply (Reply.empty pushDonorReply)) with
+     | .ok _ => true | .error _ => false)
+  assertBool "OD5.4: ...and a context heading no stack still retypes"
+    (match lifecyclePreRetypeCleanup pushStore pushSc.toObjId
+        (.schedContext (SchedContext.empty pushSc))
+        (.schedContext (SchedContext.empty pushSc)) with
+     | .ok _ => true | .error _ => false)
+  -- OD5.2: the middle-caller policy, from the cancellation end.  The reclaim
+  -- fires for the immediate donor and declines below the cut; both are the
+  -- chosen `severAtCut` policy rather than an omission.
+  assertBool "OD5.2: the reclaim fires for the caller the holder names as owner"
+    (Lifecycle.Suspend.cancelledCallerDonation? pushStore pushOuter
+       { mkTcb 93 50 none with
+           ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor) }
+       == some (pushSc, pushDonor))
+  assertBool "OD5.2: the reclaim declines below the cut (the holder donated onward)"
+    (Lifecycle.Suspend.cancelledCallerDonation?
+       (pushStoreShaped .unbound (some pushDonorReply) pushFreshHead) pushOuter
+       { mkTcb 93 50 none with
+           ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor) }
+       == none)
+  assertBool "OD5.2: the policy this kernel implements is `severAtCut`"
+    (cancelledMiddleCallerPolicy == CancelledMiddleCallerPolicy.severAtCut)
+  -- OD4.7: the `.call` footprint already declares every object the push writes.
+  assertBool "OD4.7: the resolved `.call` footprint declares the donated context"
+    (((lockSet_endpointCallOnCore pushStore (SeLe4n.ObjId.ofNat 97) pushDonor
+        (SeLe4n.ObjId.ofNat 0)).pairs.any
+        (fun p => p.1 == schedContextLock pushSc && p.2 == AccessMode.write)))
+
+-- ============================================================================
 -- WS-OD OD3.14 — the receive rendezvous' PRIORITY hand-off
 -- ============================================================================
 
@@ -2135,6 +2338,7 @@ def runSmpIpcChecks : IO Unit := do
   runHandlerContentionChecks
   runDonationChainStructureChecks
   runDonationReturnPopChecks
+  runDonationPushChecks
   runReceivePriorityHandoffChecks
   runTraceFixtureCheck
   IO.println "===================================="

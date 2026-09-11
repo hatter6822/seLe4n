@@ -1426,8 +1426,9 @@ def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
       -- **WS-OD OD3.7**: the two objects the hand-back reads *below* the
       -- reply-stack head, in READ mode — the Reply one frame down, and that
       -- frame's caller's TCB, which `outerCallerAcceptable` validates before the
-      -- pop binds it.  Both are `none` at every depth this tree reaches, so the
-      -- arm's resolved footprint is unchanged until OD4's push.
+      -- pop binds it.  Both are `none` below the first donating `Call`, so the
+      -- arm's resolved footprint was unchanged until OD4.1 (`v0.35.2`) wrote a
+      -- `scReply`; it is load-bearing at depth >= 2 and inert at depth 1.
       (belowHeadReplyId.map (fun r => (replyLock r, AccessMode.read))))
       (outerCallerTid.map (fun ot => (tcbLock ot, AccessMode.read))))
     -- **WS-OD OD3.5**: the reply arm's donation hand-back runs
@@ -3020,21 +3021,64 @@ chain step, the member's TCB **write** lock *and* its home-core
 `SchedLockId.runQueue` **write** lock together (see the amended SM3.C
 consumer contract in `LockSetTransitions.lean`).  The same declaration
 covers the `.call`/`.reply`/`.replyRecv` walks, which run the identical
-`updatePipBoostOnCore` re-bucketing. -/
-def suspendThreadOnCoreSchedLockSet (home executingCore ownerHome runningCore : CoreId) :
+`updatePipBoostOnCore` re-bucketing.
+
+**WS-OD OD5.3: the replenish segment is a TRIPLE, because the pipeline pops
+twice at call depth ≥ 2.**  The G2 teardown's reply arm reclaims the victim's
+donation and rebinds the victim through `donationReturnBinding` -- which one
+level up the reply stack is `.donated scId outer`, not `.bound scId` -- and the
+arm selector below it re-reads the binding from the **post-teardown** TCB
+(`tcb'`).  So the `.donated` arm fires on a victim that entered the syscall
+`.unbound`, and its migration's destination is the *outer caller's* home core,
+a third replenish core the pre-OD4 pair could not name: at the pre-state the
+victim holds no binding at all, so a footprint resolved there would declare the
+self-pair `home`/`home` while the operation writes `outer`'s queue.  A footprint
+that omits a written lock is false, so the third core is declared -- and
+over-declaring is the safe direction: where the second pop does not fire the
+caller passes `home` and the triple collapses to the pre-OD5.3 pair. -/
+def suspendThreadOnCoreSchedLockSet
+    (home executingCore ownerHome outerHome runningCore : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   (SchedLockId.object schedObjStoreLockId, .write) ::
   (sortedSchedCoreTriple (fun c => SchedLockId.runQueue ⟨c⟩) home executingCore runningCore
-    ++ sortedSchedCorePair (fun c => SchedLockId.replenishQueue ⟨c⟩) home ownerHome)
+    ++ sortedSchedCoreTriple (fun c => SchedLockId.replenishQueue ⟨c⟩) home ownerHome outerHome)
+
+/-- **WS-OD OD5.3: the second pop's migration endpoints, read off the operation.**
+
+`cancelDonatedDonationOnCore` migrates the reclaimed context's replenishments
+from the victim's own home core to the home of the thread its binding **records
+as owner**.  At call depth 1 that thread is whoever donated to the victim; at
+depth ≥ 2, after the G2 teardown has already reclaimed and rebound the victim
+through `donationReturnBinding`, it is the *outer caller* the reply stack
+resolved -- a core the pre-state binding does not mention, because the victim
+entered the syscall `.unbound`.
+
+Stated so the footprint's third replenish member has a consumer: the destination
+is `determineTargetCore stC originalOwner`, and `originalOwner` is the binding's
+own field rather than anything resolvable before the teardown ran. -/
+theorem cancelDonatedDonationOnCore_migrates_to_recorded_owner
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hBind : tcb.schedContextBinding = .donated scId originalOwner)
+    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
+    ∃ stC, cleanupDonatedSchedContext st tid = .ok stC ∧
+      st' = migrateSchedContextReplenishment stC scId
+        (determineTargetCore st tid) (determineTargetCore stC originalOwner) := by
+  unfold cancelDonatedDonationOnCore at h
+  rw [hBind] at h
+  simp only [] at h
+  cases hC : cleanupDonatedSchedContext st tid with
+  | error e => rw [hC] at h; cases h
+  | ok stC => rw [hC] at h; exact ⟨stC, rfl, (Except.ok.inj h).symm⟩
 
 /-- SM6.E: the suspend footprint's keys form a `SchedLockId`-ascending
 acquisition sequence — the full three-domain ladder
 `object < runQueue < replenishQueue` with each same-kind segment's endpoints
 in `CoreId`-ascending order. -/
 theorem suspendThreadOnCoreSchedLockSet_pairwise_le
-    (home executingCore ownerHome runningCore : CoreId) :
-    ((suspendThreadOnCoreSchedLockSet home executingCore ownerHome runningCore).map (·.1)).Pairwise
-      (· ≤ ·) := by
+    (home executingCore ownerHome outerHome runningCore : CoreId) :
+    ((suspendThreadOnCoreSchedLockSet home executingCore ownerHome outerHome
+        runningCore).map (·.1)).Pairwise (· ≤ ·) := by
   have hObjRQ : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
       ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
     fun c => (SchedLockId.object_lt_runQueue _ _).1
@@ -3050,13 +3094,13 @@ theorem suspendThreadOnCoreSchedLockSet_pairwise_le
   · intro x hx
     rcases List.mem_append.mp hx with hx | hx
     · rcases sortedSchedCoreTriple_map_fst_mem hx with rfl | rfl | rfl <;> exact hObjRQ _
-    · rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;> exact hObjRep _
+    · rcases sortedSchedCoreTriple_map_fst_mem hx with rfl | rfl | rfl <;> exact hObjRep _
   · rw [List.pairwise_append]
     refine ⟨sortedSchedCoreTriple_pairwise_le _ _ _ _ (fun c d h => h),
-      sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h), ?_⟩
+      sortedSchedCoreTriple_pairwise_le _ _ _ _ (fun c d h => h), ?_⟩
     intro x hx y hy
     rcases sortedSchedCoreTriple_map_fst_mem hx with rfl | rfl | rfl <;>
-    rcases sortedSchedCorePair_map_fst_mem hy with rfl | rfl <;> exact hRQRep _ _
+    rcases sortedSchedCoreTriple_map_fst_mem hy with rfl | rfl | rfl <;> exact hRQRep _ _
 
 -- ============================================================================
 -- §13  SM6.E — the live per-core suspend (the `.tcbSuspend` dispatch target)

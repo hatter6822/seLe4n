@@ -1988,7 +1988,8 @@ theorem cleanupPreReceiveDonationChecked_preservesFieldsOutside
   · cases hStep
     exact preservesFieldsOutside_refl _ _
   · split at hStep
-    · exact returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep
+    · exact returnDonatedSchedContextResolved_lift hStep
+        (fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs)
     · cases hStep
       exact preservesFieldsOutside_refl _ _
 

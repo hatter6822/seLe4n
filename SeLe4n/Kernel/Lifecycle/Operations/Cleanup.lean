@@ -282,14 +282,11 @@ def cleanupDonatedSchedContext (st : SystemState) (tid : SeLe4n.ThreadId)
   | some tcb =>
     match tcb.schedContextBinding with
     | .donated scId originalOwner =>
-      -- WS-OD OD3.4 built the resolver this site will use; OD4.4 cannot thread
-      -- it here yet.  This site's invariant surface goes through
-      -- `returnDonatedSchedContext_preserves_ipcInvariantFull`, which OD3.2
-      -- states under `hBottom : newOwner? = none` and which **OD4.3**
-      -- generalises — so the resolver arrives with OD4.3, and until then this is
-      -- the bottom-of-stack answer that resolver computes on every reachable
-      -- state (`replyStackOuterCaller?_of_no_stack`).
-      returnDonatedSchedContext st tid scId originalOwner none
+      -- **WS-OD OD4.4**: destroying a thread that holds a donation hands the
+      -- context back through the same resolver the reply path uses — the frame
+      -- being cleared is the destroyed thread's own, and the context is owed to
+      -- the caller of the frame below it.
+      returnDonatedSchedContextResolved st tid scId originalOwner
     | _ => .ok st
 
 /-- Z7-P / AJ1-A (M-14): cleanupDonatedSchedContext preserves the scheduler
@@ -303,7 +300,8 @@ theorem cleanupDonatedSchedContext_scheduler_eq
   · injection h with h; subst h; rfl
   · split at h <;> first
       | (injection h with h; subst h; rfl)
-      | exact returnDonatedSchedContext_scheduler_eq st st' tid _ _ none h
+      | exact returnDonatedSchedContextResolved_lift h
+          (fun n s hs => returnDonatedSchedContext_scheduler_eq st s tid _ _ n hs)
 
 /-- WS-SM SM8.B: `cleanupDonatedSchedContext` never touches the machine state
 either — the register banks included.  Added beside the scheduler frame for the
@@ -320,7 +318,8 @@ theorem cleanupDonatedSchedContext_machine_eq
   · injection h with h; subst h; rfl
   · split at h <;> first
       | (injection h with h; subst h; rfl)
-      | exact returnDonatedSchedContext_machine_eq st st' tid _ _ none h
+      | exact returnDonatedSchedContextResolved_lift h
+          (fun n s hs => returnDonatedSchedContext_machine_eq st s tid _ _ n hs)
 
 /-- WS-SM SM7.B: `cleanupDonatedSchedContext` never touches the
 TLB-shootdown state (mirrors `cleanupDonatedSchedContext_scheduler_eq`;
@@ -335,7 +334,8 @@ theorem cleanupDonatedSchedContext_tlbShootdown_eq
   · injection h with h; subst h; rfl
   · split at h <;> first
       | (injection h with h; subst h; rfl)
-      | exact returnDonatedSchedContext_tlbShootdown_eq st st' tid _ _ none h
+      | exact returnDonatedSchedContextResolved_lift h
+          (fun n s hs => returnDonatedSchedContext_tlbShootdown_eq st s tid _ _ n hs)
 
 
 /-- WS-H2/H-05, R4-A.3 (M-12): Clean up external references to a TCB being retyped away.

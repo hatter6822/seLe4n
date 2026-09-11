@@ -3615,8 +3615,13 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
       cases hStep
       exact ⟨rfl, rfl⟩
   | schedContext sc =>
-      cases hStep
-      exact ⟨rfl, rfl⟩
+      -- WS-OD OD5.4: a context that heads a reply stack is refused, so the `.ok`
+      -- arm is the one that heads none.
+      simp only [] at hStep
+      split at hStep
+      · contradiction
+      · cases hStep
+        exact ⟨rfl, rfl⟩
 
 /-- The detachment pack transports across any objects- and scheduler-preserving
 step (the cleanup and scrub stages). -/
@@ -4374,6 +4379,11 @@ private theorem cancelDonatedDonationOnCore_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStored : st.getTcb? vtid.val = some tcb)
     (hAllowed : passiveServerIdleAllowed tcb.ipcState)
+    -- **WS-OD OD4.4**: destroying a thread that holds a donation hands the
+    -- context back through the reply-stack resolver; this is the obligation that
+    -- resolution carries.
+    (hStackValid : ∀ scId serverTid originalOwner,
+        replyStackOuterCallerValid st scId serverTid originalOwner)
     (hStep : cancelDonatedDonationOnCore st vtid.val tcb = .ok st') :
     ipcInvariantFull st' := by
   obtain ⟨tval, hprop⟩ := vtid
@@ -4403,6 +4413,7 @@ private theorem cancelDonatedDonationOnCore_preserves_ipcInvariantFull
           refine migrateSchedContextReplenishment_preserves_ipcInvariantFull st1 _ _ _ ?_
           unfold cleanupDonatedSchedContext at hCl
           simp only [hLk, hB] at hCl
+          obtain ⟨n, hRes, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hCl
           exact returnDonatedSchedContext_preserves_ipcInvariantFull st st1 ⟨tval, hprop⟩
             scId owner hObjInv hInv
             (by unfold replyDonationReturn?; rw [hLk]; simp [hB])
@@ -4410,7 +4421,7 @@ private theorem cancelDonatedDonationOnCore_preserves_ipcInvariantFull
               rw [hStored] at hX
               obtain rfl : tcb = tcbX := Option.some.inj hX
               exact hAllowed)
-            none rfl hCl
+            n (donationReturnOuterValid_of_stackValid (hStackValid scId tval owner) hRes) hPop
 
 /-- The bound-donation cancel touches only the victim's binding — every other
 bundle-read TCB field survives. -/
@@ -4540,8 +4551,9 @@ private theorem cancelDonatedDonationOnCore_victim_shape
             (SystemState.getTcb?_eq_some_iff st1 tval tcbX).mpr hXobj
           unfold cleanupDonatedSchedContext at hCl
           simp only [hLk, hB] at hCl
+          obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hCl
           exact returnDonatedSchedContext_victim_shape st st1 tval scId owner tcb hObjInv
-            ((SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored) none hCl tcbX hX1
+            ((SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored) n hPop tcbX hX1
 
 /-- The suspend tail's clear-and-deactivate stage: pending-state clear
 (pointwise inert on a quiescent victim) then the `threadState := .Inactive`
@@ -4625,6 +4637,11 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
     (hQ : threadIpcFieldsQuiescent st vtid.val)
     (hBidir : schedContextBindingBidirectional st)
     (hInv : ipcInvariantFull st)
+    -- **WS-OD OD4.4**: suspending a thread that holds a donation hands the
+    -- context back through the reply-stack resolver; this is the obligation that
+    -- resolution carries.
+    (hStackValid : ∀ scId serverTid originalOwner,
+        replyStackOuterCallerValid st scId serverTid originalOwner)
     (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid ec = .ok (st', sgi)) :
     ipcInvariantFull st' := by
   unfold Lifecycle.Suspend.suspendThreadOnCore at hStep
@@ -4777,13 +4794,14 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
                 rw [hDon] at hStep
                 dsimp only [] at hStep
                 have hInvD := cancelDonatedDonationOnCore_preserves_ipcInvariantFull st stD
-                  vtid tcb hObjInv hInv hLk (Or.inl hReady)
+                  vtid tcb hObjInv hInv hLk (Or.inl hReady) hStackValid
                   hDon
                 have hObjInvD := cancelDonatedDonationOnCore_preserves_objects_invExt st stD
                   vtid.val tcb hObjInv hDon
                 have hShapeD := hShapeOf stD
                   (cancelDonatedDonationOnCore_victim_shape st stD vtid tcb hObjInv hLk
                     hDon)
+
                 cases hRC : runningCoreOf? st vtid.val with
                 | none =>
                     simp only [hRC] at hStep

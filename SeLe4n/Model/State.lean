@@ -3207,12 +3207,37 @@ theorem getReply?_eq_some_iff (st : SystemState) (replyId : SeLe4n.ReplyId)
 (sets `reply.caller`).  Fails closed with `.replyCapInvalid` if the reply is
 absent or already in use (`caller ≠ none`) — an in-use reply cannot be
 re-linked, the structural half of reply caps' single-use semantics.  Pure
-prep (Phase B): wired into the `Call` path in Phase C. -/
+prep (Phase B): wired into the `Call` path in Phase C.
+
+**WS-OD OD5.1** (plan §3.4, the confused deputy): a Reply that still names a
+donated scheduling context (`donatedSc ≠ none`) is a **live frame of that
+context's reply stack**, and this refuses it too.  `Reply` has `prev` and no
+`next`, so a cancelled middle caller's frame cannot be spliced out by a backward
+scan the way seL4's doubly-linked `reply_remove` does; the frame stays on the
+stack with its `caller` consumed, which is exactly the state
+`r.caller = none ∧ r.donatedSc ≠ none` names.  Re-linking there would make the
+pop that later reaches this frame read the **new** caller and hand the original
+thread's scheduling context to an unrelated thread, in another domain, driven by
+object reuse.
+
+**Refused rather than cleared, and that is the decision.**  Clearing `donatedSc`
+and `prev` here would take the frame off a stack the context still *heads*, so
+`donationChainWellFormed`'s walk — which follows `prev` and accepts a frame only
+while it names the context — would stop mid-chain and the store would satisfy no
+chain at all.  Refusing is O(1), keeps the invariant, and needs no repair pass.
+The clear that *does* happen is the pop's own (`storeDonationHeadClear`), which
+removes the head at the moment the context leaves it.
+
+Inert wherever no Reply donates -- which was every state the tree reached before
+OD4.1 (`v0.35.2`), and is every state below the first donating `Call` now -- and
+inert on a *live* frame too, because a live frame's donor still holds it and the
+`caller ≠ none` barrier above already refuses that one.  What it adds is exactly
+the cancelled-middle-caller case. -/
 def linkReply (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.getReply? rid with
     | some r =>
-        if r.caller.isNone then
+        if r.caller.isNone && r.donatedSc.isNone then
           storeObject rid.toObjId (.reply { r with caller := some caller }) st
         else .error .replyCapInvalid
     | none => .error .replyCapInvalid
@@ -3250,7 +3275,17 @@ theorem linkReply_getReply?_caller_some (st : SystemState) (rid : SeLe4n.ReplyId
   intro result hRun
   unfold linkReply at hRun
   rw [hGet] at hRun
-  simp only [hFree, Option.isNone_none, if_true] at hRun
+  simp only [] at hRun
+  -- **WS-OD OD5.1**: the freshening barrier's second half — a Reply that still
+  -- donates is a live stack frame and is refused — is *derived* from the link
+  -- succeeding rather than taken as a hypothesis, so every caller of this lemma
+  -- is unchanged.  The guard is discharged, not rewritten: substituting it into
+  -- the stored record would change the object this theorem is about.
+  have hNoDonation : r.donatedSc = none := by
+    cases hc : r.donatedSc with
+    | none => rfl
+    | some _ => rw [if_neg (by simp [hc])] at hRun; cases hRun
+  rw [if_pos (by simp [hFree, hNoDonation])] at hRun
   have hStore := storeObject_inserted_object_lookup st rid.toObjId
     (.reply { r with caller := some caller }) hObjInv result hRun
   rw [getReply?_eq_some_iff, RHTable_getElem?_eq_get?]
@@ -3403,12 +3438,13 @@ theorem linkReply_preserves_objects_invExt (st st' : SystemState)
   | none => rw [hGet] at hStep; simp at hStep
   | some r =>
     simp only [hGet] at hStep
-    cases hFree : r.caller.isNone with
+    -- **WS-OD OD5.1**: the guard is the conjunction, so the split is on it.
+    cases hCond : (r.caller.isNone && r.donatedSc.isNone) with
     | true =>
-      rw [if_pos hFree] at hStep
+      rw [if_pos hCond] at hStep
       exact storeObject_preserves_objects_invExt st st' rid.toObjId _ hObjInv hStep
     | false =>
-      rw [if_neg (by simp [hFree])] at hStep
+      rw [if_neg (by simp [hCond])] at hStep
       simp at hStep
 
 /-- WS-SM SM6.D: `consumeReply` preserves the object-store extensional invariant

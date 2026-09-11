@@ -531,8 +531,9 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
   -- reply-stack head.  Resolved through `replyStackBelowHeadReads?` on the very
   -- SchedContext this arm returns — one resolver for one question, so the
   -- footprint cannot disagree with the walk `replyStackOuterCaller?` performs.
-  -- Both are `none` at every depth this tree reaches, so this arm's declared
-  -- footprint is unchanged until OD4's push writes a `scReply`.
+  -- Both are `none` below the first donating `Call`, so this arm's declared
+  -- footprint was unchanged until OD4.1 (`v0.35.2`) wrote a `scReply`; it is
+  -- load-bearing at depth >= 2 and inert at depth 1.
   let server := (recordedReplyServer? st target).getD replier
   let belowHead := match (endpointReplyServerDonation? st target).map (·.1) with
     | none => (none, none)
@@ -1374,36 +1375,17 @@ theorem lockSet_endpointReplyRecvOnCore_covers_cdt
   exact lockSet_replyRecv_stateLevel_write_mem replier cnodeRootObjId target endpointObjId
     _ _ _ _ _ _
 
-/-- WS-SM SM6.D (PR #822 review 6J-NL9): the per-object reply **write** lock is a
-declared member of the `.call` lock-set footprint once the linked reply object is
-resolved (`replyId := some rid`).  A server-first `Call` rendezvous links the caller
-to the waiting server's stashed Reply object (the folded `linkServerStashedReply` →
-`linkCallerReply` writes `reply.caller`); that write is now serialised under the
-per-object reply lock.
+/- **WS-OD OD4.7**: the reply **write** member of the `.call` footprint now lives
+beside the footprint it is about, as
+`Concurrency.lockSet_endpointCall_reply_write_mem`
+(`SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean`).
 
-**WS-RR RR7.7**: stated over every `destCnode`, so the same lemma serves the
-capless call and the capability-carrying one.  The reply member is no longer
-outermost — the transfer destination and the state-level lock extend past it —
-and a write-mode member survives any optional extension
-(`mem_write_lockSetExtendOpt`), so the two extra layers cost two applications
-of that and nothing else. -/
-theorem lockSet_endpointCall_reply_write_mem
-    (callerTid : SeLe4n.ThreadId) (cnRoot endpointObjId : SeLe4n.ObjId)
-    (receiverTid : Option SeLe4n.ThreadId) (donatedScId : Option SeLe4n.SchedContextId)
-    (rid : SeLe4n.ReplyId) (destCnode : Option SeLe4n.ObjId := none)
-    -- **WS-OD OD3.11**: and over the queue-structure neighbour, which extends
-    -- past the reply member too.  Stated rather than defaulted: the live
-    -- `.call` resolves it, so a version fixed at `none` would be a membership
-    -- claim about a footprint the transition does not declare.
-    (queueNeighbour : Option SeLe4n.ThreadId := none) :
-    (replyLock rid, AccessMode.write)
-      ∈ (lockSet_endpointCall callerTid cnRoot endpointObjId receiverTid donatedScId
-           (some rid) destCnode queueNeighbour).pairs := by
-  unfold lockSet_endpointCall
-  exact mem_write_lockSetExtendOpt _ _ _
-    (mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _
-        (self_write_mem_insertOrMerge _ (replyLock rid))))
+It was stated here from SM6.D until OD4.7 needed it in `EndpointCall.lean` — which
+cannot import this module, since this module imports it — and a second copy was
+added there.  Two theorems with one conclusion is the shape this project deletes
+rather than reconciles, so the statement moved to the module that defines
+`lockSet_endpointCall` and carries its four sibling membership lemmas, and this
+comment records where it went. -/
 
 /-- WS-SM SM6.D (PR #827 review): the per-object reply **write** lock is likewise a
 declared member of the **WithCaps** `.call` footprint once the linked reply object
@@ -1422,8 +1404,8 @@ theorem lockSet_endpointCallWithCaps_reply_write_mem
     (replyLock rid, AccessMode.write)
       ∈ (lockSet_endpointCallWithCaps callerTid cnRoot destCnode endpointObjId
             receiverTid donatedScId (some rid)).pairs :=
-  lockSet_endpointCall_reply_write_mem callerTid cnRoot endpointObjId receiverTid
-    donatedScId rid (some destCnode)
+  Concurrency.lockSet_endpointCall_reply_write_mem callerTid cnRoot endpointObjId receiverTid
+    donatedScId rid (some destCnode) none
 
 -- ============================================================================
 -- §7  SM6.C.7 — Reply-replay protection

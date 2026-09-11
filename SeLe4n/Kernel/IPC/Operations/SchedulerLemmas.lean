@@ -859,28 +859,13 @@ theorem donateSchedContext_ok_implies_sc_bound
     ∃ sc : SchedContext,
       st.objects[clientScId.toObjId]? = some (.schedContext sc) ∧
       sc.boundThread = some clientTid := by
-  -- We use the existing donateSchedContext_scheduler_eq to know the function
-  -- succeeds, then unfold to extract the SchedContext witness.
-  unfold donateSchedContext at hOk
-  -- Generalize the object lookup to preserve the equation
-  generalize hLookup : st.objects[clientScId.toObjId]? = optObj at hOk
-  match optObj, hLookup with
-  | none, _ => cases hOk
-  | some (.schedContext sc), hLookup =>
-    simp only [] at hOk
-    refine ⟨sc, rfl, ?_⟩
-    -- Case-split on the bound-thread check (Bool)
-    cases hBne : (sc.boundThread != some clientTid)
-    · -- false branch: bne = false means they are equal
-      simp [bne] at hBne; exact hBne
-    · -- true branch: bne = true → .error, contradicting .ok
-      simp [hBne] at hOk
-  | some (.tcb _), _ => cases hOk
-  | some (.endpoint _), _ => cases hOk
-  | some (.notification _), _ => cases hOk
-  | some (.cnode _), _ => cases hOk
-  | some (.vspaceRoot _), _ => cases hOk
-  | some (.untyped _), _ => cases hOk
+  -- WS-OD OD4.1: the first two components of the operation's own decomposition.
+  -- Before the push landed this was a second copy of the case analysis; the
+  -- fourth store made that copy non-compiling, which is the shared derivation
+  -- doing its job.
+  obtain ⟨sc, _, _, _, _, _, _, _, _, _, hObj, hBound, _⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId hOk
+  exact ⟨sc, (SystemState.getSchedContext?_eq_some_iff st clientScId sc).mp hObj, hBound⟩
 
 /-- AC3-B: On success, `donateSchedContext` establishes the donated binding in
     the post-state: the server TCB has `schedContextBinding = .donated`. This
@@ -893,48 +878,21 @@ theorem donateSchedContext_ok_server_donated
     ∃ serverTcb : TCB,
       st'.objects[serverTid.toObjId]? = some (.tcb serverTcb) ∧
       serverTcb.schedContextBinding = .donated clientScId clientTid := by
-  unfold donateSchedContext at hOk
-  generalize hLookup : st.objects[clientScId.toObjId]? = optObj at hOk
-  match optObj, hLookup with
-  | none, _ => cases hOk
-  | some (.schedContext sc), _ =>
-    simp only [] at hOk
-    cases hBne : (sc.boundThread != some clientTid)
-    · simp [hBne] at hOk
-      cases hS1 : storeObject clientScId.toObjId (.schedContext { sc with boundThread := some serverTid }) st with
-      | error _ => simp [hS1] at hOk
-      | ok p1 =>
-        simp [hS1] at hOk
-        -- F-3: donor-clear store between the SC store and the server store
-        cases hLC : lookupTcb p1.2 clientTid with
-        | none => simp [hLC] at hOk
-        | some clientTcb =>
-          simp [hLC] at hOk
-          cases hS2 : storeObject clientTid.toObjId (.tcb { clientTcb with schedContextBinding := .unbound }) p1.2 with
-          | error _ => simp [hS2] at hOk
-          | ok p2 =>
-            simp [hS2] at hOk
-            cases hL1 : lookupTcb p2.2 serverTid with
-            | none => simp [hL1] at hOk
-            | some serverTcb =>
-              simp [hL1] at hOk
-              cases hS3 : storeObject serverTid.toObjId (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) p2.2 with
-              | error _ => simp [hS3] at hOk
-              | ok p3 =>
-                simp [hS3] at hOk
-                subst hOk
-                -- p3.2 = st', and the last storeObject wrote the server TCB
-                have hInvP1 := storeObject_preserves_objects_invExt' st _ _ _ hObjInv hS1
-                have hInvP2 := storeObject_preserves_objects_invExt' p1.2 _ _ _ hInvP1 hS2
-                exact ⟨{ serverTcb with schedContextBinding := .donated clientScId clientTid },
-                       storeObject_objects_eq' p2.2 _ _ _ hInvP2 hS3, rfl⟩
-    · simp [hBne] at hOk
-  | some (.tcb _), _ => cases hOk
-  | some (.endpoint _), _ => cases hOk
-  | some (.notification _), _ => cases hOk
-  | some (.cnode _), _ => cases hOk
-  | some (.vspaceRoot _), _ => cases hOk
-  | some (.untyped _), _ => cases hOk
+  -- WS-OD OD4.1: the post-state half of the same decomposition.  This is the
+  -- `SchedulerLemmas`-visible spelling of `donateSchedContext_server_binding`
+  -- (`Donation/Primitives.lean`); neither module imports the other, so the two
+  -- names stay, but both are now projections of the single description of the
+  -- operation and therefore cannot answer the question differently.
+  obtain ⟨_, _, _, serverTcb, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hS2, _, hS3, _, hS4,
+      hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId hOk
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  refine ⟨{ serverTcb with schedContextBinding := .donated clientScId clientTid }, ?_, rfl⟩
+  rw [hEq]
+  show s4.objects[serverTid.toObjId]? = _
+  exact storeObject_objects_eq s3 s4 serverTid.toObjId _ hInv3 hS4
 
 -- ============================================================================
 -- AK1-E (I-M03): notificationSignal respects PIP boost
