@@ -1,3 +1,179 @@
+## v0.35.3 — a donated scheduling context carries budget, not priority or domain
+
+**Reported while closing WS-OD at `v0.35.2`, fixed here.**  `updatePrioritySource`
+(`SeLe4n/Kernel/SchedContext/PriorityManagement.lean`) classified `.bound scId`
+and `.donated scId owner` identically, so `.tcbSetPriority` and
+`.tcbSetMCPriority` on a thread that was *holding* a donated context wrote the
+**donor's** `SchedContext.priority`.  Both arms are authorised by a TCB-write
+right over the **target** and the caller's MCP ceiling, and neither says anything
+about the donor — so a principal with authority over a passive server could
+retune the scheduling parameter of every client that had called it, and the
+effect outlived the call: `returnDonatedSchedContext` hands the reservation back
+with the rewritten field, so the client resumed in a band it never asked for.
+Medium–High **integrity** (an authority crossing), not a leak and not a denial of
+service; live at call depth 1 since donation landed, and widened by WS-OD OD4 to
+reach a thread several hops up a chain, in a third domain.
+
+**The remedy is seL4-MCS's own split, not a refusal.**  In seL4, priority and
+domain live on the TCB (`tcb->tcbPriority`, `tcb->tcbDomain`) and the scheduling
+context carries budget, period and deadline: a passive server runs at **its own**
+priority in **its own** partition on the **client's** budget, and rises to the
+client's band only through priority inheritance.  This model had put both
+parameters on the SchedContext, which is where the crossing came from.  So a
+donee now reads and writes its own priority and domain at every site, while
+budget, period and deadline still come from the donated reservation.
+
+**One classifier, one resolver, every reader pinned to it.**  Nine sites answered
+"whose priority is this" and the fix could have been nine independent edits that
+a later cut unpicks one at a time — the enumeration-standing-in-for-a-derivation
+shape `CLAUDE.md` warns about, and the shape that produced the defect in the
+first place.  Instead:
+
+* **`SchedContextBinding.ownScId?`** (`SchedContext/Types.lean`) is the
+  decision, on the binding itself: the SchedContext a thread **owns**, which is
+  `some scId` for `.bound` and `none` for `.unbound` and `.donated`.  It is the
+  counterpart to `scId?`, the reservation a thread **runs on**, and the two
+  govern different halves of a thread's scheduling parameters:
+  **reservation-owned** (budget, period, deadline) come from `scId?` at every
+  binding, because being charged to a reservation and answering to its deadline
+  is what a donation *is*; **thread-owned** (base priority and domain) come from
+  the thread's own TCB fields, mirrored onto its own reservation by the AK2-B
+  convention.  A binding constructor added later (WS-CB's hierarchical servers)
+  must be classified there before it compiles.
+  `ownScId?_eq_scId?_of_isSome` states that it *narrows* `scId?`
+  rather than resolving independently, so the two can never name different
+  contexts.
+* **`SystemState.threadBasePriority`** (`Model/State.lean`) is the state-level
+  answer, built on the classifier, with a congruence
+  (`threadBasePriority_congr`) over exactly the key the resolution reads.
+* `getCurrentPriority` **is** `threadBasePriority` (by `rfl`);
+  `getCurrentPriorityChecked`, `updatePrioritySource`, the frozen
+  `frozenSetPriority` and `schedContextConfigureBoundPropagate` classify through
+  the classifier directly; and the three scheduler resolvers that also need the
+  reservation's **deadline** split the arm and are tied back by theorem —
+  `resolveEffectivePrioDeadline_fst_eq_threadBasePriority` (new, unconditional),
+  `effectiveSchedParams_priority_deadline_eq_resolve` and
+  `effectiveBucketPriority_eq_resolveEffective`.
+
+The per-site outcome, `.donated` arm only:
+
+| Site | Before | After |
+|------|--------|-------|
+| `resolveEffectivePrioDeadline` | `(sc.priority, sc.deadline)` | `(tcb.priority, sc.deadline)` |
+| `effectiveSchedParams` | `(sc.priority, sc.deadline, sc.domain)` | `(tcb.priority, sc.deadline, tcb.domain)` |
+| `effectiveBucketPriority` | `sc.priority` | `tcb.priority` (no store read at all) |
+| `getCurrentPriority` / `…Checked` | `sc.priority` / can `.error` | `tcb.priority` / cannot fail |
+| `updatePrioritySource` | writes `SchedContext.priority` | writes `TCB.priority` |
+| `frozenSetPriority` | writes `SchedContext.priority` | writes `TCB.priority` |
+| `schedContextConfigureBoundPropagate` | writes `boundThread`'s priority **and domain** unconditionally | writes them only when `schedContextConfigurePropagates` — `boundThread` owns this reservation |
+| `effectiveParamsMatchRunQueue{,OnCore}` | bucket = `sc.priority` | bucket = `tcb.priority` |
+| `boundThreadPriorityConsistent` | `∀ scId, …scId? = some scId → …` | `∀ scId, …ownScId? = some scId → …` |
+
+`hasSufficientBudget` is unchanged, and so are `currentBudgetPositive{,OnCore}`,
+`budgetPositive{,OnCore}`, `maxBudgetInBand{,OnCore}`, `maxPeriodInBand{,OnCore}`
+and the two `RuntimeContract` budget checks: budget and period **are** the
+reservation's at every depth.  Tier 3 anchors both directions — the `.donated`
+arms are pinned to the TCB reading, the merged arm is refused **per
+declaration** (a file-wide negative would fire on `hasSufficientBudget`, which
+keeps it in the same file as `resolveEffectivePrioDeadline`), and five budget
+sites are pinned as *still merged*, so the split cannot leak into the budget
+question.
+
+**Three things this repairs beyond the two crossings.**
+
+1. **The carrier stops being falsified by every hand-off.**
+   `boundThreadPriorityConsistent` demanded `sc.priority = tcb.priority` for
+   `.donated` as well as `.bound`, because `resolveEffectivePrioDeadline` read
+   the SchedContext for both — so the reservation's `priority` had to equal the
+   donor's base priority before a hand-off and the donee's after, while
+   `donateSchedContext` writes neither field.  Any donation between threads of
+   different bands therefore broke it, and nothing carried it across:
+   `boundThreadPriorityConsistent_frame` requires `schedContextBinding`
+   unchanged, which is exactly what the hand-off rewrites.  The carrier was
+   **false on exactly the states WS-OD had just made reachable**, and every
+   scheduler result gated on it was silent there.  Narrowing it to the owned
+   reservation is not a weakening: there is nothing left for the donated case to
+   reconcile, so `resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree`
+   discharges that arm outright and takes a strictly weaker hypothesis for the
+   same conclusion.
+2. **A donee's priority read cannot fail.**  `getCurrentPriorityChecked`
+   returned `.error .objectNotFound` for a donee whose donor's SchedContext had
+   been retyped away — an error from a syscall with nothing to do with that
+   object.  It now cannot reach the lookup at all
+   (`getCurrentPriorityChecked_donated`), and `effectiveBucketPriority`'s
+   `.donated` arm reads no object store, which is why its frame lemmas lost
+   their hypothesis on that branch and `effectiveBucketPriority_of_donated` is
+   unconditional where `…_of_bound_sc_missing` needs a lookup premise.
+3. **Bounded inversion is unaffected, and that is why the fix is safe.**  A
+   high-priority client blocked on a low-priority passive server still raises
+   it, through `propagatePipChainCrossCore` — the route WS-OD OD3.14 completed
+   on the `.receive` arm at `v0.34.141`.  Own priority + inherited boost +
+   donated budget is the MCS combination.  Before this cut the donation carried
+   base priority **as well**, which is what the OD3.14 narrative described and
+   what this entry corrects: the chain walk is now the *only* priority route,
+   which is what makes OD3.14 load-bearing rather than redundant.
+
+**The mirror crossing, found while verifying this one, closed in the same cut —
+and it is the *domain*, not only the priority.**  `schedContextConfigure`
+propagates **both** thread-owned parameters into `sc.boundThread`'s TCB, and
+after a donation `boundThread` is the **donee**, because `donateSchedContext`
+writes `boundThread := some serverTid`.  So a caller holding a capability on the
+**client's** reservation could rewrite the **server's** own base priority *and
+migrate its scheduling domain* — permanently, since the donee keeps both fields
+after the donation returns.  Same class, opposite direction; a domain is the
+partition temporal isolation is defined over, so that half is the more serious
+of the two.  Leaving either would also have defeated this cut: with the read
+split, the propagation is the one remaining route by which a client's
+reservation can set a server's band.
+
+Both halves maintain a `.bound`-only invariant
+(`boundThreadPriorityConsistent`, `boundThreadDomainConsistent`), so
+`schedContextConfigureBoundPropagate` takes the SchedContext's id and gates both
+on the bound thread **owning** that context.  There is one predicate,
+`schedContextConfigurePropagates`, and both halves consult it — so a later cut
+cannot gate one and leave the other, which is exactly how this defect came to be
+the *mirror* of one already fixed.  That is the exact relation rather than a presence
+check: a thread that owns some *other* context is not propagated to either, and
+`scId?` would be the wrong classifier here — the wrong one is what the crossing
+was.  A reconfiguration still rewrites the reservation, including the
+**reservation-owned** budget, period and deadline a donee does read: that is the
+object the caller holds a capability for.
+
+The reading side follows.  `effectiveSchedParams`'s `.donated` arm reports the
+donee's own domain, because every live domain filter in the scheduler
+(`chooseBestRunnableInDomainEffective`, `schedule`'s current-thread check, the
+per-core selection guard) reads `tcb.domain` — so reporting `sc.domain` for a
+donee described a partition the scheduler never puts it in.  That component has
+no live consumer today, which is exactly why it had to be corrected rather than
+left: the first consumer would have inherited the discrepancy.
+
+**The footprint narrows with the write.**  `lockSet_tcbSetPriority` /
+`lockSet_tcbSetMCPriority` take their `boundSchedContextId` from
+`ownScId?` rather than `scId?`, since the operation no longer writes
+a donee's reservation; declaring a write lock on it would be a footprint wider
+than its transition — sound, but carrying contention (SM8.D's CC-5 channel) that
+says nothing about the operation.  `maxLockSetSize` is unmoved at **14** and the
+RPi5 tick still admits **23 µs** per lock: the members are the same or fewer.
+`lockSet_tcbSetAffinity` keeps `scId?` — a thread's home core *is* a property of
+the reservation it runs on.
+
+**Tests.**  Six scenarios in `tests/PriorityManagementSuite.lean`
+(`WS-OD-PRIO-01`…`06`): the classifier on all three constructors; every reader
+on a donee, asserting the donor's band appears in none of them while the donor's
+deadline and domain appear in the parameter triple; the security regression on
+`setPriorityOp` (the donee's TCB moves, the reservation is byte-identical, the
+donor's own TCB is untouched); the same through `setMCPriorityOp`'s capping
+branch, which reaches the write helper by a different route; the frozen mirror;
+and a `.bound` **control** that the reservation is still written and the TCB is
+not — so none of the five can be satisfied by the priority write having simply
+been removed.  Two more (`WS-OD-PRIO-07`, `08`) cover the configure gate in both
+directions: a reconfiguration of a **donated** reservation still rewrites the
+reservation — its budget and period included, since a donee reads those — and
+leaves the donee's own priority *and domain* alone, while a `.bound` thread's
+priority and domain are both still propagated.  The donated fixture puts the
+reservation in domain 3 and the donee in domain 0, so every domain assertion
+discriminates instead of passing by coincidence.
+
 ## v0.35.2 — WS-OD OD4–OD6: the donation chain is transitive, and the workstream closes
 
 The row the workstream was opened for.  `applyCallDonation` donated only from a

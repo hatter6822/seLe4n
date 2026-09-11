@@ -140,7 +140,6 @@ constrains what v1.0.0 may claim, and RR8.4's hand-off check reads this table.
 | `crossSubsystemFieldSets` lists 11 field-sets while `crossSubsystemInvariant` has **12** conjuncts: `untypedRegionsDisjoint` was appended without a matching `_fields` entry, so the pairwise disjointness analysis and every frame lemma derived from it cover 11 of the 12 | Incompleteness, not unsoundness — the uncovered predicate simply gets no frame lemma, so proofs needing it establish it directly; nothing false is proved | post-v1.0.0; closing it means adding `untypedRegionsDisjoint_fields` and redoing the analysis over C(12,2) = 66 pairs.  Found during the RR0 review round (v0.34.27), not by the pre-SM10 audit |
 | The IPC and capability write-sets (`ipcEndpointOp_modifiedFields`, `capabilityOp_modifiedFields` in `SeLe4n/Kernel/CrossSubsystem.lean`) carry `storeObject`'s three index/ASID fields (`objectIndex`, `objectIndexSet`, `asidTable`), which those operations write only vacuously — an in-place store of a key already present, and never of a `.vspaceRoot`.  The v0.34.70 docstring called tightening them back out "registered rather than assumed" and registered it nowhere; the RR7 audit round (v0.34.109) registers it here | Over-declaring costs disjointness, never soundness (`preservesFieldsOutside_mono`): the only loss is that a frame lemma needing those three fields disjoint from an IPC or capability write is unavailable until the two conditional facts are proved — that `RHSet.insert` is a no-op on a present key, and that neither family ever stores a `.vspaceRoot`.  No consumer needs the narrower lists today | post-v1.0.0 hardening; the two conditional facts, then the lists narrowed with their `_preservesFieldsOutside` theorems re-proved at the narrower lists |
 
-| **Priority authority crosses a SchedContext donation** — `updatePrioritySource` (`SeLe4n/Kernel/SchedContext/PriorityManagement.lean`) treats `.bound scId` and `.donated scId owner` identically, so `.tcbSetPriority` / `.tcbSetMCPriority` on a thread that is *holding* a donated context write the **donor's** `SchedContext.priority`.  `setPriorityOp` checks the **caller's** MCP ceiling and the target's TCB-write right, neither of which says anything about the donor, so a principal with authority over a passive server can rewrite a client's scheduling parameter, and the client receives it when the donation returns.  Reported at `v0.35.2` while closing WS-OD; **pre-existing and live at depth 1** since donation landed — WS-OD OD4 widens the reach, because at depth ≥ 2 the context written can belong to a thread several hops up the chain, in a third domain.  Severity **Medium–High integrity** (an authority crossing), **not** a leak or a denial of service.  seL4-MCS does not have it: priority lives on the TCB (`tcb->tcbPriority`) there, and this model put it on the SchedContext.  The fix is to make the *write* side asymmetric — a donated context is not the holder's to reconfigure — which is a behavioural change to two live syscall arms with their own preservation obligations, so it is a cut of its own rather than a rider on the closure | It is an authority crossing between a client and a server it *chose* to call, bounded by the caller already needing a TCB-write capability on the donee and an MCP ceiling above the new priority; no unprivileged thread reaches it, and no reachable state loses budget or leaks | **WS-CB** — the MCP-authority work (CB0.3 / CB1.6) already reopens `schedContextConfigure`'s authority story, and this is the same question on the priority-write path |
 | **`scThreadIndexConsistent` is prose, not a predicate** — `SystemState.scThreadIndex`'s docstring (`SeLe4n/Model/State.lean`) states the index's consistency property in as many words, and no Lean definition says it: the donation push and pop maintain the index correctly at every depth (the donor is cleared either way, and `donationReturnBinding`'s two arms name the same context, so `donationReturnBinding_scId?` makes the index insensitive to stack depth), but nothing *states* that they do.  Registered at `v0.35.2` as WS-OD closes, rather than left in the plan that named it | A documented-but-unstated invariant on an index every donation-carrying footprint already serialises through `stateLevelLock`; the property is true and maintained, so this strengthens a correct surface rather than closing a gap | post-v1.0.0 — the implement-the-improvement candidate is a `scThreadIndexConsistent` definition plus preservation at the four writers |
 #### C.1 — The 32 in-source post-1.0 hardening candidates
 
@@ -401,6 +400,34 @@ unwired here. The cost is that **v1.0.0 does not ship a userspace-reachable
 ASID surface**, and the release note must not imply one.
 
 ## WS-OD — SchedContext donation chains
+
+**The priority-authority crossing found while closing this workstream is fixed
+at `v0.35.3`** and is no longer registered debt.  `updatePrioritySource` had
+classified `.bound scId` and `.donated scId owner` identically, so
+`.tcbSetPriority` / `.tcbSetMCPriority` on a thread *holding* a donated context
+wrote the **donor's** `SchedContext.priority` — an authority crossing, since
+both arms are gated on a TCB-write right over the *target* and the caller's MCP
+ceiling, and neither says anything about the donor; the rewritten field then
+travelled back with `returnDonatedSchedContext`, so the client resumed in a band
+it never asked for.  Medium–High **integrity**, live at call depth 1 since
+donation landed and widened by OD4 to reach a thread several hops up a chain.
+The remedy is seL4-MCS's own split rather than a refusal: a donee runs on the
+donor's budget, deadline and domain at **its own** priority, so the write lands
+in the donee's TCB and the read prefers it.  One classifier decides
+(`SchedContextBinding.ownScId?`), one resolver answers
+(`SystemState.threadBasePriority`), and the five readers are pinned to it by
+theorem.  The **mirror** crossing found while verifying that fix is closed in
+the same cut, and it is the *domain* as much as the priority:
+`schedContextConfigure` propagated **both** thread-owned parameters into
+`sc.boundThread`'s TCB, which after a donation is the *donee*, so a capability
+on the client's reservation could rewrite the server's own base priority and
+**migrate its scheduling domain** — permanently, since the donee keeps both
+fields.  Both propagations are now gated on the bound thread *owning* that
+reservation, through one predicate both halves consult, and `effectiveSchedParams` reports a
+donee's own domain, since every live domain filter reads `tcb.domain`.  What
+remains with **WS-CB** (CB0.3, CB1.6) is the other authority question on that
+path: `schedContextConfigure` answers to a SchedContext write right with no
+caller-MCP check at all.  See `CHANGELOG.md` at `v0.35.3`.
 
 Registered at `v0.34.98`. **OD1 is closed** — OD1.1–OD1.7 landed at
 `v0.34.100`, `v0.34.101`, `v0.34.103`, `v0.34.104`, `v0.34.105`, `v0.34.106` and

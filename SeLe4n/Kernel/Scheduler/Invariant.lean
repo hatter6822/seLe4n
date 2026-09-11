@@ -285,7 +285,7 @@ a utility for future use (AK2-A full Option A fusion deferred). -/
 def effectiveBucketPriority (st : SystemState) (tcb : TCB) : SeLe4n.Priority :=
   let base : SeLe4n.Priority := match tcb.schedContextBinding with
     | .unbound => tcb.priority
-    | .bound scId | .donated scId _ =>
+    | .bound scId =>
       -- AN10-B note: kept on the raw lookup (rather than migrated to
       -- `getSchedContext?`) because `effectiveBucketPriority_frame` /
       -- `_frame_weak` / `_lookup_non_sc` and ~15 downstream invariant
@@ -295,6 +295,12 @@ def effectiveBucketPriority (st : SystemState) (tcb : TCB) : SeLe4n.Priority :=
       match (st.objects[scId.toObjId]? : Option KernelObject) with
       | some (.schedContext sc) => sc.priority
       | _ => tcb.priority
+    -- WS-OD (v0.35.3): a donee runs at its **own** base priority, so this arm
+    -- reads no SchedContext at all — the `SchedContextBinding.ownScId?`
+    -- classification, mirrored here because `Invariant.lean` sits below
+    -- `Selection.lean` and cannot call `resolveEffectivePrioDeadline`.  The two
+    -- are held together by `effectiveBucketPriority_eq_resolveEffective`.
+    | .donated _ _ => tcb.priority
   match tcb.pipBoost with
   | none => base
   | some boostPrio => ⟨Nat.max base.val boostPrio.val⟩
@@ -328,15 +334,22 @@ theorem effectiveBucketPriority_of_bound_sc_missing
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | tcb _
       | reply _ =>
           simp [hLookup]
-  · rw [hB]
-    cases hLookup : (st.objects[scId.toObjId]? : Option KernelObject) with
-    | none => simp [hLookup]
-    | some obj =>
-      cases obj with
-      | schedContext sc => exact absurd hLookup (hMiss sc)
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | tcb _
-      | reply _ =>
-          simp [hLookup]
+  · -- WS-OD (v0.35.3): the `.donated` arm reads no SchedContext at all, so it
+    -- *is* the fallback and `hMiss` has nothing to discharge.  Stated by
+    -- `effectiveBucketPriority_of_donated` without the hypothesis.
+    rw [hB]
+
+/-- WS-OD (v0.35.3): a **donated** thread's bucket priority is the legacy
+`effectiveRunQueuePriority` unconditionally — no SchedContext is read, so
+unlike the `.bound` case this needs no lookup hypothesis.  The `.donated`
+half of `effectiveBucketPriority_of_bound_sc_missing`, sharpened. -/
+@[simp] theorem effectiveBucketPriority_of_donated
+    (st : SystemState) (tcb : TCB) (scId : SchedContextId)
+    (owner : SeLe4n.ThreadId)
+    (hDonated : tcb.schedContextBinding = .donated scId owner) :
+    effectiveBucketPriority st tcb = effectiveRunQueuePriority tcb := by
+  unfold effectiveBucketPriority effectiveRunQueuePriority
+  rw [hDonated]
 
 /-- AK2-B helper: auxiliary "falls through to base" lemma. If a map lookup
 does not produce `.schedContext _`, then the `.bound scId`/`.donated scId _`
@@ -370,10 +383,9 @@ theorem effectiveBucketPriority_frame
     have hEq : st'.objects[scId.toObjId]? = st.objects[scId.toObjId]? :=
       hSc scId (Or.inl hBind)
     simp only [hEq]
-  | donated scId owner =>
-    have hEq : st'.objects[scId.toObjId]? = st.objects[scId.toObjId]? :=
-      hSc scId (Or.inr ⟨owner, hBind⟩)
-    simp only [hEq]
+  -- WS-OD (v0.35.3): the `.donated` arm reads no object store, so the frame
+  -- hypothesis is not needed on this branch.
+  | donated _ _ => rfl
 
 section
 set_option linter.unusedSimpArgs false
@@ -402,12 +414,8 @@ theorem effectiveBucketPriority_frame_weak
     · simp only [hOld, hNew]
     · rw [effectiveBucketPriority_lookup_non_sc st' tcb scId hNewN]
       rw [effectiveBucketPriority_lookup_non_sc st tcb scId hOldN]
-  | donated scId owner =>
-    simp only [hBind]
-    rcases hSc scId (Or.inr ⟨owner, hBind⟩) with ⟨sc, hOld, hNew⟩ | ⟨hOldN, hNewN⟩
-    · simp only [hOld, hNew]
-    · rw [effectiveBucketPriority_lookup_non_sc st' tcb scId hNewN]
-      rw [effectiveBucketPriority_lookup_non_sc st tcb scId hOldN]
+  -- WS-OD (v0.35.3): the `.donated` arm reads no object store.
+  | donated _ _ => rfl
 
 end
 
@@ -825,11 +833,16 @@ def effectiveParamsMatchRunQueue (st : SystemState) : Prop :=
       match tcb.schedContextBinding with
       | .unbound =>
         (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some tcb.priority
-      | .bound scId | .donated scId _ =>
+      | .bound scId =>
         match st.objects[scId.toObjId]? with
         | some (.schedContext sc) =>
           (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some sc.priority
         | _ => True
+      -- WS-OD (v0.35.3): a donee is bucketed at its **own** base priority, so
+      -- its recorded bucket is the `.unbound` arm's — the donor's reservation
+      -- supplies budget, deadline and domain, never the scheduling band.
+      | .donated _ _ =>
+        (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some tcb.priority
     | _ => True
 
 /-- Z4-P: Default state has empty run queue — vacuously true. -/

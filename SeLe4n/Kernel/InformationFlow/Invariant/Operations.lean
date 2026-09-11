@@ -3609,16 +3609,23 @@ theorem objects_insert_preserves_projection_high
 -- ============================================================================
 
 /-- AK6-F.2c (helper): `updatePrioritySource` modifies only `st.objects` via
-    direct insert, at either the target TCB (unbound case) or the bound/donated
-    SchedContext. When the relevant object is non-observable, projection is
-    preserved by `objects_insert_preserves_projection_high`. -/
+    direct insert, at either the target TCB (no priority source) or the
+    SchedContext the binding's priority source names. When the written object is
+    non-observable, projection is preserved by
+    `objects_insert_preserves_projection_high`.
+
+    **WS-OD (v0.35.3)**: `hScHigh` is stated over
+    `SchedContextBinding.ownScId?`, so it ranges over `.bound` alone.
+    A `.donated` thread's priority write lands in its own TCB, which `hTcbHigh`
+    already covers, and demanding the *donor's* reservation be non-observable
+    would refuse a state where a low donee is retuned by a low principal while
+    the client is high — a case the operation no longer touches. -/
 theorem updatePrioritySource_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPriority : SeLe4n.Priority)
     (hTcbHigh : objectObservable ctx observer tid.toObjId = false)
-    (hScHigh : ∀ scId, (tcb.schedContextBinding = SchedContextBinding.bound scId ∨
-                         (∃ donor, tcb.schedContextBinding = SchedContextBinding.donated scId donor)) →
+    (hScHigh : ∀ scId, tcb.schedContextBinding.ownScId? = some scId →
                         objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer
@@ -3626,27 +3633,17 @@ theorem updatePrioritySource_preserves_projection
     projectState ctx observer st := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
   split
-  · -- .unbound
-    exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
-      hTcbHigh hObjInv
-  · -- .bound scId: match on st.objects[scId.toObjId]?
-    rename_i scId hBinding
+  · -- the priority source resolves (`.bound scId`)
+    rename_i scId hSrc
     split
     · -- some (.schedContext sc) — apply frame lemma
-      have hSc : objectObservable ctx observer scId.toObjId = false :=
-        hScHigh scId (Or.inl hBinding)
       exact objects_insert_preserves_projection_high ctx observer st scId.toObjId _
-        hSc hObjInv
-    · -- other: state unchanged
+        (hScHigh scId hSrc) hObjInv
+    · -- absent: state unchanged
       rfl
-  · -- .donated scId originalOwner: match on st.objects[scId.toObjId]?
-    rename_i scId originalOwner hBinding
-    split
-    · have hSc : objectObservable ctx observer scId.toObjId = false :=
-        hScHigh scId (Or.inr ⟨originalOwner, hBinding⟩)
-      exact objects_insert_preserves_projection_high ctx observer st scId.toObjId _
-        hSc hObjInv
-    · rfl
+  · -- no priority source (`.unbound` / `.donated`): the target's own TCB
+    exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
+      hTcbHigh hObjInv
 
 -- ============================================================================
 -- AK6-F.2h/i: VSpace checked+flush wrappers preservation
@@ -4274,8 +4271,7 @@ theorem setPriorityOp_preserves_projection
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
     (hScHigh : ∀ targetTcb, (st.objects[vTargetTid.val.toObjId]? : Option KernelObject)
                 = some (.tcb targetTcb) →
-                ∀ scId, (targetTcb.schedContextBinding = SchedContextBinding.bound scId ∨
-                         ∃ donor, targetTcb.schedContextBinding = SchedContextBinding.donated scId donor) →
+                ∀ scId, targetTcb.schedContextBinding.ownScId? = some scId →
                 objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hSchedProj : ∀ stMid stFinal,
@@ -4428,8 +4424,7 @@ theorem setPriorityOnCore_preserves_projection
     (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
     (hScHigh : ∀ targetTcb, st.getTcb? vTargetTid.val = some targetTcb →
-                ∀ scId, (targetTcb.schedContextBinding = SchedContextBinding.bound scId ∨
-                         ∃ donor, targetTcb.schedContextBinding = SchedContextBinding.donated scId donor) →
+                ∀ scId, targetTcb.schedContextBinding.ownScId? = some scId →
                 objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hReschedProj : ∀ stIn stOut c,
@@ -4483,8 +4478,7 @@ theorem setMCPriorityOp_preserves_projection
     (hScHighForUpdated : ∀ targetTcb, (st.objects[vTargetTid.val.toObjId]? : Option KernelObject)
                 = some (.tcb targetTcb) →
                 ∀ scId,
-                  (({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.bound scId ∨
-                   ∃ donor, ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.donated scId donor) →
+                  ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding.ownScId? = some scId →
                 objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hSchedProj : ∀ stMid stFinal,
@@ -4569,8 +4563,7 @@ theorem setMCPriorityOnCore_preserves_projection
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
     (hScHighForUpdated : ∀ targetTcb, st.getTcb? vTargetTid.val = some targetTcb →
                 ∀ scId,
-                  (({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.bound scId ∨
-                   ∃ donor, ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.donated scId donor) →
+                  ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding.ownScId? = some scId →
                 objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hReschedProj : ∀ stIn stOut c,

@@ -120,11 +120,19 @@ theorem validatePriorityAuthority_bound
 -- D2-E: setPriorityOp
 -- ============================================================================
 
-/-- Helper: get the current effective priority value for a thread, resolving
-through SchedContext binding. Returns the TCB priority if unbound, or the
-SchedContext priority if bound/donated.
+/-- Helper: get the current base priority of a thread, resolving through its
+**priority source** (`SchedContextBinding.ownScId?`).  Returns the
+SchedContext priority for a `.bound` thread and the TCB priority for an
+`.unbound` or `.donated` one.
 
-**Invariant dependency**: For bound/donated threads, this function requires
+**WS-OD (v0.35.3)**: this is `SystemState.threadBasePriority`, by definition
+rather than by resemblance — the tree answers "what priority does this thread
+run at" in one place, and `setPriorityOp`'s pre/post reading is that answer.
+The `.donated` arm reads the TCB because a donee runs on the donor's budget,
+deadline and domain but at its own scheduling band; before the split it read
+the donor's reservation, which is what let `updatePrioritySource` write it.
+
+**Invariant dependency**: for a `.bound` thread this requires
 `schedContextBindingConsistent` (Invariant/Defs.lean) to guarantee the
 referenced SchedContext exists. If it does not (invariant violation), the
 function defensively falls back to `tcb.priority`. This fallback path is
@@ -135,25 +143,35 @@ signature is preserved for backward compatibility and for proof contexts
 where the `schedContextBindingConsistent` invariant has already been
 established at the call site. Production dispatch paths should prefer
 `getCurrentPriorityChecked` (below), which surfaces the "bound to
-non-existent SchedContext" case as `.error .schedContextNotFound` rather
+non-existent SchedContext" case as `.error .objectNotFound` rather
 than silently masking it. -/
 def getCurrentPriority (st : SystemState) (tcb : TCB)
     : SeLe4n.Priority :=
-  match tcb.schedContextBinding with
-  | .unbound => tcb.priority
-  | .bound scId | .donated scId _ =>
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    match st.getSchedContext? scId with
-    | some sc => sc.priority
-    | none    => tcb.priority
+  st.threadBasePriority tcb
+
+/-- WS-OD (v0.35.3): `getCurrentPriority` *is* the canonical resolver — held by
+`rfl`, so the priority-management API and the scheduler cannot answer the
+question differently. -/
+theorem getCurrentPriority_eq_threadBasePriority (st : SystemState) (tcb : TCB) :
+    getCurrentPriority st tcb = st.threadBasePriority tcb := rfl
+
+/-- WS-OD (v0.35.3): a **donated** thread's current priority is its own,
+whatever the donor's reservation holds. -/
+@[simp] theorem getCurrentPriority_donated (st : SystemState) (tcb : TCB)
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    (h : tcb.schedContextBinding = .donated scId owner) :
+    getCurrentPriority st tcb = tcb.priority := by
+  simp [getCurrentPriority, SystemState.threadBasePriority, h]
 
 /-- AK8-E (WS-AK / C-M06): Error-surfacing variant of `getCurrentPriority`.
 
 Returns `.error .objectNotFound` if the TCB's `schedContextBinding` is
-`.bound scId` or `.donated scId _` but the referenced SchedContext is not
-present in the object store (indicating a `schedContextBindingConsistent`
-invariant violation). Returns `.ok sc.priority` when the binding resolves
-cleanly, and `.ok tcb.priority` for unbound threads.
+`.bound scId` but the referenced SchedContext is not present in the object
+store (indicating a `schedContextBindingConsistent` invariant violation).
+Returns `.ok sc.priority` when the binding resolves cleanly, and
+`.ok tcb.priority` for unbound **and donated** threads — since WS-OD
+(v0.35.3) a donee's priority is its own, so no lookup can fail on that arm
+(`getCurrentPriorityChecked_donated`).
 
 The error variant reuses `.objectNotFound` (rather than introducing a new
 `.schedContextNotFound` variant) to keep the Rust ABI discriminant range
@@ -168,13 +186,16 @@ that read priority for a potentially-bound TCB (e.g., preemption checks in
 binding invariant is established as a precondition. -/
 def getCurrentPriorityChecked (st : SystemState) (tcb : TCB)
     : Except KernelError SeLe4n.Priority :=
-  match tcb.schedContextBinding with
-  | .unbound => .ok tcb.priority
-  | .bound scId | .donated scId _ =>
+  -- WS-OD (v0.35.3): classify through the priority source, so this checked
+  -- reader and `getCurrentPriority` cannot disagree about which arm consults
+  -- the object store (`getCurrentPriorityChecked_ok_eq_getCurrentPriority`).
+  match tcb.schedContextBinding.ownScId? with
+  | some scId =>
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
     match st.getSchedContext? scId with
     | some sc => .ok sc.priority
     | none    => .error .objectNotFound
+  | none => .ok tcb.priority
 
 /-- AK8-E (C-M06): Soundness — when `getCurrentPriorityChecked` returns
 `.ok p`, the result matches the lookup-tolerant `getCurrentPriority`. This
@@ -184,42 +205,124 @@ theorem getCurrentPriorityChecked_ok_eq_getCurrentPriority
     (st : SystemState) (tcb : TCB) (p : SeLe4n.Priority)
     (hOk : getCurrentPriorityChecked st tcb = .ok p) :
     getCurrentPriority st tcb = p := by
-  unfold getCurrentPriorityChecked at hOk
-  unfold getCurrentPriority
-  split at hOk
-  · -- unbound branch
+  cases hb : tcb.schedContextBinding with
+  | unbound =>
+    -- no priority source: both readers take `tcb.priority`
+    simp only [getCurrentPriorityChecked, getCurrentPriority,
+      SystemState.threadBasePriority, hb,
+      SchedContextBinding.ownScId?] at hOk ⊢
     exact Except.ok.inj hOk
-  · -- bound branch
-    split at hOk
-    · exact Except.ok.inj hOk
-    · cases hOk
-  · -- donated branch
-    split at hOk
-    · exact Except.ok.inj hOk
-    · cases hOk
+  | donated scId owner =>
+    -- WS-OD (v0.35.3): likewise — a donee's priority is its own, so this arm
+    -- consults no object store and cannot error.
+    simp only [getCurrentPriorityChecked, getCurrentPriority,
+      SystemState.threadBasePriority, hb,
+      SchedContextBinding.ownScId?] at hOk ⊢
+    exact Except.ok.inj hOk
+  | bound scId =>
+    cases hSc : st.getSchedContext? scId with
+    | none =>
+      simp only [getCurrentPriorityChecked, hb,
+        SchedContextBinding.ownScId?, hSc] at hOk
+      cases hOk
+    | some sc =>
+      simp only [getCurrentPriorityChecked, getCurrentPriority,
+        SystemState.threadBasePriority, hb,
+        SchedContextBinding.ownScId?, hSc] at hOk ⊢
+      exact Except.ok.inj hOk
 
-/-- Helper: update the priority of a thread's scheduling source (SchedContext
-or TCB) and store the updated object. Returns the updated state.
+/-- WS-OD (v0.35.3): the checked reader cannot fail on a **donated** thread —
+its priority is its own, so there is no lookup left to miss.  Before the split
+a donee whose donor's SchedContext had been retyped away read
+`.error .objectNotFound` from a syscall that had nothing to do with that
+object. -/
+@[simp] theorem getCurrentPriorityChecked_donated (st : SystemState) (tcb : TCB)
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    (h : tcb.schedContextBinding = .donated scId owner) :
+    getCurrentPriorityChecked st tcb = .ok tcb.priority := by
+  simp [getCurrentPriorityChecked, h]
 
-**Invariant dependency**: For bound/donated threads, requires
+/-- Helper: update the priority of a thread's **priority source** — the object
+`SchedContextBinding.ownScId?` names — and store it.  Returns the
+updated state.
+
+**WS-OD (v0.35.3) — the write follows the read, and a donee's priority is its
+own.**  A `.donated` thread's priority now lands in **its own TCB**, not in the
+donor's SchedContext.  Writing the reservation was an authority crossing: the
+donor's scheduling context is the *client's* object, and
+`.tcbSetPriority` / `.tcbSetMCPriority` are authorised by a TCB write
+capability on the **target** plus the caller's MCP headroom — neither of which
+says anything about the client.  A caller holding a TCB capability on a passive
+server could therefore retune the priority of every client that had called it,
+and the effect outlived the call: `returnDonatedSchedContext` hands the
+reservation back with the rewritten field, so the client resumed at a band it
+never asked for.  Reachable at call depth 1 and, since the donation chain
+became transitive, at every depth.  Registered in
+`docs/REGISTERED_DEBT.md` §C and closed here.
+
+Writing the TCB is also the only spelling that makes the syscall *work*: with
+the read split (`SystemState.threadBasePriority`) a write to the donor's
+reservation would no longer be observed by the scheduler at all, so a
+`.tcbSetPriority` on a donee would silently do nothing while corrupting an
+unrelated object.
+
+**Invariant dependency**: for a `.bound` thread, requires
 `schedContextBindingConsistent` to guarantee the SchedContext exists.
 If it does not (invariant violation), the function defensively returns
 the state unchanged. This no-op path is dead code when invariants hold. -/
 def updatePrioritySource (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (newPriority : SeLe4n.Priority) : SystemState :=
-  match tcb.schedContextBinding with
-  | .unbound =>
-    -- Update TCB priority directly
-    let tcb' := { tcb with priority := newPriority }
-    { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
-  | .bound scId | .donated scId _ =>
-    -- Update SchedContext priority
+  match tcb.schedContextBinding.ownScId? with
+  | some scId =>
+    -- `.bound`: the reservation is the thread's own, so its priority field is
+    -- the scheduling source.
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
     match st.getSchedContext? scId with
     | some sc =>
       let sc' := { sc with priority := newPriority }
       { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
     | none => st  -- SchedContext missing — no-op (consistency violation)
+  | none =>
+    -- `.unbound` and `.donated`: update the TCB priority directly.
+    let tcb' := { tcb with priority := newPriority }
+    { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+
+/-- WS-OD (v0.35.3): the payoff — a priority update on a **donated** thread
+writes that thread's own TCB and nothing else, so the donor's reservation is
+untouched.  Stated as an exact equation on the resulting state rather than as
+an inequality about the SchedContext, because "does not write object `X`" is
+satisfied by an operation that writes object `Y` instead and this says *which*
+object is written. -/
+theorem updatePrioritySource_donated (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (newPriority : SeLe4n.Priority)
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    (h : tcb.schedContextBinding = .donated scId owner) :
+    updatePrioritySource st tid tcb newPriority =
+      { st with objects :=
+          st.objects.insert tid.toObjId (.tcb { tcb with priority := newPriority }) } := by
+  simp [updatePrioritySource, h]
+
+/-- WS-OD (v0.35.3): the security statement, in the form the finding was
+reported in — a priority update on a donee leaves the **donor's** scheduling
+context byte-for-byte unchanged.  Requires only that the donee's TCB is not
+stored at the donated context's key, which `objectIndexBounded` and the
+kind-disjointness of the object store give for any reachable state; the
+hypothesis is stated rather than assumed so the theorem is checkable in
+isolation. -/
+theorem updatePrioritySource_donated_preserves_donor_schedContext
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (newPriority : SeLe4n.Priority)
+    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    (h : tcb.schedContextBinding = .donated scId owner)
+    (hNe : tid.toObjId ≠ scId.toObjId)
+    (hExt : st.objects.invExt) :
+    (updatePrioritySource st tid tcb newPriority).getSchedContext? scId =
+      st.getSchedContext? scId := by
+  rw [updatePrioritySource_donated st tid tcb newPriority h]
+  unfold SystemState.getSchedContext?
+  simp only [RHTable_getElem?_eq_get?]
+  rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects
+    tid.toObjId scId.toObjId _ (by simpa using hNe) hExt]
 
 /-- Helper: if a thread is in the run queue, remove it and re-insert at
 the effective priority (new base priority with PIP boost applied). This

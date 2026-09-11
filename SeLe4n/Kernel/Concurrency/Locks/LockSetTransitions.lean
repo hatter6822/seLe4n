@@ -2607,23 +2607,28 @@ Audit-pass-6 (P1 closure for chatgpt-codex-connector review on PR #793):
 `updatePrioritySource st tid targetTcb newPriority` which dispatches
 on `targetTcb.schedContextBinding`:
 
-* `.unbound`: writes the TARGET TCB's `priority` field (already
-  covered by `tcbLock targetTcbTid .write` in the base).
-* `.bound scId` / `.donated scId _`: writes the bound SchedContext's
-  `priority` field via `st.objects.insert scId.toObjId (.schedContext sc')`.
+* `.unbound` **and, since WS-OD (v0.35.3), `.donated`**: writes the
+  TARGET TCB's `priority` field (already covered by
+  `tcbLock targetTcbTid .write` in the base).
+* `.bound scId`: writes the bound SchedContext's `priority` field via
+  `st.objects.insert scId.toObjId (.schedContext sc')`.
   Without locking that SC, this transition could race with concurrent
   SchedContext operations on the same object.
 
-The caller pre-resolves `targetTcb.schedContextBinding` to determine
-whether the bound SC needs locking:
+The caller pre-resolves the **priority source** — not the binding's
+SchedContext — to determine whether an SC lock is needed:
 
 ```
 let scId := s.getTcb? targetTcbTid >>= fun t =>
-  match t.schedContextBinding with
-  | .unbound => none
-  | .bound id | .donated id _ => some id
+  t.schedContextBinding.ownScId?
 ```
--/
+
+WS-OD (v0.35.3) narrowed this from `SchedContextBinding.scId?`.  A donee's
+priority is its own, so the operation no longer writes the donor's
+reservation and declaring a write lock on it would be a footprint wider than
+its transition — sound, but carrying contention (SM8.D's CC-5 channel) that
+says nothing about the operation.  `.tcbSetAffinity` keeps `scId?`: a
+thread's home core *is* a property of the reservation it runs on. -/
 def lockSet_tcbSetPriority (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (boundSchedContextId : Option SchedContextId)
@@ -2646,10 +2651,12 @@ target TCB's `maxControlledPriority` field (covered by
 branch (when the target's current effective priority exceeds
 `newMCP`), it then calls `updatePrioritySource` with the capped
 priority — which writes the bound SchedContext if the binding is
-`.bound`/`.donated` (same shape as `setPriorityOp`).
+`.bound` (same shape as `setPriorityOp`), and the target's own TCB
+otherwise.  It also *reads* the priority source through
+`getCurrentPriority`, which is the same object.
 
-The caller pre-resolves `targetTcb.schedContextBinding` identically
-to `lockSet_tcbSetPriority`. -/
+The caller pre-resolves `targetTcb.schedContextBinding.ownScId?`
+identically to `lockSet_tcbSetPriority`. -/
 def lockSet_tcbSetMCPriority (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (boundSchedContextId : Option SchedContextId)

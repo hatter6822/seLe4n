@@ -438,71 +438,62 @@ theorem insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull
       exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
   exact ipcInvariantFull_of_readViewAgreement hView hPsi hCap hInv
 
-/-- Reduction of `updatePrioritySource` at an unbound binding. -/
-private theorem updatePrioritySource_unbound_eq (st : SystemState)
+/-- Reduction of `updatePrioritySource` at a binding with **no** priority
+source — `.unbound` and, since WS-OD (v0.35.3), `.donated`.  Both write the
+thread's own TCB. -/
+private theorem updatePrioritySource_tcbTarget_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
-    (hB : tcb.schedContextBinding = .unbound) :
+    (hB : tcb.schedContextBinding.ownScId? = none) :
     SchedContext.PriorityManagement.updatePrioritySource st tid tcb p
       = { st with objects := st.objects.insert tid.toObjId (.tcb { tcb with priority := p }) } := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
   rw [hB]
 
-/-- Reduction of `updatePrioritySource` at a bound or donated binding, keyed on
-the projected SchedContext id. -/
+/-- Reduction of `updatePrioritySource` at a binding that **does** name a
+priority source — `.bound scId`, and only that since WS-OD (v0.35.3). -/
 private theorem updatePrioritySource_sc_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
     (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
-    (hB : tcb.schedContextBinding = .bound scId ∨
-          ∃ owner, tcb.schedContextBinding = .donated scId owner)
+    (hB : tcb.schedContextBinding.ownScId? = some scId)
     (hSc : st.getSchedContext? scId = some sc) :
     SchedContext.PriorityManagement.updatePrioritySource st tid tcb p
       = { st with objects :=
             st.objects.insert scId.toObjId (.schedContext { sc with priority := p }) } := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  rcases hB with hB | ⟨owner, hB⟩ <;> (rw [hB]; dsimp only []; rw [hSc])
+  rw [hB]; dsimp only []; rw [hSc]
 
 /-- Reduction of `updatePrioritySource` when the named SchedContext is absent. -/
 private theorem updatePrioritySource_sc_none_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
     (scId : SeLe4n.SchedContextId)
-    (hB : tcb.schedContextBinding = .bound scId ∨
-          ∃ owner, tcb.schedContextBinding = .donated scId owner)
+    (hB : tcb.schedContextBinding.ownScId? = some scId)
     (hSc : st.getSchedContext? scId = none) :
     SchedContext.PriorityManagement.updatePrioritySource st tid tcb p = st := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  rcases hB with hB | ⟨owner, hB⟩ <;> (rw [hB]; dsimp only []; rw [hSc])
+  rw [hB]; dsimp only []; rw [hSc]
 
-/-- `updatePrioritySource` writes a priority field — on the TCB when unbound,
-on the bound SchedContext otherwise — and priority is a field no conjunct
-reads. -/
+/-- `updatePrioritySource` writes a priority field — on the thread's own TCB
+unless the binding names a priority source, in which case on that SchedContext —
+and priority is a field no conjunct reads.  The case split is on the classifier
+rather than on the binding, so the two arms are exactly the operation's. -/
 theorem updatePrioritySource_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hPre : st.objects[tid.toObjId]? = some (.tcb tcb)) :
     ipcInvariantFull (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) := by
-  cases hB : tcb.schedContextBinding with
-  | unbound =>
-      rw [updatePrioritySource_unbound_eq st tid tcb p hB]
+  cases hB : tcb.schedContextBinding.ownScId? with
+  | none =>
+      rw [updatePrioritySource_tcbTarget_eq st tid tcb p hB]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
         { tcb with priority := p } hObjInv hInv hPre rfl rfl rfl rfl rfl rfl rfl rfl rfl
-  | bound scId =>
+  | some scId =>
       cases hSc : st.getSchedContext? scId with
       | some sc =>
-          rw [updatePrioritySource_sc_eq st tid tcb p scId sc (Or.inl hB) hSc]
+          rw [updatePrioritySource_sc_eq st tid tcb p scId sc hB hSc]
           exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st scId
             sc { sc with priority := p } hObjInv hInv
             ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc) rfl
-      | none => rw [updatePrioritySource_sc_none_eq st tid tcb p scId (Or.inl hB) hSc]; exact hInv
-  | donated scId owner =>
-      cases hSc : st.getSchedContext? scId with
-      | some sc =>
-          rw [updatePrioritySource_sc_eq st tid tcb p scId sc (Or.inr ⟨owner, hB⟩) hSc]
-          exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st scId
-            sc { sc with priority := p } hObjInv hInv
-            ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc) rfl
-      | none =>
-          rw [updatePrioritySource_sc_none_eq st tid tcb p scId (Or.inr ⟨owner, hB⟩) hSc]
-          exact hInv
+      | none => rw [updatePrioritySource_sc_none_eq st tid tcb p scId hB hSc]; exact hInv
 
 /-- `migrateRunQueueBucketOnCore` moves no object. -/
 theorem migrateRunQueueBucketOnCore_objects_eq (st : SystemState)
@@ -1286,12 +1277,16 @@ theorem ipcInvariantFull_of_runQueueReKey (st : SystemState) (c : CoreId)
 /-- Domain alignment over any base state: a no-op or a one-TCB rewrite of a
 field no conjunct reads. -/
 private theorem domainAlignStep_preserves_ipcInvariantFull (stP : SystemState)
-    (tid : SeLe4n.ThreadId) (tcbC : TCB) (domain : Nat)
+    (tid : SeLe4n.ThreadId) (tcbC : TCB) (domain : Nat) (gate : Prop) [Decidable gate]
     (hObjInv : stP.objects.invExt) (hInv : ipcInvariantFull stP)
     (hAt : stP.objects[tid.toObjId]? = some (.tcb tcbC)) :
-    ipcInvariantFull (if tcbC.domain.val = domain then stP
+    ipcInvariantFull (if tcbC.domain.val = domain ∨ gate then stP
       else { stP with objects := stP.objects.insert tid.toObjId (.tcb { tcbC with domain := ⟨domain⟩ }) }) := by
-  by_cases h : tcbC.domain.val = domain
+  -- WS-OD (v0.35.3): the domain write gained the ownership gate as a second
+  -- disjunct, and the bundle argument is indifferent to it — either disjunct
+  -- takes the no-write arm.  Stated over an opaque `gate` so this lemma cannot
+  -- drift from whatever the operation's condition is.
+  by_cases h : tcbC.domain.val = domain ∨ gate
   · rw [if_pos h]
     exact hInv
   · rw [if_neg h]
@@ -1302,15 +1297,20 @@ private theorem domainAlignStep_preserves_ipcInvariantFull (stP : SystemState)
 write and domain write touch fields no conjunct reads, and the re-bucket
 re-keys a queued thread in place. -/
 theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
-    (stStored : SystemState) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
+    (stStored : SystemState) (scId : SeLe4n.SchedContextId)
+    (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
     (priority domain : Nat)
     (hObjInv : stStored.objects.invExt) (hInv : ipcInvariantFull stStored)
     (hBT : stStored.getTcb? boundTid = some boundTcb) :
-    ipcInvariantFull (SchedContextOps.schedContextConfigureBoundPropagate stStored boundTid
+    ipcInvariantFull (SchedContextOps.schedContextConfigureBoundPropagate stStored scId boundTid
       boundTcb priority domain) := by
   have hBTRaw := (SystemState.getTcb?_eq_some_iff stStored boundTid boundTcb).mp hBT
   unfold SchedContextOps.schedContextConfigureBoundPropagate
-  by_cases hPrioEq : boundTcb.priority.val = priority
+  -- WS-OD (v0.35.3): both propagations are gated on the bound thread OWNING this
+  -- SchedContext, so the "no write" arms now also cover a donated binding.  The
+  -- bundle argument is unchanged on every arm.
+  by_cases hPrioEq : boundTcb.priority.val = priority ∨
+      ¬ SchedContextOps.schedContextConfigurePropagates boundTcb scId
   · rw [if_pos hPrioEq]
     dsimp only []
     split
@@ -1318,7 +1318,7 @@ theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
       have hCEq : boundTcb = currentTcb := Option.some.inj (hBT.symm.trans hCur)
       subst hCEq
       exact domainAlignStep_preserves_ipcInvariantFull stStored boundTid boundTcb domain
-        hObjInv hInv hBTRaw
+        _ hObjInv hInv hBTRaw
     · exact hInv
   · rw [if_neg hPrioEq]
     dsimp only []
@@ -1349,7 +1349,7 @@ theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
           Option.some.inj (hSomeW.symm.trans hCur)
         subst hCEq
         exact domainAlignStep_preserves_ipcInvariantFull _ boundTid _ domain
-          hObjInvW hInvR hAtW
+          _ hObjInvW hInvR hAtW
       · exact hInvR
     · rw [if_neg hMem]
       split
@@ -1358,7 +1358,7 @@ theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
           Option.some.inj (hSomeW.symm.trans hCur)
         subst hCEq
         exact domainAlignStep_preserves_ipcInvariantFull _ boundTid _ domain
-          hObjInvW hInvW hAtW
+          _ hObjInvW hInvW hAtW
       · exact hInvW
 
 /-- `.schedContextConfigure`: the SC rewrite keeps `boundThread`, the optional
@@ -1400,7 +1400,7 @@ theorem schedContextConfigure_preserves_ipcInvariantFull
             · rename_i boundTcb hBT
               cases hStep
               exact schedContextConfigureBoundPropagate_preserves_ipcInvariantFull stStored
-                boundTid boundTcb priority domain hObjInvStored hInvStored hBT
+                _ boundTid boundTcb priority domain hObjInvStored hInvStored hBT
             · cases hStep
               exact hInvStored
       · contradiction

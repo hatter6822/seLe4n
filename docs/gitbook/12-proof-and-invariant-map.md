@@ -193,6 +193,41 @@ frame donating a *different* context. `maxLockSetSize` does not move — the
 published WCRT or covert-channel figure is recomputed.
 See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.7 for the canonical text.
 
+**A donation moves budget, period and deadline — not priority or domain**
+(`v0.35.3`).  Closing WS-OD surfaced an authority crossing in both directions:
+`updatePrioritySource` classified `.bound` and `.donated` alike, so
+`.tcbSetPriority` on a thread *holding* a donated context wrote the **donor's**
+`SchedContext.priority` though the syscall is gated on a TCB-write right over
+the server alone; and `schedContextConfigure` propagated into `sc.boundThread`'s
+TCB, which after a donation is the *donee*, so a capability on the client's
+reservation rewrote the server's own priority **and migrated its scheduling
+domain**.  The remedy is seL4-MCS's own split — a donee runs its client's work
+on the client's reservation at **its own** priority and in its own partition,
+and rises to the client's band only through priority inheritance.  One
+classifier decides which SchedContext supplies a thread's thread-owned
+parameters — `SchedContextBinding.ownScId?`, the reservation a thread *owns*
+(`some` on `.bound`, `none` on `.unbound` and `.donated`), as against `scId?`,
+the one it *runs on* — one resolver answers
+(`SystemState.threadBasePriority`), and every reader is pinned to it by theorem
+— `resolveEffectivePrioDeadline_fst_eq_threadBasePriority`,
+`getCurrentPriority_eq_threadBasePriority` (by `rfl`),
+`effectiveSchedParams_priority_deadline_eq_resolve`,
+`effectiveBucketPriority_eq_resolveEffective` — so the split cannot be unpicked
+one site at a time.  Two invariants follow the read: a donee's recorded
+run-queue bucket is its own base priority
+(`effectiveParamsMatchRunQueue{,OnCore}`), and `boundThreadPriorityConsistent`
+ranges over `.bound` alone, where quantified over every binding **the donation
+falsified it** whenever the donor's and the donee's base priorities differed —
+the reservation's `priority` had to equal one before the hand-off and the other
+after, and the hand-off writes neither field.  Budget,
+period and deadline stay the reservation's at every depth, and the five budget
+predicates keep their merged arm — pinned as such, so the split cannot leak into
+the budget question.  `schedContextConfigureBoundPropagate` gates both
+propagations on the bound thread **owning** the reservation, through one
+predicate both halves consult so they cannot diverge, and `effectiveSchedParams` reports a donee's own
+domain, since every live domain filter reads `tcb.domain`.  `maxLockSetSize` is
+unmoved at **14**.
+
 ### 3.4 Lifecycle — `SeLe4n/Kernel/Lifecycle/Invariant/`
 
 `lifecycleInvariantBundle` covers identity aliasing, stale-reference exclusion

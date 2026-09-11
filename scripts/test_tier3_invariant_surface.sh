@@ -2028,6 +2028,129 @@ run_check "INVARIANT" rg -n '^theorem passiveServerHoldsDonatedContext_atCallDep
 run_check "INVARIANT" rg -n '^theorem passiveServerHoldsDonatedContext_onCore' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem passiveServerHoldsDonatedContext_atCallDepthTwo[^\n]*(\n([ \t][^\n]*)?)*sc\.boundThread = some receiverVtid\.val" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 
+# ---------------------------------------------------------------------------
+# WS-OD (v0.35.3) -- a donated scheduling context does not carry the donor's
+# priority.  Reported while closing WS-OD: `updatePrioritySource` classified
+# `.bound` and `.donated` alike, so `.tcbSetPriority` on a passive server wrote
+# the CLIENT's `SchedContext.priority` -- an authority crossing, since the
+# syscall is gated on a TCB-write right over the *server* and the caller's MCP.
+# The remedy is seL4-MCS's own split: the donee runs on the donor's budget,
+# deadline and domain, at its OWN priority.
+# ---------------------------------------------------------------------------
+
+# The classifier.  One definition decides which object supplies a thread's base
+# priority, so a binding constructor added later (WS-CB's hierarchical servers)
+# must be classified before it compiles -- the enumeration-standing-in-for-a-
+# derivation shape CLAUDE.md forbids.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def ownScId\? : SchedContextBinding → Option SeLe4n\.SchedContextId\n  \| \.unbound => none\n  \| \.bound scId => some scId\n  \| \.donated _ _ => none$" SeLe4n/Kernel/SchedContext/Types.lean'
+# NEGATIVE: the classifier must not name the donor's context.  Relation, not
+# presence: the mutation keeps every constructor and re-points the donated arm.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def ownScId\?[^\n]*(\n([ \t][^\n]*)?)*\| \.donated scId _ => some scId" SeLe4n/Kernel/SchedContext/Types.lean'
+# ...and it is a NARROWING of `scId?`, not a second independent resolution.
+run_check "INVARIANT" rg -n '^theorem ownScId\?_eq_scId\?_of_isSome' SeLe4n/Kernel/SchedContext/Types.lean
+
+# The canonical state-level resolver, classified through it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def threadBasePriority \(st : SystemState\) \(tcb : TCB\) : SeLe4n\.Priority :=\n  match tcb\.schedContextBinding\.ownScId\? with" SeLe4n/Model/State.lean'
+run_check "INVARIANT" rg -n '^@\[simp\] theorem threadBasePriority_donated' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem threadBasePriority_congr' SeLe4n/Model/State.lean
+
+# THE WRITE.  `updatePrioritySource` selects its target through the classifier,
+# so a donee's priority lands in its own TCB and the donor's reservation is not
+# written at all.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def updatePrioritySource \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(tcb : TCB\) \(newPriority : SeLe4n\.Priority\) : SystemState :=\n  match tcb\.schedContextBinding\.ownScId\? with" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+# NEGATIVE: the merged arm, bounded to this declaration -- the pre-fix spelling.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def updatePrioritySource[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+# The payoff, in the form the finding was reported in: which object moves.  An
+# inequality about the SchedContext alone would be satisfied by an operation
+# that wrote some third object instead.
+run_check "INVARIANT" rg -n '^theorem updatePrioritySource_donated ' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
+run_check "INVARIANT" rg -n '^theorem updatePrioritySource_donated_preserves_donor_schedContext' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
+
+# THE READS.  Each site's `.donated` arm takes the donor's deadline (and, where
+# it resolves one, domain) and the donee's OWN priority.  Bounded gaps: a
+# declaration header sits at column 0, so the match cannot leave its own `def`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def resolveEffectivePrioDeadline[^\n]*(\n([ \t][^\n]*)?)*\| \.donated scId _ =>[^\n]*(\n([ \t][^\n]*)?)*\| some sc => \(tcb\.priority, sc\.deadline\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def effectiveSchedParams[^\n]*(\n([ \t][^\n]*)?)*\| \.donated scId _ =>[^\n]*(\n([ \t][^\n]*)?)*\| none => \(tcb\.priority, sc\.deadline, tcb\.domain\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def effectiveBucketPriority[^\n]*(\n([ \t][^\n]*)?)*\| \.donated _ _ => tcb\.priority$" SeLe4n/Kernel/Scheduler/Invariant.lean'
+# NEGATIVE (each declaration-bounded): the merged arm, which is how all three
+# read the donor's `sc.priority` before the split.  `hasSufficientBudget` in the
+# same file KEEPS it, so a file-wide negative would fire on a clean tree.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def resolveEffectivePrioDeadline[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def effectiveSchedParams[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def effectiveBucketPriority[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/Scheduler/Invariant.lean'
+# The two API readers, classified rather than matched.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def getCurrentPriority \(st : SystemState\) \(tcb : TCB\)\n    : SeLe4n\.Priority :=\n  st\.threadBasePriority tcb$" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def getCurrentPriorityChecked[^\n]*(\n([ \t][^\n]*)?)*match tcb\.schedContextBinding\.ownScId\? with" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+run_check "INVARIANT" rg -n '^@\[simp\] theorem getCurrentPriorityChecked_donated' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
+
+# The pins that keep the four readers from answering differently.  Without these
+# the split would be four independent edits that a later cut could unpick one at
+# a time -- one question, four answers.
+run_check "INVARIANT" rg -n '^theorem resolveEffectivePrioDeadline_fst_eq_threadBasePriority' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^theorem resolveEffectivePrioDeadline_fst_of_donated' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^theorem effectiveSchedParams_priority_deadline_eq_resolve' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^theorem effectiveBucketPriority_eq_resolveEffective' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^theorem getCurrentPriority_eq_threadBasePriority' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
+
+# The frozen mirror answers the same question the same way.  `frozenSetPriority`
+# is `updatePrioritySource`'s second implementation, and the two diverging is
+# exactly the shape CLAUDE.md's "one question, two answers" rule names.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetPriority[^\n]*(\n([ \t][^\n]*)?)*match targetTcb\.schedContextBinding\.ownScId\? with" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetPriority[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/FrozenOps/Operations.lean'
+
+# The invariants follow the read: a donee is bucketed at its own base priority,
+# so its recorded run-queue bucket is the `.unbound` arm's.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def effectiveParamsMatchRunQueue \(st : SystemState\) : Prop :=[^\n]*(\n([ \t][^\n]*)?)*\| \.donated _ _ =>\n        \(st\.scheduler\.runQueueOnCore bootCoreId\)\.threadPriority\[tid\]\? = some tcb\.priority" SeLe4n/Kernel/Scheduler/Invariant.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def effectiveParamsMatchRunQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*\| \.donated _ _ =>\n        \(st\.scheduler\.runQueueOnCore c\)\.threadPriority\[tid\]\? = some tcb\.priority" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
+# The carrier is scoped to the priority source, not to the binding.  Quantified
+# over `scId?` it covered `.donated` too, and the donation FALSIFIES that: the
+# reservation's priority must equal the donor's before the hand-off and the
+# donee's after, and the hand-off writes neither field.  `_frame` requires the
+# binding unchanged, so nothing carried it across either.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def boundThreadPriorityConsistent \(st : SystemState\) : Prop :=[^\n]*(\n([ \t][^\n]*)?)*∀ scId, tcb\.schedContextBinding\.ownScId\? = some scId" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def boundThreadPriorityConsistent[^\n]*(\n([ \t][^\n]*)?)*∀ scId, tcb\.schedContextBinding\.scId\? = some scId" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
+
+# THE CONTROL, in the relation-preserving direction: the split must not leak
+# into the BUDGET question.  Budget, period and deadline *are* the reservation's
+# at every depth, so these five sites keep the merged arm; an anchor that only
+# forbade the merged spelling would be satisfied by splitting them too, which
+# would be a different (and wrong) kernel.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def hasSufficientBudget[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def currentBudgetPositiveOnCore[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def budgetPositiveOnCore[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def budgetPositive \(st : SystemState\) : Prop :=[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/Scheduler/Invariant.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def maxBudgetInBandOnCore[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean'
+
+# The mirror crossing, closed in the same cut: `schedContextConfigure`
+# propagates BOTH thread-owned parameters -- priority and domain -- into
+# `sc.boundThread`'s TCB, and after a donation `boundThread` is the DONEE.  So a
+# capability on the *client's* reservation could rewrite the *server's* own base
+# priority and migrate its partition, permanently.  Both propagations maintain a
+# `.bound`-only invariant (`boundThreadPriorityConsistent`,
+# `boundThreadDomainConsistent`), so both are gated on this SchedContext being
+# the bound thread's OWN.  Relation, not presence: the gate names `scId`, so a
+# thread that owns a DIFFERENT context is not propagated to either.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate \(stStored : SystemState\)\n    \(scId : SeLe4n\.SchedContextId\)" SeLe4n/Kernel/SchedContext/Operations.lean'
+# The ownership question has ONE definition that both halves consult, so a later
+# cut cannot gate one and not the other -- the shape that made this the *mirror*
+# of a crossing already fixed once.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigurePropagates \(boundTcb : TCB\)\n    \(scId : SeLe4n\.SchedContextId\) : Prop :=\n  boundTcb\.schedContextBinding\.ownScId\? = some scId$" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" rg -n '^@\[simp\] theorem schedContextConfigurePropagates_donated' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem schedContextConfigurePropagates_bound' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*if boundTcb\.priority\.val = priority ∨\n       ¬ schedContextConfigurePropagates boundTcb scId then" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*if currentTcb\.domain\.val = domain ∨\n       ¬ schedContextConfigurePropagates boundTcb scId then stProp" SeLe4n/Kernel/SchedContext/Operations.lean'
+# NEGATIVES: the ungated spellings -- the pre-fix shapes, which keep every token
+# and drop only the conjunct that makes the write the bound thread's own.  Both
+# halves are named, because a fix applied to one and not its sibling is how this
+# class stays open while reading closed.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*if boundTcb\.priority\.val = priority then\n      stStored" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*if currentTcb\.domain\.val = domain then stProp" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" rg -n '^theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+# ...and the reading side follows: `effectiveSchedParams` reports a donee's OWN
+# domain, because every live domain filter reads `tcb.domain`, so reporting
+# `sc.domain` described a partition the scheduler never puts the donee in.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def effectiveSchedParams[^\n]*(\n([ \t][^\n]*)?)*\| \.donated scId _ =>[^\n]*(\n([ \t][^\n]*)?)*sc\.deadline, sc\.domain\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+
 # PR #892 review: a refused current-thread record CLEARS the mirror rather than
 # leaving it naming the previous thread.  `switchToThreadHw` refuses a tid at or
 # above the `u64::MAX` sentinel *without touching the HAL*, so discarding that

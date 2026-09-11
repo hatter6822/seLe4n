@@ -724,27 +724,37 @@ figures above.
 
 ## 9. Two things this plan deliberately does not fix
 
-**Both are entered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §C at
+**Both were entered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §C at
 `v0.35.2`**, so they outlive this plan rather than dying with it — "registered
 rather than absorbed" is a claim about that table, and until the closure cut it
-was a claim about this paragraph.
+was a claim about this paragraph.  **The first is closed at `v0.35.3`** and is
+no longer in that table; the second stands.
 
-* **Priority authority through a donation.**  `getCurrentPriority` and
-  `updatePrioritySource` treat `.bound` and `.donated` identically, so writing a
-  `.donated` thread's priority writes the *donor's* SchedContext — and
-  `setPriorityOp` checks the **caller's** MCP ceiling and the target's TCB-write
-  right, neither of which says anything about the donor.  A principal with
-  authority over a passive server can therefore rewrite a client's scheduling
-  parameter, which the client receives when the donation returns.  Already true
-  at depth 1; chains widen the blast radius to a third domain but do not create
-  the behaviour.  Reported as a possible vulnerability at `v0.35.2` (Medium–High
-  integrity, an authority crossing rather than a leak or a denial of service),
-  and owned by WS-CB's MCP-authority work (CB0.3, CB1.6), which reopens the same
-  question on the configure path.  The fix is to make the *write* side
-  asymmetric — a donated context is not the holder's to reconfigure, which is why
-  seL4-MCS keeps priority on the TCB — and that is a behavioural change to two
-  live syscall arms with their own preservation obligations, so it is a cut of
-  its own rather than a rider on this closure.
+* **Priority authority through a donation — CLOSED at `v0.35.3`.**
+  `getCurrentPriority` and `updatePrioritySource` treated `.bound` and
+  `.donated` identically, so writing a `.donated` thread's priority wrote the
+  *donor's* SchedContext — and `setPriorityOp` checks the **caller's** MCP
+  ceiling and the target's TCB-write right, neither of which says anything about
+  the donor.  A principal with authority over a passive server could therefore
+  rewrite a client's scheduling parameter, which the client received when the
+  donation returned.  Already true at depth 1; chains widened the blast radius
+  to a third domain but did not create the behaviour.  Reported as a possible
+  vulnerability at `v0.35.2` (Medium–High integrity, an authority crossing
+  rather than a leak or a denial of service).
+
+  The remedy is seL4-MCS's own split rather than a refusal: a donee runs on the
+  donor's budget, deadline and domain at **its own** priority.
+  `SchedContextBinding.ownScId?` is the one classifier,
+  `SystemState.threadBasePriority` the one resolver, and the five readers are
+  pinned to it by theorem.  Verifying it surfaced the **mirror** crossing —
+  `schedContextConfigure` propagates **both** thread-owned parameters into
+  `sc.boundThread`'s TCB, which after a donation is the *donee*, so a capability
+  on the client's reservation could rewrite the server's own priority and
+  migrate its scheduling domain — closed in the same cut by gating both halves
+  on the bound thread *owning* that reservation.  What remains with WS-CB
+  (CB0.3, CB1.6) is the *other* authority question on that path: that
+  `schedContextConfigure` answers to a SchedContext write right with no
+  caller-MCP check at all.
 * **`scThreadIndexConsistent` is prose only.**  The object-store index that tracks
   which threads reference a SchedContext has a documented consistency property and
   no Lean definition.  The push and pop maintain the index correctly at depth ≥ 2

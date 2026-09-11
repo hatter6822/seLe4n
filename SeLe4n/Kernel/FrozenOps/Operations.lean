@@ -1242,7 +1242,14 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
 -- ============================================================================
 
 /-- D2-L: Frozen-phase setPriority. Validates MCP authority, updates priority
-on the frozen state (SchedContext if bound, TCB if unbound). -/
+on the frozen state (the thread's SchedContext if `.bound`, its TCB otherwise).
+
+**WS-OD (v0.35.3)**: the target is chosen by
+`SchedContextBinding.ownScId?`, the same classifier the live
+`updatePrioritySource` uses, so the frozen mirror and the live operation cannot
+answer "whose priority does this write" differently.  A `.donated` thread's
+priority lands in its own TCB — writing the donor's reservation was an
+authority crossing (`docs/REGISTERED_DEBT.md` §C). -/
 def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
     (newPriority : SeLe4n.Priority) : FrozenKernel Unit :=
   fun st =>
@@ -1253,14 +1260,10 @@ def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
       else match frozenLookupTcb st targetTid with
       | none => .error .objectNotFound
       | some targetTcb =>
-        -- Update priority source (SchedContext or TCB)
-        match targetTcb.schedContextBinding with
-        | .unbound =>
-          let tcb' := { targetTcb with priority := newPriority }
-          match st.objects.set targetTid.toObjId (.tcb tcb') with
-          | some objs => .ok ((), { st with objects := objs })
-          | none => .error .objectNotFound
-        | .bound scId | .donated scId _ =>
+        -- Update the priority source (`.bound`: the SchedContext; `.unbound`
+        -- and `.donated`: the TCB).
+        match targetTcb.schedContextBinding.ownScId? with
+        | some scId =>
           match st.objects.get? scId.toObjId with
           | some (.schedContext sc) =>
             let sc' := { sc with priority := newPriority }
@@ -1268,6 +1271,11 @@ def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
             | some objs => .ok ((), { st with objects := objs })
             | none => .error .objectNotFound
           | _ => .error .objectNotFound
+        | none =>
+          let tcb' := { targetTcb with priority := newPriority }
+          match st.objects.set targetTid.toObjId (.tcb tcb') with
+          | some objs => .ok ((), { st with objects := objs })
+          | none => .error .objectNotFound
 
 /-- D2-L: Frozen-phase setMCPriority. Validates caller has sufficient MCP,
 updates target's maxControlledPriority. If current priority exceeds new MCP,

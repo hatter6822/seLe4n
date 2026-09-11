@@ -243,16 +243,76 @@ def checkAdmission (st : SystemState) (candidate : SchedContext)
 -- Z5-F3: schedContextConfigure
 -- ============================================================================
 
+/-- WS-OD (v0.35.3): may a reconfiguration of SchedContext `scId` propagate its
+**thread-owned** parameters — base priority and domain — into `boundTcb`?
+
+Exactly when `boundTcb` **owns** that reservation.  One predicate for both
+halves of `schedContextConfigureBoundPropagate`, so they provably gate on the
+same fact: a domain gate that asked the question a second way would be the
+"one question, two answers" shape `CLAUDE.md` forbids, and the two halves
+disagreeing is how half a fix reads as a whole one. -/
+def schedContextConfigurePropagates (boundTcb : TCB)
+    (scId : SeLe4n.SchedContextId) : Prop :=
+  boundTcb.schedContextBinding.ownScId? = some scId
+
+instance (boundTcb : TCB) (scId : SeLe4n.SchedContextId) :
+    Decidable (schedContextConfigurePropagates boundTcb scId) := by
+  unfold schedContextConfigurePropagates; infer_instance
+
+/-- A donee's thread-owned parameters are never propagated to: it owns no
+reservation, so no reconfiguration of the one it runs on reaches its TCB. -/
+@[simp] theorem schedContextConfigurePropagates_donated (boundTcb : TCB)
+    {scId held : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    (h : boundTcb.schedContextBinding = .donated held owner) :
+    ¬ schedContextConfigurePropagates boundTcb scId := by
+  simp [schedContextConfigurePropagates, h]
+
+/-- A thread that owns the reconfigured reservation is propagated to — the
+`.bound` case, so neither half of the propagation is dead code. -/
+@[simp] theorem schedContextConfigurePropagates_bound (boundTcb : TCB)
+    {scId : SeLe4n.SchedContextId}
+    (h : boundTcb.schedContextBinding = .bound scId) :
+    schedContextConfigurePropagates boundTcb scId := by
+  simp [schedContextConfigurePropagates, h]
+
 /-- The bound-thread propagation tail of `schedContextConfigure`, factored so
 the invariant surface can speak about it by name: rewrite the bound TCB's
-priority (when it moved), re-bucket the thread on its home core (when
-queued), then align its domain (when it moved).  The body is the verbatim
-propagation tower `schedContextConfigure` carried inline. -/
+priority (when it moved), re-bucket the thread on its home core (when queued),
+then align its domain (when it moved) — **all of it gated on
+`schedContextConfigurePropagates`**, one predicate over
+`SchedContextBinding.ownScId?` that both halves consult.
+
+**WS-OD (v0.35.3) — the mirror authority crossing.**  `sc.boundThread` is the
+thread the reservation is *charged to*, which after a donation is the **donee**,
+not the owner: `donateSchedContext` writes `boundThread := some serverTid`.
+Propagating a reconfiguration there unconditionally let a caller holding a
+capability on the **client's** reservation rewrite the **server's** own
+`TCB.priority` *and* `TCB.domain` — the mirror of the crossing
+`updatePrioritySource` had, and permanent, since the donee keeps both fields
+after the donation returns.  Neither is the caller's to set: `.tcbSetPriority`
+answers to a TCB-write right over the target plus an MCP ceiling, and the domain
+is the partition the thread runs in.
+
+Both halves are propagations of the **thread-owned** parameters onto the
+reservation the thread owns — the AK2-B convention — and the invariants they
+maintain (`boundThreadPriorityConsistent`, `boundThreadDomainConsistent`) are
+both `.bound`-only, so gating on ownership is the exact relation rather than a
+weakening: it fires on every state those invariants constrain.  `scId?` would be
+the wrong classifier here, and the wrong one is what the crossing was.  Both
+halves consult the **one** predicate, so a later cut cannot gate one and not the
+other.
+
+Budget, period and deadline are **reservation-owned** and are written by
+`schedContextConfigure` itself, on the SchedContext, where a donee reads them
+at every depth.  A reconfiguration therefore still retunes the donee's budget
+and deadline, which is correct: that is the reservation the caller holds. -/
 def schedContextConfigureBoundPropagate (stStored : SystemState)
+    (scId : SeLe4n.SchedContextId)
     (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
     (priority domain : Nat) : SystemState :=
   let stProp : SystemState :=
-    if boundTcb.priority.val = priority then
+    if boundTcb.priority.val = priority ∨
+       ¬ schedContextConfigurePropagates boundTcb scId then
       stStored
     else
       let newPri : SeLe4n.Priority := ⟨priority⟩
@@ -271,7 +331,8 @@ def schedContextConfigureBoundPropagate (stStored : SystemState)
       else stWithTcb
   match stProp.getTcb? boundTid with
   | some currentTcb =>
-    if currentTcb.domain.val = domain then stProp
+    if currentTcb.domain.val = domain ∨
+       ¬ schedContextConfigurePropagates boundTcb scId then stProp
     else
       let newDom : SeLe4n.DomainId := ⟨domain⟩
       let currentTcb2 : TCB := { currentTcb with domain := newDom }
@@ -359,8 +420,8 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
               -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
               match stStored.getTcb? boundTid with
               | some boundTcb =>
-                .ok ((), schedContextConfigureBoundPropagate stStored boundTid boundTcb
-                  priority domain)
+                .ok ((), schedContextConfigureBoundPropagate stStored scIdTyped boundTid
+                  boundTcb priority domain)
               | none => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
         else
           .error .resourceExhausted
