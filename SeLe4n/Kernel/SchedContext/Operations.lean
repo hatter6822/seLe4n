@@ -431,6 +431,17 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
 -- Z5-G1/G2/G3: schedContextBind
 -- ============================================================================
 
+/-- WS-OD (`v0.35.4`): does this thread's reply link name a frame that is on a
+live reply stack — one with a frame or a context above it?  Such a thread is owed
+a scheduling context by the pop that reaches its frame. -/
+def replyFrameOnLiveStack (st : SystemState) (tcb : TCB) : Bool :=
+  match tcb.replyObject with
+  | none => false
+  | some rid =>
+    match st.getReply? rid with
+    | none => false
+    | some r => r.next.isSome
+
 /-- Z5-G1/G2/G3: Bind a thread to a SchedContext.
 1. Precondition: SchedContext has no bound thread, TCB is unbound
 2. Set bidirectional binding (sc.boundThread, tcb.schedContextBinding)
@@ -450,6 +461,11 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
     | some sc =>
       -- Z5-G1: Precondition check — SchedContext must not already have a bound thread
       if sc.boundThread.isSome then .error .illegalState
+      -- WS-OD (`v0.35.4`): a context that heads a reply stack is on loan down a
+      -- call chain and owed back along it; binding it elsewhere would give it a
+      -- second claimant the pop then displaces.  Refused until the chain unwinds
+      -- (or its callers are cancelled, which reclaims it).
+      else if sc.scReply.isSome then .error .illegalState
       else
         match st.getTcb? vThreadId.val with
         | some tcb =>
@@ -459,6 +475,13 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
           -- cause a thread to pass the domain filter by TCB domain but be prioritized
           -- by SchedContext domain.
           if tcb.domain != sc.domain then .error .invalidArgument
+          -- WS-OD (`v0.35.4`): a thread blocked on a reply whose frame is on a
+          -- live stack (`next.isSome`) is owed a context by the pop that reaches
+          -- that frame, and the pop writes its binding; giving it a second
+          -- context now would be overwritten by that pop, orphaning this one.
+          -- Refused while the frame is on a stack; a frame the detach cut off
+          -- (`next = none`) is owed nothing, and binding is allowed.
+          else if replyFrameOnLiveStack st tcb then .error .illegalState
           else
           -- Z5-G1: Precondition check — TCB must be unbound.
           -- AI6-D (L-13): `schedContextBind` checks `tcb.schedContextBinding`
@@ -554,6 +577,17 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
       | some tid =>
         match st.getTcb? tid with
         | some tcb =>
+          -- WS-OD (`v0.35.4`): a holder that received the context by donation
+          -- is not unbound here.  The donation pop is keyed on the recorded
+          -- server's `.donated` binding; erasing that binding while the
+          -- context's stack still names the caller left the caller's frame
+          -- dead on the stack when the server later replied (the Reply and the
+          -- context could never be retyped again).  The context's owner
+          -- reclaims it by cancelling the blocked caller, which returns it and
+          -- unbinds the holder.  (seL4 allows the unbind and re-donates at the
+          -- pop because its pop is keyed on the reply object; this kernel keys
+          -- the pop on the binding and refuses the unbind instead — fail closed.)
+          if tcb.schedContextBinding.isDonated then .error .illegalState else
           -- Z5-H1: Preemption guard — if the bound thread is current, clear
           -- current to force rescheduling.  Under dequeue-on-dispatch the
           -- current thread is not in the RunQueue, so clearing current is

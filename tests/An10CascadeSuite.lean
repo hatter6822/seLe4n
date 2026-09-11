@@ -630,9 +630,13 @@ def an10_e_donateSchedContextValid_reduces : IO Bool := do
     match SeLe4n.Kernel.donateSchedContextValid stPop clientVtid serverVtid scId,
           SeLe4n.Kernel.donateSchedContext stPop clientVtid.val serverVtid.val scId with
     | Except.ok st1, Except.ok st2 =>
-      -- ...and the push really happened: the context now heads the donor's reply.
+      -- ...and the push really happened: the context now heads the donor's reply,
+      -- and (WS-OD `v0.35.4`) the frame says so from its own side — `next` names
+      -- the context on the head frame, where `donatedSc` used to sit on every
+      -- frame.  Both directions, because the head link and the frame's upward
+      -- link are the two halves the chain walk checks against each other.
       ((st1.getSchedContext? scId).bind (·.scReply) == some replyId) &&
-        ((st2.getReply? replyId).bind (·.donatedSc) == some scId)
+        ((st2.getReply? replyId).bind (·.next) == some (.head scId))
     | _, _ => false
   return errorOk && successOk
 

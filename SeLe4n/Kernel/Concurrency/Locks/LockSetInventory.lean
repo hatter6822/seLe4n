@@ -10,6 +10,10 @@
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
 import SeLe4n.Kernel.Concurrency.Locks.LockIdProjection
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
+-- **WS-OD (`v0.35.4`)**: the `.tcbSuspend` footprint is rooted at the
+-- state-resolved cancellation footprint and lives beside it; the inventory
+-- registers it where it is defined.
+import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.PackedString
 
 /-!
@@ -228,8 +232,8 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_schedContextBind .lockSet,
     lkst! "lockSet for schedContextUnbind"
       lockSet_schedContextUnbind .lockSet,
-    lkst! "lockSet for tcbSuspend"
-      lockSet_tcbSuspend .lockSet,
+    lkst! "lockSet for tcbSuspend (state-resolved, rooted at the cancellation footprint)"
+      lockSet_tcbSuspendOnCore .lockSet,
     lkst! "lockSet for tcbResume"
       lockSet_tcbResume .lockSet,
     lkst! "lockSet for tcbSetPriority"
@@ -299,8 +303,8 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_consistent_schedContextBind .consistency,
     lkst! "lockSet_consistent for schedContextUnbind"
       lockSet_consistent_schedContextUnbind .consistency,
-    lkst! "lockSet_consistent for tcbSuspend"
-      lockSet_consistent_tcbSuspend .consistency,
+    lkst! "lockSet_consistent for tcbSuspend (the state-resolved footprint's kinds)"
+      lockSet_tcbSuspendOnCore_correct .consistency,
     lkst! "lockSet_consistent for tcbResume"
       lockSet_consistent_tcbResume .consistency,
     lkst! "lockSet_consistent for tcbSetPriority"

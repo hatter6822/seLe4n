@@ -775,37 +775,37 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
     stDualFifo4 (SeLe4n.ThreadId.ofNat 8) none none none
 
   -- Arbitrary O(1) remove with queuePPrev metadata: remove middle waiter 8 from [7,8,9].
-  let (_, stDualRm1) ← expectOkSt "dual queue remove enqueue sender 7"
+  let (_, stDualRemove1) ← expectOkSt "dual queue remove enqueue sender 7"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
-  let (_, stDualRm2) ← expectOkSt "dual queue remove enqueue sender 8"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) .empty stDualRm1)
-  let (_, stDualRm3) ← expectOkSt "dual queue remove enqueue sender 9"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) .empty stDualRm2)
-  let (_, stDualRm4) ← expectOkSt "dual queue remove middle sender 8"
-    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8) stDualRm3)
+  let (_, stDualRemove2) ← expectOkSt "dual queue remove enqueue sender 8"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) .empty stDualRemove1)
+  let (_, stDualRemove3) ← expectOkSt "dual queue remove enqueue sender 9"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) .empty stDualRemove2)
+  let (_, stDualRemove4) ← expectOkSt "dual queue remove middle sender 8"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8) stDualRemove3)
   expectThreadQueueLinks "dual queue remove middle clears sender 8 links"
-    stDualRm4 (SeLe4n.ThreadId.ofNat 8) none none none
+    stDualRemove4 (SeLe4n.ThreadId.ofNat 8) none none none
   expectThreadQueueLinks "dual queue remove middle repairs sender 7 -> sender 9"
-    stDualRm4 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 9))
+    stDualRemove4 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 9))
   expectThreadQueueLinks "dual queue remove middle repairs sender 9 <- sender 7"
-    stDualRm4 (SeLe4n.ThreadId.ofNat 9) (some (SeLe4n.ThreadId.ofNat 7)) (some (.tcbNext (SeLe4n.ThreadId.ofNat 7))) none
-  let (rmFirst, stDualRm5) ← expectOkSt "dual queue remove receive #1"
-    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 6) none stDualRm4)
+    stDualRemove4 (SeLe4n.ThreadId.ofNat 9) (some (SeLe4n.ThreadId.ofNat 7)) (some (.tcbNext (SeLe4n.ThreadId.ofNat 7))) none
+  let (rmFirst, stDualRemove5) ← expectOkSt "dual queue remove receive #1"
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 6) none stDualRemove4)
   let (rmSecond, _) ← expectOkSt "dual queue remove receive #2"
-    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 6) none stDualRm5)
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 6) none stDualRemove5)
   if rmFirst = SeLe4n.ThreadId.ofNat 7 ∧ rmSecond = SeLe4n.ThreadId.ofNat 9 then
     IO.println "positive check passed [dual queue remove preserves remaining FIFO order]"
   else
     throw <| IO.userError s!"dual queue remove expected [7,9], got [{toString rmFirst},{toString rmSecond}]"
 
   let stMalformedHeadPPrev ← expectOkVal "dual queue malformed pprev state (head points to prev tcbNext)"
-    (corruptThreadQueueLinks stDualRm3 (SeLe4n.ThreadId.ofNat 7) none (some (.tcbNext (SeLe4n.ThreadId.ofNat 8))) (some (SeLe4n.ThreadId.ofNat 8)))
+    (corruptThreadQueueLinks stDualRemove3 (SeLe4n.ThreadId.ofNat 7) none (some (.tcbNext (SeLe4n.ThreadId.ofNat 8))) (some (SeLe4n.ThreadId.ofNat 8)))
   expectErr "dual queue malformed pprev rejects head non-endpoint owner"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stMalformedHeadPPrev)
     .illegalState
 
   let stMalformedPrevNext ← expectOkVal "dual queue malformed pprev state (prev next mismatch)"
-    (corruptThreadQueueLinks stDualRm3 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 9)))
+    (corruptThreadQueueLinks stDualRemove3 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 9)))
   expectErr "dual queue malformed pprev rejects stale prev pointer"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8) stMalformedPrevNext)
     .illegalState

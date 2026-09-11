@@ -1047,21 +1047,19 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- `pendingReceiveReply = some (ReplyId.ofNat target)`, so derive the id from
     -- `target` to avoid missing the stash and freeing a still-referenced Reply.
     --
-    -- **WS-OD OD5.4: and a third in-use form — a live reply-stack frame.**
-    -- `r.donatedSc.isSome` says this Reply *is* a frame of some scheduling
-    -- context's donation stack (`donationChainWellFormed`'s walk accepts a frame
-    -- only while it names the context).  Freeing it would leave that context's
-    -- `scReply`, or some other frame's `prev`, naming a slot the retype has
-    -- replaced: the chain walk then stops mid-stack and every later pop of that
-    -- context refuses, so the context is stranded on whichever server holds it.
-    -- Refused rather than repaired, for the reason `linkReply` refuses rather
-    -- than clears (OD5.1): a repair would have to splice a middle frame out of a
-    -- singly-linked stack, which is `O(depth)` and needs the frame above it.
-    -- One guard covers both halves of the plan's row -- "must not leave a live
-    -- `prev` naming a deleted Reply" and "must pop the context's head" -- because
-    -- a Reply that no `prev` names and that heads no stack has `donatedSc = none`.
-    if r.caller.isSome || r.donatedSc.isSome
-        || st.replyIsStashed (SeLe4n.ReplyId.ofNat target.toNat) then
+    -- **WS-OD OD5.4 / `v0.35.4`: and a third in-use form — a reply-stack frame.**
+    -- A Reply carrying a stack link in either direction (`prev` or `next`) is a
+    -- frame of some scheduling context's donation stack, or the top of a part
+    -- the detach cut off; freeing it would leave a context's `scReply` or a
+    -- neighbour's link naming a slot the retype has replaced.  The one spelling
+    -- of "this Reply may be linked or retyped" is `Reply.isFree` — no caller, no
+    -- links — shared with `linkReply`, `replyStashValid` and the boot check.
+    -- Under `donationChainWellFormed` a linked frame always has a blocked
+    -- caller, and a frame whose caller is gone has already left its stack (the
+    -- pop, the detach, `Reply.consumed`), so nothing is pinned by this guard
+    -- that a cancellation cannot free: the `v0.35.4` finding was exactly a frame
+    -- that stayed linked after its caller was consumed.
+    if !r.isFree || st.replyIsStashed (SeLe4n.ReplyId.ofNat target.toNat) then
       .error .revocationRequired
     else .ok st
   | .tcb tcb =>
@@ -1087,19 +1085,43 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     if sc.scReply.isSome then .error .revocationRequired else .ok st
   | _ => .ok st
 
-/-- **WS-OD OD5.4: a Reply that is a live reply-stack frame cannot be retyped.**
+/-- **WS-OD OD5.4 / `v0.35.4`: a Reply that is a reply-stack frame cannot be
+retyped.**
 
-The guard, stated: `donatedSc.isSome` means some scheduling context's stack
-reaches this Reply, so destroying it would leave that stack naming a slot the
-retype has replaced.  `.revocationRequired` is the error this path already uses
-for "clear this precondition first", and it reads correctly here as "let the
-outstanding call chain unwind, or cancel it, before freeing the Reply". -/
+The guard, stated: a Reply that is not free — a caller still blocked on it, or a
+stack link in either direction — is in use, so destroying it would strand that
+caller or leave a stack naming a slot the retype has replaced.
+`.revocationRequired` is the error this path already uses for "clear this
+precondition first", and it reads correctly here as "let the outstanding call
+chain unwind, or cancel it, before freeing the Reply". -/
 theorem lifecyclePreRetypeCleanup_reply_refuses_live_stack_frame
     (st : SystemState) (target : SeLe4n.ObjId) (r : Reply) (newObj : KernelObject)
-    (hDon : r.donatedSc.isSome = true) :
+    (hNotFree : r.isFree = false) :
     lifecyclePreRetypeCleanup st target (.reply r) newObj = .error .revocationRequired := by
   unfold lifecyclePreRetypeCleanup
-  simp only [hDon, Bool.or_true, Bool.true_or, if_true]
+  simp only [hNotFree, Bool.not_false, Bool.true_or, if_true]
+
+/-- The linked forms of the guard: a `prev` link alone, or a `next` link alone,
+each refuses the retype. -/
+theorem lifecyclePreRetypeCleanup_reply_refuses_prev_link
+    (st : SystemState) (target : SeLe4n.ObjId) (r : Reply) (newObj : KernelObject)
+    (hPrev : r.prev.isSome = true) :
+    lifecyclePreRetypeCleanup st target (.reply r) newObj = .error .revocationRequired :=
+  lifecyclePreRetypeCleanup_reply_refuses_live_stack_frame st target r newObj (by
+    unfold Reply.isFree
+    cases hp : r.prev with
+    | none => rw [hp] at hPrev; cases hPrev
+    | some _ => simp)
+
+theorem lifecyclePreRetypeCleanup_reply_refuses_next_link
+    (st : SystemState) (target : SeLe4n.ObjId) (r : Reply) (newObj : KernelObject)
+    (hNext : r.next.isSome = true) :
+    lifecyclePreRetypeCleanup st target (.reply r) newObj = .error .revocationRequired :=
+  lifecyclePreRetypeCleanup_reply_refuses_live_stack_frame st target r newObj (by
+    unfold Reply.isFree
+    cases hn : r.next with
+    | none => rw [hn] at hNext; cases hNext
+    | some _ => simp)
 
 /-- **WS-OD OD5.4: a scheduling context that heads a reply stack cannot be
 retyped either.**

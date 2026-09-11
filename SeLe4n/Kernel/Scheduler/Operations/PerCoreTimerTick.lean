@@ -200,8 +200,9 @@ pinning the tick to the bounded-WCRT class.
 
 **WS-RR RR7.11**: what fits the 1 ms tick budget is the tick's **own** footprint
 — three locks, `3 · 3 · 60 µs = 540 µs` on the RPi5 figures — not the uniform
-`maxLockSetSize` envelope, which is `2520 µs` at the WS-OD OD3.13 constant, was
-`1980 µs` at OD3.5's, `1620 µs` at RR7.11's and `1440 µs` before that.  The sentence here used to
+`maxLockSetSize` envelope, which is `2880 µs` at the WS-OD `v0.35.4` constant, was
+`2520 µs` at OD3.13's, `2340 µs` at OD3.7's, `1980 µs` at OD3.5's, `1620 µs` at
+RR7.11's and `1440 µs` before that.  The sentence here used to
 attribute the fit to the envelope, which the arithmetic never supported at any
 value of the constant; the envelope is a coarse upper bound over every declared
 footprint, and the tick's is one of the smallest.  `SmpWcrtSuite` §3.2 pins both

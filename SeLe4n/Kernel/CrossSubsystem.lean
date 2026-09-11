@@ -1792,6 +1792,27 @@ theorem storeDonationHeadClear_preservesFieldsOutside_ipc
   · exact preservesFieldsOutside_refl _ _
   · exact storeObject_preservesFieldsOutside_ipc _ _ _ _ hS
 
+/-- `v0.35.4`: the pop's re-head of the frame below is at most one `storeObject`. -/
+theorem storeReplyReHead_preservesFieldsOutside_ipc
+    {scId : SeLe4n.SchedContextId} {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (hStep : storeReplyReHead scId head? st = .ok st') :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  rcases storeReplyReHead_cases hStep with rfl | ⟨_, _, _, _, hS⟩
+  · exact preservesFieldsOutside_refl _ _
+  · exact storeObject_preservesFieldsOutside_ipc _ _ _ _ hS
+
+/-- `v0.35.4`: the whole pop — the unlink and the re-head — is at most two
+`storeObject`s, so it writes no field the endpoint write set omits. -/
+theorem storeDonationHeadPop_preservesFieldsOutside_ipc
+    {scId : SeLe4n.SchedContextId} {head? : Option (SeLe4n.ReplyId × Reply)}
+    {st st' : SystemState}
+    (hStep : storeDonationHeadPop scId head? st = .ok st') :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  rcases storeDonationHeadPop_cases hStep with ⟨_, rfl⟩ | ⟨_, _, s1, _, hClear, hReHead⟩
+  · exact preservesFieldsOutside_refl _ _
+  · exact preservesFieldsOutside_trans (storeDonationHeadClear_preservesFieldsOutside_ipc hClear)
+      (storeReplyReHead_preservesFieldsOutside_ipc hReHead)
+
 theorem ensureRunnable_preservesFieldsOutside (st : SystemState) (tid : SeLe4n.ThreadId) :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st (ensureRunnable st tid) := by
   unfold ensureRunnable
@@ -1968,7 +1989,7 @@ theorem returnDonatedSchedContext_preservesFieldsOutside
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? hStep
   refine preservesFieldsOutside_trans
     (storeObject_preservesFieldsOutside_ipc _ _ _ _ hS1) ?_
-  refine preservesFieldsOutside_trans (storeDonationHeadClear_preservesFieldsOutside_ipc hClear) ?_
+  refine preservesFieldsOutside_trans (storeDonationHeadPop_preservesFieldsOutside_ipc hClear) ?_
   refine preservesFieldsOutside_trans
     (storeObject_preservesFieldsOutside_ipc _ _ _ _ hS3) ?_
   refine preservesFieldsOutside_trans

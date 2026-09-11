@@ -299,7 +299,7 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- — a **ReplyId**, so it names the innermost Call the context was donated
       -- through, and with it the caller that Call blocked.  That is the same
       -- class of cross-domain linkage the `.reply` arm below erases
-      -- (`caller` / `donatedSc` / `prev`) and the TCB arm erases
+      -- (`caller` / `prev` / `next`) and the TCB arm erases
       -- (`schedContextBinding` / `replyObject`): internal donation plumbing,
       -- not part of the context's observable logical identity.  Landing the
       -- erasure with the field is what keeps the OD4 push *unobservable* — a
@@ -310,9 +310,10 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
   | .reply r =>
       -- WS-SM SM6.D (PR #822 review, Reply objects): Strip the Reply object's
       -- cross-domain linkage — `caller` (the back-link to the blocked caller
-      -- TCB), `donatedSc` (the MCS donated SchedContext), and `prev` (the
-      -- reply-stack link for nested calls).  These three fields name high-domain
-      -- thread / SchedContext / reply-stack identities; leaving them in the
+      -- TCB), `prev` (the reply-stack link to the enclosing call's reply) and
+      -- `next` (the link to the frame above, or — on the head — to the donated
+      -- SchedContext; WS-OD `v0.35.4`, seL4's `replyNext`).  These three fields
+      -- name high-domain thread / SchedContext / reply-stack identities; leaving them in the
       -- low projection would leak who is blocked on (or donating to) a
       -- low-visible reply object once the receive-path links it.  Mirrors the
       -- `.schedContext` `boundThread := none` stripping and the TCB
@@ -326,7 +327,7 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- internal id would leak a hidden ReplyId through a low-visible Reply object.
       -- Erasing it to the canonical sentinel removes the channel.
       .reply { r with replyId := SeLe4n.ReplyId.sentinel,
-                      caller := none, donatedSc := none, prev := none,
+                      caller := none, prev := none, next := none,
                       lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
   -- WS-SM SM8.B.4: strip the per-object `lock`.  `RwLockState` carries
   -- `writerHeld : Option CoreId`, `readers : List CoreId` and
@@ -464,14 +465,16 @@ theorem projectKernelObject_erases_reply_caller
     | _ => True := by
   simp [projectKernelObject]
 
-/-- WS-SM SM6.D (PR #822 review, Reply objects): `projectKernelObject` strips the
-    Reply object's `donatedSc` MCS donated-SchedContext link (resets it to
-    `none`).  Donation chain identities are internal scheduling plumbing — the
-    same class the TCB/SchedContext arms already erase. -/
-theorem projectKernelObject_erases_reply_donatedSc
+/-- WS-OD (`v0.35.4`): `projectKernelObject` strips the Reply object's `next`
+    reply-stack link (resets it to `none`).  On the head frame that link names the
+    donated SchedContext — seL4's `replyNext` with the `isHead` bit set — and below
+    the head it names the frame above; either is cross-domain donation plumbing,
+    erased for the reason the SM6.D arm erased the per-frame context field it
+    replaces. -/
+theorem projectKernelObject_erases_reply_next
     (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply) :
     match projectKernelObject ctx observer (.reply r) with
-    | .reply r' => r'.donatedSc = none
+    | .reply r' => r'.next = none
     | _ => True := by
   simp [projectKernelObject]
 
@@ -512,19 +515,17 @@ theorem projectKernelObject_reply_caller_invariant
       = projectKernelObject ctx observer (.reply r) := by
   simp [projectKernelObject]
 
-/-- **WS-OD OD2.2**: the projection is invariant under a Reply's donated
-scheduling context — the `.reply` arm has stripped `donatedSc` since SM6.D, and
-this is the theorem that says so, stated in the same cut as the SchedContext
-head so that all three reply-stack fields have one.
-
-The sibling sweep is the point: the erasure covered `caller`, `donatedSc` and
-`prev` from the day the arm was written, but only `caller` had a theorem — so a
-reader asking whether the donation push is observable would have found the
-question answered for one field of three. -/
-theorem projectKernelObject_reply_donatedSc_invariant
+/-- **WS-OD OD2.2 / `v0.35.4`**: the projection is invariant under a Reply's
+`next` link — the `.reply` arm strips it, so a push that writes the head link (or
+a detach that clears the frame above's) is unobservable through a low-visible
+Reply.  Stated per field beside `_caller_invariant` and `_prev_invariant`, because
+an erasure with no theorem is one nothing consumes: the OD2.2 sweep found the
+arm had erased every link field from the day it was written while only `caller`
+had a statement. -/
+theorem projectKernelObject_reply_next_invariant
     (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply)
-    (sc : Option SeLe4n.SchedContextId) :
-    projectKernelObject ctx observer (.reply { r with donatedSc := sc })
+    (n : Option SeLe4n.Kernel.ReplyStackLink) :
+    projectKernelObject ctx observer (.reply { r with next := n })
       = projectKernelObject ctx observer (.reply r) := by
   simp [projectKernelObject]
 
@@ -543,10 +544,22 @@ frame — the two links the donation return's head clear resets together.  State
 one lemma so a projection hop over that write is one rewrite rather than two. -/
 theorem projectKernelObject_reply_stackLinks_invariant
     (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply)
-    (donated : Option SeLe4n.SchedContextId) (prev : Option SeLe4n.ReplyId) :
-    projectKernelObject ctx observer (.reply { r with donatedSc := donated, prev := prev })
+    (prev : Option SeLe4n.ReplyId) (next : Option SeLe4n.Kernel.ReplyStackLink) :
+    projectKernelObject ctx observer (.reply { r with prev := prev, next := next })
       = projectKernelObject ctx observer (.reply r) := by
   simp [projectKernelObject]
+
+/-- `v0.35.4`: the projection is invariant under **consuming** a Reply —
+`Reply.consumed` clears `caller` and, off a stack head, both stack links, all
+three of which the `.reply` arm strips, and keeps `replyId` and `lock`, which the
+arm normalises or leaves alone.  The consume is therefore unobservable through a
+low-visible Reply whether or not the frame headed a context. -/
+theorem projectKernelObject_reply_consumed_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply) :
+    projectKernelObject ctx observer (.reply r.consumed)
+      = projectKernelObject ctx observer (.reply r) := by
+  unfold SeLe4n.Kernel.Reply.consumed
+  split <;> simp [projectKernelObject]
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the projection is invariant under a
 TCB's SchedContext binding — `projectKernelObject` strips the field (AI4-A), so a

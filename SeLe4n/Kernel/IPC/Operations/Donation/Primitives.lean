@@ -119,7 +119,7 @@ theorem donateSchedContext_scheduler_eq
   obtain ⟨_, _, _, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hS2, _, hS3, _, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
   have h1 := storeObject_scheduler_eq_local st _ _ _ hS1
-  have h2 := storeObject_scheduler_eq_local s1 _ _ _ hS2
+  have h2 := storeDonationFramePush_scheduler_eq hS2
   have h3 := storeObject_scheduler_eq_local s2 _ _ _ hS3
   have h4 := storeObject_scheduler_eq_local s3 _ _ _ hS4
   rw [hEq]
@@ -224,7 +224,7 @@ theorem donateSchedContext_server_binding
       hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
+  have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   refine ⟨{ serverTcb with schedContextBinding := .donated clientScId clientTid }, ?_, rfl⟩
   rw [hEq]
@@ -249,7 +249,7 @@ theorem returnDonatedSchedContext_server_unbound
   obtain ⟨_, _, _, serverTcb, s1, s2, s3, s4, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   refine ⟨{ serverTcb with schedContextBinding := .unbound }, ?_, rfl⟩
   rw [hEq]
@@ -349,7 +349,7 @@ theorem donateSchedContext_machine_eq
   obtain ⟨_, _, _, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hS2, _, hS3, _, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
   have h1 := storeObject_machine_eq_local st _ _ _ hS1
-  have h2 := storeObject_machine_eq_local s1 _ _ _ hS2
+  have h2 := storeDonationFramePush_machine_eq hS2
   have h3 := storeObject_machine_eq_local s2 _ _ _ hS3
   have h4 := storeObject_machine_eq_local s3 _ _ _ hS4
   rw [hEq]
@@ -397,7 +397,7 @@ theorem returnDonatedSchedContext_machine_eq
   show s4.machine = st.machine
   rw [SeLe4n.Model.storeObject_machine_eq s3 s4 _ _ h4,
     SeLe4n.Model.storeObject_machine_eq s2 s3 _ _ h3,
-    storeDonationHeadClear_machine_eq hClear,
+    storeDonationHeadPop_machine_eq hClear,
     SeLe4n.Model.storeObject_machine_eq st s1 _ _ h1]
 
 /-- AG8-G: Return donation is atomic — `returnDonatedSchedContext` preserves
@@ -672,7 +672,7 @@ theorem donateSchedContext_getTcb?_cpuAffinity_eq
       hObj, _, _, hFrame, hS1, hS2, hLC, hS3, hL, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
+  have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   -- The pushed Reply resolves at the state its own store runs on: it resolved in
   -- `st` (that is what `donationPushFrame?` validated), and the SchedContext
@@ -693,7 +693,7 @@ theorem donateSchedContext_getTcb?_cpuAffinity_eq
   have hRaw2 : s3.getTcb? serverTid = some serverTcb :=
     getTcb?_of_lookupTcb s3 serverTid serverTcb hL
   have e1 := storeObject_schedContextAt_getTcb?_eq st s1 clientScId sc _ hObj hObjInv hS1 tid
-  have e2 := storeObject_replyAt_getTcb?_eq s1 s2 pushRid pushReply _ hRep1 hInv1 hS2 tid
+  have e2 := storeDonationFramePush_getTcb?_eq hInv1 hRep1 hS2 tid
   have e3 := storeObject_tcbAt_getTcb?_cpuAffinity_eq s2 s3 clientTid clientTcb
     { clientTcb with schedContextBinding := .unbound } hRaw1 rfl hInv2 hS3 tid
   have e4 := storeObject_tcbAt_getTcb?_cpuAffinity_eq s3 s4 serverTid serverTcb
@@ -718,7 +718,7 @@ theorem donateSchedContext_getSchedContext?_ne
       hObj, _, _, hFrame, hS1, hS2, hLC, hS3, hL, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
+  have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   -- The pushed Reply resolves at the state its own store runs on: it resolved in
   -- `st` (that is what `donationPushFrame?` validated), and the SchedContext
@@ -740,7 +740,7 @@ theorem donateSchedContext_getSchedContext?_ne
     getTcb?_of_lookupTcb s3 serverTid serverTcb hL
   have e1 := storeObject_schedContext_getSchedContext?_ne st s1 clientScId scId _
     hNe hObjInv hS1
-  have e2 := storeObject_replyAt_getSchedContext?_eq s1 s2 pushRid pushReply _ hRep1 hInv1 hS2 scId
+  have e2 := storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2 scId
   have e3 := storeObject_tcbAt_getSchedContext?_eq s2 s3 clientTid clientTcb
     { clientTcb with schedContextBinding := .unbound } hRaw1 hInv2 hS3 scId
   have e4 := storeObject_tcbAt_getSchedContext?_eq s3 s4 serverTid serverTcb
@@ -766,7 +766,7 @@ theorem donateSchedContext_post_boundThread
       hObj, _, _, hFrame, hS1, hS2, hLC, hS3, hL, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
+  have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   -- The pushed Reply resolves at the state its own store runs on: it resolved in
   -- `st` (that is what `donationPushFrame?` validated), and the SchedContext
@@ -790,8 +790,7 @@ theorem donateSchedContext_post_boundThread
       = some { sc with boundThread := some serverTid, scReply := some pushRid } := by
     rw [SystemState.getSchedContext?_eq_some_iff,
       storeObject_objects_eq st s1 clientScId.toObjId _ hObjInv hS1]
-  have e2 := storeObject_replyAt_getSchedContext?_eq s1 s2 pushRid pushReply _ hRep1 hInv1 hS2
-    clientScId
+  have e2 := storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2 clientScId
   have e3 := storeObject_tcbAt_getSchedContext?_eq s2 s3 clientTid clientTcb
     { clientTcb with schedContextBinding := .unbound } hRaw1 hInv2 hS3 clientScId
   have e4 := storeObject_tcbAt_getSchedContext?_eq s3 s4 serverTid serverTcb
@@ -860,7 +859,7 @@ theorem returnDonatedSchedContext_getTcb?_cpuAffinity_eq
     hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   have hScPre : st.getSchedContext? scId = some sc := by
     unfold SystemState.getSchedContext?; rw [hSc]
@@ -869,7 +868,7 @@ theorem returnDonatedSchedContext_getTcb?_cpuAffinity_eq
   have hRaw2 : s3.getTcb? serverTid = some serverTcb :=
     getTcb?_of_lookupTcb s3 serverTid serverTcb hL2
   have e1 := storeObject_schedContextAt_getTcb?_eq st s1 scId sc _ hScPre hObjInv hS1 tid
-  have e2 := storeDonationHeadClear_getTcb?_eq hInv1 hClear tid
+  have e2 := storeDonationHeadPop_getTcb?_eq hInv1 hClear tid
   have e3 := storeObject_tcbAt_getTcb?_cpuAffinity_eq s2 s3 originalOwner clientTcb
     { clientTcb with schedContextBinding := donationReturnBinding scId newOwner? }
     hRaw1 rfl hInv2 hS3 tid
@@ -899,14 +898,14 @@ theorem returnDonatedSchedContext_getSchedContext?_ne
     hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   have hRaw1 : s2.getTcb? originalOwner = some clientTcb :=
     getTcb?_of_lookupTcb s2 originalOwner clientTcb hL1
   have hRaw2 : s3.getTcb? serverTid = some serverTcb :=
     getTcb?_of_lookupTcb s3 serverTid serverTcb hL2
   have e1 := storeObject_schedContext_getSchedContext?_ne st s1 scId scId' _ hNe hObjInv hS1
-  have e2 := storeDonationHeadClear_getSchedContext?_eq hInv1 hClear scId'
+  have e2 := storeDonationHeadPop_getSchedContext?_eq hInv1 hClear scId'
   have e3 := storeObject_tcbAt_getSchedContext?_eq s2 s3 originalOwner clientTcb
     { clientTcb with schedContextBinding := donationReturnBinding scId newOwner? }
     hRaw1 hInv2 hS3 scId'

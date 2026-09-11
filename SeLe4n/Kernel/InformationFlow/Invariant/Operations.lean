@@ -1761,14 +1761,14 @@ private theorem returnDonatedSchedContext_preserves_projection
     hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? hReturn
   have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
   have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hObjSetInv hS1
-  have hSet2 := storeDonationHeadClear_preserves_objectIndexSet_invExt hSet1 hClear
+  have hSet2 := storeDonationHeadPop_preserves_objectIndexSet_invExt hSet1 hClear
   have hSet3 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s2 s3 _ _ hSet2 hS3
   have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
     hObjSetInv hIdxComplete hS1
-  have hC2 := storeDonationHeadClear_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
+  have hC2 := storeDonationHeadPop_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
   have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
     hSet2 hC2 hS3
   have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
@@ -1776,7 +1776,7 @@ private theorem returnDonatedSchedContext_preserves_projection
     (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _)
     (hIdxComplete scId.toObjId (by rw [hSc]; intro hx; cases hx))
     hObjInv hS1
-  have hP2 := storeDonationHeadClear_preserves_projection ctx observer hC1 hInv1 hClear
+  have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
   have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
     originalOwner.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 originalOwner clientTcb hL1)
     (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _)
@@ -3284,15 +3284,14 @@ private theorem donateSchedContext_preserves_projection
       hKeyNe hObjInv hS1]
     exact hRepRaw
   have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hInv2 := SeLe4n.Model.storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
+  have hInv2 := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
   have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hObjSetInv hS1
-  have hSet2 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s1 s2 _ _ hSet1 hS2
+  have hSet2 := storeDonationFramePush_preserves_objectIndexSet_invExt hSet1 hS2
   have hSet3 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s2 s3 _ _ hSet2 hS3
   have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
     hObjSetInv hIdxComplete hS1
-  have hC2 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s1 s2 _ _ hInv1
-    hSet1 hC1 hS2
+  have hC2 := storeDonationFramePush_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hS2
   have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
     hSet2 hC2 hS3
   have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
@@ -3300,11 +3299,10 @@ private theorem donateSchedContext_preserves_projection
     (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _)
     (hIdxComplete clientScId.toObjId (by rw [hScRaw]; intro hx; cases hx))
     hObjInv hS1
-  have hP2 := storeObject_projectionStable_preserves_projection ctx observer s1 s2
-    pushRid.toObjId _ (.reply pushReply) hRep1
-    (projectKernelObject_reply_stackLinks_invariant ctx observer pushReply _ _)
-    (hC1 pushRid.toObjId (by rw [hRep1]; intro hx; cases hx))
-    hInv1 hS2
+  -- `v0.35.4`: the push is two Reply writes now (the pushed frame and the old
+  -- head's upward link); both are projection-stable for the same reason.
+  have hP2 := storeDonationFramePush_preserves_projection ctx observer hC1 hSet1 hInv1
+    ((SystemState.getReply?_eq_some_iff _ _ _).mpr hRep1) hS2
   have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
     clientTid.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 clientTid clientTcb hL1)
     (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _)

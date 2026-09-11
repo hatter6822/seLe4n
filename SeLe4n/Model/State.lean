@@ -3281,83 +3281,99 @@ absent or already in use (`caller ≠ none`) — an in-use reply cannot be
 re-linked, the structural half of reply caps' single-use semantics.  Pure
 prep (Phase B): wired into the `Call` path in Phase C.
 
-**WS-OD OD5.1** (plan §3.4, the confused deputy): a Reply that still names a
-donated scheduling context (`donatedSc ≠ none`) is a **live frame of that
-context's reply stack**, and this refuses it too.  `Reply` has `prev` and no
-`next`, so a cancelled middle caller's frame cannot be spliced out by a backward
-scan the way seL4's doubly-linked `reply_remove` does; the frame stays on the
-stack with its `caller` consumed, which is exactly the state
-`r.caller = none ∧ r.donatedSc ≠ none` names.  Re-linking there would make the
-pop that later reaches this frame read the **new** caller and hand the original
-thread's scheduling context to an unrelated thread, in another domain, driven by
-object reuse.
+**WS-OD OD5.1 / `v0.35.4`** (plan §3.4, the confused deputy): the barrier is
+`Reply.isFree` — no caller **and no reply-stack link in either direction** — and
+it is the one spelling of "this Reply may be linked" that `replyStashValid`, the
+retype guard and the boot check read too.  A Reply that still carries a link is
+a live frame of some scheduling context's reply stack; re-linking it would make
+the pop that later reaches that frame read the **new** caller and hand the
+original thread's scheduling context to an unrelated thread, in another domain,
+driven by object reuse.
 
-**Refused rather than cleared, and that is the decision.**  Clearing `donatedSc`
-and `prev` here would take the frame off a stack the context still *heads*, so
-`donationChainWellFormed`'s walk — which follows `prev` and accepts a frame only
-while it names the context — would stop mid-chain and the store would satisfy no
-chain at all.  Refusing is O(1), keeps the invariant, and needs no repair pass.
-The clear that *does* happen is the pop's own (`storeDonationHeadClear`), which
-removes the head at the moment the context leaves it.
+Since `v0.35.4` the stack is doubly linked (seL4's `replyPrev` / `replyNext`), a
+cancelled caller's frame is taken off its stack in `O(1)` by the detach, and a
+consumed frame leaves the structure as it is consumed (`Reply.consumed`) — so
+under `donationChainWellFormed` a Reply with no caller carries no link and this
+barrier reduces to the single-use one.  It stays a conjunction because that is
+the fail-closed shape: a stale link is refused rather than trusted.
 
-Inert wherever no Reply donates -- which was every state the tree reached before
-OD4.1 (`v0.35.2`), and is every state below the first donating `Call` now -- and
-inert on a *live* frame too, because a live frame's donor still holds it and the
-`caller ≠ none` barrier above already refuses that one.  What it adds is exactly
-the cancelled-middle-caller case. -/
+Inert wherever no Reply is linked -- which was every state the tree reached
+before OD4.1 (`v0.35.2`), and is every state below the first donating `Call` now
+-- and inert on a *live* frame too, because a live frame's donor still holds it
+and the `caller ≠ none` barrier already refuses that one. -/
 def linkReply (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.getReply? rid with
     | some r =>
-        if r.caller.isNone && r.donatedSc.isNone then
+        if r.isFree then
           storeObject rid.toObjId (.reply { r with caller := some caller }) st
         else .error .replyCapInvalid
     | none => .error .replyCapInvalid
 
 /-- WS-SM SM6.D: consume a Reply object's linkage (clears `reply.caller`).  A
 delivered reply is consumed so a replay finds `caller = none` and fails closed —
-the dynamic half of single-use.  No-op if the reply is absent. -/
+the dynamic half of single-use.  No-op if the reply is absent.
+
+**WS-OD (`v0.35.4`)**: the record stored is `Reply.consumed r` — the caller
+cleared, and the stack links cleared too unless the frame heads a stack (the
+donation pop that follows the reply leg in the same transition takes a head
+off).  One store, as before; what changed is the record, so a frame that no pop
+will ever reach — the top of a part the detach cut off — leaves the structure
+here rather than pinning its object forever.  See `Reply.consumed`. -/
 def consumeReply (rid : SeLe4n.ReplyId) : Kernel Unit :=
   fun st =>
     match st.getReply? rid with
-    | some r => storeObject rid.toObjId (.reply { r with caller := none }) st
+    | some r => storeObject rid.toObjId (.reply r.consumed) st
     | none => .ok ((), st)
 
-/-- WS-SM SM6.D: `consumeReply` on a present reply clears its `caller`. -/
+/-- WS-SM SM6.D: `consumeReply` on a present reply stores its consumed record —
+in particular its `caller` is cleared (`Reply.consumed_caller`). -/
 theorem consumeReply_getReply?_caller_none (st : SystemState) (rid : SeLe4n.ReplyId)
     (r : SeLe4n.Kernel.Reply) (hObjInv : st.objects.invExt)
     (hGet : st.getReply? rid = some r) :
     ∀ result, consumeReply rid st = .ok ((), result) →
-      result.getReply? rid = some { r with caller := none } := by
+      result.getReply? rid = some r.consumed := by
   intro result hRun
   unfold consumeReply at hRun
   rw [hGet] at hRun
   have hStore := storeObject_inserted_object_lookup st rid.toObjId
-    (.reply { r with caller := none }) hObjInv result hRun
+    (.reply r.consumed) hObjInv result hRun
   rw [getReply?_eq_some_iff, RHTable_getElem?_eq_get?]
   exact hStore
+
+/-- The consumed record on a Reply carrying no links is the caller clear alone —
+the shape every consumer below the first donating `Call` sees. -/
+theorem consumeReply_getReply?_caller_none_of_unlinked (st : SystemState)
+    (rid : SeLe4n.ReplyId) (r : SeLe4n.Kernel.Reply) (hObjInv : st.objects.invExt)
+    (hGet : st.getReply? rid = some r) (hPrev : r.prev = none) (hNext : r.next = none) :
+    ∀ result, consumeReply rid st = .ok ((), result) →
+      result.getReply? rid = some { r with caller := none } := by
+  intro result hRun
+  rw [consumeReply_getReply?_caller_none st rid r hObjInv hGet result hRun,
+    SeLe4n.Kernel.Reply.consumed_of_unlinked r hPrev hNext]
 
 /-- WS-SM SM6.D: `linkReply` on a present, free reply sets its `caller`. -/
 theorem linkReply_getReply?_caller_some (st : SystemState) (rid : SeLe4n.ReplyId)
     (caller : SeLe4n.ThreadId) (r : SeLe4n.Kernel.Reply)
     (hObjInv : st.objects.invExt)
-    (hGet : st.getReply? rid = some r) (hFree : r.caller = none) :
+    (hGet : st.getReply? rid = some r) :
     ∀ result, linkReply rid caller st = .ok ((), result) →
       result.getReply? rid = some { r with caller := some caller } := by
   intro result hRun
   unfold linkReply at hRun
   rw [hGet] at hRun
   simp only [] at hRun
-  -- **WS-OD OD5.1**: the freshening barrier's second half — a Reply that still
-  -- donates is a live stack frame and is refused — is *derived* from the link
-  -- succeeding rather than taken as a hypothesis, so every caller of this lemma
-  -- is unchanged.  The guard is discharged, not rewritten: substituting it into
-  -- the stored record would change the object this theorem is about.
-  have hNoDonation : r.donatedSc = none := by
-    cases hc : r.donatedSc with
-    | none => rfl
-    | some _ => rw [if_neg (by simp [hc])] at hRun; cases hRun
-  rw [if_pos (by simp [hFree, hNoDonation])] at hRun
+  -- **WS-OD OD5.1 / `v0.35.4`**: the freshening barrier's second half — a Reply
+  -- that still carries a stack link is a live frame and is refused — is *derived*
+  -- from the link succeeding rather than taken as a hypothesis, so every caller
+  -- of this lemma is unchanged.  The guard is discharged, not rewritten:
+  -- substituting it into the stored record would change the object this theorem
+  -- is about.
+  have hIsFree : r.isFree = true := by
+    cases hc : r.isFree with
+    | true => rfl
+    | false => rw [if_neg (by simp [hc])] at hRun; cases hRun
+  rw [if_pos hIsFree] at hRun
   have hStore := storeObject_inserted_object_lookup st rid.toObjId
     (.reply { r with caller := some caller }) hObjInv result hRun
   rw [getReply?_eq_some_iff, RHTable_getElem?_eq_get?]
@@ -3372,7 +3388,7 @@ theorem linkReply_inUse_error (st : SystemState) (rid : SeLe4n.ReplyId)
     cases hc : r.caller with
     | none => exact absurd hc hInUse
     | some _ => rfl
-  simp [linkReply, hGet, hNot]
+  simp [linkReply, hGet, hNot, SeLe4n.Kernel.Reply.isFree]
 
 /-- WS-SM SM6.D (Reply-cap linkage, Call path): establish the bidirectional
 TCB↔Reply link that the `Call` syscall creates.  Sets `reply.caller := some
@@ -3478,13 +3494,19 @@ every stasher is `.blockedOnReceive`, `!replyIsStashed` coincides with the
 so the `endpointReceiveDual` / `endpointReceiveDualOnCore` primitives **structurally
 reject** an absent / in-use / already-stashed `rid` rather than stranding a
 `.blockedOnReceive` receiver whose stash violates `pendingReceiveReplyWellFormed`
-(which a later `Call` would then fail closed on). -/
+(which a later `Call` would then fail closed on).
+
+**WS-OD (`v0.35.4`)**: the stash admission reads `Reply.isFree`, the same
+barrier `linkReply` applies at the rendezvous.  Before, it checked `caller` alone,
+so a server's `Recv` could stash a Reply that still carried a stack link and its
+next `Call` then failed `.replyCapInvalid` at the rendezvous — with the server
+left blocked on a stash nothing could link.  One question, one answer. -/
 def replyStashValid (st : SystemState) (replyId : Option SeLe4n.ReplyId) : Bool :=
   match replyId with
   | none => true
   | some rid =>
       match st.getReply? rid with
-      | some r => r.caller.isNone && !st.replyIsStashed rid
+      | some r => r.isFree && !st.replyIsStashed rid
       | none => false
 
 /-- WS-SM SM6.D: `linkCallerReply` fails closed (`.replyCapInvalid`) on an
@@ -3510,8 +3532,8 @@ theorem linkReply_preserves_objects_invExt (st st' : SystemState)
   | none => rw [hGet] at hStep; simp at hStep
   | some r =>
     simp only [hGet] at hStep
-    -- **WS-OD OD5.1**: the guard is the conjunction, so the split is on it.
-    cases hCond : (r.caller.isNone && r.donatedSc.isNone) with
+    -- **WS-OD OD5.1 / `v0.35.4`**: the guard is `Reply.isFree`, so the split is on it.
+    cases hCond : r.isFree with
     | true =>
       rw [if_pos hCond] at hStep
       exact storeObject_preserves_objects_invExt st st' rid.toObjId _ hObjInv hStep
@@ -3655,7 +3677,7 @@ reply is still observed with `caller = some caller`.  Together with
 TCB↔Reply link the Phase-D `replyCallerLinkage` invariant reads. -/
 theorem linkCallerReply_getReply?_caller_some (st : SystemState) (caller : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (r : SeLe4n.Kernel.Reply) (hObjInv : st.objects.invExt)
-    (hGet : st.getReply? rid = some r) (hFree : r.caller = none) :
+    (hGet : st.getReply? rid = some r) :
     ∀ result, linkCallerReply caller rid st = .ok ((), result) →
       result.getReply? rid = some { r with caller := some caller } := by
   intro result hRun
@@ -3666,7 +3688,7 @@ theorem linkCallerReply_getReply?_caller_some (st : SystemState) (caller : SeLe4
     obtain ⟨_, st1⟩ := p1
     simp only [hLink] at hRun
     have hR1 : st1.getReply? rid = some { r with caller := some caller } :=
-      linkReply_getReply?_caller_some st rid caller r hObjInv hGet hFree st1 hLink
+      linkReply_getReply?_caller_some st rid caller r hObjInv hGet st1 hLink
     cases hT : st1.getTcb? caller with
     | none => simp [hT] at hRun
     | some tcb =>
@@ -3691,7 +3713,7 @@ theorem consumeCallerReply_getReply?_caller_none (st : SystemState) (caller : Se
     (rid : SeLe4n.ReplyId) (r : SeLe4n.Kernel.Reply) (hObjInv : st.objects.invExt)
     (hGet : st.getReply? rid = some r) :
     ∀ result, consumeCallerReply caller rid st = .ok ((), result) →
-      result.getReply? rid = some { r with caller := none } := by
+      result.getReply? rid = some r.consumed := by
   intro result hRun
   unfold consumeCallerReply at hRun
   cases hCons : consumeReply rid st with
@@ -3699,7 +3721,7 @@ theorem consumeCallerReply_getReply?_caller_none (st : SystemState) (caller : Se
   | ok p1 =>
     obtain ⟨_, st1⟩ := p1
     simp only [hCons] at hRun
-    have hR1 : st1.getReply? rid = some { r with caller := none } :=
+    have hR1 : st1.getReply? rid = some r.consumed :=
       consumeReply_getReply?_caller_none st rid r hObjInv hGet st1 hCons
     cases hT : st1.getTcb? caller with
     | none =>
@@ -3711,7 +3733,7 @@ theorem consumeCallerReply_getReply?_caller_none (st : SystemState) (caller : Se
       have hInv1 : st1.objects.invExt :=
         consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
       have hNe : caller.toObjId ≠ rid.toObjId :=
-        getTcb?_getReply?_slot_ne st1 caller rid tcb { r with caller := none } hT hR1
+        getTcb?_getReply?_slot_ne st1 caller rid tcb r.consumed hT hR1
       have hFrame : result.objects[rid.toObjId]? = st1.objects[rid.toObjId]? :=
         storeObject_objects_ne st1 result caller.toObjId rid.toObjId _ hNe.symm hInv1 hRun
       rw [getReply?_eq_some_iff] at hR1 ⊢
@@ -4115,7 +4137,7 @@ theorem consumeCallerReply_getReply?_isSome (st st' : SystemState)
       | some r =>
         rw [hGet] at hCons
         by_cases hEq : rid'.toObjId = rid.toObjId
-        · refine ⟨{ r with caller := none }, ?_⟩
+        · refine ⟨r.consumed, ?_⟩
           rw [getReply?_eq_some_iff, hEq]
           exact storeObject_objects_eq st st1 rid.toObjId _ hObjInv hCons
         · refine ⟨r', ?_⟩

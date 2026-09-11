@@ -1,3 +1,185 @@
+## v0.35.4 — the reply stack is doubly linked, and every pop and push is declared
+
+**Three findings, reported before being fixed.  The first two share one cause: a
+reply-stack frame that the kernel could reach but never take out.**
+
+### 1. A cancelled middle caller left a frame nothing could ever clear
+
+`Reply` carried `donatedSc` and `prev`: the scheduling context this frame
+donates, and the frame below it.  The stack was **singly** linked downward, and
+every frame carried the context — so taking a frame out of the *middle* of a
+stack was not an operation the structure supported.  `cancelIpcBlocking`'s reply
+arm did the only thing it could: it consumed the caller's reply link and left the
+frame where it was.  The later pop then met that frame below the head, bound the
+context outright (`severAtCut`) and left the **dead frame heading the stack**,
+with `donatedSc` set and no caller.
+
+From there nothing could clear it.  `linkReply` refuses a Reply that still
+donates (OD5), `lifecyclePreRetypeCleanup` refuses a context that still heads a
+stack (OD5) — both deliberately, because clearing either would take a frame off a
+stack the context still heads and stop the walk mid-chain.  So the Reply object
+and the SchedContext were **pinned for the lifetime of the system**: never
+retypeable, never re-linkable, and holding a `donationChainWellFormed` obligation
+against an object no operation could reach.  Reachable from an ordinary
+`.tcbSuspend` on a middle caller of a depth-≥ 2 chain — authority over one client,
+a permanent leak of two kernel objects per occurrence.  **Medium**: resource
+exhaustion under repetition, not privilege escalation and not a leak of data.
+
+**The remedy is seL4's own structure.**  `Reply.next : Option ReplyStackLink`
+replaces `donatedSc`, and `ReplyStackLink` is seL4's `call_stack_t` as a sum:
+`.frame above` names the frame pushed above this one, `.head sc` names the
+scheduling context whose stack this frame heads.  A sum rather than two fields,
+so *head*, *has a frame above* and *off every stack* (`none`) are three states of
+one value and no object can claim two at once.  **The context is recorded at the
+head only** — which is the whole point of the encoding: a frame taken out of the
+middle repairs its two neighbours and nothing else, where a per-frame context
+field would have to be cleared on every frame below the cut (an `O(depth)` walk,
+or, left undone, exactly the dead frame above).
+
+So `cancelIpcBlocking`'s reply arm now runs `detachCancelledCallerFrame` —
+seL4's `reply_remove_tcb`, non-head arm — which makes the frame above stop
+linking down to the cancelled one (`detachReplyFrameAbove`, `prev := none`).  The
+frame above becomes the bottom of the stack it heads, the next pop binds its
+caller outright, and the cancelled frame leaves the structure when its caller
+link is consumed one step later.  The `severAtCut` policy is unchanged: it is
+still seL4-MCS's answer and still costs the original owner's reservation to the
+innermost live caller.  What changed is that the cut no longer strands an object.
+
+Four things new code must respect.  (1) **The detach is the identity on a head
+and on an already-unlinked frame**, deliberately: a head is *popped* by the
+reclaim, never detached, and a reclaim that declined on a head is an invariant
+violation this step must not paper over by dropping a stack.  (2) **It is
+all-or-nothing**: a detach that cannot repair the frame above — a link that does
+not point back — commits nothing, since rewriting a frame on the strength of a
+stale upward link is the trust the structure withholds.  (3) **The pop is two
+stores, not one**: `storeDonationHeadPop` is `storeDonationHeadClear` followed by
+`storeReplyReHead`, because the frame below the popped head becomes the new head
+and must be told so (`next := .head scId`).  (4) **`Reply.wellFormed` is
+`r.caller = none → r.prev = none ∧ r.next = none`** — a consumed reply is off
+every stack in both directions, which is what makes `Reply.consumed` decidable
+locally.
+
+**The seL4 attribution is corrected where it was wrong.**  The `v0.34.97`
+reclaim's docstrings and `CLAUDE.md` called it "seL4-MCS's `reply_remove`".  It
+is not: `reply_remove` is the *reply path's* pop, which donates the context back;
+`cancelIPC` on a reply-blocked thread runs **`reply_remove_tcb`**, which takes the
+frame out and donates nothing.  This kernel's reclaim does both, because it is
+the innermost live caller's frame that is being cut; the middle-caller case is
+`reply_remove_tcb` alone, and that is the case that had no implementation.
+
+### 2. Four pops and two pushes wrote objects no footprint named
+
+Found while auditing the fix above, and reported separately because it is a
+*verification* defect rather than a live race — SM5.I's global entry lock
+serialises every kernel entry, and nothing boots yet.  A footprint that omits a
+written object is **false**, and everything built on `lockSetForSyscall` — the
+2PL serialisation results, `boundedWait_under_2pl`, the CC-5 contention bound —
+was *silent* about these objects rather than conservative.
+
+* **`.receive`'s pre-receive return.**  A `.donated` receiver that finds no sender
+  queued runs `cleanupPreReceiveDonationChecked` before it blocks: a full pop,
+  writing the context, the previous owner's TCB, the head Reply and the frame
+  below it, and reading the outer caller.  None of it was declared.  `.receive`'s
+  `donatedScId` is the *incoming* rendezvous donation, which is `none` on exactly
+  the arm where this pop runs.  Now `receivePreReturn?` / `receivePreReturnStack?`
+  resolve it from the two fields the transition branches on.
+* **The `.tcbSuspend` pipeline.**  `suspendFootprintOf` resolved the donation
+  cancellation's members from the victim's **pre-state** binding, while
+  `suspendThreadOnCore`'s G3 arm dispatches on the binding the *teardown* leaves —
+  and the `v0.34.97` reclaim rebinds a cancelled caller mid-teardown.  So the
+  reclaim itself, and at depth ≥ 2 the second pop it provokes, wrote objects the
+  footprint never named, on both live suspend seams.
+* **`lockSet_cancelDonation`** named none of the pop's three stack objects, while
+  its donated arm *is* `returnDonatedSchedContextResolved`.
+* **The push's old head.**  `storeDonationFramePush` rewrites the previous head
+  (`next := .frame pushRid`) — a fifth object `.call`, `.receive` and
+  `.replyRecv`'s re-donation all write and none declared.
+
+**The `.tcbSuspend` footprint is now rooted at the cancellation footprint.**
+`lockSet_tcbSuspendOnCore` (`IPC/CrossCore/Cancellation.lean` §8) is *defined
+over* `lockSet_cancelIpcBlockingOnCore` and adds only what the pipeline adds — the
+caller's two read locks, and the donation cancellation's members resolved on the
+binding the teardown leaves.  The teardown's coverage is one lift
+(`_covers_cancelIpcBlockingOnCore`) rather than a member-by-member family, so a
+member the cancellation gains reaches the syscall without being added twice.  The
+parametric `lockSet_tcbSuspend`, its consistency lemma, its six `_write_mem`
+theorems, its size bound and `KernelOperation.ofTcbSuspend` are **retired**: one
+question answered in two places, which is how the pre-state resolution drifted
+from the transition in the first place.
+
+**The ceiling is 16.**  `admissibleCriticalSection` for the 1 ms tick falls
+23 → **20 µs**, and the uniform 60 µs envelope moves 2520 → **2880 µs**.  Both are
+derived from the constant and move with it; `scripts/check_lock_ceiling_figures.py`
+holds the five prose copies to the Lean sources.  Two footprints reach it now, not
+one: the widest `.replyRecv` (base 4 + twelve optionals) and the widest
+`.tcbSuspendOnCore` — a reply-arm victim owed a donation at reply-stack depth ≥ 3,
+where the second pop's own members sit on top of the teardown's twelve.  Read the
+cost against the alternative, as every previous raise was: a footprint that omits
+a written object is false, and this project rates that worse than a wide one.
+
+One shape is **refused** rather than declared: a victim owed a reclaim that
+*already* holds a binding (`cancelledCallerAlreadyBound`), which
+`donationOwnerValid` excludes from every reachable state.  On such a state the
+reclaim would overwrite the binding the tail was resolved from, so no single
+footprint inside the ceiling describes both what the reclaim leaves and what a
+*refused* reclaim would then touch.  `suspendFootprintOf` answers `none` there and
+the seam falls back to the coarse serialisation, which is always sound.
+
+### 3. A nightly gate that could not build
+
+`tests/TraceSequenceProbe.lean` still passed `endpointSendDualChecked` the
+`senderCspaceRoot` argument WS-RR RR7.33 deleted at `v0.34.x`.  The probe is a
+Tier-4 executable, so no tier script from 0 to 3 builds it and the arity error
+survived every gate since.  One argument deleted; the lesson is recorded rather
+than the fix — a gate whose *build* is outside the tiers that run on every PR is
+a gate that is only checked when someone runs it.
+
+### 4. …and the same defect's remaining shape, registered rather than closed
+
+Found by auditing §1's own remedy.  The detach went into the **cancellation**
+path; the **reply** path still runs `SystemState.consumeCallerReply` with no
+detach, and `Reply.consumed` clears both links on any frame that is not a head.
+So a reply to a caller whose frame has a frame *above* it falsifies
+`donationChainWellFormed.prevLinkReciprocal` at that frame.
+
+Reachable, because the reply seam's own docstring records that authority flows
+from **holding** the reply capability and that a copied or minted one held by a
+different server is legitimate delegated authority: on a chain `C1 → C2 → S`, a
+delegate can answer `C1` out of order while `S` has pushed a frame above `C1`'s.
+
+**Fail-closed, not a corruption.**  The later pop's reciprocity test
+(`replyStackOuterCaller?`) refuses the stale link and returns `.invalidArgument`
+having written nothing, and the same test refuses a *re-linked* Reply — so there
+is no confused deputy and no privilege escalation.  The cost is a **wedge**: that
+reply fails permanently, the intermediate caller stays blocked, and the
+scheduling context stays with the server.  Medium, availability only, against the
+threads in one call chain and one reservation, and only to a party that already
+holds delegated reply authority over that chain.  Before this cut the same input
+produced §1's leak, so it is not a new exposure class.
+
+It is **registered, not patched**, because the honest remedy is seL4's
+`reply_remove` non-head branch on the reply path, and that needs one more
+declared footprint member on `.reply` and `.replyRecv` — which moves the declared
+ceiling to 17 — plus a re-proof of the reply spine's post-state characterisation
+and everything that funnels through it.  That is a coherent slice of its own, not
+a rider on this one.  A fail-closed `.illegalState` guard was written, measured
+and **reverted**: it would have traded a wedge for a capability the model
+documents as legitimate and seL4 supports.
+
+**WS-RM** carries it — `docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`, 26 sub-tasks
+across six phases, opening immediately after this cut and closing before WS-RR
+RR8 — and `Reply.consumed`'s docstring states the precondition at the definition
+that relies on it, so a reader meets the constraint where it binds.
+
+One consequence of registering it is worth recording, because it is the register
+working as designed: `scripts/check_identifier_naming.py` derives its family
+grammar from the **rows** of the workstream registry, so adding `WS-RM` made the
+gate read `Rm` as a phase code — and five pre-existing dual-queue removal
+fixtures in `tests/NegativeStateSuite.lean` (`stDualRm1`…`stDualRm5`) began to
+parse as one.  They are renamed to `stDualRemove1`…`stDualRemove5`, which
+internal-first naming wanted anyway: the abbreviation said less than the word.
+A hand-kept prefix list would have been silent here.
+
 ## v0.35.3 — a donated scheduling context carries budget, not priority or domain
 
 **Reported while closing WS-OD at `v0.35.2`, fixed here.**  `updatePrioritySource`

@@ -152,18 +152,25 @@ unsatisfiable pack field cannot hide. The state-shaped fields are collected in
 **The donation chain sits beside the bundle, not inside it.** WS-OD OD2
 (`v0.34.125`) added `SchedContext.scReply` — the head of a context's MCS reply
 stack — and `donationChainWellFormed`
-([`Defs.lean`](../../SeLe4n/Kernel/IPC/Invariant/Defs.lean)): every
-`Reply.donatedSc` resolves, and each context's head walks a **terminating**
-`prev`-chain (`donationChainFrom`, fuel-bounded) holding **exactly** the replies
-naming that context. It is a conjunct of `ipcReachable`, not of
+([`Defs.lean`](../../SeLe4n/Kernel/IPC/Invariant/Defs.lean)): the stack is
+**doubly linked** (`Reply.prev` down, `Reply.next` up, with the context recorded
+on the head frame alone), every `prev` link is answered by the frame it names,
+and each context's head walks a **terminating** chain (`donationChainFrom`,
+fuel-bounded). It is a conjunct of `ipcReachable`, not of
 `ipcInvariantFull`, which keeps its twenty; and it is *preserved* through
 `donationChainFrame` rather than assumed. The frame is stated over the two
 projections the walk actually reads (`replyStackLinks?`,
 `schedContextStackHead?`), so it **is** the read set rather than an
 over-approximation of it. The donation **pop** writes all three (WS-OD OD3.1,
 `v0.34.126`) and carries its own preservation theorem (OD3.8, `v0.34.132`); the
-donation **push** writes the reply's two fields and the context's head (OD4.1,
-`v0.35.2`) and carries `donateSchedContext_preserves_donationChainWellFormed`.
+donation **push** writes the new frame's two links, the old head's upward link
+and the context's head (OD4.1, `v0.35.2`; five stores since `v0.35.4`) and
+carries `donateSchedContext_preserves_donationChainWellFormed`. The **detach**
+(`v0.35.4`) is the third writer: it cuts a frame out of the *middle* of a stack
+in `O(1)` by clearing the `prev` of the frame above it, which is what the upward
+link exists for and what stops a cancelled middle caller's frame from being left
+on a stack with its caller gone — pinning its Reply and its SchedContext against
+every retype.
 With the push live the predicate is no longer vacuous — a depth-2 Call leaves a
 two-frame stack — which is the order this workstream was numbered for: the
 invariant and its frames landed at OD2, before the transitions that must
@@ -437,7 +444,7 @@ platform rather than with the lock.
 > `lockSet_<τ>` — which is what keeps the static footprint an honest declaration
 > of the *static* locks.
 >
-> At HEAD, the declared lock-set ceiling is **14**, the RPi5 tick admits **23 µs** per lock, and the uniform 60 µs envelope is **2520 µs** —
+> At HEAD, the declared lock-set ceiling is **16**, the RPi5 tick admits **20 µs** per lock, and the uniform 60 µs envelope is **2880 µs** —
 > the canonical spelling `scripts/check_lock_ceiling_figures.py` (Tier 0, WS-OD
 > OD3.15) holds to the Lean sources, so this chapter cannot go stale behind the
 > constant the way it did between OD3.7 and OD3.14. See

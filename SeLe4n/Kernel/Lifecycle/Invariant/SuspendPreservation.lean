@@ -660,6 +660,42 @@ theorem returnDonationToCancelledCaller_preserves_objects_invExt (st : SystemSta
     · exact hInv
   · exact hInv
 
+/-- `v0.35.4`: the donation return preserves the identity registry's
+well-formedness — the abort's and the pop's stores each do. -/
+theorem returnDonationToCancelledCaller_preserves_objectIndexSet_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hSetInv : st.objectIndexSet.table.invExt) :
+    (returnDonationToCancelledCaller st tid tcb).objectIndexSet.table.invExt := by
+  unfold returnDonationToCancelledCaller
+  split
+  · rename_i scId holder _ _ _
+    split
+    · rename_i st' h
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
+      exact returnDonatedSchedContext_preserves_objectIndexSet_invExt _ st' holder scId tid n
+        (abortHolderPendingIpc_preserves_objectIndexSet_invExt st holder hSetInv) hPop
+    · exact hSetInv
+  · exact hSetInv
+
+/-- `v0.35.4`: ...and its completeness. -/
+theorem returnDonationToCancelledCaller_preserves_objectIndexSetComplete (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
+    (hSetInv : st.objectIndexSet.table.invExt)
+    (hComplete : SeLe4n.Model.objectIndexSetComplete st) :
+    SeLe4n.Model.objectIndexSetComplete (returnDonationToCancelledCaller st tid tcb) := by
+  unfold returnDonationToCancelledCaller
+  split
+  · rename_i scId holder _ _ _
+    split
+    · rename_i st' h
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
+      exact returnDonatedSchedContext_preserves_objectIndexSetComplete _ st' holder scId tid n
+        (abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
+        (abortHolderPendingIpc_preserves_objectIndexSet_invExt st holder hSetInv)
+        (abortHolderPendingIpc_preserves_objectIndexSetComplete st holder hInv hSetInv hComplete)
+        hPop
+    · exact hComplete
+  · exact hComplete
+
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation return is the identity
 when there is nothing to return — no recorded reply target, no such thread, or a
 holder whose binding is not a donation naming this caller. -/
@@ -668,6 +704,96 @@ holder whose binding is not a donation naming this caller. -/
     returnDonationToCancelledCaller st tid tcb = st := by
   unfold returnDonationToCancelledCaller
   rw [h]
+
+-- ============================================================================
+-- `v0.35.4` — the cancelled caller's frame detach
+-- ============================================================================
+
+/-- `v0.35.4`: the detach, decomposed — the identity (no reply link, no frame
+above, or a refused repair), or one `detachReplyFrameAbove` that succeeded. -/
+theorem detachCancelledCallerFrame_cases (st : SystemState) (tcb : TCB) :
+    detachCancelledCallerFrame st tcb = st ∨
+    ∃ rid, tcb.replyObject = some rid ∧
+      detachReplyFrameAbove st rid = .ok (detachCancelledCallerFrame st tcb) := by
+  unfold detachCancelledCallerFrame
+  split
+  · exact Or.inl rfl
+  · rename_i rid hRid
+    split
+    · rename_i st' h
+      exact Or.inr ⟨rid, hRid, h⟩
+    · exact Or.inl rfl
+
+/-- `v0.35.4`: the detach is the identity on a frame with nothing above it — the
+shape every cancellation of a head or bottom frame, and every successful reclaim,
+leaves. -/
+theorem detachCancelledCallerFrame_eq_self_of_no_frame_above (st : SystemState) (tcb : TCB)
+    (hNoFrameAbove : ∀ (rid : SeLe4n.ReplyId) (r : Reply) (above : SeLe4n.ReplyId),
+      tcb.replyObject = some rid → st.getReply? rid = some r →
+      r.next ≠ some (.frame above)) :
+    detachCancelledCallerFrame st tcb = st := by
+  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨rid, hRid, h⟩
+  · exact h
+  · rcases detachReplyFrameAbove_cases h with h' | ⟨r, above, _, hR, hN, _, _, _⟩
+    · exact h'
+    · exact absurd hN (hNoFrameAbove rid r above hRid hR)
+
+theorem detachCancelledCallerFrame_scheduler_eq (st : SystemState) (tcb : TCB) :
+    (detachCancelledCallerFrame st tcb).scheduler = st.scheduler := by
+  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]
+  · exact detachReplyFrameAbove_scheduler_eq h
+
+theorem detachCancelledCallerFrame_machine_eq (st : SystemState) (tcb : TCB) :
+    (detachCancelledCallerFrame st tcb).machine = st.machine := by
+  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]
+  · exact detachReplyFrameAbove_machine_eq h
+
+theorem detachCancelledCallerFrame_serviceRegistry_eq (st : SystemState) (tcb : TCB) :
+    (detachCancelledCallerFrame st tcb).serviceRegistry = st.serviceRegistry := by
+  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]
+  · exact detachReplyFrameAbove_serviceRegistry_eq h
+
+theorem detachCancelledCallerFrame_preserves_objects_invExt (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) : (detachCancelledCallerFrame st tcb).objects.invExt := by
+  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]; exact hInv
+  · exact detachReplyFrameAbove_preserves_objects_invExt hInv h
+
+/-- The detach writes at most one Reply, so every stored TCB is where it was. -/
+theorem detachCancelledCallerFrame_tcb_eq (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hk : st.objects[k]? = some (.tcb t0)) :
+    (detachCancelledCallerFrame st tcb).objects[k]? = some (.tcb t0) := by
+  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]; exact hk
+  · exact detachReplyFrameAbove_tcb_eq hInv h k t0 hk
+
+theorem detachCancelledCallerFrame_tcb_backward (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hk : (detachCancelledCallerFrame st tcb).objects[k]? = some (.tcb t0)) :
+    st.objects[k]? = some (.tcb t0) := by
+  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h] at hk; exact hk
+  · exact detachReplyFrameAbove_tcb_backward hInv h k t0 hk
+
+theorem detachCancelledCallerFrame_getTcb?_eq (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId) :
+    (detachCancelledCallerFrame st tcb).getTcb? tid = st.getTcb? tid := by
+  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]
+  · exact detachReplyFrameAbove_getTcb?_eq hInv h tid
+
+/-- The detach writes a Reply, never a notification. -/
+theorem detachCancelledCallerFrame_preserves_ipcInvariant (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (detachCancelledCallerFrame st tcb) := by
+  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]; exact hIpc
+  · intro oid ntfn hN
+    exact hIpc oid ntfn (detachReplyFrameAbove_notification_backward hInv h oid ntfn hN)
 
 /-- D1-I: cancelIpcBlocking only modifies `objects`, preserving the scheduler.
     Each IPC state branch either (a) is a no-op, (b) uses
@@ -688,7 +814,7 @@ theorem cancelIpcBlocking_scheduler_eq
     -- three `storeObject`s leave the scheduler alone, which is why the
     -- replenishment migration sits at the `OnCore` layer and not here.
     rw [consumeReplyLink_scheduler_eq, restoreToReadyCancelled_scheduler_eq,
-      returnDonationToCancelledCaller_scheduler_eq]
+      detachCancelledCallerFrame_scheduler_eq, returnDonationToCancelledCaller_scheduler_eq]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
 
@@ -713,7 +839,7 @@ theorem cancelIpcBlocking_machine_eq
     rw [restoreToReadyCancelled_machine_eq, removeFromAllEndpointQueues_machine_eq]
   | blockedOnReply _ _ =>
     rw [consumeReplyLink_machine_eq, restoreToReadyCancelled_machine_eq,
-      returnDonationToCancelledCaller_machine_eq]
+      detachCancelledCallerFrame_machine_eq, returnDonationToCancelledCaller_machine_eq]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_machine_eq, removeFromAllNotificationWaitLists_machine_eq]
 
@@ -789,6 +915,7 @@ theorem cancelIpcBlocking_serviceRegistry_eq
     rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllEndpointQueues_serviceRegistry_eq]
   | blockedOnReply _ _ =>
     rw [consumeReplyLink_serviceRegistry_eq, restoreToReadyCancelled_serviceRegistry_eq,
+      detachCancelledCallerFrame_serviceRegistry_eq,
       returnDonationToCancelledCaller_serviceRegistry_eq]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllNotificationWaitLists_serviceRegistry_eq]
@@ -878,11 +1005,18 @@ The values written are the ones already there (the same object types, and a
 `capabilityRefs` filter that removes nothing at a TCB or SchedContext key), so
 the metadata is semantically unchanged; it is not *definitionally* unchanged, and
 this frame is about definitional equality.  Nothing in the tree consumes this
-lemma today, which is why the hypothesis costs nothing; a caller that needs the
-unconditional form needs a semantic-equality frame instead. -/
+lemma today, which is why the hypotheses cost nothing; a caller that needs the
+unconditional form needs a semantic-equality frame instead.
+
+`v0.35.4` added the second hypothesis for the same reason: the reply arm's frame
+detach is a `storeObject` too, on a caller whose frame has a frame above it, so
+the arm keeps the bookkeeping definitionally only where that detach is inert. -/
 theorem cancelIpcBlocking_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hNoDonation : cancelledCallerDonation? st tid tcb = none) :
+    (hNoDonation : cancelledCallerDonation? st tid tcb = none)
+    (hNoFrameAbove : ∀ (rid : SeLe4n.ReplyId) (r : Reply) (above : SeLe4n.ReplyId),
+      tcb.replyObject = some rid → st.getReply? rid = some r →
+      r.next ≠ some (.frame above)) :
     (cancelIpcBlocking st tid tcb).lifecycle = st.lifecycle := by
   unfold cancelIpcBlocking
   cases hI : tcb.ipcState with
@@ -891,7 +1025,8 @@ theorem cancelIpcBlocking_lifecycle_eq
     rw [restoreToReadyCancelled_lifecycle_eq, removeFromAllEndpointQueues_lifecycle_eq]
   | blockedOnReply _ _ =>
     rw [consumeReplyLink_lifecycle_eq, restoreToReadyCancelled_lifecycle_eq,
-      returnDonationToCancelledCaller_none st tid tcb hNoDonation]
+      returnDonationToCancelledCaller_none st tid tcb hNoDonation,
+      detachCancelledCallerFrame_eq_self_of_no_frame_above st tcb hNoFrameAbove]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_lifecycle_eq, removeFromAllNotificationWaitLists_lifecycle_eq]
 
@@ -1688,7 +1823,8 @@ theorem cancelIpcBlocking_preserves_objects_invExt
   | blockedOnReply _ _ =>
     exact consumeReplyLink_preserves_objects_invExt _ _ _
       (restoreToReadyCancelled_invExt _ _
-        (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv))
+        (detachCancelledCallerFrame_preserves_objects_invExt _ tcb
+          (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv)))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_invExt _ _
       (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)
@@ -1828,14 +1964,19 @@ theorem cancelIpcBlocking_tcb_lookup
     -- same shape as its three siblings.
     obtain ⟨t₀, hL0, hAff0⟩ :=
       returnDonationToCancelledCaller_tcb_lookup st tid tcb hInv k t0 hPre
+    have hInvR := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
+    -- `v0.35.4`: the frame detach writes at most a Reply, so the TCB is untouched.
+    have hLD := detachCancelledCallerFrame_tcb_eq _ tcb hInvR k t₀ hL0
+    have hInvD := detachCancelledCallerFrame_preserves_objects_invExt _ tcb hInvR
     obtain ⟨t₁, hL1, hAff1⟩ :=
-      restoreToReadyCancelled_tcb_lookup (returnDonationToCancelledCaller st tid tcb) tid k _
-        (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv) hL0
+      restoreToReadyCancelled_tcb_lookup
+        (detachCancelledCallerFrame (returnDonationToCancelledCaller st tid tcb) tcb) tid k _
+        hInvD hLD
     obtain ⟨t₂, hL2, hAff2⟩ :=
       consumeReplyLink_tcb_lookup
-        (restoreToReadyCancelled (returnDonationToCancelledCaller st tid tcb) tid) tid tcb k t₁
-        (restoreToReadyCancelled_invExt _ tid
-          (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv)) hL1
+        (restoreToReadyCancelled
+          (detachCancelledCallerFrame (returnDonationToCancelledCaller st tid tcb) tcb) tid)
+        tid tcb k t₁ (restoreToReadyCancelled_invExt _ tid hInvD) hL1
     exact ⟨t₂, hL2, ((hAff2.trans hAff1).trans hAff0)⟩
   | blockedOnNotification _ =>
     obtain ⟨hInvN, t₁, hL1, hAff1⟩ :=
@@ -1930,21 +2071,35 @@ theorem cancelIpcBlocking_getTcb?_none
     exact hTE
   | blockedOnReply _ _ =>
     show (consumeReplyLink
-      (restoreToReadyCancelled (returnDonationToCancelledCaller st tid tcb) tid) tid tcb).getTcb?
-        tid = none
-    rw [returnDonationToCancelledCaller_eq_self_of_getTcb?_none st tid tcb hT,
-      restoreToReadyCancelled_eq_self_of_getTcb?_none st tid hT]
+      (restoreToReadyCancelled
+        (detachCancelledCallerFrame (returnDonationToCancelledCaller st tid tcb) tcb) tid)
+      tid tcb).getTcb? tid = none
+    rw [returnDonationToCancelledCaller_eq_self_of_getTcb?_none st tid tcb hT]
+    -- `v0.35.4`: the frame detach writes at most a Reply, so the victim's key
+    -- still holds no TCB after it.
+    have hTD : (detachCancelledCallerFrame st tcb).getTcb? tid = none := by
+      rw [detachCancelledCallerFrame_getTcb?_eq st tcb hInv tid]; exact hT
+    have hInvD : (detachCancelledCallerFrame st tcb).objects.invExt :=
+      detachCancelledCallerFrame_preserves_objects_invExt st tcb hInv
+    have hNoD : ∀ t : TCB,
+        (detachCancelledCallerFrame st tcb).objects[tid.toObjId]? ≠ some (.tcb t) := by
+      intro t h
+      have hSome := (SystemState.getTcb?_eq_some_iff _ tid t).mpr h
+      rw [hTD] at hSome
+      cases hSome
+    generalize hD : detachCancelledCallerFrame st tcb = sD at hTD hInvD hNoD ⊢
+    rw [restoreToReadyCancelled_eq_self_of_getTcb?_none sD tid hTD]
     unfold consumeReplyLink
     cases tcb.replyObject with
-    | none => exact hT
+    | none => exact hTD
     | some rid =>
       simp only []
-      rw [clearTcbReplyObject_eq_self_of_getTcb?_none st tid hT]
-      cases hX : (clearReplyObjectCaller st rid).getTcb? tid with
+      rw [clearTcbReplyObject_eq_self_of_getTcb?_none sD tid hTD]
+      cases hX : (clearReplyObjectCaller sD rid).getTcb? tid with
       | none => rfl
       | some t =>
         exact absurd ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX)
-          (clearReplyObjectCaller_no_tcb st rid tid.toObjId hInv hNo t)
+          (clearReplyObjectCaller_no_tcb sD rid tid.toObjId hInvD hNoD t)
   | blockedOnNotification _ =>
     obtain ⟨hInvN, hNoN⟩ := removeFromAllNotificationWaitLists_no_tcb st tid hInv hNo
     have hTN : (removeFromAllNotificationWaitLists st tid).getTcb? tid = none := by
@@ -2065,7 +2220,7 @@ theorem clearReplyObjectCaller_preserves_ipcInvariant
   | none => exact hIpc
   | some r =>
     exact ipcInvariant_insert_no_notification st rid.toObjId
-      (.reply { r with caller := none }) hInv
+      (.reply r.consumed) hInv
       (fun _ h => KernelObject.noConfusion h) hIpc
 
 /-- WS-SM SM6.E: `consumeReplyLink` preserves `ipcInvariant` — both legs of
@@ -2117,10 +2272,12 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
       (removeFromAllEndpointQueues_preserves_ipcInvariant st tid hInv hIpc)
   | blockedOnReply _ _ =>
     have hInvR := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
+    have hInvD := detachCancelledCallerFrame_preserves_objects_invExt _ tcb hInvR
     exact consumeReplyLink_preserves_ipcInvariant _ tid tcb
-      (restoreToReadyCancelled_invExt _ tid hInvR)
-      (restoreToReadyCancelled_preserves_ipcInvariant _ tid hInvR
-        (returnDonationToCancelledCaller_preserves_ipcInvariant st tid tcb hInv hIpc))
+      (restoreToReadyCancelled_invExt _ tid hInvD)
+      (restoreToReadyCancelled_preserves_ipcInvariant _ tid hInvD
+        (detachCancelledCallerFrame_preserves_ipcInvariant _ tcb hInvR
+          (returnDonationToCancelledCaller_preserves_ipcInvariant st tid tcb hInv hIpc)))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_preserves_ipcInvariant _ tid
       (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)

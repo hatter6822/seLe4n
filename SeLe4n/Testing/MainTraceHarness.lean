@@ -3077,7 +3077,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let outerReplyId : SeLe4n.ReplyId := ⟨7005⟩
   let outerReply : KernelObject := .reply
     { SeLe4n.Kernel.Reply.empty outerReplyId with
-        caller := some outerTid, donatedSc := some scId }
+        caller := some outerTid, next := some (.head scId) }
   let outerTcb : KernelObject := .tcb {
     tid := outerTid, priority := ⟨120⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
@@ -3111,7 +3111,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
       | some (.schedContext s) => s.scReply == some callerReplyId
       | _ => false
     let frameLinked := match stPushed.objects[callerReplyId.toObjId]? with
-      | some (.reply r) => r.donatedSc == some scId && r.prev == some outerReplyId
+      | some (.reply r) => r.next == some (SeLe4n.Kernel.ReplyStackLink.head scId) && r.prev == some outerReplyId
       | _ => false
     IO.println s!"[SCN-DONATION-PUSH-DEPTH-TWO] depth-2 donateSchedContext: server_holds={serverHolds} head_pushed={headPushed} frame_linked={frameLinked}"
 
@@ -3131,7 +3131,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
         | some (.schedContext s) => s.scReply == some outerReplyId
         | _ => false
       let frameCleared := match stPopped.objects[callerReplyId.toObjId]? with
-        | some (.reply r) => r.donatedSc == none && r.prev == none
+        | some (.reply r) => r.next == none && r.prev == none
         | _ => false
       IO.println s!"[SCN-DONATION-RETURN-RESOLVED-OUTER] depth-2 resolved return: mid_rebound_donated={midRebound} head_popped={headPopped} frame_cleared={frameCleared}"
 

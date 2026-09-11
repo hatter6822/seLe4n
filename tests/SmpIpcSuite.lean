@@ -863,13 +863,13 @@ private def runDonationChecks : IO Unit := do
       assertBool "OD4: the donating call pushes the caller's Reply as the stack head"
         (match stCall.getReply? donReply, stCall.getSchedContext? scClient with
          | some r, some sc =>
-             decide (r.donatedSc = some scClient) && decide (r.prev = none) &&
+             decide (r.next = some (.head scClient)) && decide (r.prev = none) &&
              decide (sc.scReply = some donReply)
          | _, _ => false)
       assertBool "OD4: the donation return pops it back off, clearing the frame"
         (match stReply.getReply? donReply, stReply.getSchedContext? scClient with
          | some r, some sc =>
-             decide (r.donatedSc = none) && decide (r.prev = none) &&
+             decide (r.next = none) && decide (r.prev = none) &&
              decide (sc.scReply = none)
          | _, _ => false)
 
@@ -1665,19 +1665,22 @@ private def runTraceFixtureCheck : IO Unit := do
 -- §3.15 the SchedContext donation chain's structure (WS-OD OD2 — inert)
 -- ============================================================================
 
-/-! The reply stack the donation push will build, exercised *before* any
-transition writes it.  The store below is what a depth-2 Call chain leaves:
-`chainSc` heads the inner call's Reply, which links down to the outer call's,
-and both replies name `chainSc` as the context they carry.
+/-! The reply stack a depth-2 Call chain leaves, exercised as a store.  `chainSc`
+heads the inner call's Reply (`next = .head chainSc`), which links **down** to
+the outer call's through `prev`; the outer frame links **up** to the inner one
+(`next = .frame chainHeadReply`) and names no context at all.  The context is
+recorded at the head alone, which is what makes taking a frame out of the middle
+an `O(1)` repair of its two neighbours rather than a walk clearing a per-frame
+context field below the cut.
 
 The negatives are the mutation this project asks for — they **keep the link and
 break the relation** rather than deleting it.  In each, the head still carries a
-`prev`; what changes is what that link leads to: a live Reply donating a
-*different* context, a live Reply donating none, the head itself (a cycle), or a
-`ReplyId` no object answers.  Deleting the link would be caught by the positive
-above; the first two are what a re-linked (reused) Reply object actually looks
-like, which is the confused deputy the walk's `donatedSc` validation exists to
-refuse. -/
+`prev`; what changes is what that link leads to: a live Reply whose upward link
+names a *different* frame, one that heads a *different* context, one carrying no
+upward link at all, the head itself (a cycle), or a `ReplyId` no object answers.
+Deleting the link would be caught by the positive above; the first three are what
+a re-linked (reused) Reply object actually looks like, which is the confused
+deputy the walk's reciprocity test exists to refuse. -/
 
 private def chainSc : SeLe4n.SchedContextId := ⟨71⟩
 private def chainOtherSc : SeLe4n.SchedContextId := ⟨74⟩
@@ -1685,33 +1688,52 @@ private def chainHeadReply : SeLe4n.ReplyId := ⟨72⟩
 private def chainOuterReply : SeLe4n.ReplyId := ⟨73⟩
 private def chainAbsentReply : SeLe4n.ReplyId := ⟨75⟩
 
+/-- A caller for the literal `Reply.wellFormed` checks below: the predicate is
+`caller = none → prev = none ∧ next = none`, so every *positive* shape it admits
+carries a caller. -/
+private def chainCaller : SeLe4n.ThreadId := ⟨76⟩
+
 /-- A donation-chain store, parameterised by the two things the negatives vary:
-what the head links down to, and what the reply below it donates. -/
+what the head links down to, and what the frame below it links back **up** to.
+`caller` is left at `none` throughout: the walk validates a `prev` by the
+target's own upward link and never by who is blocked on it — the decision that
+refuses a re-linked Reply — so the fixture exercising it carries no callers. -/
 private def chainStore (headPrev : Option SeLe4n.ReplyId)
-    (outerDonated : Option SeLe4n.SchedContextId) : SystemState :=
+    (outerUp : Option ReplyStackLink) : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject chainSc.toObjId
         (.schedContext { SchedContext.empty chainSc with scReply := some chainHeadReply })
     |>.withObject chainOtherSc.toObjId (.schedContext (SchedContext.empty chainOtherSc))
     |>.withObject chainHeadReply.toObjId
-        (.reply { replyId := chainHeadReply, donatedSc := some chainSc, prev := headPrev })
+        (.reply { replyId := chainHeadReply, next := some (.head chainSc), prev := headPrev })
     |>.withObject chainOuterReply.toObjId
-        (.reply { replyId := chainOuterReply, donatedSc := outerDonated })
+        (.reply { replyId := chainOuterReply, next := outerUp })
     |>.build)
 
 /-- The well-formed depth-2 chain. -/
-private def stChain : SystemState := chainStore (some chainOuterReply) (some chainSc)
+private def stChain : SystemState :=
+  chainStore (some chainOuterReply) (some (.frame chainHeadReply))
 
 private def runDonationChainStructureChecks : IO Unit := do
   IO.println "--- §3.15 the SchedContext donation chain's structure (WS-OD OD2, inert) ---"
   -- `Reply.wellFormed`: a stack link only on a reply that is itself on a stack.
   assertBool "an inert Reply is well formed"
     (decide (Reply.empty chainHeadReply).wellFormed)
-  assertBool "a Reply on a stack may carry a prev link"
-    (decide ({ replyId := chainHeadReply, donatedSc := some chainSc,
+  assertBool "a Reply with a caller may carry both stack links"
+    (decide ({ replyId := chainHeadReply, caller := some chainCaller,
+               next := some (.head chainSc),
                prev := some chainOuterReply } : Reply).wellFormed)
   assertBool "NEGATIVE: a Reply off every stack may not carry a prev link"
     (!decide ({ replyId := chainHeadReply, prev := some chainOuterReply } : Reply).wellFormed)
+  -- The `next` half of the same predicate: the doubly-linked stack made the
+  -- upward link a second way to pin an object, so it is refused on the same
+  -- terms.  Without this check the head link could be left behind by a pop and
+  -- `Reply.wellFormed` would still pass.
+  assertBool "NEGATIVE: a Reply off every stack may not head a context either"
+    (!decide ({ replyId := chainHeadReply, next := some (.head chainSc) } : Reply).wellFormed)
+  assertBool "NEGATIVE: a Reply off every stack may not carry an upward frame link"
+    (!decide ({ replyId := chainHeadReply,
+                next := some (.frame chainOuterReply) } : Reply).wellFormed)
   -- The walk: the head's chain is the two replies, innermost first.
   assertBool "the context's head walks the whole depth-2 chain"
     (donationChainFrom stChain chainSc 2 (some chainHeadReply)
@@ -1727,20 +1749,27 @@ private def runDonationChainStructureChecks : IO Unit := do
     (donationChainFrom stChain chainSc 8 (some chainHeadReply)
        == some [chainHeadReply, chainOuterReply])
   -- NEGATIVE: the link is still there and still names a LIVE Reply — but that
-  -- reply donates a DIFFERENT context, which is what a re-linked Reply looks
-  -- like.  Following it would hand this context to the other stack's caller.
-  assertBool "NEGATIVE: a prev naming a live reply that donates another context is refused"
-    (donationChainFrom (chainStore (some chainOuterReply) (some chainOtherSc))
+  -- reply's upward link does not answer the frame that reached it, which is what
+  -- a re-linked (reused) Reply looks like.  Following it would hand this context
+  -- to the other stack's caller.
+  assertBool "NEGATIVE: a prev whose target links up to a different frame is refused"
+    (donationChainFrom (chainStore (some chainOuterReply) (some (.frame chainAbsentReply)))
        chainSc 8 (some chainHeadReply) == none)
-  assertBool "NEGATIVE: a prev naming a live reply that donates nothing is refused"
+  assertBool "NEGATIVE: a prev whose target heads another context is refused"
+    (donationChainFrom (chainStore (some chainOuterReply) (some (.head chainOtherSc)))
+       chainSc 8 (some chainHeadReply) == none)
+  assertBool "NEGATIVE: a prev whose target heads THIS context is refused"
+    (donationChainFrom (chainStore (some chainOuterReply) (some (.head chainSc)))
+       chainSc 8 (some chainHeadReply) == none)
+  assertBool "NEGATIVE: a prev whose target carries no upward link is refused"
     (donationChainFrom (chainStore (some chainOuterReply) none)
        chainSc 8 (some chainHeadReply) == none)
   assertBool "NEGATIVE: a self-linked head (a cycle) is refused at every fuel"
     ((List.range 12).all (fun f =>
-      donationChainFrom (chainStore (some chainHeadReply) (some chainSc))
+      donationChainFrom (chainStore (some chainHeadReply) (some (.frame chainHeadReply)))
         chainSc f (some chainHeadReply) == none))
   assertBool "NEGATIVE: a prev naming no object at all is refused"
-    (donationChainFrom (chainStore (some chainAbsentReply) (some chainSc))
+    (donationChainFrom (chainStore (some chainAbsentReply) (some (.frame chainHeadReply)))
        chainSc 8 (some chainHeadReply) == none)
   -- One chain per context: the second context's stack is empty and does not
   -- pick up a chain whose members name the first.
@@ -1797,7 +1826,7 @@ private def popStoreShaped (outerTcb : TCB) (head? : Option SeLe4n.ReplyId)
                            boundThread := some popServer, scReply := head? })
     |>.withObject chainHeadReply.toObjId
         (.reply { replyId := chainHeadReply, caller := some popClient,
-                  donatedSc := some chainSc, prev := prev? })
+                  next := some (.head chainSc), prev := prev? })
     |>.withObject chainOuterReply.toObjId (.reply outerReply)
     |>.withObject popServer.toObjId
         (.tcb { mkTcb 81 50 none with schedContextBinding := .donated chainSc popClient })
@@ -1809,10 +1838,12 @@ private def popStoreShaped (outerTcb : TCB) (head? : Option SeLe4n.ReplyId)
     |>.withObject popOuter.toObjId (.tcb outerTcb)
     |>.build)
 
-/-- The frame below the head as a live depth-2 chain leaves it: donating this
-context, with the outer caller still waiting on it. -/
+/-- The frame below the head as a live depth-2 chain leaves it: linking **up**
+to the head, with the outer caller still waiting on it.  It names no context —
+only the head does — which is what makes the pop's lookahead one frame deep. -/
 private def popOuterFrame : Reply :=
-  { replyId := chainOuterReply, caller := some popOuter, donatedSc := some chainSc }
+  { replyId := chainOuterReply, caller := some popOuter,
+    next := some (.frame chainHeadReply) }
 
 /-- The pre-state with the outer caller's TCB varied and the frame below the
 head well formed. -/
@@ -1825,16 +1856,38 @@ private def popStore (head? : Option SeLe4n.ReplyId)
     (prev? : Option SeLe4n.ReplyId) : SystemState :=
   popStoreWith popWaitingDonor head? prev?
 
-/-- ...and the same store with the frame *below* the head donating some other
-context — what a re-linked (reused) Reply looks like from the resolver's side. -/
-private def popStoreOuterDonating (other : SeLe4n.SchedContextId) : SystemState :=
+/-- ...and the same store with the frame *below* the head carrying some other
+upward link — what a re-linked (reused) Reply looks like from the resolver's
+side.  A reused Reply keeps its `caller`; what it loses is the link back up to
+the frame that named it, and that is the reciprocity the resolver refuses to
+read past. -/
+private def popStoreOuterLinkedTo (up : Option ReplyStackLink) : SystemState :=
   popStoreShaped popWaitingDonor (some chainHeadReply) (some chainOuterReply)
-    { popOuterFrame with donatedSc := some other }
+    { popOuterFrame with next := up }
+
+/-- ...and the store with the *head* itself carrying some other upward link.
+The context still points at it, so the mutation keeps the head and breaks the
+relation `donationHeadOf?` reads: a head that heads a different context, one
+that heads none, or one claiming a frame above it. -/
+private def popHeadLinkedTo (up : Option ReplyStackLink) : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject chainSc.toObjId
+        (.schedContext { SchedContext.empty chainSc with
+                           boundThread := some popServer,
+                           scReply := some chainHeadReply })
+    |>.withObject chainHeadReply.toObjId
+        (.reply { replyId := chainHeadReply, caller := some popClient, next := up })
+    |>.withObject chainOuterReply.toObjId (.reply popOuterFrame)
+    |>.withObject popServer.toObjId
+        (.tcb { mkTcb 81 50 none with schedContextBinding := .donated chainSc popClient })
+    |>.withObject popClient.toObjId (.tcb (mkTcb 82 40 none))
+    |>.withObject popOuter.toObjId (.tcb popWaitingDonor)
+    |>.build)
 
 /-- ...and with the frame below the head *validated* but its caller consumed —
-what a cancelled middle caller's frame looks like while nothing yet removes it
-from the stack (plan §3.4; the decision OD5.2 makes).  The outer caller's TCB is
-still present, so the resolver's `none` here is decided by the frame and not by
+the shape the pre-`v0.35.4` single-linked stack left behind when a middle caller
+was cancelled and nothing could remove its frame.  The outer caller's TCB is
+still present, so the resolver's verdict here is decided by the frame and not by
 a missing thread. -/
 private def popStoreOuterConsumed : SystemState :=
   popStoreShaped popWaitingDonor (some chainHeadReply) (some chainOuterReply)
@@ -1848,9 +1901,9 @@ private def popHeadOf (st : SystemState) : Option (Option SeLe4n.ReplyId) :=
   (st.getSchedContext? chainSc).map (·.scReply)
 
 private def popReplyLinks (st : SystemState) :
-    Option (Option SeLe4n.SchedContextId × Option SeLe4n.ReplyId) :=
+    Option (Option SeLe4n.ReplyId × Option ReplyStackLink) :=
   match st.objects[chainHeadReply.toObjId]? with
-  | some (.reply r) => some (r.donatedSc, r.prev)
+  | some (.reply r) => some (r.prev, r.next)
   | _ => none
 
 private def runDonationReturnPopChecks : IO Unit := do
@@ -1877,7 +1930,7 @@ private def runDonationReturnPopChecks : IO Unit := do
   | .ok st' =>
     assertBool "depth-2: the head is popped to the reply below it"
       (popHeadOf st' == some (some chainOuterReply))
-    assertBool "depth-2: the consumed head's stack links are cleared"
+    assertBool "depth-2: the consumed head's stack links are cleared, both ways"
       (popReplyLinks st' == some (none, none))
     assertBool "depth-2: the owner comes back `.donated` at the outer caller"
       (popBindingOf st' popClient == some (.donated chainSc popOuter))
@@ -1889,30 +1942,30 @@ private def runDonationReturnPopChecks : IO Unit := do
       popServer chainSc popClient (some popOuter) with
   | .error _ => assertBool "depth-2 pop must succeed (control)" false
   | .ok st' =>
-    assertBool "depth-2: the frame below the head keeps its own donation"
+    assertBool "depth-2: the frame below the head becomes the head, caller intact"
       (match st'.objects[chainOuterReply.toObjId]? with
-       | some (.reply r) => r.donatedSc == some chainSc && r.caller == some popOuter
+       | some (.reply r) =>
+           r.next == some (.head chainSc) && r.prev == none && r.caller == some popOuter
        | _ => false)
   -- NEGATIVE: the head validation is fail-closed, and the mutations keep the
-  -- head and break the relation.  A head naming a Reply that donates a
-  -- *different* context is what a re-linked (reused) Reply looks like; a head
-  -- naming no object at all is a dangling link.  Either must refuse rather than
-  -- read as an empty stack, or the pop would clear a Reply belonging to someone
-  -- else and leave this context's own head dangling.
-  assertBool "NEGATIVE: a head donating another context is refused"
-    (match returnDonatedSchedContext
-        ((BootstrapBuilder.empty
-          |>.withObject chainSc.toObjId
-              (.schedContext { SchedContext.empty chainSc with
-                                 boundThread := some popServer,
-                                 scReply := some chainHeadReply })
-          |>.withObject chainHeadReply.toObjId
-              (.reply { replyId := chainHeadReply, donatedSc := some chainOtherSc })
-          |>.withObject popServer.toObjId
-              (.tcb { mkTcb 81 50 none with
-                        schedContextBinding := .donated chainSc popClient })
-          |>.withObject popClient.toObjId (.tcb (mkTcb 82 40 none))
-          |>.build)) popServer chainSc popClient none with
+  -- head and break the relation.  A head whose upward link names a *different*
+  -- context, or none at all, is what a re-linked (reused) Reply looks like; a
+  -- head naming no object at all is a dangling link.  Each must refuse rather
+  -- than read as an empty stack, or the pop would clear a Reply belonging to
+  -- someone else and leave this context's own head dangling.
+  assertBool "NEGATIVE: a head that heads another context is refused"
+    (match returnDonatedSchedContext (popHeadLinkedTo (some (.head chainOtherSc)))
+        popServer chainSc popClient none with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+  assertBool "NEGATIVE: a head carrying no upward link is refused"
+    (match returnDonatedSchedContext (popHeadLinkedTo none)
+        popServer chainSc popClient none with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+  assertBool "NEGATIVE: a head whose upward link names a frame above it is refused"
+    (match returnDonatedSchedContext (popHeadLinkedTo (some (.frame chainOuterReply)))
+        popServer chainSc popClient none with
      | .error e => e == KernelError.invalidArgument
      | .ok _ => false)
   assertBool "NEGATIVE: a head naming no object is refused"
@@ -1970,30 +2023,41 @@ private def runDonationReturnPopChecks : IO Unit := do
     (match replyStackOuterCaller? (popStore none none) chainSc with
      | .ok none => true | _ => false)
   -- The fourth state — a frame below the head that validates but whose caller
-  -- has been consumed (a cancelled middle caller, whose frame nothing yet
-  -- removes).  The resolver answers `none` and the pop binds the target
-  -- outright, leaving that frame heading the stack: seL4's non-head branch,
-  -- stated by `replyStackOuterCaller?_of_consumed_frame` so that OD5.2 decides
-  -- it rather than inherits it.  Pinned in both halves — the resolver's answer
-  -- and the pop's result — because a later row changing one must change both.
-  assertBool "the resolver answers `none` on a validated frame whose caller was consumed"
+  -- has been consumed.  Before `v0.35.4` the resolver read it as the bottom of
+  -- the stack: the pop bound the target outright and left that dead frame
+  -- heading the context forever, pinning both objects against every retype and
+  -- against ever linking the Reply again.  `severAtCut` is now implemented by
+  -- the *detach* at the cancellation (`detachReplyFrameAbove`), so a linked
+  -- frame always has a blocked caller (`Reply.wellFormed`) and this shape is an
+  -- invariant violation — refused, never settled.  Pinned in three halves: the
+  -- resolver's verdict, the declared below-head read (which is on the link
+  -- alone, so it still answers), and the resolved pop the call sites run.
+  assertBool "NEGATIVE: a validated frame whose caller was consumed is refused, not read as the bottom"
     (match replyStackOuterCaller? popStoreOuterConsumed chainSc with
-     | .ok none => true | _ => false)
+     | .error e => e == KernelError.illegalState
+     | .ok _ => false)
   assertBool "...and the below-head Reply read is still declared on that frame"
-    (replyStackBelowHeadReads? popStoreOuterConsumed chainSc == (some chainOuterReply, none))
-  match returnDonatedSchedContext popStoreOuterConsumed popServer chainSc popClient none with
-  | .error e => assertBool s!"the pop over a consumed frame must succeed (got {reprStr e})" false
-  | .ok st' =>
-    assertBool "the pop over a consumed frame binds the target outright"
-      (popBindingOf st' popClient == some (.bound chainSc))
-    assertBool "...and leaves the consumed frame heading the stack"
-      (popHeadOf st' == some (some chainOuterReply))
+    (replyStackBelowHead? popStoreOuterConsumed chainSc == (some chainOuterReply, none))
+  assertBool "...and the resolved pop refuses rather than settling the context on nobody"
+    (match returnDonatedSchedContextResolved popStoreOuterConsumed popServer chainSc
+        popClient with
+     | .error e => e == KernelError.illegalState
+     | .ok _ => false)
   -- NEGATIVE: the frame below is validated too — the confused deputy of §3.4.
-  -- A reused Reply keeps its `caller`; what it loses is the donation, and that
-  -- is what the resolver refuses to read past.
-  assertBool "NEGATIVE: a frame below the head donating another context is refused"
+  -- A reused Reply keeps its `caller`; what it loses is the link back up to the
+  -- frame that named it, and that is what the resolver refuses to read past.
+  assertBool "NEGATIVE: a frame below the head linking up to a different frame is refused"
     (match replyStackOuterCaller?
-        (popStoreOuterDonating chainOtherSc) chainSc with
+        (popStoreOuterLinkedTo (some (.frame chainAbsentReply))) chainSc with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+  assertBool "NEGATIVE: a frame below the head that heads a context is refused"
+    (match replyStackOuterCaller?
+        (popStoreOuterLinkedTo (some (.head chainOtherSc))) chainSc with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+  assertBool "NEGATIVE: a frame below the head carrying no upward link is refused"
+    (match replyStackOuterCaller? (popStoreOuterLinkedTo none) chainSc with
      | .error e => e == KernelError.invalidArgument
      | .ok _ => false)
   -- The RR2.8 guard is unchanged by the widening: a context bound to someone
@@ -2033,7 +2097,7 @@ private def pushStoreShaped (donorBinding : SchedContextBinding)
                            boundThread := some pushDonor, scReply := some pushOuterReply })
     |>.withObject pushOuterReply.toObjId
         (.reply { replyId := pushOuterReply, caller := some pushOuter,
-                  donatedSc := some pushSc })
+                  next := some (.head pushSc) })
     |>.withObject pushDonorReply.toObjId (.reply headReply)
     |>.withObject pushDonor.toObjId
         (.tcb { mkTcb 91 40 none with
@@ -2044,7 +2108,8 @@ private def pushStoreShaped (donorBinding : SchedContextBinding)
                   ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor) })
     |>.build)
 
-/-- The donor's own reply object, fresh: linked to the donor, donating nothing. -/
+/-- The donor's own reply object, fresh: linked to the donor, on no stack —
+neither link set, which is what `donationPushFrame?` requires of a frame. -/
 private def pushFreshHead : Reply :=
   { replyId := pushDonorReply, caller := some pushDonor }
 
@@ -2060,9 +2125,9 @@ private def pushHeadOf (st : SystemState) : Option (Option SeLe4n.ReplyId) :=
   (st.getSchedContext? pushSc).map (·.scReply)
 
 private def pushLinksOf (st : SystemState) (rid : SeLe4n.ReplyId) :
-    Option (Option SeLe4n.SchedContextId × Option SeLe4n.ReplyId) :=
+    Option (Option SeLe4n.ReplyId × Option ReplyStackLink) :=
   match st.objects[rid.toObjId]? with
-  | some (.reply r) => some (r.donatedSc, r.prev)
+  | some (.reply r) => some (r.prev, r.next)
   | _ => none
 
 private def runDonationPushChecks : IO Unit := do
@@ -2080,10 +2145,14 @@ private def runDonationPushChecks : IO Unit := do
       ((st'.getSchedContext? pushSc).map (·.boundThread) == some (some pushServer))
     assertBool "depth-2 push: the donor's own reply is now the stack head"
       (pushHeadOf st' == some (some pushDonorReply))
-    assertBool "depth-2 push: the new frame donates this context and links to the old head"
-      (pushLinksOf st' pushDonorReply == some (some pushSc, some pushOuterReply))
-    assertBool "depth-2 push: the frame below is untouched"
-      (pushLinksOf st' pushOuterReply == some (some pushSc, none))
+    assertBool "depth-2 push: the new frame heads the context and links down to the old head"
+      (pushLinksOf st' pushDonorReply == some (some pushOuterReply, some (.head pushSc)))
+    -- The fifth store: the old head stops heading the context and links **up**
+    -- to the frame pushed above it.  Under the single-linked stack this object
+    -- was untouched, which is precisely what left a middle frame unreachable
+    -- from above and so unremovable in `O(1)`.
+    assertBool "depth-2 push: the old head now links up to the new frame, heading nothing"
+      (pushLinksOf st' pushOuterReply == some (none, some (.frame pushDonorReply)))
     -- OD4.5: the chain the push leaves is the two frames, in order.
     assertBool "depth-2 push: the chain walks head-then-outer"
       (donationChainFrom st' pushSc 4 (some pushDonorReply)
@@ -2123,37 +2192,71 @@ private def runDonationPushChecks : IO Unit := do
         pushDonor pushServer pushSc with
      | .error e => e == KernelError.objectNotFound
      | .ok _ => false)
-  assertBool "NEGATIVE: a donor whose reply already donates cannot push"
+  assertBool "NEGATIVE: a donor whose reply already heads a stack cannot push"
     (match donateSchedContext
         (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
-          { pushFreshHead with donatedSc := some pushSc })
+          { pushFreshHead with next := some (.head pushSc) })
         pushDonor pushServer pushSc with
      | .error e => e == KernelError.invalidArgument
      | .ok _ => false)
-  -- OD5.1: the freshening barrier.  A Reply that still names a donated context
-  -- is a live stack frame; re-linking it to a new caller is the confused deputy
-  -- of plan §3.4, and it is refused rather than cleared.
-  assertBool "OD5.1: a free, non-donating Reply may be linked to a new caller"
+  assertBool "NEGATIVE: a donor whose reply already sits on a stack cannot push"
+    (match donateSchedContext
+        (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
+          { pushFreshHead with prev := some pushOuterReply })
+        pushDonor pushServer pushSc with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+  -- ...and a *consumed* frame is refused too, with its own error: pushing one
+  -- would build a stack whose pop cannot resolve an outer caller, which is the
+  -- dead frame this cut exists to make impossible.
+  assertBool "NEGATIVE: a donor whose reply has no caller cannot push"
+    (match donateSchedContext
+        (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
+          { pushFreshHead with caller := none })
+        pushDonor pushServer pushSc with
+     | .error e => e == KernelError.illegalState
+     | .ok _ => false)
+  -- OD5.1: the freshening barrier.  A Reply still carrying a stack link is a
+  -- live frame; re-linking it to a new caller is the confused deputy of plan
+  -- §3.4, and it is refused rather than cleared.  The three shapes below are one
+  -- predicate (`Reply.isFree`) read three ways: no link, an upward link, a
+  -- downward one.
+  assertBool "OD5.1: an unlinked Reply with no caller may be linked to a new caller"
     (match SystemState.linkReply pushDonorReply pushServer
         (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
           { pushFreshHead with caller := none }) with
      | .ok _ => true | .error _ => false)
-  assertBool "OD5.1 NEGATIVE: a free Reply that still donates is refused"
+  assertBool "OD5.1 NEGATIVE: a caller-free Reply that still heads a stack is refused"
     (match SystemState.linkReply pushDonorReply pushServer
         (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
-          { pushFreshHead with caller := none, donatedSc := some pushSc }) with
+          { pushFreshHead with caller := none, next := some (.head pushSc) }) with
      | .error e => e == KernelError.replyCapInvalid
      | .ok _ => false)
-  assertBool "OD5.1: ...and the link never CLEARS the donation instead"
+  assertBool "OD5.1 NEGATIVE: ...and one that still links down to a frame below"
+    (match SystemState.linkReply pushDonorReply pushServer
+        (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
+          { pushFreshHead with caller := none, prev := some pushOuterReply }) with
+     | .error e => e == KernelError.replyCapInvalid
+     | .ok _ => false)
+  assertBool "OD5.1: ...and the link never CLEARS the stack links instead"
     (match SystemState.linkReply pushOuterReply pushServer
         (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
           { pushFreshHead with caller := none }) with
      | .error e => e == KernelError.replyCapInvalid
      | .ok _ => false)
   -- OD5.4: retype refuses both halves of a live stack -- the frame and the head.
-  assertBool "OD5.4 NEGATIVE: a Reply that is a live stack frame cannot be retyped"
+  -- Both mutations keep the Reply caller-free — the clause the pre-OD5.4 guard
+  -- read — and add exactly one stack link, so a guard reading `caller` and the
+  -- stash alone would pass both.
+  assertBool "OD5.4 NEGATIVE: a Reply that still heads a stack cannot be retyped"
     (match lifecyclePreRetypeCleanup pushStore pushOuterReply.toObjId
-        (.reply { replyId := pushOuterReply, donatedSc := some pushSc })
+        (.reply { replyId := pushOuterReply, next := some (.head pushSc) })
+        (.reply (Reply.empty pushOuterReply)) with
+     | .error e => e == KernelError.revocationRequired
+     | .ok _ => false)
+  assertBool "OD5.4 NEGATIVE: ...and one linked only downward, the top of a cut-off part"
+    (match lifecyclePreRetypeCleanup pushStore pushOuterReply.toObjId
+        (.reply { replyId := pushOuterReply, prev := some pushDonorReply })
         (.reply (Reply.empty pushOuterReply)) with
      | .error e => e == KernelError.revocationRequired
      | .ok _ => false)

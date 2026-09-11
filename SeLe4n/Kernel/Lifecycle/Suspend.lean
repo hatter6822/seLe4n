@@ -531,7 +531,11 @@ def clearReplyObjectCaller (st : SystemState) (rid : SeLe4n.ReplyId)
     : SystemState :=
   match st.getReply? rid with
   | some r =>
-      { st with objects := st.objects.insert rid.toObjId (.reply { r with caller := none }) }
+      -- WS-OD (`v0.35.4`): the record is `Reply.consumed r` — the caller clear,
+      -- and the stack links unless the frame heads a stack — the same record
+      -- `consumeReply` stores on the reply path, so the two spellings of
+      -- "consume a reply link" cannot disagree about what a consumed frame is.
+      { st with objects := st.objects.insert rid.toObjId (.reply r.consumed) }
   | none => st
 
 def clearTcbReplyObject (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -748,6 +752,39 @@ def returnDonationToCancelledCaller (st : SystemState) (tid : SeLe4n.ThreadId)
     | .error _ => st
   | _, _ => st
 
+/-- **WS-OD (`v0.35.4`): sever a cancelled caller's frame that is not the head of
+its stack** — seL4's `reply_remove_tcb`, non-head arm, applied where seL4 applies
+it: in `cancelIPC`.
+
+A caller whose callee has donated the context **onward** is blocked on a frame
+that is not the head, so the reclaim above (`returnDonationToCancelledCaller`)
+has nothing to return and declines.  Before `v0.35.4` that was the end of it, and
+the frame stayed on the stack with its `caller` consumed: the later pop met it
+below the head, bound the target outright (`severAtCut`) and left the dead frame
+*heading* the stack, where nothing could ever clear it — the Reply object and the
+context could never be retyped, and the Reply could never be linked again.  The
+detach implements the same policy structurally: the frame above the cancelled one
+stops linking down to it (`detachReplyFrameAbove`), so it becomes the bottom of
+the stack it heads and the next pop binds its caller outright, and the cancelled
+frame leaves the structure when its caller link is consumed (`Reply.consumed`,
+run by `consumeReplyLink` right after).
+
+**Order.**  After a successful reclaim the frame is already unlinked, so this is
+the identity there (`detachReplyFrameAbove_of_no_frame_above`); on a head it is
+the identity too, deliberately — a head is popped by the reclaim, never detached,
+and a reclaim that *declined* on a head is an invariant violation this step must
+not paper over by dropping a stack.  All-or-nothing like the reclaim: a detach
+that cannot repair the frame above (a link that does not point back) commits
+nothing, since rewriting a frame on the strength of a stale upward link is the
+trust the structure withholds. -/
+def detachCancelledCallerFrame (st : SystemState) (tcb : TCB) : SystemState :=
+  match tcb.replyObject with
+  | none => st
+  | some rid =>
+    match detachReplyFrameAbove st rid with
+    | .ok st' => st'
+    | .error _ => st
+
 def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) : SystemState :=
   match tcb.ipcState with
@@ -764,13 +801,23 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     -- object is stranded in-use (see `consumeReplyLink`).
     --
     -- WS-RR RR7.22 (residual, remediation): and it must get its donated
-    -- SchedContext back **first** — seL4-MCS's `reply_remove` does — else the
-    -- server holds `.donated scId tid` while `tid` is no longer reply-blocked,
-    -- which `donationOwnerValid` forbids.  The return runs before the restore so
-    -- that every intermediate state satisfies the invariant: at the return the
-    -- caller is still `.blockedOnReply`, and after it no donation names the
-    -- caller at all.
-    consumeReplyLink (restoreToReadyCancelled (returnDonationToCancelledCaller st tid tcb) tid)
+    -- SchedContext back **first**, else the server holds `.donated scId tid`
+    -- while `tid` is no longer reply-blocked, which `donationOwnerValid`
+    -- forbids.  The return runs before the restore so that every intermediate
+    -- state satisfies the invariant: at the return the caller is still
+    -- `.blockedOnReply`, and after it no donation names the caller at all.
+    -- (This is a deliberate divergence from seL4-MCS, whose `cancelIPC` runs
+    -- `reply_remove_tcb` and never donates the context back — there the server
+    -- keeps a cancelled client's context until its manager intervenes.)
+    --
+    -- WS-OD (`v0.35.4`): and a frame that is **not** the head — the caller's
+    -- callee donated onward — is detached from its stack in `O(1)` before the
+    -- caller link is consumed (`detachCancelledCallerFrame`, seL4's
+    -- `reply_remove_tcb`), so no frame is ever left dead on a stack.  It runs
+    -- after the reclaim, on whose success it is the identity.
+    consumeReplyLink
+      (restoreToReadyCancelled
+        (detachCancelledCallerFrame (returnDonationToCancelledCaller st tid tcb) tcb) tid)
       tid tcb
   | .blockedOnNotification _ =>
     restoreToReadyCancelled (removeFromAllNotificationWaitLists st tid) tid

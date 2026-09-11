@@ -10,6 +10,10 @@
 -- STATUS: staged for WS-SM (SM3.D deadlock-freedom inventory)
 
 import SeLe4n.Kernel.Concurrency.Locks.Deadlock
+-- **WS-OD (`v0.35.4`)**: the `.tcbSuspend` operation is built over the
+-- state-resolved footprint and its bound, which live with the other resolved
+-- bounds.
+import SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds
 import SeLe4n.PackedString
 
 /-!
@@ -228,8 +232,8 @@ def deadlockTheorems : List DeadlockTheorem :=
       KernelOperation.ofEndpointCall .boundedWait,
     dlt! "KernelOperation.ofReplyRecv — KernelOperation from replyRecv"
       KernelOperation.ofReplyRecv .boundedWait,
-    dlt! "KernelOperation.ofTcbSuspend — KernelOperation from tcbSuspend"
-      KernelOperation.ofTcbSuspend .boundedWait,
+    dlt! "KernelOperation.ofTcbSuspendOnCore — KernelOperation from the state-resolved tcbSuspend footprint"
+      KernelOperation.ofTcbSuspendOnCore .boundedWait,
     dlt! "otherCores — the cores other than c"
       otherCores .boundedWait,
     dlt! "otherCores_length_eq — |otherCores c| = numCores - 1"

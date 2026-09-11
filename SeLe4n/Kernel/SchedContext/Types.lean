@@ -282,6 +282,19 @@ deriving Repr, DecidableEq
 
 namespace SchedContextBinding
 
+/-- `v0.35.4`: is this binding a donation?  The one-word form of the question
+`schedContextUnbind` asks (a donated holder is not unbound in place), so the
+transition and every proof about it read one predicate. -/
+def isDonated : SchedContextBinding → Bool
+  | .donated _ _ => true
+  | _ => false
+
+@[simp] theorem isDonated_unbound : isDonated .unbound = false := rfl
+@[simp] theorem isDonated_bound (scId : SeLe4n.SchedContextId) :
+    isDonated (.bound scId) = false := rfl
+@[simp] theorem isDonated_donated (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId) :
+    isDonated (.donated scId owner) = true := rfl
+
 /-- Extract the SchedContextId if bound or donated, `none` if unbound. -/
 @[inline] def scId? : SchedContextBinding → Option SeLe4n.SchedContextId
   | .unbound => none

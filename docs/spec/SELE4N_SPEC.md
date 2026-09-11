@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.3` (`lakefile.toml`) |
+| **Package version** | `0.35.4` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 364,812 across 328 Lean files |
-| **Test LoC** | 74,909 across 70 Lean test suites |
-| **Proved declarations** | 12,185 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 369,809 across 328 Lean files |
+| **Test LoC** | 75,158 across 70 Lean test suites |
+| **Proved declarations** | 12,402 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2928,7 +2928,7 @@ alongside the latent inventory (closing SMP-H3).
    required the raise**: `lockSet_endpointReply` reaches nine with the
    same two members and the cancellation reply arm ten.
 
-   **At HEAD, the declared lock-set ceiling is **14**, the RPi5 tick admits **23 µs** per lock, and the uniform 60 µs envelope is **2520 µs**.**
+   **At HEAD, the declared lock-set ceiling is **16**, the RPi5 tick admits **20 µs** per lock, and the uniform 60 µs envelope is **2880 µs**.**
    All three are *derived* — from `maxLockSetSize`, `numCores` and
    `rpi5TickBudgetMicros`, through `admissibleCriticalSection`'s own
    formula — and since WS-OD OD3.15 (v0.34.142)
@@ -4136,20 +4136,38 @@ so no live transition is ever ahead of its own proofs.
   reserved-idle-slot check, because it holds an object id.  Building it is also
   what keeps the eventual push inside `maxLockSetSize`: the push reads the
   previous head off an object the call footprint already write-locks.
-- **`Reply.wellFormed` is no longer `True`** — a `prev` link exists only on a
-  Reply that is itself on a stack.  The two store-level clauses its SM6.D
-  docstring also promised (`donatedSc` resolves; the context's head agrees) are
-  stated where their data is, in the predicate below, which carries this one as
-  its own first conjunct.
-- **`donationChainWellFormed`** (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`) — every
-  `donatedSc` resolves to a SchedContext, and each context's `scReply` heads a
-  **terminating** `prev`-chain (`donationChainFrom`, a fuel-bounded walk) that
-  holds **exactly** the replies naming that context.  Each link is validated by
-  the target's own `donatedSc` and never by its `caller`: Reply objects are
-  re-linked to new callers, so a stale link over a reused Reply would otherwise
-  let a donation return read the *new* caller and hand the original thread's
-  scheduling context to an unrelated thread, in another domain, driven by object
-  reuse.
+- **The stack is doubly linked** (`v0.35.4`).  `Reply.prev` names the frame
+  below, and `Reply.next : ReplyStackLink` names the frame **above** — or, on the
+  head frame alone, the scheduling context whose stack this is (`.head sc`).  A
+  sum type rather than two fields, so "heads a context", "has a frame above" and
+  "off every stack" are three states of one value and no object can claim two at
+  once.  The context is therefore recorded at the head only, which is what makes
+  taking a frame out of the **middle** of a stack an `O(1)` repair of its two
+  neighbours (seL4's `reply_remove_tcb`) rather than a walk clearing a per-frame
+  context field below the cut.  A single-linked encoding cannot do that, and a
+  frame it could not remove stayed on its stack with its caller gone: the Reply
+  object and the scheduling context could then never be retyped, and the Reply
+  could never be linked to a new caller.
+- **`Reply.wellFormed` is no longer `True`** — seL4's `reply_unlink` invariant, a
+  stack link in **either** direction only on a Reply whose caller is still
+  blocked on it (`caller = none → prev = none ∧ next = none`).  `Reply.isFree` is
+  its decidable form and the one spelling of "this Reply may be linked to a new
+  caller or retyped", shared by the link guard, the stash admission, the retype
+  guard and the boot check.
+- **`donationChainWellFormed`** (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`) — five
+  clauses: every stored Reply is locally well formed; a context's head resolves
+  to a Reply heading that context and conversely; every `prev` link is answered
+  by the frame it names (`prevLinkReciprocal`); and each context's stack, walked
+  from its head, **terminates** (`donationChainFrom`, a fuel-bounded walk).  Each
+  link is validated by the target's own **upward** link and never by its
+  `caller`: Reply objects are re-linked to new callers, so a stale link over a
+  reused Reply would otherwise let a donation return read the *new* caller and
+  hand the original thread's scheduling context to an unrelated thread, in
+  another domain, driven by object reuse.  Relinking clears both links, so a
+  reused Reply carries no answer back and the walk stops at it.  The relation is
+  stated **downward** deliberately: an upward `.frame` link whose target does not
+  point back is a legitimate state — the top of a part a detach cut off — and no
+  reader trusts one on its own.
 - **A conjunct of `ipcReachable`, not of `ipcInvariantFull`**, which keeps its
   twenty — and *preserved* rather than assumed.  `donationChainFrame` is the
   reusable frame, stated over the two projections the walk actually reads
@@ -4157,7 +4175,10 @@ so no live transition is ever ahead of its own proofs.
   than an over-approximation of it, with an objects-equality instance, a
   no-chain-object-write instance, the walk's own congruence (the no-Reply-write
   frame) and single-`storeObject` instances for the TCB, SchedContext and Reply
-  kinds; `donationChainWellFormed_of_frame` is the payoff.
+  kinds; `donationChainWellFormed_of_frame` is the payoff.  Its third clause
+  (`callerKept`, `v0.35.4`) is what keeps the frame honest about the one step
+  that is not one: a transition may not consume a linked frame's caller while
+  framing its links, because `Reply.wellFormed` reads both.
 
 `donationChainAcyclic` is unrelated and stays as it is: it constrains the
 **binding** graph (`.donated scId owner` edges), which onward donation leaves
@@ -4169,8 +4190,10 @@ change**.  `returnDonatedSchedContext` takes `newOwner? : Option ThreadId` and
 performs four object writes: the context's rebind **and** stack pop as one store
 (`boundThread := some originalOwner`, `scReply := head?.bind (·.2.prev)` — one
 write, so a frame over either half alone would be false of the operation), the
-consumed head Reply's stack links cleared, the target's
-`donationReturnBinding scId newOwner?`, and the server's `.unbound`.
+pop itself (`storeDonationHeadPop`: the consumed head's links cleared, then the
+frame below **re-headed** to this context, which is what keeps the new head's
+upward link reciprocal), the target's `donationReturnBinding scId newOwner?`, and
+the server's `.unbound`.
 `returnDonatedSchedContext_eq_legacy_of_none` proves that at `newOwner? = none`
 over a context heading no stack the new definition **is** the old one, and every
 call site in the tree passes `none`, so OD4's push remains the only phase that
@@ -4208,11 +4231,11 @@ changes behaviour.
   field it writes is stripped by `projectKernelObject`, so the projection result
   no longer carries an observability hypothesis on the server.
 
-**The pop preserves it** (WS-OD OD3.8, v0.34.132).  Every other transition in the
-tree discharges `donationChainWellFormed` through `donationChainFrame` — it
-writes no `Reply.donatedSc`, no `Reply.prev` and no `SchedContext.scReply`, so
-the two projections the walk reads are fixed.  The pop is the exception the frame
-family was designed against, and
+**The pop preserves it** (WS-OD OD3.8, v0.34.132).  Almost every transition in
+the tree discharges `donationChainWellFormed` through `donationChainFrame` — it
+writes no `Reply.prev`, no `Reply.next` and no `SchedContext.scReply`, so the two
+projections the walk reads are fixed.  The pop is the exception the frame family
+was designed against, and
 `returnDonatedSchedContext_preserves_donationChainWellFormed`
 (`SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`) is what closes it.  With
 it, the predicate is preserved by **every** kernel transition rather than by every
@@ -4223,8 +4246,8 @@ aspiration.
   Clearing the popped head's links is sound for the rest of that context's stack
   only if no frame below links back to it, and for every other context's stack
   only if the head is on none of them.  The second is
-  `not_mem_donationChainFrom_of_not_donating` (the head donates *this* context, so
-  it is on no other's).  The first is
+  `not_mem_donationChainFrom_of_unlinked` (a Reply carrying no upward link is on
+  no chain at all).  The first is
   `donationChainFrom_head_not_mem_tail`, which reads acyclicity off the invariant's
   own **termination** clause: the walk is a function of its starting point
   (`donationChainFrom_deterministic`, over `donationChainFrom_mono_le`), so a head
@@ -4260,12 +4283,16 @@ because each is false without the other.
   reads `sender->tcbSchedContext` without asking how the sender came by it.  A
   footprint narrower than its transition is *false*, so the resolver and the
   guard widened in one cut and neither can move without the other.
-- **`donateSchedContext` pushes a reply-stack frame.**  Four object writes: the
-  context's rebind **and** new stack head as one store
+- **`donateSchedContext` pushes a reply-stack frame.**  Five object writes since
+  `v0.35.4`: the context's rebind **and** new stack head as one store
   (`boundThread := some serverTid`, `scReply := some pushRid`), the pushed
-  Reply's `donatedSc := some clientScId` and `prev := sc.scReply` (the old head,
-  read off the same object the first store rewrites), the donor's `.unbound` and
-  the server's `.donated clientScId clientTid`.  The frame is the donor's **own**
+  Reply's `prev := sc.scReply` (the old head, read off the same object the first
+  store rewrites) and `next := some (.head clientScId)`, the **old head's**
+  `next := some (.frame pushRid)` — the store that makes the new frame reachable
+  from below, and without which a middle frame could never be removed in `O(1)` —
+  the donor's `.unbound` and the server's `.donated clientScId clientTid`.  A
+  frame cannot be pushed onto itself, which is refused rather than assumed.  The
+  frame is the donor's **own**
   `replyObject` — the Reply the `Call` rendezvous linked to it — so the push
   declares nothing the `.call` footprint had not
   (`lockSet_endpointCallOnCore_covers_donationPush`), and `maxLockSetSize` does
@@ -4281,7 +4308,7 @@ because each is false without the other.
   every transition rather than by every transition but one.  Freshness is what
   makes the new frame safe and is *checked* rather than assumed: the refusal
   above puts the pushed Reply on **no** context's chain
-  (`not_mem_donationChainFrom_of_not_donating`), so prepending it cannot revisit
+  (`not_mem_donationChainFrom_of_unlinked`), so prepending it cannot revisit
   a member and the old walk transports verbatim.
 - **The migration's source is the intermediate donor's home**
   (WS-OD OD4.6).  `replenishQueueAffinityConsistentOnCore` puts a context's CBS
@@ -4302,15 +4329,17 @@ because each is false without the other.
 
 **The teardown paths are chain-aware** (WS-OD OD5, v0.35.2).
 
-- **A Reply that still donates cannot be freshened** (OD5.1, plan §3.4's confused
-  deputy).  `linkReply` refuses `donatedSc ≠ none` — such a Reply is a live frame
-  of some context's stack, and re-linking it to a new caller would make the pop
-  that later reaches it hand the original thread's context to an unrelated
+- **A Reply that still carries a stack link cannot be freshened** (OD5.1, plan
+  §3.4's confused deputy).  `linkReply` refuses anything but a **free** Reply
+  (`Reply.isFree`: no caller, no link in either direction) — a linked Reply is a
+  live frame of some context's stack, and re-linking it to a new caller would make
+  the pop that later reaches it hand the original thread's context to an unrelated
   thread, driven by object reuse.  **Refused rather than cleared**: clearing would
   take the frame off a stack the context still heads, so the walk would stop
-  mid-chain and the store would satisfy no chain at all.  The clear that *does*
-  happen is the pop's own; `consumeReply` deliberately leaves the two stack fields
-  alone, because the reply leg consumes the link **before** the pop reads them.
+  mid-chain and the store would satisfy no chain at all.  A head's links are
+  cleared by the pop that follows the reply leg in the same transition, which is
+  why `Reply.consumed` leaves them in place on a head and clears them everywhere
+  else.
 - **A cancelled *middle* caller severs the stack at the cut** (OD5.2).  Both
   candidate answers are named (`CancelledMiddleCallerPolicy`), one is chosen
   (`cancelledMiddleCallerPolicy = .severAtCut`) and the choice is proved:
@@ -4319,9 +4348,10 @@ because each is false without the other.
   exactly what `reclaimToCancelledThread` would not do.  Chosen because it is what
   the pop already does (one program rather than two), because it is `O(1)` where
   the alternative walks a chain a `LockSet` cannot bound, and because it reaches
-  the same owner seL4-MCS's `reply_remove` does — by a different route, since
-  seL4's doubly linked stack splices the middle frame out where this model's
-  single `prev` link leaves it in place with its `caller` consumed.  Its cost is
+  the same owner seL4-MCS's `reply_remove` does — and, since `v0.35.4`, by the
+  same route: `detachCancelledCallerFrame` splices the cancelled frame out of the
+  middle in `O(1)` before its caller link is consumed, so no frame is left on a
+  stack with its caller gone.  Its cost is
   stated rather than hidden: the original owner's reservation ends up with the
   innermost live caller, and no later pop carries it below the cut.  From the
   cancellation end the same policy is two theorems — the reclaim fires for the
@@ -4333,14 +4363,15 @@ because each is false without the other.
   is the *outer caller's* home core.  That core is not resolvable from the
   victim's pre-state binding, because at the pre-state the victim has none, so
   `suspendThreadOnCoreSchedLockSet`'s replenish segment is a **triple**.
-- **Retype refuses both halves of a live stack** (OD5.4).  A Reply with
-  `donatedSc ≠ none` is a frame; a SchedContext with `scReply ≠ none` is a head,
+- **Retype refuses both halves of a live stack** (OD5.4).  A Reply that is not
+  `Reply.isFree` is a frame; a SchedContext with `scReply ≠ none` is a head,
   and by the chain's own completeness clause that is exactly "some frame names
   this context".  Both are `.revocationRequired`, `O(1)`, and fail-closed.
-- **Every teardown path frames the chain** (OD5.6).  `linkReply`, `consumeReply`,
-  their bidirectional composites and the cancellation's reply-link sever all reach
-  `donationChainWellFormed_of_frame`; only the push and the pop carry their own
-  preservation, because only they write chain data.
+- **Every teardown path either frames the chain or preserves it** (OD5.6).
+  `linkReply`, `linkCallerReply` and the TCB-side reply-link clear reach
+  `donationChainWellFormed_of_frame`, because they write no chain data.  The push,
+  the pop, the detach and the cancellation's reply-link sever carry their own
+  preservation theorem, because they do.
 
 **The payoff** (WS-OD OD6.1, v0.35.2).
 `passiveServerHoldsDonatedContext_atCallDepthTwo` states what the workstream was
@@ -4350,6 +4381,51 @@ so `resolveEffectivePrioDeadline` reads a real reservation rather than falling
 back to the legacy TCB priority, the second so the CBS engine charges it.  The
 `onCore` instance adds the replenishment migration, so the reservation's refills
 land on the core that now runs the server.
+
+**The stack is doubly linked, and no frame is left on it with its caller gone**
+(`v0.35.4`).  WS-OD's closure audit found that `severAtCut` was implemented by
+*leaving a frame behind*: a cancelled middle caller's frame stayed on its stack
+with its `caller` consumed, the later pop read it as the bottom of the stack and
+bound the context outright, and the frame then **headed** that context forever.
+Nothing could clear it — the Reply object and the SchedContext could never be
+retyped, and the Reply could never be linked to a new caller — so an ordinary
+`.tcbSuspend` on a client at call depth ≥ 3 pinned two kernel objects
+permanently.  Reachable with no more authority than a TCB write right over a
+thread in one's own call chain.
+
+The remedy is seL4's own structure rather than a weakening.  `Reply.donatedSc`
+is replaced by `Reply.next : ReplyStackLink`, the policy is unchanged, and it is
+now carried out by a **detach**:
+
+- **`detachReplyFrameAbove`** clears the `prev` of the frame above the one being
+  removed, so that frame becomes the bottom of the stack it heads and the removed
+  frame leaves the structure when its caller link is consumed (`Reply.consumed`).
+  It validates the back-link before it writes — a frame whose `prev` does not name
+  the frame being cut out is a stale upward link, which the downward-stated
+  relation permits and which is therefore read as "nothing above me", never
+  repaired.
+- **The cancellation path runs it** (`detachCancelledCallerFrame`), after the
+  reclaim and before `consumeReplyLink`, with both orders pinned.
+- **A validated frame below the head whose caller was consumed is now an
+  `.error`**, not the bottom of the stack: with the detach in place a linked frame
+  always has a blocked caller, so that shape is an invariant violation and
+  settling a context on it would hand a reservation to a thread the stack does
+  not name.
+- **`maxLockSetSize` moved to 16**, because the pop now *writes* the frame below
+  the head (it re-heads it) and the suspend pipeline's second pop reads and
+  writes one frame further down.  The per-lock cost and envelope that implies are
+  stated once, in this document's canonical ceiling sentence.  A footprint that omits an object the
+  transition writes is false, which this project rates worse than a wide one.
+
+**One residual is registered rather than closed** (WS-RM).  The **reply** path
+does not yet run the detach: it relies on the answered frame being the head,
+which every reply of the nested Call pattern satisfies but which a *delegated*
+reply capability answering its caller out of order does not.  The consequence is
+fail-closed — the later pop's reciprocity test refuses the stale link and the
+reply returns `.invalidArgument`, writing nothing — so it is a wedged call chain
+rather than a corrupted one, and there is no confused deputy.  See
+`docs/REGISTERED_DEBT.md` and
+[`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](../planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

@@ -1715,13 +1715,27 @@ theorem schedContextBind_preserves_ipcInvariantFull
     split at hStep
     · contradiction
     · rename_i hFreeGuard
+      -- `v0.35.4`: a context heading a reply stack is refused, so a successful
+      -- bind saw none — the guard is discharged here rather than split, which
+      -- keeps the arm structure below it what it was.
+      have hNoHead : sc.scReply.isSome = false := by
+        cases hH : sc.scReply.isSome with
+        | false => rfl
+        | true => rw [hH] at hStep; simp at hStep
+      simp only [hNoHead, Bool.false_eq_true, if_false] at hStep
       split at hStep
       · rename_i tcb hT
+        -- `v0.35.4`: and a thread whose reply frame is on a live stack is refused.
+        have hNoLive : SchedContextOps.replyFrameOnLiveStack st tcb = false := by
+          cases hL : SchedContextOps.replyFrameOnLiveStack st tcb with
+          | false => rfl
+          | true => rw [hL] at hStep; split at hStep <;> simp at hStep
+        simp only [hNoLive, Bool.false_eq_true, if_false] at hStep
         split at hStep
         · contradiction
         · split at hStep
           · rename_i hUnbound
-            dsimp only [] at hStep
+            try dsimp only [] at hStep
             cases hStep
             have hFree : sc.boundThread = none := by
               cases hB : sc.boundThread with
@@ -2214,6 +2228,13 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
       split at hStep
       · rename_i tcb hTcb
         dsimp only [] at hStep
+        -- `v0.35.4`: a donated holder is refused, so a successful unbind saw a
+        -- binding that is not a donation.
+        have hNotDon : tcb.schedContextBinding.isDonated = false := by
+          cases hD : tcb.schedContextBinding.isDonated with
+          | false => rfl
+          | true => rw [hD] at hStep; simp at hStep
+        simp only [hNotDon, Bool.false_eq_true, if_false] at hStep
         have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
           (SchedContextId.ofObjId vScId.val) sc).mp hSc
         have hTcbRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb

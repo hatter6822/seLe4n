@@ -2832,10 +2832,21 @@ theorem declaredLockSetForEntry_binds_decode (ctx : LabelingContext)
       exact ⟨tid, decoded, targetTid, rfl, hTgt, h⟩
 
 /-- SM8.D.5: the victim is an interior node of endpoint `ep`'s queue — the
-situation in which suspending it splices it out and patches its neighbours. -/
+situation in which suspending it splices it out and patches its neighbours.
+
+**WS-OD (`v0.35.4`)**: the three *queued* blocking states, and not
+`.blockedOnReply`.  A caller awaiting a reply has been dequeued — the rendezvous
+that put it there took it off the endpoint's send queue — so the reply arm of
+`cancelIpcBlocking` runs no `removeFromAllEndpointQueues`, splices nothing
+(`cancelArmSpliceNeighbors?` is `(none, none)` there since WS-OD OD3.5) and
+writes no endpoint of the victim's.  The fourth disjunct described a splice the
+operation does not perform, and the footprint that used to carry an endpoint
+member for it was over-declaring on the arm where that costs the most: the reply
+arm is the widest one.  Derived from `cancelBlockedEndpoint?` rather than
+re-matched, so the predicate and the footprint's own resolver cannot disagree
+about which states are queued. -/
 def victimBlockedOnEndpoint (victim : TCB) (ep : SeLe4n.ObjId) : Prop :=
-  victim.ipcState = .blockedOnSend ep ∨ victim.ipcState = .blockedOnReceive ep ∨
-    victim.ipcState = .blockedOnCall ep ∨ ∃ r, victim.ipcState = .blockedOnReply ep r
+  SeLe4n.Kernel.cancelBlockedEndpoint? victim = some ep
 
 /-- SM8.D.5 (**the splice's neighbour writes are covered — the queue-owning-object
 umbrella, as a theorem**).
@@ -2921,21 +2932,17 @@ theorem suspendFootprint_splice_neighbors_under_endpoint_lock (st : SystemState)
   -- in a theorem *about* it would be counted as an un-migrated access.
   have hVictimRaw := (SystemState.getTcb?_eq_some_iff st targetTid victim).mp hVictim
   refine ⟨?_, ?_, ?_⟩
-  · -- The endpoint write lock is declared: every endpoint-blocked arm resolves
-    -- `blockedEndpoint` to `some ep`, so the SM6.E parametric membership applies
-    -- to the resolved set.  The other components differ per arm, so each arm
-    -- applies it at its own instantiation.
-    unfold SeLe4n.Kernel.Concurrency.suspendFootprintOf at hFp
-    cases hCaller : st.getTcb? callerTid with
-    | none => rw [hCaller] at hFp; simp at hFp
-    | some caller =>
-      rw [hCaller, hVictim] at hFp
-      simp only at hFp
-      rcases hBlocked with h | h | h | ⟨r, h⟩ <;>
-        · rw [h] at hFp
-          simp only at hFp
-          rw [← Option.some.inj hFp]
-          exact SeLe4n.Kernel.lockSet_tcbSuspend_blocked_endpoint_write_mem _ _ _ _ _ _ _ _
+  · -- **WS-OD (`v0.35.4`)**: one lift rather than a per-arm instantiation.  The
+    -- suspend footprint is *defined over* the state-resolved cancellation
+    -- footprint, which declares the blocked endpoint on the arm that splices, so
+    -- the coverage crosses `_covers_cancelIpcBlockingOnCore` and the arm
+    -- analysis happens once, where the resolver lives.
+    obtain ⟨caller, hCaller, rfl⟩ :=
+      SeLe4n.Kernel.Concurrency.suspendFootprintOf_eq_lockSet hFp
+    exact SeLe4n.Kernel.lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore
+      st callerTid caller.cspaceRoot targetTid _
+      (SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore_covers_blockedEndpoint
+        st targetTid victim ep hVictim hBlocked)
   · -- The predecessor is a real TCB whose `queueNext` is the victim — so it is
     -- the victim's neighbour in the queue `ep` owns, not an arbitrary thread.
     intro p hp

@@ -1131,9 +1131,9 @@ theorem endpointReplyOnCore_reuse_freshens
               rw [hWakeEq, storeTcbIpcStateAndMessage_preserves_objects_ne st st' target .ready
                 (some msg) rid.toObjId (fun h => hNeSlot h.symm) hObjInv hStore']
               exact (getReply?_eq_some_iff st rid r).mp hGetR
-            exact ⟨{ r with caller := none },
+            exact ⟨r.consumed,
               SystemState.consumeCallerReply_getReply?_caller_none _ target rid r hInvWake
-                hRWake stC hCons, rfl⟩
+                hRWake stC hCons, Reply.consumed_caller r⟩
 
 -- ============================================================================
 -- §11  SM6.D: the composed cross-core reply-receive (compositional closure)

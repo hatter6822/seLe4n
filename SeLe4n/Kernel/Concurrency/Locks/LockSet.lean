@@ -932,16 +932,16 @@ the honest constant is the one the definition can produce.
 **The cost, stated rather than implied.**  This constant is the WCRT headline's
 first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrows the
 per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at eleven,
-25 µs at thirteen, and 23 µs at fourteen
+25 µs at thirteen, 23 µs at fourteen, and 20 µs at sixteen
 (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
-At the value above, the declared lock-set ceiling is **14**, the RPi5 tick admits **23 µs** per lock, and the uniform 60 µs envelope is **2520 µs** —
+At the value above, the declared lock-set ceiling is **16**, the RPi5 tick admits **20 µs** per lock, and the uniform 60 µs envelope is **2880 µs** —
 the canonical spelling `scripts/check_lock_ceiling_figures.py` holds to the Lean
 sources, so a raise that leaves a copy of any of the three behind is a build
 failure on the cut that makes it stale rather than on the cut that notices.  The figure is *derived* from this constant and must be
-read off that theorem rather than from this paragraph: at fourteen the tick
-admits `14 · 3 · 23 = 966 µs ≤ 1000`, and quoting a superseded per-lock cost
+read off that theorem rather than from this paragraph: at sixteen the tick
+admits `16 · 3 · 20 = 960 µs ≤ 1000`, and quoting a superseded per-lock cost
 beside the current ceiling states a budget the constant does not satisfy.  Every
 raise is the maintainer's decision, taken against the same alternative — refusing
 to declare `.replyRecv` on the arms that do not fit — which would leave the
@@ -972,7 +972,25 @@ thirteen, so the object its receive leg writes had nowhere to go.  A footprint
 that omits a written object is **false**, and every statement built on
 `lockSetForSyscall` was silent about that TCB rather than conservative; two
 microseconds of admissible critical section is what the true footprint costs.
-With this raise all eight declared syscall arms name every object they write. -/
-def maxLockSetSize : Nat := 14
+With this raise all eight declared syscall arms name every object they write.
+
+**WS-OD (`v0.35.4`): 14 → 16**, on that same arm and for two members at once.
+The reply stack became doubly linked (`Reply.next`), so a **push** rewrites the
+frame below the one it adds — the donated context's old head, a Reply no
+footprint had named — and every **pop** re-heads the frame below the one it
+clears, so OD3.7's read of that frame is a write.  And the head the pop clears
+is declared on its own account (`replyStackHead?`) rather than identified with
+the answered caller's reply object: the identification holds on every reachable
+state, but it is the invariants that supply it, not the operation, and a
+declared footprint bounds the union over all argument values.  `.replyRecv`
+carries both new members — the re-donation's old head and the returned
+context's head — beside the fourteen it had, so the ceiling is sixteen, the
+admissible section on the 1 ms tick is 20 µs, and the same cut found and
+closed three footprints that omitted the pop's writes outright (the `.receive`
+pre-receive return, `lockSet_cancelDonation`, and the `.tcbSuspend` pipeline's
+whole reclaim — see `lockSet_tcbSuspendOnCore`).  A footprint that omits a
+written object is false, which this project rates worse than a wide one; three
+microseconds of admissible critical section is what the true footprints cost. -/
+def maxLockSetSize : Nat := 16
 
 end SeLe4n.Kernel.Concurrency

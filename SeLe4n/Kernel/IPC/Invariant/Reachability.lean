@@ -315,7 +315,7 @@ theorem ipcReachable_default : ipcReachable (default : SystemState) := by
 
 /-! **When this section was written** (OD2.4, `v0.34.125`)
 `donationChainWellFormed` was *vacuously* true of every state the tree reached:
-the one transition writing `Reply.donatedSc`, `Reply.prev` and
+the one transition writing a Reply's stack links and
 `SchedContext.scReply` was the donation pop, whose writing arm needs a context
 that already heads a reply stack, and nothing constructed one.  Every discharge
 was therefore one of the two vacuous constructors — `ipcReachable_default` uses
@@ -336,8 +336,10 @@ the failure this file exists to remove, one level down — the same argument
 `ipcReachable_default` makes for the bundle.
 
 So the witness below builds the state a depth-2 Call chain leaves — one
-scheduling context heading two `prev`-linked Reply objects, both naming it — and
-proves the **whole** predicate of it, the completeness clause included.  With
+scheduling context heading two doubly-linked Reply objects (`v0.35.4`: the head's
+`next` names the context, the frame below it answers the head with `.frame`, and
+each frame's `prev` names the one below) — and proves the **whole** predicate of
+it, every reciprocity clause included.  With
 `donationChainWellFormed_of_no_donations` on one side and this on the other, the
 predicate is known to admit both the link-free state and the depth-2 state OD3's
 pop and OD4's push produce, so neither is walking into a conjunct that refuses
@@ -352,6 +354,14 @@ def donationChainWitnessInner : SeLe4n.ReplyId := ⟨12⟩
 /-- The **outer** call's Reply — the reply below the head. -/
 def donationChainWitnessOuter : SeLe4n.ReplyId := ⟨13⟩
 
+/-- The outer call's caller — the client at the bottom of the chain.  A Reply on
+a stack has a caller (`Reply.wellFormed`), so the witness frames name one; any two
+distinct ids off the three object ids above will do for the predicate. -/
+def donationChainWitnessOuterCaller : SeLe4n.ThreadId := ⟨14⟩
+
+/-- The inner call's caller — the intermediate server, calling onward. -/
+def donationChainWitnessInnerCaller : SeLe4n.ThreadId := ⟨15⟩
+
 /-- The witness's scheduling context, heading the inner call's reply.  Public
 because a consumer of the witness needs its objects: WS-OD OD3.8 pops this stack
 and re-proves the chain invariant of the result, which is what keeps the pop's
@@ -360,18 +370,21 @@ def witnessChainSchedContext : SchedContext :=
   { SchedContext.empty donationChainWitnessContext with
       scReply := some donationChainWitnessInner }
 
-/-- The witness's inner (head) reply: donates the context, links down to the
-outer one.  Public for the same reason as `witnessChainSchedContext`. -/
+/-- The witness's inner (head) reply: heads the context (`next := .head`), links
+down to the outer one.  Public for the same reason as `witnessChainSchedContext`. -/
 def witnessChainInnerReply : Reply :=
   { replyId := donationChainWitnessInner,
-    donatedSc := some donationChainWitnessContext,
-    prev := some donationChainWitnessOuter }
+    caller := some donationChainWitnessInnerCaller,
+    prev := some donationChainWitnessOuter,
+    next := some (.head donationChainWitnessContext) }
 
-/-- The witness's outer reply: donates the context and is the bottom of the
-stack.  Public for the same reason as `witnessChainSchedContext`. -/
+/-- The witness's outer reply: answers the head above it (`next := .frame`) and
+is the bottom of the stack.  Public for the same reason as
+`witnessChainSchedContext`. -/
 def witnessChainOuterReply : Reply :=
   { replyId := donationChainWitnessOuter,
-    donatedSc := some donationChainWitnessContext }
+    caller := some donationChainWitnessOuterCaller,
+    next := some (.frame donationChainWitnessInner) }
 
 private def chainWitnessSt1 : SystemState :=
   { (default : SystemState) with
@@ -384,8 +397,8 @@ private def chainWitnessSt2 : SystemState :=
       donationChainWitnessOuter.toObjId (.reply witnessChainOuterReply) }
 
 /-- WS-OD OD2.4: the state a depth-2 Call chain leaves — the context heads the
-inner call's reply, which links down to the outer call's, and both replies name
-the context they carry. -/
+inner call's reply, which links down to the outer call's, and every link is
+answered by the object it names. -/
 def donationChainWitness : SystemState :=
   { chainWitnessSt2 with
     objects := chainWitnessSt2.objects.insert
@@ -465,38 +478,56 @@ theorem donationChainWitness_chain :
         witnessChainSchedContext.scReply
       = some [donationChainWitnessInner, donationChainWitnessOuter] := by
   have hInner : replyStackLinksAt? donationChainWitness donationChainWitnessInner
-      = some (some donationChainWitnessContext, some donationChainWitnessOuter) := by
+      = some (some donationChainWitnessOuter, some (.head donationChainWitnessContext)) := by
     unfold replyStackLinksAt?
     rw [donationChainWitness_lookup_cases]
     simp [replyStackLinks?, witnessChainInnerReply]
   have hOuter : replyStackLinksAt? donationChainWitness donationChainWitnessOuter
-      = some (some donationChainWitnessContext, none) := by
+      = some (none, some (.frame donationChainWitnessInner)) := by
     unfold replyStackLinksAt?
     rw [donationChainWitness_lookup_cases]
     simp [replyStackLinks?, witnessChainOuterReply,
       show (donationChainWitnessInner.toObjId == donationChainWitnessOuter.toObjId) = false from
         by decide]
-  have hTail : donationChainFrom donationChainWitness donationChainWitnessContext 1
+  have hTail : donationChainWalk donationChainWitness (.frame donationChainWitnessInner) 1
       (some donationChainWitnessOuter) = some [donationChainWitnessOuter] := by
-    rw [donationChainFrom_succ, hOuter]; simp
+    rw [donationChainWalk_succ, hOuter]; simp
   show donationChainFrom donationChainWitness donationChainWitnessContext 2
       (some donationChainWitnessInner) = _
   rw [donationChainFrom_succ, hInner]
   simp [hTail]
 
-/-- WS-OD OD2.4: **the depth-2 chain satisfies the whole predicate.**  The
-completeness clause is the substantive one: the two replies naming the context
-are exactly the two the walk returns, so `donatedSc = some scId` and "on `scId`'s
-stack" are the same statement on this state — which is what the donation return's
-link validation relies on. -/
+/-- WS-OD OD2.4 / `v0.35.4`: **the depth-2 chain satisfies the whole predicate.**
+The reciprocity clauses are the substantive ones: the context's head answers it
+(`headLinkReciprocal` / `headLinkResolves`), the head's `prev` is answered by a
+frame whose `next` names the head back (`prevLinkReciprocal`), and the walk from
+the head terminates on exactly those two frames — which is what the donation
+return's link validation and the cancellation's `O(1)` detach both rely on. -/
 theorem donationChainWitness_wellFormed :
     donationChainWellFormed donationChainWitness := by
   have hInnerNe : (donationChainWitnessInner.toObjId
       == donationChainWitnessContext.toObjId) = false := by decide
   have hOuterNe : (donationChainWitnessOuter.toObjId
       == donationChainWitnessContext.toObjId) = false := by decide
-  refine ⟨?_, ?_, ?_⟩
-  · -- Every stored Reply carries a donation, so `Reply.wellFormed` is immediate.
+  have hInnerNeOuter : (donationChainWitnessInner.toObjId
+      == donationChainWitnessOuter.toObjId) = false := by decide
+  -- The one SchedContext in the store, by key.
+  have hScCases : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+      donationChainWitness.objects[scId.toObjId]? = some (.schedContext sc) →
+      scId = donationChainWitnessContext ∧ sc = witnessChainSchedContext := by
+    intro scId sc hSc
+    rw [donationChainWitness_lookup_cases] at hSc
+    split at hSc
+    · cases hSc
+    · split at hSc
+      · cases hSc
+      · split at hSc
+        · next hKey =>
+          cases hSc
+          exact ⟨(SeLe4n.SchedContextId.toObjId_injective _ _ (eq_of_beq hKey)).symm, rfl⟩
+        · cases hSc
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · -- Every stored Reply has a caller, so `Reply.wellFormed` is immediate.
     intro rid r hR
     rw [donationChainWitness_lookup_cases] at hR
     split at hR
@@ -506,54 +537,58 @@ theorem donationChainWitness_wellFormed :
       · split at hR
         · cases hR
         · cases hR
-  · -- Both replies name the context, and the store holds it.
-    intro rid r scId hR hDon
-    have hScId : scId = donationChainWitnessContext := by
-      rw [donationChainWitness_lookup_cases] at hR
-      split at hR
-      · cases hR; simp [witnessChainInnerReply] at hDon; exact hDon.symm
-      · split at hR
-        · cases hR; simp [witnessChainOuterReply] at hDon; exact hDon.symm
-        · split at hR
-          · cases hR
-          · cases hR
-    subst hScId
-    refine ⟨witnessChainSchedContext, ?_⟩
+  · -- The context's head is the inner reply, which heads it back.
+    intro scId sc hSc rid hRid
+    obtain ⟨rfl, rfl⟩ := hScCases scId sc hSc
+    have hRid' : rid = donationChainWitnessInner := by
+      simpa [witnessChainSchedContext] using hRid.symm
+    subst hRid'
+    refine ⟨witnessChainInnerReply, ?_, rfl⟩
     rw [donationChainWitness_lookup_cases]
-    simp [hInnerNe, hOuterNe]
-  · -- The context's head walks the whole stack, and the stack holds exactly the
-    -- replies naming the context.
-    intro scId sc hSc
-    have hEq : scId = donationChainWitnessContext ∧ sc = witnessChainSchedContext := by
-      rw [donationChainWitness_lookup_cases] at hSc
-      split at hSc
-      · cases hSc
-      · split at hSc
-        · cases hSc
-        · split at hSc
-          · next hKey =>
-            cases hSc
-            exact ⟨(SeLe4n.SchedContextId.toObjId_injective _ _ (eq_of_beq hKey)).symm, rfl⟩
-          · cases hSc
-    obtain ⟨rfl, rfl⟩ := hEq
-    refine ⟨2, [donationChainWitnessInner, donationChainWitnessOuter],
-      donationChainWitness_chain, ?_⟩
-    intro rid r hR _
+    simp
+  · -- The one Reply heading a context heads the witness context, whose head it is.
+    intro rid r scId hR hNext
     rw [donationChainWitness_lookup_cases] at hR
     split at hR
     · next hKey =>
+      cases hR
       have hRid : rid = donationChainWitnessInner :=
         (SeLe4n.ReplyId.toObjId_injective _ _ (eq_of_beq hKey)).symm
       subst hRid
-      simp
+      have hScId : scId = donationChainWitnessContext := by
+        simpa [witnessChainInnerReply] using hNext.symm
+      subst hScId
+      refine ⟨witnessChainSchedContext, ?_, rfl⟩
+      rw [donationChainWitness_lookup_cases]
+      simp [hInnerNe, hOuterNe]
     · split at hR
-      · next hKey =>
-        have hRid : rid = donationChainWitnessOuter :=
-          (SeLe4n.ReplyId.toObjId_injective _ _ (eq_of_beq hKey)).symm
-        subst hRid
-        simp
+      · cases hR; simp [witnessChainOuterReply] at hNext
       · split at hR
         · cases hR
         · cases hR
+  · -- The one `prev` link — the head's — is answered by the outer reply.
+    intro rid r below hR hPrev
+    rw [donationChainWitness_lookup_cases] at hR
+    split at hR
+    · next hKey =>
+      cases hR
+      have hRid : rid = donationChainWitnessInner :=
+        (SeLe4n.ReplyId.toObjId_injective _ _ (eq_of_beq hKey)).symm
+      subst hRid
+      have hBelow : below = donationChainWitnessOuter := by
+        simpa [witnessChainInnerReply] using hPrev.symm
+      subst hBelow
+      refine ⟨witnessChainOuterReply, ?_, rfl⟩
+      rw [donationChainWitness_lookup_cases]
+      simp [hInnerNeOuter]
+    · split at hR
+      · cases hR; simp [witnessChainOuterReply] at hPrev
+      · split at hR
+        · cases hR
+        · cases hR
+  · -- The context's head walks the whole stack.
+    intro scId sc hSc
+    obtain ⟨rfl, rfl⟩ := hScCases scId sc hSc
+    exact ⟨2, [donationChainWitnessInner, donationChainWitnessOuter], donationChainWitness_chain⟩
 
 end SeLe4n.Kernel

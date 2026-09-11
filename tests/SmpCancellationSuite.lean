@@ -111,12 +111,35 @@ open SeLe4n.Testing
 #check @lockSet_cancelDonation_victim_tcb_write_mem
 #check @lockSet_cancelDonation_binding_sc_write_mem
 #check @lockSet_cancelDonation_donated_owner_tcb_write_mem
-#check @lockSet_tcbSuspend_victim_tcb_write_mem
-#check @lockSet_tcbSuspend_blocked_endpoint_write_mem
-#check @lockSet_tcbSuspend_blocked_notification_write_mem
-#check @lockSet_tcbSuspend_binding_sc_write_mem
-#check @lockSet_tcbSuspend_donated_owner_tcb_write_mem
-#check @lockSet_tcbSuspend_consumed_reply_write_mem
+-- **WS-OD (`v0.35.4`)**: the parametric `lockSet_tcbSuspend_*_write_mem` family
+-- is retired with the footprint it was about.  The syscall's footprint is
+-- `lockSet_tcbSuspendOnCore`, *defined over* the state-resolved cancellation
+-- footprint, so the teardown's coverage crosses one lift and the pipeline's own
+-- members have their own family.
+#check @lockSet_tcbSuspendOnCore
+#check @lockSet_tcbSuspendOnCore_correct
+#check @lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore
+#check @lockSet_tcbSuspendOnCore_covers_victim
+#check @lockSet_tcbSuspendOnCore_covers_tail
+#check @lockSet_tcbSuspendOnCore_covers_boundCancel
+#check @lockSet_tcbSuspendOnCore_covers_donatedCancel
+#check @lockSet_tcbSuspendOnCore_covers_reclaimSecondPop
+#check @suspendDonationCancelTail?
+#check @suspendDonationCancelTailOf?
+#check @cancelledCallerAlreadyBound
+-- WS-OD (`v0.35.4`): the teardown footprint's own new members.
+#check @cancelReclaimHead?
+#check @cancelDetachedFrameAbove?
+#check @cancelDonationPopMembers?
+#check @lockSet_cancelIpcBlocking_reclaim_head_write_mem
+#check @lockSet_cancelIpcBlocking_detached_frame_above_write_mem
+#check @lockSet_cancelIpcBlocking_below_head_write_mem
+#check @lockSet_cancelIpcBlocking_outer_caller_containsKey
+#check @lockSet_cancelDonation_head_write_mem
+#check @lockSet_cancelDonation_below_head_write_mem
+#check @lockSet_cancelDonation_outer_caller_containsKey
+#check @lockSet_cancelIpcBlockingOnCore_covers_reclaim
+#check @lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove
 
 -- SM6.E.2/.4 2PL atomicity (single-core + cross-core forms):
 #check @cancelIpcBlocking_atomic_under_lockSet
@@ -400,7 +423,11 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlockingOnCore_replyArm_eq
 #check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev
 #check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next
-#check @lockSet_cancelIpcBlockingOnCore_size_le_ten
+#check @lockSet_cancelIpcBlockingOnCore_size_le_twelve
+#check @lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation
+#check @lockSet_cancelIpcBlockingOnCore_size_le_of_donation
+#check @lockSet_tcbSuspendOnCore_size_le_sixteen
+#check @lockSet_tcbSuspendOnCore_size_le
 -- ...and the frames that license it: the arms that declare no neighbour write
 -- none.
 #check @cancelIpcBlocking_notificationArm_tcb_frame
@@ -446,8 +473,13 @@ variable (rdSc? : Option SeLe4n.SchedContextId) (dh? : Option SeLe4n.ThreadId)
 variable (hEp? : Option SeLe4n.ObjId)
 variable (hNb? : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
 -- WS-OD OD3.7: and two more — the Reply one frame below the reply-stack head and
--- that frame's caller's TCB, which the hand-back reads at call depth ≥ 2.
+-- that frame's caller's TCB, which the hand-back reaches at call depth ≥ 2.
 variable (bhR? : Option SeLe4n.ReplyId) (oc? : Option SeLe4n.ThreadId)
+-- WS-OD (`v0.35.4`): and two more again — the head the reclaim's pop clears, and
+-- the frame above a cancelled *middle* caller's own, which the detach unlinks.
+variable (rh? fa? : Option SeLe4n.ReplyId)
+-- WS-OD (`v0.35.4`): the donation cancellation's pop members.
+variable (dh1? dh2? : Option SeLe4n.ReplyId) (doc? : Option SeLe4n.ThreadId)
 
 /-- SM6.E.5: the flagship's remote-poke conjunct applies. -/
 example (h1 : st.getTcb? victim = some tcb0)
@@ -540,29 +572,29 @@ example (stPost : SystemState) (holder : SeLe4n.ThreadId) (t : TCB)
 
 /-- SM6.E.2: the single-core atomicity theorem applies (2PL bracket shape). -/
 example :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc?) ec
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa?) ec
         (fun st => (cancelIpcBlocking st victim tcb, ())) s
       = (unwindAll ec
-          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc?).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa?).lockAcquireSequence.reverse
           (cancelIpcBlocking
             (acquireAll ec
-              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc?).lockAcquireSequence s)
+              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa?).lockAcquireSequence s)
             victim tcb),
          ()) :=
   cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? hEp? hNb?
-    bhR? oc? s
+    bhR? oc? rh? fa? s
 
 /-- SM6.E.4: the donation atomicity companion applies (dispatcher form). -/
 example :
-    withLockSet (lockSet_cancelDonation victim sc? ot?) ec
+    withLockSet (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?) ec
         (cancelDonationOnCore victim tcb) s
       = (unwindAll ec
-          (lockSet_cancelDonation victim sc? ot?).lockAcquireSequence.reverse
+          (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?).lockAcquireSequence.reverse
           (cancelDonationOnCore victim tcb
-            (acquireAll ec (lockSet_cancelDonation victim sc? ot?).lockAcquireSequence s)).1,
+            (acquireAll ec (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?).lockAcquireSequence s)).1,
          (cancelDonationOnCore victim tcb
-            (acquireAll ec (lockSet_cancelDonation victim sc? ot?).lockAcquireSequence s)).2) :=
-  cancelDonationOnCore_atomic_under_lockSet victim tcb ec sc? ot? s
+            (acquireAll ec (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?).lockAcquireSequence s)).2) :=
+  cancelDonationOnCore_atomic_under_lockSet victim tcb ec sc? ot? dh1? dh2? doc? s
 
 /-- SM6.E.1: `objects.invExt` transports through the cross-core cancellation. -/
 example (hInv : st.objects.invExt) :
@@ -839,11 +871,12 @@ private def runReplyCancelChecks : IO Unit := do
     (decide ((replyLock rId, AccessMode.write) ∈ ls.pairs))
   assertBool "reply-extended footprint kinds all permitted (.tcbSuspend now covers .reply)"
     (decide (∀ p ∈ ls.pairs, p.fst.kind ∈ permittedKinds .tcbSuspend))
-  -- The enclosing suspend footprint also covers the reply write.
+  -- **WS-OD (`v0.35.4`)**: the enclosing suspend footprint covers the reply write
+  -- *by construction* — it is defined over the state-resolved cancellation
+  -- footprint, so every write that one declares is a write it declares.
   assertBool "suspend footprint covers the consumed Reply write lock"
     (decide ((replyLock rId, AccessMode.write) ∈
-      (lockSet_tcbSuspend bystanderTid cnRoot victimTid none none none none
-        (some rId)).pairs))
+      (lockSet_tcbSuspendOnCore stReplyBlocked bystanderTid cnRoot victimTid).pairs))
   -- WS-OD OD3.5: **the arm-selected split, exercised on the shape it is about.**
   -- The victim below is reply-blocked *and* carries queue links — a stale pair,
   -- since a `.blockedOnReply` thread is on no endpoint queue.  The summed

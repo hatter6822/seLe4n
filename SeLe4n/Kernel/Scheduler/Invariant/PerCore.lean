@@ -524,8 +524,8 @@ theorem effectiveParamsMatchRunQueueOnCore_bootCore_iff (st : SystemState) :
       | donated scId _owner =>
         unfold SystemState.getSchedContext?
         cases h2 : (st.objects[scId.toObjId]? : Option KernelObject) with
-        | none => simp [h2]
-        | some objSc => cases objSc <;> simp [h2]
+        | none => simp
+        | some objSc => cases objSc <;> simp
     | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
       simp
 
