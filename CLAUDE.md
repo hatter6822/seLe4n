@@ -1865,8 +1865,15 @@ discharges `donationChainWellFormed` through `donationChainFrame` — it writes 
 `Reply.prev`, no `Reply.next` and no `SchedContext.scReply`, so the two
 projections the walk reads are fixed — and the pop is the exception that family
 was designed against.  With
-`returnDonatedSchedContext_preserves_donationChainWellFormed` the predicate is
-preserved by **every** kernel transition rather than by every transition but one.
+`returnDonatedSchedContext_preserves_donationChainWellFormed` the pop stopped
+being that exception.  **The universal it established is not the state of the
+tree at HEAD**, and a reader must not take it for one: `v0.35.4` made the stack
+doubly linked, so the mid-stack *detach* is a second writer of chain data (it
+preserves the predicate, `detachReplyFrameAbove_preserves_donationChainWellFormed`),
+and the reply path's `consumeCallerReply` falsifies `prevLinkReciprocal` on a
+frame that is not a head — the WS-RM residual recorded two sections above.  New
+code must not assume `donationChainWellFormed` of a state reached by replying to
+a caller whose frame has a frame above it.
 Five things new code must respect.  (1) **Acyclicity is derived, not assumed**:
 clearing the popped head's links is sound for the rest of that context's stack
 only if no frame below links back to it, and `donationChainFrom_head_not_mem_tail`
