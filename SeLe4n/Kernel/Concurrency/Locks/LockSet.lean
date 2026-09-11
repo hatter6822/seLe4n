@@ -932,16 +932,16 @@ the honest constant is the one the definition can produce.
 **The cost, stated rather than implied.**  This constant is the WCRT headline's
 first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrows the
 per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at eleven,
-25 µs at thirteen, 23 µs at fourteen, and 20 µs at sixteen
+25 µs at thirteen, 23 µs at fourteen, 20 µs at sixteen and 15 µs at twenty-one
 (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
-At the value above, the declared lock-set ceiling is **16**, the RPi5 tick admits **20 µs** per lock, and the uniform 60 µs envelope is **2880 µs** —
+At the value above, the declared lock-set ceiling is **21**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3780 µs** —
 the canonical spelling `scripts/check_lock_ceiling_figures.py` holds to the Lean
 sources, so a raise that leaves a copy of any of the three behind is a build
 failure on the cut that makes it stale rather than on the cut that notices.  The figure is *derived* from this constant and must be
-read off that theorem rather than from this paragraph: at sixteen the tick
-admits `16 · 3 · 20 = 960 µs ≤ 1000`, and quoting a superseded per-lock cost
+read off that theorem rather than from this paragraph: at twenty-one the tick
+admits `21 · 3 · 15 = 945 µs ≤ 1000`, and quoting a superseded per-lock cost
 beside the current ceiling states a budget the constant does not satisfy.  Every
 raise is the maintainer's decision, taken against the same alternative — refusing
 to declare `.replyRecv` on the arms that do not fit — which would leave the
@@ -990,7 +990,36 @@ closed three footprints that omitted the pop's writes outright (the `.receive`
 pre-receive return, `lockSet_cancelDonation`, and the `.tcbSuspend` pipeline's
 whole reclaim — see `lockSet_tcbSuspendOnCore`).  A footprint that omits a
 written object is false, which this project rates worse than a wide one; three
-microseconds of admissible critical section is what the true footprints cost. -/
-def maxLockSetSize : Nat := 16
+microseconds of admissible critical section is what the true footprints cost.
+
+**PR #894 review: 16 → 21**, on that same arm for the fifth consecutive time,
+and for the same reason every previous raise happened: a member the arm writes
+and the footprint did not name.  `.replyRecv`'s receive leg *is* `.receive`'s
+transition, so when the endpoint has no queued sender it runs
+`cleanupPreReceiveDonationChecked` on the **invoking** thread — and the arm's
+own donation return runs *after* the receive leg, so the invoker still carries
+whatever `.donated` binding it entered with.  On a non-delegated reply the
+recorded server *is* the invoker and the reply leg has just made it `.unbound`,
+so that second pop is inert; **delegation is exactly what breaks the
+coincidence**, and WS-OD OD3.5 retired the refusal
+(`lockSetForSyscall_replyRecv_delegated`) that used to keep the delegated shape
+out of the declared set altogether.  Two threads cannot be bound to one
+scheduling context, so the recorded server's five members provably never alias
+the invoker's: a delegated `.replyRecv` wrote a SchedContext, the previous
+owner's TCB and two Reply objects under **no** declared lock, on the tree's
+most-travelled IPC path.  The five members are the same five
+`lockSet_endpointReceive` declares, because it is the same pop
+(`lockSet_endpointReplyRecvOnCore_covers_preReturn`).
+
+*How much of that ceiling is slack is stated rather than left to be re-derived*
+(the OD3.7 precedent).  The pre-receive return fires exactly when the endpoint
+has **no** queued sender, and the re-donation members fire exactly when it has
+one, so no reachable state carries both groups:
+`lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds every state at
+**eighteen** with no hypothesis, and the owner merge takes a reachable
+`.replyRecv` to seventeen.  Twenty-one is what the *definition* can produce over
+all argument values, which is what `boundedWait_under_2pl` and the WCRT surface
+must consume. -/
+def maxLockSetSize : Nat := 21
 
 end SeLe4n.Kernel.Concurrency

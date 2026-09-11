@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.4` (`lakefile.toml`) |
+| **Package version** | `0.35.5` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 369,816 across 328 Lean files |
-| **Test LoC** | 75,288 across 70 Lean test suites |
-| **Proved declarations** | 12,402 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 370,721 across 328 Lean files |
+| **Test LoC** | 75,430 across 70 Lean test suites |
+| **Proved declarations** | 12,428 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2928,7 +2928,37 @@ alongside the latent inventory (closing SMP-H3).
    required the raise**: `lockSet_endpointReply` reaches nine with the
    same two members and the cancellation reply arm ten.
 
-   **At HEAD, the declared lock-set ceiling is **16**, the RPi5 tick admits **20 µs** per lock, and the uniform 60 µs envelope is **2880 µs**.**
+   **PR #894's review moved it from 16 to 21**, on that same footprint
+   for the fifth consecutive time and for the same class of reason
+   once more.  `.replyRecv`'s receive leg *is* `.receive`'s
+   transition, so when the endpoint has no queued sender it runs
+   `cleanupPreReceiveDonationChecked` on the **invoking** thread — and
+   the arm's own donation return runs *after* the receive leg, so the
+   invoker still carries whatever `.donated` binding it entered with.
+   On a non-delegated reply the recorded server *is* the invoker and
+   the reply leg has just made it `.unbound`, so that second pop is
+   inert; delegation is exactly what breaks the coincidence, and
+   OD3.5 had already retired the refusal that used to keep the
+   delegated shape out of the declared set.  Two threads cannot be
+   bound to one scheduling context, so the recorded server's members
+   provably never alias the invoker's: a delegated `.replyRecv` wrote
+   a SchedContext, the previous owner's TCB and two Reply objects
+   under no declared lock.  The five are the same five
+   `lockSet_endpointReceive` declares, because it is the same pop
+   (`lockSet_endpointReplyRecvOnCore_covers_preReturn`).
+
+   *How much of that ceiling is slack is stated rather than left to be
+   re-derived.*  The re-donation members are live exactly when the
+   endpoint has a queued sender and the invoker's pre-receive return
+   exactly when it does not, so **no reachable state carries both
+   groups**: `lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds
+   every state at eighteen with no hypothesis at all, and the owner
+   merge takes a reachable `.replyRecv` to seventeen
+   (`…_size_le_seventeen`).  Twenty-one is what the *definition* can
+   produce over all argument values, which is what
+   `boundedWait_under_2pl` and the WCRT surface must consume.
+
+   **At HEAD, the declared lock-set ceiling is **21**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3780 µs**.**
    All three are *derived* — from `maxLockSetSize`, `numCores` and
    `rpi5TickBudgetMicros`, through `admissibleCriticalSection`'s own
    formula — and since WS-OD OD3.15 (v0.34.142)

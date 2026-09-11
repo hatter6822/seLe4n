@@ -432,15 +432,42 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
 -- ============================================================================
 
 /-- WS-OD (`v0.35.4`): does this thread's reply link name a frame that is on a
-live reply stack — one with a frame or a context above it?  Such a thread is owed
-a scheduling context by the pop that reaches its frame. -/
+live reply stack — one whose upward link is **answered** by what it names?  Such
+a thread is owed a scheduling context by the pop that reaches its frame.
+
+**The test is reciprocity, not `next.isSome`** (PR #894 review).  `severAtCut`
+leaves the frame *below* the cut with a **stale** upward link: cancelling the
+middle caller of `B → M → H` detaches `H` (`prev := none`) and consumes `M`, but
+`B.next` still reads `some (.frame M)`.  `B` is then on no live stack and is owed
+nothing, so refusing its bind refuses an operation `schedContextBind` documents as
+supported (binding a *blocked* thread).  Presence of the link is not the property;
+the property is that the frame or context above answers this frame.
+
+That is the same question `donationChainWalk` validates on the way down — a link
+is validated by the target's own upward link, never by its `caller`, because a
+re-linked Reply carries no answer back — and the one `detachReplyFrameAbove`
+checks before it writes.  Asking it one step is **exact** rather than
+approximate: under `donationChainWellFormed`, `prevLinkReciprocal` and
+`headTerminates` make a reciprocated link a link to a frame that is itself on the
+stack, so no walk is needed and the guard stays `O(1)`.  A frame that really is
+live still answers `true`, so the fail-closed direction is unchanged. -/
 def replyFrameOnLiveStack (st : SystemState) (tcb : TCB) : Bool :=
   match tcb.replyObject with
   | none => false
   | some rid =>
     match st.getReply? rid with
     | none => false
-    | some r => r.next.isSome
+    | some r =>
+      match r.next with
+      | none => false
+      | some (.frame above) =>
+        match st.getReply? above with
+        | none => false
+        | some a => a.prev == some rid
+      | some (.head scId) =>
+        match st.getSchedContext? scId with
+        | none => false
+        | some sc => sc.scReply == some rid
 
 /-- Z5-G1/G2/G3: Bind a thread to a SchedContext.
 1. Precondition: SchedContext has no bound thread, TCB is unbound

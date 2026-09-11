@@ -1286,18 +1286,50 @@ private def runLubMergeChecks : IO Unit := do
   -- The widest shape the arm can declare: a delegated, re-donating, caps-carrying
   -- `.replyRecv` with a distinct original owner, reaching both objects below its
   -- reply-stack head, relinking the queue-structure TCB its receive leg writes
-  -- (WS-OD OD3.13), and — WS-OD (`v0.35.4`) — naming the head its pop clears and
-  -- the old head its re-donation's push rewrites: sixteen, which is what
-  -- `maxLockSetSize` is measured against.
+  -- (WS-OD OD3.13), WS-OD (`v0.35.4`)'s head its pop clears and old head its
+  -- re-donation's push rewrites, and — PR #894's review — the five objects the
+  -- INVOKING receiver's own pre-receive return touches: twenty-one, which is
+  -- what `maxLockSetSize` is measured against.
   let widestReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                           (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
                           (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
                           (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                           (some ⟨45⟩) (some ⟨46⟩)
-  assertBool "the widest declarable .replyRecv has 16 locks (= maxLockSetSize)"
-    (decide (widestReplyRecv.size = 16))
+                          (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
+                          (some ⟨15⟩)
+  assertBool "the widest declarable .replyRecv has 21 locks (= maxLockSetSize)"
+    (decide (widestReplyRecv.size = 21))
   assertBool "...and that is exactly maxLockSetSize"
     (decide (widestReplyRecv.size = maxLockSetSize))
+  -- **PR #894 review**: and no *reachable* state declares all twenty-one --
+  -- the re-donation members are live exactly when the endpoint has a queued
+  -- sender and the invoker's pre-receive return exactly when it does not.  The
+  -- widest reachable no-sender shape is eighteen; the widest rendezvous shape is
+  -- sixteen.  Both are exercised here at the same operands so the difference is
+  -- attributable to the mutual exclusion and nothing else.
+  let blockingReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                            (ObjId.ofNat 20) none (some ⟨42⟩) (some ⟨11⟩)
+                            (some ⟨60⟩) true (some ⟨9⟩) none
+                            (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
+                            none (some ⟨46⟩)
+                            (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
+                            (some ⟨15⟩)
+  assertBool "the widest reachable blocking .replyRecv has 18 locks"
+    (decide (blockingReplyRecv.size = 18))
+  let rendezvousReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                              (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
+                              (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
+                              (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
+                              (some ⟨45⟩) (some ⟨46⟩)
+                              none none none none none
+  assertBool "the widest reachable rendezvous .replyRecv has 16 locks"
+    (decide (rendezvousReplyRecv.size = 16))
+  -- NEGATIVE: neither reachable shape reaches the ceiling, which is the whole
+  -- content of `lockSet_endpointReplyRecvOnCore_size_le_eighteen` -- a witness
+  -- asserting only `≤ maxLockSetSize` would pass with the slack claim false.
+  assertBool "NEGATIVE: no reachable .replyRecv shape reaches maxLockSetSize"
+    (!decide (blockingReplyRecv.size = maxLockSetSize
+              || rendezvousReplyRecv.size = maxLockSetSize))
 
 private def runUnionChecks : IO Unit := do
   IO.println "--- §10 LockSet.union semantics ---"

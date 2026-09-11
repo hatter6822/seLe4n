@@ -947,11 +947,11 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReceiveOnCore[^\n]
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*receiveSideQueueStructureNeighbor\? st endpointObjId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 # The ceiling and the figures derived from it move together -- the point of
 # stating them as theorems rather than paragraphs.
-run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 16' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 20" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 21' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 15" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # NEGATIVE: the superseded figure must not come back.  Mutating by deleting the
 # theorem would be caught by the positive; this keeps it at the old number.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 25" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 20" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # WS-OD OD3.11: `.send` and `.call` declare the one TCB their queue *structure*
 # change writes.  A rendezvous pops the receive queue, relinking the popped
 # receiver's successor into the head; a block enqueues on the send queue,
@@ -1719,7 +1719,10 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv =>[^\n]*(\n([ 
 # so the two cannot disagree about whether a donation happens.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReply[^\n]*(\n([ \t][^\n]*)?)*if donatedScId\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointCall[^\n]*(\n([ \t][^\n]*)?)*if destCnodeObjId\.isSome \|\| donatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome \|\| redonatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# PR #894 review: and with the invoker's own pre-receive return declared, the
+# `.replyRecv` disjunct has a fourth arm -- so it is anchored across the wrap.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome \|\| redonatedScId\.isSome$" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][^\n]*)?)*\|\| preReturnScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 # **WS-OD (`v0.35.4`)**: the state-level member moved with the footprint.  The
 # parametric `lockSet_tcbSuspend` is retired -- it resolved the donation
 # cancellation's members from the victim's PRE-state binding, while the pipeline
@@ -1798,6 +1801,47 @@ run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_confinedToC
 # member is a DISJUNCTION -- conditioning it on `installsCaps` alone would omit
 # it on exactly the passive-server path, which installs nothing.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReceive[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome \|\| preReturnScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+
+# ============================================================================
+# PR #894 review -- the INVOKING receiver's own pre-receive return, on `.replyRecv`
+# ============================================================================
+#
+# `.replyRecv`'s receive leg IS `.receive`'s transition, so with no queued sender
+# it runs `cleanupPreReceiveDonationChecked` on the INVOKER -- and the arm's own
+# donation return runs AFTER the receive leg, so the invoker still carries
+# whatever `.donated` binding it entered with.  On a non-delegated reply the
+# recorded server IS the invoker and the reply leg has just made it `.unbound`,
+# leaving that pop inert; delegation breaks the coincidence, and WS-OD OD3.5
+# retired the refusal that used to keep the delegated shape out of the declared
+# set.  Two threads cannot be bound to one scheduling context, so the recorded
+# server's members provably never alias these five.
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_preReturn' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_sc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_owner_tcb_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_head_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_belowHead_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_stateLevel_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The five members are resolved on `replier`, NOT on `target`: resolving them on
+# the reply's target would name the recorded server's objects, which the arm
+# already declares, and would leave the invoker's own pop undeclared on exactly
+# the delegated shape this closes.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(receivePreReturn\? st endpointObjId replier\)\.map \(·\.1\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(receivePreReturnStack\? st endpointObjId replier\)\.2\.2" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# NEGATIVE: not on `target`.  Token-preserving -- it keeps both resolvers and
+# changes only the thread they are asked about.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*receivePreReturn\? st endpointObjId target" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# The state-level member gains a FOURTH disjunct: on a delegated reply whose
+# recorded server holds no donation the other three are all false, so without it
+# the `scThreadIndex` write is undeclared on exactly the shape this exists for.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome \|\| redonatedScId\.isSome$" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][^\n]*)?)*\|\| preReturnScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# One question, one answer: the send-queue head this footprint reads is
+# `receiveRendezvousSender?`, the resolver every other receive-side member of the
+# same footprint reads, not an inlined copy of its body.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*let newSender\? := receiveRendezvousSender\? st endpointObjId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*let newSender\? := match st\.getEndpoint\?" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# The stack-level reading of the mutual exclusion, stated beside the resolver.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem receivePreReturnStack\?_of_sender' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 
 # ============================================================================
 # WS-OD OD3.14 -- the receive rendezvous' PRIORITY hand-off
@@ -1888,8 +1932,8 @@ run_check "INVARIANT" rg -n 'lockSet_endpointReceive \(donation, no caps\) size 
 # OD3.5: the ceiling, and the figure derived from it.  `maxLockSetSize` is the
 # WCRT headline's first factor, so a cut that widens a footprint pays here —
 # visibly, as a theorem rather than a paragraph.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 16$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 20 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 21$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 15 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 
 # The projection result got STRONGER: every field the return writes is stripped,
@@ -6406,12 +6450,15 @@ EOF'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReceive \(callerTid[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome \|\| preReturnScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 # WS-OD OD3.5: `.replyRecv`'s state-level member is a DISJUNCTION -- the receive
 # leg's CDT writes, the donation return's `scThreadIndex` write, and the
-# re-donation's -- because all three touch state the per-object locks cannot
+# re-donation's -- and, since PR #894's review, the INVOKER's own pre-receive
+# return's -- because all four touch state the per-object locks cannot
 # decompose.  Anchored on the disjunction, not on the caps conjunct alone: the
 # arm that returns a donation without installing capabilities is precisely the
 # passive-server steady state, and pinning only `installsCaps` would leave the
-# member deletable on exactly that path.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv \(callerTid[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome \|\| redonatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# member deletable on exactly that path.  The fourth disjunct is anchored on its
+# own line, since the condition now wraps.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv \(callerTid[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome \|\| redonatedScId\.isSome$" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv \(callerTid[^\n]*(\n([ \t][^\n]*)?)*\|\| preReturnScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 # WS-OD OD3.6: `.receive` gained `.schedContext` -- the rendezvous donation
 # reaches the same primitive `.call` does.  Anchored on the `.receive` arm
 # itself rather than on the bare list, which said only that SOME arm carried
@@ -12372,13 +12419,16 @@ run_check "INVARIANT" rg -n '^theorem lockSet_consistent_base_plus_eleven_opts' 
 # POSITIVE pin lives once, at the theorem itself (see the `:= by decide` anchor
 # above); repeating it here would be one question with two answers.  What this
 # block adds is the negative: no superseded figure may come back while the
-# ceiling stands at fourteen.
+# ceiling stands at twenty-one.
 #
 # The list must gain the figure each raise supersedes.  OD3.13 moved the ceiling
 # 13 -> 14 and the cost 25 -> 23 and did NOT add `= 25` here, so for four cuts
 # the value it had just retired was the one figure that could come back
 # unrefused -- an enumeration that has to be extended by hand, extended at every
-# raise but the latest (PR #893 review).
+# raise but the latest (PR #893 review).  PR #894's review adds `= 20`, the
+# figure ITS raise supersedes, for the same reason.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 20" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 23" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 25" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 30" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
@@ -12391,8 +12441,15 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi
 # donation -- so it is a STATED hypothesis, the reply-side twin of WS-RR RR7.22's
 # `donationHolderIsReplyTarget`, not a derived one.
 run_check "INVARIANT" rg -n '^def replyDonationOwnerIsAnsweredCaller' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_fifteen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_fifteen_of_owner_eq_target' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_seventeen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twenty_of_owner_eq_target' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+# PR #894 review: and the UNCONDITIONAL reachable bound, which needs no
+# invariant at all -- the re-donation members are live exactly when the endpoint
+# has a queued sender and the invoker's own pre-receive return exactly when it
+# does not, so no state carries both groups.
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_sixteen_of_no_preReturn' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_eighteen_of_no_sender' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # The mechanism: a key already present costs nothing, which is what lets a
 # RESOLVED footprint be sharper than the parametric bound it is measured by.
 run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_containsKey' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
@@ -12402,12 +12459,19 @@ run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_not_containsKey' SeL
 # of every argument value; a cut that lowered the constant to the reachable
 # figure would make the parametric footprint unbounded.  Token-preserving: it
 # keeps the theorem and changes only the number it concludes.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "lockSet_endpointReplyRecvOnCore_size_le_fifteen[^\n]*(\n([ \t][^\n]*)?)*≤ maxLockSetSize" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "lockSet_endpointReplyRecvOnCore_size_le_seventeen[^\n]*(\n([ \t][^\n]*)?)*≤ maxLockSetSize" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "lockSet_endpointReplyRecvOnCore_size_le_eighteen[^\n]*(\n([ \t][^\n]*)?)*≤ maxLockSetSize" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
 # The runtime witness executes the merge, and pins that the sharpening is ONE
 # member: the recorded server merges only on a non-delegated reply, which is a
 # case split rather than an invariant.
-run_check "INVARIANT" rg -n 'a \.replyRecv whose donation owner is the answered caller declares 15' tests/DeadlockFreedomSuite.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: the sharpening is one member, not two' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'a \.replyRecv whose donation owner is the answered caller declares 20' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the merge sharpening is one member, not two' tests/DeadlockFreedomSuite.lean
+# PR #894 review: and the mutual exclusion is exercised at both reachable widths,
+# with the negative that neither reaches the ceiling -- a witness asserting only
+# the parametric bound would pass with the slack claim false.
+run_check "INVARIANT" rg -n 'the widest reachable blocking \.replyRecv has 18 locks' tests/LockSetSuite.lean
+run_check "INVARIANT" rg -n 'the widest reachable rendezvous \.replyRecv has 16 locks' tests/LockSetSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: no reachable \.replyRecv shape reaches maxLockSetSize' tests/LockSetSuite.lean
 
 # ============================================================================
 # WS-OD OD3.8 -- the pop preserves the donation chain
@@ -12464,5 +12528,31 @@ run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_some_ok' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^theorem donationChainWitness_pop_wellFormed' tests/SmpCrossCoreCallSuite.lean
 run_check "INVARIANT" rg -n '^theorem donationChainWitness_pop_chain' tests/SmpCrossCoreCallSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationChainWitness_pop_chain[^\n]*(\n([ \t][^\n]*)?)*= some \[donationChainWitnessOuter\]" tests/SmpCrossCoreCallSuite.lean'
+
+# ============================================================================
+# PR #894 review -- the two P2 corrections
+# ============================================================================
+#
+# (1) The bind guard asks the reply stack's own RECIPROCITY question, not
+# `r.next.isSome`.  `severAtCut` deliberately leaves the frame BELOW the cut with
+# a stale upward link -- on `B -> M -> H`, cancelling `M` detaches `H.prev` and
+# consumes `M`, but `B.next` still reads `some (.frame M)` -- so a presence test
+# refuses to bind a thread that is on no live stack and owed nothing, on a path
+# `schedContextBind` explicitly supports (a blocked thread).  One-step
+# reciprocity is EXACT under `donationChainWellFormed`, so no walk is needed,
+# and a live frame still reads `true`, so the fail-closed direction is kept.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameOnLiveStack[^\n]*(\n([ \t][^\n]*)?)*a\.prev == some rid" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameOnLiveStack[^\n]*(\n([ \t][^\n]*)?)*sc\.scReply == some rid" SeLe4n/Kernel/SchedContext/Operations.lean'
+# NEGATIVE: the presence test must not come back.  Token-preserving -- it keeps
+# the definition and the field it reads, and changes only the question asked.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameOnLiveStack[^\n]*(\n([ \t][^\n]*)?)*r\.next\.isSome" SeLe4n/Kernel/SchedContext/Operations.lean'
+#
+# (2) The frozen unbind mirrors the live one.  `schedContextUnbind` refuses a
+# holder whose binding is `.donated`; the frozen path cleared `sc.boundThread`
+# and the holder's binding unconditionally while its own docstring said it
+# mirrors the live transition -- so it built exactly the dead stack the live
+# guard exists to prevent.  One question, two answers; the docstring described
+# the better behaviour, so the code moved.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*if tcb\.schedContextBinding\.isDonated then \.error \.illegalState else" SeLe4n/Kernel/FrozenOps/Operations.lean'
 
 finalize_report

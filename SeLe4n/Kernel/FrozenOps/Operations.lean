@@ -1099,6 +1099,17 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
         -- AK8-H Phase 1: Validate TCB lookup BEFORE any state mutation.
         match st.objects.get? tid.toObjId with
         | some (.tcb tcb) =>
+          -- WS-OD (PR #894 review): **the donated-holder rejection this path
+          -- claims to mirror.**  `schedContextUnbind` refuses to unbind a holder
+          -- that received the context by donation, because erasing that binding
+          -- while the context's stack still names the caller leaves the caller's
+          -- frame dead on the stack — the Reply and the context can then never be
+          -- retyped.  This operation's own docstring says it mirrors that one,
+          -- and it cleared both sides unconditionally, so the frozen path could
+          -- construct exactly the dead stack the live guard exists to prevent.
+          -- `freezeObject` preserves TCBs and SchedContexts verbatim, so the
+          -- shape reaches here intact; one question must not have two answers.
+          if tcb.schedContextBinding.isDonated then .error .illegalState else
           -- AK8-H Phase 2: Both lookups succeeded; apply all writes atomically.
           let st0 := if (st.scheduler.current) == some tid then
             { st with scheduler := { st.scheduler with current := none } }

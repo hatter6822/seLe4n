@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.4.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.5.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~61691 lines)
+- `CHANGELOG.md` (~62040 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22688 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12165 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -211,9 +211,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6415 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5968 lines)
 - `SeLe4n/Platform/Boot.lean` (~5864 lines)
-- `docs/spec/SELE4N_SPEC.md` (~5289 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~5480 lines)
+- `docs/spec/SELE4N_SPEC.md` (~5365 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~5275 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~5093 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5044 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5008 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4976 lines)
@@ -249,6 +249,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
+- `tests/SmpIpcSuite.lean` (~2582 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2565 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2535 lines)
@@ -256,7 +257,6 @@ To find files that need pagination today, run:
 - `tests/ModelIntegritySuite.lean` (~2484 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
-- `tests/SmpIpcSuite.lean` (~2453 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2354 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
@@ -269,6 +269,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2281 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2254 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2136 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
@@ -277,8 +278,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2043 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2033 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2021 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1972 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~1963 lines)
@@ -296,17 +297,16 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
+- `tests/LockSetSuite.lean` (~1813 lines)
 - `tests/SyscallDispatchSuite.lean` (~1812 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1795 lines)
-- `tests/LockSetSuite.lean` (~1781 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1746 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1698 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
@@ -317,7 +317,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1433 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1444 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
@@ -358,18 +358,18 @@ To find files that need pagination today, run:
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1105 lines)
+- `tests/SmpIdleSuite.lean` (~1105 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
-- `tests/SmpIdleSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `tests/PriorityManagementSuite.lean` (~1035 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1025 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
 - `tests/SmpCbsSuite.lean` (~1001 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~996 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~995 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
@@ -388,6 +388,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~917 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
+- `tests/DeadlockFreedomSuite.lean` (~905 lines)
 - `tests/SmpTimerSuite.lean` (~904 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~897 lines)
@@ -2070,9 +2071,56 @@ so the below-head footprint member is a *write*, not a read.  (5) **The
 cancellation path detaches before it consumes** (`detachCancelledCallerFrame`
 over `detachReplyFrameAbove`, between the reclaim and `consumeReplyLink`), and a
 validated below-head frame whose caller was consumed is now an `.error`, never
-the bottom of the stack.  (6) **`maxLockSetSize` is 16** — the pop's new write
-plus the suspend pipeline's second pop — and the per-lock cost and envelope it
-implies are stated once, in the canonical sentence this file carries above.
+the bottom of the stack.  (6) **`maxLockSetSize` went to 16 at this cut** — the
+pop's new write plus the suspend pipeline's second pop; it is **21** at HEAD, and
+the per-lock cost and envelope it implies are stated once, in the canonical
+sentence this file carries above.
+
+**And a delegated `.replyRecv` declares the invoking receiver's own pre-receive
+return** (PR #894's review, `v0.35.5`).  That arm's receive leg **is**
+`.receive`'s transition, so when the endpoint has no queued sender it runs
+`cleanupPreReceiveDonationChecked` on the **invoker** — and the arm's own
+donation return runs *after* the receive leg, so the invoker still carries
+whatever `.donated` binding it entered with.  On a non-delegated reply the
+recorded server *is* the invoker and the reply leg has just made it `.unbound`,
+so that second pop is inert; **delegation is exactly what breaks the
+coincidence**, and WS-OD OD3.5 had already retired the refusal
+(`lockSetForSyscall_replyRecv_delegated`) that used to keep the delegated shape
+out of the declared set.  Two threads cannot be bound to one scheduling context,
+so the recorded server's members provably never alias the invoker's: a delegated
+`.replyRecv` wrote a SchedContext, the previous owner's TCB and two Reply objects
+under no declared lock, and read a third TCB it was about to hand a context to.
+Four things new code must respect.  (1) **The five members are the same five
+`lockSet_endpointReceive` declares**, resolved through the same two resolvers on
+`replier` (`lockSet_endpointReplyRecvOnCore_covers_preReturn`); a Tier 3 negative
+refuses resolving them on `target`.  (2) **The state-level member has a fourth
+disjunct** — on a delegated reply whose recorded server holds no donation the
+other three are all false, so without it the `scThreadIndex` write is undeclared
+on exactly the shape the member exists for.  (3) **`maxLockSetSize` is 21**, and
+that is the cost: `admissibleCriticalSection` falls to 15 µs on the 1 ms
+tick, down from 20.  (4) **No
+*reachable* state declares twenty-one**: the re-donation members fire exactly
+when the endpoint has a queued sender and the pre-receive return exactly when it
+does not, so `lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds every
+state at **eighteen** with no hypothesis, and the owner merge takes a reachable
+`.replyRecv` to seventeen.  Twenty-one is what the *definition* can produce,
+which is what `boundedWait_under_2pl` and the WCRT surface must consume.  The
+gap was excused by `lockSetForSyscall_replyRecv_refuses_donated_delegate`, **a
+theorem that was never written**; it is deleted.
+
+**And the bind guard asks reciprocity, not presence** (PR #894's review,
+`v0.35.5`).  `replyFrameOnLiveStack` asked `r.next.isSome`, and `severAtCut`
+deliberately leaves the frame *below* the cut with a stale upward link — so a
+thread on no live stack, owed nothing, had its `schedContextBind` refused with
+`.illegalState`, on a path the transition explicitly supports (it binds a
+**blocked** thread).  The guard now asks the walk's own test: `.frame above`
+counts only when `above.prev = some rid`, `.head sc` only when
+`sc.scReply = some rid`.  It is `O(1)` and **exact** under
+`donationChainWellFormed`, where `prevLinkReciprocal` and `headTerminates` make
+one-step reciprocity equivalent to liveness, and a live frame still reads `true`,
+so the fail-closed direction is unchanged.  In the same cut
+`frozenSchedContextUnbind` gained the `isDonated` refusal its live counterpart
+has carried since `v0.35.4` and its own docstring already claimed.
 
 **One residual is registered rather than closed** (WS-RM).  The **reply** path
 does not yet run the detach: it relies on the answered frame being the head,
@@ -2269,7 +2317,7 @@ code may assume:
   a budget admits at the declared ceiling, with
   `WCRT_lockSet_le_budget_of_admissible` the payoff and
   `rpi5Tick_refuses_sixty_micro_sections` the `decide`-checked negative.  At
-  HEAD, the declared lock-set ceiling is **16**, the RPi5 tick admits **20 µs** per lock, and the uniform 60 µs envelope is **2880 µs**.
+  HEAD, the declared lock-set ceiling is **21**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3780 µs**.
   Those three figures are **derived**, and since WS-OD OD3.15
   `scripts/check_lock_ceiling_figures.py` (Tier 0) holds every prose copy of them
   to the Lean sources: the constants and the formula that combines them are read
@@ -2365,13 +2413,16 @@ code may assume:
   does; RR7.7 declared that on the two sending arms and RR7.11 on the two
   receiving ones, and `capsCarryingIpcArms_footprints_share_serialization` is the
   statement that no two of the four are ever disjoint.  (3) **`maxLockSetSize` is
-  13** (WS-OD OD3.7; 11 at OD3.5, 9 at RR7.11, 8 before that): the widest declared
+  21** (PR #894's review; 16 at `v0.35.4`, 14 at OD3.13, 13 at OD3.7, 11 at OD3.5,
+  9 at RR7.11, 8 before that): the widest declared
   footprint is a `.replyRecv` that returns a donation, re-donates, installs
-  capabilities, was answered through a *delegated* reply capability, and reads the
-  two objects below its reply-stack head.  The WCRT headline
+  capabilities, was answered through a *delegated* reply capability, reads the
+  two objects below its reply-stack head, names the head its pop clears and the
+  old head its push rewrites, and declares the five objects the **invoking**
+  receiver's own pre-receive return touches.  The WCRT headline
   `maxLockSetSize · (numCores − 1) · tCs` is
-  parametric in it — `admissibleCriticalSection` reads **23 µs** off it for the
-  1 ms tick, down from 30 — and a theorem named `_size_le_maxLockSetSize` must
+  parametric in it — `admissibleCriticalSection` reads **15 µs** off it for the
+  1 ms tick, down from 20 — and a theorem named `_size_le_maxLockSetSize` must
   state the
   constant, never the numeral — five in the scheduler pinned `≤ 8` literally,
   which is why the constant now lives in `Locks/LockSet.lean` where every

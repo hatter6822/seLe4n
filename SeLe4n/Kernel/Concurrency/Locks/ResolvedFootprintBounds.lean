@@ -96,17 +96,22 @@ theorem lockSet_endpointReplyOnCore_size_le (st : SystemState)
   exact lockSet_endpointReply_size_le _ _ _ _ _ _ _ _ _
 
 /-- The `replyRecv` resolved footprint — the widest IPC footprint the kernel
-declares.  **Sixteen** members over all argument values on the widest path: a
+declares.  **Twenty-one** members over all argument values on the widest path: a
 delegated reply that returns a donation, re-donates, installs capabilities,
 (WS-OD OD3.7) reaches the Reply below the reply-stack head and that frame's
-caller's TCB, and (WS-OD `v0.35.4`) names the head the pop clears and the old
-head the re-donation's push rewrites. -/
+caller's TCB, (WS-OD `v0.35.4`) names the head the pop clears and the old head
+the re-donation's push rewrites, and (PR #894 review) declares the five objects
+the **invoking** receiver's own pre-receive return touches.
+
+Twenty-one is what the *definition* can produce; no reachable state carries the
+last five and the re-donation members at once, which
+`lockSet_endpointReplyRecvOnCore_size_le_eighteen` states. -/
 theorem lockSet_endpointReplyRecvOnCore_size_le (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
       ≤ maxLockSetSize :=
-  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD OD1.5: `none` extends nothing. -/
 private theorem extendOpt_none (S : LockSet) : lockSetExtendOpt S none = S := rfl
@@ -128,54 +133,104 @@ re-establish it for every thread. -/
 def replyDonationOwnerIsAnsweredCaller (st : SystemState) (target : SeLe4n.ThreadId) : Prop :=
   ∀ scId owner, endpointReplyServerDonation? st target = some (scId, owner) → owner = target
 
-/-- **WS-OD OD3.7: what a reachable `.replyRecv` actually declares — fifteen.**
+/-- **PR #894 review: what a reachable `.replyRecv` actually declares — eighteen,
+with no hypothesis at all.**
+
+The ceiling is twenty-one because a `LockSet` bounds the union over **all**
+argument values.  No *state* produces all twenty-one, and the reason is a mutual
+exclusion between two groups of members rather than an invariant anyone has to
+supply:
+
+* the receive leg's **re-donation** members — the new sender, the context it
+  re-donates and the frame its push rewrites — are live exactly when the
+  endpoint has a queued sender (`receiveRendezvousDonatedSc?_of_no_sender`);
+* the **invoking** receiver's own pre-receive return is live exactly when it
+  does not (`receivePreReturn?_of_sender`).
+
+So a rendezvous declares `4 + 12 = 16` and a blocking receive `4 + 14 = 18`, and
+eighteen bounds both.  Three of the ceiling's twenty-one are slack that no state
+can take up; stating that here is what stops the next reader re-deriving it from
+the definition, the way WS-OD OD3.7 established for this same arm. -/
+theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
+    (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
+    (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
+      ≤ 18 := by
+  unfold lockSet_endpointReplyRecvOnCore
+  cases hS : receiveRendezvousSender? st endpointObjId with
+  | some sender =>
+      -- A rendezvous: the invoker does not block, so its pre-receive return does
+      -- not run and the five members it would contribute are absent.
+      rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
+        receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
+      simp only [Option.map_none]
+      exact Nat.le_trans
+        (lockSet_replyRecv_size_le_sixteen_of_no_preReturn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+        (by decide : (16 : Nat) ≤ 18)
+  | none =>
+      -- A blocking receive: nothing is dequeued, so the new sender, the
+      -- re-donated context and the frame its push would rewrite are all absent.
+      rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+      simp only [Option.bind_none]
+      exact lockSet_replyRecv_size_le_eighteen_of_no_sender
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+/-- **WS-OD OD3.7: and one narrower still under the donation discipline —
+seventeen.**
 
 **WS-OD OD3.13** moved the ceiling and this figure together (fourteen and
-thirteen); **WS-OD `v0.35.4`** added two members to the footprint — the head the
-pop clears and the old head the re-donation's push rewrites — so this is
-fifteen, while the ceiling is sixteen for a different reason: the state-resolved
-suspend footprint reaches sixteen on its widest shape
-(`lockSet_tcbSuspendOnCore_size_le_sixteen`).  A reachable `.replyRecv` sits one
-below it.
+thirteen); **WS-OD `v0.35.4`** added the head the pop clears and the old head the
+re-donation's push rewrites; **PR #894 review** added the invoking receiver's own
+pre-receive return and took the ceiling to twenty-one.  What this theorem adds
+over the unconditional eighteen above is the one *merge* the invariants supply:
+the returned donation's owner is the answered caller, so two arguments name one
+key and `insertOrMerge` lubs the modes without moving the cardinality.
 
-The sharpening is the same one member as before: the returned donation's owner
-is the answered caller, so two arguments name one key and `insertOrMerge` lubs
-the modes without moving the cardinality.
+That merge is the whole of the remaining sharpening.  The other candidate — the
+recorded server with the invoking thread — holds exactly on a *non-delegated*
+reply, which is a case split rather than an invariant, and the delegated case is
+precisely the one WS-OD OD3.5 exists to declare and PR #894's review found still
+undeclared.
 
-**One member is the whole of the available sharpening**, and saying so is the
-point of stating this at all.  The other candidate merge — the recorded server
-with the invoking thread — holds exactly on a *non-delegated* reply, which is a
-case split rather than an invariant, and the delegated case is precisely the one
-WS-OD OD3.5 exists to declare.  Anyone reading the ceiling and wondering how much
-of it is slack gets the answer here rather than having to re-derive it.
-
-This does **not** move `maxLockSetSize`: the parametric bound is what
+Neither figure moves `maxLockSetSize`: the parametric bound is what
 `boundedWait_under_2pl` and the WCRT surface consume, and it must stay true of
-every argument value.  What this gives is a smaller number available where the
+every argument value.  What these give is a smaller number available where the
 state permits — the relationship `lockSet_cancelIpcBlockingOnCore_size_le_ten`
 already has to the ceiling. -/
-theorem lockSet_endpointReplyRecvOnCore_size_le_fifteen (st : SystemState)
+theorem lockSet_endpointReplyRecvOnCore_size_le_seventeen (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
     (hOwner : replyDonationOwnerIsAnsweredCaller st target) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
-      ≤ 15 := by
+      ≤ 17 := by
   unfold lockSet_endpointReplyRecvOnCore
-  cases hDon : endpointReplyServerDonation? st target with
+  cases hS : receiveRendezvousSender? st endpointObjId with
+  | some sender =>
+      -- A rendezvous declares sixteen whatever the reply returns; the owner merge
+      -- is not even needed to stay inside seventeen here.
+      rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
+        receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
+      simp only [Option.map_none]
+      exact Nat.le_trans
+        (lockSet_replyRecv_size_le_sixteen_of_no_preReturn
+          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) (by decide : (16 : Nat) ≤ 17)
   | none =>
-      -- No donation returned: the owner member is absent outright (and so is the
-      -- head the pop would clear), so the set is narrower still and the crude
-      -- bound already gives fifteen.
-      simp only [Option.map_none, Option.bind_none]
-      refine Nat.le_trans (size_le_10 _ _ _ _ _ _ _ _ _ _ _) ?_
-      simp only [List.length_cons, List.length_nil]
-      omega
-  | some pr =>
-      obtain ⟨scId, owner⟩ := pr
-      have hEq : owner = target := hOwner scId owner hDon
-      subst hEq
-      simp only [Option.map_some]
-      exact lockSet_replyRecv_size_le_fifteen_of_owner_eq_target _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+      cases hDon : endpointReplyServerDonation? st target with
+      | none =>
+          -- Nothing to return: neither group of state-resolved members is live
+          -- but the invoker's own pre-receive return, so this is thirteen.
+          simp only [Option.map_none, Option.bind_none]
+          exact Nat.le_trans
+            (lockSet_replyRecv_size_le_thirteen_of_no_sender_of_no_donation
+              _ _ _ _ _ _ _ _ _ _ _ _ _) (by decide : (13 : Nat) ≤ 17)
+      | some pr =>
+          obtain ⟨scId, owner⟩ := pr
+          have hEq : owner = target := hOwner scId owner hDon
+          subst hEq
+          simp only [Option.map_some, Option.bind_none]
+          exact lockSet_replyRecv_size_le_seventeen_of_owner_eq_target_of_no_sender
+            _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- The resolved **receive** footprint.  Stated over the reply optional rather
 than at its default, so the receive-with-reply shape is bounded too. -/

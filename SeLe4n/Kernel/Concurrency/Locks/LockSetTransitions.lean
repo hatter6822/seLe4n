@@ -955,7 +955,23 @@ def lockSet_replyRecv (callerTid : ThreadId)
     -- `replyId` on every reachable state and is declared on its own account for
     -- the reason `lockSet_endpointReply` gives.
     (redonationOldHeadReplyId : Option ReplyId := none)
-    (donatedHeadReplyId : Option ReplyId := none) : LockSet :=
+    (donatedHeadReplyId : Option ReplyId := none)
+    -- **PR #894 review — the INVOKING receiver's own pre-receive return.**  The
+    -- receive leg is `.receive`'s transition, so when the endpoint has no queued
+    -- sender it runs `cleanupPreReceiveDonationChecked` on the **invoker**
+    -- (`endpointReceiveDualOnCore`'s `none` arm), and the donation *return* runs
+    -- after it -- so the invoker still carries whatever `.donated` binding it
+    -- entered with.  On a non-delegated reply the recorded server *is* the
+    -- invoker and the reply leg has just made it `.unbound`, so that pop is
+    -- inert; **delegation is exactly what breaks the coincidence**, and OD3.5
+    -- retired the refusal that used to keep the delegated shape out.  Two
+    -- threads cannot share a SchedContext, so the recorded server's members
+    -- (`donatedScId` and the stack below it) provably never alias these.
+    (preReturnScId : Option SchedContextId := none)
+    (preReturnOwnerTid : Option ThreadId := none)
+    (preReturnHeadReplyId : Option ReplyId := none)
+    (preReturnBelowHeadReplyId : Option ReplyId := none)
+    (preReturnOuterCallerTid : Option ThreadId := none) : LockSet :=
   -- PR #873 round 8: `.replyRecv`'s receive leg installs capabilities too (it
   -- runs the same WithCaps transition `.receive` does), so the caller's own
   -- CSpace root takes the same write upgrade, in the same size- and
@@ -1027,8 +1043,25 @@ def lockSet_replyRecv (callerTid : ThreadId)
   -- happens if the receive installs capabilities, or if either donation runs.
   -- All three conditions read the same resolvers the members above do, so the
   -- footprint cannot disagree with itself about what the arm does.
-  let withState := lockSetExtendOpt withOuter
-    (if installsCaps || donatedScId.isSome || redonatedScId.isSome then
+  -- **PR #894 review**: the invoker's pre-receive return, in the modes the pop
+  -- takes them -- the same five `lockSet_endpointReceive` declares, because it is
+  -- the same pop.  Resolved off `replier` rather than off `target`, which is the
+  -- one question the entry resolver never asked of the invoking thread.
+  let withPreReturn := lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+    (lockSetExtendOpt (lockSetExtendOpt withOuter
+      (preReturnScId.map (fun sc => (schedContextLock sc, AccessMode.write))))
+      (preReturnOwnerTid.map (fun ot => (tcbLock ot, AccessMode.write))))
+      (preReturnHeadReplyId.map (fun rid => (replyLock rid, AccessMode.write))))
+      (preReturnBelowHeadReplyId.map (fun rid => (replyLock rid, AccessMode.write))))
+      (preReturnOuterCallerTid.map (fun ot => (tcbLock ot, AccessMode.read)))
+  let withState := lockSetExtendOpt withPreReturn
+    -- **PR #894 review**: …and the fourth disjunct.  The pre-receive return
+    -- maintains `scThreadIndex` like every other hand-off, and on a delegated
+    -- reply whose recorded server holds no donation the other three are all
+    -- false — so without it the index write is undeclared on exactly the shape
+    -- this member exists for.
+    (if installsCaps || donatedScId.isSome || redonatedScId.isSome
+        || preReturnScId.isSome then
        some (stateLevelLock, AccessMode.write) else none)
   lockSetExtendOpt withState
     (queueNeighbour.map (fun q => (tcbLock q, AccessMode.write)))
@@ -2033,12 +2066,17 @@ theorem lockSet_replyRecv_caller_tcb_write_mem (callerTid : ThreadId)
     -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
     (queueNeighbour : Option ThreadId)
     -- **WS-OD (`v0.35.4`)**: and at the old-head and head arity.
-    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId) :
+    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
     (tcbLock callerTid, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
-          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId).pairs := by
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
   unfold lockSet_replyRecv lockSetOfList
   simp only [List.foldl]
   -- WS-OD OD3.5: two further optional extensions on the outside — the recorded
@@ -2062,12 +2100,17 @@ theorem lockSet_replyRecv_target_tcb_write_mem (callerTid : ThreadId)
     -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
     (queueNeighbour : Option ThreadId)
     -- **WS-OD (`v0.35.4`)**: and at the old-head and head arity.
-    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId) :
+    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
     (tcbLock replyTargetTid, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
-          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId).pairs := by
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
   unfold lockSet_replyRecv lockSetOfList
   simp only [List.foldl]
   -- The optional extensions are peeled by count rather than by a hand-nested
@@ -2087,12 +2130,17 @@ theorem lockSet_replyRecv_endpoint_write_mem (callerTid : ThreadId)
     -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
     (queueNeighbour : Option ThreadId)
     -- **WS-OD (`v0.35.4`)**: and at the old-head and head arity.
-    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId) :
+    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
     (endpointLock endpointObjId, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
-          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId).pairs := by
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
   unfold lockSet_replyRecv lockSetOfList
   simp only [List.foldl]
   -- The optional extensions are peeled by count rather than by a hand-nested
@@ -2326,12 +2374,17 @@ theorem lockSet_replyRecv_stateLevel_write_mem (callerTid : ThreadId)
     -- carried was accidental rather than chosen.
     (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
     (queueNeighbour : Option ThreadId)
-    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId) :
+    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
     (stateLevelLock, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId true
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
-          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId).pairs := by
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
   unfold lockSet_replyRecv
   -- WS-OD OD3.13: one extension outside (the queue-structure neighbour).
   exact mem_write_lockSetExtendOpt _ _ _
@@ -2355,12 +2408,17 @@ theorem lockSet_replyRecv_donation_stateLevel_write_mem (callerTid : ThreadId)
     -- carried was accidental rather than chosen.
     (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
     (queueNeighbour : Option ThreadId)
-    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId) :
+    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
     (stateLevelLock, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid (some donatedScId) donatedOriginalOwnerTid replyId false
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
-          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId).pairs := by
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
   unfold lockSet_replyRecv
   -- WS-OD OD3.13: one extension outside (the queue-structure neighbour).
   exact mem_write_lockSetExtendOpt _ _ _
@@ -2379,14 +2437,19 @@ theorem lockSet_replyRecv_redonation_stateLevel_write_mem (callerTid : ThreadId)
     -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
     (queueNeighbour : Option ThreadId)
     -- **WS-OD (`v0.35.4`)**: and at the old-head and head arity.
-    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId) :
+    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
     (stateLevelLock, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid (some redonatedScId) belowHeadReplyId outerCallerTid
-          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId).pairs := by
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
   unfold lockSet_replyRecv
-  simp only [Option.isSome_some, Bool.or_true, if_true]
+  simp only [Option.isSome_some, Bool.or_true]
   -- WS-OD OD3.13: one extension outside (the queue-structure neighbour).
   exact mem_write_lockSetExtendOpt _ _ _
     (LockSet.mem_insertOrMerge_write_self _ _)
@@ -2405,12 +2468,17 @@ theorem lockSet_replyRecv_redonated_sc_write_mem (callerTid : ThreadId)
     -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
     (queueNeighbour : Option ThreadId)
     -- **WS-OD (`v0.35.4`)**: and at the old-head and head arity.
-    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId) :
+    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
     (schedContextLock redonatedScId, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid (some redonatedScId) belowHeadReplyId outerCallerTid
-          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId).pairs := by
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
   unfold lockSet_replyRecv
   -- Peeled by an EXACT count, not `repeat`: this member is introduced by an
   -- extension rather than by the base list, so peeling one layer too far would
@@ -2418,7 +2486,7 @@ theorem lockSet_replyRecv_redonated_sc_write_mem (callerTid : ThreadId)
   -- re-donation's old head and the returned context's head (WS-OD `v0.35.4`),
   -- WS-OD OD3.7's two below-head members, the state-level lock and, since
   -- WS-OD OD3.13, the queue-structure neighbour outside all of them.
-  iterate 6 apply mem_write_lockSetExtendOpt
+  iterate 11 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD OD3.5**: and the **recorded server's** own TCB, which the return
@@ -2432,19 +2500,24 @@ theorem lockSet_replyRecv_donation_server_tcb_write_mem (callerTid : ThreadId)
     (redonatedScId : Option SchedContextId)
     (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
     (queueNeighbour : Option ThreadId)
-    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId) :
+    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
     (tcbLock donationServerTid, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           (some donationServerTid) redonatedScId belowHeadReplyId
-          outerCallerTid queueNeighbour redonationOldHeadReplyId donatedHeadReplyId).pairs := by
+          outerCallerTid queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
   unfold lockSet_replyRecv
   -- An exact count for the same reason as the redonation member above: seven
   -- layers sit over the recorded server's own extension — the re-donated
   -- SchedContext, its old head and the returned context's head (WS-OD
   -- `v0.35.4`), WS-OD OD3.7's two below-head members, the state-level lock and
   -- WS-OD OD3.13's queue-structure neighbour.
-  iterate 7 apply mem_write_lockSetExtendOpt
+  iterate 12 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD (`v0.35.4`)**: the re-donated context's **old head** -- the frame
@@ -2458,16 +2531,22 @@ theorem lockSet_replyRecv_redonationOldHead_write_mem (callerTid : ThreadId)
     (redonatedScId : Option SchedContextId)
     (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
     (queueNeighbour : Option ThreadId) (oldHead : ReplyId)
-    (donatedHeadReplyId : Option ReplyId) :
+    (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
     (replyLock oldHead, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
-          queueNeighbour (some oldHead) donatedHeadReplyId).pairs := by
+          queueNeighbour (some oldHead) donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
   unfold lockSet_replyRecv
-  -- Five layers sit above it: the returned context's head, the frame below it,
-  -- the outer caller, the state-level lock and the queue-structure neighbour.
-  iterate 5 apply mem_write_lockSetExtendOpt
+  -- Ten layers sit above it: the returned context's head, the frame below it,
+  -- the outer caller, the invoker's own five pre-receive members, the
+  -- state-level lock and the queue-structure neighbour.
+  iterate 10 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD (`v0.35.4`)**: the returned context's stack **head**, which the
@@ -2480,16 +2559,22 @@ theorem lockSet_replyRecv_donatedHead_write_mem (callerTid : ThreadId)
     (redonatedScId : Option SchedContextId)
     (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
     (queueNeighbour : Option ThreadId) (redonationOldHeadReplyId : Option ReplyId)
-    (head : ReplyId) :
+    (head : ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
     (replyLock head, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
-          queueNeighbour redonationOldHeadReplyId (some head)).pairs := by
+          queueNeighbour redonationOldHeadReplyId (some head)
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
   unfold lockSet_replyRecv
-  -- Four layers sit above it: the frame below the head, the outer caller, the
-  -- state-level lock and the queue-structure neighbour.
-  iterate 4 apply mem_write_lockSetExtendOpt
+  -- Nine layers sit above it: the frame below the head, the outer caller, the
+  -- invoker's own five pre-receive members, the state-level lock and the
+  -- queue-structure neighbour.
+  iterate 9 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD (`v0.35.4`)**: and the frame **below** the head, which the pop
@@ -2503,17 +2588,162 @@ theorem lockSet_replyRecv_belowHead_write_mem (callerTid : ThreadId)
     (redonatedScId : Option SchedContextId)
     (below : ReplyId) (outerCallerTid : Option ThreadId)
     (queueNeighbour : Option ThreadId) (redonationOldHeadReplyId : Option ReplyId)
-    (donatedHeadReplyId : Option ReplyId) :
+    (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
     (replyLock below, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId (some below) outerCallerTid
-          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId).pairs := by
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
+  unfold lockSet_replyRecv
+  -- Eight layers sit above it: the outer caller, the invoker's own five
+  -- pre-receive members, the state-level lock and the queue-structure
+  -- neighbour.
+  iterate 8 apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **PR #894 review**: the **invoking** receiver's own pre-receive return hands
+back a context, and that context is a declared write of `.replyRecv`.
+
+The twin of `lockSet_endpointReceive_preReturn_sc_write_mem`, and it has to be a
+twin rather than a corollary: `.replyRecv`'s receive leg *is* `.receive`'s
+transition, but the footprint it runs under is this arm's, so a member declared
+only over there says nothing here. -/
+theorem lockSet_replyRecv_preReturn_sc_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (installsCaps : Bool) (donationServerTid : Option ThreadId)
+    (redonatedScId : Option SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    (queueNeighbour : Option ThreadId) (redonationOldHeadReplyId : Option ReplyId)
+    (donatedHeadReplyId : Option ReplyId)
+    (scId : SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
+    (schedContextLock scId, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
+          donationServerTid redonatedScId belowHeadReplyId outerCallerTid
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          (some scId) preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
+  unfold lockSet_replyRecv
+  -- Six layers sit above it: the four remaining pre-receive members, the
+  -- state-level lock and the queue-structure neighbour.
+  iterate 6 apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **PR #894 review**: …the **previous owner's TCB** that return rebinds… -/
+theorem lockSet_replyRecv_preReturn_owner_tcb_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (installsCaps : Bool) (donationServerTid : Option ThreadId)
+    (redonatedScId : Option SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    (queueNeighbour : Option ThreadId) (redonationOldHeadReplyId : Option ReplyId)
+    (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (owner : ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
+    (tcbLock owner, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
+          donationServerTid redonatedScId belowHeadReplyId outerCallerTid
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId (some owner) preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
+  unfold lockSet_replyRecv
+  -- Five layers sit above it: the three remaining pre-receive members, the
+  -- state-level lock and the queue-structure neighbour.
+  iterate 5 apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **PR #894 review**: …the **head** that return clears… -/
+theorem lockSet_replyRecv_preReturn_head_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (installsCaps : Bool) (donationServerTid : Option ThreadId)
+    (redonatedScId : Option SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    (queueNeighbour : Option ThreadId) (redonationOldHeadReplyId : Option ReplyId)
+    (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (head : ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
+    (replyLock head, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
+          donationServerTid redonatedScId belowHeadReplyId outerCallerTid
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid (some head) preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
+  unfold lockSet_replyRecv
+  -- Four layers sit above it: the frame below, the outer caller, the
+  -- state-level lock and the queue-structure neighbour.
+  iterate 4 apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **PR #894 review**: …and the frame **below** the head that return re-heads. -/
+theorem lockSet_replyRecv_preReturn_belowHead_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (installsCaps : Bool) (donationServerTid : Option ThreadId)
+    (redonatedScId : Option SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    (queueNeighbour : Option ThreadId) (redonationOldHeadReplyId : Option ReplyId)
+    (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (below : ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
+    (replyLock below, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
+          donationServerTid redonatedScId belowHeadReplyId outerCallerTid
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId (some below)
+          preReturnOuterCallerTid).pairs := by
   unfold lockSet_replyRecv
   -- Three layers sit above it: the outer caller, the state-level lock and the
   -- queue-structure neighbour.
   iterate 3 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **PR #894 review**: …and the state-level lock its `scThreadIndex`
+maintenance takes, on the arm that installs nothing, returns no recorded
+server's donation and re-donates nothing -- the **fourth** disjunct of the state
+member, stated on the shape where the other three are all false, so it cannot be
+read as a restatement of them. -/
+theorem lockSet_replyRecv_preReturn_stateLevel_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (donationServerTid : Option ThreadId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    (queueNeighbour : Option ThreadId) (redonationOldHeadReplyId : Option ReplyId)
+    (donatedHeadReplyId : Option ReplyId)
+    (scId : SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid none donatedOriginalOwnerTid replyId false
+          donationServerTid none belowHeadReplyId outerCallerTid
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          (some scId) preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs := by
+  unfold lockSet_replyRecv
+  simp only [Option.isSome_some, Option.isSome_none, Bool.or_true, Bool.false_or, if_true]
+  -- One extension outside (the queue-structure neighbour).
+  exact mem_write_lockSetExtendOpt _ _ _
+    (LockSet.mem_insertOrMerge_write_self _ _)
 /-- **WS-RR RR7.11, the capstone: no two capability-installing IPC arms are
 ever disjoint.**
 
@@ -2538,7 +2768,8 @@ theorem capsCarryingIpcArms_footprints_share_serialization
              (some destRoot) none none).pairs ∧
       (stateLevelLock, AccessMode.write)
         ∈ (lockSet_replyRecv receiver cnRootB receiver epB senderTid none none
-             replyIdA true none none none none none none none).pairs) :=
+             replyIdA true none none none none none none none
+             none none none none none).pairs) :=
   ⟨⟨by unfold lockSet_endpointSend
        -- WS-OD OD3.11: one further extension outside (the queue neighbour).
        exact mem_write_lockSetExtendOpt _ _ _
@@ -2549,7 +2780,8 @@ theorem capsCarryingIpcArms_footprints_share_serialization
        exact mem_write_lockSetExtendOpt _ _ _
          (LockSet.mem_insertOrMerge_write_self _ _),
     lockSet_replyRecv_stateLevel_write_mem receiver cnRootB receiver epB senderTid
-      none none replyIdA none none none none none none none⟩⟩
+      none none replyIdA none none none none none none none
+      none none none none none⟩⟩
 
 /-- WS-SM SM8.C.9 (PR #870 round 7): the declassification's trail append is a
 declared **write** on the state-level lock. -/
@@ -4011,6 +4243,128 @@ theorem lockSet_consistent_base_plus_thirteen_opts
       opt₉ opt₁₀ opt₁₁ opt₁₂ permitted hBase hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅ hOpt₆ hOpt₇ hOpt₈
       hOpt₉ hOpt₁₀ hOpt₁₁ hOpt₁₂) hOpt₁₃
 
+/-- PR #894 review: fourteen optionals — generated one step at a time from the
+predecessor, exactly as the family already was.  `lockSet_replyRecv` reaches
+seventeen once the invoking receiver's own pre-receive return is declared. -/
+theorem lockSet_consistent_base_plus_fourteen_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ :
+      Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₅ : ∀ pp, opt₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₆ : ∀ pp, opt₆ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₇ : ∀ pp, opt₇ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₈ : ∀ pp, opt₈ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₉ : ∀ pp, opt₉ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₀ : ∀ pp, opt₁₀ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₁ : ∀ pp, opt₁₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₂ : ∀ pp, opt₁₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₃ : ∀ pp, opt₁₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₄ : ∀ pp, opt₁₄ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList base) opt₁) opt₂) opt₃) opt₄) opt₅) opt₆) opt₇) opt₈) opt₉) opt₁₀) opt₁₁) opt₁₂) opt₁₃) opt₁₄).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_thirteen_opts base opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ permitted hBase
+      hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅ hOpt₆ hOpt₇ hOpt₈ hOpt₉ hOpt₁₀ hOpt₁₁ hOpt₁₂ hOpt₁₃) hOpt₁₄
+
+/-- PR #894 review: fifteen optionals — generated one step at a time from the
+predecessor, exactly as the family already was.  `lockSet_replyRecv` reaches
+seventeen once the invoking receiver's own pre-receive return is declared. -/
+theorem lockSet_consistent_base_plus_fifteen_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ :
+      Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₅ : ∀ pp, opt₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₆ : ∀ pp, opt₆ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₇ : ∀ pp, opt₇ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₈ : ∀ pp, opt₈ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₉ : ∀ pp, opt₉ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₀ : ∀ pp, opt₁₀ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₁ : ∀ pp, opt₁₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₂ : ∀ pp, opt₁₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₃ : ∀ pp, opt₁₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₄ : ∀ pp, opt₁₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₅ : ∀ pp, opt₁₅ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList base) opt₁) opt₂) opt₃) opt₄) opt₅) opt₆) opt₇) opt₈) opt₉) opt₁₀) opt₁₁) opt₁₂) opt₁₃) opt₁₄) opt₁₅).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_fourteen_opts base opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ permitted hBase
+      hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅ hOpt₆ hOpt₇ hOpt₈ hOpt₉ hOpt₁₀ hOpt₁₁ hOpt₁₂ hOpt₁₃ hOpt₁₄) hOpt₁₅
+
+/-- PR #894 review: sixteen optionals — generated one step at a time from the
+predecessor, exactly as the family already was.  `lockSet_replyRecv` reaches
+seventeen once the invoking receiver's own pre-receive return is declared. -/
+theorem lockSet_consistent_base_plus_sixteen_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ :
+      Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₅ : ∀ pp, opt₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₆ : ∀ pp, opt₆ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₇ : ∀ pp, opt₇ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₈ : ∀ pp, opt₈ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₉ : ∀ pp, opt₉ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₀ : ∀ pp, opt₁₀ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₁ : ∀ pp, opt₁₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₂ : ∀ pp, opt₁₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₃ : ∀ pp, opt₁₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₄ : ∀ pp, opt₁₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₅ : ∀ pp, opt₁₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₆ : ∀ pp, opt₁₆ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList base) opt₁) opt₂) opt₃) opt₄) opt₅) opt₆) opt₇) opt₈) opt₉) opt₁₀) opt₁₁) opt₁₂) opt₁₃) opt₁₄) opt₁₅) opt₁₆).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_fifteen_opts base opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ permitted hBase
+      hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅ hOpt₆ hOpt₇ hOpt₈ hOpt₉ hOpt₁₀ hOpt₁₁ hOpt₁₂ hOpt₁₃ hOpt₁₄ hOpt₁₅) hOpt₁₆
+
+/-- PR #894 review: seventeen optionals — generated one step at a time from the
+predecessor, exactly as the family already was.  `lockSet_replyRecv` reaches
+seventeen once the invoking receiver's own pre-receive return is declared. -/
+theorem lockSet_consistent_base_plus_seventeen_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ opt₁₇ :
+      Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₅ : ∀ pp, opt₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₆ : ∀ pp, opt₆ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₇ : ∀ pp, opt₇ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₈ : ∀ pp, opt₈ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₉ : ∀ pp, opt₉ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₀ : ∀ pp, opt₁₀ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₁ : ∀ pp, opt₁₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₂ : ∀ pp, opt₁₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₃ : ∀ pp, opt₁₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₄ : ∀ pp, opt₁₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₅ : ∀ pp, opt₁₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₆ : ∀ pp, opt₁₆ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₇ : ∀ pp, opt₁₇ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList base) opt₁) opt₂) opt₃) opt₄) opt₅) opt₆) opt₇) opt₈) opt₉) opt₁₀) opt₁₁) opt₁₂) opt₁₃) opt₁₄) opt₁₅) opt₁₆) opt₁₇).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_sixteen_opts base opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ permitted hBase
+      hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅ hOpt₆ hOpt₇ hOpt₈ hOpt₉ hOpt₁₀ hOpt₁₁ hOpt₁₂ hOpt₁₃ hOpt₁₄ hOpt₁₅ hOpt₁₆) hOpt₁₇
+
 -- ============================================================================
 -- SM3.B.4 — lockSet_consistent per-transition theorems
 -- ============================================================================
@@ -4296,10 +4650,14 @@ theorem lockSet_consistent_reply (callerTid : ThreadId)
         | none => simp at hpp
         | some _ => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide)
 
+set_option maxHeartbeats 1000000 in
 /-- WS-SM SM3.B.4 for `.replyRecv` (audit-pass-3 + audit-pass-4:
 donation-return extension with separate `donatedOriginalOwnerTid`
 arg).  **WS-OD OD3.5**: seven optionals — the recorded server's TCB and the
-second SchedContext hand-off join the five it already carried. -/
+second SchedContext hand-off join the five it already carried.
+**PR #894 review**: seventeen, once the invoking receiver's own pre-receive
+return is declared — five more layers of nesting, which is what the raised
+heartbeat budget above is for. -/
 theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
     (cnRoot : ObjId) (rTid : ThreadId) (epId : ObjId)
     (newSenderTid : Option ThreadId)
@@ -4311,13 +4669,18 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
     -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
     (queueNeighbour : Option ThreadId)
     -- **WS-OD (`v0.35.4`)**: and at the old-head and head arity.
-    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId) :
+    (redonationOldHeadReplyId : Option ReplyId) (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId) :
     ∀ p ∈ (lockSet_replyRecv callerTid cnRoot rTid epId newSenderTid
               donatedScId donatedOriginalOwnerTid replyId installsCaps
               donationServerTid redonatedScId belowHeadReplyId outerCallerTid
-              queueNeighbour redonationOldHeadReplyId donatedHeadReplyId).pairs,
+              queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid).pairs,
       p.fst.kind ∈ permittedKinds .replyRecv :=
-  lockSet_consistent_base_plus_twelve_opts _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  lockSet_consistent_base_plus_seventeen_opts _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -4374,10 +4737,34 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
         cases outerCallerTid with
         | none => simp at hpp
         | some ot => simp at hpp; rw [← hpp]; simp; decide)
-    -- …and the state-level lock, now fired by a capability install *or* either
-    -- donation's `scThreadIndex` write.
+    -- PR #894 review: the invoking receiver's own pre-receive return — a
+    -- SchedContext, two TCBs and two Replies, every kind this arm already
+    -- admits, so `permittedKinds .replyRecv` is unchanged.
+    (by intro pp hpp
+        cases preReturnScId with
+        | none => simp at hpp
+        | some sc => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases preReturnOwnerTid with
+        | none => simp at hpp
+        | some ot => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases preReturnHeadReplyId with
+        | none => simp at hpp
+        | some rid => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases preReturnBelowHeadReplyId with
+        | none => simp at hpp
+        | some rid => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases preReturnOuterCallerTid with
+        | none => simp at hpp
+        | some ot => simp at hpp; rw [← hpp]; simp; decide)
+    -- …and the state-level lock, now fired by a capability install, either
+    -- donation's `scThreadIndex` write, *or* the pre-receive return's.
     (by intro pp hpp
         by_cases hc : installsCaps || donatedScId.isSome || redonatedScId.isSome
+            || preReturnScId.isSome
         · rw [if_pos hc] at hpp
           simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide
         · rw [if_neg hc] at hpp; simp at hpp)

@@ -244,9 +244,12 @@ example : ¬ mutualBlocked execNoDeadlock c0 c1 := by decide
 -- WS-OD (`v0.35.4`) added, to `.replyRecv`, the head its pop clears and the old
 -- head its re-donation's push rewrites, and gave the `.tcbSuspend` seam a
 -- state-resolved footprint that reaches the same sixteen on a victim owed a
--- donation at reply-stack depth >= 3.  See `maxLockSetSize`'s docstring for why
--- the answer was a wider ceiling rather than a narrower declaration, each time.
-example : maxLockSetSize = 16 := by decide
+-- donation at reply-stack depth >= 3; and PR #894's review took it to
+-- twenty-one, for the five objects the *invoking* receiver's own pre-receive
+-- return touches on a delegated `.replyRecv`.  See `maxLockSetSize`'s docstring
+-- for why the answer was a wider ceiling rather than a narrower declaration,
+-- each time.
+example : maxLockSetSize = 21 := by decide
 example : perLockWaitCost 10 = 30 := by decide
 -- The `totalWaitCost ≤ …` bound is established via the theorem in §3
 -- (`boundedWait_under_2pl`).  Elaboration-time `decide` cannot reduce
@@ -425,7 +428,7 @@ private def runWaitGraphChecks : IO Unit := do
 
 private def runBoundedWaitChecks : IO Unit := do
   IO.println "--- §5 SM3.D.6 — bounded wait ---"
-  assertBool "maxLockSetSize = 16" (decide (maxLockSetSize = 16))
+  assertBool "maxLockSetSize = 21" (decide (maxLockSetSize = 21))
   assertBool "perLockWaitCost 10 = (numCores-1)*10 = 30" (decide (perLockWaitCost 10 = 30))
   -- A singleton lock set: total wait = 1 * (3 * 10) = 30.
   assertBool "totalWaitCost (singleton) 10 = 30"
@@ -502,12 +505,14 @@ private def runSizeBoundChecks : IO Unit := do
     (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
     (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
     (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)
+    (some ⟨16⟩) (some (ThreadId.ofNat 17)) (some ⟨18⟩) (some ⟨19⟩)
+    (some (ThreadId.ofNat 20))
   assertBool "lockSet_replyRecv (all options) size ≤ maxLockSetSize"
     (decide (replySet.size ≤ maxLockSetSize))
   assertBool "lockSet_replyRecv (all options) size = maxLockSetSize (the bound, exactly)"
     (decide (replySet.size = maxLockSetSize))
   -- **WS-OD OD3.7 (the sharp bound): how much of the ceiling is slack.**  The
-  -- fourteen is the union over ALL argument values; no reachable state supplies
+  -- twenty-one is the union over ALL argument values; no reachable state supplies
   -- them all distinctly, because the returned donation's owner IS the answered
   -- caller, so those two arguments name one key and `insertOrMerge` lubs the
   -- modes without moving the cardinality.  Executed here at the *same* operands
@@ -518,16 +523,18 @@ private def runSizeBoundChecks : IO Unit := do
     (some ⟨6⟩) (some (ThreadId.ofNat 3)) (some ⟨8⟩) true
     (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
     (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)
-  assertBool "a .replyRecv whose donation owner is the answered caller declares 15"
-    (decide (reachableShapeReplyRecv.size = 15))
-  assertBool "…one inside the ceiling, which is the slack the constant carries"
+    (some ⟨16⟩) (some (ThreadId.ofNat 17)) (some ⟨18⟩) (some ⟨19⟩)
+    (some (ThreadId.ofNat 20))
+  assertBool "a .replyRecv whose donation owner is the answered caller declares 20"
+    (decide (reachableShapeReplyRecv.size = 20))
+  assertBool "…one inside the ceiling, which is the slack the merge carries"
     (decide (reachableShapeReplyRecv.size < maxLockSetSize))
   -- NEGATIVE: and it is exactly one member of slack, not two -- the recorded
   -- server merges with the invoking thread only on a NON-delegated reply, which
   -- is a case split rather than an invariant, so it cannot be taken in a bound.
   -- Keeping the delegated server distinct here is what makes that visible.
-  assertBool "NEGATIVE: the sharpening is one member, not two"
-    (!decide (reachableShapeReplyRecv.size = 14))
+  assertBool "NEGATIVE: the merge sharpening is one member, not two"
+    (!decide (reachableShapeReplyRecv.size = 19))
   -- WS-OD OD3.7: and the two below-head reads are each a member of their own —
   -- the reason the ceiling moved 11 → 13.  Stated as the drop, so a merge would
   -- fail here rather than silently make the raise look unnecessary.
@@ -536,7 +543,9 @@ private def runSizeBoundChecks : IO Unit := do
       (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
       (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
       (some (ThreadId.ofNat 9)) (some ⟨10⟩) none none
-      (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)).size = maxLockSetSize - 2))
+      (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)
+      (some ⟨16⟩) (some (ThreadId.ofNat 17)) (some ⟨18⟩) (some ⟨19⟩)
+      (some (ThreadId.ofNat 20))).size = maxLockSetSize - 2))
   -- WS-OD OD3.13: and the receive leg's queue-structure neighbour is a member of
   -- its own too — the reason the ceiling moved 13 → 14.  Same shape of check:
   -- stated as the drop, so a merge would fail here rather than make the raise
@@ -546,7 +555,9 @@ private def runSizeBoundChecks : IO Unit := do
       (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
       (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
       (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
-      none (some ⟨14⟩) (some ⟨15⟩)).size = maxLockSetSize - 1))
+      none (some ⟨14⟩) (some ⟨15⟩)
+      (some ⟨16⟩) (some (ThreadId.ofNat 17)) (some ⟨18⟩) (some ⟨19⟩)
+      (some (ThreadId.ofNat 20))).size = maxLockSetSize - 1))
   -- **The caps flag is a MODE, not a member.**  RR7.11 expressed the receiver's
   -- CSpace-root upgrade as `installsCaps`'s effect on an existing member's
   -- access mode, precisely so the footprint's size and acquisition order do not
@@ -560,6 +571,8 @@ private def runSizeBoundChecks : IO Unit := do
     (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) false
     (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
     (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)
+    (some ⟨16⟩) (some (ThreadId.ofNat 17)) (some ⟨18⟩) (some ⟨19⟩)
+    (some (ThreadId.ofNat 20))
   assertBool "lockSet_replyRecv capless size = maxLockSetSize (the caps flag is a mode)"
     (decide (replySetCapless.size = maxLockSetSize))
   assertBool "a capless donating .replyRecv still declares the state-level lock"
@@ -570,15 +583,19 @@ private def runSizeBoundChecks : IO Unit := do
     (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
     none (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
     (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)
-  assertBool "lockSet_replyRecv without a distinct recorded server size = 15"
-    (decide (replySetNoServer.size = 15))
+    (some ⟨16⟩) (some (ThreadId.ofNat 17)) (some ⟨18⟩) (some ⟨19⟩)
+    (some (ThreadId.ofNat 20))
+  assertBool "lockSet_replyRecv without a distinct recorded server size = 20"
+    (decide (replySetNoServer.size = 20))
   let replySetNoRedonation := lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
     (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
     (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
     (some (ThreadId.ofNat 9)) none (some ⟨11⟩) (some (ThreadId.ofNat 12))
     (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)
-  assertBool "lockSet_replyRecv without the second hand-off size = 15"
-    (decide (replySetNoRedonation.size = 15))
+    (some ⟨16⟩) (some (ThreadId.ofNat 17)) (some ⟨18⟩) (some ⟨19⟩)
+    (some (ThreadId.ofNat 20))
+  assertBool "lockSet_replyRecv without the second hand-off size = 20"
+    (decide (replySetNoRedonation.size = 20))
   -- **WS-OD (`v0.35.4`)**: and so are the two the doubly-linked reply stack
   -- added — the head the arm's pop clears, and the old head its re-donation's
   -- push links down to.  Stated as the drop, for the reason the two above are.
@@ -587,15 +604,107 @@ private def runSizeBoundChecks : IO Unit := do
     (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
     (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
     (some (ThreadId.ofNat 13)) (some ⟨14⟩) none
-  assertBool "lockSet_replyRecv without the pop's head size = 15"
-    (decide (replySetNoPopHead.size = 15))
+    (some ⟨16⟩) (some (ThreadId.ofNat 17)) (some ⟨18⟩) (some ⟨19⟩)
+    (some (ThreadId.ofNat 20))
+  assertBool "lockSet_replyRecv without the pop's head size = 20"
+    (decide (replySetNoPopHead.size = 20))
   let replySetNoPushHead := lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
     (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
     (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
     (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
     (some (ThreadId.ofNat 13)) none (some ⟨15⟩)
-  assertBool "lockSet_replyRecv without the re-donation's old head size = 15"
-    (decide (replySetNoPushHead.size = 15))
+    (some ⟨16⟩) (some (ThreadId.ofNat 17)) (some ⟨18⟩) (some ⟨19⟩)
+    (some (ThreadId.ofNat 20))
+  assertBool "lockSet_replyRecv without the re-donation's old head size = 20"
+    (decide (replySetNoPushHead.size = 20))
+  -- **PR #894 review: the five members the INVOKING receiver's own pre-receive
+  -- return contributes.**  `.replyRecv`'s receive leg is `.receive`'s transition,
+  -- so with no queued sender it runs `cleanupPreReceiveDonationChecked` on the
+  -- invoker -- and the arm's own donation return runs *after* the receive leg, so
+  -- the invoker still carries whatever `.donated` binding it entered with.  On a
+  -- non-delegated reply the recorded server IS the invoker and the reply leg has
+  -- just made it `.unbound`, leaving that pop inert; delegation breaks the
+  -- coincidence, and WS-OD OD3.5 retired the refusal that used to keep the
+  -- delegated shape out of the declared set.
+  let replySetNoPreReturn := lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
+    (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
+    (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
+    (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)
+    none none none none none
+  assertBool "lockSet_replyRecv without the invoker's pre-receive return size = 16"
+    (decide (replySetNoPreReturn.size = 16))
+  assertBool "…so the five pre-receive members are five, which is why 16 became 21"
+    (decide (replySet.size - replySetNoPreReturn.size = 5))
+  -- NEGATIVE, and this is the check that makes the positives mean something:
+  -- the RECORDED SERVER's own members do not cover the invoker's.  Two threads
+  -- cannot be bound to one scheduling context, so on a delegated reply the two
+  -- pops name disjoint objects -- and a witness that only asserted membership
+  -- would pass whether or not the arm declared them, since the recorded server's
+  -- context, owner, head and below-head are declared anyway.  Dropping the five
+  -- must therefore drop the SIZE, which the assertions above state and this one
+  -- restates in the direction a merge would break.
+  assertBool "NEGATIVE: the recorded server's members do not stand in for the invoker's"
+    (!decide (replySetNoPreReturn.size = maxLockSetSize))
+  -- And each of the five is a member of its own: dropping any one drops exactly
+  -- one, so none of them is an alias of a member already declared.
+  assertBool "…and dropping only the pre-return context drops it by exactly one"
+    (decide ((lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+      (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
+      (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
+      (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
+      (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)
+      none (some (ThreadId.ofNat 17)) (some ⟨18⟩) (some ⟨19⟩)
+      (some (ThreadId.ofNat 20))).size = maxLockSetSize - 1))
+  assertBool "…and dropping only the previous owner's TCB drops it by exactly one"
+    (decide ((lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+      (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
+      (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
+      (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
+      (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)
+      (some ⟨16⟩) none (some ⟨18⟩) (some ⟨19⟩)
+      (some (ThreadId.ofNat 20))).size = maxLockSetSize - 1))
+  assertBool "…and dropping only the pre-return stack head drops it by exactly one"
+    (decide ((lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+      (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
+      (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
+      (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
+      (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)
+      (some ⟨16⟩) (some (ThreadId.ofNat 17)) none (some ⟨19⟩)
+      (some (ThreadId.ofNat 20))).size = maxLockSetSize - 1))
+  assertBool "…and dropping only the frame below that head drops it by exactly one"
+    (decide ((lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+      (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
+      (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
+      (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
+      (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)
+      (some ⟨16⟩) (some (ThreadId.ofNat 17)) (some ⟨18⟩) none
+      (some (ThreadId.ofNat 20))).size = maxLockSetSize - 1))
+  assertBool "…and dropping only the outer caller it reads drops it by exactly one"
+    (decide ((lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+      (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
+      (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
+      (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
+      (some (ThreadId.ofNat 13)) (some ⟨14⟩) (some ⟨15⟩)
+      (some ⟨16⟩) (some (ThreadId.ofNat 17)) (some ⟨18⟩) (some ⟨19⟩)
+      none).size = maxLockSetSize - 1))
+  -- And the modes are the pop's own: four writes and one read, the same five
+  -- `lockSet_endpointReceive` declares, because it is the same pop.
+  assertBool "the pre-return context is declared WRITE"
+    (decide ((schedContextLock ⟨16⟩, AccessMode.write) ∈ replySet.pairs))
+  assertBool "the previous owner's TCB is declared WRITE"
+    (decide ((tcbLock (ThreadId.ofNat 17), AccessMode.write) ∈ replySet.pairs))
+  assertBool "the pre-return stack head is declared WRITE"
+    (decide ((replyLock ⟨18⟩, AccessMode.write) ∈ replySet.pairs))
+  assertBool "the frame below that head is declared WRITE (the pop re-heads it)"
+    (decide ((replyLock ⟨19⟩, AccessMode.write) ∈ replySet.pairs))
+  assertBool "the outer caller it validates is declared READ"
+    (decide ((tcbLock (ThreadId.ofNat 20), AccessMode.read) ∈ replySet.pairs))
+  -- NEGATIVE: the outer caller is a READ on this arm, not a write -- a validate,
+  -- not a rewrite.  Asserting the read alone would pass under a write too, since
+  -- the mode lattice would have to have been changed for that to matter.
+  assertBool "NEGATIVE: the outer caller is not declared WRITE"
+    (!decide ((tcbLock (ThreadId.ofNat 20), AccessMode.write) ∈ replySet.pairs))
   -- The receive arm's caps shape gains the same member: 3 base + sender + reply
   -- + state-level = 6.
   let recvSet := lockSet_endpointReceive (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)

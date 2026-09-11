@@ -442,9 +442,20 @@ platform rather than with the lock.
 > now walk is state-discovered and unbounded, so its locks are declared through
 > the `pipChainStart_<τ>` markers the SM3.C walker consumes rather than through
 > `lockSet_<τ>` — which is what keeps the static footprint an honest declaration
-> of the *static* locks.
+> of the *static* locks. **PR #894's review (`v0.35.5`) moved it 16 → 21**, on
+> that same arm a fifth time: `.replyRecv`'s receive leg *is* `.receive`'s
+> transition, so with no queued sender it runs the pre-receive donation return on
+> the **invoking** thread — and the arm's own return runs after the receive leg,
+> so the invoker still carries the `.donated` binding it entered with. On a
+> non-delegated reply the recorded server *is* the invoker, which is the
+> coincidence delegation breaks; two threads cannot share a scheduling context,
+> so a delegated `.replyRecv` wrote four kernel objects under no declared lock.
+> **No reachable state takes up the whole ceiling**:
+> `lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds every state at
+> eighteen with no hypothesis, because the re-donation members and the
+> pre-receive return are mutually exclusive on the send queue.
 >
-> At HEAD, the declared lock-set ceiling is **16**, the RPi5 tick admits **20 µs** per lock, and the uniform 60 µs envelope is **2880 µs** —
+> At HEAD, the declared lock-set ceiling is **21**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3780 µs** —
 > the canonical spelling `scripts/check_lock_ceiling_figures.py` (Tier 0, WS-OD
 > OD3.15) holds to the Lean sources, so this chapter cannot go stale behind the
 > constant the way it did between OD3.7 and OD3.14. See

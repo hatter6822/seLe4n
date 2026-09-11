@@ -22,8 +22,8 @@ raw_lookup_tid           = 1678
 ## Typed-helper adoption (should-grow)
 
 gettcb_adoption          = 2144
-getschedctx_adoption     = 351
-getendpoint_adoption     = 180
+getschedctx_adoption     = 352
+getendpoint_adoption     = 179
 getnotification_adoption = 85
 getuntyped_adoption      = 11
 getcnode_adoption        = 81
@@ -233,8 +233,8 @@ RAW_MATCH_TOTAL=110
 RAW_MATCH_UNCLASSIFIED=19
 RAW_LOOKUP_TID=1678
 GETTCB_ADOPTION=2144
-GETSCHEDCTX_ADOPTION=351
-GETENDPOINT_ADOPTION=180
+GETSCHEDCTX_ADOPTION=352
+GETENDPOINT_ADOPTION=179
 GETNOTIFICATION_ADOPTION=85
 GETUNTYPED_ADOPTION=11
 GETCNODE_ADOPTION=81

@@ -1,3 +1,154 @@
+## v0.35.5 — the `.replyRecv` footprint declares the invoker's own pre-receive return
+
+**One P1 and two P2 findings from an automated review of PR #894, all three
+verified against the code before being fixed — and verifying the P1 turned up a
+fourth defect the previous cut had introduced.**
+
+### 1. A delegated `.replyRecv` wrote four kernel objects under no declared lock
+
+`.replyRecv`'s receive leg **is** `.receive`'s transition. So when the endpoint
+has no queued sender it runs `cleanupPreReceiveDonationChecked` on the
+**invoking** thread — and the arm's own donation return runs *after* the receive
+leg, so the invoker still carries whatever `.donated` binding it entered with.
+That pre-receive return writes a SchedContext, the previous owner's TCB, the
+reply-stack head it clears and the frame below it re-heads, and reads the outer
+caller's TCB before validating it.
+
+`lockSet_endpointReplyRecvOnCore` named none of them. Every state-dependent
+member it declared resolved off the reply's *target* or the endpoint's
+send-queue head; `replier` was consumed exactly once in the whole body, as the
+footprint's first argument. On a **non-delegated** reply the recorded server
+*is* the invoker and the reply leg has just made it `.unbound`, so the second
+pop is inert — that coincidence is what delegation breaks, and two threads
+cannot be bound to one scheduling context, so the recorded server's members
+provably never alias the invoker's.
+
+A footprint that omits a written object is **false**, not conservative: a
+delegated `.replyRecv` on one core and a `.tcbSuspend` of the donation's
+previous owner on another had *provably disjoint* footprints while both writing
+that owner's TCB, and the outer-caller read is a validate-then-commit, so
+leaving it undeclared is a time-of-check/time-of-use window on the thread about
+to be handed a scheduling context. **Medium**, and latent rather than live:
+SM5.I's global kernel-entry ticket lock serialises every kernel entry and
+nothing boots yet, so this is a verification defect — everything built on
+`lockSetForSyscall` was *silent* about those objects rather than conservative.
+
+`lockSet_replyRecv` therefore takes the same five `preReturn*` optionals
+`lockSet_endpointReceive` has carried since `v0.35.4`, resolved through the same
+two resolvers on `replier`, with `lockSet_endpointReplyRecvOnCore_covers_preReturn`
+the statement that it does — the twin of the `.receive` theorem, and a twin
+rather than a corollary because a member declared on the other arm's footprint
+says nothing about this one's. The state-level member gains a **fourth**
+disjunct: on a delegated reply whose recorded server holds no donation the other
+three are all false, so without it the `scThreadIndex` write is undeclared on
+exactly the shape this exists for.
+
+#### …and the gap was excused by a theorem that does not exist
+
+The footprint carried a note saying the delegated shape was safe because "the
+entry resolver refuses the one shape where it does not
+(`lockSetForSyscall_replyRecv_refuses_donated_delegate`)". **No such theorem was
+ever written** — a whole-tree grep returned one hit, the citation itself, and
+`git log -S` shows the string entering with the commit that added the *citation*.
+The excuse was false in substance too: `lockSetForSyscall_replyRecv_isSome_iff`
+shows the declare condition has no delegation or donation conjunct, and WS-OD
+OD3.5 had already **retired** the refusal it named
+(`lockSetForSyscall_replyRecv_delegated`, concluding `none`), with a Tier 3
+*negative* now forbidding its return. So the coarse-serialisation fallback the
+gap would have needed was gone, while the gap stayed open behind a reference a
+reader would have trusted. The citation is deleted and replaced with what is
+now true.
+
+#### The ceiling moves, and that is the cost
+
+`maxLockSetSize` is **16 → 21** (`4 + 17`). It bounds the union over *all*
+argument values — that is what `boundedWait_under_2pl` and the WCRT surface
+consume — so the mutual exclusion below cannot be used to keep it lower. Every
+derived figure moves with it and each is a theorem, not a paragraph: the RPi5
+1 ms tick admits **15 µs** per lock (`1000 / 63`, from 20), the uniform 60 µs
+envelope is **3780 µs** (from 2880), and `rpi5Tick_refuses_sixty_micro_sections`
+still holds. `scripts/check_lock_ceiling_figures.py` held every prose copy of
+the three to the Lean sources and failed on each stale one, which is what it is
+for.
+
+**How much of that ceiling is slack is stated, not left to be re-derived** (the
+OD3.7 precedent). The re-donation members are live exactly when the endpoint has
+a queued sender, and the invoker's pre-receive return exactly when it does not,
+so no state carries both groups:
+`lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds **every** state at
+eighteen **with no hypothesis at all**, and the owner merge takes a reachable
+`.replyRecv` to seventeen (`…_size_le_seventeen`). Three of the twenty-one are
+slack no state can take up. Both are exercised at both reachable widths in
+`tests/LockSetSuite.lean`, with the negative that neither shape reaches the
+ceiling — a witness asserting only the parametric bound would pass with the
+slack claim false.
+
+#### One question, one answer: the send-queue head
+
+Verifying the above found a fourth defect, introduced by `v0.35.4`:
+`lockSet_endpointReplyRecvOnCore` resolved the send-queue head with an **inlined
+copy** of `receiveRendezvousSender?`'s body, while the queue-structure
+neighbour, the re-donated context and the pre-receive return in the *same
+footprint* all called the function. The two answers are definitionally equal, so
+nothing was ever wrong at runtime; what it cost is that no statement about the
+send queue could reach that member — which is why the reachable size bound could
+not be stated branch-wise until the duplicate went. Anchored in both directions
+at Tier 3.
+
+### 2. The bind guard refused frames that are on no stack
+
+`replyFrameOnLiveStack` asked `r.next.isSome` — a **presence** check standing in
+for a **relation**, the shape this project sweeps for. `severAtCut` deliberately
+leaves the frame *below* the cut with a stale upward link: on `B → M → H`,
+cancelling `M` detaches `H.prev` and consumes `M`, but `B.next` still reads
+`some (.frame M)`. `B` is on no live stack and is owed nothing, yet its
+`schedContextBind` was refused with `.illegalState` — on a path the transition
+explicitly supports, since it binds a **blocked** thread. The guard's own comment
+named the relation it meant ("a frame the detach cut off is owed nothing");
+`isSome` is not that relation.
+
+It now asks the one-step **reciprocity** question the tree already asks —
+`.frame above` counts only when `above.prev = some rid`, `.head sc` only when
+`sc.scReply = some rid`. That is `donationChainFrom`'s own test and
+`detachReplyFrameAbove`'s pre-write check, it is `O(1)`, and it is **exact**
+under `donationChainWellFormed`, where `prevLinkReciprocal` and `headTerminates`
+make one-step reciprocity equivalent to liveness. A live frame still reads
+`true`, so the fail-closed direction is unchanged.
+
+### 3. The frozen unbind did not mirror the live one
+
+`v0.35.4` gave `schedContextUnbind` an `isDonated` guard: a context whose holder
+still carries a `.donated` binding cannot be unbound, because clearing it builds
+the dead stack the whole cut exists to prevent. `frozenSchedContextUnbind`
+cleared `sc.boundThread` and the holder's binding **unconditionally**, while its
+own docstring opens *"Mirrors `schedContextUnbind` in frozen state."* One
+question, two answers — and the docstring described the better behaviour, so the
+code moved, not the docstring. Test-only surface, so this is model consistency
+rather than live security.
+
+### Mechanical notes
+
+* `size_le_14`..`size_le_17` and `size_le_10_over`..`size_le_14_over` join the
+  combinator family; `lockSet_consistent_replyRecv` is restated through
+  `…_base_plus_seventeen_opts`.
+* Every statement about `lockSet_replyRecv` is restated at the **new full
+  arity** — the two size bounds, the twelve write-membership lemmas, the
+  `lockSetTransitions_within_bound` conjunct, `KernelOperation.ofReplyRecv`, the
+  capless equation and both resolved bounds. A bound left at a new argument's
+  default is a different proposition, which `LockFootprintBoundCensus` refuses;
+  two membership lemmas were caught mid-cut in exactly that state.
+* `receivePreReturnStack?_of_sender` is the stack-level reading of the mutual
+  exclusion, stated beside the resolver rather than re-derived at each bound.
+* `docs/planning/REPLY_FRAME_REMOVAL_PLAN.md` §3.5 / RM3.4 are re-baselined: the
+  ceiling they assume WS-RM moves is 21 → 22, and the sharp reachable bound they
+  cite is no longer fifteen.
+* `scripts/store_reader_hygiene_baseline.txt` is re-anchored for the documented
+  refactor: `getendpoint_adoption` falls 180 → 179 because the duplicated
+  send-queue-head read went, and `getschedctx_adoption` rises 351 → 352 for the
+  bind guard's new `getSchedContext?` read.  `RAW_MATCH_ENDPOINT` is unmoved and
+  the per-(file, variant) inventory reports no new or grown site, which is what
+  says the drop is a deletion rather than a hygienic read turning raw.
+
 ## v0.35.4 — the reply stack is doubly linked, and every pop and push is declared
 
 **Three findings, reported before being fixed.  The first two share one cause: a
