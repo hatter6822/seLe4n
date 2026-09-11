@@ -101,8 +101,13 @@ same shape `ipcInvariantFullExceptDonationOwner` has against the bare reply.
 
 The detach writes a Reply the reply footprints do not name, so both gain a member
 in **write** mode.  `lockSet_replyRecv` goes 16 → 17 members, which moves
-`maxLockSetSize` to 17: the RPi5 tick then admits **19 µs** per lock
-(`1000 / 51`) and the uniform 60 µs envelope is **3060 µs**.
+`maxLockSetSize` to 17.  The per-lock critical section admissible under the
+RPi5 tick, and the contention envelope at a uniform cost, are *functions* of
+that constant, so this plan quotes neither figure: RM3.4 re-derives both and rewrites the canonical
+sentence at the five sites `scripts/check_lock_ceiling_figures.py` requires.
+Copying a derived figure into a plan is exactly the shape that gate exists to
+refuse — a plan that ran after some other cut had moved the ceiling would carry
+a number nobody re-measured.
 
 The cost is **parametric only**, and that is stated rather than left to be
 re-derived: the new member is `some` exactly when the answered frame is *not* a
@@ -175,7 +180,7 @@ over-declaring is sound.
 | RM3.3 | `lockSet_replyRecv` gains it too: 16 → 17 parameters, base 4 plus 13 options.  Restate the four size bounds, the consistency lemma, the twelve write-membership lemmas, the bound conjunct, `KernelOperation.ofReplyRecv`, both atomicity lemmas, `lockSet_replyRecv_no_caps`, `capsCarryingIpcArms_footprints_share_serialization`, and the resolver.  `size_le_13` and `lockSet_consistent_base_plus_thirteen_opts` already exist, so no new combinator is needed | same | L |
 | RM3.4 | `maxLockSetSize` 16 → 17 and every figure derived from it (§3.5).  Rewrite the canonical sentence at all five sites `scripts/check_lock_ceiling_figures.py` requires, plus the `PerCoreWcrt.lean` docstrings and `rpi5Tick_refuses_sixty_micro_sections` | `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md`, `docs/gitbook/12-proof-and-invariant-map.md` | M |
 | RM3.5 | `lockSetForSyscall`'s thirteen reply and replyRecv theorems, and the two resolved bounds.  **Add the sharp bound that characterises the cost**: the new member and the donation-return members are mutually exclusive, so no reachable footprint grows and `lockSet_endpointReplyRecvOnCore_size_le_fifteen` is unmoved.  Consumes RM3.3 | `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean`, `SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean` | M |
-| RM3.6 | The figure-bearing suites and anchors: `DeadlockFreedomSuite` (about 39 sites, several positional 16-argument applications), `LockSetSuite`, `SmpWcrtSuite` (divisor 48 → 51, envelope 2880 → 3060), `SmpSchedulerSuite`, and the Tier 3 ceiling anchors including the negative that refuses the previous value | `tests/DeadlockFreedomSuite.lean`, `tests/LockSetSuite.lean`, `tests/SmpWcrtSuite.lean`, `tests/SmpSchedulerSuite.lean`, `scripts/test_tier3_invariant_surface.sh` | M |
+| RM3.6 | The figure-bearing suites and anchors: `DeadlockFreedomSuite` (about 39 sites, several positional 16-argument applications), `LockSetSuite`, `SmpWcrtSuite` (its divisor and envelope constants, re-derived from the new ceiling rather than copied from here), `SmpSchedulerSuite`, and the Tier 3 ceiling anchors including the negative that refuses the previous value | `tests/DeadlockFreedomSuite.lean`, `tests/LockSetSuite.lean`, `tests/SmpWcrtSuite.lean`, `tests/SmpSchedulerSuite.lean`, `scripts/test_tier3_invariant_surface.sh` | M |
 
 **Acceptance**: `SeLe4n.Testing.LockFootprintBoundCensus` builds — it refuses a
 size bound left at the old arity — and `check_lock_ceiling_figures.py` passes
