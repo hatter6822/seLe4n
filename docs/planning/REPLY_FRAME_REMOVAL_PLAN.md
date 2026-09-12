@@ -277,7 +277,10 @@ document existing.
    answered frame heads nothing (RM5.1).
 4. The Tier 1 census reports every reply-stack writer as carrying a chain result
    — or as a half-step of the composite that does, whose own record must reach
-   one — reconciled in both directions (RM5.3, refined in §10.3).
+   one, or as a frozen site mirroring a live one that does — reconciled in both
+   directions (RM5.3, refined in §10.3; the frozen surface brought in at
+   `v0.35.12`, which is where "every" stopped meaning "every module either root
+   reaches").  Seventeen sites, eight stating, three mirroring.
 5. An executed run answers a middle caller out of order and then completes the
    in-order reply that used to fail with `.invalidArgument` (RM6.1).
 6. No footprint exceeds `maxLockSetSize`, and the sharp resolved bound shows no

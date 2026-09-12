@@ -19,6 +19,15 @@ import SeLe4n.Platform.Staged
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
 import SeLe4n.Kernel.IPC.Invariant.FaultPreservation
+-- The frozen execution surface, which neither root reaches: it is built by its
+-- own `lean_exe` target (`tests.FrozenOpsSuite`) and is in the staged allowlist
+-- of neither.  `FrozenKernelObject.reply` carries the **live**
+-- `SeLe4n.Kernel.Reply` — links and all — and `Model.freeze` copies a live
+-- state's Reply objects verbatim, so a frozen state taken mid-call-chain holds
+-- a real reply stack and a frozen transition can falsify the chain exactly as a
+-- live one can.  Without this import the census's claim held for every module
+-- except the one that had the defect.
+import SeLe4n.Kernel.FrozenOps.Operations
 
 /-!
 # WS-RM RM5.3 — every reply-stack write names a chain result
@@ -96,6 +105,10 @@ def chainWritePrimitives : List Name :=
     -- The detach: the frame above's `prev`, and its total fold.
   , `SeLe4n.Kernel.detachReplyFrameAbove
   , `SeLe4n.Kernel.detachReplyFrameAboveOrSelf
+    -- ...and the frozen surface's counterparts, which write the same field of
+    -- the same `SeLe4n.Kernel.Reply` record in `FrozenSystemState.objects`.
+  , `SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAbove
+  , `SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAboveOrSelf
     -- The push: the new head's two links, and the old head's `next`.
   , `SeLe4n.Kernel.storeDonationFramePush
     -- The pop: the head's two links, the frame below re-headed, and the pair.
@@ -117,7 +130,14 @@ def chainRecordConstructors : List Name :=
 def objectStoreSpellings : List Name :=
   [ `SeLe4n.Model.storeObject
   , `SeLe4n.Model.SystemState.storeObject
-  , `SeLe4n.Model.storeObjectKindChecked ]
+  , `SeLe4n.Model.storeObjectKindChecked
+    -- The frozen surface's own store, and the raw map write its helpers reach
+    -- for directly.  Both land a built record in `FrozenSystemState.objects`,
+    -- which is where the frozen chain lives, so a derivation that knows only
+    -- the live spellings sees a frozen writer build a `Reply` and store it
+    -- nowhere.
+  , `SeLe4n.Kernel.FrozenOps.frozenStoreObject
+  , `SeLe4n.Model.FrozenMap.set ]
 
 /-- Definitions that build a chain-bearing record and store it, and yet write no
 chain field — each with the reason, which is a property of the code rather than
@@ -140,7 +160,21 @@ def chainNeutralConstructors : List (Name × String) :=
     -- A `{ sc with budget := …, period := …, … }` update: `scReply` is not in
     -- the assignment list, so the stored record carries the value it read.
   , (`SeLe4n.Kernel.SchedContextOps.schedContextConfigure,
-      "rebuilds a SchedContext for its CBS parameters; `scReply` is untouched by the update") ]
+      "rebuilds a SchedContext for its CBS parameters; `scReply` is untouched by the update")
+    -- The frozen surface's counterparts of the two shapes above.  Each is the
+    -- frozen twin of a live definition already exempt for the same reason, so
+    -- these are not a new judgement — they are the existing one applied to the
+    -- surface this census could not see before `v0.35.12`.
+  , (`SeLe4n.Kernel.FrozenOps.frozenLinkCallerReply,
+      "writes `Reply.caller` only, gated on `Reply.isFree` — no link in either direction; the frozen twin of `Model.linkReply`, and reading the same guard since `v0.35.12` (it read `caller` alone, so a frame still on a live stack was linkable here while the live kernel refuses it)")
+  , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextConfigure,
+      "rebuilds a SchedContext for its CBS parameters; `scReply` is not in the assignment list, so the stored record carries the value it read")
+  , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextBind,
+      "`{ sc with boundThread := some _ }`; `scReply` is untouched by the update")
+  , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind,
+      "`{ sc with boundThread := none, isActive := false }`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.FrozenOps.frozenSetPriority,
+      "`{ sc with priority := _ }` on the bound SchedContext; `scReply` is untouched") ]
 
 /-- Where the derived frontier and the primitive list disagree.
 
@@ -261,6 +295,19 @@ inductive ChainDiscipline where
   broken by construction.  The composite named here is what re-establishes it,
   and it must be registered `states` and must run this half-step. -/
   | halfStep (composite : Name)
+  /-- The site is on the **frozen execution surface**, which has no chain
+  invariant of its own to state: `donationChainWellFormed` is a predicate on
+  `SystemState`, and `FrozenSystemState.objects` is a `FrozenMap`.
+
+  Requiring a `donationChain…` result of a frozen site would therefore demand a
+  theorem that cannot be written, and accepting no record at all would be the
+  silence this census exists to refuse.  What carries the chain here is the
+  frozen surface's own reason for existing: it performs the **same removal** as
+  its live counterpart, and the differential suite exercises the agreement.  So
+  the entry names that counterpart, which must itself be registered `states` —
+  a frozen writer with no live twin is a frozen transition the live kernel never
+  performs, and that is a finding rather than an exemption. -/
+  | mirrors (live : Name)
   deriving Inhabited
 
 /-- `true` when `n` names a member of the `donationChain…` family: the invariant,
@@ -322,6 +369,23 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Kernel.removeCallerReplyFrame,
       .states [`SeLe4n.Kernel.removeCallerReplyFrame_preserves_donationChainWellFormed,
                `SeLe4n.Kernel.removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept])
+    -- ---------------------------------------------------------------------
+    -- The frozen execution surface.
+    --
+    -- These were invisible to this census until `v0.35.12`: `FrozenOps` is
+    -- reached by neither root, so the closure it claims held for every module
+    -- except one that writes the live `Reply` record.  And the gap was not
+    -- theoretical — `frozenEndpointReply` cleared a caller's Reply bare, which
+    -- is WS-RM's own defect, surviving on the surface nothing was looking at.
+  , (`SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAbove,
+      .mirrors `SeLe4n.Kernel.detachReplyFrameAbove)
+  , (`SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAboveOrSelf,
+      .mirrors `SeLe4n.Kernel.detachReplyFrameAboveOrSelf)
+    -- The frozen reply, which now runs the detach before the consume in the
+    -- order the live one does.  `FO-031` is the differential scenario that
+    -- exercises the agreement.
+  , (`SeLe4n.Kernel.FrozenOps.frozenEndpointReply,
+      .mirrors `SeLe4n.Kernel.removeCallerReplyFrame)
     -- The detach itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
   , (`SeLe4n.Kernel.detachReplyFrameAbove,
@@ -369,6 +433,9 @@ where
       | none => false
       | some (_, .states _) => true
       | some (_, .halfStep next) => go next fuel'
+        -- A chain that ends at a `mirrors` entry follows through to the live
+        -- twin, so a frozen half-step is covered exactly when that twin is.
+      | some (_, .mirrors live) => go live fuel'
 
 /-- Why a registry entry does not hold up; `[]` when it does. -/
 def disciplineViolations (env : Environment) (registry : List (Name × ChainDiscipline))
@@ -386,6 +453,18 @@ def disciplineViolations (env : Environment) (registry : List (Name × ChainDisc
       (if usesDirectly env [site] composite then [] else
         [s!"`{site}` is recorded as a half-step of `{composite}`, whose body does not run \
             it — the record names a composite that does not complete this write"])
+  | .mirrors live =>
+      -- The live twin must exist, must itself state a chain result, and must not
+      -- be the site itself: a frozen entry pointing at a frozen entry would be
+      -- the record carrying its own weight.
+      (if (env.find? live).isSome then [] else
+        [s!"`{site}` is recorded as mirroring `{live}`, which is not a declaration of \
+            this environment"]) ++
+      (if live == site then
+        [s!"`{site}` is recorded as mirroring itself"] else []) ++
+      (if halfStepResolves registry live then [] else
+        [s!"`{site}` is recorded as mirroring `{live}`, which states no chain result — a \
+            frozen writer whose live twin is itself uncovered is covered by nothing"])
 
 /-- Where the derived set of write sites and the registry disagree; `[]` when
 they are the same set.
@@ -579,8 +658,11 @@ run_cmd Command.liftTermElabM do
     unless violations.isEmpty do
       throwError "reply-stack write census: {violations}"
   let stating := chainWriteRegistry.filter
-    (fun (_, d) => match d with | .states _ => true | .halfStep _ => false)
+    (fun (_, d) => match d with | .states _ => true | _ => false)
+  let mirroring := chainWriteRegistry.filter
+    (fun (_, d) => match d with | .mirrors _ => true | _ => false)
   logInfo m!"reply-stack write census: {derived.length} write sites, {stating.length} of \
-    them stating their own chain result; the rest are half-steps of a composite that does"
+    them stating their own chain result, {mirroring.length} on the frozen surface \
+    mirroring a live site that does; the rest are half-steps of a composite that does"
 
 end SeLe4n.Testing.ReplyStackWriteCensus

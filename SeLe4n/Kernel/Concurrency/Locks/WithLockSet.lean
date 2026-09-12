@@ -287,13 +287,21 @@ The function is defined inside `SeLe4n.Kernel.Concurrency` (not
 create a back-reference.  Callers must use the qualified name
 `SeLe4n.Kernel.Concurrency.updateObjectAt s oid f`.
 
-The lookup uses the `RHTable.get?` method form (rather than the
-`[oid]?` bracket sugar) so the AK7-cascade raw-match floor stays at
-its v0.31.2 baseline — the bracket-match idiom is the legacy pattern
-the cascade metric discourages.  `updateObjectAt` is genuinely
-kind-agnostic (it applies a lock-only transform `f` to whatever
-object is stored), so a typed `getX?` accessor is not applicable
-here; the `.get?` method form is the clean structural alternative. -/
+This is a **store primitive** rather than a reader: it reads the
+store generically and writes it back, exactly as `storeObject` does
+one domain over, and it never discriminates a variant — `f` is
+`KernelObject → KernelObject` and runs on whatever is stored.  So
+the raw read is its body in the sense that makes it the primitive,
+and `scripts/lean_store_read_census.py` registers it beside
+`Model/State.lean`'s own primitives for that reason.
+
+An earlier cut said something else here: that the `.get?` method
+form was chosen *"so the AK7-cascade raw-match floor stays at its
+v0.31.2 baseline"*, and that no typed accessor applied.  The first
+is choosing a spelling to evade a metric rather than to say
+something — and it worked, which is why the census now reads both
+spellings — and the second was false, since `getObject?` is the
+kind-agnostic accessor.  Neither is why the read is here. -/
 def updateObjectAt (s : SystemState) (oid : SeLe4n.ObjId)
     (f : KernelObject → KernelObject) : SystemState :=
   match s.objects.get? oid with

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.11.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.12.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -798,9 +798,41 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `STORE_READ_CODE` is now a `ZERO_METRICS` entry beside `SORRY_COUNT` and
   `AXIOM_COUNT`: **regenerating the baseline does not clear it**, only fixing
   the tree does, and the gate says so in its failure epilogue.  The only raw
-  reads left anywhere are the accessors' own bodies in `Model/State.lean` —
-  which the census exempts by name — and propositions, which have no helper
-  form.
+  reads left anywhere are the accessor bodies — which the census registers by
+  name — and propositions, which have no helper form.
+
+  **And a spelling is not a read** (PR #895 review, `v0.35.12`).  The zero above
+  was true of `s.objects[k]?` and blind to `s.objects.get? k`, which is *the same
+  read*: the `GetElem?` instance **is** `RHTable.get?`, and this tree proves it
+  outright (`objects_getElem?_eq_get?`, by `rfl`).  So the census measured a
+  spelling, and an enforced zero a rename walks around is worse than no zero,
+  because the number reads like a measurement.  Not theoretical either: forty
+  executable reads were hiding in the method form, and one of them —
+  `Concurrency.updateObjectAt` — **said so in its own docstring**, *"so the
+  AK7-cascade raw-match floor stays at its v0.31.2 baseline"*, which is choosing
+  a spelling to evade a metric and is the mirror image of this file's own rule
+  against contorting prose to satisfy a scanner.  Its second claim, that no typed
+  accessor applied, was false besides: `getObject?` is the kind-agnostic one.
+  `READ` reads both spellings now, and the self-test's decisive case keeps the
+  read and changes only how it is written.
+
+  Three things new code must respect.  (1) **The frozen surface is in scope, and
+  always was.**  `FrozenKernelObject.reply` carries the live
+  `SeLe4n.Kernel.Reply` and `Model.freeze` copies a live state's records
+  verbatim, so a frozen transition discriminating a variant at the call site is
+  the defect this census is named for — it had twenty-nine such reads, now zero,
+  routed through a frozen accessor family (`Model/FrozenState.lean`) that mirrors
+  the live one and which `FrozenOps.frozenLookup*` is stated over rather than
+  beside.  (2) **Where a site distinguishes "wrong kind" from "absent" the typed
+  accessor is the wrong tool**: it answers `none` to both, so collapsing the two
+  would change an error code.  Those sites read `getObject?` and keep their arms
+  — no raw table read, and the distinction that *is* the semantics survives.  (3)
+  **The exemption is per declaration, not per file.**  `Model/State.lean` was
+  skipped whole, which is a 4800-line module that is not only accessors, so a raw
+  read added anywhere in it was invisible; `ACCESSOR_BODIES` names the twenty-one
+  bodies that *are* the accessors and the store primitives, and is reconciled in
+  both directions in **every** mode — `--rows` included, since that is the mode
+  Tier 0 calls — so a stale exemption fails rather than reading like coverage.
 
   Two mechanical notes, both the *one question, two answers* rule at the point
   where the fix could have introduced it.  The per-key inventory for this metric
@@ -2323,11 +2355,34 @@ one of the chain-write primitives, `SystemState.consumeReply` and
 registry in both directions.  A site either **states** its chain results (each
 named theorem must mention the site *and* a `donationChain…` form) or is recorded
 as a **half-step** of the composite that completes it, and the half-step chain
-must terminate in a stating entry.  Fourteen sites, eight stating.  A new
+must terminate in a stating entry.  Seventeen sites, eight stating.  A new
 definition that consumes a caller's Reply bare is a build failure on the day it
 is written — which is the shape this workstream exists to close, and the one
 level above the frontier the census deliberately stops at (composites inherit by
 `donationChainFrame`'s algebra, which is a composition rather than a claim).
+
+**And "every" meant every module either root reaches** (PR #895 review,
+`v0.35.12`).  `SeLe4n/Kernel/FrozenOps/` is reached by neither, and it is in no
+staged allowlist: it is built only by its own `lean_exe` target
+(`tests.FrozenOpsSuite`), so the closure this census claims held for every
+module except one that writes the live `Reply` record — `FrozenKernelObject.reply` carries `SeLe4n.Kernel.Reply`, links and
+all, and `Model.freeze` copies a live state's Reply objects verbatim, so a
+frozen state taken mid-call-chain holds a real reply stack.  And the gap was not
+theoretical: `frozenEndpointReply` cleared a caller's Reply **bare**, which is
+WS-RM's own defect surviving on the surface nothing was looking at.  Bringing it
+in cost three things.  The frozen reply now runs a frozen `reply_remove`
+(`frozenDetachReplyFrameAboveOrSelf` then the consume, in that order, since the
+detach reads the link the consume clears).  `frozenLinkCallerReply`'s guard read
+`caller.isNone` where `Model.linkReply` reads `Reply.isFree` — a fifth guard
+deciding one question differently, so a frame still on a live stack was linkable
+there while the live kernel refuses it; it reads `isFree` now.  And the
+discipline gained a third constructor, `mirrors`: `donationChainWellFormed` is a
+predicate on `SystemState` and the frozen store is a `FrozenMap`, so demanding a
+`donationChain…` result of a frozen site would demand a theorem that cannot be
+written, while accepting no record would be the silence this census refuses.  A
+`mirrors` entry names the live twin, which must itself resolve to a stating
+entry — a frozen writer with no live twin is a transition the live kernel never
+performs, which is a finding rather than an exemption.
 
 (7) **`donationChainFrame_of_objects_insert` is public and lives beside the
 predicate.**  It was private to the cancellation shape module; the fault-reply
@@ -3517,7 +3572,7 @@ code may assume:
   (non-broadcast) call site to `scripts/tlbi_local_allowlist.txt`.
 - **An `unsafe fn` body is not an unsafe context** (`v0.34.129`).  `sele4n-abi`
   and `sele4n-hal` both deny `unsafe_op_in_unsafe_fn`, so a hardware operation,
-  a raw-pointer dereference or a foreign call inside one of the HAL's thirteen
+  a raw-pointer dereference or a foreign call inside one of the HAL's ten
   `unsafe fn`s must sit in its own `unsafe { … }` block with its own
   `// SAFETY:` comment — which is what makes the HAL's stated discipline
   (*every unsafe block carries a `// SAFETY:` comment*) reach the bodies where
@@ -3531,9 +3586,23 @@ code may assume:
   evidence.  The live gate asks each site kind its own question — a `// SAFETY:`
   comment in the contiguous run above an `unsafe` **block**, a `# Safety` doc
   section on an `unsafe fn` **declaration**, which are Rust's two idioms and not
-  interchangeable — and the tree is at **125 of 125 justified**, so its baseline
-  is empty and any new unjustified site fails outright rather than raising a
-  floor.  The ARM ARM citation count is reported beside it and deliberately not
+  interchangeable — and the tree is at **125 of 125 justified** (113 blocks and
+  12 declarations, both counts emitted by the gate rather than written down
+  here), so its baseline is empty and any new unjustified site fails outright
+  rather than raising a floor.
+
+  **And the gate meant that sentence only from `v0.35.12`** (PR #895 review): it
+  accepted a `// SAFETY:` comment on a declaration too, as a fallback, under the
+  very comment saying the two are not interchangeable.  That is not leniency —
+  the idioms publish to different audiences.  A `// SAFETY:` comment is inside
+  the file, for the reviewer reading the next line; a `# Safety` section is
+  rustdoc, for the **caller** who must discharge the obligation and never opens
+  this file.  Taking the first for the second passes an `unsafe fn` that exposes
+  no contract at all to the people bound by it.  All twelve declarations already
+  carried a `# Safety` section, so removing the fallback failed nothing and
+  refuses the next one documented the wrong way; the self-test pins the
+  separation in **both** directions, each case keeping the justification and
+  writing it in the other kind's idiom.  The ARM ARM citation count is reported beside it and deliberately not
   enforced: deciding which sites touch hardware needs the body, which is the
   analysis-instead-of-a-contract shape this file retires twice above.  It also makes an *absence* checkable: the host
   `raw_syscall` mock is `unsafe fn` for signature parity alone, and its body

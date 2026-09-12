@@ -52,9 +52,27 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lean_code_view  # noqa: E402  (needs the path above)
 
-# A raw read is a subscript of the object table.  `.objects.insert` is a write
-# and is a different question (STOREOBJECTCHECKED_ADOPTION asks it).
-READ = re.compile(r"\.objects\[")
+# A raw read of an object table, in **either** spelling.  `.objects.insert` is a
+# write and is a different question (STOREOBJECTCHECKED_ADOPTION asks it).
+#
+# **Both spellings, because they are one read.**  `s.objects[k]?` is `GetElem?`
+# notation whose instance *is* `RHTable.get?`, which this tree proves outright
+# (`objects_getElem?_eq_get?`, by `rfl`).  Counting the bracket alone therefore
+# measured a spelling rather than a read, and the gap was not theoretical: a cut
+# wrote `Concurrency.updateObjectAt` in the method form and said so in its own
+# docstring — *"so the AK7-cascade raw-match floor stays at its v0.31.2
+# baseline"* — which is choosing a spelling to evade a metric.  A scanner that
+# can be satisfied by a rename is a scanner asserting nothing, and an enforced
+# zero that one spelling walks around is worse than no zero at all, because the
+# number reads like a measurement.
+#
+# The frozen surface is in scope for the same reason it was never out of it: the
+# claim is about *executable code discriminating a kernel object's variant at
+# the call site*, `FrozenSystemState.objects` holds the live `Reply`, `TCB` and
+# `SchedContext` records verbatim, and the hazard is identical.  It has its own
+# accessor family now (`Model/FrozenState.lean`), so both tables answer the
+# same question the same way.
+READ = re.compile(r"\.objects(?:\[|\.get\?)")
 
 DECL = re.compile(
     r"^(?:@\[[^\]]*\]\s*)?"
@@ -118,17 +136,73 @@ def classify(path: Path):
             yield decl, is_prop_decl, n_body
 
 
+# The definitions whose body IS the raw read, which is what makes each of them
+# the accessor or the store primitive rather than a caller of one.  Exempting
+# them hides nothing this census exists to catch: an accessor does the variant
+# discrimination once so that no call site has to, and a primitive does not
+# discriminate at all -- `storeObject` and `updateObjectAt` both apply to
+# whatever is stored.
+#
+# **Per declaration, not per file.**  An earlier cut skipped
+# `SeLe4n/Model/State.lean` whole, which is a 4800-line module that is not only
+# accessors, so a raw read added anywhere in it was invisible.  And it could not
+# express the frozen family at all, whose accessors share `FrozenOps/Core.lean`
+# with twenty-nine transitions that are not accessors.
+#
+# Reconciled in BOTH directions by `accessor_registry_violations`: an entry that
+# no longer reads raw is a **stale exemption**, and a stale exemption reads like
+# coverage.
+ACCESSOR_BODIES = {
+    # The live object store -- `SystemState.objects`.
+    ("SeLe4n/Model/State.lean", d): "live object-store accessor"
+    for d in ("getObject?", "getObjectType?", "getTcb?", "getEndpoint?",
+              "getNotification?", "getCNode?", "getVSpaceRoot?", "getUntyped?",
+              "getSchedContext?", "getReply?",
+              "lookupObject", "lookupCNode", "lookupVSpaceRoot")
+} | {
+    ("SeLe4n/Model/State.lean", d): "live object-store write primitive"
+    for d in ("storeObject", "storeObjectKindChecked")
+} | {
+    # The frozen object store -- `FrozenSystemState.objects`, which holds the
+    # live `TCB` / `Reply` / `SchedContext` records verbatim.
+    ("SeLe4n/Model/FrozenState.lean", "FrozenSystemState." + d):
+        "frozen object-store accessor"
+    for d in ("getObject?", "getTcb?", "getEndpoint?", "getNotification?",
+              "getCNode?", "getVSpaceRoot?", "getSchedContext?", "getReply?")
+} | {
+    # The lock domain's store primitive: it reads the store generically and
+    # writes it back, applying a lock-only transform to whatever is stored.
+    ("SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean", "updateObjectAt"):
+        "lock-domain store primitive; kind-agnostic, `f : KernelObject → KernelObject`",
+}
+
+
+def accessor_registry_violations(code: dict, exempt_hits: dict) -> list[str]:
+    """Registry entries that no longer name a raw-reading executable body."""
+    stale = [f"{f}|{d}" for (f, d) in ACCESSOR_BODIES if (f, d) not in exempt_hits]
+    if not stale:
+        return []
+    return [f"{len(stale)} accessor-registry entry(ies) no longer read the store raw "
+            f"({stale}) -- a stale exemption reads like coverage.  Remove the entry, or "
+            f"restore the body it names."]
+
+
 def census(view: Path):
-    code, spec = {}, {}
+    """(executable reads, specification reads, registry hits).
+
+    The third is what the registry is reconciled against, so an entry that stops
+    naming a raw read is reported rather than silently kept.
+    """
+    code, spec, exempt_hits = {}, {}, {}
     for f in sorted(view.rglob("SeLe4n/**/*.lean")):
         rel = str(f.relative_to(view))
-        # `Model/State.lean` defines the accessors; the raw read is their body.
-        if rel == "SeLe4n/Model/State.lean":
-            continue
         for decl, is_prop, n in classify(f):
+            if not is_prop and (rel, decl) in ACCESSOR_BODIES:
+                exempt_hits[(rel, decl)] = exempt_hits.get((rel, decl), 0) + n
+                continue
             bucket = spec if is_prop else code
             bucket[(rel, decl)] = bucket.get((rel, decl), 0) + n
-    return code, spec
+    return code, spec, exempt_hits
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +263,31 @@ def both (st : SystemState) (target : ObjId)
   match st.objects[target]? with
   | _ => st
 """, {("f.lean", "both"): 1}, {("f.lean", "both"): 1}),
+    # THE SPELLING CASE.  `s.objects[k]?` and `s.objects.get? k` are one read --
+    # `objects_getElem?_eq_get?` proves it by `rfl` -- so a census that counts
+    # the bracket alone is satisfied by a rename.  This case keeps the read and
+    # changes only how it is written, which is the mutation that finds the class.
+    "method_form_read": ("""
+def step (st : SystemState) (tid : ThreadId) : SystemState :=
+  match st.objects.get? tid.toObjId with
+  | some (.tcb t) => st
+  | _ => st
+""", {("f.lean", "step"): 1}, {}),
+    # ...and the two spellings in one declaration count twice, not once: the
+    # census counts reads, and a rename of either must not move the total.
+    "both_spellings": ("""
+def both (st st' : SystemState) : Bool :=
+  st.objects[a]? == st'.objects.get? a
+""", {("f.lean", "both"): 2}, {}),
+    # The frozen table is the same question: the records it holds are the live
+    # `TCB` / `Reply` / `SchedContext`, so a frozen transition discriminating a
+    # variant at the call site is the defect this census is named for.
+    "frozen_method_form_read": ("""
+def frozenStep (st : FrozenSystemState) (tid : ThreadId) : FrozenSystemState :=
+  match st.objects.get? tid.toObjId with
+  | some (.tcb t) => st
+  | _ => st
+""", {("f.lean", "frozenStep"): 1}, {}),
     # A comment quoting the pattern is not a read.
     "comment_only": ("""
 /-- Opens by matching `st.objects[oid]?`. -/
@@ -235,7 +334,16 @@ def main() -> int:
     if args.self_test:
         return self_test()
     view = code_view(REPO)
-    code, spec = census(view)
+    code, spec, exempt_hits = census(view)
+    # Reconciled in EVERY mode, `--rows` included: that is the mode the Tier 0
+    # baseline calls, so skipping it there would leave the registry checkable
+    # only by a command nothing runs — a gate with a silent default branch,
+    # which is the shape this project keeps paying for.
+    stale = accessor_registry_violations(code, exempt_hits)
+    if stale:
+        for problem in stale:
+            print(f"FAIL: {problem}", file=sys.stderr)
+        return 1
     if args.rows:
         for (f, d), n in sorted(code.items()):
             print(f"STORE_READ_CODE_SITE={f}|{d}|{n}")

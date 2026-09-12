@@ -93,9 +93,24 @@ ARM_ARM = re.compile(r"\(ARM ARM [A-Z][0-9]+(?:\.[0-9]+)*\)")
 
 
 def justified(run: str, is_declaration: bool) -> bool:
-    """Does this run carry the justification its site kind calls for?"""
+    """Does this run carry the justification its site kind calls for?
+
+    **Each kind, its own idiom, and no fallback between them.**  An earlier cut
+    let a declaration pass on a `// SAFETY:` comment as well, which reads like
+    leniency and is not: the two idioms publish to different audiences.  A
+    `// SAFETY:` comment is *inside* the file, for the reviewer reading the next
+    line; a `# Safety` doc section is rustdoc, for the **caller** who will have
+    to discharge the obligation and never opens this file.  Accepting the first
+    in place of the second passes an `unsafe fn` that exposes no contract at all
+    to the people bound by it — which is why this file's own comment above, and
+    `CLAUDE.md`, both say the two are *not interchangeable*.  The gate now says
+    so too.
+
+    The tree relies on the fallback nowhere: all twelve `unsafe fn`
+    declarations carry a `# Safety` section, so removing it fails nothing
+    today and refuses the next declaration documented the wrong way."""
     if is_declaration:
-        return bool(SAFETY_DECL.search(run) or SAFETY_BLOCK.search(run))
+        return bool(SAFETY_DECL.search(run))
     return bool(SAFETY_BLOCK.search(run))
 
 
@@ -171,19 +186,28 @@ def sites(path: Path):
 
 
 def census(root: Path):
-    """(unjustified inventory, total sites, sites carrying an ARM ARM citation)."""
+    """(unjustified inventory, total sites, ARM-ARM-citing sites, declarations).
+
+    The declaration count is reported because the two kinds are documented
+    differently and prose cites the number: a figure nothing emits is a figure
+    that goes stale, and this one had — `CLAUDE.md` said thirteen where the
+    tree has ten in the HAL.
+    """
     inventory: dict[str, int] = {}
     total = 0
     cited = 0
+    declarations = 0
     for path in sorted(root.glob("*/src/**/*.rs")):
         rel = str(path.relative_to(REPO))
         for _off, decl, run, is_decl in sites(path):
             total += 1
+            if is_decl:
+                declarations += 1
             if ARM_ARM.search(run):
                 cited += 1
             if not justified(run, is_decl):
                 inventory[f"{rel}|{decl}"] = inventory.get(f"{rel}|{decl}", 0) + 1
-    return inventory, total, cited
+    return inventory, total, cited, declarations
 
 
 def reconcile(current: dict[str, int], baseline: dict[str, int]) -> list[str]:
@@ -192,9 +216,11 @@ def reconcile(current: dict[str, int], baseline: dict[str, int]) -> list[str]:
     for key, count in sorted(current.items()):
         if key not in baseline:
             problems.append(
-                f"NEW unjustified unsafe site: {key} ({count}).  Every `unsafe` block and "
-                f"`unsafe fn` needs a `// SAFETY:` comment in the contiguous comment run "
-                f"immediately above it — what a reviewer reads before the operation."
+                f"NEW unjustified unsafe site: {key} ({count}).  An `unsafe` BLOCK needs a "
+                f"`// SAFETY:` comment in the contiguous comment run immediately above it — "
+                f"what a reviewer reads before the operation.  An `unsafe fn` DECLARATION "
+                f"needs a `# Safety` doc section, which is what its CALLERS read; the two "
+                f"idioms are not interchangeable."
             )
         elif count > baseline[key]:
             problems.append(
@@ -255,8 +281,28 @@ fn f() {
 unsafe fn f() {}
 """),
     ("a justified `unsafe fn`", True, """
+/// # Safety
+///
+/// The caller holds the lock this reads.
+unsafe fn f() {}
+"""),
+    # TOKEN-PRESERVING: the justification is there, in the idiom the *other*
+    # site kind uses.  A declaration publishes its obligation to callers who
+    # never open this file, so a comment they cannot see is not that contract —
+    # and this is the case the retired `SAFETY_BLOCK` fallback accepted.
+    ("an `unsafe fn` documented in the BLOCK idiom", False, """
 // SAFETY: the caller holds the lock this reads.
 unsafe fn f() {}
+"""),
+    # ...and the converse still holds: a block wants the comment, not a doc
+    # section, so the two cases together pin the separation in both directions.
+    ("an `unsafe` block documented in the DECLARATION idiom", False, """
+fn f() {
+    /// # Safety
+    ///
+    /// The pointer is valid for the lifetime of the call.
+    unsafe { g() }
+}
 """),
     ("an `unsafe {` inside a comment is not a site", True, """
 fn f() {
@@ -369,13 +415,14 @@ def _self_test() -> int:
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return _self_test()
-    inventory, total, cited = census(REPO / "rust")
+    inventory, total, cited, declarations = census(REPO / "rust")
     if "--rows" in argv:
         for key, count in sorted(inventory.items()):
             print(f"UNJUSTIFIED_UNSAFE_SITE={key}|{count}")
         print(f"UNSAFE_SITES_TOTAL={total}")
         print(f"UNSAFE_SITES_UNJUSTIFIED={sum(inventory.values())}")
         print(f"UNSAFE_SITES_ARM_ARM_CITED={cited}  (diagnostic, not enforced)")
+        print(f"UNSAFE_FN_DECLARATIONS={declarations}  (of the total; the rest are blocks)")
         return 0
     if "--update" in argv:
         BASELINE.write_text(json.dumps(inventory, indent=2, sort_keys=True) + "\n",
@@ -394,10 +441,11 @@ def main(argv: list[str]) -> int:
             print(f"FAIL: {p}", file=sys.stderr)
         return 1
     justified = total - sum(inventory.values())
-    print(f"PASS: {justified}/{total} unsafe sites carry a `// SAFETY:` justification in the "
-          f"comment run above them; {sum(inventory.values())} pinned at or below the floor "
-          f"across {len(baseline)} key(s).  {cited}/{total} also cite the ARM ARM "
-          f"(diagnostic).")
+    print(f"PASS: {justified}/{total} unsafe sites carry the justification their kind calls "
+          f"for — a `// SAFETY:` comment above each of the {total - declarations} block(s), a "
+          f"`# Safety` doc section on each of the {declarations} `unsafe fn` declaration(s); "
+          f"{sum(inventory.values())} pinned at or below the floor across {len(baseline)} "
+          f"key(s).  {cited}/{total} also cite the ARM ARM (diagnostic).")
     return 0
 
 

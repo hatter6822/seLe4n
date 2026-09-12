@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.11` (`lakefile.toml`) |
+| **Package version** | `0.35.12` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 375,100 across 329 Lean files |
+| **Production LoC** | 375,325 across 329 Lean files |
 | **Test LoC** | 75,860 across 70 Lean test suites |
-| **Proved declarations** | 12,605 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 12,606 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1874,7 +1874,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    ceiling, and 96.9% of what it counted was specification vocabulary.
    Its successors are `STORE_READ_CODE` — the executable population,
    **zero** and enforced as zero since v0.35.8 — and `STORE_READ_SPEC`,
-   a diagnostic.)
+   a diagnostic.  Since v0.35.12 that zero counts **both** spellings of
+   the read, `s.objects[k]?` and `s.objects.get? k`, which the
+   `GetElem?` instance makes one operation; it counted the bracket
+   alone before, and forty executable reads were in the method form.
+   The frozen execution surface is in scope on the same footing and is
+   also at zero, through the accessor family in
+   `SeLe4n/Model/FrozenState.lean`.)
 
    **Axiom budget for SM3.C**: 0 Lean axioms, 0 sorries.  Every
    theorem depends only on the standard Lean foundational axioms

@@ -127,8 +127,8 @@ def frozenChooseThread (st : FrozenSystemState)
             -- Skip current thread (dequeue-on-dispatch semantics)
             if currentTid == some tid then false
             else
-              match st.objects.get? tid.toObjId with
-              | some (.tcb tcb) =>
+              match st.getTcb? tid with
+              | some tcb =>
                   tcb.domain == (st.scheduler.activeDomain) &&
                   tcb.ipcState == .ready
               | _ => false)
@@ -149,8 +149,8 @@ def frozenSchedule : FrozenKernel Unit :=
         | .error e => .error e
         | .ok stSaved => frozenSetCurrentThread none stSaved
     | .ok (some tid, st') =>
-        match st'.objects.get? tid.toObjId with
-        | some (.tcb tcb) =>
+        match st'.getTcb? tid with
+        | some tcb =>
             if tcb.domain == (st'.scheduler.activeDomain) &&
                tcb.ipcState == .ready then
               match frozenSaveOutgoingContext st' with
@@ -199,8 +199,8 @@ def frozenTimerTick : FrozenKernel Unit :=
     | none =>
         .ok ((), { st with machine := tick st.machine })
     | some tid =>
-        match st.objects.get? tid.toObjId with
-        | some (.tcb tcb) =>
+        match st.getTcb? tid with
+        | some tcb =>
             if tcb.timeSlice ≤ 1 then
               -- Time-slice expired: reset to platform-configured value, update TCB
               let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
@@ -263,8 +263,8 @@ the notification has **no** ordinary waiters and its bound TCB is currently
 `none` on a dangling binding or a bound thread doing something else. -/
 private def frozenBoundDeliveryTarget? (st : FrozenSystemState)
     (notificationId : SeLe4n.ObjId) : Option (SeLe4n.ThreadId × SeLe4n.ObjId) :=
-  match st.objects.get? notificationId with
-  | some (.notification ntfn) =>
+  match st.getNotification? notificationId with
+  | some ntfn =>
       if ntfn.waitingThreads.val.isEmpty then
         match ntfn.boundTCB with
         | some t =>
@@ -300,7 +300,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
     (signaller : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
     : FrozenKernel Unit :=
   fun st =>
-    match st.objects.get? notificationId with
+    match st.getObject? notificationId with
     | some (.notification ntfn) =>
         -- **The signaller must resolve to a live TCB**, for the reason the
         -- replier must in `frozenEndpointReply`, and with one failure mode more.
@@ -433,7 +433,7 @@ via `frozenStoreTcbIpcState` makes the thread ineligible for selection by
 def frozenNotificationWait (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) : FrozenKernel (Option SeLe4n.Badge) :=
   fun st =>
-    match st.objects.get? notificationId with
+    match st.getObject? notificationId with
     | some (.notification ntfn) =>
         match ntfn.pendingBadge with
         | some badge =>
@@ -519,8 +519,8 @@ receive queue is unaffected — a thread parked to *receive* correctly holds
 nothing. -/
 private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (st : FrozenSystemState) : Except KernelError (SeLe4n.ThreadId × TCB × FrozenSystemState) :=
-  match st.objects.get? endpointId with
-  | some (.endpoint ep) =>
+  match st.getEndpoint? endpointId with
+  | some ep =>
       let queue := if isReceiveQ then ep.receiveQ else ep.sendQ
       match queue.head with
       | none => .error .endpointQueueEmpty
@@ -571,7 +571,7 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
     else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
     else
-    match st.objects.get? endpointId with
+    match st.getObject? endpointId with
     | some (.endpoint ep) =>
         -- **The sender is resolved once, for both orderings.**  The blocking
         -- path already did this and the rendezvous path did not, so whether a
@@ -657,7 +657,7 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     : FrozenKernel SeLe4n.ThreadId :=
   fun st =>
-    match st.objects.get? endpointId with
+    match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.sendQ.head with
         | some _sender =>
@@ -754,7 +754,7 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
     else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
     else
-    match st.objects.get? endpointId with
+    match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
         | some _receiver =>
@@ -840,8 +840,8 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
             | none => .error .replyCapInvalid
             | some fwdRid =>
                 if fwdRid == replyId then
-                  match st.objects.get? replyId.toObjId with
-                  | some (.reply r) =>
+                  match st.getReply? replyId with
+                  | some r =>
                       if r.caller = some targetId then
                         -- **The composing thread must be resolvable**, because
                         -- the reply's provenance is read from it.  A `replierId`
@@ -864,7 +864,12 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
                         | some _ =>
                         match frozenStoreTcb targetId targetTcb' st with
                         | .error e => .error e
-                        | .ok ((), st') =>
+                        | .ok ((), st'') =>
+                            -- **WS-RM, frozen mirror**: the frame above comes off
+                            -- the stack BEFORE its caller link is consumed — the
+                            -- detach reads the link the consume clears, so the
+                            -- order is the content, exactly as it is live.
+                            let st' := frozenDetachReplyFrameAboveOrSelf st'' replyId
                             match frozenStoreObject replyId.toObjId
                                     (.reply { r with caller := none }) st' with
                             | .error e => .error e
@@ -896,7 +901,7 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
 Uses zero-hash bit extraction for direct array indexing. -/
 def frozenCspaceLookup (st : FrozenSystemState) (cptr : SeLe4n.CPtr)
     (rootId : SeLe4n.ObjId) : Except KernelError Capability :=
-  match st.objects.get? rootId with
+  match st.getObject? rootId with
   | some (.cnode cn) =>
       let slot := SeLe4n.Slot.ofNat (extractBits cptr.toNat 0 cn.radixWidth)
       match cn.slots.lookup slot with
@@ -923,7 +928,7 @@ where a mint operation clobbers an existing capability without revoking it. -/
 def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     (cap : Capability) : FrozenKernel Unit :=
   fun st =>
-    match st.objects.get? rootId with
+    match st.getObject? rootId with
     | some (.cnode cn) =>
         -- V5-P: Reject if slot is already occupied
         match cn.slots.lookup slot with
@@ -941,7 +946,7 @@ def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
 def frozenCspaceDelete (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     : FrozenKernel Unit :=
   fun st =>
-    match st.objects.get? rootId with
+    match st.getObject? rootId with
     | some (.cnode cn) =>
         let slots' := cn.slots.erase slot
         let cn' : FrozenCNode := { cn with slots := slots' }
@@ -962,8 +967,8 @@ def frozenVspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
   fun st =>
     match st.asidTable.get? asid with
     | some rootId =>
-        match st.objects.get? rootId with
-        | some (.vspaceRoot vsr) =>
+        match st.getVSpaceRoot? rootId with
+        | some vsr =>
             if vsr.asid == asid then
               match vsr.mappings.get? vaddr with
               | some entry => .ok (entry, st)
@@ -1011,7 +1016,7 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
     else if priority > 255 then .error .invalidArgument
     else if domain ≥ 16 then .error .invalidArgument
     else
-      match st.objects.get? scId with
+      match st.getObject? scId with
       | some (.schedContext sc) =>
         let updated : SeLe4n.Kernel.SchedContext :=
           { sc with
@@ -1049,12 +1054,12 @@ dispatch), so the bind only updates bidirectional references. -/
 def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
     : FrozenKernel Unit :=
   fun st =>
-    match st.objects.get? scId with
+    match st.getObject? scId with
     | some (.schedContext sc) =>
       if sc.boundThread.isSome then .error .illegalState
       else
-        match st.objects.get? threadId.toObjId with
-        | some (.tcb tcb) =>
+        match st.getTcb? threadId with
+        | some tcb =>
           match tcb.schedContextBinding with
           | .unbound =>
             let scIdTyped : SeLe4n.SchedContextId := ⟨scId.toNat⟩
@@ -1091,14 +1096,14 @@ to a non-TCB" case explicitly with `.error .objectNotFound`, rather than
 leaving a half-mutated state behind. -/
 def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
   fun st =>
-    match st.objects.get? scId with
+    match st.getObject? scId with
     | some (.schedContext sc) =>
       match sc.boundThread with
       | none => .error .illegalState
       | some tid =>
         -- AK8-H Phase 1: Validate TCB lookup BEFORE any state mutation.
-        match st.objects.get? tid.toObjId with
-        | some (.tcb tcb) =>
+        match st.getTcb? tid with
+        | some tcb =>
           -- WS-OD (PR #894 review): **the donated-holder rejection this path
           -- claims to mirror.**  `schedContextUnbind` refuses to unbind a holder
           -- that received the context by donation, because erasing that binding
@@ -1143,13 +1148,13 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
     | none =>
         .ok ((), { st with machine := tick st.machine })
     | some tid =>
-        match st.objects.get? tid.toObjId with
-        | some (.tcb tcb) =>
+        match st.getTcb? tid with
+        | some tcb =>
           match tcb.schedContextBinding with
           | .bound scId | .donated scId _ =>
             -- CBS path: decrement SchedContext budget
-            match st.objects.get? scId.toObjId with
-            | some (.schedContext sc) =>
+            match st.getSchedContext? scId with
+            | some sc =>
               let result := SeLe4n.Kernel.cbsBudgetCheck sc st.machine.timer 1
               let updatedSc := result.1
               let wasPreempted := result.2
@@ -1234,8 +1239,8 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
           -- If resumed thread has higher priority than current, force reschedule
           let st' := match (st'.scheduler.current) with
             | some curTid =>
-              match st'.objects.get? curTid.toObjId with
-              | some (.tcb curTcb) =>
+              match st'.getTcb? curTid with
+              | some curTcb =>
                 if tcb'.priority.val > curTcb.priority.val then
                   { st' with scheduler := { st'.scheduler with current := none } }
                 else st'
@@ -1275,8 +1280,8 @@ def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
         -- and `.donated`: the TCB).
         match targetTcb.schedContextBinding.ownScId? with
         | some scId =>
-          match st.objects.get? scId.toObjId with
-          | some (.schedContext sc) =>
+          match st.getSchedContext? scId with
+          | some sc =>
             let sc' := { sc with priority := newPriority }
             match st.objects.set scId.toObjId (.schedContext sc') with
             | some objs => .ok ((), { st with objects := objs })
@@ -1334,8 +1339,8 @@ def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
       | none => .error .objectNotFound
       | some tcb =>
         -- Step 4: VSpace root validity (frozen VSpaceRoot)
-        match st.objects.get? tcb.vspaceRoot with
-        | some (.vspaceRoot vsr) =>
+        match st.getVSpaceRoot? tcb.vspaceRoot with
+        | some vsr =>
           -- Step 5: Mapping check via FrozenMap
           match vsr.mappings.get? addr with
           | some (paddr, perms) =>

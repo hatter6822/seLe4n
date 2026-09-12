@@ -221,10 +221,15 @@ coherence fact, `answeredHeadContextIsServerDonation`); and `.replyRecv`'s pop m
 `Reply.isFree` reads both stack links.  What keeps the surface closed is derived
 rather than listed: `ReplyStackWriteCensus` (Tier 1) collects every definition
 that writes reply-stack data from the elaborated environment and requires each to
-name a chain result or to be recorded as a half-step of the composite that does —
-with the primitive list it starts from held to the code by a second, independent
-derivation, since `storeObject` takes a whole object and a record update can
-rewrite a stack link without naming any helper.  The cost is stated with the fix:
+name a chain result, or to be recorded as a half-step of the composite that does,
+or — on the frozen execution surface, which has no chain predicate of its own —
+as mirroring a live site that states one — with the primitive list it starts from
+held to the code by a second, independent derivation, since `storeObject` takes a
+whole object and a record update can rewrite a stack link without naming any
+helper.  The frozen surface joined at `v0.35.12`: it is reached by neither
+library root, so the closure held everywhere except one module that writes the
+live `Reply` record, and the frozen reply was clearing a caller's Reply bare —
+this workstream's own defect, on the surface nothing was looking at.  The cost is stated with the fix:
 removing a caller from the *middle* of a chain does not preserve the donation
 accounting, so a delegate answering an owner out of order leaves that owner
 `.unbound` and the context settles on the intermediate caller — seL4-MCS's own

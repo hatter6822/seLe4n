@@ -106,12 +106,12 @@ be selected is not visible in its TCB. -/
 def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
   let objectsAgree :=
     ls.objectIndex.all (fun oid =>
-      match fs.objects.get? oid, ls.getObject? oid with
+      match fs.getObject? oid, ls.getObject? oid with
       | some f, some l => frozenObjectAgrees f l
       | none,   none   => true
       | _, _           => false)
     && fs.objects.indexMap.toList.all (fun kv =>
-         match fs.objects.get? kv.1, ls.getObject? kv.1 with
+         match fs.getObject? kv.1, ls.getObject? kv.1 with
          | some f, some l => frozenObjectAgrees f l
          | none,   none   => true
          | _, _           => false)

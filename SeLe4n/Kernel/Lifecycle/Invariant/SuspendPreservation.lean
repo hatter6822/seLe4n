@@ -1374,7 +1374,7 @@ theorem chooseThread_state_eq (st : SystemState) (optTid : Option SeLe4n.ThreadI
     (stChoose : SystemState) (hChoose : chooseThread st = .ok (optTid, stChoose)) :
     stChoose = st := by
   unfold chooseThread chooseThreadOnCore at hChoose
-  cases hPick : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId)
+  cases hPick : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore bootCoreId)
                                    (st.scheduler.activeDomainOnCore bootCoreId) with
   | error _ => simp [hPick] at hChoose
   | ok best =>

@@ -12630,6 +12630,29 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def removeCallerReplyFrame[^\n]*(\n([
 # NEGATIVE, token-preserving -- it keeps both steps and swaps them.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeCallerReplyFrame[^\n]*(\n([ \t][^\n]*)?)*detachReplyFrameAboveOrSelf \(SystemState\.consumeCallerReply" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 
+# (1b) WS-RM on the FROZEN surface (PR #895 review, v0.35.12).  `FrozenOps` is
+# reached by neither library root and is in no staged allowlist, so the RM5.3
+# census could not see it -- and `frozenEndpointReply` was clearing a caller's
+# Reply bare, this workstream's own defect on the surface nothing watched.
+run_check "INVARIANT" rg -n '^def frozenDetachReplyFrameAbove' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenDetachReplyFrameAboveOrSelf' SeLe4n/Kernel/FrozenOps/Core.lean
+# The reciprocity test is what confines the one store to the genuine frame
+# above: a target that does not name us back is a refusal, never a write.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenDetachReplyFrameAbove[^\n]*(\n([ \t][^\n]*)?)*if a\.prev != some rid then \.error \.invalidArgument" SeLe4n/Kernel/FrozenOps/Core.lean'
+# NEGATIVE, token-preserving: it keeps the test and the write and makes a
+# non-reciprocating link a write instead of a refusal.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenDetachReplyFrameAbove[^\n]*(\n([ \t][^\n]*)?)*if a\.prev == some rid then \.error \.invalidArgument" SeLe4n/Kernel/FrozenOps/Core.lean'
+# The frozen reply detaches before it consumes, in the order the live one does.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*let st. := frozenDetachReplyFrameAboveOrSelf st.. replyId[^\n]*(\n([ \t][^\n]*)?)*caller := none" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# NEGATIVE, token-preserving -- it keeps both steps and swaps them.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*caller := none[^\n]*(\n([ \t][^\n]*)?)*frozenDetachReplyFrameAboveOrSelf" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# `Reply.isFree` is the ONE spelling of "may be linked to a new caller": it
+# reads both stack links, and the frozen guard read `caller` alone, so a frame
+# still on a live stack was linkable there while the live kernel refuses it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenLinkCallerReply[^\n]*(\n([ \t][^\n]*)?)*if r\.isFree then" SeLe4n/Kernel/FrozenOps/Core.lean'
+# NEGATIVE, token-preserving: it keeps the guard and asks the weaker question.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenLinkCallerReply[^\n]*(\n([ \t][^\n]*)?)*if r\.caller\.isNone then" SeLe4n/Kernel/FrozenOps/Core.lean'
+
 # (2) Both spines run the composite rather than a bare consume.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*removeCallerReplyFrame target rid" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReply\b[^\n]*(\n([ \t][^\n]*)?)*removeCallerReplyFrame target rid \(ensureRunnable st. target\)" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'

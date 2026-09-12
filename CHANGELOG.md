@@ -1,3 +1,90 @@
+## v0.35.12 — PR #895 review: a spelling is not a read, two idioms are not one, and the frozen surface was never in the closure
+
+Three findings from the review of PR #895, each verified against the code before
+being acted on, and each against a gate this range itself wrote.
+
+**A spelling is not a read** (`scripts/lean_store_read_census.py`).  The
+`STORE_READ_CODE` zero that `v0.35.8` made a `ZERO_METRICS` entry counted
+`s.objects[k]?` and not `s.objects.get? k` — *the same read*, since the
+`GetElem?` instance is `RHTable.get?` and this tree proves it by `rfl`
+(`objects_getElem?_eq_get?`).  Forty executable reads were in the method form,
+and one of them said so in its own docstring: `Concurrency.updateObjectAt` was
+written that way *"so the AK7-cascade raw-match floor stays at its v0.31.2
+baseline"*, which is choosing a spelling to evade a metric, and its second claim
+— that no typed accessor applied — was false, `getObject?` being the
+kind-agnostic one.  The census reads both spellings now and the tree is back to
+**zero** honestly:
+
+- `chooseBestRunnableEffective` reads `getTcb?` and `chooseThreadOnCore` passes
+  `getObject?`, with `chooseBestRunnableEffective_unbound_equiv` and the
+  `PerCoreChooseThread` inductions restated in accessor vocabulary; the seven-way
+  kind analyses collapse to the accessor's two arms, which is what an accessor is
+  for.
+- The **frozen** execution surface gains the accessor family it never had
+  (`FrozenSystemState.getObject?` and seven typed siblings in
+  `Model/FrozenState.lean`), `FrozenOps.frozenLookup*` are stated over them
+  rather than beside them, and twenty-nine frozen transitions stop discriminating
+  variants at the call site.  Where a site distinguishes *wrong kind* from
+  *absent* — two different error codes — it reads `getObject?` and keeps its
+  arms, since the typed accessor answers `none` to both and collapsing them would
+  change behaviour.
+- The exemption is now **per declaration**, not per file: `Model/State.lean` was
+  skipped whole, which is a 4800-line module that is not only accessors.
+  `ACCESSOR_BODIES` names the twenty-one bodies that *are* the accessors and the
+  store primitives, reconciled in both directions in **every** mode — `--rows`
+  included, since that is the mode Tier 0 calls.
+
+**Two idioms are not one** (`scripts/check_unsafe_block_justifications.py`).  The
+gate accepted a `// SAFETY:` comment on an `unsafe fn` *declaration* as a
+fallback, under the comment saying the two idioms are not interchangeable.  They
+address different readers — a comment is for the reviewer of the next line, a
+`# Safety` section is rustdoc for the caller who must discharge the obligation —
+so the fallback passed a declaration publishing no contract to the people bound
+by it.  All twelve declarations already carried a `# Safety` section, so removing
+it failed nothing; the self-test pins the separation in both directions, each
+case keeping the justification and writing it in the other kind's idiom.  The
+gate also emits the block and declaration counts, because prose cited a figure
+nothing produced and it had gone stale — `CLAUDE.md` said the HAL has thirteen
+`unsafe fn`s where it has ten.
+
+**The frozen surface was never in the closure**
+(`SeLe4n/Testing/ReplyStackWriteCensus.lean`).  WS-RM's closure statement —
+*every reply-stack write names a chain result* — held for every module either
+library root reaches, and `SeLe4n/Kernel/FrozenOps/` is reached by neither and is
+in no staged allowlist.  `FrozenKernelObject.reply` carries the live
+`SeLe4n.Kernel.Reply`, links and all, and `Model.freeze` copies a live state's
+Reply objects verbatim, so a frozen state taken mid-call-chain holds a real reply
+stack — and `frozenEndpointReply` was clearing a caller's Reply **bare**, which
+is WS-RM's own defect surviving on the surface nothing watched.  Bringing it in
+cost three things:
+
+- `frozenDetachReplyFrameAbove` / `…OrSelf`, the frozen `reply_remove`, and the
+  frozen reply runs the detach **before** the consume, in the order the live one
+  does, since the detach reads the link the consume clears.
+- `frozenLinkCallerReply` read `caller.isNone` where `Model.linkReply` reads
+  `Reply.isFree` — a fifth guard deciding one question differently, so a frame
+  still on a live reply stack was linkable there while the live kernel refuses
+  it.  It reads `isFree` now.
+- `ChainDiscipline` gains `mirrors`: `donationChainWellFormed` is a predicate on
+  `SystemState` and the frozen store is a `FrozenMap`, so requiring a
+  `donationChain…` result of a frozen site would require a theorem that cannot be
+  written, while accepting no record would be the silence the census refuses.  A
+  `mirrors` entry names the live twin, which must itself resolve to a stating
+  entry.  Seventeen sites, eight stating, three mirroring.
+
+Every gate change is mutation-verified on the live tree: the census's decisive
+self-test case keeps the read and changes only its spelling, and fails under the
+old regex; the registry's staleness check fires in `--rows`; the unsafe gate's
+two new cases keep the justification and swap the idiom; the reply-stack census
+rejects a freshly injected bare frozen consume; and the three new Tier 3
+negatives are silent on a clean tree and fire on a token-preserving mutation.
+One of them did not, the first time — a gap opening at a newline cannot cross a
+token that sits mid-line — which is how the flaw was found before it shipped; a
+sweep of every anchor in the file found no second instance.
+
+All 33 frozen differential scenarios pass, including `FO-031`, which is the
+agreement between the frozen reply and the live one.
+
 ## v0.35.11 — The sweep, run over every resolved footprint
 
 `v0.35.10` closed the reply path's missing coverage and observed, without acting

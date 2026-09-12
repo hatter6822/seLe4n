@@ -240,8 +240,14 @@ The discharge is now real.  `scripts/check_unsafe_block_justifications.py` runs
 in Tier 0, asks each site kind Rust's own question (a `// SAFETY:` comment in
 the contiguous comment run above an `unsafe` **block**; a `# Safety` doc section
 on an `unsafe fn` **declaration**), and the tree is at **125 of 125 sites
-justified** — the fourteen that were not are fixed in the same cut, so the
-baseline is empty and the gate is a prohibition rather than a floor.  The ARM ARM
+justified** — 113 blocks and 12 declarations, both counts emitted by the gate —
+so the baseline is empty and the gate is a prohibition rather than a floor.  The
+fourteen that were not justified are fixed in the same cut.  At v0.35.12 the gate
+stopped accepting a `// SAFETY:` comment as a fallback on a *declaration*: the
+two idioms address different readers — a comment is for the reviewer of the next
+line, a `# Safety` section is rustdoc for the caller who must discharge the
+obligation — so taking one for the other passes an `unsafe fn` that publishes no
+contract to the people bound by it.  The ARM ARM
 citation count the original finding named (**50 of 125**) is reported as a
 diagnostic and not enforced: requiring an architecture-manual citation of a
 raw-pointer dereference that touches no hardware would be a scanner matching a

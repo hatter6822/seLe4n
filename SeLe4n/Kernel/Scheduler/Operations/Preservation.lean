@@ -67,7 +67,7 @@ theorem chooseThread_preserves_state
     (hStep : chooseThread st = .ok (next, st')) :
     st' = st := by
   unfold chooseThread chooseThreadOnCore at hStep
-  cases hPick : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
+  cases hPick : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hPick] at hStep
   | ok best =>
       cases best with
@@ -2173,7 +2173,7 @@ private theorem chooseThread_preserves_domainSchedule
     (hStep : chooseThread st = .ok (opt, stCT)) :
     stCT.scheduler.domainSchedule = st.scheduler.domainSchedule := by
   unfold chooseThread chooseThreadOnCore at hStep
-  cases hCB : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
+  cases hCB : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hCB] at hStep
   | ok val =>
     simp [hCB] at hStep
@@ -2453,7 +2453,7 @@ private theorem chooseBestInBucket_edf_bridge
     (hDomEq : tcbSel.domain = (st.scheduler.activeDomainOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
-    (hResult : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId)
+    (hResult : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore bootCoreId)
       (st.scheduler.activeDomainOnCore bootCoreId) = .ok (some (tid, resPrio, resDl)))
     (hObj : st.objects[tid.toObjId]? = some (.tcb tcbSel)) :
     -- EDF property over the DEQUEUED runnable set (post-remove)
@@ -2475,18 +2475,18 @@ private theorem chooseBestInBucket_edf_bridge
         ((RunQueue.mem_toList_iff_mem _ t).mp hMemDq)).1
   -- Convert to objects.get?
   have hAllTcbGet : ∀ u, u ∈ (st.scheduler.runQueueOnCore bootCoreId).toList →
-      ∃ utcb, st.objects.get? u.toObjId = some (.tcb utcb) := by
+      ∃ utcb, st.getObject? u.toObjId = some (.tcb utcb) := by
     intro u hMu
     obtain ⟨utcb, hutcb⟩ := hAllTcb u (by simpa [SchedulerState.runnable] using hMu)
     exact ⟨utcb, hutcb⟩
-  have hObjGet : st.objects.get? tid.toObjId = some (.tcb tcbSel) := hObj
+  have hObjGet : st.getObject? tid.toObjId = some (.tcb tcbSel) := hObj
   -- Domain-eligibility helper
   have eligOfDom : ∀ (tcb : TCB), tcb.domain = tcbSel.domain →
       (fun tc : TCB => tc.domain == (st.scheduler.activeDomainOnCore bootCoreId)) tcb = true := by
     intro tcb htDom; simp; rw [htDom, hDomEq]
   -- Unfold chooseBestInBucket
   unfold chooseBestInBucket at hResult
-  cases hBucket : chooseBestRunnableInDomain st.objects.get?
+  cases hBucket : chooseBestRunnableInDomain st.getObject?
       (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket (st.scheduler.activeDomainOnCore bootCoreId) none with
   | error e => simp [hBucket] at hResult
   | ok bestB =>
@@ -2494,7 +2494,7 @@ private theorem chooseBestInBucket_edf_bridge
     | none =>
       -- ── Full-scan fallback ──
       simp only [hBucket] at hResult
-      cases hFull : chooseBestRunnableInDomain st.objects.get?
+      cases hFull : chooseBestRunnableInDomain st.getObject?
           (st.scheduler.runQueueOnCore bootCoreId).toList (st.scheduler.activeDomainOnCore bootCoreId) none with
       | error e => simp [hFull] at hResult
       | ok bestF =>
@@ -2505,7 +2505,7 @@ private theorem chooseBestInBucket_edf_bridge
           have hTripleEq : triple = (tid, resPrio, resDl) := by
             simp at hResult; exact hResult
           subst hTripleEq
-          have hFields := chooseBestRunnableBy_result_fields st.objects.get?
+          have hFields := chooseBestRunnableBy_result_fields st.getObject?
             (fun tc => tc.domain == (st.scheduler.activeDomainOnCore bootCoreId))
             (st.scheduler.runQueueOnCore bootCoreId).toList none tid resPrio resDl hFull
             (by intro _ _ _ h; simp at h)
@@ -2517,10 +2517,10 @@ private theorem chooseBestInBucket_edf_bridge
             cases tObj with
             | tcb tcb =>
               intro htDom _htEffPrio htPrio
-              have hTObjGet : st.objects.get? t.toObjId = some (.tcb tcb) := hTObj
+              have hTObjGet : st.getObject? t.toObjId = some (.tcb tcb) := hTObj
               have hMemList : t ∈ (st.scheduler.runQueueOnCore bootCoreId).toList := by
                 simpa [SchedulerState.runnable] using hMemOrig
-              have hOpt := chooseBestRunnableBy_optimal st.objects.get?
+              have hOpt := chooseBestRunnableBy_optimal st.getObject?
                 (fun tc => tc.domain == (st.scheduler.activeDomainOnCore bootCoreId))
                 (st.scheduler.runQueueOnCore bootCoreId).toList tid tcbSel.priority tcbSel.deadline
                 hFull hAllTcbGet
@@ -2535,21 +2535,21 @@ private theorem chooseBestInBucket_edf_bridge
         simp at hResult; exact hResult
       subst hTripleEq
       have hBucketAllTcb : ∀ u, u ∈ (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket →
-          ∃ utcb, st.objects.get? u.toObjId = some (.tcb utcb) := by
+          ∃ utcb, st.getObject? u.toObjId = some (.tcb utcb) := by
         intro u hU
         have hURq := RunQueue.maxPriorityBucket_subset (st.scheduler.runQueueOnCore bootCoreId) hwf u hU
         obtain ⟨utcb, hutcb⟩ := hAllTcb u (by
           simpa [SchedulerState.runnable] using
             RunQueue.membership_implies_flat (st.scheduler.runQueueOnCore bootCoreId) u hURq)
         exact ⟨utcb, hutcb⟩
-      have hFields := chooseBestRunnableBy_result_fields st.objects.get?
+      have hFields := chooseBestRunnableBy_result_fields st.getObject?
         (fun tc => tc.domain == (st.scheduler.activeDomainOnCore bootCoreId))
         (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket none tid resPrio resDl hBucket
         (by intro _ _ _ h; simp at h)
       obtain ⟨resTcb, hResTcb, hResPrio, hResDl⟩ := hFields
       rw [hObjGet] at hResTcb; cases hResTcb; subst hResPrio; subst hResDl
       have hTidInBucket : tid ∈ (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket :=
-        chooseBestRunnableBy_result_mem st.objects.get?
+        chooseBestRunnableBy_result_mem st.getObject?
           (fun tc => tc.domain == (st.scheduler.activeDomainOnCore bootCoreId))
           (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket tid tcbSel.priority tcbSel.deadline
           hBucket hBucketAllTcb
@@ -2578,8 +2578,8 @@ private theorem chooseBestInBucket_edf_bridge
           have hTInBucket :=
             RunQueue.mem_maxPriorityBucket_of_threadPriority (st.scheduler.runQueueOnCore bootCoreId) hwf
               t maxPrio hTInRq hTTP hMP
-          have hTObjGet : st.objects.get? t.toObjId = some (.tcb tcb) := hTObj
-          have hOpt := chooseBestRunnableBy_optimal st.objects.get?
+          have hTObjGet : st.getObject? t.toObjId = some (.tcb tcb) := hTObj
+          have hOpt := chooseBestRunnableBy_optimal st.getObject?
             (fun tc => tc.domain == (st.scheduler.activeDomainOnCore bootCoreId))
             (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket tid tcbSel.priority tcbSel.deadline
             hBucket hBucketAllTcb
@@ -2606,7 +2606,7 @@ private theorem schedule_preserves_edfCurrentHasEarliestDeadline
     edfCurrentHasEarliestDeadline st' := by
   unfold schedule SystemState.getTcb? at hStep
   simp only [chooseThread, chooseThreadOnCore] at hStep
-  cases hCIB : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId)
+  cases hCIB : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore bootCoreId)
       (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hCIB] at hStep
   | ok cibRes =>

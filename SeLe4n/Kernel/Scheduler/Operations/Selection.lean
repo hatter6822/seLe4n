@@ -583,8 +583,8 @@ def chooseBestRunnableEffective
   match runnable with
   | [] => .ok best
   | tid :: rest =>
-      match st.objects.get? tid.toObjId with
-      | some (.tcb tcb) =>
+      match st.getTcb? tid with
+      | some tcb =>
           let best' :=
             if eligible tcb && hasSufficientBudget st tcb then
               let (prio, dl) := resolveEffectivePrioDeadline st tcb
@@ -675,7 +675,7 @@ priority/EDF/FIFO via `chooseBestInBucket` (no budget filter — the
 budget-aware variant is `chooseThreadEffective`). -/
 def chooseThreadOnCore (st : SystemState) (c : CoreId) :
     Except KernelError (Option SeLe4n.ThreadId) :=
-  match chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore c)
+  match chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) with
   | .error e => .error e
   | .ok none => .ok none
@@ -1042,31 +1042,49 @@ theorem chooseBestRunnableEffective_unbound_equiv
     (runnable : List SeLe4n.ThreadId)
     (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
     (hAllUnbound : ∀ tid ∈ runnable, ∀ tcb : TCB,
-      st.objects.get? tid.toObjId = some (.tcb tcb) →
+      st.getTcb? tid = some tcb →
       tcb.schedContextBinding = .unbound ∧ tcb.pipBoost = none) :
     chooseBestRunnableEffective st eligible runnable best =
-    chooseBestRunnableBy st.objects.get? eligible runnable best := by
+    chooseBestRunnableBy st.getObject? eligible runnable best := by
   induction runnable generalizing best with
   | nil => simp [chooseBestRunnableEffective, chooseBestRunnableBy]
   | cons tid rest ih =>
     simp only [chooseBestRunnableEffective, chooseBestRunnableBy]
     have hRest : ∀ t ∈ rest, ∀ tcb : TCB,
-        st.objects.get? t.toObjId = some (.tcb tcb) →
+        st.getTcb? t = some tcb →
         tcb.schedContextBinding = .unbound ∧ tcb.pipBoost = none :=
       fun t hMemRest => hAllUnbound t (List.mem_cons_of_mem _ hMemRest)
-    cases hObj : st.objects.get? tid.toObjId with
-    | none => exact ih best hRest
+    -- The two sides scrutinise different accessors — `getTcb?` on the left,
+    -- `getObject?` on the right — so the split is taken on the kind-agnostic
+    -- one and the typed reading is derived from it.  `getTcb?_eq_some_iff` is
+    -- what relates them, and the `_ => ` arms are where they agree by both
+    -- answering "not a TCB here".
+    cases hObj : st.getObject? tid.toObjId with
+    | none =>
+      have hT : st.getTcb? tid = none := by
+        unfold SeLe4n.Model.SystemState.getTcb?
+        rw [show st.objects[tid.toObjId]? = none from hObj]
+      rw [hT]; exact ih best hRest
     | some obj =>
       cases obj with
       | tcb tcb =>
+        have hT : st.getTcb? tid = some tcb :=
+          (SeLe4n.Model.SystemState.getTcb?_eq_some_iff st tid tcb).mpr hObj
         have hMem : tid ∈ tid :: rest := List.mem_cons_self ..
-        have ⟨hUnb, hNoPip⟩ := hAllUnbound tid hMem tcb hObj
+        have ⟨hUnb, hNoPip⟩ := hAllUnbound tid hMem tcb hT
+        rw [hT]
         simp [hasSufficientBudget_unbound st tcb hUnb, Bool.and_true,
               resolveEffectivePrioDeadline, hUnb, hNoPip]
         apply ih
         intro t hMemRest
         exact hAllUnbound t (List.mem_cons_of_mem _ hMemRest)
-      | _ => exact ih best hRest
+      | _ =>
+        all_goals (
+          first
+          | (have hT : st.getTcb? tid = none := by
+               unfold SeLe4n.Model.SystemState.getTcb?
+               rw [show st.objects[tid.toObjId]? = _ from hObj]
+             rw [hT]; exact ih best hRest))
 
 -- ============================================================================
 -- WS-SM SM5.B — Per-core context switch (`switchToThreadOnCore`)
