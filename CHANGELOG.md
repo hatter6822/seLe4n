@@ -1,3 +1,51 @@
+## v0.35.11 — The sweep, run over every resolved footprint
+
+`v0.35.10` closed the reply path's missing coverage and observed, without acting
+on it, that `lockSet_cancelDonationOnCore` had none either.  Leaving it there is
+this project's own sweep rule failing in the way it describes — *a fix applied
+at one site and not its siblings leaves the class open and reads as closed* — so
+the class is closed here instead, over **every** state-resolved footprint in the
+tree rather than the two a finding happened to name.
+
+### The census, and the one real gap it found
+
+Ten footprints resolve members from the state.  Nine carry a coverage layer
+tying each member to the resolver it comes from; `lockSet_cancelDonationOnCore`
+carried `lockSet_cancelDonationOnCore_correct` and `…_size_le` and nothing else,
+while every one of its *parametric* members already had a write-membership
+lemma.  So the relation the resolved layer exists to state — that the object a
+resolver names is a declared member, in the mode the operation needs — was
+stated nowhere for that footprint.
+
+Neither neighbour stands in for it, and the distinction is the point:
+`_correct` quantifies over the members that *are* present and constrains their
+`LockKind`, and `_size_le` bounds how many there are.  A footprint that resolved
+the wrong SchedContext, or dropped the donated arm's original owner, satisfies
+both unchanged.
+
+Six theorems close it: `lockSet_cancelDonationOnCore_covers_victim` (proved on
+both arms of the resolution, since the donor's binding is rewritten whether or
+not its TCB resolves), `…_covers_bindingSchedContext` and `…_covers_stateLevel`
+through `cancelBindingSc?`, `…_covers_donatedOwner` through
+`cancelDonatedOwner?`, and `…_covers_pop` and `…_covers_outerCaller_key` through
+`cancelDonationPopMembers?`.  The last is a declared **key** rather than a
+write, because the pop *reads* that TCB to check it is a waiting donor and
+rewrites the answered caller's binding, not its — a Tier 3 negative refuses the
+write spelling, verified silent on the clean tree and firing on a mutation that
+keeps the member and changes only its mode.
+
+`lockSet_notificationWaitOnCore` is the tenth and needs nothing: it takes no
+state and resolves nothing, so its parametric lemmas already are the statement
+at full arity.  That is a reasoned zero, recorded rather than left to look like
+the gap this cut just closed.
+
+No footprint, resolver or transition changed, so `maxLockSetSize` is unmoved at
+22 and every figure derived from it with it.  What changed is that the
+declarations are now checkable.  Six Tier 3 anchors, `SELE4N_SPEC.md` §8.12.8,
+`CLAUDE.md`, `AGENTS.md` and `CLAIM_EVIDENCE_INDEX.md`.
+
+Version bumped 0.35.10 -> 0.35.11.
+
 ## v0.35.10 — The chain payoff was never unconditional, and the detach's member was declared but never proved written
 
 A second, deeper audit of the WS-RM cut (`v0.35.6`), reading the code rather than

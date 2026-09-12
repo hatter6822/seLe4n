@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.10.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.11.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2273,6 +2273,24 @@ its `.replyRecv` twin resolved: the reply-path siblings of the coverage the
 cancellation path has carried since `v0.35.4`
 (`lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove`), which the cut that
 added the reply-path member did not sweep onto it.
+
+**And running that sweep over every resolved footprint found one more.**
+`lockSet_cancelDonationOnCore` had `_correct` and `_size_le` and no coverage
+layer at all, while each of its parametric members already carried a
+write-membership lemma — so nothing tied a member to the **resolver** the
+resolved footprint reads it from, which is the whole content of a resolved
+coverage theorem.  Neither neighbour stands in for it: `_correct` is about the
+*kinds* of the members present and `_size_le` about how many there are, and
+a footprint can satisfy both while naming the wrong object.  The six are
+`lockSet_cancelDonationOnCore_covers_victim` (both arms of the resolution),
+`…_covers_bindingSchedContext` and `…_covers_stateLevel` (through
+`cancelBindingSc?`), `…_covers_donatedOwner` (through `cancelDonatedOwner?`),
+`…_covers_pop` and `…_covers_outerCaller_key` (through
+`cancelDonationPopMembers?`) — the last a declared **key** rather than a write,
+because the pop *reads* that TCB to check it is a waiting donor, with a Tier 3
+negative refusing the write spelling.  `lockSet_notificationWaitOnCore` has no
+coverage layer and needs none: it resolves nothing, so its parametric lemmas are
+already the statement at full arity.
 
 (4) **`.replyRecv` pops the donation *between* its two legs**, which is
 seL4-MCS's own `doReplyTransfer` → `reply_remove` → `receiveIPC` order — and it

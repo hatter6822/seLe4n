@@ -12655,6 +12655,23 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_frameAbove_write_mem
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_frameAbove_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_detachedFrameAbove' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_detachedFrameAbove' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# ...and the same sweep run over the one remaining resolved footprint that had
+# no coverage layer at all.  `lockSet_cancelDonationOnCore`'s parametric members
+# each had a write-membership lemma and the resolved form had none, so nothing
+# tied a member to the resolver the footprint reads it from.  `_correct` and
+# `_size_le` do not stand in: one is about the members' kinds, the other about
+# how many there are.
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_victim' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_bindingSchedContext' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_stateLevel' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_donatedOwner' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_pop' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_outerCaller_key' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# NEGATIVE, token-preserving -- the outer caller is READ by the pop (it validates
+# that TCB before handing a context over) and written by nothing, so a coverage
+# theorem claiming a write there would describe a footprint wider than the
+# operation.  It keeps the member and changes its mode.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_cancelDonationOnCore_covers_outerCaller_key[^\n]*(\n([ \t][^\n]*)?)*tcbLock outer, AccessMode\.write" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 
 # (4) The chain payoff -- the theorem the workstream exists for -- and the
 # fault-reply and reply-transfer forms that compose it.

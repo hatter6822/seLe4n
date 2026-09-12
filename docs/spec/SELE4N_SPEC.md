@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.10` (`lakefile.toml`) |
+| **Package version** | `0.35.11` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 375,003 across 329 Lean files |
+| **Production LoC** | 375,100 across 329 Lean files |
 | **Test LoC** | 75,860 across 70 Lean test suites |
-| **Proved declarations** | 12,599 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 12,605 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4483,7 +4483,13 @@ respect.
    `lockSet_replyRecv_frameAbove_write_mem` at full arity, with
    `lockSet_endpointReplyOnCore_covers_detachedFrameAbove` and its `.replyRecv`
    twin resolved, are the relation: the reply-path siblings of the coverage the
-   cancellation path has carried since `v0.35.4`.
+   cancellation path has carried since `v0.35.4`.  Running that sweep over every
+   resolved footprint closed one more — `lockSet_cancelDonationOnCore` had
+   `_correct` and `_size_le` and no coverage layer, so nothing tied a member to
+   the resolver the footprint reads it from; the six `…_covers_` theorems do,
+   with the pop's outer caller a declared *key* rather than a write because the
+   pop reads that TCB to validate it.  `lockSet_notificationWaitOnCore` resolves
+   nothing, so its parametric lemmas are already the statement at full arity.
 3. **The head case is stated, not hidden.**  A frame that heads a scheduling
    context keeps its links when its caller is consumed (`Reply.consumed`,
    deliberately — the pop validates the head by them), so the reply leg's
