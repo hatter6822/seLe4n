@@ -1,3 +1,70 @@
+## v0.35.15 — PR #895 review round 3: a domain written as an exclusion
+
+Seven findings across two review rounds, all verified against the code first,
+and all one defect: **the gate's *domain* spelled as a hand-written exclusion
+rather than derived.**  Round 2 named that class (*a recognised set is not a
+derived set*) and fixed it at the four sites the review pointed at.  Round 3
+found four more, each the same rule unswept onto a sibling.
+
+**The unsafe census scanned `*/src/**/*.rs`** — the crate libraries, and
+silently not the integration tests, `build.rs`, examples or benches that cargo
+also compiles.  `rust/sele4n-hal/tests/readiness_gate_after_mark.rs` carries a
+real `unsafe` block, so the reported 125 described a subset of the tree while
+reading as a measurement of it.  The set is derived now: **126 of 126
+justified** (114 blocks, 12 declarations).
+
+**Its declaration idiom accepted an ordinary block comment.**  `SAFETY_DECL`'s
+`\*` alternative matched a continuation line of any `/* … */`, so
+`/*\n * # Safety\n */` passed while rustdoc published nothing to the caller
+bound by the obligation — the fail-open direction, and the mirror image of
+`v0.35.12`'s own fix.  A heading counts now only from `///`, `//!`, a `/**` or
+`/*!` block, or Rust's `#[doc = "# Safety"]` attribute form, which publishes the
+identical section and had been rejected.
+
+**The store-read census read a binder as a result.**  `PROP_RESULT` was
+`:\s*Prop\b` over the whole signature, so
+`def step (proof : Prop) (st : SystemState) : SystemState` classified as
+Prop-valued and a raw store read in its body was filed `SPEC` — walking around
+the enforced `STORE_READ_CODE = 0` floor.  The terminal result type is parsed
+now (first `:` at bracket depth zero, last top-level arrow); the tree is still
+at zero under the stricter classifier, which is the measurement that no
+executable read was hiding there.
+
+**The reply-stack census filtered user names as compiler auxiliaries.**
+`"eq_".isPrefixOf` is true of a contributor's `eq_clearReply`, so such a
+definition was excluded from both derivations *before* its used constants were
+read and could write the stack unregistered.  A generated component carries the
+prefix plus a **numeral**; that shape is required now, and a generated form the
+test misses is reported rather than skipped.
+
+**And its chain-result check was a presence check.**  It asked
+`getUsedConstants` of the whole theorem type, so a registry entry could name a
+theorem taking `donationChainWellFormed st` as an unused *hypothesis* and
+concluding nothing.  The chain predicate must appear in the **conclusion** now,
+and must be a predicate rather than any `donationChain`-prefixed constant —
+`donationChainWitnessContext` is a record, not a claim.
+
+**The frontier's store half was direct, and the fix is bounded on purpose.**  A
+writer that builds `.reply { r with prev := none }` and hands it to a store
+helper was in neither derivation.  Making the store half transitive to match the
+constructor half reports **22 composites** — `endpointCall`, `endpointReply`,
+`dispatchWithCap` — which is the frontier this census deliberately stops at.  So
+each disjunct pairs a transitive side with a direct one: reached through helpers
+and stored directly, or built directly and stored through one hop.  Delegating
+both at once is outside the frontier, and `chainWriteFrontier` says so in the
+census's own output rather than letting the count read as a proof of absence.
+
+Every fix carries a witness that fails without it, mutation-verified in both
+directions on the live tree: the prefix-only auxiliary test fires the
+user-named-writer witness, and the direct-only store half fires the
+delegated-store witness.  `CLAUDE.md` / `AGENTS.md` record the class — *a
+predicate over a domain you filtered is a measurement of the filter*.
+
+No kernel transition changes; `maxLockSetSize` is unmoved at 22.
+
+Refs: #895
+Refs: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md row F.3
+
 ## v0.35.14 — the middle-removal cost is the policy's, measured at depth three
 
 A question about WS-RM's stated residual — *"the removal does not preserve the

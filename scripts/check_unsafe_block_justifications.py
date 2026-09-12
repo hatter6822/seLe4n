@@ -136,7 +136,32 @@ def unrecognised_unsafe_forms(path: Path, view: str) -> list[str]:
 # `unsafe fn` in the tree, which is a scanner asking the wrong question rather
 # than a discipline the code fails.
 SAFETY_BLOCK = re.compile(r"//[/!]?\s*SAFETY\b|/\*+\s*SAFETY\b", re.IGNORECASE)
-SAFETY_DECL = re.compile(r"^\s*(?://[/!]|\*)?\s*#+\s*Safety\b", re.IGNORECASE | re.MULTILINE)
+# **Rustdoc, and only rustdoc.**  The heading has to reach the *caller*, so the
+# line carrying it must be a doc comment (`///`, `//!`) or a line inside a doc
+# BLOCK (`/**`, `/*!`) -- an ordinary `/* … * # Safety … */` publishes nothing
+# and used to pass on the bare `\*` alternative.  Rust's attribute spelling
+# `#[doc = "# Safety"]` publishes the same section and is accepted too, since
+# refusing it would reject correctly documented code.
+SAFETY_DECL_LINE = re.compile(r"^\s*(?://[/!])\s*#+\s*Safety\b", re.IGNORECASE | re.MULTILINE)
+SAFETY_DECL_ATTR = re.compile(r"#\s*!?\[\s*doc\s*=\s*(?:r#*)?\"[^\"]*#+\s*Safety\b",
+                              re.IGNORECASE)
+DOC_BLOCK_OPEN = re.compile(r"/\*[*!]")
+DOC_BLOCK_LINE = re.compile(r"^\s*\*?\s*#+\s*Safety\b", re.IGNORECASE | re.MULTILINE)
+
+
+def declaration_documents_safety(run: str) -> bool:
+    """Does this run publish a rustdoc `# Safety` section?"""
+    if SAFETY_DECL_LINE.search(run) or SAFETY_DECL_ATTR.search(run):
+        return True
+    # A `# Safety` inside a doc *block* counts; inside an ordinary block comment
+    # it does not.  Scan each doc block's own extent rather than the whole run,
+    # so an ordinary `/* … */` elsewhere in the run cannot donate a heading.
+    for m in DOC_BLOCK_OPEN.finditer(run):
+        end = run.find("*/", m.end())
+        body = run[m.end():] if end == -1 else run[m.end():end]
+        if DOC_BLOCK_LINE.search(body):
+            return True
+    return False
 ARM_ARM = re.compile(r"\(ARM ARM [A-Z][0-9]+(?:\.[0-9]+)*\)")
 
 
@@ -158,7 +183,7 @@ def justified(run: str, is_declaration: bool) -> bool:
     declarations carry a `# Safety` section, so removing it fails nothing
     today and refuses the next declaration documented the wrong way."""
     if is_declaration:
-        return bool(SAFETY_DECL.search(run))
+        return declaration_documents_safety(run)
     return bool(SAFETY_BLOCK.search(run))
 
 
@@ -234,6 +259,31 @@ def sites(path: Path):
                named is not None)
 
 
+def compiled_rust_sources(root: Path) -> list[Path]:
+    """Every Rust source the workspace compiles, derived rather than filtered.
+
+    **The domain was an exclusion wearing a glob.**  `*/src/**/*.rs` names the
+    crate libraries and silently omits everything else cargo builds --
+    integration tests, `build.rs`, examples, benches.  That is this project's
+    "a recognised set is not a derived set" one level up from the predicate: the
+    omitted files are never examined, so the count reads as a measurement of the
+    tree while describing a subset of it, and the empty baseline stays green
+    over an unjustified `unsafe` in any of them.  Not hypothetical --
+    `rust/sele4n-hal/tests/readiness_gate_after_mark.rs` carries a real block.
+
+    So the set is every `.rs` file under the workspace that is not build output.
+    `target/` is cargo's own, and `.rs` files there are generated rather than
+    written; everything else a contributor can put an `unsafe` in is in scope.
+    Over-approximating is the safe direction here: this scanner produces
+    *requirements*, and a requirement it drops is a check nobody runs.
+    """
+    return [
+        path
+        for path in sorted(root.rglob("*.rs"))
+        if "target" not in path.relative_to(root).parts
+    ]
+
+
 def census(root: Path):
     """(unjustified inventory, sites, ARM-ARM-citing sites, declarations, unreadable).
 
@@ -247,7 +297,7 @@ def census(root: Path):
     cited = 0
     declarations = 0
     unreadable: list[str] = []
-    for path in sorted(root.glob("*/src/**/*.rs")):
+    for path in sorted(compiled_rust_sources(root)):
         rel = str(path.relative_to(REPO))
         unreadable += unrecognised_unsafe_forms(
             path.relative_to(REPO), rust_code_view.code_no_strings(
@@ -359,6 +409,34 @@ pub unsafe extern "C" fn f() {}
     # and this is the case the retired `SAFETY_BLOCK` fallback accepted.
     ("an `unsafe fn` documented in the BLOCK idiom", False, """
 // SAFETY: the caller holds the lock this reads.
+unsafe fn f() {}
+"""),
+    # TOKEN-PRESERVING, and the defect the `\*` alternative shipped: the
+    # heading is present, spelled inside an ORDINARY block comment.  Rustdoc
+    # publishes nothing from it, so the caller bound by the obligation never
+    # sees a contract.  The mutation keeps every token and changes only which
+    # comment carries it.
+    ("an `unsafe fn` whose `# Safety` is in a plain block comment", False, """
+/*
+ * # Safety
+ * The caller must hold the lock.
+ */
+unsafe fn f() {}
+"""),
+    # ...and the same heading inside a DOC block is the real contract.
+    ("an `unsafe fn` whose `# Safety` is in a doc block", True, """
+/**
+ * # Safety
+ * The caller must hold the lock.
+ */
+unsafe fn f() {}
+"""),
+    # Rust's attribute spelling publishes the identical section, so refusing it
+    # would reject correctly documented code — the fail-closed direction, but
+    # still wrong.
+    ("an `unsafe fn` documented with `#[doc = \"# Safety\"]`", True, """
+#[doc = "# Safety"]
+#[doc = "The caller must hold the lock."]
 unsafe fn f() {}
 """),
     # ...and the converse still holds: a block wants the comment, not a doc

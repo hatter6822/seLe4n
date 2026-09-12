@@ -234,6 +234,33 @@ manglings included. -/
 def isProjectConstant (n : Name) : Bool :=
   n.components.any (· == `SeLe4n)
 
+/-- `true` when a name component has the *shape* Lean gives a generated one.
+
+**A prefix is a resemblance; a shape is a derivation** (PR #895 review round 3).
+The component tests used to be `"eq_".isPrefixOf`, `"proof_".isPrefixOf` and
+`"match_".isPrefixOf`, which are true of a contributor's own `eq_clearReply`,
+`proof_clearReply` or `match_clearReply` — so an ordinary executable writer
+named that way was filtered out of BOTH derivations before its used constants
+were ever examined, and could consume a caller's Reply without entering the
+registry.  That is this census's own domain defect: the element is never
+inspected, so the reconciliation stays clean while describing a smaller tree.
+
+Lean's generated equation, proof and matcher components are the prefix followed
+by a **numeral** (`eq_1`, `proof_3`, `match_2`); the recursor and structural
+components are whole words.  Requiring that shape refuses a user's name while
+keeping every generated one, and a generated form this misses is *reported*
+rather than skipped — the fail-closed direction for a scanner that produces
+requirements. -/
+def isGeneratedComponent (s : String) : Bool :=
+  let numbered (pre : String) : Bool :=
+    pre.isPrefixOf s && s.length > pre.length && (s.drop pre.length).all Char.isDigit
+  numbered "match_" || numbered "proof_" || numbered "eq_" ||
+  s == "eq_def" || s == "noConfusion" || s == "noConfusionType" ||
+  s == "below" || s == "brecOn" || s == "binductionOn" || s == "ibelow" ||
+  s == "casesOn" || s == "recOn" || s == "rec" || s == "ind" ||
+  s == "_sunfold" || s == "_unsafe_rec" || s == "_cstage1" ||
+  s == "_cstage2" || s == "_proof_1"
+
 /-- `true` when `n` is a compiler auxiliary rather than a declaration a
 contributor wrote: match arms, equation lemmas, proof terms and the like.  They
 inherit their parent's references, so counting them would report one site many
@@ -255,12 +282,7 @@ def isAuxiliary (env : Environment) (n : Name) : Bool :=
   (n.eraseMacroScopes != n) ||
   isAuxRecursor env n || isRecCore env n ||
   n.components.any fun c => match c with
-    | .str _ s =>
-        "match_".isPrefixOf s || "proof_".isPrefixOf s || "eq_".isPrefixOf s ||
-        "noConfusion".isPrefixOf s || "below".isPrefixOf s || "brecOn".isPrefixOf s ||
-        s == "casesOn" || s == "recOn" || s == "rec" || s == "ind" ||
-        s == "_sunfold" || s == "_unsafe_rec" || s == "eq_def" || s == "_cstage1" ||
-        s == "_cstage2" || s == "_proof_1"
+    | .str _ s => isGeneratedComponent s
     | _ => false
 
 /-- `true` when `n`'s own body directly references any of `targets`. -/
@@ -268,6 +290,45 @@ def usesDirectly (env : Environment) (targets : List Name) (n : Name) : Bool :=
   match (env.find? n).bind (·.value? (allowOpaque := true)) with
   | none => false
   | some v => v.getUsedConstants.any (fun c => targets.contains c)
+
+/-- `true` when `n` stores a kernel object — directly, or by handing a record it
+built to a project helper that stores it.
+
+**One derived hop, and the frontier is stated rather than implied** (PR #895
+review round 3).  The store half used to be `usesDirectly` alone, so a writer
+that constructs `.reply { r with prev := none }` and passes it to a generic
+helper was absent from the candidates: the caller builds the record and never
+stores, the helper stores and cannot see the constructor it was handed.  Neither
+entered the registry, and a reply-stack mutation went unrecorded.
+
+The remedy is deliberately **bounded** rather than transitive.  "Which
+definitions write the reply stack" is a property of what a program *does*, and
+nothing in the environment answers that — chasing stores transitively makes
+every IPC composite a candidate, which is the frontier this census deliberately
+stops at (a composite inherits its chain result by `donationChainFrame`'s
+algebra).  Measured rather than assumed: pairing this with the *transitive*
+constructor half reports 22 composites — `endpointCall`, `endpointReply`,
+`dispatchWithCap` among them.
+
+So **each disjunct of the frontier has one direct side**, which is what keeps a
+composite out: it builds no chain record in its own body.  A candidate either
+reaches a constructor through helpers and stores *directly* (the existing rule,
+which catches a delegated `clearPrev`), or constructs *directly* and stores
+through one hop (the shape reported here).  A deeper delegation on both sides at
+once is outside the frontier, and `chainWriteFrontier` says so in the census's
+own output rather than leaving the number to read as a proof of absence. -/
+def storesObject (env : Environment) (n : Name) : Bool :=
+  usesDirectly env objectStoreSpellings n ||
+  (match (env.find? n).bind (·.value? (allowOpaque := true)) with
+   | none => false
+   | some v => v.getUsedConstants.any fun c =>
+       isProjectConstant c && usesDirectly env objectStoreSpellings c)
+
+/-- What the store half of the frontier recognises, printed beside the count. -/
+def chainWriteFrontier : String :=
+  "a chain record reached through helpers and stored directly, or built \
+directly and stored through one helper hop; delegating BOTH halves at once is \
+outside the recognised frontier"
 
 /-- `true` when `n` is a *definition* rather than a proof.
 
@@ -302,6 +363,14 @@ def directWriteCandidates (env : Environment) : List Name :=
           (chainWritePrimitives.contains n || usesDirectly env chainWritePrimitives n)
       then n :: acc else acc) []
 
+/-- `true` when `n` builds a chain-bearing record in its **own** body.
+
+The direct half of the frontier's second disjunct: a composite calls a helper
+that constructs, and so is excluded here, which is what keeps the candidate set
+to the sites rather than the call graph above them. -/
+def constructsChainRecord (env : Environment) (n : Name) : Bool :=
+  usesDirectly env chainRecordConstructors n
+
 /-- `true` when `n` reaches a chain-bearing record constructor — in its own
 body, or through any chain of project definitions it calls.
 
@@ -317,8 +386,9 @@ exists to make impossible.
 Walked **backwards from the storing definitions** and memoised, rather than as a
 forward fixed point over the whole environment: nearly every definition in the
 tree reaches a constructor eventually, so the forward closure is both expensive
-and uninformative.  What makes the frontier small is that the *store* half stays
-direct — the site is where the store happens. -/
+and uninformative.  What makes the frontier small is that its partner half stays
+direct — see `storesObject` for why each disjunct pairs a transitive side with a
+direct one. -/
 partial def reachesChainConstructor (env : Environment)
     (seen : Std.HashSet Name) (n : Name) : Bool × Std.HashSet Name :=
   if seen.contains n then (false, seen) else
@@ -344,8 +414,8 @@ def recordConstructingStoreCandidates (env : Environment) : List Name :=
   env.constants.toList.foldl
     (fun acc (n, _) =>
       if isProjectConstant n && !isAuxiliary env n && isDefinitionShaped env n &&
-          usesDirectly env objectStoreSpellings n &&
-          (reachesChainConstructor env {} n).1
+          ((usesDirectly env objectStoreSpellings n && (reachesChainConstructor env {} n).1) ||
+            (storesObject env n && constructsChainRecord env n))
       then n :: acc else acc) []
 
 /-! ## What a write site owes
@@ -389,6 +459,28 @@ def isChainForm (n : Name) : Bool :=
   | .str _ s => "donationChain".isPrefixOf s
   | _ => false
 
+/-- The conclusion of a `∀`-telescope — what a theorem actually *proves*. -/
+partial def conclusionOf : Expr → Expr
+  | .forallE _ _ body _ => conclusionOf body
+  | .letE _ _ _ body _ => conclusionOf body
+  | .mdata _ e => conclusionOf e
+  | e => e
+
+/-- `true` when `n`'s own result type is `Prop` — a predicate rather than data. -/
+def isPredicate (env : Environment) (n : Name) : Bool :=
+  match env.find? n with
+  | some info => (conclusionOf info.type).isSort && (conclusionOf info.type) == .sort .zero
+  | none => false
+
+/-- `true` when `n` is a chain **predicate**: a `donationChain…` family member
+whose own result is a `Prop`.
+
+The prefix alone admits data — `donationChainWitnessContext` is a record, not a
+claim — so a theorem mentioning one satisfied the family test while asserting
+nothing about the chain. -/
+def isChainPredicate (env : Environment) (n : Name) : Bool :=
+  isChainForm n && isPredicate env n
+
 /-- The chain results a site may be recorded as stating, and the shape check on
 each: a proposition whose statement mentions the site **and** a chain form.
 
@@ -402,12 +494,22 @@ def resultViolations (env : Environment) (site : Name) (result : Name) : List St
           environment"]
   | some info =>
       let used := info.type.getUsedConstants
+      -- **The chain form must be in the CONCLUSION, not merely in the type.**
+      -- Asking `getUsedConstants` of the whole type is a presence check: a
+      -- theorem taking `donationChainWellFormed st` as an unused *hypothesis*
+      -- and concluding anything at all satisfied it, so a registry entry could
+      -- claim a chain result while proving none (PR #895 review round 3).  The
+      -- site may still appear anywhere — a preservation theorem names its
+      -- operation in a hypothesis (`op st = .ok st'`) by construction — but
+      -- what the theorem *asserts* is its conclusion, and that is where the
+      -- chain claim has to be.
+      let concluded := (conclusionOf info.type).getUsedConstants
       (if used.contains site then [] else
         [s!"`{site}` names the chain result `{result}`, whose statement does not mention \
             `{site}` — a result about some other subject"]) ++
-      (if used.any isChainForm then [] else
-        [s!"`{site}` names `{result}` as a chain result, but its statement mentions no \
-            `donationChain…` form"])
+      (if concluded.any (isChainPredicate env) then [] else
+        [s!"`{site}` names `{result}` as a chain result, but its CONCLUSION asserts no \
+            `donationChain…` predicate — a hypothesis mentioning one is not a result"])
 
 /-! ## The registry
 
@@ -609,6 +711,35 @@ private def censusWitnessSplitWriter (rid : SeLe4n.ReplyId) :
         SeLe4n.Model.storeObject rid.toObjId (.reply (censusWitnessSplitHelper r)) st
     | none => .ok ((), st)
 
+/-- The MIRROR-IMAGE split: the caller constructs and the **callee** stores.
+`censusWitnessSplitWriter` above delegates the *construction*; this one
+delegates the *store*, handing a record it built to a generic helper.  Both
+halves escaped while the store side demanded a direct call, so the write landed
+with nothing recorded — the shape PR #895 review round 3 reported. -/
+private def censusWitnessDelegatedStoreHelper (oid : SeLe4n.ObjId)
+    (obj : SeLe4n.Model.KernelObject) : SeLe4n.Model.Kernel Unit :=
+  SeLe4n.Model.storeObject oid obj
+
+private def censusWitnessDelegatedStoreWriter (rid : SeLe4n.ReplyId) :
+    SeLe4n.Model.Kernel Unit :=
+  fun st =>
+    match st.getReply? rid with
+    | some r =>
+        censusWitnessDelegatedStoreHelper rid.toObjId (.reply { r with next := none }) st
+    | none => .ok ((), st)
+
+/-- A writer whose name *resembles* a compiler auxiliary.  `eq_` is the prefix
+Lean gives equation lemmas, and the component test used to accept it on any
+name — so this definition was filtered out of both derivations before its used
+constants were read, and could write the stack unregistered.  A generated name
+carries the prefix plus a **numeral**; this one does not. -/
+private def eq_censusWitnessUserNamed (rid : SeLe4n.ReplyId) :
+    SeLe4n.Model.Kernel Unit :=
+  fun st =>
+    match st.getReply? rid with
+    | some r => SeLe4n.Model.storeObject rid.toObjId (.reply { r with prev := none }) st
+    | none => .ok ((), st)
+
 /-- Writes no reply-stack data: reads a Reply and returns. -/
 private def censusWitnessNoWrite (st : SeLe4n.Model.SystemState) (rid : SeLe4n.ReplyId) :
     Option SeLe4n.Kernel.Reply :=
@@ -645,6 +776,25 @@ run_cmd Command.liftTermElabM do
   -- The split-conjunction witness, both directions: the WRITER is a candidate
   -- (it stores and reaches a constructor through the helper) and the HELPER is
   -- not (it constructs and stores nothing -- the site is where the store is).
+  -- The delegated-STORE split: the writer is a candidate, the generic helper is
+  -- not (it constructs nothing).  Fails without `storesObject`'s helper hop.
+  unless (recordConstructingStoreCandidates env).contains
+      ``censusWitnessDelegatedStoreWriter do
+    throwError "the census frontier misses a writer that delegates its STORE to a helper"
+  if (recordConstructingStoreCandidates env).contains
+      ``censusWitnessDelegatedStoreHelper then
+    throwError "the census frontier reports a generic store helper that builds no record"
+  -- A user name shaped like a compiler auxiliary is still inspected.  Fails
+  -- without `isGeneratedComponent`'s numeral requirement.
+  if isAuxiliary env ``eq_censusWitnessUserNamed then
+    throwError "`isAuxiliary` filters a user definition whose name merely resembles \
+      a generated one"
+  unless (recordConstructingStoreCandidates env).contains ``eq_censusWitnessUserNamed do
+    throwError "the census frontier misses a writer named like a compiler auxiliary"
+  -- ...and a genuinely generated component is still recognised.
+  unless isGeneratedComponent "eq_1" && isGeneratedComponent "match_2" &&
+      isGeneratedComponent "proof_11" && isGeneratedComponent "casesOn" do
+    throwError "`isGeneratedComponent` no longer recognises a generated name shape"
   unless (recordConstructingStoreCandidates env).contains ``censusWitnessSplitWriter do
     throwError "reply-stack write census: the SPLIT-CONJUNCTION witness is not derived as a \
       candidate — a writer that delegates its record update escapes the frontier, which is \
@@ -731,7 +881,9 @@ run_cmd Command.liftTermElabM do
   -- planted write sites rather than kernel ones.
   let witnesses : List Name :=
     [``censusWitnessBareConsume, ``censusWitnessDirectLinkWrite,
-     ``censusWitnessSplitWriter, ``censusWitnessSplitHelper]
+     ``censusWitnessSplitWriter, ``censusWitnessSplitHelper,
+     ``censusWitnessDelegatedStoreWriter, ``censusWitnessDelegatedStoreHelper,
+     ``eq_censusWitnessUserNamed]
   let mut derived : List Name := []
   for n in directWriteCandidates env do
     if witnesses.contains n then continue

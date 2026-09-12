@@ -239,8 +239,8 @@ worse than an open row, since an open row is visible.
 The discharge is now real.  `scripts/check_unsafe_block_justifications.py` runs
 in Tier 0, asks each site kind Rust's own question (a `// SAFETY:` comment in
 the contiguous comment run above an `unsafe` **block**; a `# Safety` doc section
-on an `unsafe fn` **declaration**), and the tree is at **125 of 125 sites
-justified** — 113 blocks and 12 declarations, both counts emitted by the gate —
+on an `unsafe fn` **declaration**), and the tree is at **126 of 126 sites
+justified** — 114 blocks and 12 declarations, both counts emitted by the gate —
 so the baseline is empty and the gate is a prohibition rather than a floor.  The
 fourteen that were not justified are fixed in the same cut.  At v0.35.12 the gate
 stopped accepting a `// SAFETY:` comment as a fallback on a *declaration*: the

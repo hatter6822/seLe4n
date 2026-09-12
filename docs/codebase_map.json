@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-faraday-gz9b3w",
-      "commit_sha": "04ea388df5e4332faec04a4f434c02bf0dae3848",
-      "tree_sha": "a81db1c159937aebae117104440489ab68c1b7a8",
-      "committed_at_utc": "2026-09-12T20:27:58+00:00"
+      "commit_sha": "02240be2f1bd1a3b39488abd2fd88ab7271a2a89",
+      "tree_sha": "e381ee95583c9814d3d847a091bf4d4b6a7ceeb8",
+      "committed_at_utc": "2026-09-12T21:54:12+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3a5c860ec1f45c2ab6a6e0077df6cd34efabbe5d5a3ad6a37f0038076b70b945"
+    "source_digest": "c06efda9346a55c585cc56cc806431bcf4dce41ba97842f3fce2a5ac14020634"
   },
   "summary": {
     "module_count": 399,
-    "declaration_count": 21302
+    "declaration_count": 21312
   },
   "readme_sync": {
-    "version": "0.35.14",
+    "version": "0.35.15",
     "lean_toolchain": "v4.28.0",
     "production_files": 329,
-    "production_loc": 375511,
+    "production_loc": 375663,
     "test_files": 70,
     "test_loc": 75996,
     "proved_theorem_lemma_decls": 12606,
@@ -262853,7 +262853,7 @@
     {
       "module": "SeLe4n.Testing.ReplyStackWriteCensus",
       "path": "SeLe4n/Testing/ReplyStackWriteCensus.lean",
-      "declaration_count": 25,
+      "declaration_count": 35,
       "declarations": [
         {
           "kind": "namespace",
@@ -262942,16 +262942,26 @@
         },
         {
           "kind": "def",
-          "name": "isAuxiliary",
-          "line": 241,
+          "name": "isGeneratedComponent",
+          "line": 254,
           "called": [
-            "any"
+            "all",
+            "length"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isAuxiliary",
+          "line": 268,
+          "called": [
+            "any",
+            "isGeneratedComponent"
           ]
         },
         {
           "kind": "def",
           "name": "usesDirectly",
-          "line": 267,
+          "line": 289,
           "called": [
             "any",
             "bind",
@@ -262962,14 +262972,34 @@
         },
         {
           "kind": "def",
+          "name": "storesObject",
+          "line": 320,
+          "called": [
+            "any",
+            "bind",
+            "isProjectConstant",
+            "none",
+            "objectStoreSpellings",
+            "usesDirectly",
+            "value"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chainWriteFrontier",
+          "line": 328,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "isDefinitionShaped",
-          "line": 286,
+          "line": 347,
           "called": []
         },
         {
           "kind": "def",
           "name": "directWriteCandidates",
-          "line": 298,
+          "line": 359,
           "called": [
             "chainWritePrimitives",
             "contains",
@@ -262981,8 +263011,17 @@
         },
         {
           "kind": "def",
+          "name": "constructsChainRecord",
+          "line": 371,
+          "called": [
+            "chainRecordConstructors",
+            "usesDirectly"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "reachesChainConstructor",
-          "line": 322,
+          "line": 392,
           "called": [
             "any",
             "bind",
@@ -262996,36 +263035,64 @@
         {
           "kind": "def",
           "name": "recordConstructingStoreCandidates",
-          "line": 343,
+          "line": 413,
           "called": [
+            "constructsChainRecord",
             "isAuxiliary",
             "isDefinitionShaped",
             "isProjectConstant",
             "objectStoreSpellings",
             "reachesChainConstructor",
+            "storesObject",
             "usesDirectly"
           ]
         },
         {
           "kind": "inductive",
           "name": "ChainDiscipline",
-          "line": 361,
+          "line": 431,
           "called": []
         },
         {
           "kind": "def",
           "name": "isChainForm",
-          "line": 387,
+          "line": 457,
           "called": []
         },
         {
           "kind": "def",
+          "name": "conclusionOf",
+          "line": 463,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "isPredicate",
+          "line": 470,
+          "called": [
+            "conclusionOf",
+            "none",
+            "zero"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isChainPredicate",
+          "line": 481,
+          "called": [
+            "isChainForm",
+            "isPredicate"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "resultViolations",
-          "line": 398,
+          "line": 490,
           "called": [
             "any",
+            "conclusionOf",
             "contains",
-            "isChainForm",
+            "isChainPredicate",
             "none",
             "of"
           ]
@@ -263033,7 +263100,7 @@
         {
           "kind": "def",
           "name": "chainWriteRegistry",
-          "line": 421,
+          "line": 523,
           "called": [
             "ChainDiscipline",
             "clearReplyObjectCaller",
@@ -263069,7 +263136,7 @@
         {
           "kind": "def",
           "name": "halfStepResolves",
-          "line": 497,
+          "line": 599,
           "called": [
             "ChainDiscipline",
             "length",
@@ -263079,7 +263146,7 @@
         {
           "kind": "def",
           "name": "disciplineViolations",
-          "line": 513,
+          "line": 615,
           "called": [
             "ChainDiscipline",
             "covers",
@@ -263093,7 +263160,7 @@
         {
           "kind": "def",
           "name": "reconciliationViolations",
-          "line": 553,
+          "line": 655,
           "called": [
             "Reply",
             "SchedContext",
@@ -263109,7 +263176,7 @@
         {
           "kind": "def",
           "name": "censusWitnessBareConsume",
-          "line": 576,
+          "line": 678,
           "called": [
             "Kernel",
             "ReplyId",
@@ -263120,7 +263187,7 @@
         {
           "kind": "def",
           "name": "censusWitnessDirectLinkWrite",
-          "line": 587,
+          "line": 689,
           "called": [
             "Kernel",
             "ReplyId",
@@ -263134,7 +263201,7 @@
         {
           "kind": "def",
           "name": "censusWitnessSplitHelper",
-          "line": 597,
+          "line": 699,
           "called": [
             "Reply",
             "none"
@@ -263143,7 +263210,7 @@
         {
           "kind": "def",
           "name": "censusWitnessSplitWriter",
-          "line": 604,
+          "line": 706,
           "called": [
             "Kernel",
             "ReplyId",
@@ -263157,13 +263224,54 @@
         },
         {
           "kind": "def",
+          "name": "censusWitnessDelegatedStoreHelper",
+          "line": 719,
+          "called": [
+            "Kernel",
+            "KernelObject",
+            "ObjId",
+            "storeObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessDelegatedStoreWriter",
+          "line": 723,
+          "called": [
+            "Kernel",
+            "ReplyId",
+            "censusWitnessDelegatedStoreHelper",
+            "getReply",
+            "none",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "eq_censusWitnessUserNamed",
+          "line": 736,
+          "called": [
+            "Kernel",
+            "ReplyId",
+            "getReply",
+            "none",
+            "st",
+            "storeObject",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "censusWitnessNoWrite",
-          "line": 613,
+          "line": 744,
           "called": [
             "Reply",
             "ReplyId",
             "SystemState",
             "censusWitnessBareConsume",
+            "censusWitnessDelegatedStoreHelper",
+            "censusWitnessDelegatedStoreWriter",
             "censusWitnessDirectLinkWrite",
             "censusWitnessSplitHelper",
             "censusWitnessSplitWriter",
@@ -263175,10 +263283,13 @@
             "disciplineViolations",
             "donateSchedContext",
             "donateSchedContext_preserves_donationChainWellFormed",
+            "eq_censusWitnessUserNamed",
             "filter",
             "getReply",
             "halfStepResolves",
+            "isAuxiliary",
             "isEmpty",
+            "isGeneratedComponent",
             "length",
             "of",
             "primitiveCoverageViolations",

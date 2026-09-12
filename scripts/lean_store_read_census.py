@@ -110,7 +110,58 @@ DECL = re.compile(
 # Declaration keywords whose contents are propositions whatever their signature.
 PROP_KINDS = {"theorem", "lemma", "example", "structure", "inductive", "class"}
 
-PROP_RESULT = re.compile(r":\s*Prop\b")
+# **A binder is not the result.**  `PROP_RESULT` used to be `:\s*Prop\b` over the
+# whole signature, so `def step (proof : Prop) (st : SystemState) : SystemState`
+# read as Prop-valued and a raw store read in its body was filed `SPEC` —
+# bypassing the enforced `STORE_READ_CODE = 0` floor.  That is this file's own
+# "a recognised set is not a derived set" one level in: the *domain* of the code
+# population was decided by a regex that matched anywhere in the signature.
+#
+# The question is the declaration's TERMINAL result, so parse it: the first `:`
+# at bracket depth zero opens the result type, and the last top-level `→` arrow
+# within it names what the declaration ultimately returns.  A signature with no
+# depth-zero `:` has no declared result and fails CLOSED (its body counts as
+# code), which is the safe direction for a gate that produces a zero floor.
+_OPENERS = "([{⟨"
+_CLOSERS = ")]}⟩"
+
+
+def _result_type(head: str) -> str:
+    """The declared result type of a signature, or `""` when none is declared."""
+    depth = 0
+    for i, ch in enumerate(head):
+        if ch in _OPENERS:
+            depth += 1
+        elif ch in _CLOSERS:
+            depth -= 1
+        elif ch == ":" and depth == 0:
+            # `:=` is the signature terminator and never opens a result type;
+            # `_signature_head` has already cut there, so a bare `:` is ours.
+            return head[i + 1:].strip()
+    return ""
+
+
+def _returns_prop(head: str) -> bool:
+    """Does this signature's terminal result type return `Prop`?"""
+    result = _result_type(head)
+    if not result:
+        return False
+    # Split on top-level arrows: `SystemState → Prop` returns `Prop`.
+    depth, last = 0, 0
+    parts = []
+    i = 0
+    while i < len(result):
+        ch = result[i]
+        if ch in _OPENERS:
+            depth += 1
+        elif ch in _CLOSERS:
+            depth -= 1
+        elif depth == 0 and result.startswith("→", i):
+            parts.append(result[last:i])
+            last = i + 1
+        i += 1
+    parts.append(result[last:])
+    return re.match(r"Prop\b", parts[-1].strip()) is not None
 
 
 def code_view(root: Path) -> Path:
@@ -184,7 +235,7 @@ def classify(path: Path):
         else:
             sig_part, body_part = "", line
         head = _signature_head(signature)
-        is_prop_decl = kind in PROP_KINDS or bool(PROP_RESULT.search(head))
+        is_prop_decl = kind in PROP_KINDS or _returns_prop(head)
         n_sig = len(READ.findall(sig_part))
         n_body = len(READ.findall(body_part))
         if n_sig:
@@ -349,6 +400,26 @@ def frozenStep (st : FrozenSystemState) (tid : ThreadId) : FrozenSystemState :=
     # and reading only `:=` as the terminator put every read of it in the
     # signature bucket -- which is SPEC, which is diagnostic, so a raw
     # executable read passed the enforced zero by being legally spelled.
+    # DECISIVE for the binder-vs-result distinction (PR #895 review round 3).
+    # A `Prop` in a PARAMETER used to make the whole declaration read as
+    # Prop-valued, so this executable body's raw read was filed SPEC and walked
+    # around the enforced zero.  The mutation keeps every token and moves the
+    # `Prop` from the result to a binder, which is exactly what the superseded
+    # regex could not see.
+    "prop_binder_is_not_a_prop_result": ("""
+def step (proof : Prop) (st : SystemState) (oid : ObjId) : SystemState :=
+  match st.objects[oid]? with
+  | some _ => st
+  | none => st
+""", {("f.lean", "step"): 1}, {}),
+    # ...and the genuinely Prop-valued shape is still SPEC, so the fix did not
+    # simply reclassify everything as code.
+    "prop_result_is_still_spec": ("""
+def holds (st : SystemState) (oid : ObjId) : Prop :=
+  match st.objects[oid]? with
+  | some _ => True
+  | none => False
+""", {}, {("f.lean", "holds"): 1}),
     "where_equation_body": ("""
 def step : SystemState -> ObjId -> SystemState where
   | st, oid => match st.objects[oid]? with
