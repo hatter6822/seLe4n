@@ -1863,6 +1863,41 @@ theorem propagatePipChainCrossCore_preserves_ipcInvariantFull (st : SystemState)
 
 
 
+/-- **WS-RM (`v0.35.6`)**: the priority-inheritance walk frames the donation
+chain.  Every step is one `updatePipBoostOnCore`, whose single object write is a
+`.tcb` at a key that already held one, so no Reply and no SchedContext is
+created, destroyed or rewritten along the walk — however long it is. -/
+theorem pipBoostWithWake_donationChainFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId) (hObjInv : st.objects.invExt) :
+    donationChainFrame st (pipBoostWithWake st tid ec).1 :=
+  donationChainFrame.of_no_chain_object_write
+    (fun oid r => (PriorityInheritance.updatePipBoostOnCore_reply_schedContext_iff st
+      (determineTargetCore st tid) tid hObjInv oid).1 r)
+    (fun oid sc => (PriorityInheritance.updatePipBoostOnCore_reply_schedContext_iff st
+      (determineTargetCore st tid) tid hObjInv oid).2 sc)
+
+/-- **WS-RM (`v0.35.6`)**: and so does the whole walk, by induction on its fuel. -/
+theorem propagatePipChainCrossCore_donationChainFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId) (fuel : Nat) (hObjInv : st.objects.invExt) :
+    donationChainFrame st (PriorityInheritance.propagatePipChainCrossCore st tid ec fuel).1 := by
+  induction fuel generalizing st tid with
+  | zero => rw [PriorityInheritance.propagatePipChainCrossCore_zero]; exact donationChainFrame.refl st
+  | succ n ih =>
+    rw [PriorityInheritance.propagatePipChainCrossCore_step]
+    have hStep := pipBoostWithWake_donationChainFrame st tid ec hObjInv
+    have hObj' := PriorityInheritance.pipBoostWithWake_preserves_objects_invExt st tid ec hObjInv
+    cases hB : PriorityInheritance.blockingServer st tid with
+    | none => exact hStep
+    | some nextServer => exact hStep.trans (ih _ nextServer hObj')
+
+/-- **WS-RM (`v0.35.6`)**: hence the walk preserves the chain invariant. -/
+theorem propagatePipChainCrossCore_preserves_donationChainWellFormed (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId) (fuel : Nat) (hObjInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st) :
+    donationChainWellFormed (PriorityInheritance.propagatePipChainCrossCore st tid ec fuel).1 :=
+  donationChainWellFormed_of_frame
+    (propagatePipChainCrossCore_donationChainFrame st tid ec fuel hObjInv) hChain
+
 /-! ### WS-OD OD3.6 — the receive rendezvous hand-off's invariant surface
 
 `applyReceiveRendezvousDonation` is the step both receiving arms run, so its
@@ -2061,11 +2096,12 @@ Stated over the stores rather than over the operation, because that is the shape
 OD4's push needs on the other side: the push adds a frame and this removes one,
 and both are proved against the same store surface
 (`donationHeadPush_preserves_donationChainWellFormed` is the dual). -/
-theorem donationHeadPop_preserves_donationChainWellFormed
+theorem donationHeadPop_preserves_donationChainWellFormed_of_except
     {st s1 s2 : SystemState} {scId : SeLe4n.SchedContextId} {sc : SchedContext}
     {originalOwner : SeLe4n.ThreadId} {head? : Option (SeLe4n.ReplyId × Reply)}
     (hObjInv : st.objects.invExt)
-    (hChain : donationChainWellFormed st)
+    (hChainNone : head? = none → donationChainWellFormed st)
+    (hChainHead : ∀ rid r, head? = some (rid, r) → donationChainWellFormedExcept st rid)
     (hSc : st.getSchedContext? scId = some sc)
     (hHead : donationHeadOf? st scId sc = .ok head?)
     (hS1 : storeObject scId.toObjId
@@ -2082,7 +2118,10 @@ theorem donationHeadPop_preserves_donationChainWellFormed
   cases head? with
   | none =>
     -- No stack: the context's head stays `none` and the pop is the identity,
-    -- so the prefix frames the chain and nothing has to be re-derived.
+    -- so the prefix frames the chain and nothing has to be re-derived.  Nothing
+    -- is popped here, so nothing discharges a relaxation and the caller owes the
+    -- unrelaxed invariant.
+    have hChain : donationChainWellFormed st := hChainNone rfl
     have hNoHead : sc.scReply = none := by
       have hKey := donationHeadOf?_ok_key st scId sc none hHead
       simpa using hKey.symm
@@ -2093,6 +2132,10 @@ theorem donationHeadPop_preserves_donationChainWellFormed
     exact donationChainWellFormed_of_frame hFrame hChain
   | some pr =>
     obtain ⟨rid, r⟩ := pr
+    -- The popped head is the key the caller may relax at: the pop clears its
+    -- links, so `Reply.wellFormed` is re-established there by construction and
+    -- the argument never reads it in the pre-state.
+    have hChain : donationChainWellFormedExcept st rid := hChainHead rid r rfl
     obtain ⟨hRobj, hRnext⟩ := donationHeadOf?_ok_resolves st scId sc rid r hHead
     have hScReply : sc.scReply = some rid := by
       have hKey := donationHeadOf?_ok_key st scId sc (some (rid, r)) hHead
@@ -2181,9 +2224,9 @@ theorem donationHeadPop_preserves_donationChainWellFormed
       -- §6.4a  The five conjuncts.
       refine ⟨?_, ?_, ?_, ?_, ?_⟩
       · intro q rq hq
-        rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, hqPre⟩
+        rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨hqNe, hqPre⟩
         · intro _; exact ⟨rfl, rfl⟩
-        · exact hChain.replyWellFormed q rq hqPre
+        · exact hChain.replyWellFormedExcept q rq hqNe hqPre
       · intro c sc' hc rid' hRid'
         rcases hScCases c sc' hc with ⟨_, rfl⟩ | ⟨hcNe, hcPre⟩
         · simp at hRid'
@@ -2329,16 +2372,16 @@ theorem donationHeadPop_preserves_donationChainWellFormed
       -- has a caller (`replyWellFormed`).
       have hBelowCaller : b0.caller ≠ none := by
         intro hC
-        have hWf := hChain.replyWellFormed below b0 hBobj hC
+        have hWf := hChain.replyWellFormedExcept below b0 hBelowNeRid hBobj hC
         rw [hWf.2] at hBnext
         cases hBnext
       -- §6.4b  The five conjuncts.
       refine ⟨?_, ?_, ?_, ?_, ?_⟩
       · intro q rq hq
-        rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, _, hqPre⟩
+        rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨hqNe, _, hqPre⟩
         · intro _; exact ⟨rfl, rfl⟩
         · intro hC; exact absurd hC hBelowCaller
-        · exact hChain.replyWellFormed q rq hqPre
+        · exact hChain.replyWellFormedExcept q rq hqNe hqPre
       · intro c sc' hc rid' hRid'
         rcases hScCases c sc' hc with ⟨hcEq, rfl⟩ | ⟨hcNe, hcPre⟩
         · obtain rfl : scId = c := hcEq.symm
@@ -2470,6 +2513,76 @@ theorem donationHeadPop_preserves_donationChainWellFormed
             obtain ⟨rq, hrq, _⟩ := donationChainFrom_mem st c fuel' sc'.scReply chain' hWalk' q hq
             unfold replyStackLinksAt?
             rw [hReplyFwd q rq hqRid hqBelow hrq, hrq])
+
+/-- WS-OD OD3.8 / `v0.35.4`: the pop's chain writes preserve the chain invariant,
+from the **unrelaxed** pre-state — the instance of
+`donationHeadPop_preserves_donationChainWellFormed_of_except` every transition
+that does not run a reply leg first consumes. -/
+theorem donationHeadPop_preserves_donationChainWellFormed
+    {st s1 s2 : SystemState} {scId : SeLe4n.SchedContextId} {sc : SchedContext}
+    {originalOwner : SeLe4n.ThreadId} {head? : Option (SeLe4n.ReplyId × Reply)}
+    (hObjInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st)
+    (hSc : st.getSchedContext? scId = some sc)
+    (hHead : donationHeadOf? st scId sc = .ok head?)
+    (hS1 : storeObject scId.toObjId
+      (.schedContext { sc with boundThread := some originalOwner,
+                               scReply := head?.bind (fun p => p.2.prev) }) st = .ok ((), s1))
+    (hPop : storeDonationHeadPop scId head? s1 = .ok s2) :
+    donationChainWellFormed s2 :=
+  donationHeadPop_preserves_donationChainWellFormed_of_except hObjInv (fun _ => hChain)
+    (fun rid _ _ => donationChainWellFormedExcept_of_wellFormed hChain rid) hSc hHead hS1 hPop
+
+/-- **WS-RM (`v0.35.6`): the pop *discharges* the reply leg's head transient.**
+
+The theorem the workstream's composite payoff rests on.  When the frame the reply
+answered is a stack head, `removeCallerReplyFrame` leaves `Reply.wellFormed` false
+at exactly that frame (`Reply.consumed` keeps a head's links, deliberately — the
+pop validates the head by that very link) and the pop that follows in the same
+transition clears them, so the composite is well formed even though neither half
+is.
+
+The relaxation key is the popped head, named through `donationHeadOf?` rather than
+supplied: a caller that relaxed at some *other* frame would be claiming a
+discharge this operation does not perform.  Where the context has no stack there
+is nothing to pop and nothing to discharge, so that arm owes the unrelaxed
+invariant — which is what `hChainNone` says, and why this is not stated as a
+single relaxed hypothesis. -/
+theorem returnDonatedSchedContext_preserves_donationChainWellFormed_of_except
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hChainNone : ∀ sc, st.getSchedContext? scId = some sc →
+      donationHeadOf? st scId sc = .ok none → donationChainWellFormed st)
+    (hChainHead : ∀ sc rid r, st.getSchedContext? scId = some sc →
+      donationHeadOf? st scId sc = .ok (some (rid, r)) → donationChainWellFormedExcept st rid)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    donationChainWellFormed st' := by
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+    hSc, _, hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  have hScGet : st.getSchedContext? scId = some sc :=
+    (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hSc
+  have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
+  have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have hChain2 : donationChainWellFormed s2 :=
+    donationHeadPop_preserves_donationChainWellFormed_of_except hObjInv
+      (fun hNone => hChainNone sc hScGet (hNone ▸ hHead))
+      (fun rid r hSome => hChainHead sc rid r hScGet (hSome ▸ hHead))
+      hScGet hHead hS1 hClear
+  -- The two TCB rewrites and the index refresh carry no chain data.
+  have hFrame23 : donationChainFrame s2 s3 :=
+    donationChainFrame_of_tcb_rewrite hInv2
+      (lookupTcb_some_objects s2 originalOwner clientTcb hL1) hS3
+  have hFrame34 : donationChainFrame s3 s4 :=
+    donationChainFrame_of_tcb_rewrite hInv3
+      (lookupTcb_some_objects s3 serverTid serverTcb hL2) hS4
+  have hFrame4' : donationChainFrame s4 st' :=
+    donationChainFrame.of_objects_eq (by rw [hEq])
+  exact donationChainWellFormed_of_frame
+    ((hFrame23.trans hFrame34).trans hFrame4') hChain2
 
 /-- WS-OD OD3.8: **`returnDonatedSchedContext` preserves the donation chain.**
 
@@ -3048,7 +3161,7 @@ theorem applyCallDonationOnCore_donated_caller_migrates_and_preserves_affinity
 /-- **WS-OD OD5.2 / `v0.35.4`: the live pop implements `severAtCut`, proved.**
 
 The policy's *effect*, not merely the resolver's answer.  Cancelling a **middle**
-caller detaches its frame from the stack (`detachCancelledCallerFrame`, seL4's
+caller detaches its frame from the stack (`detachFrameAboveThreadReply`, seL4's
 `reply_remove_tcb` on a non-head frame), so the frame above it is left with no
 `prev` — the shape a bottom-of-stack head has, and the shape this theorem takes as
 its hypothesis (`hCut`).  On it the pop

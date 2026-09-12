@@ -280,8 +280,10 @@ migration restores replenish-queue affinity consistency on every core.**
 
 The substance of both reply-side donation arms, factored out because two live
 paths perform exactly this pair: `applyReplyDonationOnCore` (which follows it
-with a deschedule) and `replyRecvReturnDonation` (which does not, because the
-recorded server may immediately rendezvous with a queued `Call`).
+with a deschedule) and `replyRecvPopDonation` (which does not, because the
+recorded server may immediately rendezvous with a queued `Call` -- the
+deschedule is `replyRecvPostReceiveDonation`'s, once the receive leg has said
+whether anything did).
 
 The return rebinds exactly one SchedContext — from the replier back to the
 original owner — so exactly that SchedContext's replenish entries become
@@ -419,7 +421,9 @@ serialised against every other core.
 state-level one was written by the operation and named by no lock.
 
 **WS-OD OD3.7**: the reply object and the two below-head reads are pinned at
-`none` on *both* sides, and explicitly rather than by a default.  This equation
+`none` on *both* sides, and explicitly rather than by a default.  **WS-OD
+(`v0.35.4`) / WS-RM (`v0.35.6`)**: so are the head the pop clears and the frame
+above the answered reply, for the same reason.  This equation
 characterises what the *donation* adds, and `lockSetExtendOpt` is an insertion —
 it does not commute — so the donation's two members cannot be lifted over
 members added after them.  Stating it on the chain-free, reply-object-free shape
@@ -429,11 +433,11 @@ theorem lockSet_endpointReply_donation_extension
     (replier : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) :
     lockSet_endpointReply replier cnRoot target (some scId) (some originalOwner)
-        none none none
+        none none none none none
       = lockSetExtendOpt
           (lockSetExtendOpt
             (lockSetExtendOpt
-              (lockSet_endpointReply replier cnRoot target none none none none none)
+              (lockSet_endpointReply replier cnRoot target none none none none none none none)
               (some (schedContextLock scId, .write)))
             (some (tcbLock originalOwner, .write)))
           (some (stateLevelLock, .write)) := by

@@ -93,7 +93,7 @@ theorem lockSet_endpointReplyOnCore_size_le (st : SystemState)
     (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).size
       ≤ maxLockSetSize := by
   unfold lockSet_endpointReplyOnCore
-  exact lockSet_endpointReply_size_le _ _ _ _ _ _ _ _ _
+  exact lockSet_endpointReply_size_le _ _ _ _ _ _ _ _ _ _
 
 /-- The `replyRecv` resolved footprint — the widest IPC footprint the kernel
 declares.  **Twenty-one** members over all argument values on the widest path: a
@@ -111,7 +111,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le (st : SystemState)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
       ≤ maxLockSetSize :=
-  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD OD1.5: `none` extends nothing. -/
 private theorem extendOpt_none (S : LockSet) : lockSetExtendOpt S none = S := rfl
@@ -133,11 +133,65 @@ re-establish it for every thread. -/
 def replyDonationOwnerIsAnsweredCaller (st : SystemState) (target : SeLe4n.ThreadId) : Prop :=
   ∀ scId owner, endpointReplyServerDonation? st target = some (scId, owner) → owner = target
 
-/-- **PR #894 review: what a reachable `.replyRecv` actually declares — eighteen,
-with no hypothesis at all.**
+/-- **WS-RM (`v0.35.6`): the head of the returned context's reply stack is the
+answered caller's own reply object.**
 
-The ceiling is twenty-one because a `LockSet` bounds the union over **all**
-argument values.  No *state* produces all twenty-one, and the reason is a mutual
+The sibling of `replyDonationOwnerIsAnsweredCaller`, and like it a *local*
+coherence fact the invariants supply about one reply rather than a conjunct every
+transition must re-establish: `applyCallDonation` pushed the answered caller's
+`replyObject` as the head of the context it donated, so that is what a later
+reply's pop clears.  `lockSet_endpointReplyOnCore`'s own comment has asserted it
+in prose since WS-OD (`v0.35.4`) ("on every reachable state it is the answered
+caller's own reply object"); this names it so the sharp bounds below can cite it.
+
+It is what makes the WS-RM member **free**: the frame above the answered reply is
+`some` exactly when that reply is not a stack head, and under this fact a reply
+that is not the head means the context heads no stack at all — so the pop's three
+members are absent whenever the detach's one is present. -/
+def replyStackHeadIsAnsweredReply (st : SystemState) (target : SeLe4n.ThreadId) : Prop :=
+  ∀ scId owner h, endpointReplyServerDonation? st target = some (scId, owner) →
+    replyStackHead? st scId = some h → (st.getTcb? target).bind (·.replyObject) = some h
+
+/-- **WS-RM (`v0.35.6`): the exclusion, proved.**  If the answered caller's reply
+frame has a frame above it, the context this reply returns heads no stack — so
+the head the pop would clear, the frame below it and that frame's caller are all
+absent from the resolved footprint. -/
+theorem replyStackHead?_none_of_answeredFrameAbove (st : SystemState)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (above : SeLe4n.ReplyId)
+    (hChain : donationChainWellFormed st)
+    (hHeadIs : replyStackHeadIsAnsweredReply st target)
+    (hDon : endpointReplyServerDonation? st target = some (scId, owner))
+    (hAbove : answeredReplyFrameAbove? st target = some above) :
+    replyStackHead? st scId = none := by
+  cases hHead : replyStackHead? st scId with
+  | none => rfl
+  | some h =>
+    exfalso
+    -- The head is the answered caller's own reply object.
+    have hRid : (st.getTcb? target).bind (·.replyObject) = some h :=
+      hHeadIs scId owner h hDon hHead
+    -- So the frame above is `h`'s, which means `h.next` names a frame …
+    rw [answeredReplyFrameAbove?_eq st target h hRid] at hAbove
+    obtain ⟨r, hR, hN⟩ := replyFrameAbove?_eq_some hAbove
+    -- … while heading the context means `h.next` names the context.
+    unfold replyStackHead? at hHead
+    cases hSc : st.getSchedContext? scId with
+    | none => rw [hSc] at hHead; cases hHead
+    | some sc =>
+      rw [hSc] at hHead
+      obtain ⟨r', hR', hNext'⟩ := hChain.headLinkReciprocal scId sc
+        ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc) h hHead
+      have hrr : r' = r := KernelObject.reply.inj (Option.some.inj
+        (hR'.symm.trans ((SystemState.getReply?_eq_some_iff _ _ _).mp hR)))
+      rw [hrr, hN] at hNext'
+      cases hNext'
+
+/-- **WS-RM (`v0.35.6`): what a `.replyRecv` declares with no hypothesis at all —
+nineteen.**
+
+The ceiling is twenty-two because a `LockSet` bounds the union over **all**
+argument values.  No *state* produces all twenty-two, and the reason is a mutual
 exclusion between two groups of members rather than an invariant anyone has to
 supply:
 
@@ -147,15 +201,15 @@ supply:
 * the **invoking** receiver's own pre-receive return is live exactly when it
   does not (`receivePreReturn?_of_sender`).
 
-So a rendezvous declares `4 + 12 = 16` and a blocking receive `4 + 14 = 18`, and
-eighteen bounds both.  Three of the ceiling's twenty-one are slack that no state
-can take up; stating that here is what stops the next reader re-deriving it from
-the definition, the way WS-OD OD3.7 established for this same arm. -/
-theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
+So a rendezvous declares `4 + 13 = 17` and a blocking receive `4 + 15 = 19`, and
+nineteen bounds both.  Three of the ceiling's twenty-two are slack that no state
+can take up; the remaining one is the exclusion the *next* theorem states, which
+needs a coherence fact and so cannot live here. -/
+theorem lockSet_endpointReplyRecvOnCore_size_le_nineteen (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
-      ≤ 18 := by
+      ≤ 19 := by
   unfold lockSet_endpointReplyRecvOnCore
   cases hS : receiveRendezvousSender? st endpointObjId with
   | some sender =>
@@ -165,15 +219,72 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
         receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
       simp only [Option.map_none]
       exact Nat.le_trans
-        (lockSet_replyRecv_size_le_sixteen_of_no_preReturn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-        (by decide : (16 : Nat) ≤ 18)
+        (lockSet_replyRecv_size_le_seventeen_of_no_preReturn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+        (by decide : (17 : Nat) ≤ 19)
   | none =>
       -- A blocking receive: nothing is dequeued, so the new sender, the
       -- re-donated context and the frame its push would rewrite are all absent.
       rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
       simp only [Option.bind_none]
-      exact lockSet_replyRecv_size_le_eighteen_of_no_sender
-        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      exact lockSet_replyRecv_size_le_nineteen_of_no_sender
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+/-- **WS-RM (`v0.35.6`): and eighteen on a coherent state — exactly where PR
+#894's review left it.**
+
+The detach's member costs the *reachable* footprint nothing, and this is the
+theorem that says so.  The answered frame has a frame above it exactly when it is
+not a stack head, and under `replyStackHeadIsAnsweredReply` a reply that is not
+the head means the returned context heads no stack
+(`replyStackHead?_none_of_answeredFrameAbove`) — so the three members the pop
+contributes are absent whenever the detach's one is present, and a blocking
+`.replyRecv` that detaches declares **sixteen**, two fewer than one that pops.
+Eighteen bounds both branches and both groups.
+
+Stated with the coherence fact explicit rather than folded into `ipcReachable`,
+for the reason `replyDonationOwnerIsAnsweredCaller` gives. -/
+theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
+    (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
+    (hChain : donationChainWellFormed st)
+    (hHeadIs : replyStackHeadIsAnsweredReply st target) :
+    (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
+      ≤ 18 := by
+  unfold lockSet_endpointReplyRecvOnCore
+  cases hS : receiveRendezvousSender? st endpointObjId with
+  | some sender =>
+      rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
+        receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
+      simp only [Option.map_none]
+      exact Nat.le_trans
+        (lockSet_replyRecv_size_le_seventeen_of_no_preReturn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+        (by decide : (17 : Nat) ≤ 18)
+  | none =>
+      rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+      simp only [Option.bind_none]
+      cases hAbove : answeredReplyFrameAbove? st target with
+      | none =>
+          exact lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove
+            _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      | some above =>
+          cases hDon : endpointReplyServerDonation? st target with
+          | none =>
+              simp only [Option.map_none, Option.bind_none]
+              exact Nat.le_trans
+                (lockSet_replyRecv_size_le_sixteen_of_no_sender_of_no_head
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (by decide : (16 : Nat) ≤ 18)
+          | some pr =>
+              obtain ⟨scId, owner⟩ := pr
+              have hHead : replyStackHead? st scId = none :=
+                replyStackHead?_none_of_answeredFrameAbove st target scId owner above
+                  hChain hHeadIs hDon hAbove
+              simp only [Option.map_some, Option.bind_some, hHead,
+                replyStackBelowHead?_of_no_head st scId hHead]
+              exact Nat.le_trans
+                (lockSet_replyRecv_size_le_sixteen_of_no_sender_of_no_head
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (by decide : (16 : Nat) ≤ 18)
 
 /-- **WS-OD OD3.7: and one narrower still under the donation discipline —
 seventeen.**
@@ -181,8 +292,9 @@ seventeen.**
 **WS-OD OD3.13** moved the ceiling and this figure together (fourteen and
 thirteen); **WS-OD `v0.35.4`** added the head the pop clears and the old head the
 re-donation's push rewrites; **PR #894 review** added the invoking receiver's own
-pre-receive return and took the ceiling to twenty-one.  What this theorem adds
-over the unconditional eighteen above is the one *merge* the invariants supply:
+pre-receive return and took the ceiling to twenty-one; **WS-RM (`v0.35.6`)** added
+the frame the removal's detach writes and took it to twenty-two.  What this
+theorem adds over the eighteen above is the one *merge* the invariants supply:
 the returned donation's owner is the answered caller, so two arguments name one
 key and `insertOrMerge` lubs the modes without moving the cardinality.
 
@@ -200,37 +312,50 @@ already has to the ceiling. -/
 theorem lockSet_endpointReplyRecvOnCore_size_le_seventeen (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
+    (hChain : donationChainWellFormed st)
+    (hHeadIs : replyStackHeadIsAnsweredReply st target)
     (hOwner : replyDonationOwnerIsAnsweredCaller st target) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
       ≤ 17 := by
   unfold lockSet_endpointReplyRecvOnCore
   cases hS : receiveRendezvousSender? st endpointObjId with
   | some sender =>
-      -- A rendezvous declares sixteen whatever the reply returns; the owner merge
-      -- is not even needed to stay inside seventeen here.
+      -- A rendezvous declares seventeen whatever the reply returns; neither the
+      -- owner merge nor the head exclusion is needed to stay inside seventeen.
       rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
         receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
       simp only [Option.map_none]
-      exact Nat.le_trans
-        (lockSet_replyRecv_size_le_sixteen_of_no_preReturn
-          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) (by decide : (16 : Nat) ≤ 17)
+      exact lockSet_replyRecv_size_le_seventeen_of_no_preReturn
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   | none =>
       rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
       cases hDon : endpointReplyServerDonation? st target with
       | none =>
           -- Nothing to return: neither group of state-resolved members is live
-          -- but the invoker's own pre-receive return, so this is thirteen.
+          -- but the invoker's own pre-receive return, so this is fourteen.
           simp only [Option.map_none, Option.bind_none]
           exact Nat.le_trans
-            (lockSet_replyRecv_size_le_thirteen_of_no_sender_of_no_donation
-              _ _ _ _ _ _ _ _ _ _ _ _ _) (by decide : (13 : Nat) ≤ 17)
+            (lockSet_replyRecv_size_le_fourteen_of_no_sender_of_no_donation
+              _ _ _ _ _ _ _ _ _ _ _ _ _ _) (by decide : (14 : Nat) ≤ 17)
       | some pr =>
           obtain ⟨scId, owner⟩ := pr
           have hEq : owner = target := hOwner scId owner hDon
           subst hEq
-          simp only [Option.map_some, Option.bind_none]
-          exact lockSet_replyRecv_size_le_seventeen_of_owner_eq_target_of_no_sender
-            _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+          cases hAbove : answeredReplyFrameAbove? st owner with
+          | none =>
+              simp only [Option.map_some, Option.bind_none]
+              exact lockSet_replyRecv_size_le_seventeen_of_owner_eq_target_of_no_sender_of_no_frameAbove
+                _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+          | some above =>
+              have hHead : replyStackHead? st scId = none :=
+                replyStackHead?_none_of_answeredFrameAbove st owner scId owner above
+                  hChain hHeadIs hDon hAbove
+              simp only [Option.map_some, Option.bind_some, Option.bind_none, hHead,
+                replyStackBelowHead?_of_no_head st scId hHead]
+              exact Nat.le_trans
+                (lockSet_replyRecv_size_le_fifteen_of_owner_eq_target_of_no_sender_of_no_head
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (by decide : (15 : Nat) ≤ 17)
 
 /-- The resolved **receive** footprint.  Stated over the reply optional rather
 than at its default, so the receive-with-reply shape is bounded too. -/

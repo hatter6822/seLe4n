@@ -1410,7 +1410,7 @@ returned context — on every reachable state it is the cancelled caller's own
 reply object and merges with `consumedReplyId` by key, but a footprint is the
 union over all argument values and the operation writes whatever `scReply`
 names), and the **frame above** the cancelled caller's own
-(`detachedFrameAboveReplyId`), which `detachCancelledCallerFrame` unlinks when
+(`detachedFrameAboveReplyId`), which `detachFrameAboveThreadReply` unlinks when
 the caller is not the head of its stack — seL4's `reply_remove_tcb`, non-head
 arm.  The two are mutually exclusive on every reachable state (a caller whose
 frame has something above it is not the innermost live caller, so no reclaim is
@@ -1470,7 +1470,7 @@ def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
       -- from the returned context rather than assumed to be the consumed reply.
       (reclaimHeadReplyId.map (fun r => (replyLock r, AccessMode.write))))
       -- **WS-OD (`v0.35.4`)**: the frame above the cancelled caller's own,
-      -- which `detachCancelledCallerFrame` unlinks (`prev := none`) when the
+      -- which `detachFrameAboveThreadReply` unlinks (`prev := none`) when the
       -- caller is a middle caller of its stack — the write that stops a dead
       -- frame from heading a stack forever.
       (detachedFrameAboveReplyId.map (fun r => (replyLock r, AccessMode.write))))
@@ -1594,7 +1594,7 @@ theorem cancelReclaimHead?_of_donation (st : SystemState)
   rfl
 
 /-- **WS-OD (`v0.35.4`)**: the **frame above the cancelled caller's own** — the
-Reply `detachCancelledCallerFrame` rewrites (`prev := none`) when the caller is a
+Reply `detachFrameAboveThreadReply` rewrites (`prev := none`) when the caller is a
 *middle* caller of its stack, so that the frame above becomes the bottom of the
 stack it heads and the cancelled frame leaves the structure when its caller link
 is consumed.  Keyed on the reply arm, since only that arm detaches, and resolved
@@ -2362,7 +2362,7 @@ theorem lockSet_cancelIpcBlocking_reclaim_head_write_mem
   exact self_write_mem_insertOrMerge _ (replyLock r)
 
 /-- **WS-OD (`v0.35.4`)** (coverage): the **frame above the cancelled caller's
-own** — the one `detachCancelledCallerFrame` unlinks — is a declared write. -/
+own** — the one `detachFrameAboveThreadReply` unlinks — is a declared write. -/
 theorem lockSet_cancelIpcBlocking_detached_frame_above_write_mem
     (victimTid : SeLe4n.ThreadId)
     (blEp : Option SeLe4n.ObjId)

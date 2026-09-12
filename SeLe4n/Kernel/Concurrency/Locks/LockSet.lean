@@ -936,12 +936,12 @@ per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at elev
 (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
-At the value above, the declared lock-set ceiling is **21**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3780 µs** —
+At the value above, the declared lock-set ceiling is **22**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3960 µs** —
 the canonical spelling `scripts/check_lock_ceiling_figures.py` holds to the Lean
 sources, so a raise that leaves a copy of any of the three behind is a build
 failure on the cut that makes it stale rather than on the cut that notices.  The figure is *derived* from this constant and must be
-read off that theorem rather than from this paragraph: at twenty-one the tick
-admits `21 · 3 · 15 = 945 µs ≤ 1000`, and quoting a superseded per-lock cost
+read off that theorem rather than from this paragraph: at twenty-two the tick
+admits `22 · 3 · 15 = 990 µs ≤ 1000`, and quoting a superseded per-lock cost
 beside the current ceiling states a budget the constant does not satisfy.  Every
 raise is the maintainer's decision, taken against the same alternative — refusing
 to declare `.replyRecv` on the arms that do not fit — which would leave the
@@ -1015,11 +1015,35 @@ most-travelled IPC path.  The five members are the same five
 (the OD3.7 precedent).  The pre-receive return fires exactly when the endpoint
 has **no** queued sender, and the re-donation members fire exactly when it has
 one, so no reachable state carries both groups:
-`lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds every state at
-**eighteen** with no hypothesis, and the owner merge takes a reachable
-`.replyRecv` to seventeen.  Twenty-one is what the *definition* can produce over
+`lockSet_endpointReplyRecvOnCore_size_le_nineteen` bounds every state at
+**nineteen** with no hypothesis at all, and under the two local coherence facts
+the invariants supply — the returned donation's owner is the answered caller,
+and the returned context's stack head is that caller's own reply object — a
+reachable `.replyRecv` is back to **eighteen** and **seventeen**, exactly where
+PR #894's review left them.  Twenty-two is what the *definition* can produce over
 all argument values, which is what `boundedWait_under_2pl` and the WCRT surface
-must consume. -/
-def maxLockSetSize : Nat := 21
+must consume.
+
+**WS-RM (`v0.35.6`): 21 → 22**, on that same arm for the sixth time, and again
+for a member the arm writes.  seL4's `reply_remove` takes the answered frame off
+its reply stack **before** the caller link is consumed, by clearing the `prev` of
+the frame above it; the reply path did not, so `Reply.consumed` cleared a
+non-head frame's links while something still linked down to it and every later
+pop of that stack refused, fail-closed, forever.  The removal
+(`removeCallerReplyFrame`) writes that frame above, and no member named it.
+
+*The cost is parametric only.*  The new member is `some` exactly when the
+answered frame is **not** a stack head, and the three members the donation return
+contributes — the head the pop clears, the frame below it and that frame's
+caller — are `some` only when it **is** (under
+`replyStackHeadIsAnsweredReply`, the local coherence fact the invariants supply
+and `lockSet_endpointReplyRecvOnCore_size_le_eighteen` now states).  So a
+reachable footprint trades three members for one and the reachable figures do not
+move; twenty-two is the union over argument values no state realises together.
+`admissibleCriticalSection` is unchanged at **15 µs** — `1000 / (22 · 3) = 15`,
+the same floor twenty-one gives — so this raise is the first that costs the
+admissible critical section nothing; the uniform 60 µs envelope moves
+3780 → 3960 µs. -/
+def maxLockSetSize : Nat := 22
 
 end SeLe4n.Kernel.Concurrency

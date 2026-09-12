@@ -2053,7 +2053,7 @@ Chosen for three reasons, in order of weight.
    the stack at it: the frame above stops linking down, everything below is cut
    off, and the frame itself is unlinked.  Since `v0.35.4` this model's stack is
    doubly linked too (`Reply.next`), and the cancellation runs exactly that
-   detach (`detachCancelledCallerFrame` → `detachReplyFrameAbove`) before the
+   detach (`detachFrameAboveThreadReply` → `detachReplyFrameAbove`) before the
    caller link is consumed.  The scheduling context settles on the innermost
    live caller — the frame above the cut is now the bottom of its stack, so the
    pop that reaches it binds that thread `.bound scId` outright — and reaches no
@@ -2984,6 +2984,74 @@ structure donationChainWellFormed (st : SystemState) : Prop where
     ∃ (fuel : Nat) (chain : List SeLe4n.ReplyId),
       donationChainFrom st scId fuel sc.scReply = some chain
 
+/-- **WS-RM (`v0.35.6`): the chain invariant with `Reply.wellFormed` relaxed at one
+key** — the honest statement about the state a reply leg leaves when the frame it
+answered is a stack **head**.
+
+A head keeps its links when its caller is consumed, deliberately: the donation pop
+that removes it runs in the same transition right after the reply leg and
+validates the head by that very link (WS-OD plan §3.3).  So between the two the
+frame at `rid` has `caller = none` and a live `.head` link, which
+`Reply.wellFormed` forbids — and **only** that: the context still names the frame
+and the frame still names the context, no `prev` names it (its `next` is a
+`.head`, so `prevLinkReciprocal` in the pre-state admits none), and every walk is
+over links nothing moved.
+
+It stands to the reply leg as `ipcInvariantFullExceptDonationOwner` stands to the
+bare reply: the composite that discharges it is where the pop runs
+(`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`), and
+`donationChainWellFormed_of_except` is the upgrade. -/
+structure donationChainWellFormedExcept (st : SystemState) (rid : SeLe4n.ReplyId) : Prop where
+  /-- Every stored Reply **other than `rid`** is locally well formed. -/
+  replyWellFormedExcept : ∀ (q : SeLe4n.ReplyId) (r : Reply), q ≠ rid →
+    st.objects[q.toObjId]? = some (.reply r) → r.wellFormed
+  /-- A context's head resolves to a Reply heading that context. -/
+  headLinkReciprocal : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+    st.objects[scId.toObjId]? = some (.schedContext sc) →
+    ∀ q : SeLe4n.ReplyId, sc.scReply = some q →
+      ∃ r : Reply, st.objects[q.toObjId]? = some (.reply r) ∧ r.next = some (.head scId)
+  /-- A Reply heading a context is that context's head. -/
+  headLinkResolves : ∀ (q : SeLe4n.ReplyId) (r : Reply) (scId : SeLe4n.SchedContextId),
+    st.objects[q.toObjId]? = some (.reply r) → r.next = some (.head scId) →
+    ∃ sc : SchedContext, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
+      sc.scReply = some q
+  /-- Every `prev` link is answered by the frame it names. -/
+  prevLinkReciprocal : ∀ (q : SeLe4n.ReplyId) (r : Reply) (below : SeLe4n.ReplyId),
+    st.objects[q.toObjId]? = some (.reply r) → r.prev = some below →
+    ∃ b : Reply, st.objects[below.toObjId]? = some (.reply b) ∧ b.next = some (.frame q)
+  /-- Each context's stack, walked from its head, terminates. -/
+  headTerminates : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+    st.objects[scId.toObjId]? = some (.schedContext sc) →
+    ∃ (fuel : Nat) (chain : List SeLe4n.ReplyId),
+      donationChainFrom st scId fuel sc.scReply = some chain
+
+/-- The whole invariant is the relaxed one plus well-formedness at the one key it
+relaxes — so a composite that later removes that frame discharges the transient
+by supplying exactly that fact. -/
+theorem donationChainWellFormed_of_except {st : SystemState} {rid : SeLe4n.ReplyId}
+    (h : donationChainWellFormedExcept st rid)
+    (hAt : ∀ r : Reply, st.objects[rid.toObjId]? = some (.reply r) → r.wellFormed) :
+    donationChainWellFormed st where
+  replyWellFormed := by
+    intro q r hq
+    by_cases hEq : q = rid
+    · subst hEq; exact hAt r hq
+    · exact h.replyWellFormedExcept q r hEq hq
+  headLinkReciprocal := h.headLinkReciprocal
+  headLinkResolves := h.headLinkResolves
+  prevLinkReciprocal := h.prevLinkReciprocal
+  headTerminates := h.headTerminates
+
+/-- The relaxed form is weaker, at any key. -/
+theorem donationChainWellFormedExcept_of_wellFormed {st : SystemState}
+    (h : donationChainWellFormed st) (rid : SeLe4n.ReplyId) :
+    donationChainWellFormedExcept st rid where
+  replyWellFormedExcept := fun q r _ hq => h.replyWellFormed q r hq
+  headLinkReciprocal := h.headLinkReciprocal
+  headLinkResolves := h.headLinkResolves
+  prevLinkReciprocal := h.prevLinkReciprocal
+  headTerminates := h.headTerminates
+
 /-- WS-OD OD3.2: **the pop's head validation succeeds.**
 
 `returnDonatedSchedContext` refuses a scheduling context whose stack head does
@@ -3121,8 +3189,13 @@ first two projections are exactly what the walk and the four link fields
 consult; the third is what `replyWellFormed` — a Reply whose caller is gone
 carries no link — needs, since a step could otherwise consume the caller of a
 linked frame while framing its links, which is the one shape that is not a frame
-(a head frame's consumption on the reply path, closed by the pop that follows
-it in the same transition).  Every step that rewrites no Reply satisfies the
+— a head frame's consumption on the reply path, since `Reply.consumed` keeps a
+head's links deliberately.  It is a *transient*, not an exception: the reply leg
+leaves `donationChainWellFormedExcept` at that one key and the donation pop that
+follows it in the same transition discharges it
+(`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`, WS-RM
+`v0.35.6`).  A **non**-head consumption clears the links too, so it fails
+`replyLinks` as well and is not a borderline case.  Every step that rewrites no Reply satisfies the
 third field trivially (`of_no_chain_object_write`), and a step that *links* a
 caller (`linkReply`) satisfies it vacuously.
 
@@ -3268,6 +3341,57 @@ theorem donationChainFrame_of_storeObject
       exact hCaller r' (Option.some.inj hR) hC
     · rw [storeObject_objects_ne st st' oid k obj hk hObjInv hStore] at hR
       exact ⟨r', hR, hC⟩
+
+/-- **WS-OD OD5.6**: a single object-store insert frames the donation chain when
+the inserted object carries the same reply-stack data as the object it replaces
+and consumes no caller.
+
+The `storeObject`-free sibling of `donationChainFrame_of_storeObject`: several
+transitions write the object store with a direct `RHTable.insert` rather than
+through `storeObject`, and stating the frame once is what keeps each of them
+from re-deriving the same two-case lookup split.
+
+**WS-RM (`v0.35.6`)** re-homed it here, beside the predicate it is about.  It
+was private to the cancellation shape module, and the fault-reply path needs the
+same fact -- a second copy in a module the first does not import is the
+one-question-two-answers shape this tree keeps paying for. -/
+theorem donationChainFrame_of_objects_insert
+    {st : SystemState} {k0 : SeLe4n.ObjId} {obj : KernelObject}
+    (hInv : st.objects.invExt)
+    (hLinks : replyStackLinks? (some obj) = replyStackLinks? st.objects[k0]?)
+    (hHead : schedContextStackHead? (some obj) = schedContextStackHead? st.objects[k0]?)
+    (hCaller : ∀ r' : Reply, obj = .reply r' → r'.caller = none →
+      ∃ r : Reply, st.objects[k0]? = some (.reply r) ∧ r.caller = none) :
+    donationChainFrame st { st with objects := st.objects.insert k0 obj } := by
+  have hPoint : ∀ k : SeLe4n.ObjId,
+      (st.objects.insert k0 obj)[k]? = if k = k0 then some obj else st.objects[k]? := by
+    intro k
+    by_cases hk : k = k0
+    · subst hk
+      rw [if_pos rfl]
+      exact RobinHood.RHTable.getElem?_insert_self st.objects k obj hInv
+    · rw [if_neg hk]
+      exact RobinHood.RHTable.getElem?_insert_ne st.objects k0 k obj
+        (by simpa using fun h => hk h.symm) hInv
+  refine ⟨fun k => ?_, fun k => ?_, fun k r' hR hC => ?_⟩
+  · show replyStackLinks? ((st.objects.insert k0 obj)[k]?) = _
+    rw [hPoint k]
+    by_cases hk : k = k0
+    · subst hk; rw [if_pos rfl]; exact hLinks
+    · rw [if_neg hk]
+  · show schedContextStackHead? ((st.objects.insert k0 obj)[k]?) = _
+    rw [hPoint k]
+    by_cases hk : k = k0
+    · subst hk; rw [if_pos rfl]; exact hHead
+    · rw [if_neg hk]
+  · have hR' : (st.objects.insert k0 obj)[k]? = some (.reply r') := hR
+    rw [hPoint k] at hR'
+    by_cases hk : k = k0
+    · subst hk
+      rw [if_pos rfl] at hR'
+      exact hCaller r' (Option.some.inj hR') hC
+    · rw [if_neg hk] at hR'
+      exact ⟨r', hR', hC⟩
 
 /-- A TCB store at a key holding no Reply and no SchedContext frames the chain. -/
 theorem donationChainFrame_of_storeObject_tcb
@@ -3427,6 +3551,79 @@ theorem donationChainWellFormed_of_frame {st st' : SystemState}
   · intro rid r' below hR' hPrev'
     obtain ⟨r, hR, hP, _⟩ := hReplyPre rid.toObjId r' hR'
     obtain ⟨b, hB, hBNext⟩ := hInv.prevLinkReciprocal rid r below hR (by rw [hP]; exact hPrev')
+    obtain ⟨b', hB', _, hBN⟩ := hReplyPost below.toObjId b hB
+    exact ⟨b', hB', by rw [hBN]; exact hBNext⟩
+  · intro scId sc' hSc'
+    obtain ⟨sc, hSc, hH⟩ := hScPre scId.toObjId sc' hSc'
+    obtain ⟨fuel, chain, hChain⟩ := hInv.headTerminates scId sc hSc
+    refine ⟨fuel, chain, ?_⟩
+    rw [hH] at hChain
+    unfold donationChainFrom at hChain ⊢
+    rw [donationChainWalk_congr hFrame.replyLinks]
+    exact hChain
+
+/-- **WS-RM (`v0.35.6`): the frame transports the relaxed form too**, at the same
+key — so a step that moves no chain data cannot turn the head transient into a
+different one.  Every clause but the first is the unrelaxed clause verbatim; the
+first is the unrelaxed argument with the exempt key carried through. -/
+theorem donationChainWellFormedExcept_of_frame {st st' : SystemState}
+    {rid : SeLe4n.ReplyId} (hFrame : donationChainFrame st st')
+    (hInv : donationChainWellFormedExcept st rid) :
+    donationChainWellFormedExcept st' rid := by
+  have hReplyPre : ∀ (oid : SeLe4n.ObjId) (r' : Reply),
+      st'.objects[oid]? = some (.reply r') →
+      ∃ r : Reply, st.objects[oid]? = some (.reply r) ∧ r.prev = r'.prev ∧ r.next = r'.next := by
+    intro oid r' hR'
+    have hEq := hFrame.replyLinks oid
+    rw [hR'] at hEq
+    obtain ⟨r, hR, hP, hN⟩ := replyStackLinks?_eq_some_iff.mp hEq.symm
+    exact ⟨r, hR, hP, hN⟩
+  have hReplyPost : ∀ (oid : SeLe4n.ObjId) (r : Reply),
+      st.objects[oid]? = some (.reply r) →
+      ∃ r' : Reply, st'.objects[oid]? = some (.reply r') ∧ r'.prev = r.prev ∧ r'.next = r.next := by
+    intro oid r hR
+    have hEq := hFrame.replyLinks oid
+    rw [hR] at hEq
+    obtain ⟨r', hR', hP, hN⟩ := replyStackLinks?_eq_some_iff.mp hEq
+    exact ⟨r', hR', hP, hN⟩
+  have hScPre : ∀ (oid : SeLe4n.ObjId) (sc' : SchedContext),
+      st'.objects[oid]? = some (.schedContext sc') →
+      ∃ sc : SchedContext, st.objects[oid]? = some (.schedContext sc) ∧ sc.scReply = sc'.scReply := by
+    intro oid sc' hSc'
+    have hEq := hFrame.stackHeads oid
+    rw [hSc'] at hEq
+    obtain ⟨sc, hSc, hH⟩ := schedContextStackHead?_eq_some_iff.mp hEq.symm
+    exact ⟨sc, hSc, hH⟩
+  have hScPost : ∀ (oid : SeLe4n.ObjId) (sc : SchedContext),
+      st.objects[oid]? = some (.schedContext sc) →
+      ∃ sc' : SchedContext, st'.objects[oid]? = some (.schedContext sc') ∧ sc'.scReply = sc.scReply := by
+    intro oid sc hSc
+    have hEq := hFrame.stackHeads oid
+    rw [hSc] at hEq
+    obtain ⟨sc', hSc', hH⟩ := schedContextStackHead?_eq_some_iff.mp hEq
+    exact ⟨sc', hSc', hH⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · intro q r' hNe hR' hC
+    obtain ⟨r, hR, hCPre⟩ := hFrame.callerKept q.toObjId r' hR' hC
+    obtain ⟨r0, hR0, hP, hN⟩ := hReplyPre q.toObjId r' hR'
+    rw [hR] at hR0
+    have hEq : r0 = r := KernelObject.reply.inj (Option.some.inj hR0).symm
+    subst hEq
+    have hWf := hInv.replyWellFormedExcept q r0 hNe hR hCPre
+    exact ⟨by rw [← hP]; exact hWf.1, by rw [← hN]; exact hWf.2⟩
+  · intro scId sc' hSc' q hRid
+    obtain ⟨sc, hSc, hH⟩ := hScPre scId.toObjId sc' hSc'
+    obtain ⟨r, hR, hNext⟩ := hInv.headLinkReciprocal scId sc hSc q (by rw [hH]; exact hRid)
+    obtain ⟨r', hR', _, hN⟩ := hReplyPost q.toObjId r hR
+    exact ⟨r', hR', by rw [hN]; exact hNext⟩
+  · intro q r' scId hR' hNext'
+    obtain ⟨r, hR, _, hN⟩ := hReplyPre q.toObjId r' hR'
+    obtain ⟨sc, hSc, hHead⟩ := hInv.headLinkResolves q r scId hR (by rw [hN]; exact hNext')
+    obtain ⟨sc', hSc', hH⟩ := hScPost scId.toObjId sc hSc
+    exact ⟨sc', hSc', by rw [hH]; exact hHead⟩
+  · intro q r' below hR' hPrev'
+    obtain ⟨r, hR, hP, _⟩ := hReplyPre q.toObjId r' hR'
+    obtain ⟨b, hB, hBNext⟩ := hInv.prevLinkReciprocal q r below hR (by rw [hP]; exact hPrev')
     obtain ⟨b', hB', _, hBN⟩ := hReplyPost below.toObjId b hB
     exact ⟨b', hB', by rw [hBN]; exact hBNext⟩
   · intro scId sc' hSc'

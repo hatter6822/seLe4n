@@ -2569,13 +2569,15 @@ confused-deputy attacks where unauthorized threads reply to blocked callers.
 
 WS-SM SM6.D (PR #827 review #3 fold): a delivered reply now **consumes** the
 answered caller↔Reply link atomically — after the `.ready` store the transition
-clears `reply.caller` and the target's `replyObject` (`consumeCallerReply`),
+takes the answered frame off its reply stack and then clears `reply.caller` and
+the target's `replyObject` (`removeCallerReplyFrame`, WS-RM `v0.35.6`),
 keyed on the caller's own forward link (`tcb.replyObject`; a no-op when
 unlinked).  A *direct* below-API reply therefore establishes
 `replyCallerLinkageReciprocal` internally and the Reply object is single-use
 end-to-end; the former separate dispatch-layer consume is gone.
-`consumeCallerReply` is total (`consumeCallerReply_isOk`), so the folded
-transition's error surface is exactly the delivery leg's. -/
+`removeCallerReplyFrame` is total (`removeCallerReplyFrame_isOk`) — both its
+legs are — so the folded transition's error surface is exactly the delivery
+leg's. -/
 def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
@@ -2611,9 +2613,13 @@ def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
                     -- (single-use, seL4-MCS).  The caller was woken `.ready`
                     -- above, so clearing its `replyObject` preserves the
                     -- `blockedOnReply ⇒ replyObject` clause.
+                    -- **WS-RM (`v0.35.6`)**: and the answered frame comes off its
+                    -- reply stack first (`removeCallerReplyFrame`, seL4's
+                    -- `reply_remove`) — the same step the cross-core spine runs,
+                    -- and the identity wherever the answered frame is a head.
                     match tcb.replyObject with
                     | some rid =>
-                        SystemState.consumeCallerReply target rid (ensureRunnable st' target)
+                        removeCallerReplyFrame target rid (ensureRunnable st' target)
                     | none => .ok ((), ensureRunnable st' target)
               else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
@@ -2667,8 +2673,12 @@ def endpointReplyRecv
                     -- freeing the prior Reply *before* the receive leg so a
                     -- server-supplied `replyId` naming the same object passes the
                     -- stash/link admission (faithful seL4-MCS one-object reuse).
+                    -- **WS-RM (`v0.35.6`)**: and the frame comes off its stack
+                    -- first, which is also what makes the freed Reply linkable
+                    -- again — `Reply.isFree` reads both links, so a frame still
+                    -- named from above could not be reused even once consumed.
                     match (match tcb.replyObject with
-                        | some rid => SystemState.consumeCallerReply replyTarget rid st''
+                        | some rid => removeCallerReplyFrame replyTarget rid st''
                         | none => .ok ((), st'')) with
                     | .error e => .error e
                     | .ok ((), st3) =>

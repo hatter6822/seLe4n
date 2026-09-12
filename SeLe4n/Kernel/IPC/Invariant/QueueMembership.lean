@@ -576,18 +576,26 @@ theorem notificationWait_preserves_ipcStateQueueMembershipConsistent
                     (fun epId => by intro h; cases h) hIpc
 
 open SeLe4n.Model.SystemState in
-/-- PR #827 #3 fold: `consumeCallerReply` preserves
-`ipcStateQueueMembershipConsistent` — `ipcState`/`queueNext` are preserved TCB
-fields and endpoints are untouched, so both the head and the queue-predecessor
-membership witnesses transport. -/
-theorem consumeCallerReply_preserves_ipcStateQueueMembershipConsistent
-    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (hObjInv : st.objects.invExt) (hInv : ipcStateQueueMembershipConsistent st)
-    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+/-- **WS-RM (`v0.35.6`)**: the argument, over the three facts it uses — endpoints
+agree, and every stored TCB keeps its `ipcState` and its queue links in both
+directions.  Both the consume and the removal that precedes it supply them, so
+the case analysis is written once rather than mirrored. -/
+theorem ipcStateQueueMembershipConsistent_of_agree (st st' : SystemState)
+    (hNT : ∀ (s : SeLe4n.ObjId) (k : KernelObject),
+      (∀ tt, k ≠ .tcb tt) → (∀ rr, k ≠ .reply rr) →
+      (st'.objects[s]? = some k ↔ st.objects[s]? = some k))
+    (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
+      ∃ ty, st.objects[s]? = some (.tcb ty) ∧ tx.ipcState = ty.ipcState ∧
+        tx.pendingMessage = ty.pendingMessage ∧ tx.queueNext = ty.queueNext ∧
+        tx.queuePrev = ty.queuePrev ∧ tx.queuePPrev = ty.queuePPrev ∧
+        tx.schedContextBinding = ty.schedContextBinding ∧ tx.timeoutBudget = ty.timeoutBudget)
+    (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
+      ∃ tx, st'.objects[s]? = some (.tcb tx) ∧ tx.ipcState = ty.ipcState ∧
+        tx.pendingMessage = ty.pendingMessage ∧ tx.queueNext = ty.queueNext ∧
+        tx.queuePrev = ty.queuePrev ∧ tx.queuePPrev = ty.queuePPrev ∧
+        tx.schedContextBinding = ty.schedContextBinding ∧ tx.timeoutBudget = ty.timeoutBudget)
+    (hInv : ipcStateQueueMembershipConsistent st) :
     ipcStateQueueMembershipConsistent st' := by
-  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
-  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
-  have hBwd := consumeCallerReply_tcb_backward st st' caller rid hObjInv hStep
   intro tid tcb hObj
   obtain ⟨ty, hStObj, hIS, _⟩ := hFwd tid.toObjId tcb hObj
   have hbase := hInv tid ty hStObj
@@ -632,6 +640,34 @@ theorem consumeCallerReply_preserves_ipcStateQueueMembershipConsistent
           obtain ⟨prev, prevTcb, hPrevSt, hQN⟩ := h
           obtain ⟨xx, hStX, _, _, hQNeq, _⟩ := hBwd prev.toObjId prevTcb hPrevSt
           exact Or.inr ⟨prev, xx, hStX, hQNeq.trans hQN⟩
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves it — the detach writes a
+Reply, which is neither an endpoint nor a TCB. -/
+theorem removeCallerReplyFrame_preserves_ipcStateQueueMembershipConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : ipcStateQueueMembershipConsistent st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ipcStateQueueMembershipConsistent st' :=
+  ipcStateQueueMembershipConsistent_of_agree st st'
+    (removeCallerReplyFrame_nonTcbNonReply_agree st st' caller rid hObjInv hStep)
+    (removeCallerReplyFrame_tcb_forward st st' caller rid hObjInv hStep)
+    (removeCallerReplyFrame_tcb_backward st st' caller rid hObjInv hStep) hInv
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves
+`ipcStateQueueMembershipConsistent` — `ipcState`/`queueNext` are preserved TCB
+fields and endpoints are untouched, so both the head and the queue-predecessor
+membership witnesses transport. -/
+theorem consumeCallerReply_preserves_ipcStateQueueMembershipConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : ipcStateQueueMembershipConsistent st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    ipcStateQueueMembershipConsistent st' :=
+  ipcStateQueueMembershipConsistent_of_agree st st'
+    (consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep)
+    (consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep)
+    (consumeCallerReply_tcb_backward st st' caller rid hObjInv hStep) hInv
 
 
 /-- endpointReply preserves ipcStateQueueMembershipConsistent. -/
@@ -682,7 +718,7 @@ theorem endpointReply_preserves_ipcStateQueueMembershipConsistent
                   rw [← hStep]; exact hMid
                 | some rid =>
                   simp only [hRO] at hStep
-                  exact consumeCallerReply_preserves_ipcStateQueueMembershipConsistent _ _ target rid
+                  exact removeCallerReplyFrame_preserves_ipcStateQueueMembershipConsistent _ _ target rid
                     hObjInvMid hMid hStep
             · simp at hStep
         | _ => simp [hIpc] at hStep

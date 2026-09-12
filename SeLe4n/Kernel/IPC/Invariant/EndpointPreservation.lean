@@ -73,6 +73,42 @@ theorem consumeCallerReply_preserves_ipcInvariant
     (fun tt => by exact KernelObject.noConfusion)
     (fun rr => by exact KernelObject.noConfusion)).mp hObj)
 
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves `schedulerInvariantBundle` —
+the detach it runs first is one more object-store write, so the scheduler is
+still untouched and the current thread's TCB still survives. -/
+theorem removeCallerReplyFrame_preserves_schedulerInvariantBundle
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hInv : schedulerInvariantBundle st)
+    (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  obtain ⟨hQCC, hRQU, hCTV⟩ := hInv
+  have hSched := removeCallerReplyFrame_scheduler_eq st st' caller rid hStep
+  have hBwd := removeCallerReplyFrame_tcb_backward st st' caller rid hObjInv hStep
+  refine ⟨by rw [hSched]; exact hQCC, by rw [hSched]; exact hRQU, ?_⟩
+  unfold currentThreadValid at hCTV ⊢
+  rw [hSched]
+  cases hCur : st.scheduler.currentOnCore bootCoreId with
+  | none => exact True.intro
+  | some tid =>
+    rw [hCur] at hCTV
+    obtain ⟨tcb, hT⟩ := hCTV
+    obtain ⟨tx, hTx, _⟩ := hBwd tid.toObjId tcb hT
+    exact ⟨tx, hTx⟩
+
+/-- **WS-RM (`v0.35.6`)**: and `ipcInvariant` — the removal's three writes are a
+`.reply` slot, another `.reply` slot and a `.tcb` slot, never a `.notification`. -/
+theorem removeCallerReplyFrame_preserves_ipcInvariant
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariant st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ipcInvariant st' := by
+  have hNT := removeCallerReplyFrame_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  intro oid ntfn hObj
+  exact hInv oid ntfn ((hNT oid (.notification ntfn)
+    (fun tt => by exact KernelObject.noConfusion)
+    (fun rr => by exact KernelObject.noConfusion)).mp hObj)
+
 /-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves schedulerInvariantBundle.
 Reply stores a TCB (with message) and calls ensureRunnable, similar to
 endpointReceive unblocking. Updated for WS-H1 reply-target scoping. -/
@@ -161,7 +197,7 @@ theorem endpointReply_preserves_schedulerInvariantBundle
                     rw [← hStep]; exact hMid
                   | some rid =>
                     simp only [hRO] at hStep
-                    exact consumeCallerReply_preserves_schedulerInvariantBundle _ _ target rid hMid hObjInvMid hStep
+                    exact removeCallerReplyFrame_preserves_schedulerInvariantBundle _ _ target rid hMid hObjInvMid hStep
             · -- authorized = false
               simp_all
 
@@ -221,7 +257,7 @@ theorem endpointReply_preserves_ipcInvariant
                     rw [← hStep]; exact hMid
                   | some rid =>
                     simp only [hRO] at hStep
-                    exact consumeCallerReply_preserves_ipcInvariant _ _ target rid hObjInvMid hMid hStep
+                    exact removeCallerReplyFrame_preserves_ipcInvariant _ _ target rid hObjInvMid hMid hStep
             · -- authorized = false
               simp_all
 

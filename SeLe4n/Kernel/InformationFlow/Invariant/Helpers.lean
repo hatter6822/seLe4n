@@ -813,6 +813,54 @@ theorem consumeCallerReply_preserves_projection
       rw [storeObject_preserves_projection ctx observer st1 st' caller.toObjId _
             hCallerObjHigh hObjInv1 hStep, hProj1]
 
+/-- WS-RM (`v0.35.6`): the fold preserves the projection unconditionally — its one
+write clears a Reply's `prev`, which `projectKernelObject` strips. -/
+theorem detachReplyFrameAboveOrSelf_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (detachReplyFrameAboveOrSelf st rid)
+      = projectState ctx observer st := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]
+  · exact detachReplyFrameAbove_preserves_projection ctx observer hIdxComplete hObjInv h
+
+/-- WS-RM (`v0.35.6`): the fold preserves index-set completeness — it stores at a
+key that already resolves, so the set it would have to name already names it. -/
+theorem detachReplyFrameAboveOrSelf_preserves_objectIndexSetComplete
+    (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st) :
+    SeLe4n.Model.objectIndexSetComplete (detachReplyFrameAboveOrSelf st rid) := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]; exact hIdxComplete
+  · rcases detachReplyFrameAbove_cases h with hEq | ⟨_, above, a, _, _, _, _, hS⟩
+    · rw [hEq]; exact hIdxComplete
+    · exact storeObject_preserves_objectIndexSetComplete st _ above.toObjId _ hObjInv
+        hObjSetInv hIdxComplete hS
+
+/-- **WS-RM (`v0.35.6`): `removeCallerReplyFrame` preserves the projection** under
+exactly the hypothesis the consume alone needed.  The detach half is
+unconditional (`projectKernelObject` erases `Reply.prev`), so taking the frame off
+its stack costs the information-flow surface one rewrite and no new obligation. -/
+theorem removeCallerReplyFrame_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  rw [consumeCallerReply_preserves_projection ctx observer _ st' caller rid hCallerObjHigh
+      (detachReplyFrameAboveOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
+        hIdxComplete)
+      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep]
+  exact detachReplyFrameAboveOrSelf_preserves_projection ctx observer st rid hIdxComplete hObjInv
+
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the low-observer
 projection when both the caller and server objects are non-observable (high).  It
 composes `linkCallerReply` (caller-side, projection-preserving at a high caller) with

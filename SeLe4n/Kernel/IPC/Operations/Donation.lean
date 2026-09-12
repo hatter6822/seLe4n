@@ -680,8 +680,8 @@ context to the receiver — seL4-MCS's `receiveIPC` reaches it through
 `reply_push` → `schedContext_donate`, so the server runs the request on the
 client's own reservation and the work is charged where it belongs.
 
-This is the step `replyRecvReturnDonation`'s third stage performs, lifted out of
-it so that `.receive` performs *the same one*.  It did not: the `.receive`
+This is the step `replyRecvPostReceiveDonation` performs, lifted out of it so
+that `.receive` performs *the same one*.  It did not: the `.receive`
 dispatch arm ran `endpointReceiveDualWithCapsOnCore` and staged frames, with no
 donation anywhere on the path, so a passive server taking its **first** request
 with `seL4_Recv` received no budget while the same server taking its second and

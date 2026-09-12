@@ -1,7 +1,9 @@
 # WS-RM — seL4's `reply_remove` on the reply path
 
-> **Status**: PLANNED — registered at `v0.35.4`.  Opens immediately after that
-> cut lands and **before** WS-RR RR8; no sub-task has started.
+> **Status**: **COMPLETE** — registered at `v0.35.4`, all six phases landed at
+> `v0.35.6` in one cut (the phases are inert-then-live by construction and RM4 is
+> indivisible; see §4).  A second defect was found while closing it and fixed in
+> the same cut — see §10.
 > **Predecessor finding**: the reply-path residual recorded in
 > [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §A, found while auditing the
 > `v0.35.4` reply-stack cut.
@@ -153,11 +155,11 @@ Inert: nothing calls the new step, so the whole tree must still build unchanged.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| RM1.1 | Re-home and rename `detachCancelledCallerFrame` as `detachFrameAboveThreadReply`, beside the primitive it wraps.  The old name says *when* it is called; internal-first naming wants *what it does*, and the reply path is about to call it too.  The cancellation arm reads the new name | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/Lifecycle/Suspend.lean` | S |
-| RM1.2 | `removeCallerReplyFrame (caller) (rid) : Kernel Unit` — seL4's `reply_remove` non-head branch then `reply_unlink`: the detach folded to identity on error (a non-reciprocating upward link means "nothing above me on my stack", which the chain relation permits by design since it is stated downward), then `SystemState.consumeCallerReply`.  Ships with `removeCallerReplyFrame_eq_consume_of_no_frame_above`, the definitional equality that makes every later repair a case split whose `none` branch is the existing proof verbatim | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | M |
-| RM1.3 | Its read/write algebra, each entry a composition of `detachReplyFrameAbove`'s existing fifteen lemmas with `consumeCallerReply`'s: `_isOk`, `_objects_frame` (three keys), `_nonTcbNonReply_agree`, `_tcb_forward` / `_tcb_backward`, the `getReply?` readings, `_scheduler_eq`, `_machine_eq`, `_cdt_eq`, `_preserves_objects_invExt`.  No new argument is invented — both halves already carry every lemma this needs | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | M |
-| RM1.4 | `removeCallerReplyFrame_preserves_projection` and its per-core wrapper: one rewrite over the unconditional `detachReplyFrameAbove_preserves_projection` and the existing consume lemma.  No observability hypothesis is added, because the only field the detach writes is erased by `projectKernelObject_reply_prev_invariant` | `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointCallNiPerCore.lean` | S |
-| RM1.5 | `removeCallerReplyFrame_preserves_ipcInvariantFull` — the existing consume theorem plus a `prev`-only transport at a third key.  Cheap by construction (§3.2): no conjunct reads `prev` or `next`, and the two that read `caller` are untouched | `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` | M |
+| RM1.1 | Re-home and rename `detachCancelledCallerFrame` as `detachFrameAboveThreadReply`, beside the primitive it wraps.  The old name says *when* it is called; internal-first naming wants *what it does*, and the reply path is about to call it too.  The cancellation arm reads the new name  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/Lifecycle/Suspend.lean` | S |
+| RM1.2 | `removeCallerReplyFrame (caller) (rid) : Kernel Unit` — seL4's `reply_remove` non-head branch then `reply_unlink`: the detach folded to identity on error (a non-reciprocating upward link means "nothing above me on my stack", which the chain relation permits by design since it is stated downward), then `SystemState.consumeCallerReply`.  Ships with `removeCallerReplyFrame_eq_consume_of_no_frame_above`, the definitional equality that makes every later repair a case split whose `none` branch is the existing proof verbatim  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | M |
+| RM1.3 | Its read/write algebra, each entry a composition of `detachReplyFrameAbove`'s existing fifteen lemmas with `consumeCallerReply`'s: `_isOk`, `_objects_frame` (three keys), `_nonTcbNonReply_agree`, `_tcb_forward` / `_tcb_backward`, the `getReply?` readings, `_scheduler_eq`, `_machine_eq`, `_cdt_eq`, `_preserves_objects_invExt`.  No new argument is invented — both halves already carry every lemma this needs  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | M |
+| RM1.4 | `removeCallerReplyFrame_preserves_projection` and its per-core wrapper: one rewrite over the unconditional `detachReplyFrameAbove_preserves_projection` and the existing consume lemma.  No observability hypothesis is added, because the only field the detach writes is erased by `projectKernelObject_reply_prev_invariant`  **LANDED v0.35.6** | `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointCallNiPerCore.lean` | S |
+| RM1.5 | `removeCallerReplyFrame_preserves_ipcInvariantFull` — the existing consume theorem plus a `prev`-only transport at a third key.  Cheap by construction (§3.2): no conjunct reads `prev` or `next`, and the two that read `caller` are untouched  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` | M |
 
 **Acceptance**: `lake build` is byte-for-byte unaffected outside the new
 declarations, and `removeCallerReplyFrame_eq_consume_of_no_frame_above` holds by
@@ -167,9 +169,9 @@ declarations, and `removeCallerReplyFrame_eq_consume_of_no_frame_above` holds by
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| RM2.1 | `detachReplyFrameAbove_unreferencedAfter` — the reply-path twin of `detachCancelledCallerFrame_unreferenced`: after the detach, no stored Reply's `prev` names the detached frame.  This is the producer for the consume's `hUnreferenced` obligation, and it is why the detach must run **first** rather than alongside | `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | M |
-| RM2.2 | `removeCallerReplyFrame_preserves_donationChainWellFormed` under `invExt`, the chain invariant and `hNotHead` only — `hUnreferenced` discharged by RM2.1, exactly as the cancellation path discharges it.  Mirrors `consumeReplyLink_preserves_donationChainWellFormed` clause for clause | same | L |
-| RM2.3 | The head case stated rather than hidden: the "except at the consumed head" form, with `Reply.wellFormed` relaxed at that one key (§3.4).  It stands to the reply leg as `ipcInvariantFullExceptDonationOwner` stands to the bare reply.  The composite that discharges it is stated where it binds, in the phase that proves it | same | M |
+| RM2.1 | `detachReplyFrameAbove_unreferencedAfter` — the reply-path twin of `detachCancelledCallerFrame_unreferenced`: after the detach, no stored Reply's `prev` names the detached frame.  This is the producer for the consume's `hUnreferenced` obligation, and it is why the detach must run **first** rather than alongside  **LANDED v0.35.6** | `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | M |
+| RM2.2 | `removeCallerReplyFrame_preserves_donationChainWellFormed` under `invExt`, the chain invariant and `hNotHead` only — `hUnreferenced` discharged by RM2.1, exactly as the cancellation path discharges it.  Mirrors `consumeReplyLink_preserves_donationChainWellFormed` clause for clause  **LANDED v0.35.6** | same | L |
+| RM2.3 | The head case stated rather than hidden: the "except at the consumed head" form, with `Reply.wellFormed` relaxed at that one key (§3.4).  It stands to the reply leg as `ipcInvariantFullExceptDonationOwner` stands to the bare reply.  The composite that discharges it is stated where it binds, in the phase that proves it  **LANDED v0.35.6** | same | M |
 
 **Acceptance**: the reply leg's effect on the chain is a stated theorem in both
 cases — non-head preserved, head relaxed at one key — with no case left silent.
@@ -182,12 +184,12 @@ over-declaring is sound.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| RM3.1 | `answeredReplyFrameAbove?` — derived from the same `(st.getTcb? target).bind (·.replyObject)` expression the arm's existing reply member is resolved from, so the footprint and the transition cannot disagree about which frame is answered | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` | S |
-| RM3.2 | `lockSet_endpointReply` gains the member in **write** mode: 9 → 10 parameters, base 3 plus 8 options.  Restate at full arity the size bound, `lockSet_consistent_reply`, the five write-membership lemmas, the `lockSetTransitions_within_bound` conjunct, both atomicity lemmas, `lockSet_endpointReply_donation_extension`, and the resolver `lockSet_endpointReplyOnCore`.  `size_le_8` and `lockSet_consistent_base_plus_eight_opts` already exist | `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean`, `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` | L |
-| RM3.3 | `lockSet_replyRecv` gains it too: 21 → 22 parameters, base 4 plus 18 options.  Restate the four size bounds, the consistency lemma, the twelve write-membership lemmas, the bound conjunct, `KernelOperation.ofReplyRecv`, both atomicity lemmas, `lockSet_replyRecv_no_caps`, `capsCarryingIpcArms_footprints_share_serialization`, and the resolver.  `size_le_18` and `lockSet_consistent_base_plus_eighteen_opts` do **not** exist yet — PR #894's review took the family to seventeen — so this row adds one of each | same | L |
-| RM3.4 | `maxLockSetSize` 21 → 22 and every figure derived from it (§3.5).  Rewrite the canonical sentence at all five sites `scripts/check_lock_ceiling_figures.py` requires, plus the `PerCoreWcrt.lean` docstrings and `rpi5Tick_refuses_sixty_micro_sections` | `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md`, `docs/gitbook/12-proof-and-invariant-map.md` | M |
-| RM3.5 | `lockSetForSyscall`'s thirteen reply and replyRecv theorems, and the two resolved bounds.  **Add the sharp bound that characterises the cost**: the new member and the donation-return members are mutually exclusive, so no reachable footprint grows and both `lockSet_endpointReplyRecvOnCore_size_le_eighteen` and `…_size_le_seventeen` are unmoved.  Consumes RM3.3 | `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean`, `SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean` | M |
-| RM3.6 | The figure-bearing suites and anchors: `DeadlockFreedomSuite` (about 39 sites, several positional 21-argument applications), `LockSetSuite`, `SmpWcrtSuite` (its divisor and envelope constants, re-derived from the new ceiling rather than copied from here), `SmpSchedulerSuite`, and the Tier 3 ceiling anchors including the negative that refuses the previous value | `tests/DeadlockFreedomSuite.lean`, `tests/LockSetSuite.lean`, `tests/SmpWcrtSuite.lean`, `tests/SmpSchedulerSuite.lean`, `scripts/test_tier3_invariant_surface.sh` | M |
+| RM3.1 | `answeredReplyFrameAbove?` — derived from the same `(st.getTcb? target).bind (·.replyObject)` expression the arm's existing reply member is resolved from, so the footprint and the transition cannot disagree about which frame is answered  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` | S |
+| RM3.2 | `lockSet_endpointReply` gains the member in **write** mode: 9 → 10 parameters, base 3 plus 8 options.  Restate at full arity the size bound, `lockSet_consistent_reply`, the five write-membership lemmas, the `lockSetTransitions_within_bound` conjunct, both atomicity lemmas, `lockSet_endpointReply_donation_extension`, and the resolver `lockSet_endpointReplyOnCore`.  `size_le_8` and `lockSet_consistent_base_plus_eight_opts` already exist  **LANDED v0.35.6** | `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean`, `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` | L |
+| RM3.3 | `lockSet_replyRecv` gains it too: 21 → 22 parameters, base 4 plus 18 options.  Restate the four size bounds, the consistency lemma, the twelve write-membership lemmas, the bound conjunct, `KernelOperation.ofReplyRecv`, both atomicity lemmas, `lockSet_replyRecv_no_caps`, `capsCarryingIpcArms_footprints_share_serialization`, and the resolver.  `size_le_18` and `lockSet_consistent_base_plus_eighteen_opts` do **not** exist yet — PR #894's review took the family to seventeen — so this row adds one of each  **LANDED v0.35.6** | same | L |
+| RM3.4 | `maxLockSetSize` 21 → 22 and every figure derived from it (§3.5).  Rewrite the canonical sentence at all five sites `scripts/check_lock_ceiling_figures.py` requires, plus the `PerCoreWcrt.lean` docstrings and `rpi5Tick_refuses_sixty_micro_sections`  **LANDED v0.35.6** | `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md`, `docs/gitbook/12-proof-and-invariant-map.md` | M |
+| RM3.5 | `lockSetForSyscall`'s thirteen reply and replyRecv theorems, and the two resolved bounds.  **Add the sharp bound that characterises the cost**: the new member and the donation-return members are mutually exclusive, so no reachable footprint grows and both `lockSet_endpointReplyRecvOnCore_size_le_eighteen` and `…_size_le_seventeen` are unmoved.  Consumes RM3.3  **LANDED v0.35.6** | `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean`, `SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean` | M |
+| RM3.6 | The figure-bearing suites and anchors: `DeadlockFreedomSuite` (about 39 sites, several positional 21-argument applications), `LockSetSuite`, `SmpWcrtSuite` (its divisor and envelope constants, re-derived from the new ceiling rather than copied from here), `SmpSchedulerSuite`, and the Tier 3 ceiling anchors including the negative that refuses the previous value  **LANDED v0.35.6** | `tests/DeadlockFreedomSuite.lean`, `tests/LockSetSuite.lean`, `tests/SmpWcrtSuite.lean`, `tests/SmpSchedulerSuite.lean`, `scripts/test_tier3_invariant_surface.sh` | M |
 
 **Acceptance**: `SeLe4n.Testing.LockFootprintBoundCensus` builds — it refuses a
 size bound left at the old arity — and `check_lock_ceiling_figures.py` passes
@@ -200,11 +202,11 @@ the single-core one at every object key, so the two spines cannot move apart.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| RM4.1 | `endpointReplyOnCore`, and the single-core `endpointReply` / `endpointReplyRecv`, all call `removeCallerReplyFrame` | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` | M |
-| RM4.2 | `endpointReplyOnCore_state_eq` gains its third component, and `post_agrees` is re-proved with the single-core side carrying the same step.  Consumes RM4.1 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` | L |
-| RM4.3 | The seven success reductions and three failure reductions in `EndpointReply.lean`.  Each repair is a case split on `answeredReplyFrameAbove?` whose `none` branch is the existing proof verbatim, by RM1.2 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` | M |
-| RM4.4 | The eighteen results that `rcases` on `state_eq`, plus the single-core bundle theorems.  Consumes RM4.2 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean`, `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean`, `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` | L |
-| RM4.5 | The information-flow surface: the cross-core non-interference proofs, the reply-path NI lemmas, and the single-core projection results.  Each gains one rewrite and no hypothesis, by RM1.4 | `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyNI.lean`, `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` | L |
+| RM4.1 | `endpointReplyOnCore`, and the single-core `endpointReply` / `endpointReplyRecv`, all call `removeCallerReplyFrame`  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` | M |
+| RM4.2 | `endpointReplyOnCore_state_eq` gains its third component, and `post_agrees` is re-proved with the single-core side carrying the same step.  Consumes RM4.1  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` | L |
+| RM4.3 | The seven success reductions and three failure reductions in `EndpointReply.lean`.  Each repair is a case split on `answeredReplyFrameAbove?` whose `none` branch is the existing proof verbatim, by RM1.2  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` | M |
+| RM4.4 | The eighteen results that `rcases` on `state_eq`, plus the single-core bundle theorems.  Consumes RM4.2  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean`, `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean`, `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` | L |
+| RM4.5 | The information-flow surface: the cross-core non-interference proofs, the reply-path NI lemmas, and the single-core projection results.  Each gains one rewrite and no hypothesis, by RM1.4  **LANDED v0.35.6** | `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyNI.lean`, `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` | L |
 
 **Acceptance**: every reply path takes the answered frame off its stack before
 consuming its caller link, and the single-core and cross-core spines still agree
@@ -214,9 +216,9 @@ at every object key.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| RM5.1 | `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` — **the theorem the workstream exists for**.  The reply leg's head transient from RM2.3 is discharged by the donation pop that follows it in the same transition, exactly as `returnDonatedSchedContext` discharges the relaxed donation-owner conjunct today | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` | L |
-| RM5.2 | `replyRecvBody` and the results that consume the reply leg's post-state: the staged dispatch payoff, the dispatch invariant's `hStackValid` hypotheses, and the fault-reply preservation | `SeLe4n/Kernel/API.lean`, `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean`, `SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean` | L |
-| RM5.3 | The closure statement, **derived rather than listed**: a Tier 1 census over the elaborated environment that collects every transition reaching a write of reply-stack data and requires each to name a preservation theorem, reconciled in both directions against a registry.  This is what makes "every transition preserves the chain" checkable, and what stops a future consume site from silently omitting the detach.  Consumes RM5.1 | `SeLe4n/Testing/` (new census module), `scripts/test_tier1_build.sh` | M |
+| RM5.1 | `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` — **the theorem the workstream exists for**.  The reply leg's head transient from RM2.3 is discharged by the donation pop that follows it in the same transition, exactly as `returnDonatedSchedContext` discharges the relaxed donation-owner conjunct today  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` | L |
+| RM5.2 | `replyRecvBody` and the results that consume the reply leg's post-state: the staged dispatch payoff, the dispatch invariant's `hStackValid` hypotheses, and the fault-reply preservation  **LANDED v0.35.6** | `SeLe4n/Kernel/API.lean`, `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean`, `SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean` | L |
+| RM5.3 | The closure statement, **derived rather than listed**: a Tier 1 census over the elaborated environment that collects every definition writing reply-stack data and requires each to name a chain result, reconciled in both directions against a registry.  This is what makes "every transition preserves the chain" checkable, and what stops a future consume site from silently omitting the detach.  Consumes RM5.1.  **Two refinements found while building it, both recorded in §10.3**: the frontier is the *direct* write sites rather than the transitive closure (which is the whole dispatcher, and gains nothing — see the completeness argument there), and a site may be recorded as a **half-step** of the composite that completes it, because a theorem about one store of a multi-store transition would be false rather than missing  **LANDED v0.35.6** | `SeLe4n/Testing/ReplyStackWriteCensus.lean`, `scripts/test_tier1_build.sh` | M |
 
 **Acceptance**: `donationChainWellFormed` is preserved by every kernel
 transition, and that claim is machine-checked rather than asserted.
@@ -225,10 +227,10 @@ transition, and that claim is machine-checked rather than asserted.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| RM6.1 | Runtime witnesses for the defect and its fix: build a depth-2 chain, answer the inner caller out of order through a delegated reply capability, assert the frame above has its `prev` cleared, then assert the in-order reply **succeeds** — the wedge is gone.  A fixture exercising only the in-order path would pass before and after | `tests/SmpIpcSuite.lean` | M |
-| RM6.2 | Unit checks that the step is inert on the in-order path (the answered frame is the head, so the detach is the identity) and that it fires exactly once otherwise — both directions, so neither reads as coverage without asserting anything | `tests/SmpCrossCoreReplySuite.lean` | S |
-| RM6.3 | Tier 3 anchors: both spines call the composite; a negative refuses a bare `consumeCallerReply` in either; the detach precedes the consume in the composite's own body; and the updated ceiling figures with a negative on the previous value.  Each negative mutation-tested in both directions — silent on a clean tree, firing on a mutation that keeps the token and moves it | `scripts/test_tier3_invariant_surface.sh` | M |
-| RM6.4 | Documentation and closure: drop the registered-gap paragraph from `Reply.consumed`; correct `donationChainFrame`'s docstring, which names the reply path as its one exception; update the spec's reply-stack section and GitBook 12; add the claim-evidence rows; close the debt row; update the standing constraints in `CLAUDE.md` and `AGENTS.md`; add the **WS-RM** row to the workstream registry, which `scripts/check_identifier_naming.py` reads for its family grammar; bump the version and add the CHANGELOG entry | `SeLe4n/Model/Object/Reply.lean`, `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `docs/spec/SELE4N_SPEC.md`, `docs/gitbook/12-proof-and-invariant-map.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, `docs/REGISTERED_DEBT.md`, `CLAUDE.md`, `AGENTS.md`, `CHANGELOG.md` | M |
+| RM6.1 | Runtime witnesses for the defect and its fix: build a depth-2 chain, answer the inner caller out of order through a delegated reply capability, assert the frame above has its `prev` cleared, then assert the in-order reply **succeeds** — the wedge is gone.  A fixture exercising only the in-order path would pass before and after  **LANDED v0.35.6** | `tests/SmpIpcSuite.lean` | M |
+| RM6.2 | Unit checks that the step is inert on the in-order path (the answered frame is the head, so the detach is the identity) and that it fires exactly once otherwise — both directions, so neither reads as coverage without asserting anything  **LANDED v0.35.6** | `tests/SmpCrossCoreReplySuite.lean` | S |
+| RM6.3 | Tier 3 anchors: both spines call the composite; a negative refuses a bare `consumeCallerReply` in either; the detach precedes the consume in the composite's own body; and the updated ceiling figures with a negative on the previous value.  Each negative mutation-tested in both directions — silent on a clean tree, firing on a mutation that keeps the token and moves it  **LANDED v0.35.6** | `scripts/test_tier3_invariant_surface.sh` | M |
+| RM6.4 | Documentation and closure: drop the registered-gap paragraph from `Reply.consumed`; correct `donationChainFrame`'s docstring, which names the reply path as its one exception; update the spec's reply-stack section and GitBook 12; add the claim-evidence rows; close the debt row; update the standing constraints in `CLAUDE.md` and `AGENTS.md`; add the **WS-RM** row to the workstream registry, which `scripts/check_identifier_naming.py` reads for its family grammar; bump the version and add the CHANGELOG entry  **LANDED v0.35.6** | `SeLe4n/Model/Object/Reply.lean`, `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `docs/spec/SELE4N_SPEC.md`, `docs/gitbook/12-proof-and-invariant-map.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, `docs/REGISTERED_DEBT.md`, `CLAUDE.md`, `AGENTS.md`, `CHANGELOG.md` | M |
 
 ## 7. What every cut in this workstream must run, in order
 
@@ -267,8 +269,9 @@ document existing.
    (RM2.2).
 3. `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` holds
    unconditionally, head case included (RM5.1).
-4. The Tier 1 census reports every reply-stack writer as carrying a preservation
-   theorem, reconciled in both directions (RM5.3).
+4. The Tier 1 census reports every reply-stack writer as carrying a chain result
+   — or as a half-step of the composite that does, whose own record must reach
+   one — reconciled in both directions (RM5.3, refined in §10.3).
 5. An executed run answers a middle caller out of order and then completes the
    in-order reply that used to fail with `.invalidArgument` (RM6.1).
 6. No footprint exceeds `maxLockSetSize`, and the sharp resolved bound shows no
@@ -283,13 +286,110 @@ document existing.
   the reply leg would remove the head transient entirely, but that ordering was
   chosen deliberately (WS-OD plan §3.3) and is why `returnDonatedSchedContext`
   takes its new owner as an argument.  RM2.3 states the transient and RM5.1
-  discharges it instead.
+  discharges it instead.  §10.1 moves `.replyRecv`'s pop from after the *receive*
+  leg to between the two legs, which is a different question: the reply leg still
+  runs first there, and the transient is still RM5.1's to discharge.
 - **It does not collapse the two consume spellings.**  `consumeCallerReply` and
   `consumeReplyLink` perform the same two writes in opposite orders through
   different helpers — one question with two answers, and pre-existing.  It is
-  registered as a follow-on row rather than absorbed into a 215-mention
-  refactor here.
+  registered as a follow-on row in
+  [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §A rather than absorbed into a
+  215-mention refactor here.
 - **It does not refuse the out-of-order reply.**  A fail-closed `.illegalState`
   guard would have been far cheaper, and it was measured and rejected: delegated
   reply capabilities are documented as legitimate, seL4 supports answering a
   non-head frame, and refusing would trade a wedge for a lost capability.
+
+## 10. What closing this workstream found
+
+### 10.1 `.replyRecv` popped its donation *after* the receive leg, and the loop could not complete
+
+Reported at `v0.35.6` while threading RM5.2's payoff through `replyRecvBody`, and
+fixed in the same cut under RM5.2, which already owns that function.
+
+**The defect.**  `replyRecvBody`'s legs ran reply → receive → donation, with the
+fused `replyRecvReturnDonation` last.  The receive leg re-links the very Reply
+`rid` the reply leg just answered — faithful seL4-MCS one-object reuse — and
+`Reply.isFree` reads **both** stack links, deliberately (WS-OD, `v0.35.4`: the
+stash admission checked `caller` alone while the link checked the stack too, and
+that asymmetry was itself a defect).  On the MCS passive-server steady state the
+answered Reply **heads** the donated scheduling context, and `Reply.consumed`
+keeps a head's links — so after the reply leg the object was consumed and *not*
+free, and both admission paths refused: `linkCallerReply` and the server-first
+stash each returned `.replyCapInvalid`.
+
+**The consequence.**  No passive server whose client had donated could ever
+complete a `seL4_ReplyRecv`.  That is the seL4-MCS passive-server pattern's
+steady state — `Recv` once, then `ReplyRecv` forever — so the arm was unusable
+exactly where it is meant to be used.  Fail-closed (an error return, no state
+committed), a **liveness** defect rather than a safety one, and not exploitable
+today because nothing boots.
+
+**Why it was not caught.**  Every runtime witness of `.replyRecv` in the tree ran
+on a state where the answered Reply headed no context: either no donation was in
+play, or the fixture supplied `nextThread` directly and elided the receive leg.
+The invariant surface could not catch it either — refusing is
+invariant-preserving, so no bundle theorem is false of the refusing program.
+`tests/SmpIpcSuite.lean` §3.21 now runs the loop end to end, with the un-popped
+receive leg's `.replyCapInvalid` refusal as its paired negative.
+
+**The fix.**  The pop runs **between** the legs, which is seL4-MCS's own
+`doReplyTransfer` → `reply_remove` → `receiveIPC` order.  `replyRecvReturnDonation`
+is retired and split:
+
+* `replyRecvPopDonation recordedServer` — the return, run on the reply leg's
+  committed state, answering the context it handed back;
+* `replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned?`
+  — the re-donation, the deschedule and the priority-inheritance walk, run on the
+  receive leg's committed state and **taking the popped context as an argument**
+  rather than re-reading a binding the pop has already cleared.
+
+Each carries its own `_preserves_ipcInvariantFull` and
+`_preserves_replenishQueueAffinityConsistent_smp`, stated at the state its own
+step runs on; `PerCoreDonationStep` gains a constructor for each in place of the
+fused one.  `replyRecvPostPopState` / `replyRecvPoppedContext` are total
+accessors over the pop, so the staged dispatch payoff's hypothesis pack stays
+flat and pre-state-computable while its receive-leg fields move to the post-pop
+state.
+
+**Note on §9.**  This is *not* the reversal §9's first bullet declines.  That
+bullet is about `.reply`'s own ordering — running the donation pop before the
+reply leg, which would erase the head transient RM2.3 states and RM5.1
+discharges.  This change moves `.replyRecv`'s pop from after the *receive* leg to
+between the two legs; the reply leg still runs first, and the transient is still
+what RM5.1's composite discharges.
+
+### 10.2 The insert-shaped chain frame was private to one module
+
+`donationChainFrame_of_objects_insert` was `private` in
+`Lifecycle/Invariant/CancellationReplyShape.lean`.  The fault-reply path needs
+the same fact, and that module is not in its import closure — a second copy would
+have been one question with two answers, which is the shape this tree keeps
+paying for.  It is public and lives in `IPC/Invariant/Defs.lean`, beside
+`donationChainFrame` and its `storeObject`-shaped sibling.
+
+### 10.3 The census frontier is the direct write sites, and that is complete
+
+RM5.3's row was written as "every transition *reaching* a write of reply-stack
+data".  Taken transitively that is the whole syscall dispatcher — `dispatchSyscall`
+reaches `Reply.consumed` like everything below it — and requiring a chain result
+of each would be more work for no more guarantee.  The census uses the **direct**
+frontier: a project definition whose own `getUsedConstants` contains a chain-write
+primitive.
+
+It loses nothing, and the argument is short.  `donationChainWellFormed` reads
+exactly four things: a `Reply`'s `prev`, its `next`, its `caller`, and a
+`SchedContext`'s `scReply`.  A step that writes none of them satisfies
+`donationChainFrame` and therefore preserves the invariant
+(`donationChainWellFormed_of_frame`).  So a composite can only break the chain by
+reaching a write of one of those fields — and every path from a composite down to
+a field-level write passes through some **direct** site, which the census has.
+Composites above inherit by the frame algebra, which is a composition rather than
+a claim.  The frontier is therefore the minimal complete one.
+
+The second refinement is the `halfStep` record.  A push's second store leaves the
+context's head naming a frame that does not yet answer it; a pop's head clear
+leaves the frame below unheaded.  A theorem saying either preserves the chain
+would be **false**, not missing, so the census asks for the composite that
+completes the write instead — and requires the chain of half-step records to
+terminate in an entry that states a real result, which a cycle cannot.

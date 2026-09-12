@@ -44,6 +44,151 @@ open SeLe4n.Model
 
 
 -- ============================================================================
+-- WS-RM (`v0.35.6`): the detach's per-conjunct frames
+-- ============================================================================
+--
+-- `removeCallerReplyFrame` is `detachReplyFrameAboveOrSelf` followed by
+-- `consumeCallerReply`, so every preservation the consume proves lifts to the
+-- removal once the detach is shown to preserve the same conjunct.  Each of these
+-- is short by construction: the detach's one write is a `.reply` store, so every
+-- TCB, every endpoint, every SchedContext and the scheduler are **identical**
+-- across it, and the only Reply field it moves is `prev` -- which no conjunct
+-- below reads.  Composing them is what keeps the removal's surface a
+-- *composition* rather than a second copy of the consume's reasoning.
+
+open SeLe4n.Model.SystemState in
+theorem detachReplyFrameAboveOrSelf_preserves_ipcStateQueueConsistent
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hInv : ipcStateQueueConsistent st) :
+    ipcStateQueueConsistent (detachReplyFrameAboveOrSelf st rid) := by
+  intro tid tcb hT
+  have hPre := hInv tid tcb (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcb hT)
+  have hEp : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      (detachReplyFrameAboveOrSelf st rid).objects[epId]? = some (.endpoint ep) :=
+    fun epId ep h => (detachReplyFrameAboveOrSelf_non_reply_agree st rid hObjInv epId
+      (.endpoint ep) (fun rr => by exact KernelObject.noConfusion)).mpr h
+  cases hq : tcb.ipcState with
+  | ready => exact True.intro
+  | blockedOnNotification _ => exact True.intro
+  | blockedOnReply _ _ => exact True.intro
+  | blockedOnSend epId => rw [hq] at hPre; obtain ⟨ep, hE⟩ := hPre; exact ⟨ep, hEp epId ep hE⟩
+  | blockedOnReceive epId => rw [hq] at hPre; obtain ⟨ep, hE⟩ := hPre; exact ⟨ep, hEp epId ep hE⟩
+  | blockedOnCall epId => rw [hq] at hPre; obtain ⟨ep, hE⟩ := hPre; exact ⟨ep, hEp epId ep hE⟩
+
+open SeLe4n.Model.SystemState in
+theorem detachReplyFrameAboveOrSelf_preserves_blockedOnReplyHasReplyObject
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st) :
+    blockedOnReplyHasReplyObject (detachReplyFrameAboveOrSelf st rid) :=
+  fun tid tcb ep rt hT hBlk =>
+    hInv tid tcb ep rt (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcb hT) hBlk
+
+open SeLe4n.Model.SystemState in
+theorem detachReplyFrameAboveOrSelf_sameSchedContextBindings
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
+    sameSchedContextBindings st (detachReplyFrameAboveOrSelf st rid) :=
+  fun tid tcb' hT =>
+    ⟨tcb', detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcb' hT, rfl⟩
+
+open SeLe4n.Model.SystemState in
+theorem detachReplyFrameAboveOrSelf_timeoutBudgetFrame
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
+    timeoutBudgetFrame st (detachReplyFrameAboveOrSelf st rid) :=
+  fun tid tcb' hT =>
+    ⟨tcb', detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcb' hT, rfl⟩
+
+open SeLe4n.Model.SystemState in
+theorem detachReplyFrameAboveOrSelf_passiveServerIdleFrame
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
+    passiveServerIdleFrame st (detachReplyFrameAboveOrSelf st rid) where
+  pullback := by
+    intro tid tcb' hT hUnb hNotQ hNotCur hNotAllowed
+    rw [detachReplyFrameAboveOrSelf_scheduler_eq st rid] at hNotQ hNotCur
+    exact ⟨tcb', detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcb' hT, hUnb,
+      hNotQ, hNotCur, rfl⟩
+
+open SeLe4n.Model.SystemState in
+theorem detachReplyFrameAboveOrSelf_donationOwnerFrameExcept
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (woken : SeLe4n.ThreadId) :
+    donationOwnerFrameExcept st (detachReplyFrameAboveOrSelf st rid) woken where
+  scForward := fun scId sc h =>
+    (detachReplyFrameAboveOrSelf_non_reply_agree st rid hObjInv scId.toObjId
+      (.schedContext sc) (fun rr => by exact KernelObject.noConfusion)).mpr h
+  tcbForward := fun t tcb h =>
+    ⟨tcb, detachReplyFrameAboveOrSelf_tcb_eq st rid hObjInv _ tcb h, rfl, Or.inr rfl⟩
+
+open SeLe4n.Model.SystemState in
+theorem detachReplyFrameAboveOrSelf_preserves_blockedOnReplyHasTarget
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasTarget st) :
+    blockedOnReplyHasTarget (detachReplyFrameAboveOrSelf st rid) :=
+  fun tid tcb epId rt hT hBlk =>
+    hInv tid tcb epId rt
+      (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcb hT) hBlk
+
+open SeLe4n.Model.SystemState in
+/-- The stash clause reads a TCB's `pendingReceiveReply` and the named Reply's
+`caller`; the detach leaves every TCB alone and rewrites only stack links, which
+`replyStackRewrite.caller_eq` keeps out of the `caller` projection. -/
+theorem detachReplyFrameAboveOrSelf_preserves_pendingReceiveReplyWellFormed
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hInv : pendingReceiveReplyWellFormed st) :
+    pendingReceiveReplyWellFormed (detachReplyFrameAboveOrSelf st rid) := by
+  have hTcb := detachReplyFrameAboveOrSelf_getTcb?_eq st rid hObjInv
+  refine ⟨?_, ?_⟩
+  · intro tid tcb ridX hT hStash
+    obtain ⟨hBlk, r, hGetR, hFree⟩ := hInv.1 tid tcb ridX ((hTcb tid).symm.trans hT) hStash
+    refine ⟨hBlk, ?_⟩
+    obtain ⟨r', hGetR', hRw⟩ := detachReplyFrameAboveOrSelf_reply_rewrite st rid hObjInv
+      ridX.toObjId r ((getReply?_eq_some_iff st ridX r).mp hGetR)
+    exact ⟨r', (getReply?_eq_some_iff _ ridX r').mpr hGetR', hRw.caller_eq.trans hFree⟩
+  · intro tid₁ tid₂ tcb₁ tcb₂ ridX hT₁ hT₂ hStash₁ hStash₂
+    exact hInv.2 tid₁ tid₂ tcb₁ tcb₂ ridX ((hTcb tid₁).symm.trans hT₁)
+      ((hTcb tid₂).symm.trans hT₂) hStash₁ hStash₂
+
+open SeLe4n.Model.SystemState in
+theorem detachReplyFrameAboveOrSelf_preserves_queueNextBlockingConsistent
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hInv : queueNextBlockingConsistent st) :
+    queueNextBlockingConsistent (detachReplyFrameAboveOrSelf st rid) :=
+  fun a b tcbA tcbB hA hB hNext =>
+    hInv a b tcbA tcbB (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcbA hA)
+      (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcbB hB) hNext
+
+open SeLe4n.Model.SystemState in
+theorem detachReplyFrameAboveOrSelf_preserves_queueNextTargetBlocked
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hInv : queueNextTargetBlocked st) :
+    queueNextTargetBlocked (detachReplyFrameAboveOrSelf st rid) :=
+  fun a b tcbA tcbB hA hB hNext =>
+    hInv a b tcbA tcbB (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcbA hA)
+      (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcbB hB) hNext
+
+open SeLe4n.Model.SystemState in
+theorem detachReplyFrameAboveOrSelf_preserves_queueHeadBlockedConsistent
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hInv : queueHeadBlockedConsistent st) :
+    queueHeadBlockedConsistent (detachReplyFrameAboveOrSelf st rid) :=
+  fun epId ep hd tcb hE hT =>
+    hInv epId ep hd tcb
+      ((detachReplyFrameAboveOrSelf_non_reply_agree st rid hObjInv epId (.endpoint ep)
+        (fun rr => by exact KernelObject.noConfusion)).mp hE)
+      (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcb hT)
+
+open SeLe4n.Model.SystemState in
+theorem detachReplyFrameAboveOrSelf_preserves_endpointQueueTailBlockedConsistent
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hInv : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent (detachReplyFrameAboveOrSelf st rid) :=
+  fun epId ep tl tcb hE hT =>
+    hInv epId ep tl tcb
+      ((detachReplyFrameAboveOrSelf_non_reply_agree st rid hObjInv epId (.endpoint ep)
+        (fun rr => by exact KernelObject.noConfusion)).mp hE)
+      (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcb hT)
+
+-- ============================================================================
 -- WS-SM SM6.D (#7.1 reply-objects fold): per-conjunct frame lemmas for the
 -- atomic reply-link (`SystemState.linkCallerReply`) and the server-first stash
 -- store that the folded `endpointReceiveDual` now performs. These mirror the
@@ -854,7 +999,7 @@ theorem endpointReplyRecv_preserves_endpointQueueNoDup
       -- (PR #827 #3 fold: the receive leg's input is now the post-consume state).
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
-            ∃ rid, SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
+            ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
           ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
             endpointQueueNoDup stR.2 by
         -- AK1-B (I-H02): Fail-closed on expectedReplier = none
@@ -879,7 +1024,7 @@ theorem endpointReplyRecv_preserves_endpointQueueNoDup
                   intro ⟨_, hEq⟩; subst hEq
                   exact this st1 hMsg _ (Or.inl rfl) result hRecv
               | some rid =>
-                cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
                 | error e => simp [hCons]
                 | ok p3 =>
                   obtain ⟨⟨⟩, st3⟩ := p3
@@ -944,10 +1089,10 @@ theorem endpointReplyRecv_preserves_endpointQueueNoDup
                 ep'.sendQ.tail ≠ some tailTid)) := by
         rcases hSt3 with rfl | ⟨rid, hCons⟩
         · exact ⟨hNoDupE, hDQSIE, hObjInvE, hFreshReceiver', hRecvTailFresh'⟩
-        · have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree _ _ replyTarget rid hObjInvE hCons
-          exact ⟨consumeCallerReply_preserves_endpointQueueNoDup _ _ replyTarget rid hObjInvE hNoDupE hCons,
-            consumeCallerReply_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvE hDQSIE hCons,
-            SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons,
+        · have hNT := removeCallerReplyFrame_nonTcbNonReply_agree _ _ replyTarget rid hObjInvE hCons
+          exact ⟨removeCallerReplyFrame_preserves_endpointQueueNoDup _ _ replyTarget rid hObjInvE hNoDupE hCons,
+            removeCallerReplyFrame_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvE hDQSIE hCons,
+            removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons,
             fun epId ep hEp => hFreshReceiver' epId ep ((hNT epId (.endpoint ep)
               (fun tt => by exact KernelObject.noConfusion)
               (fun rr => by exact KernelObject.noConfusion)).mp hEp),
@@ -2975,6 +3120,19 @@ theorem consumeCallerReply_preserves_blockedThreadTimeoutConsistent
   rw [hIS]; exact hState
 
 open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the detach, then the
+consume. -/
+theorem removeCallerReplyFrame_preserves_ipcStateQueueConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : ipcStateQueueConsistent st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ipcStateQueueConsistent st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact consumeCallerReply_preserves_ipcStateQueueConsistent _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv)
+    (detachReplyFrameAboveOrSelf_preserves_ipcStateQueueConsistent st rid hObjInv hInv) hStep
+
+open SeLe4n.Model.SystemState in
 /-- PR #827 #3 fold: `consumeCallerReply` preserves `donationChainAcyclic` —
 `schedContextBinding` is a preserved TCB field. -/
 theorem consumeCallerReply_preserves_donationChainAcyclic
@@ -3060,6 +3218,32 @@ theorem consumeCallerReply_passiveServerIdleFrame
   obtain ⟨tcb, hSt, hIS, _, _, _, _, hSCB, _⟩ := hFwd tid.toObjId tcb' h
   rw [hSched] at hQ hC
   exact ⟨tcb, hSt, hSCB.symm.trans hU, hQ, hC, hIS.symm⟩
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal's frame — the detach's composed with the
+consume's. -/
+theorem removeCallerReplyFrame_timeoutBudgetFrame
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    timeoutBudgetFrame st st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact (timeoutBudgetFrame.trans (detachReplyFrameAboveOrSelf_timeoutBudgetFrame st rid hObjInv)
+    (consumeCallerReply_timeoutBudgetFrame _ st' caller rid
+      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep))
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal's frame — the detach's composed with the
+consume's. -/
+theorem removeCallerReplyFrame_passiveServerIdleFrame
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    passiveServerIdleFrame st st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact (passiveServerIdleFrame.trans (detachReplyFrameAboveOrSelf_passiveServerIdleFrame st rid hObjInv)
+    (consumeCallerReply_passiveServerIdleFrame _ st' caller rid
+      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep))
 
 open SeLe4n.Model.SystemState in
 /-- PR #827 #3 fold: `consumeCallerReply` preserves `blockedOnReplyHasReplyObject`
@@ -3167,11 +3351,30 @@ theorem endpointReply_preserves_ipcStateQueueConsistent
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact consumeCallerReply_preserves_ipcStateQueueConsistent _ _ target rid hObjInvMid hMid hStep
+              exact removeCallerReplyFrame_preserves_ipcStateQueueConsistent _ _ target rid hObjInvMid hMid hStep
         · -- authorized = false → error
           simp at hStep
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ | blockedOnNotification _ =>
       simp [hIpc] at hStep
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the detach, then the
+consume. -/
+theorem removeCallerReplyFrame_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasReplyObject st)
+    (hCallerNotBlocked : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+      ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    blockedOnReplyHasReplyObject st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  refine consumeCallerReply_preserves_blockedOnReplyHasReplyObject _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv)
+    (detachReplyFrameAboveOrSelf_preserves_blockedOnReplyHasReplyObject st rid hObjInv hInv)
+    ?_ hStep
+  intro tcb hT
+  exact hCallerNotBlocked tcb
+    (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcb hT)
 
 -- ============================================================================
 -- T4-A/B/C (M-IPC-1): ipcStateQueueConsistent preservation for compound ops
@@ -3462,13 +3665,13 @@ theorem endpointReplyRecv_preserves_ipcStateQueueConsistent
                 exact endpointReceiveDual_preserves_ipcStateQueueConsistent _ _ _ _ pair.1 replyId hInvEns hObjInvEns hRecv
             | some rid =>
               simp only [hRO] at hStep
-              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
               | error e => simp [hCons] at hStep
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons] at hStep
-                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
-                have hInv3 := consumeCallerReply_preserves_ipcStateQueueConsistent _ _ replyTarget rid hObjInvEns hInvEns hCons
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
+                have hInv3 := removeCallerReplyFrame_preserves_ipcStateQueueConsistent _ _ replyTarget rid hObjInvEns hInvEns hCons
                 generalize hRecv : endpointReceiveDual endpointId receiver replyId st3 = rRecv at hStep
                 cases rRecv with
                 | error e => simp at hStep
@@ -4421,6 +4624,43 @@ theorem consumeCallerReply_objects_frame (st st' : SystemState) (caller : SeLe4n
       simp only [hT] at hStep
       have hInv1 := consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
       rw [storeObject_objects_ne st1 st' caller.toObjId x _ hxC hInv1 hStep, hFrame1]
+
+open SeLe4n.Model.SystemState in
+/-- **The removal's write set is three keys**: the consumed Reply, the answered
+caller's TCB, and the frame above the consumed Reply — the one object the detach
+adds to `consumeCallerReply`'s two. -/
+theorem removeCallerReplyFrame_objects_frame (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st'))
+    (x : SeLe4n.ObjId) (hxR : x ≠ rid.toObjId) (hxC : x ≠ caller.toObjId)
+    (hxA : ∀ above, replyFrameAbove? st rid = some above → x ≠ above.toObjId) :
+    st'.objects[x]? = st.objects[x]? := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  rw [consumeCallerReply_objects_frame _ st' caller rid
+      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep x hxR hxC]
+  exact detachReplyFrameAboveOrSelf_objects_ne st rid hObjInv x hxA
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal's frame *up to the stack link the detach
+clears*.  Outside the consumed Reply and the answered caller every slot reads
+back to the pre-state, except at the frame above — where the Reply survives with
+only its stack links rewritten, which `replyStackRewrite.caller_eq` keeps out of
+every projection the linkage conjuncts read.  This is the form the reply
+delivery's reciprocity payoff consumes: it cannot exclude the frame above,
+because no reply-path hypothesis names it. -/
+theorem removeCallerReplyFrame_objects_rewrite (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st'))
+    (x : SeLe4n.ObjId) (hxR : x ≠ rid.toObjId) (hxC : x ≠ caller.toObjId) :
+    st'.objects[x]? = st.objects[x]? ∨
+      ∃ r r', st.objects[x]? = some (.reply r) ∧ st'.objects[x]? = some (.reply r') ∧
+        replyStackRewrite r' r := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  have hFrame := consumeCallerReply_objects_frame _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep x hxR hxC
+  rcases detachReplyFrameAboveOrSelf_objects_rewrite st rid hObjInv x with h | ⟨r, r', hr, hr', hRw⟩
+  · exact Or.inl (hFrame.trans h)
+  · exact Or.inr ⟨r, r', hr, hFrame.trans hr', hRw⟩
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (PR #822 review): the success preconditions of `linkCallerReply`:
@@ -6169,7 +6409,7 @@ theorem endpointReply_preserves_blockedOnReplyHasReplyObject
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact consumeCallerReply_preserves_blockedOnReplyHasReplyObject _ _ target rid
+              exact removeCallerReplyFrame_preserves_blockedOnReplyHasReplyObject _ _ target rid
                 hObjInvMid hMid hCallerNotBlocked hStep
         · simp at hStep
 
@@ -6233,7 +6473,7 @@ theorem endpointReplyRecv_preserves_blockedOnReplyHasReplyObject
                 exact endpointReceiveDual_establishes_blockedOnReplyHasReplyObject
                   (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId hPE hObjInvE hRecv
             | some rid =>
-              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable stReplied replyTarget) with
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable stReplied replyTarget) with
               | error e => simp [hCons]
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
@@ -6248,9 +6488,9 @@ theorem endpointReplyRecv_preserves_blockedOnReplyHasReplyObject
                   rw [hReady] at hBad
                   cases hBad
                 have hP3 : blockedOnReplyHasReplyObject st3 :=
-                  consumeCallerReply_preserves_blockedOnReplyHasReplyObject _ _ replyTarget rid
+                  removeCallerReplyFrame_preserves_blockedOnReplyHasReplyObject _ _ replyTarget rid
                     hObjInvE hPE hCallerNotBlocked hCons
-                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
                 cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                 | error e => simp
                 | ok pair =>
@@ -8430,6 +8670,19 @@ theorem ipcUnwrapCaps_sameSchedContextBindings
     st st' summary y.toObjId tcY hObjInv hStep hY, rfl⟩
 
 open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal's frame — the detach's composed with the
+consume's. -/
+theorem removeCallerReplyFrame_sameSchedContextBindings
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    sameSchedContextBindings st st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact (sameSchedContextBindings.trans (detachReplyFrameAboveOrSelf_sameSchedContextBindings st rid hObjInv)
+    (consumeCallerReply_sameSchedContextBindings _ st' caller rid
+      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep))
+
+open SeLe4n.Model.SystemState in
 /-- D5: `ipcUnwrapCaps` frames `timeoutBudgetFrame` — it writes only CNode caps at `receiverRoot`,
 so every TCB object survives byte-identical (`ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_timeoutBudgetFrame
@@ -9610,14 +9863,14 @@ theorem endpointReplyRecv_preserves_donationBudgetTransfer
                 exact endpointReceiveDual_preserves_donationBudgetTransfer
                   (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId hDE hObjInvE hRecv
             | some rid =>
-              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable stReplied replyTarget) with
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable stReplied replyTarget) with
               | error e => simp [hCons]
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
                 have hD3 := donationBudgetTransfer_of_sameSchedContextBindings
-                  (consumeCallerReply_sameSchedContextBindings _ _ replyTarget rid hObjInvE hCons) hDE
+                  (removeCallerReplyFrame_sameSchedContextBindings _ _ replyTarget rid hObjInvE hCons) hDE
                 cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                 | error e => simp
                 | ok pair =>
@@ -9940,19 +10193,19 @@ theorem endpointReplyRecv_passiveServerIdleFrame
                   (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId
                   hReceiverReadyE hObjInvE hRecv)
             | some rid =>
-              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable stReplied replyTarget) with
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable stReplied replyTarget) with
               | error e => simp [hCons]
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
-                have hF13 := hF1.trans (consumeCallerReply_passiveServerIdleFrame _ _ replyTarget rid hObjInvE hCons)
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
+                have hF13 := hF1.trans (removeCallerReplyFrame_passiveServerIdleFrame _ _ replyTarget rid hObjInvE hCons)
                 have hReceiverReady3 : ∀ (t : TCB),
                     st3.objects[receiver.toObjId]? = some (.tcb t) →
                     t.ipcState = .ready := by
                   intro t hT
                   obtain ⟨ty, hSt, hIS, _⟩ :=
-                    SystemState.consumeCallerReply_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t hT
+                    removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t hT
                   rw [hIS]; exact hReceiverReadyE ty hSt
                 cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                 | error e => simp
@@ -10037,13 +10290,13 @@ theorem endpointReplyRecv_timeoutBudgetFrame
                   (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId
                   hObjInvE hRecv)
             | some rid =>
-              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable stReplied replyTarget) with
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable stReplied replyTarget) with
               | error e => simp [hCons]
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
-                have hF13 := hF1.trans (consumeCallerReply_timeoutBudgetFrame _ _ replyTarget rid hObjInvE hCons)
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
+                have hF13 := hF1.trans (removeCallerReplyFrame_timeoutBudgetFrame _ _ replyTarget rid hObjInvE hCons)
                 cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                 | error e => simp
                 | ok pair =>
@@ -12467,7 +12720,7 @@ theorem endpointReply_sameSchedContextBindings
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact hMid.trans (consumeCallerReply_sameSchedContextBindings _ _ target rid hObjInvMid hStep)
+              exact hMid.trans (removeCallerReplyFrame_sameSchedContextBindings _ _ target rid hObjInvMid hStep)
         · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -12519,7 +12772,7 @@ theorem endpointReply_passiveServerIdleFrame
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact hMid.trans (consumeCallerReply_passiveServerIdleFrame _ _ target rid hObjInvMid hStep)
+              exact hMid.trans (removeCallerReplyFrame_passiveServerIdleFrame _ _ target rid hObjInvMid hStep)
         · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -12610,6 +12863,20 @@ theorem consumeCallerReply_donationOwnerFrameExcept
     exact ⟨tx, hTx, hSCB, hIS⟩
 
 open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: and the donation-owner frame, at the woken thread. -/
+theorem removeCallerReplyFrame_donationOwnerFrameExcept
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (woken : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    donationOwnerFrameExcept st st' woken := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact (donationOwnerFrameExcept.trans
+    (detachReplyFrameAboveOrSelf_donationOwnerFrameExcept st rid hObjInv woken)
+    (consumeCallerReply_donationOwnerFrameExcept _ st' caller rid woken
+      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep))
+
+open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.12: `endpointReply` frames the donation-owner side **relaxed at the
 answered caller** — the one thread whose `ipcState` it rewrites (`.blockedOnReply` →
 `.ready`). No `schedContextBinding` is written anywhere, so the relaxed frame holds
@@ -12663,7 +12930,7 @@ theorem endpointReply_donationOwnerFrameExcept
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact hMid.trans (consumeCallerReply_donationOwnerFrameExcept _ _ target rid
+              exact hMid.trans (removeCallerReplyFrame_donationOwnerFrameExcept _ _ target rid
                 target hObjInvMid hStep)
         · simp at hStep
 
@@ -12733,7 +13000,7 @@ theorem endpointReply_timeoutBudgetFrame
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact hMid.trans (consumeCallerReply_timeoutBudgetFrame _ _ target rid hObjInvMid hStep)
+              exact hMid.trans (removeCallerReplyFrame_timeoutBudgetFrame _ _ target rid hObjInvMid hStep)
         · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -13018,6 +13285,18 @@ theorem consumeCallerReply_preserves_blockedOnReplyHasTarget
       subst ho
       have hCallerObj := (getTcb?_eq_some_iff st1 caller tcb).mp hT
       exact hP1 caller tcb ep rt hCallerObj (by simpa using hb)
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal frames it — the detach, then the consume. -/
+theorem removeCallerReplyFrame_preserves_blockedOnReplyHasTarget
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    blockedOnReplyHasTarget st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact consumeCallerReply_preserves_blockedOnReplyHasTarget _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv)
+    (detachReplyFrameAboveOrSelf_preserves_blockedOnReplyHasTarget st rid hObjInv hInv) hStep
 
 -- ============================================================================
 -- IPC de-threading D3 — `pendingReceiveReplyWellFormed` frame family.
@@ -14433,6 +14712,18 @@ theorem consumeCallerReply_preserves_pendingReceiveReplyWellFormed
         { tcb with replyObject := none } hObjInv1 hT rfl rfl hP1 hStep
 
 open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal frames it — the detach, then the consume. -/
+theorem removeCallerReplyFrame_preserves_pendingReceiveReplyWellFormed
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : pendingReceiveReplyWellFormed st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    pendingReceiveReplyWellFormed st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact consumeCallerReply_preserves_pendingReceiveReplyWellFormed _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv)
+    (detachReplyFrameAboveOrSelf_preserves_pendingReceiveReplyWellFormed st rid hObjInv hInv) hStep
+
+open SeLe4n.Model.SystemState in
 /-- D3: `notificationWait` frames `pendingReceiveReplyWellFormed`. It stores the
 notification object (non-TCB, non-Reply) then writes the *waiter* — the calling
 thread — to `.ready` (badge path) or `.blockedOnNotification` (block path).
@@ -14776,6 +15067,19 @@ theorem storeObject_reply_preserves_queueNextTargetBlocked
     exact ⟨tcb', hY, rfl, rfl⟩
 
 open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the detach, then the
+consume. -/
+theorem removeCallerReplyFrame_preserves_endpointQueueTailBlockedConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : endpointQueueTailBlockedConsistent st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    endpointQueueTailBlockedConsistent st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact consumeCallerReply_preserves_endpointQueueTailBlockedConsistent _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv)
+    (detachReplyFrameAboveOrSelf_preserves_endpointQueueTailBlockedConsistent st rid hObjInv hInv) hStep
+
+open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `consumeReply` frames `queueNextTargetBlocked`. -/
 theorem consumeReply_preserves_queueNextTargetBlocked
     (st st' : SystemState) (rid : SeLe4n.ReplyId)
@@ -14860,6 +15164,19 @@ theorem consumeCallerReply_preserves_queueNextTargetBlocked
       exact storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked st1 st' caller tcb
         { tcb with replyObject := none } hObjInv1
         ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl rfl hInv1 hStep
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the detach, then the
+consume. -/
+theorem removeCallerReplyFrame_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : queueNextTargetBlocked st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact consumeCallerReply_preserves_queueNextTargetBlocked _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv)
+    (detachReplyFrameAboveOrSelf_preserves_queueNextTargetBlocked st rid hObjInv hInv) hStep
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D / #7.4: `linkCallerReply` preserves `ipcInvariantFull`. It is the
@@ -15042,6 +15359,139 @@ theorem consumeCallerReply_preserves_ipcInvariantFull
         exact storeObject_tcb_replyObject_preserves_ipcInvariantCore st1 st'
           caller.toObjId tcb none hCore1 hObjInv1
           ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hStep
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`): the detach preserves the whole IPC bundle.**
+
+Its one write is a `.reply` store that changes `prev` alone, and **no conjunct of
+`ipcInvariantFull` reads `Reply.prev` or `Reply.next`** — the two that read a
+Reply at all (`replyCallerLinkage`, `pendingReceiveReplyWellFormed`) read
+`caller`, which a stack-link rewrite leaves exactly where it was.  So this is
+cheap by construction rather than by a new argument: the fifteen structural
+conjuncts come from the generic reply-store frame, the two Reply-reading ones
+from `caller` agreement, and the remaining three from the fact that the detach
+writes no TCB and no endpoint. -/
+theorem detachReplyFrameAbove_preserves_ipcInvariantFull
+    {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (h : detachReplyFrameAbove st rid = .ok st') :
+    ipcInvariantFull st' := by
+  rcases detachReplyFrameAbove_cases h with rfl | ⟨_, above, a, _, _, hA, _, hS⟩
+  · exact hInv
+  · have hAObj : st.objects[above.toObjId]? = some (.reply a) :=
+      (getReply?_eq_some_iff _ _ _).mp hA
+    -- Every key other than `above` is untouched; `above` holds `a` before and
+    -- `{ a with prev := none }` after, so every Reply's `caller` and every TCB
+    -- agree across the store.
+    have hNe : ∀ k : SeLe4n.ObjId, k ≠ above.toObjId → st'.objects[k]? = st.objects[k]? :=
+      fun k hk => storeObject_objects_ne st st' above.toObjId k _ hk hObjInv hS
+    have hAt : st'.objects[above.toObjId]? = some (.reply { a with prev := none }) :=
+      storeObject_objects_eq' st _ _ _ hObjInv hS
+    have hTcbFwd : ∀ (k : SeLe4n.ObjId) (t : TCB),
+        st'.objects[k]? = some (.tcb t) → st.objects[k]? = some (.tcb t) := by
+      intro k t hk
+      by_cases hEq : k = above.toObjId
+      · rw [hEq, hAt] at hk; cases hk
+      · rw [← hNe k hEq]; exact hk
+    have hTcbBwd : ∀ (k : SeLe4n.ObjId) (t : TCB),
+        st.objects[k]? = some (.tcb t) → st'.objects[k]? = some (.tcb t) := by
+      intro k t hk
+      by_cases hEq : k = above.toObjId
+      · rw [hEq, hAObj] at hk; cases hk
+      · rw [hNe k hEq]; exact hk
+    have hReplyFwd : ∀ (q : SeLe4n.ReplyId) (rq : Reply),
+        st'.objects[q.toObjId]? = some (.reply rq) →
+        ∃ rp, st.objects[q.toObjId]? = some (.reply rp) ∧ rq.caller = rp.caller := by
+      intro q rq hq
+      by_cases hEq : q.toObjId = above.toObjId
+      · rw [hEq, hAt] at hq
+        exact ⟨a, by rw [hEq]; exact hAObj, by rw [← KernelObject.reply.inj (Option.some.inj hq)]⟩
+      · exact ⟨rq, by rw [← hNe q.toObjId hEq]; exact hq, rfl⟩
+    have hReplyBwd : ∀ (q : SeLe4n.ReplyId) (rp : Reply),
+        st.objects[q.toObjId]? = some (.reply rp) →
+        ∃ rq, st'.objects[q.toObjId]? = some (.reply rq) ∧ rq.caller = rp.caller := by
+      intro q rp hq
+      by_cases hEq : q.toObjId = above.toObjId
+      · refine ⟨{ a with prev := none }, by rw [hEq]; exact hAt, ?_⟩
+        rw [hEq, hAObj] at hq
+        rw [← KernelObject.reply.inj (Option.some.inj hq)]
+      · exact ⟨rp, by rw [hNe q.toObjId hEq]; exact hq, rfl⟩
+    refine ipcInvariantFull_of_core_replyCallerLinkage
+      (storeObject_reply_preserves_ipcInvariantCore st st' above.toObjId a
+        { a with prev := none } hInv.toCore hObjInv hAObj hS)
+      ⟨⟨?_, ?_⟩, ?_⟩ ?_ ?_ ?_ ?_
+    -- `replyCallerLinkage`, forward: a TCB's forward link still resolves to a
+    -- Reply naming it back, because both halves are untouched.
+    · intro tid tcb q hTcb hLink
+      obtain ⟨r0, hr0, hc0⟩ := hInv.replyCallerLinkage.1.1 tid tcb q (hTcbFwd _ _ hTcb) hLink
+      obtain ⟨r1, hr1, hc1⟩ := hReplyBwd q r0 hr0
+      exact ⟨r1, hr1, by rw [hc1]; exact hc0⟩
+    -- `replyCallerLinkage`, reciprocal: a Reply's caller still points back.
+    · intro q r0 tid hr0 hc0
+      obtain ⟨rp, hrp, hcEq⟩ := hReplyFwd q r0 hr0
+      obtain ⟨tcb, hTcb, hLink, hBlk⟩ :=
+        hInv.replyCallerLinkage.1.2 q rp tid hrp (by rw [← hcEq]; exact hc0)
+      exact ⟨tcb, hTcbBwd _ _ hTcb, hLink, hBlk⟩
+    -- `blockedOnReplyHasReplyObject`: no TCB moved.
+    · intro tid tcb ep rt hTcb hBlk
+      exact hInv.replyCallerLinkage.2 tid tcb ep rt (hTcbFwd _ _ hTcb) hBlk
+    -- `pendingReceiveReplyWellFormed`: the stash reads `caller`, which agrees.
+    · refine storeObject_reply_preserves_pendingReceiveReplyWellFormed st st' above a
+        { a with prev := none } hObjInv hA hInv.pendingReceiveReplyWellFormed ?_ hS
+      intro hStashed
+      obtain ⟨tid, tcb, hTcb, hStash⟩ := hStashed
+      obtain ⟨_, r1, hr1, hc1⟩ := hInv.pendingReceiveReplyWellFormed.1 tid tcb above hTcb hStash
+      rw [← KernelObject.reply.inj (Option.some.inj
+        (((getReply?_eq_some_iff _ _ _).mp hr1).symm.trans ((getReply?_eq_some_iff _ _ _).mp hA)))]
+      exact hc1
+    -- `donationOwnerUnique`: the detach writes no TCB, so no binding moved.
+    · exact donationOwnerUnique_of_sameSchedContextBindings
+        (fun tid tcb' hTcb' => ⟨tcb', hTcbFwd _ _ hTcb', rfl⟩) hInv.donationOwnerUnique
+    · exact storeObject_reply_preserves_endpointQueueTailBlockedConsistent st st' above
+        { a with prev := none } hObjInv hInv.endpointQueueTailBlockedConsistent hS
+    · exact storeObject_reply_preserves_queueNextTargetBlocked st st' above
+        { a with prev := none } hObjInv hInv.queueNextTargetBlocked hS
+
+/-- The fold inherits it. -/
+theorem detachReplyFrameAboveOrSelf_preserves_ipcInvariantFull
+    (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (detachReplyFrameAboveOrSelf st rid) := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]; exact hInv
+  · exact detachReplyFrameAbove_preserves_ipcInvariantFull hObjInv hInv h
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`): `removeCallerReplyFrame` preserves `ipcInvariantFull`**
+under exactly the hypotheses `consumeCallerReply_preserves_ipcInvariantFull`
+takes, stated on the **pre**-state — so a caller that could cite the consume can
+cite this.  No side condition relating the consumed frame to the frame above it
+is needed: the detach rewrites stack links only, so the consumed Reply reads back
+with the same `caller` whichever key the detach wrote
+(`detachReplyFrameAboveOrSelf_reply_rewrite`), and no TCB moves at all. -/
+theorem removeCallerReplyFrame_preserves_ipcInvariantFull
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (r0 : Reply)
+    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (hGetR0 : st.getReply? rid = some r0) (hLinked : r0.caller = some caller)
+    (hCallerWoken : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  have hObjInvD := detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv
+  -- The consumed frame reads back with its `caller` exactly where it was: the
+  -- detach rewrites stack links only, at whichever key it writes — so no side
+  -- condition relating `rid` to the frame above is needed here.
+  obtain ⟨r0', hr0', hRw⟩ := detachReplyFrameAboveOrSelf_reply_rewrite st rid hObjInv
+    rid.toObjId r0 ((getReply?_eq_some_iff _ _ _).mp hGetR0)
+  refine consumeCallerReply_preserves_ipcInvariantFull _ st' caller rid r0'
+    (detachReplyFrameAboveOrSelf_preserves_ipcInvariantFull st rid hObjInv hInv)
+    hObjInvD ((getReply?_eq_some_iff _ _ _).mpr hr0')
+    (by rw [hRw.caller_eq]; exact hLinked) ?_ hStep
+  intro tcb hTcb
+  exact hCallerWoken tcb
+    (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv caller.toObjId tcb hTcb)
 
 /-! ### WS-SM SM6.D reply-fold foundation (PR #827 review #3)
 
@@ -15717,6 +16167,19 @@ theorem linkServerStashedReply_preserves_queueNextBlockingConsistent
         exact storeObject_tcb_preserveLinks_queueNextBlockingConsistent st1 st' server sTcb
           { sTcb with pendingReceiveReply := none } hObjInv1
           ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl rfl hInv1 hStep
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the detach, then the
+consume. -/
+theorem removeCallerReplyFrame_preserves_queueNextBlockingConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : queueNextBlockingConsistent st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    queueNextBlockingConsistent st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact consumeCallerReply_preserves_queueNextBlockingConsistent _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv)
+    (detachReplyFrameAboveOrSelf_preserves_queueNextBlockingConsistent st rid hObjInv hInv) hStep
 
 /-- IPC de-threading D4 Slice 2c: `linkServerStashedReply` frames `queueNextTargetBlocked`. Composes a
 `linkCallerReply` (qNTB-preserving) with a `server.pendingReceiveReply := none` write (preserves
@@ -16865,7 +17328,7 @@ theorem endpointReplyRecv_preserves_queueNextBlockingConsistent
       simp only [hIpc] at hStep
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
-            ∃ rid, SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
+            ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
           ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
             queueNextBlockingConsistent stR.2 by
         cases expectedReplier with
@@ -16889,7 +17352,7 @@ theorem endpointReplyRecv_preserves_queueNextBlockingConsistent
                   intro ⟨_, hEq⟩; subst hEq
                   exact this st1 hMsg _ (Or.inl rfl) result hRecv
               | some rid =>
-                cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
                 | error e => simp [hCons]
                 | ok p3 =>
                   obtain ⟨⟨⟩, st3⟩ := p3
@@ -16971,11 +17434,11 @@ theorem endpointReplyRecv_preserves_queueNextBlockingConsistent
                 ep''.sendQ.tail ≠ some tailTid)) := by
         rcases hSt3 with rfl | ⟨rid, hCons⟩
         · exact ⟨hQNBCE, hDQSIE, hEQTBE, hObjInvE, hFreshReceiver', hRecvTailFresh'⟩
-        · have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree _ _ replyTarget rid hObjInvE hCons
-          exact ⟨consumeCallerReply_preserves_queueNextBlockingConsistent _ _ replyTarget rid hObjInvE hQNBCE hCons,
-            consumeCallerReply_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvE hDQSIE hCons,
-            consumeCallerReply_preserves_endpointQueueTailBlockedConsistent _ _ replyTarget rid hObjInvE hEQTBE hCons,
-            SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons,
+        · have hNT := removeCallerReplyFrame_nonTcbNonReply_agree _ _ replyTarget rid hObjInvE hCons
+          exact ⟨removeCallerReplyFrame_preserves_queueNextBlockingConsistent _ _ replyTarget rid hObjInvE hQNBCE hCons,
+            removeCallerReplyFrame_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvE hDQSIE hCons,
+            removeCallerReplyFrame_preserves_endpointQueueTailBlockedConsistent _ _ replyTarget rid hObjInvE hEQTBE hCons,
+            removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons,
             fun epId' ep' hEp' => hFreshReceiver' epId' ep' ((hNT epId' (.endpoint ep')
               (fun tt => by exact KernelObject.noConfusion)
               (fun rr => by exact KernelObject.noConfusion)).mp hEp'),
@@ -17054,7 +17517,7 @@ theorem endpointReply_preserves_queueNextBlockingConsistent
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact consumeCallerReply_preserves_queueNextBlockingConsistent _ _ target rid hObjInvMid hMid hStep
+              exact removeCallerReplyFrame_preserves_queueNextBlockingConsistent _ _ target rid hObjInvMid hMid hStep
         · simp at hStep
 
 /-- IPC de-threading D4 Slice 2c: the `storeTcbIpcStateAndMessage` variant of the enqueue+block-store
@@ -17288,7 +17751,7 @@ theorem endpointReply_preserves_queueNextTargetBlocked
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact consumeCallerReply_preserves_queueNextTargetBlocked _ _ target rid hObjInvMid hMid hStep
+              exact removeCallerReplyFrame_preserves_queueNextTargetBlocked _ _ target rid hObjInvMid hMid hStep
         · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -17351,7 +17814,7 @@ theorem endpointReply_preserves_endpointQueueTailBlockedConsistent
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact consumeCallerReply_preserves_endpointQueueTailBlockedConsistent _ _ target rid hObjInvMid hMid hStep
+              exact removeCallerReplyFrame_preserves_endpointQueueTailBlockedConsistent _ _ target rid hObjInvMid hMid hStep
         · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -17479,6 +17942,19 @@ theorem linkServerStashedReply_preserves_queueHeadBlockedConsistent
         exact storeObject_tcb_preserveIpc_preserves_queueHeadBlockedConsistent st1 st' server sTcb
           { sTcb with pendingReceiveReply := none } hObjInv1
           ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl hInv1 hStep
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the detach, then the
+consume. -/
+theorem removeCallerReplyFrame_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : queueHeadBlockedConsistent st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    queueHeadBlockedConsistent st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact consumeCallerReply_preserves_queueHeadBlockedConsistent _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv)
+    (detachReplyFrameAboveOrSelf_preserves_queueHeadBlockedConsistent st rid hObjInv hInv) hStep
 
 open SeLe4n.Model.SystemState in
 /-- D4: `notificationWait` frames `queueNextBlockingConsistent`. Stores the
@@ -18790,7 +19266,7 @@ theorem endpointReplyRecv_preserves_queueHeadBlockedConsistent
       simp only [hIpc] at hStep
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
-            ∃ rid, SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
+            ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
           ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
             queueHeadBlockedConsistent stR.2 by
         cases expectedReplier with
@@ -18814,7 +19290,7 @@ theorem endpointReplyRecv_preserves_queueHeadBlockedConsistent
                   intro ⟨_, hEq⟩; subst hEq
                   exact this st1 hMsg _ (Or.inl rfl) result hRecv
               | some rid =>
-                cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
                 | error e => simp [hCons]
                 | ok p3 =>
                   obtain ⟨⟨⟩, st3⟩ := p3
@@ -18888,18 +19364,18 @@ theorem endpointReplyRecv_preserves_queueHeadBlockedConsistent
             ep'.receiveQ.head ≠ some receiver ∧ ep'.receiveQ.tail ≠ some receiver) := by
         rcases hSt3 with rfl | ⟨rid, hCons⟩
         · exact ⟨hQHBCE, hQNTBE, hDQSIE, hObjInvE, hReceiverReadyE, hFreshReceiver'⟩
-        · have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree _ _ replyTarget rid hObjInvE hCons
-          refine ⟨consumeCallerReply_preserves_queueHeadBlockedConsistent _ _ replyTarget rid hObjInvE hQHBCE hCons,
-            consumeCallerReply_preserves_queueNextTargetBlocked _ _ replyTarget rid hObjInvE hQNTBE hCons,
-            consumeCallerReply_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvE hDQSIE hCons,
-            SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons,
+        · have hNT := removeCallerReplyFrame_nonTcbNonReply_agree _ _ replyTarget rid hObjInvE hCons
+          refine ⟨removeCallerReplyFrame_preserves_queueHeadBlockedConsistent _ _ replyTarget rid hObjInvE hQHBCE hCons,
+            removeCallerReplyFrame_preserves_queueNextTargetBlocked _ _ replyTarget rid hObjInvE hQNTBE hCons,
+            removeCallerReplyFrame_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvE hDQSIE hCons,
+            removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons,
             ?_,
             fun epId' ep' hEp' => hFreshReceiver' epId' ep' ((hNT epId' (.endpoint ep')
               (fun tt => by exact KernelObject.noConfusion)
               (fun rr => by exact KernelObject.noConfusion)).mp hEp')⟩
           intro t hT
           obtain ⟨ty, hSt, hIS, _⟩ :=
-            SystemState.consumeCallerReply_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t hT
+            removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t hT
           rw [hIS]; exact hReceiverReadyE ty hSt
       -- Delegate to the receive-leg qHBC establisher.
       exact endpointReceiveDual_preserves_queueHeadBlockedConsistent
@@ -18956,7 +19432,7 @@ theorem endpointReplyRecv_preserves_queueNextTargetBlocked
       simp only [hIpc] at hStep
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
-            ∃ rid, SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
+            ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
           ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
             queueNextTargetBlocked stR.2 by
         cases expectedReplier with
@@ -18980,7 +19456,7 @@ theorem endpointReplyRecv_preserves_queueNextTargetBlocked
                   intro ⟨_, hEq⟩; subst hEq
                   exact this st1 hMsg _ (Or.inl rfl) result hRecv
               | some rid =>
-                cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
                 | error e => simp [hCons]
                 | ok p3 =>
                   obtain ⟨⟨⟩, st3⟩ := p3
@@ -19078,11 +19554,11 @@ theorem endpointReplyRecv_preserves_queueNextTargetBlocked
                 ep''.sendQ.tail ≠ some tailTid)) := by
         rcases hSt3 with rfl | ⟨rid, hCons⟩
         · exact ⟨hQNTBE, hDQSIE, hTailE, hObjInvE, hReceiverReadyE, hFreshReceiver', hRecvTailFresh'⟩
-        · have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree _ _ replyTarget rid hObjInvE hCons
-          refine ⟨consumeCallerReply_preserves_queueNextTargetBlocked _ _ replyTarget rid hObjInvE hQNTBE hCons,
-            consumeCallerReply_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvE hDQSIE hCons,
-            consumeCallerReply_preserves_endpointQueueTailBlockedConsistent _ _ replyTarget rid hObjInvE hTailE hCons,
-            SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons,
+        · have hNT := removeCallerReplyFrame_nonTcbNonReply_agree _ _ replyTarget rid hObjInvE hCons
+          refine ⟨removeCallerReplyFrame_preserves_queueNextTargetBlocked _ _ replyTarget rid hObjInvE hQNTBE hCons,
+            removeCallerReplyFrame_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvE hDQSIE hCons,
+            removeCallerReplyFrame_preserves_endpointQueueTailBlockedConsistent _ _ replyTarget rid hObjInvE hTailE hCons,
+            removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons,
             ?_,
             fun epId' ep' hEp' => hFreshReceiver' epId' ep' ((hNT epId' (.endpoint ep')
               (fun tt => by exact KernelObject.noConfusion)
@@ -19096,7 +19572,7 @@ theorem endpointReplyRecv_preserves_queueNextTargetBlocked
                 (fun rr => by exact KernelObject.noConfusion)).mp hEp'')⟩
           intro t hT
           obtain ⟨ty, hSt, hIS, _⟩ :=
-            SystemState.consumeCallerReply_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t hT
+            removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t hT
           rw [hIS]; exact hReceiverReadyE ty hSt
       -- Delegate to the receive-leg qNTB establisher.
       exact endpointReceiveDual_preserves_queueNextTargetBlocked
@@ -20016,7 +20492,7 @@ theorem endpointReply_preserves_blockedOnReplyHasTarget
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact consumeCallerReply_preserves_blockedOnReplyHasTarget _ _ target rid hObjInvMid hMid hStep
+              exact removeCallerReplyFrame_preserves_blockedOnReplyHasTarget _ _ target rid hObjInvMid hMid hStep
         · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -20075,13 +20551,13 @@ theorem endpointReplyRecv_preserves_blockedOnReplyHasTarget
                 exact endpointReceiveDual_establishes_blockedOnReplyHasTarget
                   (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId hPE hObjInvE hRecv
             | some rid =>
-              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable stReplied replyTarget) with
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable stReplied replyTarget) with
               | error e => simp [hCons]
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                have hP3 := consumeCallerReply_preserves_blockedOnReplyHasTarget _ _ replyTarget rid hObjInvE hPE hCons
-                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
+                have hP3 := removeCallerReplyFrame_preserves_blockedOnReplyHasTarget _ _ replyTarget rid hObjInvE hPE hCons
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
                 cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                 | error e => simp
                 | ok pair =>
@@ -20153,7 +20629,7 @@ theorem endpointReply_preserves_pendingReceiveReplyWellFormed
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact consumeCallerReply_preserves_pendingReceiveReplyWellFormed _ _ target rid hObjInvMid hMid hStep
+              exact removeCallerReplyFrame_preserves_pendingReceiveReplyWellFormed _ _ target rid hObjInvMid hMid hStep
         · simp at hStep
 
 open SeLe4n.Model.SystemState in
@@ -20228,6 +20704,36 @@ theorem consumeCallerReply_preserves_replyIdEstablishFresh
           exact hUn1 caller tcbC hT hS
         · rw [storeObject_objects_ne st1 st' caller.toObjId tid.toObjId _ hEq hObjInv1 hStep] at hT'
           exact hUn1 tid t ((getTcb?_eq_some_iff st1 tid t).mpr hT') hS
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the detach frames the freshness pair.  It writes no
+TCB, so the stash clause is untouched; it rewrites only stack links, so the
+Reply's `caller` — the one field the free clause reads — survives
+(`replyStackRewrite.caller_eq`). -/
+theorem detachReplyFrameAboveOrSelf_preserves_replyIdEstablishFresh
+    (st : SystemState) (ridC ridR : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hFresh : replyIdEstablishFresh st ridR) :
+    replyIdEstablishFresh (detachReplyFrameAboveOrSelf st ridC) ridR := by
+  obtain ⟨⟨r, hr, hrc⟩, hUn⟩ := hFresh
+  obtain ⟨r', hr', hRw⟩ := detachReplyFrameAboveOrSelf_reply_rewrite st ridC hObjInv
+    ridR.toObjId r ((getReply?_eq_some_iff st ridR r).mp hr)
+  refine ⟨⟨r', (getReply?_eq_some_iff _ ridR r').mpr hr', hRw.caller_eq.trans hrc⟩, ?_⟩
+  intro tid tcb hT
+  exact hUn tid tcb ((detachReplyFrameAboveOrSelf_getTcb?_eq st ridC hObjInv tid).symm.trans hT)
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal frames it — the detach, then the consume. -/
+theorem removeCallerReplyFrame_preserves_replyIdEstablishFresh
+    (st st' : SystemState) (caller : SeLe4n.ThreadId)
+    (ridC ridR : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hFresh : replyIdEstablishFresh st ridR)
+    (hStep : removeCallerReplyFrame caller ridC st = .ok ((), st')) :
+    replyIdEstablishFresh st' ridR := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact consumeCallerReply_preserves_replyIdEstablishFresh _ st' caller ridC ridR
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st ridC hObjInv)
+    (detachReplyFrameAboveOrSelf_preserves_replyIdEstablishFresh st ridC ridR hObjInv hFresh) hStep
 
 open SeLe4n.Model.SystemState in
 /-- D3 (Step 5): `endpointReplyRecv` **establishes** `pendingReceiveReplyWellFormed`.
@@ -20345,23 +20851,23 @@ theorem endpointReplyRecv_preserves_pendingReceiveReplyWellFormed
                   (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId
                   hObjInvE hPE hReplyIdValidE hReceiverNotRecvE hQHBCE hRecv
             | some rid =>
-              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable stReplied replyTarget) with
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable stReplied replyTarget) with
               | error e => simp [hCons]
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
-                have hP3 := consumeCallerReply_preserves_pendingReceiveReplyWellFormed _ _ replyTarget rid hObjInvE hPE hCons
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
+                have hP3 := removeCallerReplyFrame_preserves_pendingReceiveReplyWellFormed _ _ replyTarget rid hObjInvE hPE hCons
                 have hReplyIdValid3 : ∀ rid', replyId = some rid' → replyIdEstablishFresh st3 rid' :=
-                  fun rid' hRid => consumeCallerReply_preserves_replyIdEstablishFresh _ _ replyTarget rid rid'
+                  fun rid' hRid => removeCallerReplyFrame_preserves_replyIdEstablishFresh _ _ replyTarget rid rid'
                     hObjInvE (hReplyIdValidE rid' hRid) hCons
-                have hQHBC3 := consumeCallerReply_preserves_queueHeadBlockedConsistent _ _ replyTarget rid hObjInvE hQHBCE hCons
+                have hQHBC3 := removeCallerReplyFrame_preserves_queueHeadBlockedConsistent _ _ replyTarget rid hObjInvE hQHBCE hCons
                 have hReceiverNotRecv3 : ∀ (t : TCB), st3.getTcb? receiver = some t →
                     ∀ ep, t.ipcState ≠ .blockedOnReceive ep := by
                   intro t hT ep hBlk
                   rw [getTcb?_eq_some_iff] at hT
                   obtain ⟨ty, hSt, hIS, _⟩ :=
-                    SystemState.consumeCallerReply_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t hT
+                    removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t hT
                   exact hReceiverNotRecvE ty ((getTcb?_eq_some_iff _ receiver ty).mpr hSt) ep (hIS ▸ hBlk)
                 cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                 | error e => simp
@@ -20413,7 +20919,7 @@ theorem endpointReplyRecv_preserves_endpointQueueTailBlockedConsistent
       simp only [hIpc] at hStep
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
-            ∃ rid, SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
+            ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
           ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
             endpointQueueTailBlockedConsistent stR.2 by
         cases expectedReplier with
@@ -20437,7 +20943,7 @@ theorem endpointReplyRecv_preserves_endpointQueueTailBlockedConsistent
                   intro ⟨_, hEq⟩; subst hEq
                   exact this st1 hMsg _ (Or.inl rfl) result hRecv
               | some rid =>
-                cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
                 | error e => simp [hCons]
                 | ok p3 =>
                   obtain ⟨⟨⟩, st3⟩ := p3
@@ -20504,11 +21010,11 @@ theorem endpointReplyRecv_preserves_endpointQueueTailBlockedConsistent
             ep'.receiveQ.head ≠ some receiver ∧ ep'.receiveQ.tail ≠ some receiver) := by
         rcases hSt3 with rfl | ⟨rid, hCons⟩
         · exact ⟨hEQTBE, hDQSIE, hQHBCE, hObjInvE, hFreshReceiver'⟩
-        · have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree _ _ replyTarget rid hObjInvE hCons
-          exact ⟨consumeCallerReply_preserves_endpointQueueTailBlockedConsistent _ _ replyTarget rid hObjInvE hEQTBE hCons,
-            consumeCallerReply_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvE hDQSIE hCons,
-            consumeCallerReply_preserves_queueHeadBlockedConsistent _ _ replyTarget rid hObjInvE hQHBCE hCons,
-            SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons,
+        · have hNT := removeCallerReplyFrame_nonTcbNonReply_agree _ _ replyTarget rid hObjInvE hCons
+          exact ⟨removeCallerReplyFrame_preserves_endpointQueueTailBlockedConsistent _ _ replyTarget rid hObjInvE hEQTBE hCons,
+            removeCallerReplyFrame_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvE hDQSIE hCons,
+            removeCallerReplyFrame_preserves_queueHeadBlockedConsistent _ _ replyTarget rid hObjInvE hQHBCE hCons,
+            removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons,
             fun epId' ep' hEp' => hFreshReceiver' epId' ep' ((hNT epId' (.endpoint ep')
               (fun tt => by exact KernelObject.noConfusion)
               (fun rr => by exact KernelObject.noConfusion)).mp hEp')⟩
@@ -20578,7 +21084,7 @@ theorem endpointReply_preserves_queueHeadBlockedConsistent
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact consumeCallerReply_preserves_queueHeadBlockedConsistent _ _ target rid hObjInvMid hMid hStep
+              exact removeCallerReplyFrame_preserves_queueHeadBlockedConsistent _ _ target rid hObjInvMid hMid hStep
         · simp at hStep
 
 /-- V3-J compound: endpointReplyRecv preserves ipcStateQueueMembershipConsistent.
@@ -20625,7 +21131,7 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
       simp only [hIpc] at hStep
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           ∀ st3, (st3 = ensureRunnable st1 replyTarget ∨
-            ∃ rid, SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
+            ∃ rid, removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) = .ok ((), st3)) →
           ∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
             ipcStateQueueMembershipConsistent stR.2 by
         -- AK1-B (I-H02): Fail-closed on expectedReplier = none
@@ -20650,7 +21156,7 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
                   intro ⟨_, hEq⟩; subst hEq
                   exact this st1 hMsg _ (Or.inl rfl) result hRecv
               | some rid =>
-                cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
                 | error e => simp [hCons]
                 | ok p3 =>
                   obtain ⟨⟨⟩, st3⟩ := p3
@@ -20740,12 +21246,12 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
                 ep''.sendQ.tail ≠ some tailTid)) := by
         rcases hSt3 with rfl | ⟨rid, hCons⟩
         · exact ⟨hV3JE, hDQSIE, hQNBCE, hQHBCE, hObjInvE, hFreshReceiver', hRecvTailFresh'⟩
-        · have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree _ _ replyTarget rid hObjInvE hCons
-          exact ⟨consumeCallerReply_preserves_ipcStateQueueMembershipConsistent _ _ replyTarget rid hObjInvE hV3JE hCons,
-            consumeCallerReply_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvE hDQSIE hCons,
-            consumeCallerReply_preserves_queueNextBlockingConsistent _ _ replyTarget rid hObjInvE hQNBCE hCons,
-            consumeCallerReply_preserves_queueHeadBlockedConsistent _ _ replyTarget rid hObjInvE hQHBCE hCons,
-            SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons,
+        · have hNT := removeCallerReplyFrame_nonTcbNonReply_agree _ _ replyTarget rid hObjInvE hCons
+          exact ⟨removeCallerReplyFrame_preserves_ipcStateQueueMembershipConsistent _ _ replyTarget rid hObjInvE hV3JE hCons,
+            removeCallerReplyFrame_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvE hDQSIE hCons,
+            removeCallerReplyFrame_preserves_queueNextBlockingConsistent _ _ replyTarget rid hObjInvE hQNBCE hCons,
+            removeCallerReplyFrame_preserves_queueHeadBlockedConsistent _ _ replyTarget rid hObjInvE hQHBCE hCons,
+            removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons,
             fun epId' ep' hEp' => hFreshReceiver' epId' ep' ((hNT epId' (.endpoint ep')
               (fun tt => by exact KernelObject.noConfusion)
               (fun rr => by exact KernelObject.noConfusion)).mp hEp'),
@@ -20763,31 +21269,65 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 open SeLe4n.Model.SystemState in
-/-- WS-RR RR3.8: the reply delivery's **object-level** frame — every slot other
-than the answered caller's and its Reply's reads back to the pre-state. Lets the
-`.replyRecv` fold transport its receive leg's pre-state side conditions
-(`queueHeadBlockedConsistent`, the receiver's readiness) across the reply leg
-instead of restating them at an internal state no caller can see. -/
+/-- WS-RR RR3.8 / **WS-RM (`v0.35.6`)**: the reply delivery's **object-level**
+frame — every slot other than the answered caller's and its Reply's reads back to
+the pre-state, *up to the stack link the removal's detach clears at the frame
+above*.  Lets the `.replyRecv` fold transport its receive leg's pre-state side
+conditions (`queueHeadBlockedConsistent`, the receiver's readiness) across the
+reply leg instead of restating them at an internal state no caller can see.
+
+The disjunct is not slack: since `v0.35.6` the reply leg is seL4-MCS's
+`reply_remove`, so it detaches the answered frame from the one above it before
+consuming the caller link, and that frame is a third key — one no reply-path
+hypothesis names, which is why the honest statement tolerates a rewrite there
+rather than excluding it.  Both projections a linkage conjunct reads survive it:
+a Reply's `caller` (`replyStackRewrite.caller_eq`) and every TCB
+(`replyDelivery_tcb_frame`). -/
 theorem replyDelivery_objects_frame
     (st stMid st' : SystemState) (target : SeLe4n.ThreadId) (tcb : TCB)
     (hMidNe : ∀ x, x ≠ target.toObjId → stMid.objects[x]? = st.objects[x]?)
     (hObjInvMid : stMid.objects.invExt)
     (hCons : (match tcb.replyObject with
-        | some rid => SystemState.consumeCallerReply target rid stMid
+        | some rid => removeCallerReplyFrame target rid stMid
         | none => .ok ((), stMid)) = .ok ((), st')) :
     ∀ x, x ≠ target.toObjId →
       (∀ rid, tcb.replyObject = some rid → x ≠ rid.toObjId) →
-      st'.objects[x]? = st.objects[x]? := by
+      st'.objects[x]? = st.objects[x]? ∨
+        ∃ r r', st.objects[x]? = some (.reply r) ∧ st'.objects[x]? = some (.reply r') ∧
+          replyStackRewrite r' r := by
   intro x hxT hxR
   cases hRO : tcb.replyObject with
   | none =>
     simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hCons
-    rw [← hCons]; exact hMidNe x hxT
+    exact Or.inl (by rw [← hCons]; exact hMidNe x hxT)
   | some rid =>
     simp only [hRO] at hCons
-    rw [consumeCallerReply_objects_frame stMid st' target rid hObjInvMid hCons x
-      (hxR rid hRO) hxT]
-    exact hMidNe x hxT
+    rcases removeCallerReplyFrame_objects_rewrite stMid st' target rid hObjInvMid hCons x
+        (hxR rid hRO) hxT with h | ⟨r, r', hr, hr', hRw⟩
+    · exact Or.inl (h.trans (hMidNe x hxT))
+    · exact Or.inr ⟨r, r', (hMidNe x hxT) ▸ hr, hr', hRw⟩
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the frame above holds a *Reply*, so at a TCB key the
+reply delivery's frame is an equality — the projection every structural conjunct
+that reads a thread consumes. -/
+theorem replyDelivery_tcb_frame
+    (st stMid st' : SystemState) (target : SeLe4n.ThreadId) (tcb : TCB)
+    (hMidNe : ∀ x, x ≠ target.toObjId → stMid.objects[x]? = st.objects[x]?)
+    (hObjInvMid : stMid.objects.invExt)
+    (hCons : (match tcb.replyObject with
+        | some rid => removeCallerReplyFrame target rid stMid
+        | none => .ok ((), stMid)) = .ok ((), st')) :
+    ∀ (x : SeLe4n.ObjId) (t : TCB), x ≠ target.toObjId →
+      (∀ rid, tcb.replyObject = some rid → x ≠ rid.toObjId) →
+      (st'.objects[x]? = some (.tcb t) ↔ st.objects[x]? = some (.tcb t)) := by
+  intro x t hxT hxR
+  rcases replyDelivery_objects_frame st stMid st' target tcb hMidNe hObjInvMid hCons x hxT hxR
+    with h | ⟨r, r', hr, hr', _⟩
+  · rw [h]
+  · refine ⟨fun hT => ?_, fun hT => ?_⟩
+    · rw [hr'] at hT; cases hT
+    · rw [hr] at hT; cases hT
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.8: the reply delivery preserves `st.objects.invExt`. -/
@@ -20795,7 +21335,7 @@ theorem replyDelivery_preserves_objects_invExt
     (stMid st' : SystemState) (target : SeLe4n.ThreadId) (tcb : TCB)
     (hObjInvMid : stMid.objects.invExt)
     (hCons : (match tcb.replyObject with
-        | some rid => SystemState.consumeCallerReply target rid stMid
+        | some rid => removeCallerReplyFrame target rid stMid
         | none => .ok ((), stMid)) = .ok ((), st')) :
     st'.objects.invExt := by
   cases hRO : tcb.replyObject with
@@ -20804,7 +21344,7 @@ theorem replyDelivery_preserves_objects_invExt
     rw [← hCons]; exact hObjInvMid
   | some rid =>
     simp only [hRO] at hCons
-    exact consumeCallerReply_preserves_objects_invExt stMid st' target rid hObjInvMid hCons
+    exact removeCallerReplyFrame_preserves_objects_invExt stMid st' target rid hObjInvMid hCons
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.8: **the reply delivery's linkage payoff, stated once.**
@@ -20828,7 +21368,7 @@ theorem replyDelivery_preserves_replyCallerLinkageReciprocal
     (hMidNe : ∀ x, x ≠ target.toObjId → stMid.objects[x]? = st.objects[x]?)
     (hObjInvMid : stMid.objects.invExt)
     (hCons : (match tcb.replyObject with
-        | some rid => SystemState.consumeCallerReply target rid stMid
+        | some rid => removeCallerReplyFrame target rid stMid
         | none => .ok ((), stMid)) = .ok ((), st')) :
     replyCallerLinkageReciprocal st' := by
     cases hRO : tcb.replyObject with
@@ -20874,30 +21414,46 @@ theorem replyDelivery_preserves_replyCallerLinkageReciprocal
         intro hEq; rw [hEq, hTargetObj] at hR0Obj; cases hR0Obj
       have hR0Mid : stMid.getReply? rid = some r0 := by
         rw [getReply?_eq_some_iff, hMidNe rid.toObjId hRidNeT]; exact hR0Obj
-      have hRPost : st'.getReply? rid = some r0.consumed :=
-        consumeCallerReply_getReply?_caller_none _ target rid r0 hObjInvMid hR0Mid st' hCons
-      have hRPostObj : st'.objects[rid.toObjId]? = some (.reply r0.consumed) :=
+      obtain ⟨rPost, hRPost, hRPostC⟩ :=
+        removeCallerReplyFrame_getReply?_free _ target rid r0 hObjInvMid hR0Mid st' hCons
+      have hRPostObj : st'.objects[rid.toObjId]? = some (.reply rPost) :=
         (getReply?_eq_some_iff st' rid _).mp hRPost
       have hCallerPost : ∃ t', st'.objects[target.toObjId]? = some (.tcb t') := by
-        obtain ⟨tx, hTx, _⟩ := consumeCallerReply_tcb_backward _ st' target rid
+        obtain ⟨tx, hTx, _⟩ := removeCallerReplyFrame_tcb_backward _ st' target rid
           hObjInvMid hCons target.toObjId _ hMidTarget
         exact ⟨tx, hTx⟩
+      -- WS-RM (`v0.35.6`): the removal detaches the frame above before it
+      -- consumes, so outside `rid` and `target` a slot reads back to the
+      -- pre-state *or* holds a Reply whose stack links moved.  Reciprocity
+      -- reads a Reply's `caller` and a TCB, both of which survive a rewrite.
       have hFrame : ∀ x, x ≠ rid.toObjId → x ≠ target.toObjId →
-          st'.objects[x]? = st.objects[x]? := by
+          st'.objects[x]? = st.objects[x]? ∨
+            ∃ r r', st.objects[x]? = some (.reply r) ∧
+              st'.objects[x]? = some (.reply r') ∧ replyStackRewrite r' r := by
         intro x hxR hxC
-        rw [consumeCallerReply_objects_frame _ st' target rid hObjInvMid hCons x hxR hxC]
-        exact hMidNe x hxC
+        rcases removeCallerReplyFrame_objects_rewrite _ st' target rid hObjInvMid hCons x hxR hxC
+          with h | ⟨r, r', hr, hr', hRw⟩
+        · exact Or.inl (h.trans (hMidNe x hxC))
+        · exact Or.inr ⟨r, r', (hMidNe x hxC) ▸ hr, hr', hRw⟩
+      have hFrameTcb : ∀ (x : SeLe4n.ObjId) (t : TCB), x ≠ rid.toObjId → x ≠ target.toObjId →
+          (st'.objects[x]? = some (.tcb t) ↔ st.objects[x]? = some (.tcb t)) := by
+        intro x t hxR hxC
+        rcases hFrame x hxR hxC with h | ⟨r, r', hr, hr', _⟩
+        · rw [h]
+        · refine ⟨fun hT => ?_, fun hT => ?_⟩
+          · rw [hr'] at hT; cases hT
+          · rw [hr] at hT; cases hT
       constructor
       · intro tid tcbX ridv hTid hRepX
         by_cases hT : tid.toObjId = target.toObjId
         · exfalso
           rw [hT] at hTid
-          have hNone := consumeCallerReply_replyObject_none _ target rid hObjInvMid st'
+          have hNone := removeCallerReplyFrame_replyObject_none _ target rid hObjInvMid st'
             tcbX hCons ((getTcb?_eq_some_iff st' target tcbX).mpr hTid)
           rw [hNone] at hRepX; cases hRepX
         · have hTNeR : tid.toObjId ≠ rid.toObjId := by
             intro hEq; rw [hEq, hRPostObj] at hTid; cases hTid
-          rw [hFrame tid.toObjId hTNeR hT] at hTid
+          rw [hFrameTcb tid.toObjId tcbX hTNeR hT] at hTid
           obtain ⟨r, hR, hRC⟩ := hRecip.1 tid tcbX ridv hTid hRepX
           have hRvNeRid : ridv.toObjId ≠ rid.toObjId := by
             intro hEq
@@ -20909,22 +21465,31 @@ theorem replyDelivery_preserves_replyCallerLinkageReciprocal
             exact hT (congrArg SeLe4n.ThreadId.toObjId h3.symm)
           have hRvNeT : ridv.toObjId ≠ target.toObjId := by
             intro hEq; rw [hEq, hTargetObj] at hR; cases hR
-          refine ⟨r, ?_, hRC⟩
-          rw [hFrame ridv.toObjId hRvNeRid hRvNeT]; exact hR
+          rcases hFrame ridv.toObjId hRvNeRid hRvNeT with hEq | ⟨r₀, r₀', hr₀, hr₀', hRw⟩
+          · exact ⟨r, by rw [hEq]; exact hR, hRC⟩
+          · have hr₀r : r₀ = r := KernelObject.reply.inj (Option.some.inj (hr₀.symm.trans hR))
+            subst hr₀r
+            exact ⟨r₀', hr₀', hRw.caller_eq.trans hRC⟩
       · intro ridv r tid hR hC
         by_cases hRR : ridv.toObjId = rid.toObjId
         · exfalso
           rw [hRR, hRPostObj] at hR
           injection hR with h1
           injection h1 with h2
-          rw [← h2, Reply.consumed_caller] at hC
+          rw [← h2, hRPostC] at hC
           cases hC
         · have hRvNeT : ridv.toObjId ≠ target.toObjId := by
             intro hEq
             obtain ⟨t', hT'⟩ := hCallerPost
             rw [hEq, hT'] at hR; cases hR
-          rw [hFrame ridv.toObjId hRR hRvNeT] at hR
-          obtain ⟨tcbT, hT, hTR, hBlkEx⟩ := hRecip.2 ridv r tid hR hC
+          obtain ⟨r₀, hR, hC⟩ : ∃ r₀, st.objects[ridv.toObjId]? = some (.reply r₀) ∧
+              r₀.caller = some tid := by
+            rcases hFrame ridv.toObjId hRR hRvNeT with hEq | ⟨r₀, r₀', hr₀, hr₀', hRw⟩
+            · exact ⟨r, by rw [← hEq]; exact hR, hC⟩
+            · have : r₀' = r := KernelObject.reply.inj (Option.some.inj (hr₀'.symm.trans hR))
+              subst this
+              exact ⟨r₀, hr₀, hRw.caller_eq.symm.trans hC⟩
+          obtain ⟨tcbT, hT, hTR, hBlkEx⟩ := hRecip.2 ridv r₀ tid hR hC
           have hTidNeTarget : tid.toObjId ≠ target.toObjId := by
             intro hEq
             rw [hEq, hTargetObj] at hT
@@ -20936,7 +21501,7 @@ theorem replyDelivery_preserves_replyCallerLinkageReciprocal
           have hTidNeRid : tid.toObjId ≠ rid.toObjId := by
             intro hEq; rw [hEq, hR0Obj] at hT; cases hT
           refine ⟨tcbT, ?_, hTR, hBlkEx⟩
-          rw [hFrame tid.toObjId hTidNeRid hTidNeTarget]; exact hT
+          rw [hFrameTcb tid.toObjId tcbT hTidNeRid hTidNeTarget]; exact hT
 
 
 open SeLe4n.Model.SystemState in
@@ -21189,7 +21754,7 @@ theorem endpointReply_ipcState_backward_off_target
               exact ⟨tcbX, by rw [← hMidNe x.toObjId hxNe]; exact hTcbX, rfl⟩
             | some rid =>
               simp only [hRO] at hStep
-              obtain ⟨ty, hTy, hIS, _⟩ := consumeCallerReply_tcb_forward
+              obtain ⟨ty, hTy, hIS, _⟩ := removeCallerReplyFrame_tcb_forward
                 (ensureRunnable st1 target) st' target rid hObjInvMid hStep x.toObjId tcbX hTcbX
               exact ⟨ty, by rw [← hMidNe x.toObjId hxNe]; exact hTy, hIS⟩
         · simp_all

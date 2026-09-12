@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.5` (`lakefile.toml`) |
+| **Package version** | `0.35.6` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 370,721 across 328 Lean files |
-| **Test LoC** | 75,430 across 70 Lean test suites |
-| **Proved declarations** | 12,428 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 374,568 across 329 Lean files |
+| **Test LoC** | 75,813 across 70 Lean test suites |
+| **Proved declarations** | 12,576 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2958,7 +2958,7 @@ alongside the latent inventory (closing SMP-H3).
    produce over all argument values, which is what
    `boundedWait_under_2pl` and the WCRT surface must consume.
 
-   **At HEAD, the declared lock-set ceiling is **21**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3780 µs**.**
+   **At HEAD, the declared lock-set ceiling is **22**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3960 µs**.**
    All three are *derived* — from `maxLockSetSize`, `numCores` and
    `rpi5TickBudgetMicros`, through `admissibleCriticalSection`'s own
    formula — and since WS-OD OD3.15 (v0.34.142)
@@ -4046,7 +4046,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **172** statements in the family (the
+bound on a post-state across all **176** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to
@@ -4447,15 +4447,59 @@ now carried out by a **detach**:
   stated once, in this document's canonical ceiling sentence.  A footprint that omits an object the
   transition writes is false, which this project rates worse than a wide one.
 
-**One residual is registered rather than closed** (WS-RM).  The **reply** path
-does not yet run the detach: it relies on the answered frame being the head,
-which every reply of the nested Call pattern satisfies but which a *delegated*
-reply capability answering its caller out of order does not.  The consequence is
-fail-closed — the later pop's reciprocity test refuses the stale link and the
-reply returns `.invalidArgument`, writing nothing — so it is a wedged call chain
-rather than a corrupted one, and there is no confused deputy.  See
-`docs/REGISTERED_DEBT.md` and
-[`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](../planning/REPLY_FRAME_REMOVAL_PLAN.md).
+#### 8.12.8 The reply path runs `reply_remove` too — WS-RM (`v0.35.6`)
+
+`v0.35.4` wired the detach into the **cancellation** path and left the **reply**
+path relying on the answered frame being the head: every reply of the nested
+Call pattern satisfies that, and a *delegated* reply capability answering its
+caller out of order does not.  WS-RM closes it.  Six things new code must
+respect.
+
+1. **One removal step, and both spines call it.**
+   `removeCallerReplyFrame caller rid` is seL4's `reply_remove`: the detach
+   (folded to the identity when nothing links down to the answered frame, which
+   the chain relation permits by design since it is stated downward), then the
+   consume.  `endpointReplyOnCore`, `endpointReply` and `endpointReplyRecv` all
+   run it; a Tier 3 negative refuses a bare `SystemState.consumeCallerReply` in
+   any of the three.  The order inside it is the content — the detach reads the
+   link the consume clears — and a second negative refuses the swap.
+2. **`.reply` and `.replyRecv` declare the frame the detach writes.**
+   `answeredReplyFrameAbove?` resolves it from the same
+   `(st.getTcb? target).bind (·.replyObject)` expression the arm's existing
+   reply member comes from, so the footprint and the transition cannot disagree
+   about which frame is answered.  **`maxLockSetSize` is 22**, and the per-lock
+   cost and envelope that implies are stated once, in this document's canonical
+   ceiling sentence.  No *reachable* footprint grew: the new member and the
+   donation-return members are mutually exclusive.
+3. **The head case is stated, not hidden.**  A frame that heads a scheduling
+   context keeps its links when its caller is consumed (`Reply.consumed`,
+   deliberately — the pop validates the head by them), so the reply leg's
+   post-state satisfies `donationChainWellFormedExcept … rid` and nothing
+   stronger.  `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`
+   is the composite: the donation pop that follows in the same transition
+   discharges the transient, exactly as `returnDonatedSchedContext` discharges
+   the relaxed donation-owner conjunct.  The fault reply and the reply
+   *transfer* (seL4's `doReplyTransfer`) compose it.
+4. **`.replyRecv`'s donation pop runs *between* the legs.**  seL4-MCS's own
+   order is `doReplyTransfer` → `reply_remove` → `receiveIPC`, and it has to be:
+   the receive leg re-links the very Reply the reply leg just answered, and
+   `Reply.isFree` reads *both* stack links, so a frame still heading a context
+   is not linkable.  With the pop last, `linkCallerReply` and the server-first
+   stash both refused `.replyCapInvalid` and no passive server whose client had
+   donated could complete a `seL4_ReplyRecv`.  The fused resolution is split
+   into `replyRecvPopDonation` and `replyRecvPostReceiveDonation`, each with its
+   own bundle theorem stated at the state its own step runs on.
+5. **The receive-leg hypotheses are stated at the post-pop state.**
+   `replyRecvPostPopState` is a total accessor over the pop, so the staged
+   dispatch payoff's pack stays flat and pre-state-computable; stating them at
+   the reply leg's own state is a claim about a state the receive leg no longer
+   runs on.
+6. **Every reply-stack write names a chain result.**
+   `SeLe4n/Testing/ReplyStackWriteCensus.lean` (Tier 1) derives the write-site
+   set from the elaborated environment and reconciles it against a registry in
+   both directions: a site either states what it does to the chain, or is
+   recorded as a half-step of the composite that does.  A new definition that
+   consumes a caller's Reply bare is a build failure on the day it is written.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

@@ -4973,4 +4973,59 @@ theorem stageWokenSendCompletion_objects_invExt
             | some tcb2 => exact RHTable_insert_preserves_invExt _ _ _ hObjInv
           · exact hObjInv
 
+/-- **WS-RM (`v0.35.6`)**: a return-frame writeback carries no chain data.  Its
+one write is a `.tcb` at a key that already held one (`getTcb?` is what selects
+the arm), so no Reply and no SchedContext is created, destroyed or rewritten. -/
+theorem writeReturnFrameToTcb_donationChainFrame
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : Architecture.SyscallReturnFrame)
+    (hObjInv : st.objects.invExt) :
+    donationChainFrame st (Architecture.writeReturnFrameToTcb st tid frame) := by
+  unfold Architecture.writeReturnFrameToTcb
+  cases hLk : st.getTcb? tid with
+  | none => simp only []; exact donationChainFrame.refl st
+  | some tcb =>
+      simp only []
+      exact donationChainFrame_of_objects_insert hObjInv
+        (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk]; rfl)
+        (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk]; rfl)
+        (fun _ h => by cases h)
+
+/-- **WS-RM (`v0.35.6`)**: and so does delivery staging — every arm is that
+writeback or the identity. -/
+theorem stageDeliveredMessage_donationChainFrame
+    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat)
+    (hObjInv : st.objects.invExt) :
+    donationChainFrame st (Architecture.stageDeliveredMessage st tid installedCaps) := by
+  unfold Architecture.stageDeliveredMessage
+  cases hLk : st.getTcb? tid with
+  | none => simp only []; exact donationChainFrame.refl st
+  | some tcb =>
+      simp only []
+      split
+      · cases hPm : tcb.pendingMessage with
+        | none => simp only []; exact donationChainFrame.refl st
+        | some msg =>
+            simp only []
+            exact writeReturnFrameToTcb_donationChainFrame st tid _ hObjInv
+      · exact donationChainFrame.refl st
+
+/-- **WS-RM (`v0.35.6`)**: and so does the woken sender's completion frame. -/
+theorem stageWokenSendCompletion_donationChainFrame
+    (st : SystemState) (woken? : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) :
+    donationChainFrame st (Architecture.stageWokenSendCompletion st woken?) := by
+  unfold Architecture.stageWokenSendCompletion
+  cases woken? with
+  | none => exact donationChainFrame.refl st
+  | some tid =>
+      dsimp only []
+      cases hLk : st.getTcb? tid with
+      | none => simp only []; exact donationChainFrame.refl st
+      | some tcb =>
+          simp only []
+          split
+          · exact writeReturnFrameToTcb_donationChainFrame st tid _ hObjInv
+          · exact donationChainFrame.refl st
+
+
 end SeLe4n.Kernel

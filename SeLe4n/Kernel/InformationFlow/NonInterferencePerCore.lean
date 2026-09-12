@@ -866,6 +866,17 @@ theorem consumeCallerReply_confinedToCore (st st' : SystemState) (caller : SeLe4
     (SystemState.consumeCallerReply_scheduler_eq st st' caller rid hStep)
     (SystemState.consumeCallerReply_machine_eq st st' caller rid hStep)
 
+/-- **WS-RM (`v0.35.6`)**: the removal touches neither the scheduler nor the
+machine, so it is confined on every core — the detach writes one Reply and the
+consume two objects, none of them scheduler or machine state. -/
+theorem removeCallerReplyFrame_confinedToCore (st st' : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (c₀ : CoreId)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    observableSlotsConfinedToCore st st' c₀ :=
+  observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+    (removeCallerReplyFrame_scheduler_eq st st' caller rid hStep)
+    (removeCallerReplyFrame_machine_eq st st' caller rid hStep)
+
 theorem cleanupPreReceiveDonation_confinedToCore (st : SystemState)
     (receiver : SeLe4n.ThreadId) (c₀ : CoreId) :
     observableSlotsConfinedToCore st (cleanupPreReceiveDonation st receiver) c₀ :=
@@ -1484,7 +1495,7 @@ theorem endpointReply_confinedToBootCore (st st' : SystemState)
               refine observableSlotsConfinedToCore_trans hStoreC ?_
               refine observableSlotsConfinedToCore_trans
                 (ensureRunnable_confinedToBootCore st1 target) ?_
-              exact consumeCallerReply_confinedToCore _ st' target rid bootCoreId hStep
+              exact removeCallerReplyFrame_confinedToCore _ st' target rid bootCoreId hStep
             · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep
               subst hEq
@@ -1527,7 +1538,7 @@ theorem endpointReplyRecv_confinedToBootCore (st st' : SystemState)
                   bootCoreId := by
                 split at hConsume
                 · next rid _ =>
-                  exact consumeCallerReply_confinedToCore _ st3 replyTarget rid bootCoreId hConsume
+                  exact removeCallerReplyFrame_confinedToCore _ st3 replyTarget rid bootCoreId hConsume
                 · simp only [Except.ok.injEq, Prod.mk.injEq] at hConsume
                   exact observableSlotsConfinedToCore_of_eq bootCoreId hConsume.2.symm
               split at hStep

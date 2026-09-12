@@ -27,18 +27,21 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId)
 
-/-- PR #827 #3 fold: `consumeCallerReply` preserves `ipcSchedulerContractPredicates`
-— the runnable set is untouched (scheduler frame) and every TCB's `ipcState` is a
-preserved field, so all six coherence clauses transport. -/
-theorem consumeCallerReply_preserves_ipcSchedulerContractPredicates
-    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (hContract : ipcSchedulerContractPredicates st)
-    (hObjInv : st.objects.invExt)
-    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+/-- **WS-RM (`v0.35.6`)**: the argument, over the two facts it uses — the
+scheduler is untouched and every stored TCB keeps its `ipcState`.  Both the
+consume and the removal that precedes it supply them, so the six clauses are
+discharged once rather than mirrored. -/
+theorem ipcSchedulerContractPredicates_of_schedulerEq_of_tcbIpcState
+    (st st' : SystemState)
+    (hSched : st'.scheduler = st.scheduler)
+    (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
+      ∃ ty, st.objects[s]? = some (.tcb ty) ∧ tx.ipcState = ty.ipcState ∧
+        tx.pendingMessage = ty.pendingMessage ∧ tx.queueNext = ty.queueNext ∧
+        tx.queuePrev = ty.queuePrev ∧ tx.queuePPrev = ty.queuePPrev ∧
+        tx.schedContextBinding = ty.schedContextBinding ∧ tx.timeoutBudget = ty.timeoutBudget)
+    (hContract : ipcSchedulerContractPredicates st) :
     ipcSchedulerContractPredicates st' := by
   obtain ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩ := hContract
-  have hSched := SystemState.consumeCallerReply_scheduler_eq st st' caller rid hStep
-  have hFwd := SystemState.consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hT hMem
     obtain ⟨ty, hSt, hIS, _⟩ := hFwd tid.toObjId tcb hT
@@ -65,6 +68,31 @@ theorem consumeCallerReply_preserves_ipcSchedulerContractPredicates
     obtain ⟨ty, hSt, hIS, _⟩ := hFwd tid.toObjId tcb hT
     rw [hSched]
     exact hBlockNotif tid ty nid hSt (hIS ▸ hIpc)
+
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `ipcSchedulerContractPredicates`
+— the runnable set is untouched (scheduler frame) and every TCB's `ipcState` is a
+preserved field, so all six coherence clauses transport. -/
+theorem consumeCallerReply_preserves_ipcSchedulerContractPredicates
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hContract : ipcSchedulerContractPredicates st)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    ipcSchedulerContractPredicates st' :=
+  ipcSchedulerContractPredicates_of_schedulerEq_of_tcbIpcState st st'
+    (SystemState.consumeCallerReply_scheduler_eq st st' caller rid hStep)
+    (SystemState.consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep) hContract
+
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves it — the detach it runs
+first writes a Reply, touching neither the scheduler nor a TCB. -/
+theorem removeCallerReplyFrame_preserves_ipcSchedulerContractPredicates
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hContract : ipcSchedulerContractPredicates st)
+    (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ipcSchedulerContractPredicates st' :=
+  ipcSchedulerContractPredicates_of_schedulerEq_of_tcbIpcState st st'
+    (removeCallerReplyFrame_scheduler_eq st st' caller rid hStep)
+    (removeCallerReplyFrame_tcb_forward st st' caller rid hObjInv hStep) hContract
 
 /-- WS-H12a: endpointReplyRecv preserves ipcInvariant.
 Chains storeTcbIpcStateAndMessage + ensureRunnable + endpointReceiveDual preservation. -/
@@ -124,13 +152,13 @@ theorem endpointReplyRecv_preserves_ipcInvariant
                   intro ⟨_, hEq⟩; subst hEq
                   exact this _ hInv2 hObjInvEns result hRecv
               | some rid =>
-                cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
                 | error e => simp [hCons]
                 | ok p3 =>
                   obtain ⟨⟨⟩, st3⟩ := p3
                   simp only [hCons]
-                  have hInv3 := consumeCallerReply_preserves_ipcInvariant _ _ replyTarget rid hObjInvEns hInv2 hCons
-                  have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
+                  have hInv3 := removeCallerReplyFrame_preserves_ipcInvariant _ _ replyTarget rid hObjInvEns hInv2 hCons
+                  have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
                   cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                   | error e => simp
                   | ok result =>
@@ -252,16 +280,16 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
                   intro ⟨_, hEq⟩; subst hEq
                   exact this _ hInvMid hCNHMid hObjInvEns result hRecv
               | some rid =>
-                cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
                 | error e => simp [hCons]
                 | ok p3 =>
                   obtain ⟨⟨⟩, st3⟩ := p3
                   simp only [hCons]
                   have hInv3 : schedulerInvariantBundle st3 :=
-                    consumeCallerReply_preserves_schedulerInvariantBundle _ _ replyTarget rid hInvMid hObjInvEns hCons
+                    removeCallerReplyFrame_preserves_schedulerInvariantBundle _ _ replyTarget rid hInvMid hObjInvEns hCons
                   have hCNH3 : currentNotEndpointQueueHead st3 := by
-                    have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree _ _ replyTarget rid hObjInvEns hCons
-                    have hSchedC := SystemState.consumeCallerReply_scheduler_eq _ _ replyTarget rid hCons
+                    have hNT := removeCallerReplyFrame_nonTcbNonReply_agree _ _ replyTarget rid hObjInvEns hCons
+                    have hSchedC := removeCallerReplyFrame_scheduler_eq _ _ replyTarget rid hCons
                     unfold currentNotEndpointQueueHead at hCNHMid ⊢
                     rw [hSchedC]
                     cases hCurr2 : ((ensureRunnable st1 replyTarget).scheduler.currentOnCore bootCoreId) with
@@ -272,7 +300,7 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
                       exact hCNHMid oid ep ((hNT oid (.endpoint ep)
                         (fun tt => by exact KernelObject.noConfusion)
                         (fun rr => by exact KernelObject.noConfusion)).mp hEp)
-                  have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
+                  have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
                   cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                   | error e => simp
                   | ok result =>
@@ -408,14 +436,14 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
                   intro ⟨_, hEq⟩; subst hEq
                   exact this _ hContractMid hObjInvEns result hRecv
               | some rid =>
-                cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
                 | error e => simp [hCons]
                 | ok p3 =>
                   obtain ⟨⟨⟩, st3⟩ := p3
                   simp only [hCons]
                   have hContract3 : ipcSchedulerContractPredicates st3 :=
-                    consumeCallerReply_preserves_ipcSchedulerContractPredicates _ _ replyTarget rid hContractMid hObjInvEns hCons
-                  have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
+                    removeCallerReplyFrame_preserves_ipcSchedulerContractPredicates _ _ replyTarget rid hContractMid hObjInvEns hCons
+                  have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
                   cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                   | error e => simp
                   | ok result =>
@@ -485,7 +513,7 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
                 rw [← hStep]; exact hMid
               | some rid =>
                 simp only [hRO] at hStep
-                exact consumeCallerReply_preserves_ipcSchedulerContractPredicates _ _ target rid hMid hObjInvMid hStep
+                exact removeCallerReplyFrame_preserves_ipcSchedulerContractPredicates _ _ target rid hMid hObjInvMid hStep
           · -- authorized = false
             simp_all
       -- Shared proof body

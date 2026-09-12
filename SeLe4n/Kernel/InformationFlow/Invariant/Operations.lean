@@ -2231,9 +2231,13 @@ theorem endpointReply_preserves_projection
               ensureRunnable_preserves_objectIndexSetComplete stMid target
                 (storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete st stMid target _ _
                   hObjInv hObjSetInv hIdxComplete hStore)
-            rw [consumeCallerReply_preserves_projection ctx observer
+            have hObjSetInvMid : (ensureRunnable stMid target).objectIndexSet.table.invExt :=
+              ensureRunnable_preserves_objectIndexSet_invExt stMid target
+                (storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt st stMid target _ _
+                  hObjSetInv hStore)
+            rw [removeCallerReplyFrame_preserves_projection ctx observer
                   (ensureRunnable stMid target) st' target rid hTargetObjHigh hIdxMid
-                  hObjInvMid hStep,
+                  hObjInvMid hObjSetInvMid hStep,
                 hProjMid]
       · -- authorized = false
         simp at hStep
@@ -2456,6 +2460,25 @@ theorem consumeCallerReply_preserves_objectIndexSetComplete_and_invExt
           hObjInv1 hMid.2 hMid.1 hStep,
         storeObject_preserves_objectIndexSet_invExt st1 st' caller.toObjId _ hMid.2 hStep⟩
 
+/-- **WS-RM (`v0.35.6`)**: the *removal* preserves the pair.  Its extra leg is a
+`.reply` store at a key that already held a Reply, so `objectIndexSet.contains`
+is monotone across it for the same reason the consume's two legs are. -/
+theorem removeCallerReplyFrame_preserves_objectIndexSetComplete_and_invExt
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hComplete : objectIndexSetComplete st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    objectIndexSetComplete st' ∧ st'.objectIndexSet.table.invExt := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  refine consumeCallerReply_preserves_objectIndexSetComplete_and_invExt _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) ?_
+    (detachReplyFrameAboveOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
+      hComplete) hStep
+  rcases detachReplyFrameAboveOrSelf_store_cases st rid with h | ⟨above, a, _, hS⟩
+  · rw [h]; exact hObjSetInv
+  · exact storeObject_preserves_objectIndexSet_invExt st _ above.toObjId _ hObjSetInv hS
+
 /-- U4-C: endpointReplyRecv at non-observable targets preserves projection.
 
     Sequential composition: reply (storeTcbIpcStateAndMessage + ensureRunnable +
@@ -2617,23 +2640,23 @@ theorem endpointReplyRecv_preserves_projection
           | some rid =>
             simp only [hRO] at hStep
             -- `consumeCallerReply` is total — name its output state st3.
-            obtain ⟨st3, hCons⟩ := SystemState.consumeCallerReply_isOk
+            obtain ⟨st3, hCons⟩ := removeCallerReplyFrame_isOk
               (ensureRunnable stReply replyTarget) replyTarget rid
             simp only [hCons] at hStep
-            have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt
+            have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt
               (ensureRunnable stReply replyTarget) st3 replyTarget rid hObjInvEns hCons
             obtain ⟨hIdx3, hObjSet3⟩ :=
-              consumeCallerReply_preserves_objectIndexSetComplete_and_invExt
+              removeCallerReplyFrame_preserves_objectIndexSetComplete_and_invExt
                 (ensureRunnable stReply replyTarget) st3 replyTarget rid
                 hObjInvEns hObjSetInvMid hIdxMid hCons
             have hProjCons : projectState ctx observer st3 =
                 projectState ctx observer (ensureRunnable stReply replyTarget) :=
-              consumeCallerReply_preserves_projection ctx observer
+              removeCallerReplyFrame_preserves_projection ctx observer
                 (ensureRunnable stReply replyTarget) st3 replyTarget rid
-                hReplyTargetObjHigh hIdxMid hObjInvEns hCons
+                hReplyTargetObjHigh hIdxMid hObjInvEns hObjSetInvMid hCons
             -- Transport the endpoint/queue hypotheses across the consume: its two
             -- writes land on the consumed Reply's slot and the caller's `.tcb` slot.
-            have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree
+            have hNT := removeCallerReplyFrame_nonTcbNonReply_agree
               (ensureRunnable stReply replyTarget) st3 replyTarget rid hObjInvEns hCons
             have hEpBack3 : ∀ ep', st3.objects[endpointId]? = some (.endpoint ep') →
                 (ensureRunnable stReply replyTarget).objects[endpointId]? =
@@ -2654,7 +2677,7 @@ theorem endpointReplyRecv_preserves_projection
                 objectObservable ctx observer nextTid'.toObjId = false := by
               intro ep' sender' senderTcb' nextTid' hEp' hHead hSenderTcb hNext
               obtain ⟨ty, hTy, _, _, hQN, _⟩ :=
-                SystemState.consumeCallerReply_tcb_forward
+                removeCallerReplyFrame_tcb_forward
                   (ensureRunnable stReply replyTarget) st3 replyTarget rid hObjInvEns hCons
                   sender'.toObjId senderTcb' hSenderTcb
               exact hSQNH_mid ep' sender' ty nextTid' (hEpBack3 ep' hEp') hHead hTy

@@ -154,11 +154,11 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : C
 example (replier target : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (msg : IpcMessage)
     (executingCore : CoreId) (donatedSc? : Option SeLe4n.SchedContextId)
     (donatedOwner? : Option SeLe4n.ThreadId) (s : SystemState) :
-    (withLockSet (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none)
+    (withLockSet (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none none none)
         executingCore (endpointReplyOnCore replier target msg executingCore) s).2
       = (endpointReplyOnCore replier target msg executingCore
           (acquireAll executingCore
-            (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none).lockAcquireSequence s)).2 := by
+            (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none none none).lockAcquireSequence s)).2 := by
   rw [endpointReplyOnCore_atomic_under_lockSet]
 
 /-- SM6.C.8: a cross-core reply unblocking a high caller is invisible on every core. -/
@@ -235,19 +235,19 @@ private def runLockSetChecks : IO Unit := do
   IO.println "--- §3.1 SM6.C.1/.6 lock-set footprint + caller-TCB write lock ---"
   -- SM6.C.1: every declared lock has a kind permitted for `.reply`.
   assertBool "reply lock-set kinds all permitted (replier W, cnode R, caller W)"
-    (decide (∀ p ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none).pairs,
+    (decide (∀ p ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none none none).pairs,
         p.fst.kind ∈ permittedKinds .reply))
   -- SM6.C.1: keys are duplicate-free.
   assertBool "reply lock-set keys are duplicate-free"
-    (decide ((lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none).pairs.map (·.fst)).Nodup)
+    (decide ((lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none none none).pairs.map (·.fst)).Nodup)
   -- SM6.C.6: the caller-TCB *write* lock — the reply-state lifecycle write — is declared.
   assertBool "caller-TCB write lock is in the reply footprint (reply-state lifecycle)"
     (decide ((tcbLock clientLocalTid, AccessMode.write)
-      ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none).pairs))
+      ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none none none).pairs))
   -- SM6.C.5: the replyRecv lock-set is hierarchically correct.
   assertBool "replyRecv lock-set kinds all permitted"
     (decide (∀ p ∈ (lockSet_replyRecv serverTid cnRoot clientLocalTid epId none none none
-          none false none none none none).pairs,
+          none false none none none none none none none none none none none none none).pairs,
         p.fst.kind ∈ permittedKinds .replyRecv))
   -- SM6.C.1: the state-resolved reply lock-set is hierarchically correct.
   assertBool "state-resolved reply lock-set kinds all permitted"
@@ -260,10 +260,10 @@ private def runLockSetChecks : IO Unit := do
   assertBool "per-object reply write-lock is in the reply footprint (resolved rid)"
     (decide ((replyLock (⟨707⟩ : SeLe4n.ReplyId), AccessMode.write)
       ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none
-          (some (⟨707⟩ : SeLe4n.ReplyId)) none none).pairs))
+          (some (⟨707⟩ : SeLe4n.ReplyId)) none none none none).pairs))
   assertBool "reply lock-set with resolved reply object: kinds all still permitted"
     (decide (∀ p ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none
-          (some (⟨707⟩ : SeLe4n.ReplyId)) none none).pairs, p.fst.kind ∈ permittedKinds .reply))
+          (some (⟨707⟩ : SeLe4n.ReplyId)) none none none none).pairs, p.fst.kind ∈ permittedKinds .reply))
   -- WS-SM SM6.D (PR #822 review 6J-NL9): the `.receive` / `.call` footprints also carry
   -- the per-object reply write lock once the linked reply is resolved — a Call rendezvous
   -- on receive (and a server-first Call) links a Reply object under that lock.
@@ -383,6 +383,79 @@ private def runConsumeChecks : IO Unit := do
      | .ok _, some t => decide (t.ipcState = .ready ∧ t.replyObject = none)
      | _, _ => false)
 
+/-- **WS-RM (`v0.35.6`)**: `stLinked` with the answered Reply carrying a frame
+**above** it — the shape a delegated reply capability answering out of order
+produces, and the one the detach exists for.
+
+`replyId707` is the answered caller's frame; `replyId708` sits above it, so the
+stack reads `708 -> 707 -> …` and `708.prev = some 707` is the stale reference
+that survives a bare consume.  Reciprocity is complete in the other direction
+too (`707.next = some (.frame 708)`), because `donationChainFrom` follows a
+`prev` only when the target's own `next` answers the frame that reached it. -/
+private def replyId708 : SeLe4n.ReplyId := ⟨708⟩
+
+private def stLinkedWithFrameAbove : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject epId (.endpoint {})
+    |>.withObject serverTid.toObjId (.tcb (mkTcb 601 50 none .ready))
+    |>.withObject clientLocalTid.toObjId
+        (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
+                  replyObject := some replyId707 })
+    |>.withObject clientRemoteTid.toObjId
+        (.tcb (mkTcb 603 30 (some core1) (.blockedOnReply epId (some serverTid))))
+    |>.withObject replyId707.toObjId
+        (.reply { replyId := replyId707, caller := some clientLocalTid,
+                  next := some (.frame replyId708) })
+    |>.withObject replyId708.toObjId
+        (.reply { replyId := replyId708, caller := some clientRemoteTid,
+                  prev := some replyId707 })
+    |>.withRunnable [serverTid]
+    |>.build)
+
+private def runFrameDetachChecks : IO Unit := do
+  IO.println "--- §3.9 WS-RM: seL4's `reply_remove` — the detach, both directions ---"
+  -- (1) The in-order path: the answered frame has nothing above it, so the
+  -- detach is the identity and the reply is byte-for-byte the pre-WS-RM one.
+  -- A fixture exercising only this path would pass before and after the cut,
+  -- which is why the second half below exists.
+  assertBool "in-order reply: the answered frame has no frame above it"
+    (decide (answeredReplyFrameAbove? stLinked clientLocalTid = none))
+  let (postInOrder, resInOrder) :=
+    endpointReplyOnCore serverTid clientLocalTid replyMsg bootCoreId stLinked
+  assertBool "in-order reply succeeds"
+    (match resInOrder with | .ok _ => true | .error _ => false)
+  assertBool "in-order reply: the removal is the bare consume (no other Reply moves)"
+    (postInOrder.getReply? replyId708 == stLinked.getReply? replyId708)
+  -- (2) The out-of-order path: a frame sits above the answered one, so the
+  -- removal fires exactly once and clears that frame's stale upward reference.
+  assertBool "out-of-order reply: the answered frame HAS a frame above it"
+    (decide (answeredReplyFrameAbove? stLinkedWithFrameAbove clientLocalTid = some replyId708))
+  let (postDetached, resDetached) :=
+    endpointReplyOnCore serverTid clientLocalTid replyMsg bootCoreId stLinkedWithFrameAbove
+  assertBool "out-of-order reply succeeds"
+    (match resDetached with | .ok _ => true | .error _ => false)
+  assertBool "the frame above has its `prev` cleared — no stale reference survives"
+    (match postDetached.getReply? replyId708 with
+     | some r => decide (r.prev = none)
+     | none => false)
+  assertBool "...and the detach touches nothing else on that frame"
+    (match postDetached.getReply? replyId708, stLinkedWithFrameAbove.getReply? replyId708 with
+     | some r, some r0 => r == { r0 with prev := none }
+     | _, _ => false)
+  assertBool "the answered frame is consumed and off the stack (`Reply.isFree`)"
+    (match postDetached.getReply? replyId707 with
+     | some r => decide (r.isFree = true)
+     | none => false)
+  -- (3) The removal fires exactly ONCE: re-running it on the post-state is the
+  -- identity, so "it fired" cannot be confused with "it fires every time".
+  assertBool "the removal is idempotent: nothing above the answered frame now"
+    (decide (replyFrameAbove? postDetached replyId707 = none))
+  assertBool "re-running the removal on the post-state changes no object"
+    (match removeCallerReplyFrame clientLocalTid replyId707 postDetached with
+     | .ok ((), st2) => (st2.getReply? replyId708 == postDetached.getReply? replyId708)
+         && (st2.getReply? replyId707 == postDetached.getReply? replyId707)
+     | .error _ => false)
+
 private def runReplyRecvChecks : IO Unit := do
   IO.println "--- §3.5 SM6.C.5 replyRecv combined op (reply leg wakes caller) ---"
   -- The reply leg of replyRecv wakes the recorded caller; the receive leg then
@@ -407,11 +480,11 @@ private def runDonationChecks : IO Unit := do
   assertBool "donating reply lock-set includes the returned SchedContext write lock"
     (decide ((schedContextLock scId, AccessMode.write)
       ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid (some scId) (some clientLocalTid)
-        none none none).pairs))
+        none none none none none).pairs))
   assertBool "donating reply lock-set includes the original-owner TCB write lock"
     (decide ((tcbLock clientLocalTid, AccessMode.write)
       ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid (some scId) (some clientLocalTid)
-        none none none).pairs))
+        none none none none none).pairs))
   -- The extension equation holds definitionally.  **WS-OD OD3.5**: it is a
   -- THREE-member extension — the returned SchedContext, the original owner's
   -- TCB, and the state-level lock, because the donation return maintains
@@ -420,10 +493,10 @@ private def runDonationChecks : IO Unit := do
   -- `lockSet_endpointReply_donation_extension`; the two must not drift.
   assertBool "donation lock-set extension equation holds"
     (decide ((lockSet_endpointReply serverTid cnRoot clientLocalTid (some scId) (some clientLocalTid)
-        none none none).pairs
+        none none none none none).pairs
       = (lockSetExtendOpt
            (lockSetExtendOpt
-             (lockSetExtendOpt (lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none)
+             (lockSetExtendOpt (lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none none none)
                (some (schedContextLock scId, .write)))
              (some (tcbLock clientLocalTid, .write)))
            (some (stateLevelLock, .write))).pairs))
@@ -488,6 +561,7 @@ def runSmpCrossCoreReplyChecks : IO Unit := do
   runWakeChecks
   runReplayChecks
   runConsumeChecks
+  runFrameDetachChecks
   runReplyRecvChecks
   runDonationChecks
   runDispatchChecks

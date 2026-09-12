@@ -183,22 +183,26 @@ reaches, and is cleared when that frame's own caller is consumed.  Clearing it
 eagerly would cost a second object write on every reply for a case only a
 cancellation deeper than three creates.
 
-**Precondition, and a registered gap.**  The frame **above** is the other
-direction, and it is *not* safe to ignore: if some frame still links **down** to
-this one (`above.prev = some rid`), clearing this frame's `next` falsifies
-`prevLinkReciprocal` at that frame, and the pop that later walks to it refuses
-(fail-closed, `.invalidArgument`) rather than returning the context.  So a
-removal path must take the frame above off this one *before* consuming —
-seL4's `reply_remove`, whose non-head branch clears `replyPrev` on the frame
-above.  The cancellation path does exactly that (`detachCancelledCallerFrame`,
-run immediately before `consumeReplyLink`).  The **reply** path does not: it
-relies on the answered frame being the head, which every reply of the nested
-Call pattern satisfies, but which a *delegated* reply capability answering its
-caller out of order does not.  Registered as **WS-RM** — `docs/REGISTERED_DEBT.md`
-section A, and `docs/planning/REPLY_FRAME_REMOVAL_PLAN.md` — which opens
-immediately after `v0.35.4` and closes before WS-RR RR8.  The consequence there
-is a wedged call chain, never a corrupted one, because the pop's reciprocity test
-refuses what it cannot validate. -/
+**Precondition, and who discharges it** (WS-RM, `v0.35.6`).  The frame **above**
+is the other direction, and it is *not* safe to ignore: if some frame still
+links **down** to this one (`above.prev = some rid`), clearing this frame's
+`next` falsifies `prevLinkReciprocal` at that frame, and the pop that later
+walks to it refuses (fail-closed, `.invalidArgument`) rather than returning the
+context.  So a removal path must take the frame above off this one *before*
+consuming — seL4's `reply_remove`, whose non-head branch clears `replyPrev` on
+the frame above.
+
+**Both paths do.**  The cancellation path runs `detachFrameAboveThreadReply`
+immediately before `consumeReplyLink`, and the reply path runs
+`removeCallerReplyFrame` — the detach and the consume as one step, called by
+`endpointReplyOnCore` and by both single-core spines.  Until WS-RM the reply path
+did not: it relied on the answered frame being the head, which every reply of the
+nested Call pattern satisfies but which a *delegated* reply capability answering
+its caller out of order does not.  New code on a reply path calls
+`removeCallerReplyFrame` rather than reaching for the consume; a Tier 3 negative
+refuses the bare spelling in either spine, and
+`SeLe4n/Testing/ReplyStackWriteCensus.lean` fails the build for a new write site
+that names no chain result. -/
 def consumed (r : Reply) : Reply :=
   match r.next with
   | some (.head _) => { r with caller := none }

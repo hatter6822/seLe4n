@@ -426,15 +426,18 @@ theorem notificationWait_preserves_endpointQueueNoDup
                   storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup _ _ _ _ _ hInv1 hObjInv1 hIpc
 
 open SeLe4n.Model.SystemState in
-/-- PR #827 #3 fold: `consumeCallerReply` preserves `endpointQueueNoDup` —
-endpoints are untouched and every TCB's `queueNext` is a preserved field. -/
-theorem consumeCallerReply_preserves_endpointQueueNoDup
-    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (hObjInv : st.objects.invExt) (hInv : endpointQueueNoDup st)
-    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+/-- **WS-RM (`v0.35.6`)**: the argument above, stated over the two facts it
+actually uses — endpoints agree across the step, and every stored TCB's
+`queueNext` survives it.  Both the consume and the removal that now precedes it
+supply exactly those, so the reasoning is written once rather than mirrored. -/
+theorem endpointQueueNoDup_of_endpointAgree_of_tcbQueueNext (st st' : SystemState)
+    (hNT : ∀ (s : SeLe4n.ObjId) (k : KernelObject),
+      (∀ tt, k ≠ .tcb tt) → (∀ rr, k ≠ .reply rr) →
+      (st'.objects[s]? = some k ↔ st.objects[s]? = some k))
+    (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
+      ∃ ty, st.objects[s]? = some (.tcb ty) ∧ tx.queueNext = ty.queueNext)
+    (hInv : endpointQueueNoDup st) :
     endpointQueueNoDup st' := by
-  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
-  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
   intro oid ep hObj
   have hEp := (hNT oid (.endpoint ep)
     (fun tt => by exact KernelObject.noConfusion)
@@ -442,9 +445,41 @@ theorem consumeCallerReply_preserves_endpointQueueNoDup
   obtain ⟨hSelf, hDisj⟩ := hInv oid ep hEp
   refine ⟨?_, hDisj⟩
   intro tid tcb hTcb
-  obtain ⟨ty, hSt, _, _, hQN, _⟩ := hFwd tid.toObjId tcb hTcb
+  obtain ⟨ty, hSt, hQN⟩ := hFwd tid.toObjId tcb hTcb
   rw [hQN]
   exact hSelf tid ty hSt
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves it too — the detach writes a
+Reply, which is neither an endpoint nor a TCB. -/
+theorem removeCallerReplyFrame_preserves_endpointQueueNoDup
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : endpointQueueNoDup st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    endpointQueueNoDup st' :=
+  endpointQueueNoDup_of_endpointAgree_of_tcbQueueNext st st'
+    (removeCallerReplyFrame_nonTcbNonReply_agree st st' caller rid hObjInv hStep)
+    (fun s tx hx =>
+      let ⟨ty, hSt, _, _, hQN, _⟩ :=
+        removeCallerReplyFrame_tcb_forward st st' caller rid hObjInv hStep s tx hx
+      ⟨ty, hSt, hQN⟩)
+    hInv
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `endpointQueueNoDup` —
+endpoints are untouched and every TCB's `queueNext` is a preserved field. -/
+theorem consumeCallerReply_preserves_endpointQueueNoDup
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : endpointQueueNoDup st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    endpointQueueNoDup st' :=
+  endpointQueueNoDup_of_endpointAgree_of_tcbQueueNext st st'
+    (consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep)
+    (fun s tx hx =>
+      let ⟨ty, hSt, _, _, hQN, _⟩ :=
+        consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep s tx hx
+      ⟨ty, hSt, hQN⟩)
+    hInv
 
 
 /-- V3-K-op-7: endpointReply preserves endpointQueueNoDup.
@@ -496,7 +531,7 @@ theorem endpointReply_preserves_endpointQueueNoDup
                   rw [← hStep]; exact hMid
                 | some rid =>
                   simp only [hRO] at hStep
-                  exact consumeCallerReply_preserves_endpointQueueNoDup _ _ target rid
+                  exact removeCallerReplyFrame_preserves_endpointQueueNoDup _ _ target rid
                     hObjInvMid hMid hStep
             · simp at hStep
         | _ => simp [hIpc] at hStep

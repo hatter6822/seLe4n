@@ -582,6 +582,40 @@ theorem propagatePipChainCrossCore_preserves_objects_invExt (st : SystemState)
     | none => exact hNext
     | some nextServer => exact ih _ nextServer hNext
 
+/-- **WS-RM (`v0.35.6`)**: `updatePipBoostOnCore`'s only object write stores a
+`.tcb` at a key that already held one, so at every key a Reply reads back to the
+*same* Reply and a SchedContext to the same SchedContext.  This is the pair the
+donation-chain frame reads, stated here rather than at the chain because the
+scheduler layer sits below the IPC invariant surface in the import graph. -/
+theorem updatePipBoostOnCore_reply_schedContext_iff (st : SystemState) (c : CoreId)
+    (tid : ThreadId) (hInv : st.objects.invExt) (oid : ObjId) :
+    (∀ r : Reply, (updatePipBoostOnCore st c tid).objects[oid]? = some (.reply r) ↔
+        st.objects[oid]? = some (.reply r)) ∧
+    (∀ sc : SchedContext, (updatePipBoostOnCore st c tid).objects[oid]? = some (.schedContext sc) ↔
+        st.objects[oid]? = some (.schedContext sc)) := by
+  by_cases hk : (tid.toObjId == oid) = true
+  · -- The written key: the pre-state holds a TCB there, or nothing is written.
+    have hEq : tid.toObjId = oid := by simpa using hk
+    cases hAt : st.getTcb? tid with
+    | none =>
+      rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hAt]
+      exact ⟨fun _ => Iff.rfl, fun _ => Iff.rfl⟩
+    | some tcb =>
+      obtain ⟨pb, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hAt hInv
+      have hPre : st.objects[oid]? = some (.tcb tcb) := by
+        rw [← hEq]; exact (SystemState.getTcb?_eq_some_iff st tid tcb).mp hAt
+      have hPost' : (updatePipBoostOnCore st c tid).objects[oid]?
+          = some (.tcb { tcb with pipBoost := pb }) := by
+        rw [← hEq]
+        exact (SystemState.getTcb?_eq_some_iff _ tid _).mp hPost
+      refine ⟨fun r => ⟨fun h => ?_, fun h => ?_⟩, fun sc => ⟨fun h => ?_, fun h => ?_⟩⟩
+      · rw [hPost'] at h; cases h
+      · rw [hPre] at h; cases h
+      · rw [hPost'] at h; cases h
+      · rw [hPre] at h; cases h
+  · rw [updatePipBoostOnCore_objects_ne st c tid oid hk hInv]
+    exact ⟨fun _ => Iff.rfl, fun _ => Iff.rfl⟩
+
 /-- WS-RR RR2.17: `updatePipBoostOnCore`'s only object write stores a `.tcb`,
 so every notification the post-state holds was already there.  This is the shape
 `ipcInvariant` reads (it quantifies over notifications and nothing else), and it

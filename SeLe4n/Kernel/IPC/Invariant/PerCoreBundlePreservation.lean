@@ -489,6 +489,33 @@ theorem consumeCallerReply_passiveServerIdleFrameOnCore
   exact ⟨tcb, (getTcb?_eq_some_iff st tid tcb).mpr hSt, hSCB.symm.trans hU, hQ, hC, hIS.symm⟩
 
 open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)** micro-frame: the *detach* frames every core's slice —
+its one write is a `.reply` store, so every TCB is identical and the scheduler
+is untouched. -/
+theorem detachReplyFrameAboveOrSelf_passiveServerIdleFrameOnCore
+    (st : SystemState) (rid : SeLe4n.ReplyId) {c : CoreId}
+    (hObjInv : st.objects.invExt) :
+    passiveServerIdleFrameOnCore st (detachReplyFrameAboveOrSelf st rid) c := by
+  refine ⟨fun tid tcb' h hU hQ hC _ => ?_⟩
+  rw [detachReplyFrameAboveOrSelf_scheduler_eq st rid] at hQ hC
+  exact ⟨tcb', (getTcb?_eq_some_iff st tid tcb').mpr
+    (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcb'
+      ((getTcb?_eq_some_iff _ tid tcb').mp h)), hU, hQ, hC, rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)** micro-frame: the removal frames it — the detach, then
+the consume. -/
+theorem removeCallerReplyFrame_passiveServerIdleFrameOnCore
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) {c : CoreId}
+    (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    passiveServerIdleFrameOnCore st st' c := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact (detachReplyFrameAboveOrSelf_passiveServerIdleFrameOnCore st rid hObjInv).trans
+    (consumeCallerReply_passiveServerIdleFrameOnCore _ st' caller rid
+      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep)
+
+open SeLe4n.Model.SystemState in
 /-- SM6.D.2 micro-frame: `cleanupPreReceiveDonation` frames every core's
 slice. The donation return rebinds the owner `.unbound → .bound`
 (excluded from the pullback: it becomes bound) and the receiver
@@ -1034,19 +1061,19 @@ theorem endpointReplyRecv_passiveServerIdleFrameOnCore
                   (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId c
                   hReceiverReadyE hObjInvE hRecv)
             | some rid =>
-              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable stReplied replyTarget) with
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable stReplied replyTarget) with
               | error e => simp [hCons]
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons]
-                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
-                have hF13 := hF1.trans (consumeCallerReply_passiveServerIdleFrameOnCore _ _ replyTarget rid hObjInvE hCons)
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvE hCons
+                have hF13 := hF1.trans (removeCallerReplyFrame_passiveServerIdleFrameOnCore _ _ replyTarget rid hObjInvE hCons)
                 have hReceiverReady3 : ∀ (t : TCB),
                     st3.getTcb? receiver = some t →
                     t.ipcState = .ready := by
                   intro t hT
                   obtain ⟨ty, hSt, hIS, _⟩ :=
-                    SystemState.consumeCallerReply_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t
+                    removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvE hCons receiver.toObjId t
                       ((getTcb?_eq_some_iff st3 receiver t).mp hT)
                   rw [hIS]
                   exact hReceiverReadyE ty ((getTcb?_eq_some_iff _ receiver ty).mpr hSt)
@@ -1110,7 +1137,7 @@ theorem endpointReply_passiveServerIdleFrameOnCore
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact hMid.trans (consumeCallerReply_passiveServerIdleFrameOnCore _ _ target rid hObjInvMid hStep)
+              exact hMid.trans (removeCallerReplyFrame_passiveServerIdleFrameOnCore _ _ target rid hObjInvMid hStep)
         · simp at hStep
 
 -- ============================================================================

@@ -1,3 +1,157 @@
+## v0.35.6 — WS-RM: the reply path runs seL4's `reply_remove`, and the passive server's `ReplyRecv` loop completes
+
+**WS-RM closes in one cut — all twenty-six sub-tasks across RM1..RM6 — and
+closing it turned up a second defect in the same arm, fixed here too.**
+
+### 1. The reply path did not take the answered frame off its reply stack
+
+Registered at `v0.35.4` and the remaining shape of the finding that cut was
+opened to fix.  `v0.35.4` made the reply stack doubly linked so a frame can be
+cut out of the middle in `O(1)`, and wired that detach into the **cancellation**
+path.  The **reply** path was left as it was: `endpointReplyOnCore` ran
+`SystemState.consumeCallerReply` with no detach, and `Reply.consumed` clears both
+stack links on any frame that is not a head — so when the answered frame had a
+frame above it, the consume falsified
+`donationChainWellFormed.prevLinkReciprocal` at that frame.
+
+Reachable, because authority to reply flows from *holding the reply capability*
+and a copied or minted one held by a different server is legitimate delegated
+authority: on a chain `C1 → C2 → S` a delegate can answer `C1` out of order while
+`S` has pushed a frame above `C1`'s.  Fail-closed rather than corrupting — the
+later pop's reciprocity test refuses the stale link and returns
+`.invalidArgument` having written nothing — so the cost was a **wedge**: that
+reply failed permanently, the intermediate caller stayed blocked and the
+scheduling context stayed with the server.  **Medium**, availability only, and
+not exploitable today (nothing boots).
+
+`removeCallerReplyFrame caller rid` is seL4's `reply_remove`: the detach folded
+to the identity on refusal — a non-reciprocating upward link means "nothing above
+me on my stack", which the chain relation permits by design since it is stated
+*downward* — then the consume.  `endpointReplyOnCore`, `endpointReply` and
+`endpointReplyRecv` all run it.  The order inside it is the content, because the
+detach reads the link the consume clears; Tier 3 negatives refuse a bare consume
+in any of the three spines and refuse the swap inside the composite, each
+mutation-tested in both directions.
+`removeCallerReplyFrame_eq_consume_of_no_frame_above` is the definitional
+equality that makes every repair a case split whose `none` branch is the
+pre-WS-RM proof verbatim.
+
+**The head case is stated, not hidden.**  A frame that *heads* a scheduling
+context keeps its links when its caller is consumed (`Reply.consumed`,
+deliberately — the pop validates the head by them), so the reply leg's post-state
+satisfies `donationChainWellFormedExcept … rid` and nothing stronger.  It stands
+to the reply leg as `ipcInvariantFullExceptDonationOwner` stands to the bare
+reply, and `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` is
+the composite that discharges it: the donation pop that follows in the same
+transition re-heads the frame below.  `faultReplyOnCore_preserves_donationChainWellFormed`
+and `replyTransferOnCore_preserves_donationChainWellFormed` — seL4's
+`doReplyTransfer` — compose it.
+
+**`.reply` and `.replyRecv` declare the frame the detach writes.**
+`answeredReplyFrameAbove?` is resolved from the same
+`(st.getTcb? target).bind (·.replyObject)` expression the arm's existing reply
+member comes from, so the footprint and the transition cannot disagree about
+which frame is answered.  The declared ceiling `maxLockSetSize` moves 21 → **22**
+and every figure derived from it moves with it: `admissibleCriticalSection` for
+the 1 ms RPi5 tick is now **15 µs** and the uniform 60 µs envelope **3960 µs**,
+in the canonical spelling `scripts/check_lock_ceiling_figures.py` holds at its
+five pinned sites.  **No *reachable* footprint grew**: the new member and the
+donation-return members are mutually exclusive, so
+`lockSet_endpointReplyRecvOnCore_size_le_eighteen` is unmoved.
+
+### 2. ...and `.replyRecv` popped its donation too late to complete its own loop
+
+**Found while threading RM5.2's payoff through `replyRecvBody`, reported before
+being fixed, and fixed here under RM5.2 — which already owns that function.**
+
+`replyRecvBody`'s legs ran reply → receive → donation.  The receive leg re-links
+the very Reply `rid` the reply leg just answered — faithful seL4-MCS one-object
+reuse — and `Reply.isFree` reads **both** stack links, deliberately (`v0.35.4`
+made the stash admission and the link guard ask one question after they had
+disagreed).  On the MCS passive-server steady state the answered Reply *heads*
+the donated scheduling context, and `Reply.consumed` keeps a head's links — so
+after the reply leg that object was consumed and **not** free, and both admission
+paths refused: `linkCallerReply` and the server-first stash each returned
+`.replyCapInvalid`.
+
+So **no passive server whose client had donated could ever complete a
+`seL4_ReplyRecv`** — the steady state of the pattern the arm exists for (`Recv`
+once, then `ReplyRecv` forever).  Fail-closed, a **liveness** defect rather than
+a safety one, and not exploitable today.  Nothing caught it: every runtime
+witness of `.replyRecv` ran on a state where the answered Reply headed no
+context, and refusing is invariant-preserving, so no bundle theorem is false of
+the refusing program.
+
+The pop now runs **between** the legs, which is seL4-MCS's own `doReplyTransfer`
+→ `reply_remove` → `receiveIPC` order.  `replyRecvReturnDonation` is retired and
+split into `replyRecvPopDonation` (the return, on the reply leg's committed
+state) and `replyRecvPostReceiveDonation` (the re-donation, the deschedule and
+the priority-inheritance walk, on the receive leg's committed state, **taking the
+popped context as an argument** rather than re-reading a binding the pop has
+already cleared).  Each carries its own `_preserves_ipcInvariantFull` and
+`_preserves_replenishQueueAffinityConsistent_smp`, stated at the state its own
+step runs on, and `PerCoreDonationStep` gains a constructor for each in place of
+the fused one.  `replyRecvPostPopState` / `replyRecvPoppedContext` are *total*
+accessors over the pop, so `syscallDispatchQuiescence.replyRecvStage` stays a
+flat pre-state-computable pack while its receive-leg fields move to the post-pop
+state.
+
+This is **not** the reversal the plan's §9 declines.  That bullet is about
+`.reply`'s own ordering — running the donation pop before the reply leg, which
+would erase the head transient RM2.3 states and RM5.1 discharges.  Here the reply
+leg still runs first.
+
+### 3. Every reply-stack write names a chain result — derived, not listed
+
+`SeLe4n/Testing/ReplyStackWriteCensus.lean` (Tier 1) collects the write-site set
+from the **elaborated environment** — a project definition whose own body
+references one of the chain-write primitives, `SystemState.consumeReply` and
+`SystemState.consumeCallerReply` among them — and reconciles it against a
+registry in both directions.  A site either **states** its chain results (each
+named theorem must mention the site *and* a `donationChain…` form, so a name is
+not taken for a subject) or is recorded as a **half-step** of the composite that
+completes it, with the half-step chain required to terminate in a stating entry.
+Fourteen sites, eight stating.  A new definition that consumes a caller's Reply
+bare is a build failure on the day it is written.
+
+The frontier is deliberately one level above the primitives rather than the
+transitive closure — taken transitively it is the whole dispatcher — and that
+loses nothing, because it is closed under refinement: every path from a composite
+down to a primitive passes through some direct site, and composites inherit by
+`donationChainFrame`'s algebra, which is a composition rather than a claim.  Its
+witnesses run in both directions, including a planted bare consume that the
+derived half must refuse.
+
+### 4. Witnesses
+
+`tests/SmpIpcSuite.lean` §3.20 builds a depth-2 chain, answers the outer caller
+**out of order through a delegated reply capability**, asserts the frame above
+has its `prev` cleared and the answered frame is `Reply.isFree`, and then
+completes the in-order reply that used to fail — with the same consume minus the
+detach as its paired negative, since a fixture exercising only the in-order path
+would pass before this cut and after it.  §3.21 runs the passive server's
+`seL4_ReplyRecv` loop end to end, with the un-popped receive leg's
+`.replyCapInvalid` refusal as *its* paired negative.
+`tests/SmpCrossCoreReplySuite.lean` §3.9 pins the removal inert on the in-order
+path and firing exactly once otherwise.
+
+### 5. Housekeeping
+
+- `donationChainFrame_of_objects_insert` was `private` to the cancellation shape
+  module and the fault-reply path needs the same fact; it is public and lives in
+  `IPC/Invariant/Defs.lean`, beside the predicate it is about, rather than being
+  copied into a module the first does not import.
+- The `ipcInvariantFull` bundle family measures **176** statements, up from 172:
+  the two `.replyRecv` half-steps and the two fault-reply forms.  Still zero
+  conjuncts bound on a post-state.
+- The AK7 `raw_lookup_tid` floor is re-anchored 1678 → 1711.  The thirty-three
+  new occurrences are all *statement* vocabulary in the donation-chain family —
+  hypotheses and conclusions quantifying over the object store at `ReplyId` and
+  `SchedContextId` keys, phrased exactly as `donationChainWellFormed`'s own
+  fields are — and not object-store reads inside transitions, which is what the
+  metric is about; every `raw_match_*` variant-discriminating count is unmoved,
+  and the typed-helper adoption floors rise with the cut.
+
 ## v0.35.5 — the `.replyRecv` footprint declares the invoker's own pre-receive return
 
 **One P1 and two P2 findings from an automated review of PR #894, all three

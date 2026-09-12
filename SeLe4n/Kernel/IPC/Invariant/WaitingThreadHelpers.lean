@@ -341,4 +341,19 @@ theorem consumeCallerReply_preserves_blockedThreadsPendingMessageConsistent
   rw [hIS, hPM]
   exact hbase
 
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves it — the detach it runs first
+writes a Reply, so every stored TCB keeps its `ipcState` and `pendingMessage`. -/
+theorem removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : blockedThreadsPendingMessageConsistent st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    blockedThreadsPendingMessageConsistent st' := by
+  have hFwd := removeCallerReplyFrame_tcb_forward st st' caller rid hObjInv hStep
+  intro tid tcb hObj
+  obtain ⟨ty, hSt, hIS, hPM, _⟩ := hFwd tid.toObjId tcb hObj
+  have hbase := hInv tid ty hSt
+  rw [hIS, hPM]
+  exact hbase
+
 end SeLe4n.Kernel

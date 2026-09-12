@@ -2425,7 +2425,7 @@ theorem endpointReply_preserves_blockedThreadsPendingMessageConsistent
                 rw [← hStep]; exact hMid
               | some rid =>
                 simp only [hRO] at hStep
-                exact consumeCallerReply_preserves_blockedThreadsPendingMessageConsistent _ _ target rid
+                exact removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent _ _ target rid
                   hObjInvMid hMid hStep
           · simp_all
       intro st1 hMsg
@@ -2510,14 +2510,14 @@ theorem endpointReplyRecv_preserves_blockedThreadsPendingMessageConsistent
                       intro ⟨_, hEq⟩; subst hEq
                       exact this _ hObjInvEns hInvEns result hRecv
                   | some rid =>
-                    cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                    cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
                     | error e => simp [hCons]
                     | ok p3 =>
                       obtain ⟨⟨⟩, st3⟩ := p3
                       simp only [hCons]
-                      have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
-                      have hInv3 := consumeCallerReply_preserves_blockedThreadsPendingMessageConsistent _ _ replyTarget rid hObjInvEns hInvEns hCons
-                      have hFwd := SystemState.consumeCallerReply_tcb_forward _ _ replyTarget rid hObjInvEns hCons
+                      have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
+                      have hInv3 := removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent _ _ replyTarget rid hObjInvEns hInvEns hCons
+                      have hFwd := removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvEns hCons
                       cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                       | error e => simp
                       | ok result =>
