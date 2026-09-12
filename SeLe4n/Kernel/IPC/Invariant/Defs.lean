@@ -2009,21 +2009,52 @@ theorem cleanupDonationStackValid_of_no_stacks (st : SystemState)
 -- WS-OD OD5.2 — what a cancelled MIDDLE caller's scheduling context does
 -- ============================================================================
 
-/-- **WS-OD OD5.2: the two answers plan §3.4 puts to this workstream, named.**
+/-- **WS-OD OD5.2: the answers plan §3.4 puts to this workstream, named.**
 
-`Reply` carries `prev` and no `next`, so a cancelled *middle* caller's frame
-cannot be spliced out of a reply stack by a backward scan the way seL4's
-doubly-linked `reply_remove` does.  What happens to that thread's scheduling
-context is therefore a decision, and the plan forbids inheriting one by
-omission.  Both candidates are named here so that the choice below is a
-statement rather than an accident of a field read. -/
+What happens to the scheduling context of a *middle* caller taken out of a chain
+— by a cancellation, or by a delegated reply capability answering out of order —
+is a decision, and the plan forbids inheriting one by omission.  Every candidate
+is named here so that the choice below is a statement rather than an accident of
+a field read.
+
+**The premise this list was first written under is gone** (`v0.35.4`).  It read
+"`Reply` carries `prev` and no `next`, so a middle frame cannot be spliced out of
+a reply stack by a backward scan", which was true of the singly linked stack and
+has not been true since the stack became doubly linked: `Reply.next` is exactly
+the field a splice needs.  `spliceOutTheCut` is the candidate that field made
+available, and it is named rather than the stale sentence being trimmed — a
+policy justified by a data structure the tree no longer has is a justification
+that has stopped being read. -/
 inductive CancelledMiddleCallerPolicy where
-  /-- **Sever at the cut.**  The cancelled caller's frame stays on the stack with
-  its `caller` consumed; the pop that later reaches it reads `none` and binds the
-  *innermost live* caller `.bound scId`, so the context stops at the cut and the
-  threads below it never see it again.  This is seL4-MCS's non-head
-  `reply_remove` branch, and it is `O(1)` at every depth. -/
+  /-- **Sever at the cut.**  The frame above the cut stops linking down
+  (`detachReplyFrameAbove` writes `prev := none`), so every frame *below* the cut
+  leaves the context's stack; the pop that later reaches the frame above reads
+  `none` and binds that caller `.bound scId`.  `O(1)` at every depth, and the
+  policy this kernel implements.
+
+  What it costs is **measured** at stack depth three in `tests/SmpIpcSuite.lean`
+  §3.22, not described: at depth two the frame below the cut is the bottom of the
+  stack, so this and `spliceOutTheCut` write the same value into the frame above
+  and the two cannot be told apart. -/
   | severAtCut
+  /-- **Splice the cut frame out.**  The ordinary doubly-linked-list removal: the
+  frame above takes the cut frame's own `prev`, the frame below takes its `next`.
+  The frames below stay on the stack, so the reservation goes on travelling
+  outward to the thread that owns it — strictly better accounting, and also
+  `O(1)`.
+
+  **This is what seL4-MCS does**, confirmed against its source at `v0.35.14`
+  rather than assumed: `reply_remove`'s non-head branch writes
+  `REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
+  reply->replyPrev`, so the frame above inherits the cut frame's own outward
+  pointer and every frame below stays reachable from the head.  `severAtCut` is
+  therefore a **divergence** from upstream and not an inheritance of it — which
+  is the opposite of what this file asserted before that check.
+
+  `cancelledMiddleCallerPolicy`'s third reason is why this kernel diverges, and
+  it is a property of **when this kernel pops** rather than of the splice
+  itself. -/
+  | spliceOutTheCut
   /-- **Reclaim to the cancelled thread.**  The cancellation reaches the
   context's real holder through `SchedContext.scReply` / `boundThread` and hands
   the context back to the thread being cancelled, consistent with the depth-1
@@ -2048,17 +2079,42 @@ Chosen for three reasons, in order of weight.
    is not, so a reclaim that traverses the chain could not be given a footprint
    at all -- the same argument OD3.7 makes for the pop's single frame of
    lookahead.
-3. **It is seL4-MCS's answer, structurally as well as in effect.**  seL4's reply
-   stack is doubly linked, and `reply_remove_tcb` on a non-head frame *breaks*
-   the stack at it: the frame above stops linking down, everything below is cut
-   off, and the frame itself is unlinked.  Since `v0.35.4` this model's stack is
-   doubly linked too (`Reply.next`), and the cancellation runs exactly that
-   detach (`detachFrameAboveThreadReply` → `detachReplyFrameAbove`) before the
-   caller link is consumed.  The scheduling context settles on the innermost
-   live caller — the frame above the cut is now the bottom of its stack, so the
-   pop that reaches it binds that thread `.bound scId` outright — and reaches no
-   thread below the cut, so a component written against seL4's timeout semantics
-   sees the same owner.
+3. **It keeps this kernel's pop trigger sound**, which is the reason that
+   actually carries the decision and the one a reader must not mistake for an
+   appeal to upstream.  This kernel decides whether a reply pops a donation from
+   the **recorded server's binding** (`endpointReplyServerDonation?`, resolved
+   through `recordedReplyServer?`), *not* from whether the answered frame heads a
+   context.  Under `severAtCut` those two facts stay equivalent: a frame heads a
+   context exactly while the server it recorded still holds the donation, since a
+   server that donated onward pushed a new head, and the frames below a cut leave
+   the stack altogether rather than waiting to be re-headed.
+
+   `spliceOutTheCut` breaks the equivalence.  It re-heads a frame whose recorded
+   server is by then gone and `.unbound`, so answering that frame runs **no** pop;
+   `Reply.consumed` keeps a head's links; and the resulting state is a consumed
+   frame heading a context while a live `.donated` holder still names its owner —
+   exactly what `replyStackOuterCaller?_of_consumed_frame` refuses, and the object
+   pinning `v0.35.4` closed.  The three coherence facts the reply path carries as
+   *stated* pre-state hypotheses — `replyStackHeadIsAnsweredReply`,
+   `replyDonationOwnerIsAnsweredCaller` and `answeredHeadContextIsServerDonation`
+   — are that equivalence in the form their consumers need, and no invariant in
+   this tree entails them.
+
+   So taking the splice means moving the pop's *trigger* to head-ness and its
+   *source* to `SchedContext.boundThread`, which is a workstream rather than a
+   field write.  It is registered in `docs/REGISTERED_DEBT.md` with a closure
+   target, not left as an unexamined preference.
+
+   **And this is a divergence from seL4-MCS, stated as one.**  Until `v0.35.14`
+   this file asserted the opposite — that severing was upstream's structural
+   answer.  Checked against the source, `reply_remove`'s non-head branch splices
+   (`next->replyPrev = reply->replyPrev`), so every frame below a cut stays on
+   the stack there and the reservation goes on travelling outward.  The
+   divergence costs what `tests/SmpIpcSuite.lean` §3.22 measures, it is registered
+   in `docs/REGISTERED_DEBT.md` with an owner and a closure target, and v1.0.0
+   must not claim seL4-MCS reply-stack semantics at chain depth ≥ 3.  A
+   `reply_remove_tcb` reference elsewhere in this tree names an operation's
+   *shape*; it is not evidence about what upstream writes.
 
    Before `v0.35.4` the same policy was implemented by *leaving the cut frame on
    the stack* with its `caller` consumed and letting the pop read a consumed
@@ -2070,19 +2126,24 @@ Chosen for three reasons, in order of weight.
    (`replyStackOuterCaller?_of_consumed_frame`, `.error .illegalState`) rather
    than reading it as the bottom.
 
-What it costs is stated rather than hidden.  Neither the cancelled thread nor the
+What it costs is measured rather than hidden.  Neither the cut thread nor the
 chain's **original** owner gets the scheduling context back: it settles on the
-innermost live caller, bound `.bound scId` outright, and **no later pop carries it
-below the cut** -- the frames below were cut off, and a `.bound` holder is not a
-donation, so nothing pops it.  In MCS terms the budget was already spent
-downward.  Cancelling a middle caller therefore requires authority to suspend
-that thread -- a capability its callees do not hold by virtue of being callees --
-and what it costs is that thread's callers' reservation.  It is a **fairness**
-divergence, not a safety one: the resulting state satisfies `donationOwnerValid`
-and `passiveServerIdle`, no budget is lost to the system, and — since `v0.35.4` —
-no object is pinned: the cut-off frames leave the structure as their callers are
-answered or cancelled (`Reply.consumed`), and the context's stack empties when
-the upper part is popped. -/
+caller immediately above the cut, bound `.bound scId` outright, and **no later
+pop carries it below the cut** -- the frames below left the stack, and a `.bound`
+holder is not a donation, so nothing pops it.  At stack depth three
+(`tests/SmpIpcSuite.lean` §3.22) that owner is two hops outside the cut and the
+reservation settles on a thread strictly inside the chain, where the *same* stack
+unwound in order delivers it outward still owed; depth three is the shallowest
+stack on which this is visible at all.
+
+The authority needed is the authority to unblock the thread being cut -- a
+suspend right over it, or possession of its reply capability, which a callee's
+confederate may legitimately hold.  It is a **fairness** divergence, not a safety
+one: the resulting state satisfies `donationOwnerValid` and `passiveServerIdle`,
+no budget is lost to the system, and -- since `v0.35.4` -- no object is pinned,
+because a frame cut off the stack carries no `.head` link and so is cleared
+outright when its own caller is consumed (`Reply.consumed`'s non-head branch,
+exercised in §3.22). -/
 def cancelledMiddleCallerPolicy : CancelledMiddleCallerPolicy := .severAtCut
 
 /-- WS-OD OD5.2: and the decision is checkable, not merely declared -- a cut that

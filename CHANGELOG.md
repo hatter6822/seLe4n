@@ -1,3 +1,75 @@
+## v0.35.14 — the middle-removal cost is the policy's, measured at depth three
+
+A question about WS-RM's stated residual — *"the removal does not preserve the
+donation accounting, and that is a stated cost rather than a defect"* — turned
+out to have two wrong halves: the cost is **larger** than the statement said,
+and the justification for accepting it rested on a claim about source this
+repository does not vendor.
+
+**The cost belongs to `severAtCut`, and a depth-two witness cannot see it.**
+`detachReplyFrameAbove` writes `above.prev := none`, so every frame *below* a cut
+leaves the context's reply stack.  `§3.20` measures a **two**-frame stack, whose
+lower frame is its bottom — there `severAtCut` and the ordinary
+doubly-linked-list splice write the same value into the frame above, so the
+witness was measuring a shape both policies share and the cost read as inherent
+to removing a middle frame.  It is not.  `tests/SmpIpcSuite.lean` **§3.22** is
+the depth-three witness, built by pushing the live `donateSchedContext` twice:
+the frames below the cut leave the stack, the reservation settles `.bound` on a
+thread strictly *inside* the chain, its owner is left `.unbound` two hops
+outside the cut, and the **same stack unwound in order** delivers it outward
+still owed.  Three frames is the shallowest stack on which any of that is
+visible.  Seventeen assertions, including the payoff half — a frame cut off the
+stack carries no `.head` link, so its own caller can still be answered and the
+frame is freed outright, which is why the policy pins no object.
+
+**The justification was false, and it was checked rather than argued.**  Three
+docstrings asserted that severing is seL4-MCS's structural answer (*"`reply_remove_tcb`
+on a non-head frame breaks the stack at it"*), and the policy inductive's premise
+read *"`Reply` carries `prev` and no `next`, so a middle frame cannot be spliced
+out"* — which stopped being true at `v0.35.4`, when the stack became doubly
+linked.  Checked against upstream source, seL4-MCS **splices**: `reply_remove`'s
+non-head branch writes
+`REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
+reply->replyPrev`, so the frame above inherits the cut frame's own outward
+pointer and every frame below stays reachable from the head.  The link
+orientation this tree assumes (`next` toward the head/context, `prev` outward)
+was confirmed to match, which is what makes that reading sound.
+
+So `severAtCut` is a **divergence** from upstream, not an inheritance of it — the
+reverse of what the tree said for eight cuts — and the divergence is what §3.22
+measures.  The conflation that let it survive: a `reply_remove_tcb` reference
+naming an operation's *shape* was read as evidence about what upstream *writes*.
+
+What carries the decision instead is an in-tree fact: **this kernel pops on the
+recorded server's binding** (`endpointReplyServerDonation?`), not on whether the
+answered frame heads a context, and `severAtCut` is exactly what keeps those two
+equivalent.  Splicing re-heads a frame whose recorded server is by then
+`.unbound`, so answering it runs no pop, `Reply.consumed` keeps a head's links,
+and the state is a consumed frame heading a context — what
+`replyStackOuterCaller?_of_consumed_frame` refuses and what `v0.35.4` closed.
+The three *stated* pre-state coherence hypotheses
+(`replyStackHeadIsAnsweredReply`, `replyDonationOwnerIsAnsweredCaller`,
+`answeredHeadContextIsServerDonation`) are that equivalence in the form their
+consumers need, and no invariant in this tree entails them.
+
+`CancelledMiddleCallerPolicy` gains a third constructor, **`spliceOutTheCut`**,
+so upstream's answer — the candidate the doubly linked stack made available here
+— is named rather than absent; `cancelledMiddleCallerPolicy` still reads `.severAtCut` and every
+theorem over it is unchanged.  Recovering the accounting means moving the pop's
+*trigger* to head-ness and its *source* to `SchedContext.boundThread` — a
+workstream, registered in `docs/REGISTERED_DEBT.md` table C with owner **WS-CB**
+and closure target **before v1.0.0**, with two interim contracts: new code must
+not read a successful pop as evidence the context reached its owner, and v1.0.0
+must not claim seL4-MCS reply-stack semantics at chain depth ≥ 3.  That
+table's closing claim (*"every one strengthens a surface that is already
+correct"*) is corrected in the same cut, since the new row is neither a
+soundness gap nor a strengthening.
+
+No transition changes; no proof is weakened; `maxLockSetSize` is unmoved at 22.
+
+Refs: docs/REGISTERED_DEBT.md table C (donation accounting at depth ≥ 3)
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md §9
+
 ## v0.35.13 — PR #895 review round 2: a recognised set is not a derived set
 
 Five findings, all verified against the code first.  One is a defect in the

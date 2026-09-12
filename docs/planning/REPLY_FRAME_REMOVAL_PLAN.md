@@ -311,24 +311,33 @@ document existing.
 
 - **It does not preserve the donation accounting across the removal, and that
   cost is real.**  Taking a caller out of the *middle* of a chain is destructive
-  to which thread ends up owning the scheduling context, and this plan inherits
-  seL4-MCS's answer rather than inventing one: `reply_remove` on a non-head frame
-  moves no scheduling context, and the later `reply_pop` donates to the head
-  frame's own caller.  On a chain `owner → middle → server`, a delegate that
+  to which thread ends up owning the scheduling context: the removal moves no
+  scheduling context, and the later pop donates to whatever the remaining stack
+  says is outermost — which under `severAtCut` is the frame immediately above the
+  cut, because every frame below it left the stack.  On a chain `owner → middle → server`, a delegate that
   answers `owner` out of order leaves `owner` `.unbound` permanently, and the
   server's in-order reply then settles the context `.bound` on `middle` — which
   in the in-order unwind would instead have received it `.donated … owner`, still
   owed outward.  So a callee that delegates its caller's reply capability to a
   confederate can arrange to capture that caller's reservation.
 
-  The authority required is already the authority to unblock the victim, and the
-  behaviour is upstream seL4's, so this is a stated cost rather than a defect —
-  but it is stated, because WS-OD's `severAtCut` states the identical cost for
-  the cancellation path ("the original owner's reservation ends up with that
-  caller") and the reply path acquiring it silently would be the asymmetry this
-  project's own rules refuse.  RM6.1's witness asserts both halves — the owner
-  left `.unbound`, and the in-order contrast — so the cost is pinned rather than
-  described.  Recorded by the post-landing audit of this workstream.
+  The authority required is already the authority to unblock the victim, so this
+  is a cost rather than a defect — but it is *the `severAtCut` policy's* cost,
+  not an inherent property of removing a middle frame, and the depth-two witness
+  cannot show the difference: a two-frame stack's lower frame is its bottom, so
+  `severAtCut` and `spliceOutTheCut` write the same value into the frame above.
+  §3.22 of `tests/SmpIpcSuite.lean` is the depth-three witness where they differ,
+  and it measures all three halves — the frames below the cut leaving the stack,
+  the reservation settling on a thread strictly inside the chain, and the
+  in-order contrast on the same stack delivering it outward still owed.  §3.20
+  keeps the depth-two halves.
+
+  It is also a **confirmed divergence from seL4-MCS** (checked against upstream
+  source at `v0.35.14`, where this plan previously claimed the behaviour was
+  inherited): `reply_remove`'s non-head branch splices, so the frames below a cut
+  stay reachable from the head there.  Recovering the accounting means moving the
+  pop's trigger to head-ness; registered in `docs/REGISTERED_DEBT.md` with owner
+  WS-CB and closure target before v1.0.0.
 
 ## 10. What closing this workstream found
 

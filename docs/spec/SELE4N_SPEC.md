@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.13` (`lakefile.toml`) |
+| **Package version** | `0.35.14` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 375,441 across 329 Lean files |
-| **Test LoC** | 75,860 across 70 Lean test suites |
+| **Production LoC** | 375,511 across 329 Lean files |
+| **Test LoC** | 75,996 across 70 Lean test suites |
 | **Proved declarations** | 12,606 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -4540,20 +4540,38 @@ respect.
    primitive, a registered site, or carry a stated reason for being
    chain-neutral, because `storeObject` takes a whole object and a record update
    can rewrite a stack link without naming any helper.
-7. **The removal does not preserve the donation accounting, and that is a
-   stated cost.**  Taking a caller out of the *middle* of a chain is destructive
-   to which thread ends up owning the scheduling context, and this kernel
-   inherits seL4-MCS's answer: a non-head `reply_remove` moves no context, and
-   the later `reply_pop` donates to the head frame's own caller.  On
-   `owner → middle → server`, a delegate answering `owner` out of order leaves
-   `owner` `.unbound` permanently and the server's in-order reply then settles
-   the context `.bound` on `middle` — where the in-order unwind would have left
-   it `.donated … owner`, still owed outward.  A callee that delegates its
-   caller's reply capability to a confederate can therefore capture that
-   caller's reservation; the authority required is already the authority to
-   unblock the victim.  New code must not read a successful pop as evidence that
-   the context reached its owner.  `tests/SmpIpcSuite.lean` §3.20 asserts both
-   halves, so the cost is pinned rather than described.
+7. **The removal does not preserve the donation accounting, and that cost is
+   the `severAtCut` policy's.**  Taking a caller out of the *middle* of a chain
+   is destructive to which thread ends up owning the scheduling context: the
+   removal moves no context, and the later pop donates to whatever the remaining
+   stack says is outermost.  On `owner → middle → server`, a delegate answering
+   `owner` out of order leaves `owner` `.unbound` permanently and the server's
+   in-order reply then settles the context `.bound` on `middle` — where the
+   in-order unwind would have left it `.donated … owner`, still owed outward.  A
+   callee that delegates its caller's reply capability to a confederate can
+   therefore capture that caller's reservation; the authority required is
+   already the authority to unblock the victim.  New code must not read a
+   successful pop as evidence that the context reached its owner.
+
+   **It is the policy's, not the chain's, and depth two cannot show that.**  A
+   two-frame stack's lower frame is its bottom, so `severAtCut` and the named
+   alternative `spliceOutTheCut` write the same value into the frame above and
+   the two are indistinguishable.  `tests/SmpIpcSuite.lean` §3.22 is the
+   depth-three witness where they differ: the frames below the cut leave the
+   stack, the reservation settles on a thread strictly *inside* the chain, and
+   its owner is left `.unbound` two hops outside the cut — while the same stack
+   unwound in order delivers it outward still owed.  §3.20 pins the depth-two
+   halves.
+
+   **It is also a confirmed divergence from seL4-MCS**, checked against upstream
+   source at `v0.35.14`: `reply_remove`'s non-head branch splices, writing the
+   cut frame's own `replyPrev` into the frame above, so every frame below stays
+   reachable from the head there.  Moving to `spliceOutTheCut` requires moving
+   the reply path's pop trigger from the recorded server's binding to the
+   answered frame's head-ness; that is registered in
+   `docs/REGISTERED_DEBT.md` with owner WS-CB and closure target before v1.0.0,
+   and until it closes v1.0.0 must not claim seL4-MCS reply-stack semantics at
+   chain depth ≥ 3.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

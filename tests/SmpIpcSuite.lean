@@ -2546,13 +2546,18 @@ private def runReplyFrameRemovalChecks : IO Unit := do
        | .ok st' => pushBindingOf st' pushDonor == some (.bound pushSc)
        | .error _ => false)
     -- **THE COST, PINNED RATHER THAN DESCRIBED.**  Taking a caller out of the
-    -- middle of a chain is destructive to the donation accounting, and that is
-    -- seL4-MCS's own answer: `reply_remove` on a non-head frame moves no
-    -- scheduling context, and the later `reply_pop` donates to the head frame's
-    -- own caller.  So the context settles `.bound` on the INTERMEDIATE caller
-    -- above, and `pushOuter` -- which owned it -- is left `.unbound` for good.
-    -- The in-order unwind below is the contrast: there the intermediate caller
-    -- receives it `.donated … pushOuter`, still owing it outward.
+    -- middle of a chain is destructive to the donation accounting: the removal
+    -- moves no scheduling context, and the later pop donates to whatever the
+    -- remaining stack says is outermost.  So the context settles `.bound` on the
+    -- INTERMEDIATE caller above, and `pushOuter` -- which owned it -- is left
+    -- `.unbound` for good.  The in-order unwind below is the contrast: there the
+    -- intermediate caller receives it `.donated … pushOuter`, still owing it
+    -- outward.
+    --
+    -- This is a TWO-frame stack, where `pushOuterReply` is the bottom, so
+    -- `severAtCut` and `spliceOutTheCut` write the same value and the policy is
+    -- not what is being measured here.  §3.22 is the depth-three witness where
+    -- they differ and the cost is the policy's.
     --
     -- Asserted here because the project's standard for this trade is WS-OD's:
     -- "its cost is stated rather than hidden".  A witness that checked only the
@@ -2850,6 +2855,136 @@ private def runReceivePriorityHandoffChecks : IO Unit := do
              | some t => decide (t.pipBoost = none) | none => false)
       | .error _ => assertBool "OD3.14: the plain-send hand-off succeeds" false
 
+-- ============================================================================
+-- WS-RM — what a middle removal costs at stack depth three
+-- ============================================================================
+
+/-- **The innermost server of a three-frame chain, and its own reply frame.**
+
+`§3.20` removes the *bottom* frame of a two-frame stack.  A bottom frame has
+nothing below it, so "take the frame above off this frame's stack" and "splice
+this frame out of the list" write the same value -- `none` -- into the frame
+above, and the two readings of a middle removal cannot be told apart there.
+**Three frames is the shallowest stack on which they differ**, and that is what
+makes `cancelledMiddleCallerPolicy`'s stated cost measurable rather than
+described: the frames below the cut leave the context's stack, so the
+reservation settles on the thread *above* the cut instead of travelling on
+outward to the thread that owned it.
+
+Reachable with no more authority than `§3.20` needs -- three nested donating
+`Call`s (which the transitive chain makes ordinary since OD4) and one delegated
+reply capability. -/
+private def depth3Server : SeLe4n.ThreadId := ⟨101⟩
+private def depth3Reply : SeLe4n.ReplyId := ⟨102⟩
+
+/-- The three-frame stack, built by pushing twice: `pushOuter` lends to
+`pushDonor`, `pushDonor` lends on to `pushServer`, `pushServer` lends on to
+`depth3Server`.  Both pushes are the live `donateSchedContext`, so the shape
+this witness measures is the shape the kernel produces. -/
+private def depth3Chain : Except KernelError SystemState :=
+  match donateSchedContext pushStore pushDonor pushServer pushSc with
+  | .error e => .error e
+  | .ok depth2 =>
+      let stReady : SystemState :=
+        { depth2 with
+            objects := ((depth2.objects.insert depth3Reply.toObjId
+                (.reply { replyId := depth3Reply, caller := some pushServer })).insert
+                depth3Server.toObjId (.tcb (mkTcb 101 25 none))).insert
+                pushServer.toObjId
+                (.tcb { mkTcb 92 30 none with
+                          schedContextBinding := .donated pushSc pushDonor,
+                          ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97)
+                            (some depth3Server),
+                          replyObject := some depth3Reply }) }
+      match donateSchedContext stReady pushServer depth3Server pushSc with
+      | .error e => .error e
+      | .ok depth3 =>
+          -- Every intermediate caller of a live chain is blocked on its own
+          -- reply; `pushDonor` is left `.ready` by the fixture's first push, and
+          -- a state in which it is not blocked is one the pop's outer-caller
+          -- validation refuses (`outerCallerAcceptable`).  Patched here, so the
+          -- removal and the in-order contrast below run on the same live shape.
+          .ok { depth3 with
+                  objects := depth3.objects.insert pushDonor.toObjId
+                    (.tcb { mkTcb 91 40 none with
+                              schedContextBinding := .unbound,
+                              ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97)
+                                (some pushServer),
+                              replyObject := some pushDonorReply }) }
+
+private def runMiddleRemovalDepthThreeChecks : IO Unit := do
+  IO.println "--- §3.22 WS-RM: a middle removal at stack depth three ---"
+  match depth3Chain with
+  | .error e =>
+    assertBool s!"the witness needs a depth-3 chain (got {reprStr e})" false
+  | .ok chain =>
+    -- The stack, bottom to top: `pushOuterReply` → `pushDonorReply` → `depth3Reply`.
+    assertBool "pre: the innermost frame heads the context and links down to the middle one"
+      (pushLinksOf chain depth3Reply == some (some pushDonorReply, some (.head pushSc)))
+    assertBool "pre: the middle frame links both ways"
+      (pushLinksOf chain pushDonorReply
+        == some (some pushOuterReply, some (.frame depth3Reply)))
+    assertBool "pre: the bottom frame links up only"
+      (pushLinksOf chain pushOuterReply == some (none, some (.frame pushDonorReply)))
+    assertBool "pre: the context is held by the innermost server, owed to the one before it"
+      (pushBindingOf chain depth3Server == some (.donated pushSc pushServer))
+    -- The middle caller is blocked on its own call, which is what makes the
+    -- frame a delegate answers a MIDDLE frame rather than the head.
+    assertBool "pre: the middle caller is blocked on its own call"
+      (match chain.getTcb? pushDonor with
+       | some t => t.ipcState == .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)
+       | none => false)
+    assertBool "the footprint resolves the frame ABOVE the middle one"
+      (answeredReplyFrameAbove? chain pushDonor == some depth3Reply)
+    -- **The middle removal**, through a delegated reply capability.
+    let (post, res) :=
+      endpointReplyOnCore replyRemovalDelegate pushDonor IpcMessage.empty bootCoreId chain
+    assertBool "the out-of-order reply to the MIDDLE caller succeeds"
+      (match res with | .ok _ => true | .error _ => false)
+    assertBool "the answered frame leaves the structure entirely (`Reply.isFree`)"
+      (match post.getReply? pushDonorReply with | some r => r.isFree | none => false)
+    -- **THE COST, MEASURED.**  The head's link down is cleared rather than
+    -- re-pointed at the frame below the cut, so the bottom frame -- whose caller
+    -- `pushOuter` owns the reservation -- is no longer on the context's stack.
+    assertBool "COST: the head's link down is CLEARED, not re-pointed at the frame below the cut"
+      (pushLinksOf post depth3Reply == some (none, some (.head pushSc)))
+    assertBool "COST: ...so the bottom frame is off the stack, holding only a stale upward link"
+      (pushLinksOf post pushOuterReply == some (none, some (.frame pushDonorReply)))
+    assertBool "COST: ...and the pop therefore reads the remaining stack as bottomed out"
+      (match replyStackOuterCaller? post pushSc with | .ok none => true | _ => false)
+    assertBool "COST: ...so the reservation settles `.bound` on the thread ABOVE the cut"
+      (match returnDonatedSchedContextResolved post depth3Server pushSc pushServer with
+       | .ok st' => pushBindingOf st' pushServer == some (.bound pushSc)
+       | .error _ => false)
+    assertBool "COST: ...and its owner is left unbound, two hops outside the cut"
+      (match returnDonatedSchedContextResolved post depth3Server pushSc pushServer with
+       | .ok st' => pushBindingOf st' pushOuter == some .unbound
+       | .error _ => false)
+    -- **CONTRAST**: the same three-frame stack unwound IN ORDER keeps the debt
+    -- travelling outward -- the reservation reaches `pushDonor` still owed to
+    -- `pushOuter`.  This is the half that shows the loss is the removal's, not
+    -- the chain's.
+    assertBool "CONTRAST: an IN-ORDER pop on the same stack owes the context outward"
+      (match returnDonatedSchedContextResolved chain depth3Server pushSc pushServer with
+       | .ok st' => pushBindingOf st' pushServer == some (.donated pushSc pushDonor)
+       | .error _ => false)
+    -- **WHAT THE POLICY BUYS**, and why it is not merely a loss: a frame cut off
+    -- the stack carries no `.head` link, so consuming its caller clears it
+    -- outright (`Reply.consumed`'s non-head branch).  No object is pinned, and
+    -- no consumed frame is left heading a context -- which is the state
+    -- `replyStackOuterCaller?` refuses and the defect `v0.35.4` closed.
+    let stBottom : SystemState :=
+      { post with
+          objects := post.objects.insert pushOuter.toObjId (.tcb replyRemovalOuterTcb) }
+    let (postBottom, resBottom) :=
+      endpointReplyOnCore replyRemovalDelegate pushOuter IpcMessage.empty bootCoreId stBottom
+    assertBool "PAYOFF: the cut-off frame's own caller can still be answered"
+      (match resBottom with | .ok _ => true | .error _ => false)
+    assertBool "PAYOFF: ...and that frees it, so nothing is pinned by the cut"
+      (match postBottom.getReply? pushOuterReply with | some r => r.isFree | none => false)
+    assertBool "PAYOFF: ...leaving no consumed frame heading the context"
+      (pushHeadOf postBottom == some (some depth3Reply))
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -2875,6 +3010,7 @@ def runSmpIpcChecks : IO Unit := do
   runMiddleCallerDetachChecks
   runReplyFrameRemovalChecks
   runReplyRecvLoopCompletionChecks
+  runMiddleRemovalDepthThreeChecks
   runReceivePriorityHandoffChecks
   runTraceFixtureCheck
   IO.println "===================================="

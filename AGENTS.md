@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.13.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.14.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2444,23 +2444,54 @@ predicate.**  It was private to the cancellation shape module; the fault-reply
 path needs the same fact, and a second copy in a module the first does not import
 is the one-question-two-answers shape this tree keeps paying for.
 
-**And the removal does not preserve the donation accounting — the cost, stated**
-(the post-landing audit of this workstream).  Taking a caller out of the *middle*
-of a chain is destructive to which thread ends up owning the scheduling context,
-and this kernel inherits seL4-MCS's answer rather than inventing one: a non-head
-`reply_remove` moves no context, and the later `reply_pop` donates to the head
-frame's own caller.  On `owner → middle → server`, a delegate answering `owner`
-out of order leaves `owner` **`.unbound` permanently**, and the server's in-order
-reply then settles the context **`.bound` on `middle`** — which the in-order
-unwind would instead have left `.donated … owner`, still owed outward.  So a
-callee that delegates its caller's reply capability to a confederate can capture
-that caller's reservation.  The authority required is already the authority to
-unblock the victim, so this is a cost rather than a defect — but new code must
-not read WS-RM as accounting-preserving, and it must not read a successful pop
-as evidence that the context reached its owner.  It is stated because WS-OD's
-`severAtCut` states the identical cost for the cancellation path, and
-`tests/SmpIpcSuite.lean` §3.20 asserts both halves — the owner left `.unbound`,
-and the in-order contrast — so the cost is pinned rather than described.
+**And the removal does not preserve the donation accounting — the cost, measured,
+and whose it is** (the post-landing audit, corrected at `v0.35.14`).  Taking a
+caller out of the *middle* of a chain is destructive to which thread ends up
+owning the scheduling context: the removal moves no context, and the later pop
+donates to whatever the remaining stack says is outermost.  On
+`owner → middle → server`, a delegate answering `owner` out of order leaves
+`owner` **`.unbound` permanently**, and the server's in-order reply then settles
+the context **`.bound` on `middle`** — which the in-order unwind would instead
+have left `.donated … owner`, still owed outward.  So a callee that delegates
+its caller's reply capability to a confederate can capture that caller's
+reservation.  New code must not read WS-RM as accounting-preserving, and must not
+read a successful pop as evidence that the context reached its owner.
+
+**The cost is `cancelledMiddleCallerPolicy`'s, not the removal's, and a
+depth-two witness cannot tell the difference.**  A two-frame stack's lower frame
+is its *bottom*, so `severAtCut` (write `prev := none` into the frame above) and
+the alternative `spliceOutTheCut` (write the cut frame's own `prev`) write the
+same value, and §3.20 measures a shape both policies share.  §3.22 of
+`tests/SmpIpcSuite.lean` is the depth-three witness where they differ: every
+frame below the cut leaves the context's stack, so the reservation settles on a
+thread strictly *inside* the chain and its owner is left `.unbound` two hops
+outside the cut, while the same stack unwound in order delivers it outward still
+owed.  Three frames is the shallowest stack on which any of that is visible.
+
+**Why the splice is not taken, and the claim that is deliberately not made.**
+This kernel decides whether a reply pops a donation from the **recorded server's
+binding** (`endpointReplyServerDonation?`), not from whether the answered frame
+heads a context; `severAtCut` is exactly what keeps those two facts equivalent,
+and it is what the three *stated* pre-state coherence hypotheses
+(`replyStackHeadIsAnsweredReply`, `replyDonationOwnerIsAnsweredCaller`,
+`answeredHeadContextIsServerDonation`) need — no invariant in this tree entails
+them.  Splicing re-heads a frame whose recorded server is gone and `.unbound`, so
+answering it runs no pop and leaves a consumed frame heading a context: the state
+`replyStackOuterCaller?_of_consumed_frame` refuses and the pinning `v0.35.4`
+closed.  Recovering the accounting therefore means moving the pop's *trigger* to
+head-ness and its *source* to `SchedContext.boundThread` — registered debt with a
+closure target, not a preference.
+
+**And `severAtCut` is a divergence from seL4-MCS, not an inheritance of it.**
+Until `v0.35.14` this file asserted the opposite.  Checked against upstream
+source, `reply_remove`'s non-head branch **splices** —
+`REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
+reply->replyPrev` — so the frame above inherits the cut frame's own outward
+pointer and every frame below stays reachable from the head.  v1.0.0 must not
+claim seL4-MCS reply-stack semantics at chain depth ≥ 3.  **A `reply_remove_tcb`
+reference elsewhere in this tree names an operation's shape; it is not evidence
+about what upstream writes** — that conflation is how the false claim survived
+eight cuts.
 
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 

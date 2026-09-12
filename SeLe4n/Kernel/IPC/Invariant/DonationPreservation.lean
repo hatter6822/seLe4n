@@ -3161,8 +3161,8 @@ theorem applyCallDonationOnCore_donated_caller_migrates_and_preserves_affinity
 /-- **WS-OD OD5.2 / `v0.35.4`: the live pop implements `severAtCut`, proved.**
 
 The policy's *effect*, not merely the resolver's answer.  Cancelling a **middle**
-caller detaches its frame from the stack (`detachFrameAboveThreadReply`, seL4's
-`reply_remove_tcb` on a non-head frame), so the frame above it is left with no
+caller detaches its frame from the stack (`detachFrameAboveThreadReply`, the
+non-head removal arm), so the frame above it is left with no
 `prev` — the shape a bottom-of-stack head has, and the shape this theorem takes as
 its hypothesis (`hCut`).  On it the pop
 

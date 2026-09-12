@@ -189,8 +189,10 @@ links **down** to this one (`above.prev = some rid`), clearing this frame's
 `next` falsifies `prevLinkReciprocal` at that frame, and the pop that later
 walks to it refuses (fail-closed, `.invalidArgument`) rather than returning the
 context.  So a removal path must take the frame above off this one *before*
-consuming — seL4's `reply_remove`, whose non-head branch clears `replyPrev` on
-the frame above.
+consuming.  Which value it writes into that frame's `prev` is the
+`cancelledMiddleCallerPolicy` decision: this kernel writes `none`
+(`severAtCut`), so the frames below the cut leave the stack, where seL4-MCS's
+`reply_remove` writes the cut frame's own `replyPrev` and keeps them.
 
 **Both paths do.**  The cancellation path runs `detachFrameAboveThreadReply`
 immediately before `consumeReplyLink`, and the reply path runs

@@ -1060,7 +1060,7 @@ The payoff for `.tcbSuspend`: below the cut the reply arm is the teardown -- the
 `O(1)` detach of the victim's frame from its stack, the `.ipcCancelled` restore
 and the reply-link consume -- with no donation write at all.  So the depth-≥ 3
 case needs no binding argument beyond the one the no-donation arm already has,
-which is what makes `severAtCut` cheap as well as seL4-shaped; what it does need
+which is what makes `severAtCut` cheap as well as `O(1)`; what it does need
 is the chain argument, since the detach and the consume both write stack links
 (`consumeReplyLink_preserves_donationChainWellFormed`). -/
 theorem cancelIpcBlocking_reply_arm_below_the_cut

@@ -3041,15 +3041,22 @@ theorem storeDonationHeadPop_non_reply_backward
     exact hPost
 
 -- ----------------------------------------------------------------------------
--- WS-OD (`v0.35.4`): the frame detach — seL4's `reply_remove_tcb`, non-head arm
+-- WS-OD (`v0.35.4`): the frame detach — the non-head removal arm
 -- ----------------------------------------------------------------------------
 
-/-- **Take a frame that is not a head off its stack, in `O(1)`.**  seL4's
-`reply_remove_tcb` for a non-head frame: the frame *above* the cancelled one
-(`next = .frame above`) stops linking down to it (`above.prev := none`), which
-makes it the bottom of the stack it heads — so the next pop that reaches it binds
-that thread outright, which is the `severAtCut` policy — and cuts everything
-below off the context's stack.  The cancelled frame's own links are cleared when
+/-- **Take a frame that is not a head off its stack, in `O(1)`.**  The frame
+*above* the cut one (`next = .frame above`) stops linking down to it
+(`above.prev := none`), which makes it the bottom of the stack it heads — so the
+next pop that reaches it binds that thread outright — and cuts everything below
+off the context's stack.
+
+**This writes `none`, not the cut frame's own `prev`**, and that is the
+`cancelledMiddleCallerPolicy` decision rather than an omission: the alternative
+(`spliceOutTheCut`) keeps the frames below on the stack — it is what seL4-MCS's
+`reply_remove` does — and taking it would require moving the reply path's pop
+trigger from the recorded server's binding to the answered frame's head-ness.  The two write the same value whenever the cut
+frame is the bottom of its stack, which is every stack of depth two;
+`tests/SmpIpcSuite.lean` §3.22 is the depth-three witness where they differ.  The cancelled frame's own links are cleared when
 its caller link is consumed (`Reply.consumed`), and the frame below it keeps an
 upward link the structure never trusts (see `Reply.consumed`).
 
