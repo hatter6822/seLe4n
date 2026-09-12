@@ -1,3 +1,47 @@
+## v0.35.16 — WS-HP registered: the head-driven donation pop
+
+`v0.35.14` registered the donation-accounting divergence and corrected the
+documentation that described it wrongly, and stopped there.  That is half of
+what the **implement-the-improvement rule** requires: where the optimal
+implementation is out of scope for a cut, the audit "must split the work into
+the proper sequence of PRs … rather than treating documentation surgery as a
+substitute for the code change."  This cut is the sequence.
+
+[`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md)
+— **38 sub-tasks across 9 phases, HP1..HP9**, in execution order.  The
+correction is two changes in a **forced** order rather than one: the splice
+alone is unsound under this kernel's binding-driven trigger, because it re-heads
+a frame whose recorded server is by then `.unbound`, so answering it runs no pop
+and leaves a consumed frame heading a context — the object pinning `v0.35.4`
+closed.  So the trigger moves to head-ness first (HP4, HP5), then the sever
+becomes a splice (HP6); **HP2.3 states the equivalence `severAtCut` maintains
+and the splice breaks**, so a cut that reorders them has to falsify a theorem
+rather than ignore a note.
+
+Three things the plan fixes that the debt row could not say.  **HP5 is not
+optional**, and its reason is derived: after the splice a frame becomes the head
+whose recorded reply target is gone, so a *cancellation* there would leave a
+`.donated` binding naming a `.ready` owner.  **The payoff exceeds the
+accounting**: under the head-driven trigger the three *stated* coherence
+hypotheses the reply path carries become derivable and are deleted (HP7) — no
+invariant in this tree entails them today.  And **the cost is stated up front**:
+`maxLockSetSize` 22 → 23, the RPi5 per-lock cost 15 → 14 µs, because the splice
+writes the frame below and no footprint names it.
+
+HP1–HP3 are inert; HP4, HP5 and HP6 are each one cut; no phase may run in
+parallel with another.  The acceptance gate's ten boxes are each ticked by a
+machine-checked artefact or an executed run, and the interim contracts stand
+until it closes: new code must not read a successful pop as evidence that the
+context reached its owner, and v1.0.0 must not claim seL4-MCS reply-stack
+semantics at chain depth ≥ 3.
+
+`docs/REGISTERED_DEBT.md` table C's row now names **WS-HP** as its owner rather
+than a workstream that merely reopens the same model, and `CLAUDE.md` /
+`AGENTS.md` carry the status-index section.  No code changes.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md
+Refs: docs/REGISTERED_DEBT.md table C (donation accounting at depth ≥ 3)
+
 ## v0.35.15 — PR #895 review round 3: a domain written as an exclusion
 
 Seven findings across two review rounds, all verified against the code first,

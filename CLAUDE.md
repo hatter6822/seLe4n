@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.15.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.16.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2522,6 +2522,47 @@ eight cuts.
 
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
+
+### WS-HP The head-driven donation pop — PLANNED (registered v0.35.16)
+
+The reply path decides whether to pop a donated scheduling context from the
+**recorded server's binding** (`endpointReplyServerDonation?`), not from whether
+the answered frame heads a context.  `severAtCut` is exactly what keeps those
+two facts equivalent — and it is a **divergence** from seL4-MCS, whose
+`reply_remove` splices, so the frames below a cut stay reachable from the head
+there.  The consequence is measured rather than described: at reply-stack depth
+≥ 3 a middle removal drops the frames below the cut, the reservation settles
+`.bound` on a thread strictly *inside* the chain, and its owner is left
+`.unbound` for good (`tests/SmpIpcSuite.lean` §3.22; §3.20's depth-two witness
+structurally cannot show it, because a two-frame stack's lower frame is its
+bottom and both policies then write the same value).
+
+The correction is **two changes in a forced order**, not one: the splice alone
+is unsound under a binding-driven trigger, because it re-heads a frame whose
+recorded server is by then `.unbound`, so answering it runs no pop and leaves a
+consumed frame heading a context — the object pinning `v0.35.4` closed.  So the
+trigger moves first (HP4, HP5), then the sever becomes a splice (HP6), and
+HP2.3 makes that ordering a machine-checked fact rather than a note.
+
+Three things a reader should take from the plan rather than infer.  (1) **The
+payoff is larger than the accounting**: under the head-driven trigger the three
+*stated* pre-state coherence hypotheses the reply path carries
+(`replyStackHeadIsAnsweredReply`, `replyDonationOwnerIsAnsweredCaller`,
+`answeredHeadContextIsServerDonation`) become derivable and are deleted (HP7) —
+no invariant in this tree entails them today.  (2) **The cost is stated**:
+`maxLockSetSize` 22 → 23 and the RPi5 per-lock cost 15 → 14 µs, because the
+splice writes the frame below and no footprint names it (HP3.5).  (3) **HP5 is
+not optional**, and its reason is derived: after the splice a frame becomes the
+head whose recorded reply target is gone, so a *cancellation* there would leave
+a `.donated` binding naming a `.ready` owner.
+
+No sub-task has started.  Registered in
+[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C with closure target
+**before v1.0.0**; until it closes, v1.0.0 must not claim that completing a call
+chain returns a client's reservation, nor seL4-MCS reply-stack semantics at
+chain depth ≥ 3.
+
+Plan: [`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md).
 
 ### WS-SM SMP multi-core completion — IN FLIGHT (v0.31.2 → v1.0.0)
 
