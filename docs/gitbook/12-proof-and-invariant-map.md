@@ -208,11 +208,14 @@ satisfies and a *delegated* reply capability answering out of order does not.
 `endpointReplyOnCore` and by both single-core spines; `.reply` and `.replyRecv`
 declare the frame it writes (`answeredReplyFrameAbove?`, resolved from the same
 expression the arm's existing reply member comes from), which takes the declared
-lock-set ceiling to **22**; the reply leg's head case is stated as
-`donationChainWellFormedExcept` and discharged by the donation pop that follows
-it in the same transition
+lock-set ceiling to **22** -- with that member proved a declared *write* rather
+than merely declared (`lockSet_endpointReplyOnCore_covers_detachedFrameAbove` and
+its `.replyRecv` twin, the reply-path siblings of the cancellation path's own);
+the reply leg's head case is stated as `donationChainWellFormedExcept` and
+discharged by the donation pop that follows it in the same transition
 (`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`, with the
-fault reply and the reply *transfer* composing it); and `.replyRecv`'s pop moved
+fault reply and the reply *transfer* composing it, under one pre-state local
+coherence fact, `answeredHeadContextIsServerDonation`); and `.replyRecv`'s pop moved
 **between** the legs, which is seL4-MCS's own `doReplyTransfer` → `reply_remove`
 → `receiveIPC` order and which the receive leg's re-link requires, since
 `Reply.isFree` reads both stack links.  What keeps the surface closed is derived

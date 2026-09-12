@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.9` (`lakefile.toml`) |
+| **Package version** | `0.35.10` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 374,875 across 329 Lean files |
-| **Test LoC** | 75,847 across 70 Lean test suites |
-| **Proved declarations** | 12,593 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 375,003 across 329 Lean files |
+| **Test LoC** | 75,860 across 70 Lean test suites |
+| **Proved declarations** | 12,599 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4476,7 +4476,14 @@ respect.
    about which frame is answered.  **`maxLockSetSize` is 22**, and the per-lock
    cost and envelope that implies are stated once, in this document's canonical
    ceiling sentence.  No *reachable* footprint grew: the new member and the
-   donation-return members are mutually exclusive.
+   donation-return members are mutually exclusive.  And declaring a member is
+   not proving the transition writes it — the Tier 3 anchor over each
+   footprint's definition asks only that the resolver *occur* there, which is a
+   presence check.  `lockSet_endpointReply_frameAbove_write_mem` and
+   `lockSet_replyRecv_frameAbove_write_mem` at full arity, with
+   `lockSet_endpointReplyOnCore_covers_detachedFrameAbove` and its `.replyRecv`
+   twin resolved, are the relation: the reply-path siblings of the coverage the
+   cancellation path has carried since `v0.35.4`.
 3. **The head case is stated, not hidden.**  A frame that heads a scheduling
    context keeps its links when its caller is consumed (`Reply.consumed`,
    deliberately — the pop validates the head by them), so the reply leg's
@@ -4485,7 +4492,16 @@ respect.
    is the composite: the donation pop that follows in the same transition
    discharges the transient, exactly as `returnDonatedSchedContext` discharges
    the relaxed donation-owner conjunct.  The fault reply and the reply
-   *transfer* (seL4's `doReplyTransfer`) compose it.
+   *transfer* (seL4's `doReplyTransfer`) compose it.  It carries **one**
+   condition beyond the chain invariant, and it is a **pre-state** fact:
+   `answeredHeadContextIsServerDonation`, that the context the answered frame
+   heads is the one the recorded reply server holds — the third local coherence
+   fact about a single reply, beside `replyDonationOwnerIsAnsweredCaller` and
+   `replyStackHeadIsAnsweredReply`, stated rather than derived for the reason
+   those are, vacuous wherever the answered frame heads nothing, and exhibited
+   on a live-operation state by `tests/SmpIpcSuite.lean` §3.21.  It is at the
+   pre-state as the bundle composite's `hDonationReturned` is, which is what
+   lets the reply *transfer* carry it once rather than once per branch.
 4. **`.replyRecv`'s donation pop runs *between* the legs.**  seL4-MCS's own
    order is `doReplyTransfer` → `reply_remove` → `receiveIPC`, and it has to be:
    the receive leg re-links the very Reply the reply leg just answered, and

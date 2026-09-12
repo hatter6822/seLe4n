@@ -12648,6 +12648,13 @@ run_check "INVARIANT" rg -n '^def answeredReplyFrameAbove\?' SeLe4n/Kernel/IPC/C
 run_check "INVARIANT" bash -lc 'rg -U -n "^def answeredReplyFrameAbove\?[^\n]*(\n([ \t][^\n]*)?)*replyFrameAbove\? st" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*\(answeredReplyFrameAbove\? st target\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(answeredReplyFrameAbove\? st target\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# ...and a member occurring in a footprint is not that member being a declared
+# write: these are the relation, and the reply path's twin of the coverage the
+# cancellation path has carried since `v0.35.4`.
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_frameAbove_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_frameAbove_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_detachedFrameAbove' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_detachedFrameAbove' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 
 # (4) The chain payoff -- the theorem the workstream exists for -- and the
 # fault-reply and reply-transfer forms that compose it.
@@ -12655,6 +12662,17 @@ run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_preserves_donationC
 run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
 run_check "INVARIANT" rg -n '^theorem faultReplyOnCore_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
 run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+# The condition that ties the payoff's two halves is a PRE-state fact, like the
+# bundle composite's `hDonationReturned` beside it: a `schedContextBinding` is
+# something the reply leg provably does not write, so the transport belongs
+# inside the proof rather than on every caller.
+run_check "INVARIANT" rg -n '^def answeredHeadContextIsServerDonation' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def answeredHeadContextIsServerDonation[^\n]*(\n([ \t][^\n]*)?)*replyDonationReturn\? st expected" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
+# NEGATIVE, token-preserving -- it keeps every token of the condition and reads
+# the server's binding at the state the reply leg committed instead.  That shape
+# is what made the reply *transfer* carry the same fact twice, in two spellings
+# differing only in a message the question never reads.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def answeredHeadContextIsServerDonation[^\n]*(\n([ \t][^\n]*)?)*endpointReplyOnCore" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
 
 # (5) `.replyRecv`'s donation pop runs BETWEEN the legs -- seL4-MCS's own
 # `doReplyTransfer` -> `reply_remove` -> `receiveIPC` order.  With the pop last,

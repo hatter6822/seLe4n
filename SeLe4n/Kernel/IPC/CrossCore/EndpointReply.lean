@@ -1735,6 +1735,43 @@ theorem lockSet_endpointReplyRecvOnCore_covers_pop
     exact lockSet_replyRecv_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _
 
+/-- **WS-RM (`v0.35.6`)**: the frame the reply leg's detach unlinks is a declared
+write of the resolved `.reply` footprint.
+
+The reply-path twin of `lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove`,
+which the cancellation path has carried since `v0.35.4`.  It is the relation the
+Tier 3 anchor over this footprint's definition does not make: that anchor asks
+that `answeredReplyFrameAbove? st target` *occur* in the definition, and a member
+occurring is not a member being a declared write at the mode the detach needs.
+
+Like every member of this family the resolution is on the pre-state, which is
+what `runUnderDeclaredLockSet` re-resolves and refuses on change (WS-RR RR7.12);
+the bracket, not the member, is where the two states are reconciled. -/
+theorem lockSet_endpointReplyOnCore_covers_detachedFrameAbove
+    (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (above : SeLe4n.ReplyId)
+    (hAbove : answeredReplyFrameAbove? st target = some above) :
+    (replyLock above, AccessMode.write)
+      ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
+  unfold lockSet_endpointReplyOnCore
+  rw [hAbove]
+  exact lockSet_endpointReply_frameAbove_write_mem _ _ _ _ _ _ _ _ _ _
+
+set_option maxHeartbeats 1000000 in
+/-- **WS-RM (`v0.35.6`)**: and `.replyRecv`'s, which is the same detach because
+its reply leg is the `.reply` arm's transition. -/
+theorem lockSet_endpointReplyRecvOnCore_covers_detachedFrameAbove
+    (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) (above : SeLe4n.ReplyId)
+    (hAbove : answeredReplyFrameAbove? st target = some above) :
+    (replyLock above, AccessMode.write)
+      ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
+           endpointObjId).pairs := by
+  unfold lockSet_endpointReplyRecvOnCore
+  rw [hAbove]
+  exact lockSet_replyRecv_frameAbove_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    _ _ _ _ _ _
+
 set_option maxHeartbeats 1000000 in
 /-- **PR #894 review — the invoking receiver's own pre-receive return is
 declared.**

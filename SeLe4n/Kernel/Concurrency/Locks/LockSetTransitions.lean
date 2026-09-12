@@ -2088,6 +2088,30 @@ theorem lockSet_endpointReply_belowHead_write_mem (callerTid : ThreadId)
   -- Two extensions sit above it: the outer caller and the state-level lock.
   iterate 3 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-RM (`v0.35.6`)**: and the frame **above** the answered caller's reply
+object, which the removal's detach rewrites (`detachReplyFrameAbove` clears its
+`prev`) before the caller link is consumed.
+
+The reply-path twin of `lockSet_cancelIpcBlocking_detached_frame_above_write_mem`,
+which the cancellation path has carried since `v0.35.4`.  Declaring a member and
+proving the operation writes it are two different statements, and the Tier 3
+anchor over this footprint's definition makes only the first: it asks that
+`answeredReplyFrameAbove? st target` occur in the definition, which is a presence
+check.  This is the relation. -/
+theorem lockSet_endpointReply_frameAbove_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
+    (donatedScId : Option SchedContextId) (donatedOriginalOwnerTid : Option ThreadId)
+    (replyId : Option ReplyId) (belowHeadReplyId : Option ReplyId)
+    (outerCallerTid : Option ThreadId) (donatedHeadReplyId : Option ReplyId)
+    (above : ReplyId) :
+    (replyLock above, AccessMode.write)
+      ∈ (lockSet_endpointReply callerTid cnodeRootObjId replyTargetTid donatedScId
+          donatedOriginalOwnerTid replyId belowHeadReplyId outerCallerTid
+          donatedHeadReplyId (some above)).pairs := by
+  unfold lockSet_endpointReply
+  -- The outermost extension: nothing sits above it.
+  exact LockSet.mem_insertOrMerge_write_self _ _
 /-- **WS-RR RR7.11**: `.replyRecv`'s own TCB — it replies, then receives, and
 either blocks or takes the next message. -/
 theorem lockSet_replyRecv_caller_tcb_write_mem (callerTid : ThreadId)
@@ -2845,6 +2869,33 @@ theorem lockSet_replyRecv_preReturn_stateLevel_write_mem (callerTid : ThreadId)
   -- The queue-structure neighbour, and (WS-RM `v0.35.6`) the frame above the
   -- answered reply — two extensions outside.
   iterate 2 apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-RM (`v0.35.6`)**: and `.replyRecv`'s own detach, which is the `.reply`
+arm's because it is the same transition — the sibling of
+`lockSet_endpointReply_frameAbove_write_mem` above, for the same reason. -/
+theorem lockSet_replyRecv_frameAbove_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (installsCaps : Bool) (donationServerTid : Option ThreadId)
+    (redonatedScId : Option SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    (queueNeighbour : Option ThreadId) (redonationOldHeadReplyId : Option ReplyId)
+    (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId)
+    (above : ReplyId) :
+    (replyLock above, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
+          donationServerTid redonatedScId belowHeadReplyId outerCallerTid
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid (some above)).pairs := by
+  unfold lockSet_replyRecv
+  -- The outermost extension: nothing sits above it.
   exact LockSet.mem_insertOrMerge_write_self _ _
 /-- **WS-RR RR7.11, the capstone: no two capability-installing IPC arms are
 ever disjoint.**

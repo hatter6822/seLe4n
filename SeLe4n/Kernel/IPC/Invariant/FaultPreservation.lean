@@ -670,22 +670,15 @@ theorem faultReplyApplyOnCore_donationChainFrame (st : SystemState)
 Its second stage **is** the live `.reply` chain, so the reply path's own payoff
 (`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`) carries the
 whole of the chain reasoning; stage 3 writes a TCB and nothing else.  The
-hypothesis is therefore the reply payoff's own, stated at the same pre-state --
-a fault reply that answers a caller whose reply frame *heads* a scheduling
-context leaves that context headless unless the donation pop beneath it re-heads
-the frame below, which is the relation `hHeadReturned` names. -/
+hypothesis is therefore the reply payoff's own, at the same pre-state -- a fault
+reply that answers a caller whose reply frame *heads* a scheduling context leaves
+that context headless unless the donation pop beneath it re-heads the frame
+below, which is the relation `answeredHeadContextIsServerDonation` names. -/
 theorem faultReplyOnCore_preserves_donationChainWellFormed
     (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (hHeadReturned : ∀ (tcb : TCB) (rid : SeLe4n.ReplyId) (r : Reply)
-        (scId : SeLe4n.SchedContextId),
-      lookupTcb st faulted = some tcb → tcb.replyObject = some rid →
-      st.getReply? rid = some r → r.next = some (.head scId) →
-      ∀ expected, recordedReplyServer? st faulted = some expected →
-        ∃ owner, replyDonationReturn?
-          (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 expected
-            = some (scId, owner)) :
+    (hHeadReturned : answeredHeadContextIsServerDonation st faulted) :
     donationChainWellFormed (faultReplyOnCore replier faulted mi regs c st).1 := by
   unfold faultReplyOnCore
   cases hTcb : st.getTcb? faulted with
@@ -711,35 +704,27 @@ theorem faultReplyOnCore_preserves_donationChainWellFormed
               (decodeFaultReply tf.fault tf.context mi regs) hRepObj) hRepChain
 
 /-- **WS-RM RM5.2**: and so does the reply *transfer* — seL4's
-`doReplyTransfer`, whose two branches are the two theorems above. -/
+`doReplyTransfer`, whose two branches are the two theorems above.
+
+**One** chain hypothesis, not one per branch: the fault branch replies with
+`IpcMessage.empty` and the ordinary branch with `msg`, which differed only in the
+post-state expression the condition used to be written over.  The message is not
+something the question reads — it asks which scheduling context a *pre-state*
+reply frame heads — so at the pre-state the two spellings are one proposition,
+and a caller supplies it once. -/
 theorem replyTransferOnCore_preserves_donationChainWellFormed
     (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (c : CoreId)
     (st st' : SystemState) (u : Unit)
     (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (hHeadReturnedFault : ∀ (tcb : TCB) (rid : SeLe4n.ReplyId) (r : Reply)
-        (scId : SeLe4n.SchedContextId),
-      lookupTcb st callerTid = some tcb → tcb.replyObject = some rid →
-      st.getReply? rid = some r → r.next = some (.head scId) →
-      ∀ expected, recordedReplyServer? st callerTid = some expected →
-        ∃ owner, replyDonationReturn?
-          (endpointReplyOnCore replier callerTid IpcMessage.empty c st).1 expected
-            = some (scId, owner))
-    (hHeadReturned : ∀ (tcb : TCB) (rid : SeLe4n.ReplyId) (r : Reply)
-        (scId : SeLe4n.SchedContextId),
-      lookupTcb st callerTid = some tcb → tcb.replyObject = some rid →
-      st.getReply? rid = some r → r.next = some (.head scId) →
-      ∀ expected, recordedReplyServer? st callerTid = some expected →
-        ∃ owner, replyDonationReturn?
-          (endpointReplyOnCore replier callerTid msg c st).1 expected
-            = some (scId, owner))
+    (hHeadReturned : answeredHeadContextIsServerDonation st callerTid)
     (hStep : replyTransferOnCore replier callerTid mi regs msg c st = .ok (u, st')) :
     donationChainWellFormed st' := by
   unfold replyTransferOnCore at hStep
   by_cases hF : threadHasPendingFault st callerTid
   · rw [if_pos hF] at hStep
     have hChainF := faultReplyOnCore_preserves_donationChainWellFormed replier callerTid
-      mi regs c st hObjInv hChain hHeadReturnedFault
+      mi regs c st hObjInv hChain hHeadReturned
     rcases hFR : faultReplyOnCore replier callerTid mi regs c st with ⟨stF, resF⟩
     rw [hFR] at hStep hChainF
     simp only at hChainF

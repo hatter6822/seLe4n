@@ -267,8 +267,14 @@ document existing.
 2. `removeCallerReplyFrame_preserves_donationChainWellFormed` holds for a
    non-head frame with no side condition beyond `invExt` and the chain invariant
    (RM2.2).
-3. `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` holds
-   unconditionally, head case included (RM5.1).
+3. `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` holds with
+   the head case included, under the chain invariant, `invExt` and **one**
+   pre-state local coherence fact — `answeredHeadContextIsServerDonation`, that
+   the context the answered frame heads is the one the recorded reply server
+   holds.  It is the chain analogue of the bundle composite's
+   `hDonationReturned`, is stated rather than derived for the reason
+   `donationHolderIsReplyTarget` is, and is vacuous on every reply whose
+   answered frame heads nothing (RM5.1).
 4. The Tier 1 census reports every reply-stack writer as carrying a chain result
    — or as a half-step of the composite that does, whose own record must reach
    one — reconciled in both directions (RM5.3, refined in §10.3).

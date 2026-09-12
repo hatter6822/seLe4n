@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.9.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.10.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2233,6 +2233,29 @@ and `replyTransferOnCore_preserves_donationChainWellFormed` (seL4's
 `doReplyTransfer`) compose it; the staging writes frame the chain
 (`stageDeliveredMessage_donationChainFrame` and its two siblings).
 
+The composite carries **one** condition beyond the chain invariant, and it is a
+**pre-state** fact: `answeredHeadContextIsServerDonation` — the context the
+answered frame heads is the one the recorded reply server holds.  It is the
+third of the tree's *local coherence facts* about a single reply, beside
+`replyDonationOwnerIsAnsweredCaller` and `replyStackHeadIsAnsweredReply`, and
+like them it is **stated rather than derived**: `donationOwnerValid` relates a
+caller's recorded reply target to no donation, and `donationChainWellFormed`
+carries no binding clause at all, by its own *what is deliberately absent*.
+Vacuous wherever the answered frame heads nothing — every reply in a tree with
+no donation — with both vacuity discharges named
+(`answeredHeadContextIsServerDonation_of_no_caller` / `_of_no_reply`), and
+`tests/SmpIpcSuite.lean` §3.21 exhibits its premises and its conclusion on a
+state the live operations reach, since a hypothesis nothing exhibits is
+indistinguishable from one that cannot hold.  It is at the **pre**-state exactly
+as the bundle composite's `hDonationReturned` beside it is, and unlike
+`hStackValid`: `replyStackOuterCallerValid`'s subject is a state the pop runs on,
+whereas a `schedContextBinding` is something the reply leg provably does not
+write (`endpointReplyOnCore_donationOwnerFrameExcept`), so the transport belongs
+inside the proof rather than on every caller.  That is also what makes the reply
+*transfer* carry the fact **once**: its two branches reply with `IpcMessage.empty`
+and with `msg`, which at the post-state were two spellings differing only in a
+message the question never reads.
+
 (3) **`.reply` and `.replyRecv` declare the frame the detach writes.**
 `answeredReplyFrameAbove?` is resolved from the same
 `(st.getTcb? target).bind (·.replyObject)` expression the arm's existing reply
@@ -2241,7 +2264,15 @@ which frame is answered.  **`maxLockSetSize` is 22** and the RPi5 per-lock cost
 and envelope move with it, in the canonical sentence this file carries above.  No
 *reachable* footprint grew: the new member and the donation-return members are
 mutually exclusive, so `lockSet_endpointReplyRecvOnCore_size_le_eighteen` is
-unmoved.
+unmoved.  **And declaring a member is not proving the transition writes it** —
+the Tier 3 anchor over each footprint's definition asks only that the resolver
+*occur* there, which is a presence check.  The relation is
+`lockSet_endpointReply_frameAbove_write_mem` and `lockSet_replyRecv_frameAbove_write_mem`
+at full arity, with `lockSet_endpointReplyOnCore_covers_detachedFrameAbove` and
+its `.replyRecv` twin resolved: the reply-path siblings of the coverage the
+cancellation path has carried since `v0.35.4`
+(`lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove`), which the cut that
+added the reply-path member did not sweep onto it.
 
 (4) **`.replyRecv` pops the donation *between* its two legs**, which is
 seL4-MCS's own `doReplyTransfer` → `reply_remove` → `receiveIPC` order — and it

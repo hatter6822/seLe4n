@@ -2647,6 +2647,19 @@ private def runReplyRecvLoopCompletionChecks : IO Unit := do
         (match stQueued.getReply? donReply with
          | some r => r.next == some (.head scClient)
          | none => false)
+      -- **The chain payoff's own condition, exhibited on this state.**
+      -- `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` holds
+      -- under `answeredHeadContextIsServerDonation`, a pre-state fact neither
+      -- `ipcInvariantFull` nor `donationChainWellFormed` entails (the bundle
+      -- relates a caller's recorded reply target to no donation, and the chain
+      -- invariant carries no binding clause at all).  A hypothesis nothing
+      -- exhibits is indistinguishable from one that cannot hold, so here are its
+      -- premises and its conclusion at the only quadruple that satisfies them,
+      -- on a state a real MCS chain reaches through the live operations.
+      assertBool "the chain condition's premise: the answered caller records the server"
+        (recordedReplyServer? stQueued donClient == some donServer)
+      assertBool "...and its conclusion: that server holds the context that frame heads"
+        (replyDonationReturn? stQueued donServer == some (scClient, donClient))
       -- Leg one alone: the caller is answered and the Reply is NOT free, because
       -- it still heads the context.  `Reply.isFree` reads both links, so the
       -- receive leg below cannot re-link this object yet.

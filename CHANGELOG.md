@@ -1,3 +1,102 @@
+## v0.35.10 — The chain payoff was never unconditional, and the detach's member was declared but never proved written
+
+A second, deeper audit of the WS-RM cut (`v0.35.6`), reading the code rather than
+what the documents say about it.  The workstream's substance holds under every
+check the first pass made and several it did not: the removal's fail-closed
+arms, the fold's soundness on the refusal arm, the three live spines, the
+`.replyRecv` leg order, the total accessors over the pop, the axiom surface of
+every chain theorem, five Tier 3 negatives re-run under token-preserving
+mutation of the live tree, and the Tier 1 census re-run against a freshly
+injected bare reply-stack writer.  Two findings, both closed here, and both the
+same shape one level apart: a claim about a relation that only a presence had
+been established for.
+
+### 1. The composite's condition existed, was stated at the wrong state, and was carried twice
+
+`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` is not
+unconditional and never was.  It carries `hHeadReturned` — *if the answered
+frame heads a scheduling context, the recorded reply server holds that context*
+— and the WS-RM plan's own acceptance gate item 3 said the theorem "holds
+unconditionally, head case included".  It does not, and it cannot: the condition
+relates a reply frame to a **binding**, `donationOwnerValid` relates a caller's
+recorded reply target to no donation, and `donationChainWellFormed` carries no
+binding clause at all by its own *what is deliberately absent*.  It belongs to
+the same species as `replyDonationOwnerIsAnsweredCaller`,
+`replyStackHeadIsAnsweredReply` and `donationHolderIsReplyTarget`: a local
+coherence fact the model states because the invariants do not entail it.
+
+What was genuinely wrong is where it was stated.  Its sibling on the same
+transition, four hundred lines above it in the same file, states the analogous
+`hDonationReturned` on the **pre**-state and transports it across the reply leg
+inside the proof — the reply leg provably writes no `schedContextBinding`
+(`endpointReplyOnCore_donationOwnerFrameExcept`).  WS-RM's condition was written
+against the post-reply-leg state instead, pushing that transport onto every
+caller, and its docstring justified this by analogy with `hStackValid` — whose
+subject, `replyStackOuterCallerValid`, genuinely *is* a property of the state the
+pop runs on.  The cost was concrete and visible in the tree:
+`replyTransferOnCore_preserves_donationChainWellFormed` took **two** such
+hypotheses, `hHeadReturnedFault` and `hHeadReturned`, differing only in the
+message appearing inside the post-state expression — a message the question
+never reads.  At the pre-state they are one proposition, and a caller now
+supplies it once.
+
+Closed by naming it: `answeredHeadContextIsServerDonation st target`
+(`SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean`), stated on the
+pre-state, with the transport inside the composite's proof and both vacuity
+discharges named (`_of_no_caller`, `_of_no_reply`).  The three consumers take the
+named fact; the reply transfer's hypothesis count falls from two to one, which is
+a strictly stronger theorem.  `tests/SmpIpcSuite.lean` §3.21 now exhibits the
+condition's premises *and* its conclusion on a state built by the live
+operations, because a hypothesis nothing exhibits is indistinguishable from one
+that cannot hold.  A Tier 3 positive pins the pre-state spelling and a
+token-preserving negative refuses the post-state one — verified silent on the
+clean tree and firing on a mutation that keeps every token and moves only the
+state the binding is read at.
+
+The plan's acceptance item 3, `SELE4N_SPEC.md` §8.12.8 item 3, GitBook 12,
+`CLAUDE.md`, `AGENTS.md` and `CLAIM_EVIDENCE_INDEX.md` all say what the theorem
+actually proves.
+
+### 2. The detach's footprint member was declared, and nothing proved the transition writes it
+
+`.reply` and `.replyRecv` declare `answeredReplyFrameAbove? st target` for the
+frame the removal's detach rewrites, and the Tier 3 anchors over those footprints
+ask that the resolver *occur* in each definition.  That is a presence check.
+Every sibling member of the family has the relation as well —
+`lockSet_endpointReplyOnCore_covers_pop`, `…_covers_preReturn`,
+`…_covers_queueNeighbour`, `…_covers_cdt`, `…_covers_redonationOldHead` — and so
+does the **cancellation** path's own detach member, which has carried
+`lockSet_cancelIpcBlocking_detached_frame_above_write_mem` and
+`lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove` since `v0.35.4`.  The
+cut that added the reply-path member did not sweep that coverage onto it, which
+is this project's own rule failing in the way it describes: *when a fix names a
+relation, grep for every other place that asks it.*
+
+Closed with the four theorems the family's shape requires:
+`lockSet_endpointReply_frameAbove_write_mem` and
+`lockSet_replyRecv_frameAbove_write_mem` at full arity, and
+`lockSet_endpointReplyOnCore_covers_detachedFrameAbove` with its `.replyRecv`
+twin resolved.  No footprint changed, so `maxLockSetSize` is unmoved at 22 and
+every derived figure with it; what changed is that the declaration is now
+checkable.  Four Tier 3 anchors, `SELE4N_SPEC.md` §8.12.8 item 2, GitBook 12,
+`CLAUDE.md`, `AGENTS.md` and `CLAIM_EVIDENCE_INDEX.md`.
+
+### What the audit re-verified rather than changed
+
+The removal itself: `detachReplyFrameAbove`'s two refusal arms are reachable on a
+well-formed state — the chain invariant deliberately carries no converse for
+upward `.frame` links — and `detachReplyFrameAboveOrSelf_unreferenced` is what
+licenses folding them to the identity, on all three arms.  The reciprocity test
+before the one write is what confines the detach to the frame that genuinely sits
+above the answered one, so the authority a reply capability carries is not
+widened by it.  `removeCallerReplyFrame`'s `rid` comes from the answered thread's
+own `replyObject` at all three call sites.  The `.replyRecv` leg order is
+seL4-MCS's, with the receive leg's dequeue target read from the post-pop state.
+Every chain theorem depends on `propext`, `Classical.choice` and `Quot.sound`
+alone.
+
+Version bumped 0.35.9 -> 0.35.10.
+
 ## v0.35.9 — WS-RM post-landing audit: a claimed gate that never existed, and five claims the code had moved out from under
 
 A deep audit of the WS-RM cut (`v0.35.6`) and the branch around it.  The

@@ -476,6 +476,59 @@ theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull
 -- §6  WS-RM (`v0.35.6`) — the composite payoff: the chain across the dispatch
 -- ============================================================================
 
+/-- **WS-RM (`v0.35.6`): the context the answered caller's reply frame heads is
+the one the recorded reply server holds.**
+
+The third of this tree's *local coherence facts* about one reply, beside
+`replyDonationOwnerIsAnsweredCaller` (the returned donation is owned by the thread
+the reply answers) and `replyStackHeadIsAnsweredReply` (the returned context's
+stack head is that thread's own reply object).  It is this one's converse: the
+other two start from a server that holds a donation, this one starts from a frame
+that heads a context and names its holder.
+
+True on the seL4-MCS path, because `applyCallDonation` mints the `.donated`
+binding at the very server the caller later replies through and pushes the
+caller's own `replyObject` as that context's stack head — the two writes of one
+step.  **Not entailed by `ipcInvariantFull`**: `donationOwnerValid` relates a
+caller's recorded reply target to no donation, and `donationChainWellFormed`
+carries no binding clause at all (see its docstring's *what is deliberately
+absent*).  So it is stated, for exactly the reason WS-RR RR7.22 stated
+`donationHolderIsReplyTarget` from the cancellation end.
+
+Stated on the **pre-state**, like `hDonationReturned` on the bundle composite
+beside it and unlike `hStackValid`: `replyStackOuterCallerValid`'s subject is a
+state the pop runs on, whereas a `schedContextBinding` is something the reply leg
+provably does not write (`endpointReplyOnCore_donationOwnerFrameExcept`), so the
+transport belongs inside the proof rather than on every caller.  That also makes
+the fault reply's two occurrences one fact rather than two spellings differing
+only in a message the question never reads. -/
+def answeredHeadContextIsServerDonation (st : SystemState) (target : SeLe4n.ThreadId) : Prop :=
+  ∀ (tcb : TCB) (rid : SeLe4n.ReplyId) (r : Reply) (scId : SeLe4n.SchedContextId),
+    lookupTcb st target = some tcb → tcb.replyObject = some rid →
+    st.getReply? rid = some r → r.next = some (.head scId) →
+    ∀ expected, recordedReplyServer? st target = some expected →
+      ∃ owner, replyDonationReturn? st expected = some (scId, owner)
+
+/-- A reply that answers no resolvable caller heads nothing, so the fact is
+vacuous — the discharge every reply outside the donating path takes. -/
+theorem answeredHeadContextIsServerDonation_of_no_caller (st : SystemState)
+    (target : SeLe4n.ThreadId) (h : lookupTcb st target = none) :
+    answeredHeadContextIsServerDonation st target := by
+  intro _ _ _ _ hLk
+  rw [h] at hLk
+  cases hLk
+
+/-- And so is a reply by a caller holding no reply object. -/
+theorem answeredHeadContextIsServerDonation_of_no_reply (st : SystemState)
+    (target : SeLe4n.ThreadId) (tcb : TCB)
+    (hLk : lookupTcb st target = some tcb) (hRO : tcb.replyObject = none) :
+    answeredHeadContextIsServerDonation st target := by
+  intro tcb' _ _ _ hLk' hRO'
+  rw [hLk] at hLk'
+  obtain rfl : tcb' = tcb := Option.some.inj hLk'.symm
+  rw [hRO] at hRO'
+  cases hRO'
+
 /-- **WS-RM (`v0.35.6`): the live cross-core `.reply` dispatch preserves the
 donation chain — the theorem the workstream exists for.**
 
@@ -488,38 +541,32 @@ that very link (WS-OD plan §3.3).  So the intermediate state satisfies
 `applyReplyDonationOnCore` is what closes the relaxation — exactly as it closes
 `ipcInvariantFullExceptDonationOwner` on the bundle side.
 
-`hHeadReturned` is the one condition that ties the two halves together, and it is
-the chain analogue of `hDonationReturned`: *if* the answered frame heads a
-context, the recorded reply server's donation return is that context's.  True on
-the seL4-MCS path, because a caller donates to the very server that later answers
-it and the donation's stack frame is the caller's own reply object.  When the
+`answeredHeadContextIsServerDonation` is the one condition that ties the two
+halves together, and it is the chain analogue of `hDonationReturned` in every
+respect, its **pre**-state statement included: *if* the answered frame heads a
+context, the recorded reply server's donation return is that context's.  When the
 answered frame heads nothing it is vacuous, and the chain runs on the unrelaxed
-route — which is every reply in a tree with no donation.  Stated at the state the
-pop runs at, as `hStackValid` is, since that state is a function of the
-pre-state. -/
+route — which is every reply in a tree with no donation. -/
 theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hChain : donationChainWellFormed st)
-    (hHeadReturned : ∀ (tcb : TCB) (rid : SeLe4n.ReplyId) (r : Reply)
-        (scId : SeLe4n.SchedContextId),
-      lookupTcb st target = some tcb → tcb.replyObject = some rid →
-      st.getReply? rid = some r → r.next = some (.head scId) →
-      ∀ expected, recordedReplyServer? st target = some expected →
-        ∃ owner, replyDonationReturn?
-          (endpointReplyOnCore replier target msg executingCore st).1 expected
-            = some (scId, owner)) :
+    (hHeadReturned : answeredHeadContextIsServerDonation st target) :
     donationChainWellFormed
       (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 := by
   have hReplyInv : (endpointReplyOnCore replier target msg executingCore st).1.objects.invExt :=
     endpointReplyOnCore_preserves_objects_invExt replier target msg executingCore st hObjInv
   have hCases := endpointReplyOnCore_donationChain_cases replier target msg executingCore st
     hObjInv hChain
+  -- The reply leg writes no `schedContextBinding`, which is what lets the
+  -- pre-state fact be read at the state the pop runs on.
+  have hFrame := endpointReplyOnCore_donationOwnerFrameExcept replier target msg executingCore
+    st hObjInv
   unfold endpointReplyCrossCoreDispatch
   cases hRep : endpointReplyOnCore replier target msg executingCore st with
   | mk st1 res =>
-    rw [hRep] at hReplyInv hCases hHeadReturned
+    rw [hRep] at hReplyInv hCases hFrame
     cases res with
     | error e => exact hChain
     | ok replySgi =>
@@ -545,7 +592,15 @@ theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
             rcases hCases with hFull | ⟨tcb, rid, r, scId, hLk, hRO, hRPre, hNext,
               ⟨r1, hR1, hN1⟩, hExc⟩
             · exact Or.inl hFull
-            · obtain ⟨owner, hRet⟩ := hHeadReturned tcb rid r scId hLk hRO hRPre hNext expected hRec
+            · obtain ⟨owner, hRetPre⟩ :=
+                hHeadReturned tcb rid r scId hLk hRO hRPre hNext expected hRec
+              have hRet : replyDonationReturn? st1 expected = some (scId, owner) := by
+                obtain ⟨eTcb, hELk, _⟩ :=
+                  replyDonationReturn?_some_lookup st expected scId owner hRetPre
+                obtain ⟨_, hE', hEB', _⟩ :=
+                  hFrame.tcbForward expected eTcb (lookupTcb_some_objects st expected eTcb hELk)
+                rw [replyDonationReturn?_eq_of_binding_agree hELk hE' hEB']
+                exact hRetPre
               exact Or.inr ⟨rid, scId, owner, r1, hExc, by rw [hExpV]; exact hRet, hR1, hN1⟩
           cases hApply : applyReplyDonationOnCore st1 expectedV
               (determineExecutingCore st expected) (determineTargetCore st expected)
