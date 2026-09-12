@@ -727,14 +727,14 @@ theorem endpointQueueRemove_ok_getEndpoint?
     ∃ ep, st.getEndpoint? endpointId = some ep := by
   cases hObj : st.objects[endpointId]? with
   | none =>
-    simp only [endpointQueueRemove, hObj] at hStep
+    simp only [endpointQueueRemove, hObj, SystemState.getObject?] at hStep
     exact absurd hStep (by simp)
   | some obj =>
     cases obj with
     | endpoint ep =>
       exact ⟨ep, (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj⟩
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-      simp only [endpointQueueRemove, hObj] at hStep
+      simp only [endpointQueueRemove, hObj, SystemState.getObject?] at hStep
       exact absurd hStep (by simp)
 
 /-- **WS-OD OD3.5**: `endpointQueueRemove`'s two link patches **are**
@@ -773,7 +773,7 @@ theorem endpointQueueRemove_eq_patches (endpointId : SeLe4n.ObjId) (isReceiveQ :
        .ok { st with objects :=
          ((objs.insert endpointId (.endpoint ep')).insert tid.toObjId
            (.tcb { tcb with queuePrev := none, queuePPrev := none, queueNext := none })) }) := by
-  unfold endpointQueueRemove
+  unfold endpointQueueRemove SystemState.getObject?
   rw [(SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp, hTcb]
   rfl
 
@@ -849,7 +849,7 @@ theorem abortPendingIpcOnEndpoint_other_tcb_eq
     have hkEp : k ≠ epId := by
       intro hEqK
       have hEp : ∃ ep, st.objects[epId]? = some (.endpoint ep) := by
-        unfold endpointQueueRemove at hRem
+        unfold endpointQueueRemove SystemState.getObject? at hRem
         cases hObj : st.objects[epId]? with
         | none => rw [hObj] at hRem; exact absurd hRem (by simp)
         | some obj =>
@@ -1308,7 +1308,7 @@ theorem detachReplyFrameAbove_preserves_donationChainWellFormed {st st' : System
               exact ⟨a, { a with prev := none }, by rw [hk]; exact hAObj,
                 by rw [hk]; exact hAbove, rfl, rfl⟩
             · left
-              unfold replyStackLinksAt?
+              unfold replyStackLinksAt? SystemState.getObject?
               rw [hOther q.toObjId hk])
       exact ⟨fuel, chain', hWalk'⟩
 
@@ -1503,7 +1503,7 @@ theorem consumedReplyStore_preserves_donationChainWellFormed (st s' : SystemStat
       intro q hq
       have hqNe : q ≠ rid := fun hx => hRidNotIn (hx ▸ hq)
       obtain ⟨rq, hrq, _⟩ := donationChainFrom_mem st c fuel sc.scReply chain hWalk q hq
-      unfold replyStackLinksAt?
+      unfold replyStackLinksAt? SystemState.getObject?
       rw [hReplyFwd q rq hqNe hrq, hrq])
 
 /-- `v0.35.4`: **consuming a reply link preserves the chain** when the frame heads

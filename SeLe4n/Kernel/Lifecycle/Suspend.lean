@@ -1017,8 +1017,8 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     : Except KernelError SystemState :=
   let tid : SeLe4n.ThreadId := vtid.val
   -- G1: TCB lookup + state validation
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
     if tcb.threadState == .Inactive then .error .illegalState
     else
       -- G7-precapture (WS-SM SM6.E fix): whether the victim is the boot
@@ -1083,8 +1083,7 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- Defensive re-lookup ensures `cancelDonation` sees the post-IPC-cleanup
       -- TCB state, guarding against future changes to `cancelIpcBlocking` that
       -- might modify additional TCB fields.
-      let tcb' := match st.objects[tid.toObjId]? with
-        | some (.tcb t) => t | _ => tcb
+      let tcb' := (st.getTcb? tid).getD tcb
       -- G3: Cancel donation (AJ1-A/M-14: propagate cleanup errors).
       -- R5.A (DEEP-SUSP-02): Explicit dispatch on the binding variant —
       -- `cancelBoundDonation` for the in-place unbind, `cancelDonatedDonation`
@@ -1105,11 +1104,11 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- G5: Clear pending state — AN10-residual-1 (commit 3): typed entry-point.
       let st := clearPendingStateValid st vtid
       -- G6: Set threadState := .Inactive
-      let st := match st.objects[tid.toObjId]? with
-        | some (.tcb tcb'') =>
+      let st := match st.getTcb? tid with
+        | some tcb'' =>
           { st with objects := st.objects.insert tid.toObjId (.tcb { tcb'' with
               threadState := .Inactive }) }
-        | _ => st
+        | none => st
       -- G7: If suspended thread was current, trigger reschedule.
       -- WS-SM SM6.E fix: dispatch on the G7-precapture (entry-time) value —
       -- the post-G4 current slot never holds the victim (see the precapture
@@ -1136,7 +1135,7 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
           | .error e => .error e
         else
           .ok st
-  | _ => .error .invalidArgument
+  | none => .error .invalidArgument
 
 -- ============================================================================
 -- D1-H: resumeThread
@@ -1163,8 +1162,8 @@ def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     : Except KernelError SystemState :=
   let tid : SeLe4n.ThreadId := vtid.val
   -- H1: TCB lookup
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
     -- H2: State validation — must be Inactive
     if tcb.threadState != .Inactive then .error .illegalState
     else
@@ -1205,12 +1204,12 @@ def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- If the resumed thread has higher effective priority than current, reschedule
       let needsReschedule : Bool := match (st.scheduler.currentOnCore bootCoreId) with
         | some curTid =>
-          match st.objects[curTid.toObjId]? with
-          | some (.tcb curTcb) =>
+          match st.getTcb? curTid with
+          | some curTcb =>
             let resumedEffective := (resolveEffectivePrioDeadline st tcb').1
             let curEffective := (resolveEffectivePrioDeadline st curTcb).1
             resumedEffective.val > curEffective.val
-          | _ => true  -- No valid current → always reschedule
+          | none => true  -- No valid current → always reschedule
         | none => false  -- No current thread → no preemption needed
       if needsReschedule then
         -- Re-enqueue the current (outgoing) thread BEFORE rescheduling, so the
@@ -1233,7 +1232,7 @@ def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
         | .error e => .error e
       else
         .ok st
-  | _ => .error .invalidArgument
+  | none => .error .invalidArgument
 
 -- ============================================================================
 -- AN9-D (DEF-C-M04 — RESOLVED): suspendThread atomicity under FFI bracket
@@ -1332,7 +1331,7 @@ theorem suspendThread_atomicity_under_ffi_bracket_default
     (_hPre : suspendThread_atomicity_precondition (default : SystemState)) :
     suspendThread (default : SystemState) vtid = .error .invalidArgument := by
   -- Unfold suspendThread on the default state.
-  unfold suspendThread
+  unfold suspendThread SystemState.getTcb?
   -- The default state's objects table is empty, so the outer
   -- `match st.objects[tid.toObjId]?` falls into the `_` arm.
   have hLookup : (default : SystemState).objects[vtid.val.toObjId]? = none :=

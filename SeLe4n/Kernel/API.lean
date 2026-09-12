@@ -1587,7 +1587,7 @@ Returns `objectNotFound` if the thread ID does not correspond to any object,
 or `illegalState` if the object is not a TCB. -/
 def lookupThreadRegisterContext (tid : SeLe4n.ThreadId) : Kernel SeLe4n.RegisterFile :=
   fun st =>
-    match st.objects[tid.toObjId]? with
+    match st.getObject? tid.toObjId with
     | some (.tcb tcb) => .ok (tcb.registerContext, st)
     | some _          => .error .illegalState
     | none            => .error .objectNotFound
@@ -4087,9 +4087,9 @@ def dispatchWithCapChecked (ctx : LabelingContext)
 def dispatchSyscallChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
-    match st.objects[tid.toObjId]? with
+    match st.getObject? tid.toObjId with
     | some (.tcb tcb) =>
-      match st.objects[tcb.cspaceRoot]? with
+      match st.getObject? tcb.cspaceRoot with
       | some (.cnode rootCn) =>
         let gate : SyscallGate := {
           callerId     := tid
@@ -4618,9 +4618,9 @@ entries inherit it, and the seam is one sentence rather than a list of call site
 that each have to remember. -/
 def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
-    match st.objects[tid.toObjId]? with
+    match st.getObject? tid.toObjId with
     | some (.tcb tcb) =>
-      match st.objects[tcb.cspaceRoot]? with
+      match st.getObject? tcb.cspaceRoot with
       | some (.cnode rootCn) =>
         let gate : SyscallGate := {
           callerId     := tid
@@ -4720,7 +4720,7 @@ theorem syscallEntry_requires_valid_decode
       · simp at hOk
       next decoded hDecode =>
         have hStEq : _st_regs = st := by
-          unfold lookupThreadRegisterContext at hLookup
+          unfold lookupThreadRegisterContext SystemState.getObject? at hLookup
           split at hLookup <;> simp at hLookup
           exact hLookup.2.symm
         subst hStEq
@@ -4742,7 +4742,7 @@ theorem dispatchSyscall_requires_right
   -- `simp only` rather than `unfold`: the gate binding elaborates to a `have`,
   -- which is opaque to `split` (the same distinction `syscallEntryChecked`
   -- records above), and the seam's `match` sits inside it.
-  simp only [dispatchSyscall] at hOk
+  simp only [dispatchSyscall, SystemState.getObject?] at hOk
   split at hOk
   next tcb hTcb =>
     refine ⟨tcb, hTcb, ?_⟩
@@ -4802,7 +4802,7 @@ theorem syscallEntry_implies_capability_held
       · simp at hOk
       next decoded hDecode =>
         have hStEq : _st_regs = st := by
-          unfold lookupThreadRegisterContext at hLookup
+          unfold lookupThreadRegisterContext SystemState.getObject? at hLookup
           split at hLookup <;> simp at hLookup
           exact hLookup.2.symm
         -- PR #873 round 6: the seam moved into `dispatchSyscall`, so the entry
@@ -4819,7 +4819,7 @@ theorem lookupThreadRegisterContext_state_unchanged
     (tid : SeLe4n.ThreadId) (st : SystemState) (regs : SeLe4n.RegisterFile) (st' : SystemState)
     (hOk : lookupThreadRegisterContext tid st = .ok (regs, st')) :
     st' = st := by
-  unfold lookupThreadRegisterContext at hOk
+  unfold lookupThreadRegisterContext SystemState.getObject? at hOk
   split at hOk <;> simp at hOk
   exact hOk.2.symm
 
@@ -5880,7 +5880,7 @@ theorem dispatchSyscallChecked_applies_taint_plan
     (st st' : SystemState)
     (h : dispatchSyscallChecked ctx decoded tid st = .ok ((), st')) :
     ∃ stPost, st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
-  simp only [dispatchSyscallChecked] at h
+  simp only [dispatchSyscallChecked, SystemState.getObject?] at h
   split at h
   · split at h
     · split at h
@@ -5901,7 +5901,7 @@ theorem dispatchSyscall_applies_taint_plan
     (st st' : SystemState)
     (h : dispatchSyscall decoded tid st = .ok ((), st')) :
     ∃ stPost, st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
-  simp only [dispatchSyscall] at h
+  simp only [dispatchSyscall, SystemState.getObject?] at h
   split at h
   · split at h
     · split at h
@@ -5949,7 +5949,7 @@ theorem dispatchSyscallChecked_preserves_projection
         projectState ctx observer stOut = projectState ctx observer st)
     (hStep : dispatchSyscallChecked ctx decoded tid st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  simp only [dispatchSyscallChecked] at hStep
+  simp only [dispatchSyscallChecked, SystemState.getObject?] at hStep
   -- Layer 1: TCB lookup (read-only)
   split at hStep
   · -- some (.tcb tcb)
@@ -6324,7 +6324,7 @@ theorem dispatchSyscallChecked_audit_target_first
         capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
       cap oid st (Or.inl h) hTarget
     rw [h] at hArm
-    simp only [dispatchSyscallChecked,
+    simp only [dispatchSyscallChecked, SystemState.getObject?,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
@@ -6338,7 +6338,7 @@ theorem dispatchSyscallChecked_audit_target_first
         capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
       cap oid st (Or.inr h) hTarget
     rw [h] at hArm
-    simp only [dispatchSyscallChecked,
+    simp only [dispatchSyscallChecked, SystemState.getObject?,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
@@ -6374,7 +6374,7 @@ theorem dispatchSyscallChecked_audit_right_checked_second
         capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
       cap st (Or.inl h) hTarget hRight
     rw [h] at hArm
-    simp only [dispatchSyscallChecked,
+    simp only [dispatchSyscallChecked, SystemState.getObject?,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
@@ -6390,7 +6390,7 @@ theorem dispatchSyscallChecked_audit_right_checked_second
         capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
       cap st (Or.inr h) hTarget hRight
     rw [h] at hArm
-    simp only [dispatchSyscallChecked,
+    simp only [dispatchSyscallChecked, SystemState.getObject?,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
@@ -6466,7 +6466,7 @@ theorem dispatchSyscallChecked_requires_right
           resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
           SystemState.lookupSlotCap st ref = some cap ∧
           cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
-  simp only [dispatchSyscallChecked] at hOk
+  simp only [dispatchSyscallChecked, SystemState.getObject?] at hOk
   split at hOk
   next tcb hTcb =>
     refine ⟨tcb, (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb, ?_⟩
@@ -6559,7 +6559,7 @@ theorem syscallEntryChecked_implies_capability_held
         · simp at hOk
         next decoded hDecode =>
           have hStEq : _stRegs = st := by
-            unfold lookupThreadRegisterContext at hLookup
+            unfold lookupThreadRegisterContext SystemState.getObject? at hLookup
             split at hLookup <;> simp at hLookup
             exact hLookup.2.symm
           subst hStEq

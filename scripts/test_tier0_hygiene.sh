@@ -322,6 +322,16 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/rust_code_view.py" --self-test
 # symbol exists only in a comment.
 run_check "HYGIENE" "${SCRIPT_DIR}/test_code_view_wiring.sh"
 
+# ... and the store-read census, which decides which POPULATION each raw
+# `st.objects[…]` read belongs to.  Its failure mode is the one that made
+# `RAW_LOOKUP_TID` meaningless: classify a proposition's vocabulary as a
+# transition's and the enforced number becomes dominated by invariant text, so
+# every cut re-anchors it upward and the ceiling stops meaning anything.  The
+# self-test pins the classification (body vs binder, `Prop`-valued `def` vs
+# transition, occurrences not lines) and the wiring through the comment-free
+# view, on fixtures rather than on the tree.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/lean_store_read_census.py" --self-test
+
 # ... and the acceptance-gate skip accounting, whose failure mode is the
 # same shape: a sub-test that cannot run used to `exit 0`, `run_check`
 # scored it PASS, and tier 4 printed "All checks passed" over fourteen

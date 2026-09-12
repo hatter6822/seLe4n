@@ -71,7 +71,7 @@ theorem endpointQueuePopHead_machine_eq
     (tid : SeLe4n.ThreadId)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st')) :
     st'.machine = st.machine := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -127,7 +127,7 @@ theorem endpointQueueEnqueue_machine_eq
     (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     st'.machine = st.machine := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with

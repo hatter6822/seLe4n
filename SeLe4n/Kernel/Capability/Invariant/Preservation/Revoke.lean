@@ -238,7 +238,7 @@ theorem cspaceRevoke_preserves_cdtNodeSlot
     (st stLocal : SystemState) (addr : CSpaceAddr)
     (hRevoke : cspaceRevoke addr st = .ok ((), stLocal)) :
     stLocal.cdtNodeSlot = st.cdtNodeSlot := by
-  unfold cspaceRevoke at hRevoke
+  unfold cspaceRevoke SystemState.getCNode? at hRevoke
   cases hLookup : cspaceLookupSlot addr st with
   | error e => simp [hLookup] at hRevoke
   | ok pair =>

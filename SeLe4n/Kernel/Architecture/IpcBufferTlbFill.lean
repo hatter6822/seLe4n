@@ -291,7 +291,7 @@ private theorem tlbWalkEntry_congr {st st' : SystemState}
     (hObj : st'.objects = st.objects) (hAsid : st'.asidTable = st.asidTable)
     (asid : SeLe4n.ASID) (vaddr : VAddr) :
     tlbWalkEntry st' asid vaddr = tlbWalkEntry st asid vaddr := by
-  unfold tlbWalkEntry resolveAsidRoot
+  unfold tlbWalkEntry resolveAsidRoot SystemState.getVSpaceRoot?
   rw [hObj, hAsid]
 
 /-- **WS-SM SM7.F.5**: every page the walk resolves ends up cached. -/

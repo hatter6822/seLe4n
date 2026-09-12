@@ -1319,7 +1319,9 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
     refine ⟨h1, h1i, h2, h3, h4, advanceTimerState_preserves_serviceGraphInvariant ticks st h5,
            h6, h7, h8,
            PriorityInheritance.blockingAcyclic_frame st (advanceTimerState ticks st) h9
-             (fun _ => by simp [PriorityInheritance.blockingServer, advanceTimerState])
+             (fun _ => by
+               simp [PriorityInheritance.blockingServer,
+                 SystemState.getTcb?, advanceTimerState])
              (by simp [advanceTimerState]), ?_, ?_⟩
     · -- AM4-A: advanceTimerState preserves both `objects` and `lifecycle.objectTypes`,
       -- so the lockstep invariant transports unchanged.
@@ -1447,7 +1449,9 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
              hBound⟩
     -- blockingAcyclic
     · exact PriorityInheritance.blockingAcyclic_frame st (writeRegisterState reg value st) h9
-        (fun _ => by simp [PriorityInheritance.blockingServer, writeRegisterState])
+        (fun _ => by
+               simp [PriorityInheritance.blockingServer,
+                 SystemState.getTcb?, writeRegisterState])
         (by simp [writeRegisterState])
     -- AM4-A: lifecycleObjectTypeLockstep — writeRegisterState leaves
     -- objects and lifecycle.objectTypes unchanged.
@@ -1678,7 +1682,9 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
              hBound⟩
     -- blockingAcyclic
     · exact PriorityInheritance.blockingAcyclic_frame st (contextSwitchState newTid newRegs st) h9
-        (fun _ => by simp [PriorityInheritance.blockingServer, contextSwitchState])
+        (fun _ => by
+               simp [PriorityInheritance.blockingServer,
+                 SystemState.getTcb?, contextSwitchState])
         (by simp [contextSwitchState])
     -- AM4-A: lifecycleObjectTypeLockstep
     · intro oid obj hObj'

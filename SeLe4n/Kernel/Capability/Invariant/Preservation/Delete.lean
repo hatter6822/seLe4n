@@ -40,7 +40,7 @@ theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
   -- WS-H4: Prove new components through storeObject → storeCapabilityRef → detachSlotFromCdt
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
-    unfold cspaceDeleteSlotCore at hStep
+    unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
     cases hPre : st.objects[addr.cnode]? with
     | none => simp [hPre] at hStep
     | some preObj =>
@@ -106,7 +106,7 @@ theorem cspaceDeleteSlotCore_preserves_cdtNodeSlot
     (hNodeSlotK : st.cdtNodeSlot.invExtK)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     st'.cdtNodeSlot.invExtK := by
-  unfold cspaceDeleteSlotCore at hStep
+  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
   cases hPre : st.objects[addr.cnode]? with
   | none => simp [hPre] at hStep
   | some obj =>
@@ -159,7 +159,7 @@ theorem cspaceRevoke_preserves_replyCapPointsToValidReply
     (hObjInv : st.objects.invExt)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     replyCapPointsToValidReply st' := by
-  unfold cspaceRevoke at hStep
+  unfold cspaceRevoke SystemState.getCNode? at hStep
   cases hLookup2 : cspaceLookupSlot addr st with
   | error e => simp [hLookup2] at hStep
   | ok pair =>
@@ -220,7 +220,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
   -- WS-H4: storeObject(CNode.revokeTargetLocal) → revokeAndClearRefsState (M-P01)
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
-    unfold cspaceRevoke at hStep
+    unfold cspaceRevoke SystemState.getCNode? at hStep
     cases hLookup2 : cspaceLookupSlot addr st with
     | error e => simp [hLookup2] at hStep
     | ok pair =>

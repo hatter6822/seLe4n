@@ -100,7 +100,7 @@ theorem getEndpoint?_congr_getElem {s1 s2 : SystemState}
 theorem lookupTcb_congr_getElem {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
     (tid : SeLe4n.ThreadId) : lookupTcb s2 tid = lookupTcb s1 tid := by
-  unfold lookupTcb; rw [hEq]
+  unfold lookupTcb SystemState.getTcb?; rw [hEq]
 
 -- ============================================================================
 -- §1  Per-conjunct pointwise-lookup transports

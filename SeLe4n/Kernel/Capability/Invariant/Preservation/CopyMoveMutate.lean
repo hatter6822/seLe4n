@@ -129,7 +129,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                 (objects_invExt_of_capabilityInvariantBundle st hInv)
                 (replyCapBacked_of_source_slot st src cap hInv hSrc) hInsert
               have hNSSt2 : st2.cdtNodeSlot = st.cdtNodeSlot := by
-                unfold cspaceInsertSlot at hInsert
+                unfold cspaceInsertSlot SystemState.getCNode? at hInsert
                 cases hPre : st.objects[dst.cnode]? with
                 | none => simp [hPre] at hInsert
                 | some obj =>
@@ -289,7 +289,7 @@ theorem cspaceMutate_preserves_replyCapPointsToValidReply
     (hObjInv : st.objects.invExt)
     (hStep : cspaceMutate addr rights badge st = .ok ((), st')) :
     replyCapPointsToValidReply st' := by
-  unfold cspaceMutate at hStep
+  unfold cspaceMutate SystemState.getCNode? at hStep
   cases hLookup2 : cspaceLookupSlot addr st with
   | error e => simp [hLookup2] at hStep
   | ok pair =>
@@ -366,7 +366,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
   -- WS-H4: cspaceMutate goes through storeObject(CNode.insert) → storeCapabilityRef, same as insertSlot
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
-    unfold cspaceMutate at hStep
+    unfold cspaceMutate SystemState.getCNode? at hStep
     cases hLookup2 : cspaceLookupSlot addr st with
     | error e => simp [hLookup2] at hStep
     | ok pair =>
@@ -443,7 +443,7 @@ theorem cspaceMutate_rejects_null_cap
   -- and the bridge avoids the `cases`-driven goal rewrite that would turn the
   -- target equation into a tautology.
   have hExists : ∃ cap, SystemState.lookupSlotCap st addr = some cap := by
-    unfold cspaceMutate at hOk
+    unfold cspaceMutate SystemState.getCNode? at hOk
     cases hL : cspaceLookupSlot addr st with
     | error e => rw [hL] at hOk; simp at hOk
     | ok pair =>
@@ -463,7 +463,7 @@ theorem cspaceMutate_rejects_null_cap
     (cspaceLookupSlot_ok_iff_lookupSlotCap st addr cap).2 hLook
   refine ⟨cap, hLkp, ?_⟩
   -- Now derive non-nullness from `hOk` using `hLkp`.
-  unfold cspaceMutate at hOk
+  unfold cspaceMutate SystemState.getCNode? at hOk
   rw [hLkp] at hOk
   simp only at hOk
   by_cases hNull : cap.isNull
@@ -489,7 +489,7 @@ theorem cspaceMutate_null_cap_rejected
     (hCap : ∃ cap, cspaceLookupSlot addr st = .ok (cap, st) ∧ cap.isNull = true) :
     cspaceMutate addr rights badge st = .error .nullCapability := by
   obtain ⟨cap, hLkp, hNull⟩ := hCap
-  unfold cspaceMutate
+  unfold cspaceMutate SystemState.getCNode?
   rw [hLkp]
   simp [hNull]
 

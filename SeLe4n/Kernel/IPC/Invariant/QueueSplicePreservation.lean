@@ -188,7 +188,7 @@ theorem endpointQueueRemoveDual_shape
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     SpliceShape endpointId isReceiveQ tid st st' := by
-  unfold endpointQueueRemoveDual at hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep
   revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
@@ -3000,7 +3000,7 @@ theorem endpointQueueRemove_ok_headLast
             (.endpoint (spliceEndpoint isReceiveQ ep (IntrusiveQueue.mk none none)))).insert
           tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none)))) := by
   unfold spliceQueue at hHead hTail
-  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects
+  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
   -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
   unfold queueUnlinkPredecessor queueUnlinkSuccessor
   simp only [hEp, hTcb, hPrevNone, hNext, hHead, hTail, if_pos]
@@ -3026,7 +3026,7 @@ theorem endpointQueueRemove_ok_headMore
           tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none)))) := by
   have hNextRaw := (SystemState.getTcb?_eq_some_iff st nextTid nextTcb).mp hNextTcb
   unfold spliceQueue at hHead hTailNe ⊢
-  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects
+  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
   -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
   unfold queueUnlinkPredecessor queueUnlinkSuccessor
   simp only [hEp, hTcb, hPrevNone, hNext, hHead, hNextRaw, if_pos, if_neg hTailNe]
@@ -3052,7 +3052,7 @@ theorem endpointQueueRemove_ok_midLast
           tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none)))) := by
   have hPrevRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevTcb
   unfold spliceQueue at hHeadNe hTail ⊢
-  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects
+  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
   -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
   unfold queueUnlinkPredecessor queueUnlinkSuccessor
   simp only [hEp, hTcb, hPrev, hNext, hTail, hPrevRaw, if_pos, if_neg hHeadNe]
@@ -3091,7 +3091,7 @@ theorem endpointQueueRemove_ok_midMore
   rw [if_neg hPN, hNextRaw] at hLk
   unfold tcbWithQueueLinks at hLk
   unfold spliceQueue at hHeadNe hTailNe ⊢
-  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects
+  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
   -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
   unfold queueUnlinkPredecessor queueUnlinkSuccessor
   simp only [hEp, hTcb, hPrev, hNext, hPrevRaw, hLk, if_neg hHeadNe, if_neg hTailNe]

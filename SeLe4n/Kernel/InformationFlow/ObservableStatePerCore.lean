@@ -802,7 +802,7 @@ theorem onCore_perCore_independence
   refine ObservableState.ext_fragments ?_ ?_
   · simp only [onCore_sharedFragment, SharedObservableFragment.mk.injEq]
     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · funext oid; simp only [projectObjects]; rw [hObjects]
+    · funext oid; simp only [projectObjects, SystemState.getObject?]; rw [hObjects]
     · funext sid; simp only [projectServicePresence, lookupService]; rw [hServices]
     · funext irq; simp only [projectIrqHandlers]; rw [hIrq]
     · simp only [projectObjectIndex]; rw [hIndex]
@@ -1509,7 +1509,7 @@ theorem onCore_label_monotone (ctx : LabelingContext) (c : CoreId) {L₁ L₂ : 
   · -- objects: visibility widens, and the projected *content* widens only by
     -- CNode slot un-redaction (`projectKernelObject_visibilityLe_monotone`)
     intro oid obj₁ hGet
-    simp only [onCore_objects, projectObjects] at hGet ⊢
+    simp only [onCore_objects, projectObjects, SystemState.getObject?] at hGet ⊢
     by_cases hObs : objectObservable ctx (IfObserver.ofLabel L₁) oid = true
     · rw [if_pos hObs] at hGet
       cases hLook : s.objects[oid]? with
@@ -1608,7 +1608,7 @@ theorem onCore_objects_label_invariant_off_cnode (ctx : LabelingContext) (c : Co
     (ObservableState.onCore ctx c L₂ s).objects oid
       = (ObservableState.onCore ctx c L₁ s).objects oid := by
   have hSome := hVisible
-  simp only [onCore_objects, projectObjects] at hSome ⊢
+  simp only [onCore_objects, projectObjects, SystemState.getObject?] at hSome ⊢
   by_cases hObs : objectObservable ctx (IfObserver.ofLabel L₁) oid = true
   · rw [objectObservable_monotone ctx hFlow oid hObs]
     simp only [hObs, if_pos, hGet, Option.map_some]
@@ -1653,8 +1653,10 @@ theorem onCore_objects_cnode (ctx : LabelingContext) (c : CoreId) (L : SecurityL
     (hObs : objectObservable ctx (IfObserver.ofLabel L) oid = true) :
     (ObservableState.onCore ctx c L s).objects oid
       = some (.cnode (projectCNode ctx (IfObserver.ofLabel L) cn)) := by
-  simp only [onCore_objects, projectObjects, hObs, if_true, hGet, Option.map_some,
-    projectKernelObject_cnode]
+  -- `projectObjects` reads through the kind-agnostic accessor, so it is
+  -- unfolded here to meet the store-level hypothesis.
+  simp only [onCore_objects, projectObjects, SystemState.getObject?, hObs, if_true, hGet,
+    Option.map_some, projectKernelObject_cnode]
 
 /-- SM8.A.5 (object-content refinement, at the observable-state layer): a CNode
 slot the narrower observer can see is still there, **with the same capability**,

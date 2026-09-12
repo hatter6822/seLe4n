@@ -241,7 +241,7 @@ theorem storeTcbQueueLinks_preserves_blockedThreadsPendingMessageConsistent
       simp only [hSO, Except.ok.injEq] at hStore; subst hStore
       -- Extract objects lookup from lookupTcb
       have hObjOrig : st.objects[tid.toObjId]? = some (.tcb tcb) := by
-        unfold lookupTcb at hLk; split at hLk
+        unfold lookupTcb SystemState.getTcb? at hLk; split at hLk
         · simp at hLk
         · split at hLk
           next t hObj => exact Option.some.inj hLk ▸ hObj
@@ -288,7 +288,7 @@ theorem storeTcbPendingMessage_preserves_blockedThreadsPendingMessageConsistent
     | ok pair =>
       simp only [hSO, Except.ok.injEq] at hStore; subst hStore
       have hObjOrig : st.objects[tid.toObjId]? = some (.tcb tcb) := by
-        unfold lookupTcb at hLk; split at hLk
+        unfold lookupTcb SystemState.getTcb? at hLk; split at hLk
         · simp at hLk
         · split at hLk
           next t hObj => exact Option.some.inj hLk ▸ hObj

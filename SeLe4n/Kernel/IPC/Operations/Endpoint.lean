@@ -516,9 +516,10 @@ def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
   if tid.isReserved then
     none
   else
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) => some tcb
-    | _ => none
+    -- Composes the canonical reader rather than re-implementing it: this is
+    -- `getTcb?` plus the reserved-id refusal, and spelling the store read a
+    -- second time here is how the two could come to disagree.
+    st.getTcb? tid
 
 /-- WS-RR RR3.12: a successful `lookupTcb` witnesses that the tid is not reserved —
 the half of `lookupTcb`'s guard that lets a lookup be *re-established* in another
@@ -526,7 +527,7 @@ state at the same tid. -/
 theorem lookupTcb_some_not_reserved
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : lookupTcb st tid = some tcb) : ¬ tid.isReserved := by
-  unfold lookupTcb at h
+  unfold lookupTcb SystemState.getTcb? at h
   intro hRes
   rw [if_pos hRes] at h
   cases h
@@ -538,7 +539,7 @@ theorem lookupTcb_of_objects_of_not_reserved
     (hObj : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hNotReserved : ¬ tid.isReserved) :
     lookupTcb st tid = some tcb := by
-  unfold lookupTcb
+  unfold lookupTcb SystemState.getTcb?
   rw [if_neg hNotReserved, hObj]
 
 /-- If lookupTcb succeeds, the underlying objects map has a TCB at tid.toObjId. -/
@@ -546,7 +547,7 @@ theorem lookupTcb_some_objects
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : lookupTcb st tid = some tcb) :
     st.objects[tid.toObjId]? = some (.tcb tcb) := by
-  unfold lookupTcb at h
+  unfold lookupTcb SystemState.getTcb? at h
   cases hRes : tid.isReserved
   · -- false
     simp [hRes] at h; revert h
@@ -660,7 +661,7 @@ theorem lookupTcb_preserved_by_storeObject_notification
   have hNe : tid.toObjId ≠ notifId := by
     intro heq; rw [← heq] at hNtfn; rw [hNtfn] at hTcbObj; cases hTcbObj
   have hPreserved := storeObject_objects_ne st pair.2 notifId tid.toObjId obj hNe hObjInv hStore'
-  unfold lookupTcb at hLookup ⊢
+  unfold lookupTcb SystemState.getTcb? at hLookup ⊢
   rw [hPreserved]
   exact hLookup
 
@@ -3983,8 +3984,8 @@ def returnDonatedSchedContext
     (originalOwner : SeLe4n.ThreadId)
     (newOwner? : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
   -- Step 1: Look up and update SchedContext to point back to original owner
-  match st.objects[scId.toObjId]? with
-  | some (.schedContext sc) =>
+  match st.getSchedContext? scId with
+  | some sc =>
     -- WS-RR RR2.8 (symmetry with `donateSchedContext`'s AUD-3b guard): verify the
     -- SchedContext is actually bound to the **server** before handing it back.
     -- The donation path checks its own direction (`sc.boundThread != some
@@ -4055,7 +4056,7 @@ def returnDonatedSchedContext
                     (scThreadIndexAdd
                       (scThreadIndexRemove st4.scThreadIndex scId serverTid)
                       scId originalOwner) }
-  | _ => .error .objectNotFound
+  | none => .error .objectNotFound
 
 
 /-- WS-OD OD4.4: **the donation return with its new owner resolved from the state
@@ -4390,7 +4391,7 @@ theorem returnDonatedSchedContext_ok_storeChain
       storeObject serverTid.toObjId
         (.tcb { serverTcb with schedContextBinding := .unbound }) s3 = .ok ((), s4) ∧
       st' = { s4 with scThreadIndex := st'.scThreadIndex } := by
-  unfold returnDonatedSchedContext at h
+  unfold returnDonatedSchedContext SystemState.getSchedContext? at h
   revert h
   cases hObj : st.objects[scId.toObjId]? with
   | none => intro h; cases h
@@ -4521,7 +4522,7 @@ theorem returnDonatedSchedContext_eq_legacy_of_none
     show ({ sc with boundThread := some originalOwner,
                     scReply := (none : Option SeLe4n.ReplyId) } : SchedContext) = _
     rw [← hNoHead]
-  unfold returnDonatedSchedContext
+  unfold returnDonatedSchedContext SystemState.getSchedContext?
   rw [hSc]
   -- WS-OD OD4.4: at the bottom of the reply stack the outer-caller guard demands
   -- nothing, so it reduces away and the body is the pre-OD3 one exactly.
@@ -5296,7 +5297,7 @@ with preservation theorems in IPC/Invariant/WaitingThreadHelpers.lean
 structural (entry path analysis above) AND formally verified. -/
 def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : Kernel Unit :=
   fun st =>
-    match st.objects[notificationId]? with
+    match st.getObject? notificationId with
     | some (.notification ntfn) =>
         -- WS-RC R4.C: pop via the structural `NoDupList.tail?` smart accessor;
         -- it returns the head and a `NoDupList`-typed tail with the Nodup
@@ -5370,7 +5371,7 @@ def notificationWait
     (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) : Kernel (Option SeLe4n.Badge) :=
   fun st =>
-    match st.objects[notificationId]? with
+    match st.getObject? notificationId with
     | some (.notification ntfn) =>
         match ntfn.pendingBadge with
         | some badge =>
@@ -5487,7 +5488,7 @@ theorem storeTcbIpcState_preserves_notification
   · subst hEq
     unfold storeTcbIpcState at hStep
     have hLookup : lookupTcb st tid = none := by
-      unfold lookupTcb; simp [hNtfn]
+      unfold lookupTcb SystemState.getTcb?; simp [hNtfn]
     simp [hLookup] at hStep
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc notifId hEq hObjInv hStep]
     exact hNtfn
@@ -5531,7 +5532,7 @@ theorem storeTcbIpcStateAndMessage_preserves_notification
   by_cases hEq : notifId = tid.toObjId
   · subst hEq
     unfold storeTcbIpcStateAndMessage at hStep
-    have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hNtfn]
+    have hLookup : lookupTcb st tid = none := by unfold lookupTcb SystemState.getTcb?; simp [hNtfn]
     simp [hLookup] at hStep
   · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg notifId hEq hObjInv hStep]
     exact hNtfn
@@ -5615,7 +5616,7 @@ theorem storeTcbIpcState_preserves_endpoint
   · subst hEq
     unfold storeTcbIpcState at hStep
     have hLookup : lookupTcb st tid = none := by
-      unfold lookupTcb; simp [hEp]
+      unfold lookupTcb SystemState.getTcb?; simp [hEp]
     simp [hLookup] at hStep
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc epId hEq hObjInv hStep]
     exact hEp
@@ -5635,7 +5636,7 @@ theorem storeTcbIpcState_preserves_cnode
   · subst hEq
     unfold storeTcbIpcState at hStep
     have hLookup : lookupTcb st tid = none := by
-      unfold lookupTcb; simp [hCn]
+      unfold lookupTcb SystemState.getTcb?; simp [hCn]
     simp [hLookup] at hStep
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc cnodeId hEq hObjInv hStep]
     exact hCn
@@ -5655,7 +5656,7 @@ theorem storeTcbIpcState_preserves_vspaceRoot
   · subst hEq
     unfold storeTcbIpcState at hStep
     have hLookup : lookupTcb st tid = none := by
-      unfold lookupTcb; simp [hVs]
+      unfold lookupTcb SystemState.getTcb?; simp [hVs]
     simp [hLookup] at hStep
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hObjInv hStep]
     exact hVs
@@ -5756,7 +5757,7 @@ theorem notificationWait_error_alreadyWaiting
     (hTcb : lookupTcb st waiter = some tcb)
     (hBlocked : tcb.ipcState = .blockedOnNotification notifId) :
     notificationWait notifId waiter st = .error .alreadyWaiting := by
-  unfold notificationWait
+  unfold notificationWait SystemState.getObject?
   simp [hObj, hNoBadge, hTcb, hBlocked]
 
 /-- Decomposition: on the badge-consumed path, the post-state notification
@@ -5774,7 +5775,9 @@ theorem notificationWait_badge_path_notification
     (hStep : notificationWait notifId waiter st = .ok (some badge, st')) :
     ∃ ntfn', st'.objects[notifId]? = some (.notification ntfn') ∧
       ntfn'.waitingThreads.val = [] := by
-  unfold notificationWait at hStep
+  -- The proof reasons about the object store directly, so the kind-agnostic
+  -- accessor the transition now reads through is unfolded once, here.
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -5861,7 +5864,7 @@ theorem notificationWait_wait_path_notification
       ntfn.pendingBadge = none ∧
       st'.objects[notifId]? = some (.notification ntfn') ∧
       ntfn'.waitingThreads.val = waiter :: ntfn.waitingThreads.val := by
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hStep
   | some obj =>

@@ -140,7 +140,7 @@ private theorem registerContextStable_writeRegister_contextMatch
       simp only []
       -- Goal: (writeReg ... == tcb.registerContext) = true
       -- Extract register match from the && chain in registerContextStableCheck
-      unfold registerContextStablePred registerContextStableCheck at hStable
+      unfold registerContextStablePred registerContextStableCheck SystemState.getTcb? at hStable
       simp only [writeRegisterState, hCurr, hObj] at hStable
       -- hStable : (regs == ctx && ...) = true; Bool.and_eq_true decomposes
       simp only [Bool.and_eq_true] at hStable
@@ -177,7 +177,20 @@ def rpi5ProductionAdapterProofHooks :
       unfold rpi5RuntimeContract at hStable; exact hStable
     -- Extract all conditions from registerContextStablePred
     unfold rpi5RuntimeContract at hStable
+    -- The check reads the *post*-state through `getTcb?`; unfolding the
+    -- accessor lets projection reduction identify it with the pre-state read
+    -- this proof matches on (`contextSwitchState` leaves `objects` alone).
+    --
+    -- The split below stays over the store deliberately.  This is a PROOF case
+    -- analysis inside a `def` returning a record of proofs, so it is
+    -- specification rather than a transition reading the store raw --  but
+    -- `scripts/lean_store_read_census.py` classifies by the enclosing
+    -- declaration's result type, and a record of proofs is not syntactically a
+    -- `Prop`, so this is the census's one known over-count.  Recorded here
+    -- rather than worked around, because contorting the proof to satisfy a
+    -- scanner is what this project's key conventions forbid.
     simp only [registerContextStablePred, registerContextStableCheck,
+      SystemState.getTcb?,
       contextSwitchState, SchedulerState.setCurrentOnCore_currentOnCore_self,
       MachineState.regs_setRegsOnCore_bootCore] at hStable
     -- Match on objects[newTid.toObjId]?

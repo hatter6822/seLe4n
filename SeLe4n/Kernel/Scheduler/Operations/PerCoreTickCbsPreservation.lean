@@ -266,7 +266,7 @@ theorem saveOutgoingContextOnCore_machine (st : SystemState) (c : CoreId) :
 writes only `machine.regs` (the register file), never the global timer. -/
 theorem restoreIncomingContext_machine_timer (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).machine.timer = st.machine.timer := by
-  unfold restoreIncomingContext; split <;> rfl
+  unfold restoreIncomingContext SystemState.getTcb?; split <;> rfl
 
 -- WS-OD OD1.4: `endpointQueueRemove_machine` moved to
 -- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` and `abortPendingIpcOnEndpoint_machine`

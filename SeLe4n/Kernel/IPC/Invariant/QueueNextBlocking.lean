@@ -610,7 +610,7 @@ theorem endpointQueuePopHead_preserves_queueNextBlockingConsistent
     (hInv : queueNextBlockingConsistent st)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
     queueNextBlockingConsistent st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -695,7 +695,7 @@ theorem endpointQueueEnqueue_preserves_queueNextBlockingConsistent
     (hInv : queueNextBlockingConsistent st)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     queueNextBlockingConsistent st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1300,7 +1300,7 @@ theorem endpointQueuePopHead_preserves_endpointQueueTailBlockedConsistent
     (hInv : endpointQueueTailBlockedConsistent st)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
     endpointQueueTailBlockedConsistent st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1388,7 +1388,7 @@ theorem endpointQueueEnqueue_enqueued_queuePrev
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧
       tcb'.queuePrev = (if isReceiveQ then ep.receiveQ else ep.sendQ).tail := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   simp only [hObj] at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
@@ -1442,7 +1442,7 @@ theorem endpointQueueEnqueue_enqueued_queueNext_none
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧ tcb'.queueNext = none := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   simp only [hObj] at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
@@ -1498,7 +1498,7 @@ theorem endpointQueueEnqueue_enqueued_is_tail
       (if isReceiveQ then ep'.receiveQ.tail else ep'.sendQ.tail) = some tid ∧
       (if isReceiveQ then ep'.sendQ.tail else ep'.receiveQ.tail) =
         (if isReceiveQ then ep.sendQ.tail else ep.receiveQ.tail) := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   simp only [hObj] at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
@@ -2062,7 +2062,7 @@ theorem endpointQueuePopHead_preserves_queueNextTargetBlocked
     (hInv : queueNextTargetBlocked st)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
     queueNextTargetBlocked st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2138,7 +2138,7 @@ theorem endpointQueuePopHead_popped_queuePrev_none
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
     ∃ tcb, st'.objects[rTid.toObjId]? = some (.tcb tcb) ∧ tcb.queuePrev = none := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with

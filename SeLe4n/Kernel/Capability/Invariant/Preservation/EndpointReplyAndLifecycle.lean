@@ -90,7 +90,7 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
     by_cases hEq : cnodeId = target.toObjId
     · subst hEq
       have hTargetTcb : ∃ tcb', st.objects[target.toObjId]? = some (.tcb tcb') := by
-        unfold lookupTcb at hLookup; cases hObj : st.objects[target.toObjId]? with
+        unfold lookupTcb SystemState.getTcb? at hLookup; cases hObj : st.objects[target.toObjId]? with
         | none => simp [hObj] at hLookup
         | some obj => cases obj with
           | tcb t => exact ⟨t, rfl⟩
@@ -1340,7 +1340,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
     cspaceRevoke_preserves_capabilityInvariantBundle st stRevoked cleanup hInv hRevoke
   -- cspaceRevoke preserves cdtNodeSlot
   have hRevokedNS : stRevoked.cdtNodeSlot = st.cdtNodeSlot := by
-    unfold cspaceRevoke at hRevoke
+    unfold cspaceRevoke SystemState.getCNode? at hRevoke
     cases hLookup : cspaceLookupSlot cleanup st with
     | error e => simp [hLookup] at hRevoke
     | ok pair =>

@@ -251,7 +251,7 @@ theorem lockWritesOnly_preserves_projectObjects (ctx : LabelingContext) (observe
     {s s' : SystemState} (h : lockWritesOnly s s') :
     projectObjects ctx observer s' = projectObjects ctx observer s := by
   funext oid
-  simp only [projectObjects]
+  simp only [projectObjects, SystemState.getObject?]
   by_cases hObs : objectObservable ctx observer oid = true
   · rw [if_pos hObs, if_pos hObs]
     have hErase := h.2 oid
@@ -327,8 +327,8 @@ records. -/
 def lockWritesOnlyCheck (s s' : SystemState) : Bool :=
   (s'.objectIndex == s.objectIndex) &&
     s.objectIndex.all (fun oid =>
-      ((s'.objects[oid]?).map KernelObject.objectType)
-        == ((s.objects[oid]?).map KernelObject.objectType))
+      (s'.getObjectType? oid)
+        == (s.getObjectType? oid))
 
 /-- SM8.D.1: the refuter is **sound** — a lock-only step passes it, so a
 failure is a real counterexample rather than an artefact of the approximation. -/

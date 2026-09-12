@@ -81,29 +81,23 @@ open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
-      cases h : st.objects[outTid.toObjId]? with
+      cases h : st.getTcb? outTid with
       | none => simp_all
-      | some obj =>
-          revert h
-          cases obj <;> intro h <;> simp_all
+      | some _ => simp_all
 
 @[simp] theorem restoreIncomingContext_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).scheduler = st.scheduler := by
   simp only [restoreIncomingContext]
-  cases h : st.objects[tid.toObjId]? with
+  cases h : st.getTcb? tid with
   | none => simp_all
-  | some obj =>
-      revert h
-      cases obj <;> intro h <;> simp_all
+  | some _ => simp_all
 
 @[simp] theorem restoreIncomingContext_objects (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).objects = st.objects := by
   simp only [restoreIncomingContext]
-  cases h : st.objects[tid.toObjId]? with
+  cases h : st.getTcb? tid with
   | none => simp_all
-  | some obj =>
-      revert h
-      cases obj <;> intro h <;> simp_all
+  | some _ => simp_all
 
 /-- `saveOutgoingContext` preserves the existence of a TCB at any object ID.
 If `st.objects[oid]? = some (.tcb tcb)`, then there exists a TCB at `oid`
@@ -118,24 +112,14 @@ theorem saveOutgoingContext_preserves_tcb
   | none => exact ⟨tcb, h⟩
   | some outTid =>
       dsimp only
-      cases hOut : st.objects[outTid.toObjId]? with
+      cases hOut : st.getTcb? outTid with
       | none => exact ⟨tcb, h⟩
-      | some outObj =>
-          cases outObj with
-          | tcb outTcb =>
-              dsimp only
-              simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-              by_cases hEq : outTid.toObjId == oid
-              · simp [hEq]
-              · simp [hEq]; exact ⟨tcb, h⟩
-          | endpoint _ => exact ⟨tcb, h⟩
-          | notification _ => exact ⟨tcb, h⟩
-          | cnode _ => exact ⟨tcb, h⟩
-          | vspaceRoot _ => exact ⟨tcb, h⟩
-          | untyped _ => exact ⟨tcb, h⟩
-          | schedContext _ => exact ⟨tcb, h⟩
-          | reply _ => exact ⟨tcb, h⟩
-
+      | some outTcb =>
+          dsimp only
+          simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+          by_cases hEq : outTid.toObjId == oid
+          · simp [hEq]
+          · simp [hEq]; exact ⟨tcb, h⟩
 /-- `saveOutgoingContext` preserves all TCB fields except `registerContext`. -/
 theorem saveOutgoingContext_tcb_fields
     (st : SystemState) (oid : SeLe4n.ObjId) (tcb : TCB)
@@ -153,28 +137,18 @@ theorem saveOutgoingContext_tcb_fields
   | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
   | some outTid =>
       dsimp only
-      cases hOut : st.objects[outTid.toObjId]? with
+      cases hOut : st.getTcb? outTid with
       | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
-      | some outObj =>
-          cases outObj with
-          | tcb outTcb =>
-              dsimp only
-              simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-              by_cases hEq : outTid.toObjId == oid
-              · simp only [hEq, ite_true]
-                have hEq' := beq_iff_eq.mp hEq
-                subst hEq'
-                rw [hOut] at h; cases h
-                exact ⟨_, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-              · simp [hEq]; exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
-          | endpoint _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
-          | notification _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
-          | cnode _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
-          | vspaceRoot _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
-          | untyped _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
-          | schedContext _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
-          | reply _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
-
+      | some outTcb =>
+          dsimp only
+          simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+          by_cases hEq : outTid.toObjId == oid
+          · simp only [hEq, ite_true]
+            have hEq' := beq_iff_eq.mp hEq
+            subst hEq'
+            rw [(SystemState.getTcb?_eq_some_iff st outTid outTcb).mp hOut] at h; cases h
+            exact ⟨_, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+          · simp [hEq]; exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
 /-- When `st.objects[oid]?` is not a TCB (i.e., `none` or a non-TCB object),
 `saveOutgoingContext` preserves the lookup unchanged. This is because the only
 insert targets `outTid.toObjId` where a TCB exists — if `oid` had no TCB, it
@@ -189,26 +163,17 @@ theorem saveOutgoingContext_preserves_non_tcb_lookup
   | none => rfl
   | some outTid =>
       dsimp only
-      cases hOut : st.objects[outTid.toObjId]? with
+      cases hOut : st.getTcb? outTid with
       | none => rfl
-      | some outObj =>
-          cases outObj with
-          | tcb outTcb =>
-              dsimp only
-              simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-              have hNe : ¬(outTid.toObjId == oid) := by
-                intro hEq
-                have hEq' := beq_iff_eq.mp hEq
-                subst hEq'; exact hNonTcb outTcb hOut
-              simp [hNe]
-          | endpoint _ => rfl
-          | notification _ => rfl
-          | cnode _ => rfl
-          | vspaceRoot _ => rfl
-          | untyped _ => rfl
-          | schedContext _ => rfl
-          | reply _ => rfl
-
+      | some outTcb =>
+          dsimp only
+          simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+          have hNe : ¬(outTid.toObjId == oid) := by
+            intro hEq
+            have hEq' := beq_iff_eq.mp hEq
+            subst hEq'
+            exact hNonTcb outTcb ((SystemState.getTcb?_eq_some_iff st outTid outTcb).mp hOut)
+          simp [hNe]
 /-- `saveOutgoingContext` preserves `timeSlicePositive`. The context save only
 changes `registerContext` on the outgoing TCB — no scheduler or time-slice
 field is modified. -/
@@ -225,27 +190,20 @@ theorem saveOutgoingContext_preserves_timeSlicePositive
   | none => exact hOrig
   | some outTid =>
       dsimp only
-      cases hOut : st.objects[outTid.toObjId]? with
+      cases hOut : st.getTcb? outTid with
       | none => exact hOrig
-      | some outObj =>
-          cases outObj with
-          | tcb outTcb =>
-              dsimp only
-              simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-              by_cases hEq : outTid.toObjId == tid.toObjId
-              · -- Same key: inserted TCB has same timeSlice as original
-                simp [hEq]
-                have hEq' := beq_iff_eq.mp hEq
-                rw [hEq'] at hOut; simp [hOut] at hOrig; exact hOrig
-              · simp [hEq]; exact hOrig
-          | endpoint _ => exact hOrig
-          | notification _ => exact hOrig
-          | cnode _ => exact hOrig
-          | vspaceRoot _ => exact hOrig
-          | untyped _ => exact hOrig
-          | schedContext _ => exact hOrig
-          | reply _ => exact hOrig
-
+      | some outTcb =>
+          dsimp only
+          simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+          by_cases hEq : outTid.toObjId == tid.toObjId
+          · -- Same key: inserted TCB has same timeSlice as original
+            simp [hEq]
+            have hEq' := beq_iff_eq.mp hEq
+            -- `hOut` is the accessor equation; the key rewrite is about the
+            -- store subscript, so it crosses first.
+            have hOutRaw := (SystemState.getTcb?_eq_some_iff st outTid outTcb).mp hOut
+            rw [hEq'] at hOutRaw; simp [hOutRaw] at hOrig; exact hOrig
+          · simp [hEq]; exact hOrig
 /-- `saveOutgoingContext` preserves `objects.invExt`. The context save
 inserts a TCB at an existing key, which preserves the Robin Hood invariant. -/
 theorem saveOutgoingContext_preserves_objects_invExt
@@ -256,15 +214,11 @@ theorem saveOutgoingContext_preserves_objects_invExt
   | none => exact hObjInv
   | some outTid =>
       dsimp only
-      cases hObj : st.objects[outTid.toObjId]? with
+      cases hObj : st.getTcb? outTid with
       | none => simp; exact hObjInv
-      | some obj =>
-          cases obj with
-          | tcb outTcb =>
-              dsimp only
-              exact RHTable_insert_preserves_invExt st.objects _ _ hObjInv
-          | _ => simp; exact hObjInv
-
+      | some outTcb =>
+          dsimp only
+          exact RHTable_insert_preserves_invExt st.objects _ _ hObjInv
 /-- `restoreIncomingContext` preserves `timeSlicePositive`. The context restore
 only changes `machine.regs` — objects and scheduler state are unchanged. -/
 private theorem restoreIncomingContext_preserves_timeSlicePositive
@@ -282,7 +236,8 @@ theorem restoreIncomingContext_establishes_context
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb)) :
     (restoreIncomingContext st tid).machine.regs = tcb.registerContext := by
-  simp only [restoreIncomingContext, hTcb, MachineState.regs_setRegsOnCore_bootCore]
+  simp only [restoreIncomingContext, (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb,
+    MachineState.regs_setRegsOnCore_bootCore]
 
 /-- WS-H12c: `restoreIncomingContext` does not change the machine state when
 the given thread ID does not correspond to a TCB in the object store. -/
@@ -291,14 +246,9 @@ the given thread ID does not correspond to a TCB in the object store. -/
     (h : ∀ tcb, st.objects[tid.toObjId]? ≠ some (.tcb tcb)) :
     (restoreIncomingContext st tid).machine = st.machine := by
   unfold restoreIncomingContext
-  cases hObj : st.objects[tid.toObjId]? with
+  cases hObj : st.getTcb? tid with
   | none => rfl
-  | some obj =>
-      cases obj with
-      | tcb t => exact absurd hObj (h t)
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rfl
-
+  | some t => exact absurd ((SystemState.getTcb?_eq_some_iff st tid t).mp hObj) (h t)
 /-- WS-H12b/H-04 + WS-H12c/H-03: Scheduler step with dequeue-on-dispatch and
 inline context switch semantics.
 
@@ -365,8 +315,8 @@ def schedule : Kernel Unit :=
         let stSaved := saveOutgoingContext st'
         setCurrentThread none stSaved
     | .ok (some tid, st') =>
-        match st'.objects[tid.toObjId]? with
-        | some (.tcb tcb) =>
+        match st'.getTcb? tid with
+        | some tcb =>
             -- AF1-G: Domain check uses static `tcb.domain`, safe under
             -- `boundThreadDomainConsistent` (AE3-A: sc.domain = tcb.domain).
             if tid ∈ (st'.scheduler.runQueueOnCore bootCoreId) ∧ tcb.domain = (st'.scheduler.activeDomainOnCore bootCoreId) then
@@ -379,7 +329,7 @@ def schedule : Kernel Unit :=
               setCurrentThread (some tid) stRestored
             else
               .error .schedulerInvariantViolation
-        | _ => .error .schedulerInvariantViolation
+        | none => .error .schedulerInvariantViolation
 
 /-- WS-H12b/H-04 + WS-H12c/H-03: Yield semantics with dequeue-on-dispatch.
 
@@ -439,8 +389,8 @@ def handleYield : Kernel Unit :=
         -- gives userspace a stable "bad syscall" signal.
         .error .invalidArgument
     | some tid =>
-        match st.objects[tid.toObjId]? with
-        | some (.tcb tcb) =>
+        match st.getTcb? tid with
+        | some tcb =>
             -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
             -- `effectiveRunQueuePriority tcb` (base + PIP boost). For
             -- SchedContext-bound threads, the AK2-B Option B propagation
@@ -451,7 +401,7 @@ def handleYield : Kernel Unit :=
             let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
             let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
             schedule st'
-        | _ => .error .schedulerInvariantViolation
+        | none => .error .schedulerInvariantViolation
 
 -- ============================================================================
 -- M-04/WS-E6: Time-slice preemption
@@ -487,8 +437,8 @@ def timerTick : Kernel Unit :=
         -- No current thread: just advance the timer
         .ok ((), { st with machine := tick st.machine })
     | some tid =>
-        match st.objects[tid.toObjId]? with
-        | some (.tcb tcb) =>
+        match st.getTcb? tid with
+        | some tcb =>
             if tcb.timeSlice ≤ 1 then
               -- Time-slice expired: reset, re-enqueue, reschedule
               -- AC2-C: Now uses configurable `configDefaultTimeSlice` from scheduler
@@ -511,7 +461,7 @@ def timerTick : Kernel Unit :=
               -- Time-slice not expired: decrement and continue
               let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
               .ok ((), { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine })
-        | _ => .error .schedulerInvariantViolation
+        | none => .error .schedulerInvariantViolation
 
 -- ============================================================================
 -- Z4-G: System-level replenishment processing
@@ -530,12 +480,12 @@ writes the updated object back to the store. No-op if the SchedContext is not fo
 or is not a SchedContext object. -/
 def refillSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
     (now : Nat) : SystemState :=
-  match st.objects[scId.toObjId]? with
-  | some (.schedContext sc) =>
+  match st.getSchedContext? scId with
+  | some sc =>
     let processed := processReplenishments sc now
     let updated := cbsUpdateDeadline processed now true
     { st with objects := st.objects.insert scId.toObjId (.schedContext updated) }
-  | _ => st
+  | none => st
 
 /-- Z4-G3: Process all due replenishments and re-enqueue threads whose budget
 was restored. Pops due entries from the replenish queue, refills each
@@ -553,14 +503,14 @@ def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
   let (remainingQueue, dueIds) := popDueReplenishments st now
   let st' := { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId remainingQueue }
   dueIds.foldl (fun acc scId =>
-    let wasExhausted := match acc.objects[scId.toObjId]? with
-      | some (.schedContext sc) => sc.budgetRemaining.isZero
-      | _ => false
+    let wasExhausted := match acc.getSchedContext? scId with
+      | some sc => sc.budgetRemaining.isZero
+      | none => false
     let refilled := refillSchedContext acc scId now
     -- If the SchedContext's bound thread was budget-exhausted and is now refilled,
     -- re-enqueue the thread into the RunQueue
-    match refilled.objects[scId.toObjId]? with
-    | some (.schedContext sc) =>
+    match refilled.getSchedContext? scId with
+    | some sc =>
       if wasExhausted && sc.budgetRemaining.isPositive then
         match sc.boundThread with
         | some tid =>
@@ -571,7 +521,7 @@ def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
           else { refilled with scheduler := refilled.scheduler.setRunQueueOnCore bootCoreId (((refilled.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority refilled tid sc))) }
         | none => refilled
       else refilled
-    | _ => refilled
+    | none => refilled
   ) st'
 
 -- ============================================================================
@@ -682,8 +632,8 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
       .ok ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
                       machine := tick st.machine }, false)
   | .bound scId | .donated scId _ =>
-    match st.objects[scId.toObjId]? with
-    | some (.schedContext sc) =>
+    match st.getSchedContext? scId with
+    | some sc =>
       if sc.budgetRemaining.val ≤ 1 then
         -- Z4-F3: Budget exhausted — schedule replenishment and preempt.
         -- CBS semantics: `consumedAmount` is the full remaining budget (not 1 tick),
@@ -726,7 +676,7 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
           objects := st.objects.insert scId.toObjId (.schedContext sc'),
           machine := tick st.machine }
         .ok (st', false)
-    | _ =>
+    | none =>
       -- R5.E (DEEP-SCH-04): SchedContext lookup failed for a bound-budget
       -- thread.  Pre-R5 this silently fell back to a no-preempt
       -- `(state, false)` so the kernel kept running on stale state.  The
@@ -764,8 +714,8 @@ def scheduleEffective : Kernel Unit :=
         let stSaved := saveOutgoingContext st'
         setCurrentThread none stSaved
     | .ok (some tid, st') =>
-        match st'.objects[tid.toObjId]? with
-        | some (.tcb tcb) =>
+        match st'.getTcb? tid with
+        | some tcb =>
             if tid ∈ (st'.scheduler.runQueueOnCore bootCoreId) ∧ tcb.domain = (st'.scheduler.activeDomainOnCore bootCoreId) then
               let stSaved := saveOutgoingContext st'
               let stDequeued := { stSaved with scheduler := stSaved.scheduler.setRunQueueOnCore bootCoreId ((stSaved.scheduler.runQueueOnCore bootCoreId).remove tid) }
@@ -773,7 +723,7 @@ def scheduleEffective : Kernel Unit :=
               setCurrentThread (some tid) stRestored
             else
               .error .schedulerInvariantViolation
-        | _ => .error .schedulerInvariantViolation
+        | none => .error .schedulerInvariantViolation
 
 -- ============================================================================
 -- Z4-H: Integrated timerTick with replenishment and budget
@@ -808,8 +758,8 @@ def timerTickWithBudget : Kernel Unit :=
       -- No current thread: just advance the timer
       .ok ((), { stReplenished with machine := tick stReplenished.machine })
     | some tid =>
-      match stReplenished.objects[tid.toObjId]? with
-      | some (.tcb tcb) =>
+      match stReplenished.getTcb? tid with
+      | some tcb =>
         match timerTickBudget stReplenished tid tcb with
         | .error e => .error e
         | .ok (st', true) =>
@@ -818,7 +768,7 @@ def timerTickWithBudget : Kernel Unit :=
         | .ok (st', false) =>
           -- Not preempted: continue
           .ok ((), st')
-      | _ => .error .schedulerInvariantViolation
+      | none => .error .schedulerInvariantViolation
 
 -- ============================================================================
 -- Z4-J: Budget-aware handleYield
@@ -838,8 +788,8 @@ def handleYieldWithBudget : Kernel Unit :=
     match (st.scheduler.currentOnCore bootCoreId) with
     | none => .error .invalidArgument
     | some tid =>
-      match st.objects[tid.toObjId]? with
-      | some (.tcb tcb) =>
+      match st.getTcb? tid with
+      | some tcb =>
         match tcb.schedContextBinding with
         | .unbound =>
           -- AI3-A (M-04): Legacy yield with effective priority (base + PIP boost)
@@ -847,8 +797,8 @@ def handleYieldWithBudget : Kernel Unit :=
           let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
           scheduleEffective st'
         | .bound scId | .donated scId _ =>
-          match st.objects[scId.toObjId]? with
-          | some (.schedContext sc) =>
+          match st.getSchedContext? scId with
+          | some sc =>
             -- Charge remaining budget and schedule replenishment
             let now := st.machine.timer
             let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
@@ -864,13 +814,13 @@ def handleYieldWithBudget : Kernel Unit :=
             let rq' := (st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid sc)
             let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore bootCoreId rq' }
             scheduleEffective st''
-          | _ =>
+          | none =>
             -- SchedContext not found — fall back to legacy yield
             -- AI3-A (M-04): Use effective priority (base + PIP boost)
             let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
             let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
             scheduleEffective st'
-      | _ => .error .schedulerInvariantViolation
+      | none => .error .schedulerInvariantViolation
 
 -- ============================================================================
 -- M-05/WS-E6: Domain scheduling
@@ -939,10 +889,10 @@ def switchDomain : Kernel Unit :=
             let rq' := match (st.scheduler.currentOnCore bootCoreId) with
               | none => (st.scheduler.runQueueOnCore bootCoreId)
               | some tid =>
-                  match st.objects[tid.toObjId]? with
-                  | some (.tcb tcb) =>
+                  match st.getTcb? tid with
+                  | some tcb =>
                       (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)
-                  | _ => (st.scheduler.runQueueOnCore bootCoreId)
+                  | none => (st.scheduler.runQueueOnCore bootCoreId)
             let sched' := ((((st.scheduler.setRunQueueOnCore bootCoreId rq').setCurrentOnCore
                   bootCoreId none).setActiveDomainOnCore bootCoreId (DomainScheduleEntry.domain entry)).setDomainTimeRemainingOnCore
                   bootCoreId (DomainScheduleEntry.length entry)).setDomainScheduleIndexOnCore bootCoreId nextIdx

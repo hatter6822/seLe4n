@@ -309,7 +309,7 @@ theorem notificationSignal_preserves_endpointQueueNoDup
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     endpointQueueNoDup st' := by
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -354,7 +354,7 @@ theorem notificationWait_preserves_endpointQueueNoDup
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     endpointQueueNoDup st' := by
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -415,11 +415,11 @@ theorem notificationWait_preserves_endpointQueueNoDup
                     intro h
                     have hTcbObj := lookupTcb_some_objects st waiter tcb hLookup
                     rw [h] at hTcbObj; rw [hObj] at hTcbObj; cases hTcbObj
-                  unfold lookupTcb
+                  unfold lookupTcb SystemState.getTcb?
                   rw [show waiter.isReserved = false from by
-                    unfold lookupTcb at hLookup; split at hLookup <;> simp_all]
+                    unfold lookupTcb SystemState.getTcb? at hLookup; split at hLookup <;> simp_all]
                   rw [storeObject_objects_ne st pair1.2 notificationId waiter.toObjId _ hNe hObjInv hStore1]
-                  unfold lookupTcb at hLookup
+                  unfold lookupTcb SystemState.getTcb? at hLookup
                   split at hLookup <;> simp_all
                 rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup1] at hIpc
                 exact removeRunnable_preserves_endpointQueueNoDup _ _ <|
@@ -561,7 +561,7 @@ theorem endpointQueueEnqueue_preserves_endpointQueueNoDup
     by_cases hEq : oid = endpointId
     · -- Target endpoint: opposite queue head is none
       -- Unfold to extract the stored endpoint structure
-      unfold endpointQueueEnqueue at hEnqueue
+      unfold endpointQueueEnqueue SystemState.getObject? at hEnqueue
       cases hObj : st.objects[endpointId]? with
       | none => simp [hObj] at hEnqueue
       | some obj => cases obj with
@@ -651,7 +651,7 @@ theorem endpointQueuePopHead_preserves_endpointQueueNoDup
   · -- K-2: head disjointness
     by_cases hEq : oid = endpointId
     · -- Target endpoint: unfold PopHead with revert pattern to track stored endpoint
-      unfold endpointQueuePopHead at hPop; revert hPop
+      unfold endpointQueuePopHead SystemState.getObject? at hPop; revert hPop
       cases hObj : st.objects[endpointId]? with
       | none => simp
       | some obj => cases obj with

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.6.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.7.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -747,6 +747,44 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `mod`-less, gate-less toy passes checks the real file would fail, which
   is how a missing `re.MULTILINE` and an unanchored `.file()` search both
   survived.
+
+  **And a count over two populations measures neither** (`v0.35.7`, prompted).
+  The same substitution again, and the one this file had not written because the
+  gate wearing it was *already* an inventory: `RAW_LOOKUP_TID` held raw
+  `st.objects[…]` reads at a whole-tree ceiling, and 96.9% of what it counted was
+  **specification vocabulary** — 1490 of 1711 lines in `theorem`s, 168 more in
+  `Prop`-valued `def`s, `structure` fields and `inductive` arguments — against 53
+  lines of executable code.  A proposition about the store has no helper form
+  (`getTcb? k = none` holds for an absent key and a wrong-kinded object alike, so
+  a frame statement quantified over every key cannot be phrased through a variant
+  accessor without weakening it), so the enforced number rose whenever anyone
+  wrote an invariant, and it was re-anchored **upward four times in three days**
+  (1609 → 1600 → 1678 → 1711).  A ceiling that every cut raises is a ratchet
+  running backwards; it reads as measurement because it prints a number.
+  Three further defects rode along, each a rule already in this file applied
+  everywhere but here: the metric was named `_TID` while **four** types carry
+  `.toObjId` (*a name is not the thing*); it was `grep -c`, so two reads on one
+  line counted once and a reflow lowered it (*a cardinality is not a set*, one
+  level down); and `RAW_LOOKUP_SITE` was keyed by `(file)` while its sibling
+  `RAW_SITE` had been refined to `(file, declaration, variant)` for the stated
+  reason that a per-file key cannot see a read moving between declarations —
+  *when a fix names a relation, grep for every other place that asks it*, unrun.
+
+  **Split the populations, enforce the one that can reach zero, and report the
+  other.**  `scripts/lean_store_read_census.py` classifies each read by whether it
+  sits in the *body* of a declaration whose result is not a `Prop` — a binder or a
+  result type is a proposition whatever the declaration's kind — and emits
+  `STORE_READ_CODE` (enforced, per `(file, declaration)` with occurrence counts)
+  beside `STORE_READ_SPEC` (diagnostic, the treatment `RAW_MATCH_UNCLASSIFIED`
+  already had).  The mutation for this class **moves a read between the
+  populations while holding their sum fixed**, which is all the superseded figure
+  could see: the gate's self-test has that case in both directions, the
+  spec→code one rejecting and the code→spec one passing, because the second is
+  the migration working.  With the split enforced, the executable count in
+  `SeLe4n/Kernel` and `SeLe4n/Platform` is **zero** — every store read there goes
+  through a typed accessor, and the only raw reads left in the tree are the
+  accessors' own bodies in `Model/State.lean`, the trace harness, and one proof
+  case split recorded in place.
 
   **A region-scoped presence check is still a presence check** (PR #887
   review round 4).  Resolving the guard's block, the tail after a branch, or

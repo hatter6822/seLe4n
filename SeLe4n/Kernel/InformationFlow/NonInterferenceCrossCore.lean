@@ -507,7 +507,7 @@ theorem endpointQueuePopHead_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
     (x : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
     determineTargetCore st' x = determineTargetCore st x := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1219,7 +1219,7 @@ theorem updatePipBoostOnCore_confinedToCores (st : SystemState) (c : CoreId)
             (fun h => hc (by simp [h])),
           fun c' _ => updatePipBoostOnCore_currentOnCore st c c' tid, ?_, ?_, ?_, ?_⟩
   all_goals intro c' _
-  all_goals simp only [updatePipBoostOnCore]
+  all_goals simp only [updatePipBoostOnCore, SystemState.getTcb?]
   all_goals repeat' split
   all_goals first
     | rfl
@@ -4601,7 +4601,7 @@ private theorem lifecycleRetypeDirect_framed
     (st st' : SystemState)
     (h : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
     st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
-  unfold lifecycleRetypeDirect at h
+  unfold lifecycleRetypeDirect SystemState.getObject? at h
   split at h
   · exact absurd h (by simp)
   · split at h
@@ -4621,7 +4621,7 @@ theorem lifecycleRetypeDirectWithCleanup_confinedToCores
     (st st' : SystemState)
     (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) := by
-  unfold lifecycleRetypeDirectWithCleanup at h
+  unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at h
   simp only [lifecycleRetypeWriteSet, SystemState.getObject?_eq_getElem]
   split at h
   · exact absurd h (by simp)

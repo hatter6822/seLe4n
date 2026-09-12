@@ -64,7 +64,7 @@ theorem updatePipBoostOnCore_not_mem_of_not_mem (st : SystemState) (c c' : CoreI
     (tid other : SeLe4n.ThreadId)
     (h : other ∉ st.scheduler.runQueueOnCore c') :
     other ∉ (PriorityInheritance.updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c' := by
-  simp only [PriorityInheritance.updatePipBoostOnCore]
+  simp only [PriorityInheritance.updatePipBoostOnCore, SystemState.getTcb?]
   split
   · split
     · exact h

@@ -772,7 +772,7 @@ theorem acceptedCovertChannel_tcbMetadata_is_model_visible (ctx : LabelingContex
         ∧ projected.ipcState = tcb.ipcState := by
   refine ⟨rfl, ?_⟩
   rw [onCore_objects ctx c L s]
-  unfold projectObjects
+  unfold projectObjects SystemState.getObject?
   rw [if_pos hObservable, (SystemState.getTcb?_eq_some_iff s tid tcb).mp hLookup]
   exact ⟨_, rfl, rfl, rfl⟩
 

@@ -1036,7 +1036,7 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
       syscallDispatchQuiescence decoded tid gate cap st)
     (hStep : dispatchSyscall decoded tid st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  unfold dispatchSyscall at hStep
+  unfold dispatchSyscall SystemState.getObject? at hStep
   cases hT : st.objects[tid.toObjId]? with
   | none => simp only [hT] at hStep; cases hStep
   | some obj =>
@@ -1541,7 +1541,7 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
       checkedSyscallDispatchQuiescence decoded tid gate cap st)
     (hStep : dispatchSyscallChecked ctx decoded tid st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  unfold dispatchSyscallChecked at hStep
+  unfold dispatchSyscallChecked SystemState.getObject? at hStep
   cases hT : st.objects[tid.toObjId]? with
   | none => simp only [hT] at hStep; cases hStep
   | some obj =>

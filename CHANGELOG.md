@@ -1,3 +1,88 @@
+## v0.35.7 — Every kernel store read goes through a typed accessor, and the AK7 lookup floor stops being a ratchet
+
+**The raw object-store read is gone from executable kernel code.**  `SeLe4n/Kernel`
+and `SeLe4n/Platform` held **89** raw `st.objects[…]?` reads in transition bodies;
+they hold **none**.  Each one had a typed reader available and declined to use it:
+the variant-discriminating two-way matches became `getTcb?` / `getSchedContext?` /
+`getReply?` / `getEndpoint?` / `getCNode?` / `getVSpaceRoot?` / `getUntyped?`, the
+three-way ones (right variant / wrong kind / absent) became `getObject?`, and the
+type-only read became `getObjectType?`.  `lookupTcb` is now `getTcb?` behind its
+reserved-id refusal rather than a second spelling of the same store read, and
+`replyStackLinksAt?` reads `getObject?`.
+
+Six sites in `SeLe4n/Kernel` still match `.objects[`; every one is a **hypothesis
+binder or a result type** (`mkRetypeTarget`'s `hTypeMeta`, `bridgeSignatureWitness`'s
+antecedent), which is a proposition, not a read.  One in
+`Platform/RPi5/ProofHooks.lean` is a proof case split inside a `def` returning a
+record of proofs; it is recorded in place as the census's single known over-count
+rather than contorted to satisfy the scanner.
+
+**The migration is a simplification, not a translation.**  A raw variant match
+forces a proof to enumerate all eight `KernelObject` constructors; the accessor has
+already collapsed seven of them into its own `none`, so each such case analysis
+became two arms.  Sixteen eight-way splits went this way across `BlockingGraph`,
+`Preservation`, `PerCore`, `PerCoreInvariantSuite`, `RuntimeContract` and
+`Selection`.  `effectiveBucketPriority` carried a note deferring exactly this on
+the ground that it would "cascade through the entire scheduler invariant module
+without proof-correctness benefit"; the cascade was three sites in one file and all
+three got shorter.  The note is replaced by what was measured.
+
+**The object-table frame family is stated once.**  `getTcb?_congr_at` and its nine
+siblings (pointwise: a read depends on the table only at its own key) and the ten
+`…_frame` corollaries now sit in `SeLe4n/Model/State.lean` beside the accessors they
+are about.  The tree had answered that question in four places — a
+`getTcb?_congr_objects` in `Architecture/InvariantPerCore.lean` and another in
+`IPC/Invariant/PerCore.lean`, both `private` so neither could serve the other, a
+third in `IPC/Invariant/PerCoreBundlePreservation.lean`, and a
+`getSchedContext?_frame` spelled differently again in
+`Scheduler/PriorityInheritance/Compute.lean`.  The pointwise form comes first
+because that is the one a per-slot hypothesis supplies; the frame is its corollary.
+
+### The AK7 lookup floor was measuring the wrong population
+
+`RAW_LOOKUP_TID` is retired and replaced by `STORE_READ_CODE` (enforced) and
+`STORE_READ_SPEC` (diagnostic), derived by `scripts/lean_store_read_census.py`.
+The superseded metric was wrong in four ways at once, and the fourth is why it had
+been re-anchored upward four times in three days (1609 → 1600 → 1678 → 1711):
+
+1. **It summed two populations.**  Of its 1711 counted lines, 1490 were in
+   `theorem`s, 114 in `Prop`-valued `def`s, 48 in `structure` fields and 6 in
+   `inductive`s — **96.9% specification vocabulary** — against 53 lines of
+   executable code.  So the number tracked how much invariant text the project had
+   written, and an invariant cut could not help but raise it.  A proposition about
+   the store has no helper form: `getTcb? k = none` holds for an absent key and a
+   wrong-kinded object alike, so a frame statement quantified over every key cannot
+   be phrased through a variant accessor without weakening it.  `STORE_READ_SPEC`
+   is therefore reported and never enforced, exactly as `RAW_MATCH_UNCLASSIFIED` is
+   and for the same stated reason.
+2. **It was not `_TID`.**  The pattern was `grep -c "\.toObjId\]?"` and four types
+   carry `.toObjId` — `ThreadId`, `SchedContextId`, `ReplyId`, `KindedObjId` — so
+   WS-OD's and WS-RM's reply-stack and scheduling-context vocabulary moved a figure
+   whose name claimed it was about threads.
+3. **It counted lines, not occurrences.**  Two reads on one line counted once, and
+   a reflow that joined two lines lowered it.
+4. **`RAW_LOOKUP_SITE` was keyed by `(file)` alone.**  Its sibling `RAW_SITE` was
+   refined to `(file, declaration, variant)` in PR #893 review round 6, with the
+   reason recorded in the gate's own header — a per-file key is a cardinality one
+   level up, so hygienizing one declaration while another starts reading raw leaves
+   the row unmoved.  That refinement was never swept onto the sibling: this is the
+   project's own sweep rule failing in the way it describes.
+
+`STORE_READ_CODE_SITE` is keyed by `(file, declaration)` with an occurrence count,
+and the monotonic gate's self-test gains three token-preserving cases the
+superseded figure admitted by construction: a read moved between declarations of
+one file, a read moved **from a proposition into a transition** (the sum unchanged,
+which is all the old metric could see) and its converse moved the other way, which
+must pass because it is the migration working.  `lean_store_read_census.py` carries
+its own nine-case self-test — body vs binder, `Prop`-valued `def` vs transition,
+occurrences vs lines, and the wiring through the comment-free view — run in Tier 0.
+
+At this cut `STORE_READ_CODE` is **76**, of which **75** are in `SeLe4n/Testing`
+(the executable trace harness and the invariant-check helpers) and one is the
+`ProofHooks` over-count above.  The kernel's own figure is zero.
+
+Refs: docs/REGISTERED_DEBT.md (AK7 reader-hygiene residual)
+
 ## v0.35.6 — WS-RM: the reply path runs seL4's `reply_remove`, and the passive server's `ReplyRecv` loop completes
 
 **WS-RM closes in one cut — all twenty-six sub-tasks across RM1..RM6 — and

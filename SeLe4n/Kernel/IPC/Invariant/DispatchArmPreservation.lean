@@ -851,7 +851,7 @@ private theorem cspaceInsertSlot_cnode_shape
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     ∃ cn : CNode, st.objects[addr.cnode]? = some (.cnode cn) ∧
       st'.objects[addr.cnode]? = some (.cnode (cn.insert addr.slot cap)) := by
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -916,7 +916,7 @@ private theorem cspaceDeleteSlotCore_shape
       st'.objects[addr.cnode]? = some (.cnode (cn.remove addr.slot)) ∧
       (∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]?) ∧
       st'.scheduler = st.scheduler := by
-  unfold cspaceDeleteSlotCore at hStep
+  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -3528,7 +3528,7 @@ private theorem cleanupTcbReferences_id_of_detached
     cleanupTcbReferences stX tcb.tid = stX := by
   have hLkT : ∀ tcbX : TCB, lookupTcb stX tcb.tid = some tcbX → tcbX = tcb := by
     intro tcbX hLk
-    unfold lookupTcb at hLk
+    unfold lookupTcb SystemState.getTcb? at hLk
     split at hLk
     · cases hLk
     · rw [hO, hDet.tcbSelfId tcb hObj, hObj] at hLk
@@ -3580,7 +3580,7 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
       have hND : ∀ tcbX : TCB, lookupTcb st tcb.tid = some tcbX →
           ∀ scId owner, tcbX.schedContextBinding ≠ .donated scId owner := by
         intro tcbX hLk scId owner
-        unfold lookupTcb at hLk
+        unfold lookupTcb SystemState.getTcb? at hLk
         split at hLk
         · cases hLk
         · rw [hDet.tcbSelfId tcb hObj, hObj] at hLk
@@ -3679,7 +3679,7 @@ theorem lifecycleRetypeDirect_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st)
     (hStep : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  unfold lifecycleRetypeDirect at hStep
+  unfold lifecycleRetypeDirect SystemState.getObject? at hStep
   cases hObj : st.objects[target]? with
   | none => simp [hObj] at hStep
   | some currentObj =>
@@ -3706,7 +3706,7 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st)
     (hStep : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  unfold lifecycleRetypeDirectWithCleanup at hStep
+  unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at hStep
   split at hStep
   · contradiction
   · cases hObj : st.objects[target]? with
@@ -4416,7 +4416,7 @@ private theorem cancelDonatedDonationOnCore_preserves_ipcInvariantFull
     cases tval
     simp_all [SeLe4n.ThreadId.sentinel]
   have hLk : lookupTcb st tval = some tcb := by
-    unfold lookupTcb
+    unfold lookupTcb SystemState.getTcb?
     rw [if_neg hNotRes, (SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored]
   unfold cancelDonatedDonationOnCore at hStep
   cases hB : tcb.schedContextBinding with
@@ -4550,7 +4550,7 @@ private theorem cancelDonatedDonationOnCore_victim_shape
     cases tval
     simp_all [SeLe4n.ThreadId.sentinel]
   have hLk : lookupTcb st tval = some tcb := by
-    unfold lookupTcb
+    unfold lookupTcb SystemState.getTcb?
     rw [if_neg hNotRes, (SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored]
   unfold cancelDonatedDonationOnCore at hStep
   cases hB : tcb.schedContextBinding with
@@ -4679,8 +4679,10 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
         rw [Lifecycle.Suspend.cancelIpcBlockingValid_eq,
           cancelIpcBlocking_ready_id st vtid.val tcb hReady] at hStep
         have hBS : PriorityInheritance.blockingServer st vtid.val = none := by
+          -- `blockingServer` reads `getTcb?`, which is what `hLk` already says;
+          -- the raw restatement `hPre` is no longer the vocabulary it needs.
           unfold PriorityInheritance.blockingServer
-          simp [hPre, hReady]
+          simp [hLk, hReady]
         rw [hBS] at hStep
         dsimp only [] at hStep
         rw [hLk] at hStep

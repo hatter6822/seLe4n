@@ -627,7 +627,7 @@ theorem endpointReceiveDualOnCore_post_agrees
                 | ok st4 =>
                   right
                   refine ⟨sender, st4, ?_, OffSchedulerAgrees.refl st4⟩
-                  unfold endpointReceiveDual
+                  unfold endpointReceiveDual SystemState.getObject?
                   simp only [hEpRaw, hHead, hPop, hSIpc, hStore1, hLink, hStore2, ↓reduceIte]
         | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
         | blockedOnReply _ _ =>
@@ -663,7 +663,7 @@ theorem endpointReceiveDualOnCore_post_agrees
                   storeTcbIpcStateAndMessage_offSchedulerAgrees receiver .ready
                     senderTcb.pendingMessage hRel0 hInvEns hInvWake hStore2
                 refine ⟨sender, st4SC, ?_, hAgree4⟩
-                unfold endpointReceiveDual
+                unfold endpointReceiveDual SystemState.getObject?
                 simp only [hEpRaw, hHead, hPop, hSIpc, if_neg Bool.false_ne_true,
                   hStore1, hStore2SC]
     | none =>
@@ -684,7 +684,7 @@ theorem endpointReceiveDualOnCore_post_agrees
             | none =>
               right
               refine ⟨receiver, removeRunnable st2 receiver, ?_, ?_⟩
-              · unfold endpointReceiveDual
+              · unfold endpointReceiveDual SystemState.getObject?
                 simp only [hEpRaw, hHead, hClean, hEnq, hStore1, hGetR]
               · exact (removeRunnable_offSchedulerAgrees st2 receiver).symm.trans
                   (removeRunnableOnCore_offSchedulerAgrees st2 receiver executingCore)
@@ -699,7 +699,7 @@ theorem endpointReceiveDualOnCore_post_agrees
                   obtain ⟨⟨⟩, stStashed⟩ := pStash
                   right
                   refine ⟨receiver, removeRunnable stStashed receiver, ?_, ?_⟩
-                  · unfold endpointReceiveDual
+                  · unfold endpointReceiveDual SystemState.getObject?
                     simp only [hEpRaw, hHead, hClean, hEnq, hStore1, hGetR, if_pos hValid, hStash]
                   · exact (removeRunnable_offSchedulerAgrees stStashed receiver).symm.trans
                       (removeRunnableOnCore_offSchedulerAgrees stStashed receiver executingCore)

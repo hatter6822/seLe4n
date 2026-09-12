@@ -512,7 +512,7 @@ theorem endpointQueuePopHead_returns_head
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st')) :
     (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some tid := by
-  unfold endpointQueuePopHead at hPop
+  unfold endpointQueuePopHead SystemState.getObject? at hPop
   rw [hObj] at hPop; simp only at hPop
   cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
   | none => simp [hHead] at hPop
@@ -563,7 +563,7 @@ theorem endpointQueuePopHead_returns_pre_tcb
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
     st.objects[tid.toObjId]? = some (.tcb headTcb) := by
-  unfold endpointQueuePopHead at hPop
+  unfold endpointQueuePopHead SystemState.getObject? at hPop
   rw [hObj] at hPop; simp only at hPop
   cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
   | none => simp [hHead] at hPop
@@ -637,7 +637,7 @@ theorem endpointQueuePopHead_send_sender_carries_message
     cases hp : t.pendingMessage with
     | none => rw [hSend, hp] at h; simp at h
     | some m => simp
-  unfold endpointQueuePopHead at hPop
+  unfold endpointQueuePopHead SystemState.getObject? at hPop
   rw [hObj] at hPop; simp only at hPop
   cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
   | none => simp [hHead] at hPop
@@ -2337,7 +2337,7 @@ def schedContextStackHead? : Option KernelObject → Option (Option SeLe4n.Reply
 to the state's own lookup, so the walk and the frame read one projection. -/
 def replyStackLinksAt? (st : SystemState) (rid : SeLe4n.ReplyId) :
     Option (Option SeLe4n.ReplyId × Option ReplyStackLink) :=
-  replyStackLinks? st.objects[rid.toObjId]?
+  replyStackLinks? (st.getObject? rid.toObjId)
 
 @[simp] theorem replyStackLinks?_reply (r : Reply) :
     replyStackLinks? (some (.reply r)) = some (r.prev, r.next) := rfl
@@ -2526,7 +2526,7 @@ theorem donationChainWalk_mono (st : SystemState) :
       obtain ⟨r, tail, hR, hNext, hRec, rfl⟩ := donationChainWalk_succ_some h
       rw [donationChainWalk_succ]
       have hLinks : replyStackLinksAt? st rid = some (r.prev, r.next) := by
-        unfold replyStackLinksAt?; rw [hR]; rfl
+        unfold replyStackLinksAt? SystemState.getObject?; rw [hR]; rfl
       rw [hLinks]
       simp only []
       rw [if_pos hNext, ih (.frame rid) r.prev tail hRec]
@@ -2676,14 +2676,14 @@ theorem donationChainWalk_exists_of_agree_or_cut {st st' : SystemState} :
         refine ⟨rid0 :: tail', ?_⟩
         rw [donationChainWalk_succ]
         have hLinks : replyStackLinksAt? st' rid0 = some (r0.prev, r0.next) := by
-          rw [hEq]; unfold replyStackLinksAt?; rw [hR0]; rfl
+          rw [hEq]; unfold replyStackLinksAt? SystemState.getObject?; rw [hR0]; rfl
         rw [hLinks]
         simp [hNext0, hTail']
       · have hrq : rq = r0 := KernelObject.reply.inj (Option.some.inj (hRq.symm.trans hR0))
         refine ⟨[rid0], ?_⟩
         rw [donationChainWalk_succ]
         have hLinks : replyStackLinksAt? st' rid0 = some (none, r0.next) := by
-          unfold replyStackLinksAt?; rw [hRq']; simp [hPrev', hNext', hrq]
+          unfold replyStackLinksAt? SystemState.getObject?; rw [hRq']; simp [hPrev', hNext', hrq]
         rw [hLinks]
         simp [hNext0]
 
@@ -2903,7 +2903,7 @@ theorem donationChainWalk_congr_on_chain {st st' : SystemState} :
       obtain ⟨r, tail, hR, hNext, hRec, rfl⟩ := donationChainWalk_succ_some h
       rw [donationChainWalk_succ]
       have hLinks : replyStackLinksAt? st rid = some (r.prev, r.next) := by
-        unfold replyStackLinksAt?; rw [hR]; rfl
+        unfold replyStackLinksAt? SystemState.getObject?; rw [hR]; rfl
       rw [hAgree rid List.mem_cons_self, hLinks]
       simp only []
       rw [if_pos hNext,
@@ -6430,7 +6430,7 @@ theorem returnDonatedSchedContext_ok_under_invariants
     intro heq; exact hOwnerNeRecv (SeLe4n.ThreadId.toObjId_injective _ _ heq)
   -- WS-OD OD3.2: the pop's head validation, and the Reply it resolved.
   obtain ⟨head?, hHead, hBelow⟩ := hHeadRes sc hScObj
-  unfold returnDonatedSchedContext
+  unfold returnDonatedSchedContext SystemState.getSchedContext?
   rw [hScObj]
   simp only []
   -- WS-RR RR2.8: the `sc.boundThread = some serverTid` guard is a
@@ -6485,7 +6485,7 @@ theorem returnDonatedSchedContext_ok_under_invariants
         exact hRecvObj)
     have hOwnerNotResEq : owner.isReserved = false := Bool.eq_false_iff.mpr hOwnerNotRes
     have hLkOwner2 : lookupTcb s2 owner = some ownerTcb := by
-      unfold lookupTcb
+      unfold lookupTcb SystemState.getTcb?
       rw [hOwnerNotResEq]
       simp only [Bool.false_eq_true, if_false]
       rw [hOwnerObj2]
@@ -6503,7 +6503,7 @@ theorem returnDonatedSchedContext_ok_under_invariants
         exact hRecvObj2
       have hRecvNotResEq : receiver.isReserved = false := Bool.eq_false_iff.mpr hRecvNotRes
       have hLkRecv3 : lookupTcb pair3.2 receiver = some recvTcb := by
-        unfold lookupTcb
+        unfold lookupTcb SystemState.getTcb?
         rw [hRecvNotResEq]
         simp only [Bool.false_eq_true, if_false]
         rw [hRecvObj3]

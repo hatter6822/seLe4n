@@ -152,7 +152,7 @@ theorem refillSchedContext_determineTargetCore (st : SystemState) (scId0 : SeLe4
   split
   · rename_i sc hOld
     exact determineTargetCore_congr_getTcb? _ st t
-      (getTcb?_insert_schedContext_eq st _ scId0 sc _ hInv hOld rfl t)
+      (getTcb?_insert_schedContext_eq st _ scId0 sc _ hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hOld) rfl t)
   · rfl
 
 /-- WS-SM SM5.I: `refillSchedContext` preserves every SchedContext's `boundThread`
@@ -169,7 +169,7 @@ theorem refillSchedContext_boundThread (st : SystemState) (scId0 : SeLe4n.SchedC
         = sc.boundThread := by
       simp only [cbsUpdateDeadline, processReplenishments, applyRefill]
       split <;> rfl
-    exact getSchedContext?_boundThread_insert_schedContext st _ scId0 sc _ hInv hOld hBT rfl scId
+    exact getSchedContext?_boundThread_insert_schedContext st _ scId0 sc _ hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hOld) hBT rfl scId
   · rfl
 
 /-- WS-SM SM5.I: `saveOutgoingContextOnCore` (a register-context TCB write) preserves

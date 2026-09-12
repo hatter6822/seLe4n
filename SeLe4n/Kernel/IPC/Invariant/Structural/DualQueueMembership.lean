@@ -643,7 +643,7 @@ theorem endpointSendDual_preserves_endpointQueueNoDup
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     endpointQueueNoDup st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -722,7 +722,7 @@ theorem endpointReceiveDual_preserves_endpointQueueNoDup
           ep'.sendQ.tail ≠ some tailTid))
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     endpointQueueNoDup st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -889,7 +889,7 @@ theorem endpointCall_preserves_endpointQueueNoDup
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     endpointQueueNoDup st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -1139,7 +1139,7 @@ theorem endpointSendDual_preserves_ipcStateQueueMembershipConsistent
   have hDQSI := hInvFull.2.1
   have hQNBC := hInvFull.2.2.2.2.2.2.2.1
   have hQHBC := hInvFull.2.2.2.2.2.2.2.2.1
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -1216,7 +1216,7 @@ theorem endpointSendDual_preserves_ipcStateQueueMembershipConsistent
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             -- sender.toObjId ≠ endpointId (TCB vs endpoint)
             have hNeSenderEp : endpointId ≠ sender.toObjId := by
-              intro h; unfold endpointQueueEnqueue at hEnq
+              intro h; unfold endpointQueueEnqueue SystemState.getObject? at hEnq
               rw [hObj] at hEnq; simp only at hEnq
               cases hL : lookupTcb st sender with
               | none => simp [hL] at hEnq
@@ -1275,7 +1275,7 @@ theorem endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent
           ep'.sendQ.tail ≠ some tailTid))
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     ipcStateQueueMembershipConsistent st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1422,7 +1422,7 @@ theorem endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent
             | ok st2 =>
               simp only [hIpc] at hStep
               have hNeRecvEp : endpointId ≠ receiver.toObjId := by
-                intro h; unfold endpointQueueEnqueue at hEnq
+                intro h; unfold endpointQueueEnqueue SystemState.getObject? at hEnq
                 rw [hObjClean] at hEnq; simp only at hEnq
                 cases hL : lookupTcb (cleanupPreReceiveDonation st receiver) receiver with
                 | none => simp [hL] at hEnq
@@ -1511,7 +1511,7 @@ theorem endpointCall_preserves_ipcStateQueueMembershipConsistent
   have hDQSI := hInvFull.2.1
   have hQNBC := hInvFull.2.2.2.2.2.2.2.1
   have hQHBC := hInvFull.2.2.2.2.2.2.2.2.1
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -1599,7 +1599,7 @@ theorem endpointCall_preserves_ipcStateQueueMembershipConsistent
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hNeCallerEp : endpointId ≠ caller.toObjId := by
-              intro h; unfold endpointQueueEnqueue at hEnq
+              intro h; unfold endpointQueueEnqueue SystemState.getObject? at hEnq
               rw [hObj] at hEnq; simp only at hEnq
               cases hL : lookupTcb st caller with
               | none => simp [hL] at hEnq
@@ -1966,7 +1966,7 @@ theorem endpointQueueEnqueue_tcb_queueNext_backward_ne
     (hNe : anyTid.toObjId ≠ enqueueTid.toObjId) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧
       (tcb.queueNext = tcb'.queueNext ∨ tcb'.queueNext = some enqueueTid) := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2331,7 +2331,7 @@ theorem endpointSendDual_preserves_queueNextBlockingConsistent
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     queueNextBlockingConsistent st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -2464,7 +2464,7 @@ theorem endpointSendDual_preserves_endpointQueueTailBlockedConsistent
       ep.receiveQ.head ≠ some sender ∧ ep.receiveQ.tail ≠ some sender)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     endpointQueueTailBlockedConsistent st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -2545,7 +2545,7 @@ theorem endpointSendDual_preserves_queueNextTargetBlocked
         (epId' = endpointId → ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     queueNextTargetBlocked st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -2849,7 +2849,7 @@ theorem endpointSendDual_preserves_ipcStateQueueConsistent
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     ipcStateQueueConsistent st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -2917,7 +2917,7 @@ theorem endpointReceiveDual_preserves_ipcStateQueueConsistent
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (resultTid, st')) :
     ipcStateQueueConsistent st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -3423,7 +3423,7 @@ theorem notificationSignal_preserves_ipcStateQueueConsistent
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcStateQueueConsistent st' := by
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -3468,7 +3468,7 @@ theorem notificationWait_preserves_ipcStateQueueConsistent
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcStateQueueConsistent st' := by
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -3517,10 +3517,10 @@ theorem notificationWait_preserves_ipcStateQueueConsistent
                 rw [storeObject_objects_ne st pair1.2 notificationId waiter.toObjId _ hNe hObjInv hStore1]
                 exact hTcbObj
               have hLookup' : lookupTcb pair1.2 waiter = some tcb := by
-                unfold lookupTcb; split
+                unfold lookupTcb SystemState.getTcb?; split
                 · -- isReserved: contradiction (original lookupTcb succeeded so not reserved)
                   rename_i hRes
-                  unfold lookupTcb at hLookup; simp [hRes] at hLookup
+                  unfold lookupTcb SystemState.getTcb? at hLookup; simp [hRes] at hLookup
                 · rw [hTcbObj']
               rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup'] at hStep
               cases hIpc : storeTcbIpcStateAndMessage pair1.2 waiter
@@ -3546,7 +3546,7 @@ theorem endpointCall_preserves_ipcStateQueueConsistent
     (hObjInv : st.objects.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     ipcStateQueueConsistent st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -4918,7 +4918,7 @@ theorem endpointQueuePopHead_preserves_blockedOnReplyHasReplyObject
     (hInv : blockedOnReplyHasReplyObject st)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
     blockedOnReplyHasReplyObject st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -4987,7 +4987,7 @@ theorem endpointQueueEnqueue_preserves_blockedOnReplyHasReplyObject
     (hInv : blockedOnReplyHasReplyObject st)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     blockedOnReplyHasReplyObject st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -5168,7 +5168,7 @@ theorem endpointCall_establishes_blockedOnReplyHasReplyObject
     (hObjInv : st.objects.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     blockedOnReplyHasReplyObject st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -5251,7 +5251,7 @@ theorem endpointReceiveDual_establishes_blockedOnReplyHasReplyObject
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     blockedOnReplyHasReplyObject st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -5654,7 +5654,7 @@ theorem endpointSendDual_preserves_blockedOnReplyHasReplyObject
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     blockedOnReplyHasReplyObject st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -5977,7 +5977,7 @@ theorem endpointQueuePopHead_replyLinkageFrame
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
     replyLinkageFrame st st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -6041,7 +6041,7 @@ theorem endpointQueueEnqueue_replyLinkageFrame
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     replyLinkageFrame st st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -6261,7 +6261,7 @@ theorem notificationSignal_preserves_blockedOnReplyHasReplyObject
     (hInv : blockedOnReplyHasReplyObject st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     blockedOnReplyHasReplyObject st' := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -6303,7 +6303,7 @@ theorem notificationWait_preserves_blockedOnReplyHasReplyObject
     (hInv : blockedOnReplyHasReplyObject st)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     blockedOnReplyHasReplyObject st' := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -7734,7 +7734,7 @@ theorem endpointQueuePopHead_preserves_blockedOnReplyHasTarget
     (hInv : blockedOnReplyHasTarget st)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
     blockedOnReplyHasTarget st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -7801,7 +7801,7 @@ theorem endpointQueueEnqueue_preserves_blockedOnReplyHasTarget
     (hInv : blockedOnReplyHasTarget st)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     blockedOnReplyHasTarget st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -7859,7 +7859,7 @@ theorem endpointQueuePopHead_sameSchedContextBindings
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
     sameSchedContextBindings st st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -7925,7 +7925,7 @@ theorem endpointQueueEnqueue_sameSchedContextBindings
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     sameSchedContextBindings st st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -7981,7 +7981,7 @@ theorem endpointQueuePopHead_timeoutBudgetFrame
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
     timeoutBudgetFrame st st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -8047,7 +8047,7 @@ theorem endpointQueueEnqueue_timeoutBudgetFrame
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     timeoutBudgetFrame st st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -8104,7 +8104,7 @@ theorem endpointQueuePopHead_donationOwnerFrame
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
     donationOwnerFrame st st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -8207,7 +8207,7 @@ theorem endpointQueueEnqueue_donationOwnerFrame
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     donationOwnerFrame st st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -8749,7 +8749,7 @@ theorem endpointCall_establishes_blockedOnReplyHasTarget
     (hObjInv : st.objects.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     blockedOnReplyHasTarget st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -8819,7 +8819,7 @@ theorem endpointReceiveDual_establishes_blockedOnReplyHasTarget
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     blockedOnReplyHasTarget st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -8952,7 +8952,7 @@ theorem endpointReceiveDual_preserves_donationBudgetTransfer
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     donationBudgetTransfer st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -9095,7 +9095,7 @@ theorem endpointReceiveDual_preserves_donationOwnerUnique
     (hStackValid : cleanupDonationStackValid st receiver)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     donationOwnerUnique st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -9247,7 +9247,7 @@ theorem endpointReceiveDual_preserves_donationOwnerValid
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     donationOwnerValid st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -9464,7 +9464,7 @@ theorem endpointReceiveDual_passiveServerIdleFrame
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     passiveServerIdleFrame st st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -9625,7 +9625,7 @@ theorem endpointReceiveDual_timeoutBudgetFrame
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     timeoutBudgetFrame st st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -10333,7 +10333,7 @@ theorem endpointCall_sameSchedContextBindings
     (hObjInv : st.objects.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     sameSchedContextBindings st st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -10408,7 +10408,7 @@ theorem endpointCall_donationOwnerFrame
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     donationOwnerFrame st st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -10521,7 +10521,7 @@ theorem endpointCall_passiveServerIdleFrame
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     passiveServerIdleFrame st st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -10614,7 +10614,7 @@ theorem endpointCall_timeoutBudgetFrame
     (hObjInv : st.objects.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     timeoutBudgetFrame st st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -10698,7 +10698,7 @@ theorem endpointSendDual_sameSchedContextBindings
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     sameSchedContextBindings st st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -10762,7 +10762,7 @@ theorem endpointSendDual_donationOwnerFrame
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     donationOwnerFrame st st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -10853,7 +10853,7 @@ theorem endpointSendDual_passiveServerIdleFrame
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     passiveServerIdleFrame st st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -10931,7 +10931,7 @@ theorem endpointSendDual_timeoutBudgetFrame
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     timeoutBudgetFrame st st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -11433,7 +11433,7 @@ theorem endpointSendDual_preserves_blockedOnReplyHasTarget
     (hInv : blockedOnReplyHasTarget st) (hObjInv : st.objects.invExt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     blockedOnReplyHasTarget st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -11490,7 +11490,7 @@ theorem notificationSignal_preserves_blockedOnReplyHasTarget
     (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     blockedOnReplyHasTarget st' := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -11528,7 +11528,7 @@ theorem notificationWait_preserves_blockedOnReplyHasTarget
     (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     blockedOnReplyHasTarget st' := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -11579,7 +11579,7 @@ theorem notificationWait_sameSchedContextBindings
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     sameSchedContextBindings st st' := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -11640,7 +11640,7 @@ theorem notificationWait_donationOwnerFrame
       ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     donationOwnerFrame st st' := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -11723,7 +11723,7 @@ theorem notificationSignal_sameSchedContextBindings
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     sameSchedContextBindings st st' := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -11764,7 +11764,7 @@ theorem notificationSignal_donationOwnerFrame
     (hNWC : notificationWaiterConsistent st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     donationOwnerFrame st st' := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -11875,7 +11875,7 @@ theorem endpointSendDual_preserves_replyCallerLinkageReciprocal
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     replyCallerLinkageReciprocal st' := by
   refine replyCallerLinkageReciprocal_of_frame ?_ hInv
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -11967,7 +11967,7 @@ theorem endpointCall_preserves_replyCallerLinkageReciprocal
   have hCallerUnlinked : ∀ tcb, st.objects[caller.toObjId]? = some (.tcb tcb) →
       tcb.replyObject = none :=
     fun tcb hTcb => hInv.unlinkedOfNotBlockedOnReply hTcb (hCallerNotReply tcb hTcb)
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -12083,7 +12083,7 @@ theorem endpointReceiveDual_preserves_replyCallerLinkageReciprocal
     intro tcb hTcb
     refine hInv.unlinkedOfNotBlockedOnReply hTcb (fun epx rtx hb => ?_)
     rw [hReceiverReady tcb hTcb] at hb; cases hb
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -12286,7 +12286,7 @@ theorem notificationSignal_preserves_replyCallerLinkageReciprocal
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     replyCallerLinkageReciprocal st' := by
   refine replyCallerLinkageReciprocal_of_frame ?_ hInv
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -12349,7 +12349,7 @@ theorem notificationWait_preserves_replyCallerLinkageReciprocal
   have hUnlinked : ∀ tcb, st.objects[waiter.toObjId]? = some (.tcb tcb) → tcb.replyObject = none :=
     fun tcb hTcb => hInv.unlinkedOfNotBlockedOnReply hTcb (hWaiterNotReply tcb hTcb)
   refine replyCallerLinkageReciprocal_of_frame ?_ hInv
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -12433,7 +12433,7 @@ theorem notificationWait_passiveServerIdleFrame
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     passiveServerIdleFrame st st' := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -12475,7 +12475,8 @@ theorem notificationWait_passiveServerIdleFrame
                 rw [lookupTcb]; rw [lookupTcb] at hLookup
                 by_cases hRes : waiter.isReserved
                 · rw [if_pos hRes] at hLookup; simp at hLookup
-                · rw [if_neg hRes, hOrig1]
+                · rw [if_neg hRes]
+                  exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hOrig1
               split at hStep
               next => contradiction
               next st2 hSI =>
@@ -12511,7 +12512,7 @@ theorem notificationSignal_passiveServerIdleFrame
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     passiveServerIdleFrame st st' := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -12562,7 +12563,7 @@ theorem notificationWait_timeoutBudgetFrame
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     timeoutBudgetFrame st st' := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -12630,7 +12631,7 @@ theorem notificationSignal_timeoutBudgetFrame
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     timeoutBudgetFrame st st' := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -14106,7 +14107,7 @@ theorem endpointQueuePopHead_preserves_pendingReceiveReplyWellFormed
     (hInv : pendingReceiveReplyWellFormed st)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
     pendingReceiveReplyWellFormed st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -14173,7 +14174,7 @@ theorem endpointQueueEnqueue_preserves_pendingReceiveReplyWellFormed
     (hInv : pendingReceiveReplyWellFormed st)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     pendingReceiveReplyWellFormed st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -14462,7 +14463,7 @@ theorem endpointSendDual_preserves_pendingReceiveReplyWellFormed
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     pendingReceiveReplyWellFormed st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -14538,7 +14539,7 @@ theorem endpointCall_preserves_pendingReceiveReplyWellFormed
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     pendingReceiveReplyWellFormed st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -14741,7 +14742,7 @@ theorem notificationWait_preserves_pendingReceiveReplyWellFormed
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     pendingReceiveReplyWellFormed st' := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     -- `hWaiterNotRecv` framed through any notification-object store at `notificationId`
@@ -14821,7 +14822,7 @@ theorem notificationSignal_preserves_pendingReceiveReplyWellFormed
     (hNWC : notificationWaiterConsistent st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     pendingReceiveReplyWellFormed st' := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -15589,7 +15590,7 @@ theorem endpointReceiveDual_preserves_pendingReceiveReplyWellFormed
     (hQHBC : queueHeadBlockedConsistent st)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     pendingReceiveReplyWellFormed st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -16241,7 +16242,7 @@ theorem endpointCall_preserves_queueNextBlockingConsistent
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     queueNextBlockingConsistent st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -16341,7 +16342,7 @@ theorem endpointCall_preserves_endpointQueueTailBlockedConsistent
       ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     endpointQueueTailBlockedConsistent st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -16543,7 +16544,7 @@ theorem endpointReceiveDual_preserves_queueNextBlockingConsistent
           ep'.sendQ.tail ≠ some tailTid))
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     queueNextBlockingConsistent st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -16727,7 +16728,7 @@ theorem endpointReceiveDual_preserves_endpointQueueTailBlockedConsistent
       ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     endpointQueueTailBlockedConsistent st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -17967,7 +17968,7 @@ theorem notificationWait_preserves_queueNextBlockingConsistent
     (hObjInv : st.objects.invExt) (hInv : queueNextBlockingConsistent st)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     queueNextBlockingConsistent st' := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -18028,7 +18029,7 @@ theorem notificationWait_preserves_queueNextTargetBlocked
         tcb.ipcState = .ready)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     queueNextTargetBlocked st' := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -18115,7 +18116,7 @@ theorem notificationSignal_preserves_queueNextBlockingConsistent
     (hObjInv : st.objects.invExt) (hInv : queueNextBlockingConsistent st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     queueNextBlockingConsistent st' := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -18157,7 +18158,7 @@ theorem notificationSignal_preserves_queueHeadBlockedConsistent
     (hNWC : notificationWaiterConsistent st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     queueHeadBlockedConsistent st' := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -18215,7 +18216,7 @@ theorem notificationSignal_preserves_queueNextTargetBlocked
     (hNWC : notificationWaiterConsistent st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     queueNextTargetBlocked st' := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -18270,7 +18271,7 @@ theorem notificationSignal_preserves_endpointQueueTailBlockedConsistent
     (hNWC : notificationWaiterConsistent st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     endpointQueueTailBlockedConsistent st' := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -18328,7 +18329,7 @@ theorem notificationWait_preserves_endpointQueueTailBlockedConsistent
         tcb.ipcState = .ready)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     endpointQueueTailBlockedConsistent st' := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -18420,7 +18421,7 @@ theorem notificationWait_preserves_queueHeadBlockedConsistent
         tcb.ipcState = .ready)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     queueHeadBlockedConsistent st' := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -18515,7 +18516,7 @@ theorem endpointSendDual_preserves_queueHeadBlockedConsistent
       ep.receiveQ.head ≠ some sender ∧ ep.receiveQ.tail ≠ some sender)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     queueHeadBlockedConsistent st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -18695,7 +18696,7 @@ theorem endpointReceiveDual_preserves_queueHeadBlockedConsistent
       ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     queueHeadBlockedConsistent st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -18894,7 +18895,7 @@ theorem endpointReceiveDual_preserves_queueNextTargetBlocked
       (∀ ep, (ThreadIpcState.ready) ≠ .blockedOnSend ep) ∧
       (∀ ep, (ThreadIpcState.ready) ≠ .blockedOnCall ep) :=
     ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -19604,7 +19605,7 @@ theorem endpointCall_preserves_queueHeadBlockedConsistent
       ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     queueHeadBlockedConsistent st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -19780,7 +19781,7 @@ theorem endpointCall_preserves_queueNextTargetBlocked
       (∀ ep, (ThreadIpcState.ready) ≠ .blockedOnSend ep) ∧
       (∀ ep, (ThreadIpcState.ready) ≠ .blockedOnCall ep) :=
     ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by

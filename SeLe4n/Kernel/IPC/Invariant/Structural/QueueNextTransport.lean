@@ -643,7 +643,7 @@ theorem storeTcbIpcState_preserves_dualQueueSystemInvariant
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
           have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
-            unfold lookupTcb at hLookup
+            unfold lookupTcb SystemState.getTcb? at hLookup
             split at hLookup
             · simp at hLookup
             · cases h : st.objects[tid.toObjId]? with
@@ -723,7 +723,7 @@ theorem storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
           have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
-            unfold lookupTcb at hLookup; split at hLookup
+            unfold lookupTcb SystemState.getTcb? at hLookup; split at hLookup
             · simp at hLookup
             · cases h : st.objects[tid.toObjId]? with
               | none => simp [h] at hLookup
@@ -773,7 +773,7 @@ theorem storeTcbReceiveComplete_preserves_dualQueueSystemInvariant
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
           have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
-            unfold lookupTcb at hLookup; split at hLookup
+            unfold lookupTcb SystemState.getTcb? at hLookup; split at hLookup
             · simp at hLookup
             · cases h : st.objects[tid.toObjId]? with
               | none => simp [h] at hLookup
@@ -818,7 +818,7 @@ theorem storeTcbPendingMessage_preserves_dualQueueSystemInvariant
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
           have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
-            unfold lookupTcb at hLookup; split at hLookup
+            unfold lookupTcb SystemState.getTcb? at hLookup; split at hLookup
             · simp at hLookup
             · cases h : st.objects[tid.toObjId]? with
               | none => simp [h] at hLookup
@@ -1406,7 +1406,7 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   obtain ⟨hEpInv, hLink, hAcyclic⟩ := hInv
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -1782,7 +1782,7 @@ theorem endpointQueueEnqueue_preserves_dualQueueSystemInvariant
           (if isReceiveQ then ep'.sendQ else ep'.receiveQ).tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
   obtain ⟨hEpInv, hLink, hAcyclic⟩ := hInv
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>

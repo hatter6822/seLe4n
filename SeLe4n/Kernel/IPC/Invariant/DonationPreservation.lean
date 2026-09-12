@@ -2277,7 +2277,7 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
             intro q hq
             have hqRid : q ≠ rid := fun hx => hRidNotIn (hx ▸ hq)
             obtain ⟨rq, hrq, _⟩ := donationChainFrom_mem st c fuel' sc'.scReply chain' hWalk' q hq
-            unfold replyStackLinksAt?
+            unfold replyStackLinksAt? SystemState.getObject?
             rw [hReplyFwd q rq hqRid hrq, hrq])
     | some below =>
       -- §6.3b  A frame below: it is a Reply answering `rid` (`prevLinkReciprocal`),
@@ -2474,13 +2474,13 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
               have hqBelow : q ≠ below := fun hx => hBelowNotIn (hx ▸ hq)
               obtain ⟨rq, hrq, _⟩ :=
                 donationChainWalk_mem st f' (.frame below) b0.prev tail' hTail' q hq
-              unfold replyStackLinksAt?
+              unfold replyStackLinksAt? SystemState.getObject?
               rw [hReplyFwd q rq hqRid hqBelow hrq, hrq])
           refine ⟨f' + 1, below :: tail', ?_⟩
           show donationChainWalk s2 (.head scId) (f' + 1) (some below) = some (below :: tail')
           rw [donationChainWalk_succ]
           have hLinks : replyStackLinksAt? s2 below = some (b0.prev, some (.head scId)) := by
-            unfold replyStackLinksAt?; rw [hS2Below]; rfl
+            unfold replyStackLinksAt? SystemState.getObject?; rw [hS2Below]; rfl
           rw [hLinks]
           simp [hTail2]
         · -- Every other context: the popped head heads `scId` and the re-headed
@@ -2511,7 +2511,7 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
             have hqRid : q ≠ rid := fun hx => hRidNotIn (hx ▸ hq)
             have hqBelow : q ≠ below := fun hx => hBelowNotIn (hx ▸ hq)
             obtain ⟨rq, hrq, _⟩ := donationChainFrom_mem st c fuel' sc'.scReply chain' hWalk' q hq
-            unfold replyStackLinksAt?
+            unfold replyStackLinksAt? SystemState.getObject?
             rw [hReplyFwd q rq hqRid hqBelow hrq, hrq])
 
 /-- WS-OD OD3.8 / `v0.35.4`: the pop's chain writes preserve the chain invariant,
@@ -2800,7 +2800,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
         show donationChainWalk s1' (.head scId) 1 (some pushRid) = some [pushRid]
         rw [donationChainWalk_succ]
         have hLinks : replyStackLinksAt? s1' pushRid = some (none, some (.head scId)) := by
-          unfold replyStackLinksAt?; rw [hRid2]; rfl
+          unfold replyStackLinksAt? SystemState.getObject?; rw [hRid2]; rfl
         rw [hLinks]
         simp
       · obtain ⟨fuel', chain', hWalk'⟩ := hChain.headTerminates c sc' hcPre
@@ -2811,7 +2811,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
           intro q hq
           have hqRid : q ≠ pushRid := fun hx => hPushNotIn' (hx ▸ hq)
           obtain ⟨rq, hrq, _⟩ := donationChainFrom_mem st c fuel' sc'.scReply chain' hWalk' q hq
-          unfold replyStackLinksAt?
+          unfold replyStackLinksAt? SystemState.getObject?
           rw [hReplyFwd q rq hqRid hrq, hrq])
   · -- §3b  An old head: it is a Reply heading `scId` (`headLinkReciprocal`),
     -- distinct from the pushed frame (the push refuses its own head) and from the
@@ -2990,14 +2990,14 @@ theorem donationHeadPush_preserves_donationChainWellFormed
             have hqRid : q ≠ pushRid := fun hx => hPushNotInTail (hx ▸ hq)
             have hqOld : q ≠ old := fun hx => hOldNotIn (hx ▸ hq)
             obtain ⟨rq, hrq, _⟩ := donationChainWalk_mem st f (.frame old) oldR.prev tail hTail q hq
-            unfold replyStackLinksAt?
+            unfold replyStackLinksAt? SystemState.getObject?
             rw [hReplyFwd q rq hqRid hqOld hrq, hrq])
         have hInner : donationChainWalk s2 (.frame pushRid) (f + 1) (some old)
             = some (old :: tail) := by
           rw [donationChainWalk_succ]
           have hLinksOld : replyStackLinksAt? s2 old
               = some (oldR.prev, some (.frame pushRid)) := by
-            unfold replyStackLinksAt?; rw [hS2Old]; rfl
+            unfold replyStackLinksAt? SystemState.getObject?; rw [hS2Old]; rfl
           rw [hLinksOld]
           simp [hTail2]
         refine ⟨f + 1 + 1, pushRid :: old :: tail, ?_⟩
@@ -3005,7 +3005,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
           = some (pushRid :: old :: tail)
         rw [donationChainWalk_succ]
         have hLinks : replyStackLinksAt? s2 pushRid = some (some old, some (.head scId)) := by
-          unfold replyStackLinksAt?; rw [hRid2]; rfl
+          unfold replyStackLinksAt? SystemState.getObject?; rw [hRid2]; rfl
         rw [hLinks]
         simp [hInner]
       · -- Every other context: the pushed frame is on no chain (fresh), and the
@@ -3028,7 +3028,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
           have hqRid : q ≠ pushRid := fun hx => hPushNotIn' (hx ▸ hq)
           have hqOld : q ≠ old := fun hx => hOldNotIn' (hx ▸ hq)
           obtain ⟨rq, hrq, _⟩ := donationChainFrom_mem st c fuel' sc'.scReply chain' hWalk' q hq
-          unfold replyStackLinksAt?
+          unfold replyStackLinksAt? SystemState.getObject?
           rw [hReplyFwd q rq hqRid hqOld hrq, hrq])
 
 /-- **WS-OD OD4.5: `donateSchedContext` preserves the donation chain.**

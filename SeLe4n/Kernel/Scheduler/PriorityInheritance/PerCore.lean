@@ -102,23 +102,25 @@ theorem updatePipBoostOnCore_preserves_blockingServer (st : SystemState) (c : Co
   by_cases hEq : t = tid
   · rw [hEq]
     unfold updatePipBoostOnCore
-    cases hTid : st.objects[tid.toObjId]? with
+    -- The transition discriminates on `getTcb?`, so the split is its two arms;
+    -- the congruence lemma wants the store form, which `getTcb?_eq_some_iff`
+    -- supplies without a second reading.
+    cases hTid : st.getTcb? tid with
     | none => rfl
-    | some obj =>
-      cases obj with
-      | tcb tcb =>
-        simp only []
-        split
-        · rfl
-        · refine blockingServer_ipcState_congr _ _ _
-            { tcb with pipBoost := computeMaxWaiterPriority st tid } tcb ?_ hTid rfl
-          -- `.get?`-method form (AK7-clean: no raw `[·]?` bracket in the proof source).
-          have hSelf := RHTable_get?_insert_self st.objects tid.toObjId
-            (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hObjInv
-          by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
-          · simp only [hRQ, ite_true]; split <;> exact hSelf
-          · simp only [hRQ, ite_false]; exact hSelf
-      | _ => rfl
+    | some tcb =>
+      have hRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+        (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTid
+      simp only []
+      split
+      · rfl
+      · refine blockingServer_ipcState_congr _ _ _
+          { tcb with pipBoost := computeMaxWaiterPriority st tid } tcb ?_ hRaw rfl
+        -- `.get?`-method form (AK7-clean: no raw `[·]?` bracket in the proof source).
+        have hSelf := RHTable_get?_insert_self st.objects tid.toObjId
+          (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hObjInv
+        by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
+        · simp only [hRQ, ite_true]; split <;> exact hSelf
+        · simp only [hRQ, ite_false]; exact hSelf
   · exact blockingServer_congr_objects _ _ _
       (updatePipBoostOnCore_objects_ne st c tid t.toObjId
         (fun h => hEq (ThreadId.toObjId_injective tid t (eq_of_beq h)).symm) hObjInv)
@@ -160,11 +162,10 @@ theorem updatePipBoostOnCore_getTcb?_pipBoost (st : SystemState) (c : CoreId) (t
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
     ∃ tcb', (updatePipBoostOnCore st c tid).getTcb? tid = some tcb' ∧
       tcb'.pipBoost = computeMaxWaiterPriority st tid := by
-  -- Typed-accessor hypothesis; the raw form is the inferred type of `hRaw` (no raw
-  -- `[·]?` bracket in the proof source — AK7-clean).
-  have hRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+  -- The transition discriminates on `getTcb?`, which is what this hypothesis
+  -- already says; no crossing to the store form is needed to drive the match.
   unfold updatePipBoostOnCore
-  simp only [hRaw]
+  simp only [hTcb]
   split
   · -- no-op: pipBoost already equals newBoost
     rename_i hEq
@@ -712,9 +713,8 @@ consumes it. -/
 theorem updatePipBoostOnCore_getTcb?_cpuAffinity (st : SystemState) (c : CoreId) (tid : ThreadId)
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
     ∃ t', (updatePipBoostOnCore st c tid).getTcb? tid = some t' ∧ t'.cpuAffinity = tcb.cpuAffinity := by
-  have hRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
   unfold updatePipBoostOnCore
-  simp only [hRaw]
+  simp only [hTcb]
   split
   · exact ⟨tcb, hTcb, rfl⟩
   · refine ⟨{ tcb with pipBoost := computeMaxWaiterPriority st tid }, ?_, rfl⟩
@@ -1322,7 +1322,7 @@ Factored out so the dispatch theorems reference it by name (the single object-st
 read site, mirroring `waitersOf`'s raw iteration). -/
 def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
     : Option (CoreId × SgiKind) :=
-  match post.objects[oid]? with
+  match post.getObject? oid with
   | some (KernelObject.tcb tpost) =>
     match pre.getTcb? tpost.tid with
     | some tpre =>
@@ -1644,7 +1644,7 @@ theorem scheduleLocalSuccessor_idle_of_no_candidate (pre post : SystemState) (ex
 theorem crossCoreSgiBody_reschedule (pre post : SystemState) (ec : CoreId) (oid : ObjId)
     (p : CoreId × SgiKind) (h : crossCoreSgiBody pre post ec oid = some p) :
     p.2 = SgiKind.reschedule := by
-  unfold crossCoreSgiBody at h
+  unfold crossCoreSgiBody SystemState.getObject? at h
   split at h
   · split at h
     · simp only [] at h
@@ -1690,7 +1690,7 @@ theorem crossCoreSgiBody_none_single_core (pre post : SystemState) (oid : ObjId)
     (hNoRemoteCur : ∀ c : CoreId, c ≠ bootCoreId →
       pre.scheduler.currentOnCore c = none) :
     crossCoreSgiBody pre post bootCoreId oid = none := by
-  unfold crossCoreSgiBody
+  unfold crossCoreSgiBody SystemState.getObject?
   split
   · split
     · simp only []
@@ -1723,7 +1723,7 @@ theorem crossCoreSgiBody_remote_wake (pre post : SystemState) (execCore : CoreId
         pre.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid)) :
     crossCoreSgiBody pre post execCore oid
       = some (SeLe4n.Kernel.determineTargetCore post tpost.tid, SgiKind.reschedule) := by
-  unfold crossCoreSgiBody
+  unfold crossCoreSgiBody SystemState.getObject?
   rw [hPost]
   simp only [hPre]
   rw [if_pos hPostRq, if_neg (by simpa using hRemote),
@@ -1749,7 +1749,7 @@ theorem crossCoreSgiBody_remote_deschedule (pre post : SystemState) (execCore : 
     (hPostNotCur : post.scheduler.currentOnCore preCur ≠ some tpost.tid) :
     crossCoreSgiBody pre post execCore oid
       = some (preCur, SgiKind.reschedule) := by
-  unfold crossCoreSgiBody
+  unfold crossCoreSgiBody SystemState.getObject?
   rw [hPost]
   simp only [hPre, hFind]
   rw [if_neg hPostNotRq, if_neg (by simpa using hRemote),
@@ -1776,7 +1776,7 @@ theorem crossCoreSgiBody_remote_deboost_current (pre post : SystemState)
         < (SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1.val) :
     crossCoreSgiBody pre post execCore oid
       = some (preCur, SgiKind.reschedule) := by
-  unfold crossCoreSgiBody
+  unfold crossCoreSgiBody SystemState.getObject?
   rw [hPost]
   simp only [hPre, hFind]
   rw [if_neg hPostNotRq, if_neg (by simpa using hRemote),

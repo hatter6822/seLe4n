@@ -83,7 +83,7 @@ theorem abortPendingIpcOnEndpoint_ok
     (hLk : lookupTcb st tid = some tcb) :
     ∃ st', abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st' := by
   have hRem : ∃ st1, endpointQueueRemove epId isReceiveQ tid st = .ok st1 := by
-    unfold endpointQueueRemove
+    unfold endpointQueueRemove SystemState.getObject?
     rw [hEp, hLk]
     exact ⟨_, rfl⟩
   obtain ⟨st1, hRem1⟩ := hRem

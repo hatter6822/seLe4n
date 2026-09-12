@@ -333,7 +333,7 @@ theorem endpointSendDual_preserves_dualQueueSystemInvariant
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -416,7 +416,7 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
         (epId' = endpointId →
           ep'.sendQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -757,7 +757,7 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -1260,7 +1260,7 @@ theorem endpointQueuePopHead_preserves_pendingMessagesSatisfy
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st'))
     (hInv : pendingMessagesSatisfy P st) :
     pendingMessagesSatisfy P st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1338,7 +1338,7 @@ theorem endpointQueuePopHead_preserves_badgeWellFormed
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st'))
     (hInv : badgeWellFormed st) :
     badgeWellFormed st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1405,7 +1405,7 @@ theorem endpointQueueEnqueue_preserves_pendingMessagesSatisfy
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st')
     (hInv : pendingMessagesSatisfy P st) :
     pendingMessagesSatisfy P st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1477,7 +1477,7 @@ theorem endpointQueueEnqueue_preserves_badgeWellFormed
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st')
     (hInv : badgeWellFormed st) :
     badgeWellFormed st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1542,7 +1542,7 @@ theorem notificationSignal_preserves_allPendingMessagesBounded
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     allPendingMessagesBounded st' := by
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1593,7 +1593,7 @@ theorem notificationWait_preserves_allPendingMessagesBounded
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     allPendingMessagesBounded st' := by
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1800,7 +1800,7 @@ theorem notificationSignal_preserves_dualQueueSystemInvariant
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     dualQueueSystemInvariant st' := by
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1844,7 +1844,7 @@ theorem notificationWait_preserves_dualQueueSystemInvariant
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     dualQueueSystemInvariant st' := by
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2082,7 +2082,7 @@ theorem endpointSendDual_preserves_allPendingMessagesBounded
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     allPendingMessagesBounded st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
   simp only [hReg, ↓reduceIte] at hStep
   have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
@@ -2151,7 +2151,7 @@ theorem endpointSendDual_preserves_badgeWellFormed
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     badgeWellFormed st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
   simp only [hReg, ↓reduceIte] at hStep
   have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
@@ -2222,7 +2222,7 @@ theorem endpointReceiveDual_preserves_pendingMessagesSatisfy
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     pendingMessagesSatisfy P st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -2402,7 +2402,7 @@ theorem endpointReceiveDual_preserves_badgeWellFormed
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     badgeWellFormed st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -2537,7 +2537,7 @@ theorem endpointCall_preserves_allPendingMessagesBounded
     (hObjInv : st.objects.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     allPendingMessagesBounded st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
   simp only [hReg, ↓reduceIte] at hStep
   have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
@@ -2619,7 +2619,7 @@ theorem endpointCall_preserves_badgeWellFormed
     (hObjInv : st.objects.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     badgeWellFormed st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
   simp only [hReg, ↓reduceIte] at hStep
   have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep

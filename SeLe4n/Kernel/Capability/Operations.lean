@@ -497,8 +497,8 @@ already contains a capability, returns `targetSlotOccupied`. The caller must
 explicitly delete or revoke the existing capability before inserting. -/
 def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
   fun st =>
-    match st.objects[addr.cnode]? with
-    | some (.cnode cn) =>
+    match st.getCNode? addr.cnode with
+    | some cn =>
         match cn.lookup addr.slot with
         | some _ => .error .targetSlotOccupied  -- H-02: reject occupied slot
         | none =>
@@ -506,7 +506,7 @@ def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
             match storeObject addr.cnode (.cnode cn') st with
             | .error e => .error e
             | .ok (_, st') => storeCapabilityRef addr (some cap.target) st'
-    | _ => .error .objectNotFound
+    | none => .error .objectNotFound
 
 theorem cspaceInsertSlot_preserves_scheduler
     (st st' : SystemState)
@@ -514,7 +514,7 @@ theorem cspaceInsertSlot_preserves_scheduler
     (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -544,7 +544,7 @@ theorem cspaceInsertSlot_preserves_services
     (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.services = st.services := by
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -575,7 +575,7 @@ theorem cspaceInsertSlot_preserves_objects_ne
     (hObjInv : st.objects.invExt)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.objects[oid]? = st.objects[oid]? := by
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -603,7 +603,7 @@ theorem cspaceInsertSlot_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.objects.invExt := by
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -630,7 +630,7 @@ theorem cspaceInsertSlot_preserves_machine
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.machine = st.machine := by
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -657,7 +657,7 @@ theorem cspaceInsertSlot_preserves_irqHandlers
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.irqHandlers = st.irqHandlers := by
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -686,7 +686,7 @@ theorem cspaceInsertSlot_rejects_occupied_slot
     (hObj : st.objects[addr.cnode]? = some (.cnode cn))
     (hOccupied : cn.lookup addr.slot = some existingCap) :
     cspaceInsertSlot addr cap st = .error .targetSlotOccupied := by
-  unfold cspaceInsertSlot
+  unfold cspaceInsertSlot SystemState.getCNode?
   simp [hObj, hOccupied]
 
 theorem cspaceLookupSlot_ok_iff_lookupSlotCap
@@ -1163,8 +1163,8 @@ operations (`processRevokeNode`, `cspaceRevokeCdtStrict`, `cspaceMove`) that
 manage CDT children themselves. -/
 def cspaceDeleteSlotCore (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
-    match st.objects[addr.cnode]? with
-    | some (.cnode cn) =>
+    match st.getCNode? addr.cnode with
+    | some cn =>
         let cn' := cn.remove addr.slot
         match storeObject addr.cnode (.cnode cn') st with
         | .error e => .error e
@@ -1174,7 +1174,7 @@ def cspaceDeleteSlotCore (addr : CSpaceAddr) : Kernel Unit :=
             | .ok ((), st'') =>
                 let stDetached := SystemState.detachSlotFromCdt st'' addr
                 .ok ((), stDetached)
-    | _ => .error .objectNotFound
+    | none => .error .objectNotFound
 
 /-- Delete the capability currently stored in `addr`.
 
@@ -1269,8 +1269,8 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
     match cspaceLookupSlot addr st with
     | .error e => .error e
     | .ok (parent, st') =>
-        match st'.objects[addr.cnode]? with
-        | some (.cnode cn) =>
+        match st'.getCNode? addr.cnode with
+        | some cn =>
             let cn' := cn.revokeTargetLocal addr.slot parent.target
             match storeObject addr.cnode (.cnode cn') st' with
             | .error e => .error e
@@ -1278,7 +1278,7 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
                 -- M-P01: Fused single-pass revoke — clear capability refs inline
                 -- during the slot scan instead of building an intermediate list.
                 .ok ((), revokeAndClearRefsState cn addr.slot parent.target addr.cnode st'')
-        | _ => .error .objectNotFound
+        | none => .error .objectNotFound
 
 -- ============================================================================
 -- WS-E4/C-02: Capability copy, move, and mutate operations
@@ -1444,13 +1444,13 @@ def cspaceMutate (addr : CSpaceAddr) (rights : AccessRightSet)
           -- `_preserves_cdtMapsConsistent` companion in
           -- `Preservation/BadgeIpcCapsAndCdtMaps.lean`) — both witness that
           -- the in-place overwrite leaves CDT bookkeeping consistent.
-          match st'.objects[addr.cnode]? with
-          | some (.cnode cn) =>
+          match st'.getCNode? addr.cnode with
+          | some cn =>
               let cn' := cn.insert addr.slot mutatedCap
               match storeObject addr.cnode (.cnode cn') st' with
               | .error e => .error e
               | .ok (_, st'') => storeCapabilityRef addr (some mutatedCap.target) st''
-          | _ => .error .objectNotFound
+          | none => .error .objectNotFound
         else .error .invalidCapability
 
 -- ============================================================================
@@ -1845,9 +1845,9 @@ def validateRevokeCdtDescendants (st : SystemState) (descendants : List CdtNodeI
     match SystemState.lookupCdtSlotOfNode st node with
     | none => .ok ()
     | some descAddr =>
-        match st.objects[descAddr.cnode]? with
-        | some (.cnode _) => .ok ()
-        | _ => .error .objectNotFound)
+        match st.getCNode? descAddr.cnode with
+        | some _ => .ok ()
+        | none => .error .objectNotFound)
 
 /-- AK8-B (WS-AK / C-M02): validate-then-apply reporting traversal.
 
@@ -2512,8 +2512,8 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
           -- But cspaceInsertSlot stored a CNode at receiverRoot via storeObject
           -- then storeCapabilityRef only modifies lifecycle
           -- So pair.2.objects[receiverRoot]? should be some (.cnode cn')
-          -- Let's unfold cspaceInsertSlot at hIns to extract storeObject
-          unfold cspaceInsertSlot at hIns
+          -- Let's unfold cspaceInsertSlot SystemState.getCNode? at hIns to extract storeObject
+          unfold cspaceInsertSlot SystemState.getCNode? at hIns
           simp [hObj] at hIns
           cases hLookup : cn.lookup emptySlot with
           | some _ => simp [hLookup] at hIns
@@ -2690,7 +2690,7 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
       have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2
         { cnode := receiverRoot, slot := emptySlot }
       -- pair.2.objects[receiverRoot]? is a CNode from cspaceInsertSlot
-      unfold cspaceInsertSlot at hIns
+      unfold cspaceInsertSlot SystemState.getCNode? at hIns
       simp [hCn] at hIns
       cases hLookup : cn.lookup emptySlot with
       | some _ => simp [hLookup] at hIns

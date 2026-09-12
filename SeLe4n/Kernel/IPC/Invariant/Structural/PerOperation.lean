@@ -109,7 +109,7 @@ theorem cspaceInsertSlot_preserves_badgeWellFormed
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     badgeWellFormed st' := by
   obtain ⟨hNtfn, hCap⟩ := hInv
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -787,7 +787,7 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   obtain ⟨hEpInv, hLink, hAcyclic⟩ := hInv
-  unfold endpointQueueRemoveDual at hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -1824,7 +1824,7 @@ theorem endpointQueuePopHead_preserves_blockedThreadsPendingMessageConsistent
     (hInv : blockedThreadsPendingMessageConsistent st)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
     blockedThreadsPendingMessageConsistent st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1891,7 +1891,7 @@ theorem endpointQueueEnqueue_preserves_blockedThreadsPendingMessageConsistent
     (hInv : blockedThreadsPendingMessageConsistent st)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st') :
     blockedThreadsPendingMessageConsistent st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1951,7 +1951,7 @@ theorem endpointSendDual_preserves_blockedThreadsPendingMessageConsistent
     (hInv : blockedThreadsPendingMessageConsistent st)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     blockedThreadsPendingMessageConsistent st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   -- Eliminate bounds-check if-branches
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -2131,7 +2131,7 @@ theorem endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
     (hInv : blockedThreadsPendingMessageConsistent st)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     blockedThreadsPendingMessageConsistent st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2288,7 +2288,7 @@ theorem endpointCall_preserves_blockedThreadsPendingMessageConsistent
     (hInv : blockedThreadsPendingMessageConsistent st)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     blockedThreadsPendingMessageConsistent st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   -- Eliminate message bounds checks
   split at hStep
   · simp at hStep

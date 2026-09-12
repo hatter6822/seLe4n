@@ -449,7 +449,7 @@ theorem notificationSignal_preserves_ipcStateQueueMembershipConsistent
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcStateQueueMembershipConsistent st' := by
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -498,7 +498,7 @@ theorem notificationWait_preserves_ipcStateQueueMembershipConsistent
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcStateQueueMembershipConsistent st' := by
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -563,11 +563,11 @@ theorem notificationWait_preserves_ipcStateQueueMembershipConsistent
                     intro h
                     have hTcbObj := lookupTcb_some_objects st waiter tcb hLookup
                     rw [h] at hTcbObj; rw [hObj] at hTcbObj; cases hTcbObj
-                  unfold lookupTcb
+                  unfold lookupTcb SystemState.getTcb?
                   rw [show waiter.isReserved = false from by
-                    unfold lookupTcb at hLookup; split at hLookup <;> simp_all]
+                    unfold lookupTcb SystemState.getTcb? at hLookup; split at hLookup <;> simp_all]
                   rw [storeObject_objects_ne st pair1.2 notificationId waiter.toObjId _ hNe hObjInv hStore1]
-                  unfold lookupTcb at hLookup
+                  unfold lookupTcb SystemState.getTcb? at hLookup
                   split at hLookup <;> simp_all
                 rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup1] at hIpc
                 exact removeRunnable_preserves_ipcStateQueueMembershipConsistent _ _ <|
@@ -1103,7 +1103,7 @@ theorem endpointQueueEnqueue_preserves_ipcStateQueueMembershipConsistent
     (hDQWF : dualQueueEndpointWellFormed endpointId st)
     (hEnqueue : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st') :
     ipcStateQueueMembershipConsistent st' := by
-  unfold endpointQueueEnqueue at hEnqueue
+  unfold endpointQueueEnqueue SystemState.getObject? at hEnqueue
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hEnqueue
   | some obj => cases obj with
@@ -1587,7 +1587,7 @@ theorem endpointQueueEnqueue_thread_reachable
        ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
          st'.objects[prev.toObjId]? = some (.tcb prevTcb) ∧
          prevTcb.queueNext = some tid) := by
-  unfold endpointQueueEnqueue at hEnqueue
+  unfold endpointQueueEnqueue SystemState.getObject? at hEnqueue
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hEnqueue
   | some obj => cases obj with
@@ -1696,7 +1696,7 @@ theorem endpointQueuePopHead_preserves_non_head_queueNext
     (hNe : prev.toObjId ≠ tid.toObjId) :
     ∃ prevTcb', st'.objects[prev.toObjId]? = some (.tcb prevTcb') ∧
       prevTcb'.queueNext = prevTcb.queueNext := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1804,7 +1804,7 @@ theorem endpointQueuePopHead_post_endpoint_queues
       (if isReceiveQ then ep'.receiveQ.head else ep'.sendQ.head) = headTcb.queueNext ∧
       (if isReceiveQ then ep'.sendQ.head else ep'.receiveQ.head) =
         (if isReceiveQ then ep.sendQ.head else ep.receiveQ.head) := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   rw [hObj] at hStep; simp only at hStep; revert hStep
   cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
   | none => simp
@@ -1891,7 +1891,7 @@ theorem endpointQueuePopHead_post_endpoint_tail
          | some _ => if isReceiveQ then ep.receiveQ.tail else ep.sendQ.tail) ∧
       (if isReceiveQ then ep'.sendQ.tail else ep'.receiveQ.tail) =
         (if isReceiveQ then ep.sendQ.tail else ep.receiveQ.tail) := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   rw [hObj] at hStep; simp only at hStep; revert hStep
   cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
   | none => simp

@@ -21,7 +21,7 @@ private theorem cspaceDeleteSlotCore_authority_reduction
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     SystemState.lookupSlotCap st' addr = none := by
   rcases addr with ⟨cnodeId, slot⟩
-  simp only [cspaceDeleteSlotCore] at hStep
+  simp only [cspaceDeleteSlotCore, SystemState.getCNode?] at hStep
   cases hObj : st.objects[cnodeId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -67,7 +67,7 @@ theorem cspaceRevoke_local_target_reduction
     (hLookup : SystemState.lookupSlotCap st' { cnode := addr.cnode, slot := slot } = some cap)
     (hTarget : cap.target = parent.target) :
     slot = addr.slot := by
-  unfold cspaceRevoke at hStep
+  unfold cspaceRevoke SystemState.getCNode? at hStep
   rw [hParent] at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
@@ -161,18 +161,18 @@ private theorem cspaceInsertSlot_lookup_eq
     cspaceLookupSlot addr st' = .ok (cap, st') := by
   rcases addr with ⟨cnodeId, slot⟩
   cases hObj : st.objects[cnodeId]? with
-  | none => simp [cspaceInsertSlot, hObj] at hStep
+  | none => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
   | some obj =>
       cases obj with
-      | tcb tcb => simp [cspaceInsertSlot, hObj] at hStep
-      | endpoint ep => simp [cspaceInsertSlot, hObj] at hStep
-      | notification ntfn => simp [cspaceInsertSlot, hObj] at hStep
-      | vspaceRoot root => simp [cspaceInsertSlot, hObj] at hStep
-      | untyped _ => simp [cspaceInsertSlot, hObj] at hStep
-      | schedContext _ | reply _ => simp [cspaceInsertSlot, hObj] at hStep
+      | tcb tcb => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
+      | endpoint ep => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
+      | notification ntfn => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
+      | vspaceRoot root => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
+      | untyped _ => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
+      | schedContext _ | reply _ => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
       | cnode cn =>
           have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
-          simp [cspaceInsertSlot, hObj] at hStep
+          simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
           cases hLookupGuard : cn.lookup slot with
           | some _ => simp [hLookupGuard] at hStep
           | none =>
@@ -204,7 +204,7 @@ theorem cspaceDeleteSlotCore_lookup_eq_none
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .error .invalidCapability := by
   rcases addr with ⟨cnodeId, slot⟩
-  simp only [cspaceDeleteSlotCore] at hStep
+  simp only [cspaceDeleteSlotCore, SystemState.getCNode?] at hStep
   cases hObj : st.objects[cnodeId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -244,7 +244,7 @@ theorem cspaceRevoke_preserves_source
     (hObjInv : st.objects.invExt)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     ∃ cap, cspaceLookupSlot addr st' = .ok (cap, st') := by
-  unfold cspaceRevoke at hStep
+  unfold cspaceRevoke SystemState.getCNode? at hStep
   cases hLookup : cspaceLookupSlot addr st with
   | error e => simp [hLookup] at hStep
   | ok pair =>
@@ -510,7 +510,7 @@ theorem notificationSignal_badge_stored_fresh
     ∃ ntfn',
       st'.objects[notifId]? = some (.notification ntfn') ∧
       ntfn'.pendingBadge = some (SeLe4n.Badge.ofNatMasked badge.toNat) := by
-  unfold notificationSignal at hSignal
+  unfold notificationSignal SystemState.getObject? at hSignal
   -- WS-RC R4.C: rewrite via the structural `tail?` derived from the empty `.val`.
   have hTailNone : ntfn.waitingThreads.tail? = none :=
     (SeLe4n.NoDupList.tail?_eq_none_iff _).mpr hNoWaiters
@@ -531,7 +531,7 @@ theorem notificationWait_recovers_pending_badge
     ∃ ntfn,
       st.objects[notifId]? = some (.notification ntfn) ∧
       ntfn.pendingBadge = some badge := by
-  unfold notificationWait at hWait
+  unfold notificationWait SystemState.getObject? at hWait
   cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hWait
   | some obj =>

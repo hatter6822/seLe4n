@@ -602,7 +602,7 @@ theorem endpointCall_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     st'.objects.invExt := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by

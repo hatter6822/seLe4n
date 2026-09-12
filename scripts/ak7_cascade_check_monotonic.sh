@@ -11,8 +11,8 @@
 # raw read in file A and introduces a fresh one in file B leaves every total
 # unchanged, so the gate passed on precisely the movement it exists to catch --
 # a previously hygienized site re-introducing the raw pattern.  The floors are
-# now the `RAW_SITE` / `RAW_LOOKUP_SITE` rows: a (file, variant) pair the
-# baseline does not name fails outright, and a pair it names may only fall.
+# now the `RAW_SITE` / `STORE_READ_CODE_SITE` rows: a key the baseline does not
+# name fails outright, and a key it names may only fall.
 # That is the shape `scripts/identifier_naming_baseline.json` already uses, for
 # the same reason -- a set of pairs alone cannot see a second occurrence inside
 # a file that already contains one, and a count alone cannot see the first
@@ -113,7 +113,8 @@ if [[ "${1:-}" == "--self-test" ]]; then
   cat > "$st_base" <<'SELFTEST_BASELINE'
 RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
 RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
-RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4
+STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9
 RAW_MATCH_TCB=3
 RAW_MATCH_SCHEDCONTEXT=0
 RAW_MATCH_ENDPOINT=0
@@ -123,7 +124,8 @@ RAW_MATCH_CNODE=0
 RAW_MATCH_VSPACEROOT=0
 RAW_MATCH_TOTAL=3
 RAW_MATCH_UNCLASSIFIED=3
-RAW_LOOKUP_TID=4
+STORE_READ_CODE=2
+STORE_READ_SPEC=9
 GETTCB_ADOPTION=0
 GETSCHEDCTX_ADOPTION=0
 GETENDPOINT_ADOPTION=0
@@ -146,17 +148,17 @@ SELFTEST_BASELINE
     local name="$1" expect="$2" rows="$3"
     local cur="$st_tmp/current.txt"
     printf '%s\n' "$rows" > "$cur"
-    grep -v '^RAW_SITE=\|^RAW_LOOKUP_SITE=' "$st_base" >> "$cur"
-    if diff -q <(grep -v '^RAW_SITE=\|^RAW_LOOKUP_SITE=' "$st_base") \
-                <(grep -v '^RAW_SITE=\|^RAW_LOOKUP_SITE=' "$cur") >/dev/null; then
+    grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=' "$st_base" >> "$cur"
+    if diff -q <(grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=' "$st_base") \
+                <(grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=' "$cur") >/dev/null; then
       : # scalars identical, as required
     else
       echo "  SELF-TEST BROKEN: case '$name' perturbed a scalar metric" >&2
       st_failed=1
       return
     fi
-    if diff -q <(grep '^RAW_SITE=\|^RAW_LOOKUP_SITE=' "$st_base" | sort) \
-                <(grep '^RAW_SITE=\|^RAW_LOOKUP_SITE=' "$cur" | sort) >/dev/null \
+    if diff -q <(grep '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=' "$st_base" | sort) \
+                <(grep '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=' "$cur" | sort) >/dev/null \
        && [[ "$expect" == "fail" ]]; then
       echo "  SELF-TEST BROKEN: case '$name' is inert (mutation changed nothing)" >&2
       st_failed=1
@@ -180,33 +182,65 @@ SELFTEST_BASELINE
   st_case "clean tree" pass \
 'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
 RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
-RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4'
+STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9'
 
   # TOKEN-PRESERVING: B gives one up, C gains one. RAW_MATCH_TCB stays 3.
   st_case "a raw read moved to an unpinned file (totals unchanged)" fail \
 'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
 RAW_SITE=SeLe4n/Kernel/C.lean|baz|tcb|1
-RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4'
+STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9'
 
   # TOKEN-PRESERVING: same key set, one file gains a second occurrence and the
   # other gives one up. A set-of-pairs floor with no counts passes this.
   st_case "a second raw read inside an already-pinned file" fail \
 'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|3
 RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|0
-RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4'
+STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9'
 
   # TOKEN-PRESERVING: the variant changes, the file and the total do not.
   st_case "a pinned site changed variant" fail \
 'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
 RAW_SITE=SeLe4n/Kernel/B.lean|bar|schedContext|1
-RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4'
+STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9'
 
-  # TOKEN-PRESERVING: the lookup inventory has the same hazard.
-  st_case "a raw tid.toObjId lookup moved to an unpinned file" fail \
+  # TOKEN-PRESERVING: the read census has the same hazard, one file over.
+  st_case "an executable store read moved to an unpinned file" fail \
 'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
 RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
-RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|3
-RAW_LOOKUP_SITE=SeLe4n/Kernel/D.lean|1'
+STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|1
+STORE_READ_CODE_SITE=SeLe4n/Kernel/D.lean|other|1
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9'
+
+  # TOKEN-PRESERVING, and the case the per-FILE key could not see: the read
+  # moves between declarations of one file.  The file's total is unchanged.
+  st_case "an executable store read moved between declarations" fail \
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
+STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|1
+STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|other|1
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9'
+
+  # A read that MOVED FROM SPEC INTO CODE: the two populations' sum is
+  # unchanged, which is exactly what the superseded single figure measured, so
+  # the superseded gate admitted this and the split one must not.
+  st_case "a store read moved from a proposition into a transition" fail \
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
+STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|3
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|8'
+
+  # ...and the other direction is the migration working: a transition's read
+  # becomes a proposition's.  The sum is again unchanged; this must PASS, or
+  # the gate would refuse the hygienization it exists to drive.
+  st_case "a store read moved from a transition into a proposition" pass \
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
+STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|1
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|10'
 
   # TOKEN-PRESERVING, and the round-6 shape: the swap stays INSIDE one file and
   # moves between declarations.  `foo` gives one up and `qux` gains one, so the
@@ -217,19 +251,21 @@ RAW_LOOKUP_SITE=SeLe4n/Kernel/D.lean|1'
 'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|1
 RAW_SITE=SeLe4n/Kernel/A.lean|qux|tcb|1
 RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
-RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4'
+STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9'
 
   # The migration working must not be a failure.
   st_case "a pinned site hygienized away" pass \
 'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|1
 RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
-RAW_LOOKUP_SITE=SeLe4n/Kernel/A.lean|4'
+STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9'
 
   if (( st_failed != 0 )); then
     echo "[ak7-monotonicity] Self-test FAILED." >&2
     exit 1
   fi
-  echo "[ak7-monotonicity] Self-test passed (7 cases, every mutation token-preserving)."
+  echo "[ak7-monotonicity] Self-test passed (10 cases, every mutation token-preserving)."
   exit 0
 fi
 
@@ -280,7 +316,21 @@ METRICS=(
   # has no quarrel with.  The variant-discriminating reads are enforced, per
   # site, by the RAW_SITE inventory below, which is the binding floor; this
   # figure is a diagnostic and its comment now matches its treatment.
-  "RAW_LOOKUP_TID:drop"
+  # The object-store read census.  `STORE_READ_CODE` is the migratable
+  # population -- a raw read in the body of a declaration whose result is not a
+  # `Prop` -- and is the one held to a ceiling.  `STORE_READ_SPEC` is
+  # deliberately NOT enforced: a proposition about the store has no helper form
+  # (`getTcb? k = none` holds for an absent key and a wrong-kinded object
+  # alike, so a frame statement quantified over every key cannot be phrased
+  # through a variant accessor without weakening it), so holding it to a drop
+  # would make writing an invariant a hard Tier 0 failure.  It is reported by
+  # the baseline for readers, exactly as `RAW_MATCH_UNCLASSIFIED` is.
+  #
+  # This pair replaced `RAW_LOOKUP_TID`, which summed both populations into one
+  # number that was 96.9% specification -- so it rose on every invariant cut
+  # and was re-anchored upward four times in three days, which is a ratchet
+  # running backwards rather than a floor.
+  "STORE_READ_CODE:drop"
   "GETTCB_ADOPTION:grow"
   "GETSCHEDCTX_ADOPTION:grow"
   "GETENDPOINT_ADOPTION:grow"
@@ -404,7 +454,7 @@ check_inventory() {
 }
 
 check_inventory "RAW_SITE" "raw variant-discriminating reads"
-check_inventory "RAW_LOOKUP_SITE" "raw tid.toObjId store lookups"
+check_inventory "STORE_READ_CODE_SITE" "raw store reads in executable positions"
 
 for metric in "${ZERO_METRICS[@]}"; do
   current=$(read_metric "$metric" "$CURRENT_FILE")

@@ -35,7 +35,8 @@ theorem timerTickBudget_bound_succeeds
     ∃ st' preempted,
       timerTickBudget st tid tcb = .ok (st', preempted) ∧
       (preempted = true ↔ sc.budgetRemaining.val ≤ 1) := by
-  simp only [timerTickBudget, hBound, hLookup]
+  simp only [timerTickBudget, hBound,
+    (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hLookup]
   by_cases h : sc.budgetRemaining.val ≤ 1 <;> simp [h]
 
 /-- D5-D (Z4-F2/F3 donated variant): Same for donated SchedContexts. -/
@@ -47,7 +48,8 @@ theorem timerTickBudget_donated_succeeds
     ∃ st' preempted,
       timerTickBudget st tid tcb = .ok (st', preempted) ∧
       (preempted = true ↔ sc.budgetRemaining.val ≤ 1) := by
-  simp only [timerTickBudget, hDonated, hLookup]
+  simp only [timerTickBudget, hDonated,
+    (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hLookup]
   by_cases h : sc.budgetRemaining.val ≤ 1 <;> simp [h]
 
 /-- D5-D: `consumeBudget` decreases budget by the specified tick count

@@ -194,7 +194,7 @@ def retypeFromUntyped
     (newObj : KernelObject)
     (allocSize : Nat) : Kernel Unit :=
   fun st =>
-    match st.objects[untypedId]? with
+    match st.getObject? untypedId with
     | none => .error .objectNotFound
     | some (.untyped ut) =>
         -- S4-B: Capacity check — reject allocation when object store is at capacity
@@ -204,7 +204,7 @@ def retypeFromUntyped
         else if childId = untypedId then
           .error .childIdSelfOverwrite
         -- WS-H2/A-26: childId must not collide with an existing object
-        else if st.objects[childId]?.isSome then
+        else if (st.getObject? childId).isSome then
           .error .childIdCollision
         -- WS-H2/A-27: childId must not collide with an existing untyped child
         else if ut.children.any (fun c => c.objId == childId) then
@@ -274,7 +274,7 @@ theorem retypeFromUntyped_capacity_gated
     (st st' : SystemState)
     (hOk : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     st.objectIndex.length < maxObjects := by
-  unfold retypeFromUntyped at hOk
+  unfold retypeFromUntyped SystemState.getObject? at hOk
   cases h1 : st.objects[untypedId]? with
   | none => simp [h1] at hOk
   | some obj =>
@@ -306,7 +306,7 @@ theorem retypeFromUntyped_childId_fresh
     (st st' : SystemState)
     (hOk : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     st.objects[childId]?.isSome = false := by
-  unfold retypeFromUntyped at hOk
+  unfold retypeFromUntyped SystemState.getObject? at hOk
   cases h1 : st.objects[untypedId]? with
   | none => simp [h1] at hOk
   | some obj =>
@@ -345,7 +345,7 @@ theorem retypeFromUntyped_ok_decompose
       ut.allocate childId allocSize = some (ut', offset) ∧
       storeObject untypedId (.untyped ut') stLookup = .ok ((), stUt) ∧
       storeObject childId newObj stUt = .ok ((), st') := by
-  unfold retypeFromUntyped at hStep
+  unfold retypeFromUntyped SystemState.getObject? at hStep
   cases hObj : st.objects[untypedId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -499,7 +499,7 @@ theorem retypeFromUntyped_error_typeMismatch
     (hObj : st.objects[untypedId]? = some obj)
     (hNotUntyped : ∀ u, obj ≠ .untyped u) :
     retypeFromUntyped authority untypedId childId newObj allocSize st = .error .untypedTypeMismatch := by
-  unfold retypeFromUntyped
+  unfold retypeFromUntyped SystemState.getObject?
   cases obj with
   | untyped u => exact absurd rfl (hNotUntyped u)
   | tcb _ => simp [hObj]
@@ -525,7 +525,7 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
     (hSmall : allocSize < objectTypeAllocSize newObj.objectType) :
     retypeFromUntyped authority untypedId childId newObj allocSize st =
       .error .untypedAllocSizeTooSmall := by
-  unfold retypeFromUntyped
+  unfold retypeFromUntyped SystemState.getObject?
   have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by omega
   simp [hObj, hCapF, hNeSelf, hNoCollision, hFreshChildren]
   cases hNotDev with
@@ -555,7 +555,7 @@ theorem retypeFromUntyped_error_regionExhausted
     (hNoFit : ut.allocate childId allocSize = none) :
     retypeFromUntyped authority untypedId childId newObj allocSize st =
       .error .untypedRegionExhausted := by
-  unfold retypeFromUntyped
+  unfold retypeFromUntyped SystemState.getObject?
   have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by omega
   simp only [hObj, hCapF, ↓reduceIte, hNeSelf, hNoCollision, hFreshChildren]
   cases hNotDev with
@@ -633,7 +633,7 @@ theorem lifecycleRetypeObject_ok_as_storeObject
       cspaceLookupSlot authority st = .ok (cap, st) ∧
       lifecycleRetypeAuthority cap target = true ∧
       storeObject target newObj st = .ok ((), st') := by
-  unfold lifecycleRetypeObject at hStep
+  unfold lifecycleRetypeObject SystemState.getObject? at hStep
   cases hObj : st.objects[target]? with
   | none => simp [hObj] at hStep
   | some currentObj =>
@@ -703,7 +703,7 @@ theorem lifecycleRetypeObject_error_illegalState
     (hObj : st.objects[target]? = some currentObj)
     (hMetaMismatch : st.lifecycle.objectTypes[target]? ≠ some currentObj.objectType) :
     lifecycleRetypeObject authority target newObj st = .error .illegalState := by
-  unfold lifecycleRetypeObject
+  unfold lifecycleRetypeObject SystemState.getObject?
   simp [hObj, hMetaMismatch]
 
 theorem lifecycleRetypeObject_error_illegalAuthority
@@ -717,7 +717,7 @@ theorem lifecycleRetypeObject_error_illegalAuthority
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
     (hAuthFail : lifecycleRetypeAuthority cap target = false) :
     lifecycleRetypeObject authority target newObj st = .error .illegalAuthority := by
-  unfold lifecycleRetypeObject
+  unfold lifecycleRetypeObject SystemState.getObject?
   simp [hObj, hMeta, hLookup, hAuthFail]
 
 

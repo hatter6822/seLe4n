@@ -1402,7 +1402,7 @@ theorem updatePipBoost_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.Thr
     (c : CoreId) :
     (PriorityInheritance.updatePipBoost st tid).scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
-  simp only [PriorityInheritance.updatePipBoost]
+  simp only [PriorityInheritance.updatePipBoost, SystemState.getTcb?]
   split
   · rename_i tcb hObj
     split

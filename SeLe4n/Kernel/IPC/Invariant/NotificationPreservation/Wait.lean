@@ -235,7 +235,7 @@ theorem notificationSignal_preserves_badgeWellFormed
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     badgeWellFormed st' := by
   obtain ⟨hNtfn, hCap⟩ := hInv
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObjSrc : st.objects[notificationId]? with
   | none => simp [hObjSrc] at hStep
   | some obj =>
@@ -287,7 +287,7 @@ theorem notificationWait_preserves_badgeWellFormed
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     badgeWellFormed st' := by
   obtain ⟨hNtfn, hCap⟩ := hInv
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObjSrc : st.objects[notificationId]? with
   | none => simp [hObjSrc] at hStep
   | some obj =>
@@ -457,7 +457,7 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     notificationWaiterConsistent st' := by
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -603,7 +603,7 @@ theorem notificationSignal_preserves_blockedThreadsPendingMessageConsistent
     (hInv : blockedThreadsPendingMessageConsistent st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     blockedThreadsPendingMessageConsistent st' := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · -- some (.notification ntfn)
     rename_i ntfn hObj
@@ -658,7 +658,7 @@ theorem notificationWait_preserves_blockedThreadsPendingMessageConsistent
     (hInv : blockedThreadsPendingMessageConsistent st)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     blockedThreadsPendingMessageConsistent st' := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · -- some (.notification ntfn)
     rename_i ntfn hObj

@@ -43,8 +43,8 @@ performs remove-then-insert for bucket migration (D2-E pattern).
   `InformationFlow/Invariant/Operations.lean` discharges cross-domain
   information-flow safety. -/
 def updatePipBoost (st : SystemState) (tid : ThreadId) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (KernelObject.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
     let newBoost := computeMaxWaiterPriority st tid
     -- Only update if pipBoost actually changed
     if tcb.pipBoost == newBoost then st
@@ -63,7 +63,7 @@ def updatePipBoost (st : SystemState) (tid : ThreadId) : SystemState :=
           }
         else st'
       else st'
-  | _ => st
+  | none => st
 
 -- ============================================================================
 -- D4-H: propagatePriorityInheritance (chain walk)
@@ -210,7 +210,10 @@ theorem updatePipBoost_self_ipcState (st : SystemState) (tid : ThreadId)
     obtain ⟨tcb', hLook, hIpc⟩ := h; simp only [hLook, hIpc]
   -- Now prove the lookup gives such a TCB
   unfold updatePipBoost
-  simp only [hObj]
+  -- `updatePipBoost` reads the store through `getTcb?`, so the raw hypothesis
+  -- is retyped into accessor form before it can drive the match.
+  have hGet : st.getTcb? tid = some tcb := by unfold SystemState.getTcb?; rw [hObj]
+  simp only [hGet]
   split
   · -- pipBoost unchanged → state is st, lookup is hObj
     exact ⟨tcb, hObj, rfl⟩
@@ -240,7 +243,7 @@ For `t = tid`: `ipcState` is preserved by the record-with update
 theorem blockingServer_congr_objects (st₁ st₂ : SystemState) (t : ThreadId)
     (h : st₁.objects[t.toObjId]? = st₂.objects[t.toObjId]?) :
     blockingServer st₁ t = blockingServer st₂ t := by
-  simp only [blockingServer, h]
+  simp only [blockingServer, SystemState.getTcb?_congr_at h]
 
 -- Helper: blockingServer is determined by the ipcState of the looked-up TCB
 -- (WS-SM SM5.F: de-privatised so the per-core PIP module can reuse it.)
@@ -249,7 +252,9 @@ theorem blockingServer_ipcState_congr (st₁ st₂ : SystemState) (t : ThreadId)
     (h₂ : st₂.objects[t.toObjId]? = some (.tcb tcb₂))
     (hIpc : tcb₁.ipcState = tcb₂.ipcState) :
     blockingServer st₁ t = blockingServer st₂ t := by
-  simp only [blockingServer, h₁, h₂, hIpc]
+  have g₁ : st₁.getTcb? t = some tcb₁ := by unfold SystemState.getTcb?; rw [h₁]
+  have g₂ : st₂.getTcb? t = some tcb₂ := by unfold SystemState.getTcb?; rw [h₂]
+  simp only [blockingServer, g₁, g₂, hIpc]
 
 theorem updatePipBoost_preserves_blockingServer (st : SystemState) (tid : ThreadId)
     (hObjInv : st.objects.invExt) (t : ThreadId) :
@@ -258,28 +263,31 @@ theorem updatePipBoost_preserves_blockingServer (st : SystemState) (tid : Thread
   · -- t = tid: ipcState preserved by { tcb with pipBoost := ... }
     rw [hEq]
     unfold updatePipBoost
-    cases hTid : st.objects[tid.toObjId]? with
+    -- `updatePipBoost` discriminates through `getTcb?`, so the case analysis is
+    -- the accessor's two arms; the raw form the congr lemma wants comes back
+    -- from `getTcb?_eq_some_iff`, which is the bridge between the two
+    -- vocabularies rather than a second reading of the store.
+    cases hTid : st.getTcb? tid with
     | none => rfl
-    | some obj =>
-      cases obj with
-      | tcb tcb =>
-        simp only []
-        split
-        · rfl -- pipBoost unchanged
-        · -- pipBoost changed: blockingServer reads only ipcState, which is
-          -- unchanged by { tcb with pipBoost := ... }. Use ipcState congr lemma.
-          refine blockingServer_ipcState_congr _ _ _
-            { tcb with pipBoost := computeMaxWaiterPriority st tid } tcb ?_ hTid rfl
-          -- Remaining goal: <result-state>.objects[tid.toObjId]? = some (.tcb { tcb with pipBoost := ... })
-          -- All scheduler branches have .objects = st.objects.insert ..., so hSelf applies.
-          have hSelf : (st.objects.insert tid.toObjId
-              (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }))[tid.toObjId]? =
-              some (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) :=
-            RHTable_get?_insert_self st.objects tid.toObjId _ hObjInv
-          by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore bootCoreId)
-          · simp only [hRQ, ite_true]; split <;> exact hSelf
-          · simp only [hRQ, ite_false]; exact hSelf
-      | _ => rfl
+    | some tcb =>
+      have hRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+        (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTid
+      simp only []
+      split
+      · rfl -- pipBoost unchanged
+      · -- pipBoost changed: blockingServer reads only ipcState, which is
+        -- unchanged by { tcb with pipBoost := ... }. Use ipcState congr lemma.
+        refine blockingServer_ipcState_congr _ _ _
+          { tcb with pipBoost := computeMaxWaiterPriority st tid } tcb ?_ hRaw rfl
+        -- Remaining goal: <result-state>.objects[tid.toObjId]? = some (.tcb { tcb with pipBoost := ... })
+        -- All scheduler branches have .objects = st.objects.insert ..., so hSelf applies.
+        have hSelf : (st.objects.insert tid.toObjId
+            (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }))[tid.toObjId]? =
+            some (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) :=
+          RHTable_get?_insert_self st.objects tid.toObjId _ hObjInv
+        by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore bootCoreId)
+        · simp only [hRQ, ite_true]; split <;> exact hSelf
+        · simp only [hRQ, ite_false]; exact hSelf
   · exact blockingServer_congr_objects _ _ _ (updatePipBoost_ipcState_frame st tid hObjInv t hEq)
 
 -- ============================================================================
@@ -311,8 +319,8 @@ the magnitude of the boost (under-boosting would reintroduce inversion).
 (the only change is the literal core), so the existing single-core PIP proof base
 is preserved verbatim and the per-core form generalises it. -/
 def updatePipBoostOnCore (st : SystemState) (c : CoreId) (tid : ThreadId) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (KernelObject.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
     let newBoost := computeMaxWaiterPriority st tid
     -- Only update if pipBoost actually changed
     if tcb.pipBoost == newBoost then st
@@ -331,7 +339,7 @@ def updatePipBoostOnCore (st : SystemState) (c : CoreId) (tid : ThreadId) : Syst
           }
         else st'
       else st'
-  | _ => st
+  | none => st
 
 /-- WS-RR RR2.6: `updatePipBoostOnCore` rewrites the boosted thread's TCB in
 `pipBoost` **and nothing else** — including on the no-op arm, where the boost it
@@ -349,8 +357,11 @@ theorem updatePipBoostOnCore_objects_at (st : SystemState) (c : CoreId) (tid : T
   have hIns : ∀ t : KernelObject,
       (st.objects.insert tid.toObjId t).get? tid.toObjId = some t := fun t =>
     SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId t hInv
+  -- The goal is converted to store form because `hIns` is about the table;
+  -- the *discriminant* needs no conversion any more, since the transition
+  -- matches on `getTcb?` itself.
   simp only [SystemState.getTcb?_eq_some_iff]
-  simp only [updatePipBoostOnCore, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb]
+  simp only [updatePipBoostOnCore, hTcb]
   split
   · exact ⟨tcb.pipBoost, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb⟩
   · split
@@ -557,11 +568,11 @@ fallthrough arm returns `st`. -/
 theorem updatePipBoostOnCore_eq_self_of_getTcb?_none (st : SystemState) (c : CoreId)
     (tid : ThreadId) (hNone : st.getTcb? tid = none) :
     updatePipBoostOnCore st c tid = st := by
+  -- The transition discriminates on `getTcb?`, which is what this hypothesis
+  -- is about, so the proof is the rewrite rather than a split through the
+  -- accessor's definition.
   unfold updatePipBoostOnCore
-  unfold SystemState.getTcb? at hNone
-  split
-  · rename_i tcb hMatch; rw [hMatch] at hNone; simp at hNone
-  · rfl
+  rw [hNone]
 
 /-- WS-SM SM5.F.4: the cross-core donation chain walk preserves the object-store
 invariant — each link is a `pipBoostWithWake` boost (an `invExt`-preserving TCB

@@ -35,19 +35,19 @@ def computeMaxWaiterPriority (st : SystemState) (tid : ThreadId)
     : Option Priority :=
   let waiters := waitersOf st tid
   waiters.foldl (fun acc waiterTid =>
-    match st.objects[waiterTid.toObjId]? with
-    | some (KernelObject.tcb waiterTcb) =>
+    match st.getTcb? waiterTid with
+    | some waiterTcb =>
       let (prio, _, _) := effectiveSchedParams st waiterTcb
       match acc with
       | none => some prio
       | some curMax => some ⟨Nat.max curMax.val prio.val⟩
-    | _ => acc) none
+    | none => acc) none
 
 /-- D4-F: computeMaxWaiterPriority of a thread with no waiters is none. -/
 theorem computeMaxWaiterPriority_no_waiters (st : SystemState) (tid : ThreadId)
     (h : waitersOf st tid = []) :
     computeMaxWaiterPriority st tid = none := by
-  simp [computeMaxWaiterPriority, h]
+  simp [computeMaxWaiterPriority, h, SystemState.getTcb?]
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase P1: computeMaxWaiterPriority frame lemma
@@ -61,7 +61,7 @@ theorem waitersOf_frame
     (hObjects : st'.objects = st.objects)
     (hObjIdx : st'.objectIndex = st.objectIndex) :
     waitersOf st' tid = waitersOf st tid := by
-  unfold waitersOf
+  unfold waitersOf SystemState.getObject?
   rw [hObjIdx, hObjects]
 
 /-- WS-RC R5.B.2 / Phase P1: `getSchedContext?` is invariant under an
@@ -69,9 +69,11 @@ theorem waitersOf_frame
 theorem getSchedContext?_frame
     (st st' : SystemState) (scId : SchedContextId)
     (hObjects : st'.objects = st.objects) :
-    st'.getSchedContext? scId = st.getSchedContext? scId := by
-  unfold SystemState.getSchedContext?
-  rw [hObjects]
+    st'.getSchedContext? scId = st.getSchedContext? scId :=
+  -- The fact is stated once, beside the accessor it is about
+  -- (`Model/State.lean`); this is the namespace-local spelling the liveness
+  -- suite's `#check` anchor names, not a second proof of it.
+  SystemState.getSchedContext?_frame hObjects scId
 
 /-- WS-RC R5.B.2 / Phase P1: `effectiveSchedParams` is invariant under an
     operation that preserves the object table.  The helper reads only
@@ -100,13 +102,13 @@ theorem effectiveSchedParams_frame
 private def cmwpFoldBody (st : SystemState)
     (acc : Option SeLe4n.Priority) (waiterTid : ThreadId)
     : Option SeLe4n.Priority :=
-  match st.objects[waiterTid.toObjId]? with
-  | some (KernelObject.tcb waiterTcb) =>
+  match st.getTcb? waiterTid with
+  | some waiterTcb =>
     let (prio, _, _) := effectiveSchedParams st waiterTcb
     match acc with
     | none => some prio
     | some curMax => some ⟨Nat.max curMax.val prio.val⟩
-  | _ => acc
+  | none => acc
 
 /-- Helper: `cmwpFoldBody st'` agrees with `cmwpFoldBody st` pointwise when
     `st'.objects = st.objects`. -/
@@ -116,15 +118,10 @@ private theorem cmwpFoldBody_frame
     (acc : Option SeLe4n.Priority) (waiterTid : ThreadId) :
     cmwpFoldBody st' acc waiterTid = cmwpFoldBody st acc waiterTid := by
   unfold cmwpFoldBody
-  rw [hObjects]
-  cases hObj : st.objects[waiterTid.toObjId]? with
+  rw [SystemState.getTcb?_frame hObjects]
+  cases hObj : st.getTcb? waiterTid with
   | none => rfl
-  | some obj =>
-    cases obj with
-    | tcb tc =>
-      simp only [effectiveSchedParams_frame st st' tc hObjects]
-    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rfl
+  | some tc => simp only [effectiveSchedParams_frame st st' tc hObjects]
 
 private theorem computeMaxWaiterPriority_foldBody_frame
     (st st' : SystemState) (ws : List ThreadId)
@@ -250,13 +247,20 @@ theorem waitersOf_frame_per_field
     -- Case-split on the lookup equivalence at `head` and on the result.
     rcases hEquiv head with hSame | ⟨tcb, tcb', hPre, hPost, hTid, hIpc, _, _, _, _, _⟩
     · -- Same lookup: rewrite st' to st in the discriminant.  Then both sides have
-      -- the same outer match; split on it.
-      rw [hSame]
+      -- the same outer match; split on it.  `lookup_equiv` is stated over the
+      -- store, so the accessor is unfolded to meet it.
+      rw [SystemState.getObject?_congr_at hSame]
       split
       · exact ih
       · rw [ih]
-    · -- TCB rewrite preserving tid + ipcState.
-      rw [hPre, hPost]
+    · -- TCB rewrite preserving tid + ipcState.  The per-slot equations are
+      -- stated over the store; `getObject?` is definitionally that read, so
+      -- they retype into accessor form in a local `have` and the rewrite then
+      -- touches only `head` -- unfolding the accessor in the goal would also
+      -- rewrite the tail and desynchronise `ih`.
+      have hPreA : st.getObject? head = some (.tcb tcb) := hPre
+      have hPostA : st'.getObject? head = some (.tcb tcb') := hPost
+      rw [hPreA, hPostA]
       simp only [hIpc, hTid]
       split
       · exact ih
@@ -279,19 +283,19 @@ private theorem cmwpFoldBody_frame_per_field
     have hStep : cmwpFoldBody st' acc head = cmwpFoldBody st acc head := by
       unfold cmwpFoldBody
       rcases hEquiv head.toObjId with hSame | ⟨tcb, tcb', hPre, hPost, _, _, hBind, hPrio, hDl, hDom, hPip⟩
-      · rw [hSame]
+      · rw [SystemState.getTcb?_congr_at hSame]
         -- After rewriting, both sides have same discriminant.  The inner bodies
         -- differ on effectiveSchedParams st' vs st.  Bridge via frame_per_field.
-        cases hLook : st.objects[head.toObjId]? with
+        cases hLook : st.getTcb? head with
         | none => rfl
-        | some obj =>
-          cases obj with
-          | tcb waiterTcb =>
-            simp only
-            rw [effectiveSchedParams_frame_per_field st st' waiterTcb hSc]
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-            | schedContext _ | reply _ => rfl
-      · rw [hPre, hPost]
+        | some waiterTcb =>
+          simp only
+          rw [effectiveSchedParams_frame_per_field st st' waiterTcb hSc]
+      · have hPreA : st.getTcb? head = some tcb := by
+          unfold SystemState.getTcb?; rw [hPre]
+        have hPostA : st'.getTcb? head = some tcb' := by
+          unfold SystemState.getTcb?; rw [hPost]
+        rw [hPreA, hPostA]
         -- After rw, both sides have `match some (.tcb tcb') with ...` and
         -- `match some (.tcb tcb) with ...`.  Reduce both matches via simp.
         simp only
@@ -391,13 +395,13 @@ def computeMaxWaiterPriorityOnCore (st : SystemState) (c : CoreId) (tid : Thread
   let waiters := waitersOf st tid
   waiters.foldl (fun acc waiterTid =>
     if SeLe4n.Kernel.determineTargetCore st waiterTid == c then
-      match st.objects[waiterTid.toObjId]? with
-      | some (KernelObject.tcb waiterTcb) =>
+      match st.getTcb? waiterTid with
+      | some waiterTcb =>
         let (prio, _, _) := effectiveSchedParams st waiterTcb
         match acc with
         | none => some prio
         | some curMax => some ⟨Nat.max curMax.val prio.val⟩
-      | _ => acc
+      | none => acc
     else acc) none
 
 /-- WS-SM SM5.F.1: per-core fold body, factored to relate `computeMaxWaiterPriorityOnCore`
@@ -421,7 +425,7 @@ private theorem computeMaxWaiterPriorityOnCore_eq_foldBody
 theorem computeMaxWaiterPriorityOnCore_no_waiters (st : SystemState) (c : CoreId)
     (tid : ThreadId) (h : waitersOf st tid = []) :
     computeMaxWaiterPriorityOnCore st c tid = none := by
-  simp [computeMaxWaiterPriorityOnCore, h]
+  simp [computeMaxWaiterPriorityOnCore, h, SystemState.getTcb?]
 
 /-- WS-SM SM5.F.1: a waiter's effective-priority contribution to the fold (`0` for
 a non-TCB).  Phrased via the typed `getTcb?` accessor — `cmwpFoldBody`'s raw

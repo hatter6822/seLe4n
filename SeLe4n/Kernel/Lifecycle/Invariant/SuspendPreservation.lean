@@ -1141,7 +1141,10 @@ theorem restoreToReady_blockingServer_subgraph
         show (st.objects.insert tid.toObjId _).get? t.toObjId = _
         rw [hEq]
         exact RobinHood.RHTable.getElem?_insert_self _ tid.toObjId _ hObjInv
-      rw [hRRObj]
+      -- `blockingServer` discriminates through `getTcb?`; this hypothesis is a
+      -- *value* at one key rather than a state-to-state congruence, so it
+      -- crosses to accessor form through `getTcb?_eq_some_iff`.
+      rw [(SystemState.getTcb?_eq_some_iff _ t _).mpr hRRObj]
   · -- t.toObjId ≠ tid.toObjId: lookup matches pre-state.
     right
     unfold PriorityInheritance.blockingServer
@@ -1156,7 +1159,7 @@ theorem restoreToReady_blockingServer_subgraph
         have hNe : ¬(tid.toObjId == t.toObjId) = true := by
           intro h; apply hEq; exact (beq_iff_eq.mp h).symm
         exact RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId t.toObjId _ hNe hObjInv
-    rw [hRRObj]
+    rw [SystemState.getTcb?_congr_at hRRObj]
 
 /-- WS-RC R5.B.2 / Phase Q1: `restoreToReady` preserves `blockingAcyclic`.
 
@@ -1199,8 +1202,9 @@ theorem ensureRunnable_blockingServer_eq
         = PriorityInheritance.blockingServer st t := by
   intro t
   unfold PriorityInheritance.blockingServer
-  rw [show (ensureRunnable st tid).objects[t.toObjId]? = st.objects[t.toObjId]? from
-        congrArg (fun o => o[t.toObjId]?) (ensureRunnable_objects_eq st tid)]
+  rw [SystemState.getTcb?_congr_at
+        (show (ensureRunnable st tid).objects[t.toObjId]? = st.objects[t.toObjId]? from
+          congrArg (fun o => o[t.toObjId]?) (ensureRunnable_objects_eq st tid))]
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase Q2: computeMaxWaiterPriority frame for ensureRunnable
@@ -1227,7 +1231,7 @@ theorem ensureRunnable_preserves_computeMaxWaiterPriority
 theorem restoreIncomingContext_objects_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).objects = st.objects := by
-  unfold restoreIncomingContext
+  unfold restoreIncomingContext SystemState.getTcb?
   split
   · rfl
   · rename_i obj _
@@ -1238,7 +1242,7 @@ theorem restoreIncomingContext_objects_eq
 theorem restoreIncomingContext_objectIndex_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).objectIndex = st.objectIndex := by
-  unfold restoreIncomingContext
+  unfold restoreIncomingContext SystemState.getTcb?
   split
   · rfl
   · rename_i obj _
@@ -1269,7 +1273,7 @@ theorem saveOutgoingContext_lookup_equiv
               (saveOutgoingContext st) objId := by
   intro objId
   unfold PriorityInheritance.computeMaxWaiterPriority_lookup_equiv
-  unfold saveOutgoingContext
+  unfold saveOutgoingContext SystemState.getTcb?
   cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
   | none => left; simp only []
   | some outTid =>
@@ -1315,7 +1319,7 @@ theorem saveOutgoingContext_getSchedContext?_eq
     (st : SystemState) (scId : SeLe4n.SchedContextId)
     (hObjInv : st.objects.invExt) :
     (saveOutgoingContext st).getSchedContext? scId = st.getSchedContext? scId := by
-  unfold SystemState.getSchedContext? saveOutgoingContext
+  unfold SystemState.getSchedContext? saveOutgoingContext SystemState.getTcb?
   cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
   | none => simp only []
   | some outTid =>
@@ -1355,7 +1359,7 @@ theorem saveOutgoingContext_getSchedContext?_eq
     `objectIndex`. -/
 theorem saveOutgoingContext_objectIndex_eq (st : SystemState) :
     (saveOutgoingContext st).objectIndex = st.objectIndex := by
-  unfold saveOutgoingContext
+  unfold saveOutgoingContext SystemState.getTcb?
   -- saveOutgoingContext returns either st (in three branches) or a record-with
   -- on objects only.  In every branch, .objectIndex agrees with st.objectIndex.
   split
@@ -1395,7 +1399,7 @@ theorem schedule_lookup_equiv
   -- We show: st'.objects = (saveOutgoingContext st).objects (since the post-saveOutgoingContext
   -- state's objects survive through dequeue/restoreIncomingContext/setCurrentThread unchanged).
   -- Then defer to saveOutgoingContext_lookup_equiv.
-  unfold schedule at hOk
+  unfold schedule SystemState.getTcb? at hOk
   cases hChoose : chooseThread st with
   | error _ => simp [hChoose] at hOk
   | ok pair =>
@@ -1449,7 +1453,7 @@ theorem schedule_getSchedContext?_eq
     (hObjInv : st.objects.invExt)
     (hOk : schedule st = .ok ((), st')) :
     st'.getSchedContext? scId = st.getSchedContext? scId := by
-  unfold schedule at hOk
+  unfold schedule SystemState.getTcb? at hOk
   cases hChoose : chooseThread st with
   | error _ => simp [hChoose] at hOk
   | ok pair =>
@@ -1498,7 +1502,7 @@ theorem schedule_getSchedContext?_eq
 theorem schedule_objectIndex_eq
     (st st' : SystemState) (hOk : schedule st = .ok ((), st')) :
     st'.objectIndex = st.objectIndex := by
-  unfold schedule at hOk
+  unfold schedule SystemState.getTcb? at hOk
   cases hChoose : chooseThread st with
   | error _ => simp [hChoose] at hOk
   | ok pair =>
@@ -1624,12 +1628,13 @@ theorem resumeThread_preserves_blockingAcyclic
       left
       unfold PriorityInheritance.blockingServer
       obtain ⟨tcb', hLook, hIpc⟩ := hAtTid
-      rw [show st'.objects[t.toObjId]? = some (.tcb tcb') from by rw [hTEq]; exact hLook]
+      rw [show st'.getTcb? t = some tcb' from by
+            unfold SystemState.getTcb?; rw [hTEq]; rw [hLook]]
       simp [hIpc]
     · -- Elsewhere: lookup matches pre-state.
       right
       unfold PriorityInheritance.blockingServer
-      rw [hOther t hTEq]
+      rw [SystemState.getTcb?_congr_at (hOther t hTEq)]
   · -- Object-index preservation.
     exact congrArg List.length hObjIdx
 

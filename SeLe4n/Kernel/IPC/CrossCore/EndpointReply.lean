@@ -268,12 +268,13 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
                               (removeRunnableOnCore stStashed receiver executingCore, .ok (receiver, none))
                         else (st, .error .replyCapInvalid)
   | none =>
-      -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is `none`
-      -- for both an absent object and a wrong-kinded one.  Recover the single-core
-      -- error distinction without a raw object-store variant match: a
-      -- present-but-wrong-kind object fails with `.invalidCapability`, a genuinely
-      -- absent one with `.objectNotFound` (mirrors `endpointCallOnCore`).
-      if (st.objects[endpointId]?).isSome then (st, .error .invalidCapability)
+      -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
+      -- `none` for both an absent object and a wrong-kinded one, so the
+      -- presence question is asked of the kind-agnostic accessor `getObject?`
+      -- -- a present-but-wrong-kind object fails with `.invalidCapability`, a
+      -- genuinely absent one with `.objectNotFound`.  Reading the store raw
+      -- here would have been the very pattern the comment claimed to avoid.
+      if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
 /-- **WS-SM SM6 (PR #873 round 6): the per-core receive that installs the
@@ -1840,7 +1841,7 @@ private theorem lookupTcb_some_of_getTcb?_some
     cases hr : tid.isReserved with
     | true => simp [lookupTcb, hr] at hLk0
     | false => exact Bool.false_ne_true
-  unfold lookupTcb
+  unfold lookupTcb SystemState.getTcb?
   rw [if_neg hNotRes, hObj]
 
 /-- WS-SM SM6.C.7 (replay barrier, composed): a reply cap is **single use**.

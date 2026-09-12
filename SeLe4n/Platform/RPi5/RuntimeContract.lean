@@ -96,9 +96,9 @@ def budgetSufficientCheck (st' : SystemState) (tcb : TCB) : Bool :=
   match tcb.schedContextBinding with
   | .unbound => true
   | .bound scId | .donated scId _ =>
-    match st'.objects[scId.toObjId]? with
-    | some (.schedContext sc) => sc.budgetRemaining.val > 0
-    | _ => false   -- AK9-E: missing / wrong-variant binding is a violation
+    match st'.getSchedContext? scId with
+    | some sc => sc.budgetRemaining.val > 0
+    | none => false   -- AK9-E: missing / wrong-variant binding is a violation
 
 /-- U6-C/V4-I/AG7-D: Computable check for register context stability with
     comprehensive current-thread validation. Returns `true` if the post-state
@@ -116,8 +116,8 @@ def registerContextStableCheck (_st st' : SystemState) : Bool :=
   match (st'.scheduler.currentOnCore bootCoreId) with
   | none => true
   | some tid =>
-    match st'.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    match st'.getTcb? tid with
+    | some tcb =>
       -- Core register-context match (U6-C)
       st'.machine.regs == tcb.registerContext &&
       -- Dequeue-on-dispatch: current not in runnable queue (AG7-D)
@@ -132,7 +132,7 @@ def registerContextStableCheck (_st st' : SystemState) : Bool :=
       (tcb.deadline.toNat == 0) &&
       -- Budget sufficiency (AG7-D)
       budgetSufficientCheck st' tcb
-    | _ => false
+    | none => false
 
 /-- U6-C: Prop-level register context stability predicate. -/
 def registerContextStablePred (st st' : SystemState) : Prop :=
@@ -253,7 +253,7 @@ theorem registerContextStableCheck_budget
     (hObj : st.objects[newTid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st (contextSwitchState newTid newRegs st) = true) :
     SeLe4n.Kernel.currentBudgetPositive (contextSwitchState newTid newRegs st) := by
-  unfold registerContextStableCheck contextSwitchState at hStable
+  unfold registerContextStableCheck contextSwitchState SystemState.getTcb? at hStable
   simp only [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
     PerCoreVector.get_set_eq, hObj, Bool.and_eq_true] at hStable
   unfold SeLe4n.Kernel.currentBudgetPositive contextSwitchState
@@ -264,17 +264,20 @@ theorem registerContextStableCheck_budget
   match hBind : tcb.schedContextBinding with
   | .unbound => trivial
   | .bound scId | .donated scId _ =>
-    simp only [hBind, budgetSufficientCheck] at hBud
-    simp only []
+    -- The check reads `getSchedContext?` of the *post*-state, whose `objects`
+    -- field is `st.objects` by construction; the accessor is unfolded so that
+    -- projection reduction makes the two states' reads the same term.
+    simp only [hBind, budgetSufficientCheck, SystemState.getSchedContext?] at hBud
+    simp only [SystemState.getSchedContext?]
+    -- Two arms, not eight: `getSchedContext?`'s `none` already is "absent or
+    -- wrong-kinded", which is what the seven enumerated non-SchedContext arms
+    -- said one constructor at a time.
     match hSc : st.objects[scId.toObjId]? with
     | some (.schedContext sc) =>
       simp only [hSc] at hBud ⊢
       simp at hBud; exact hBud
     | some (.endpoint _) | some (.notification _) | some (.tcb _) |
       some (.cnode _) | some (.vspaceRoot _) | some (.untyped _) | some (.reply _) | none =>
-      -- AK9-E: budgetSufficientCheck now returns false for these cases,
-      -- so hBud : false = true is a direct contradiction — no SC to
-      -- discharge currentBudgetPositive from.
       simp [hSc] at hBud
 
 /-! ## AN7-C (H-16): Per-conjunct soundness theorems for `registerContextStableCheck`
@@ -304,7 +307,7 @@ theorem registerContextStableCheck_none_current
     (st st' : SeLe4n.Model.SystemState)
     (hNone : (st'.scheduler.currentOnCore bootCoreId) = none) :
     registerContextStableCheck st st' = true := by
-  unfold registerContextStableCheck
+  unfold registerContextStableCheck SystemState.getTcb?
   rw [hNone]
 
 /-- AN7-C: Conversely, when the check passes, either there is no current
@@ -317,7 +320,7 @@ theorem registerContextStableCheck_implies_tcb_present
     ∃ tid tcb,
       (st'.scheduler.currentOnCore bootCoreId) = some tid ∧
       st'.objects[tid.toObjId]? = some (.tcb tcb) := by
-  unfold registerContextStableCheck at hStable
+  unfold registerContextStableCheck SystemState.getTcb? at hStable
   cases hCur : (st'.scheduler.currentOnCore bootCoreId) with
   | none => exact Or.inl rfl
   | some tid =>
@@ -348,7 +351,7 @@ theorem registerContextStableCheck_register_match
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
     (st'.machine.regs == tcb.registerContext) = true := by
-  unfold registerContextStableCheck at hStable
+  unfold registerContextStableCheck SystemState.getTcb? at hStable
   simp only [hCur, hObj, Bool.and_eq_true] at hStable
   exact hStable.1.1.1.1.1
 
@@ -362,7 +365,7 @@ theorem registerContextStableCheck_dequeue_on_dispatch
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
     st'.scheduler.runnable.contains tid = false := by
-  unfold registerContextStableCheck at hStable
+  unfold registerContextStableCheck SystemState.getTcb? at hStable
   simp only [hCur, hObj, Bool.and_eq_true] at hStable
   have h := hStable.1.1.1.1.2
   exact Bool.not_eq_true' _ |>.mp h
@@ -376,7 +379,7 @@ theorem registerContextStableCheck_timeSlice_positive
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
     tcb.timeSlice > 0 := by
-  unfold registerContextStableCheck at hStable
+  unfold registerContextStableCheck SystemState.getTcb? at hStable
   simp only [hCur, hObj, Bool.and_eq_true] at hStable
   have h := hStable.1.1.1.2
   exact decide_eq_true_eq.mp h
@@ -390,7 +393,7 @@ theorem registerContextStableCheck_ipcReady
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
     tcb.ipcState = .ready := by
-  unfold registerContextStableCheck at hStable
+  unfold registerContextStableCheck SystemState.getTcb? at hStable
   simp only [hCur, hObj, Bool.and_eq_true] at hStable
   have h := hStable.1.1.2
   exact beq_iff_eq.mp h
@@ -404,7 +407,7 @@ theorem registerContextStableCheck_edfCompatible
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
     tcb.deadline.toNat = 0 := by
-  unfold registerContextStableCheck at hStable
+  unfold registerContextStableCheck SystemState.getTcb? at hStable
   simp only [hCur, hObj, Bool.and_eq_true] at hStable
   have h := hStable.1.2
   exact beq_iff_eq.mp h
@@ -419,7 +422,7 @@ theorem registerContextStableCheck_budget_conjunct
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
     budgetSufficientCheck st' tcb = true := by
-  unfold registerContextStableCheck at hStable
+  unfold registerContextStableCheck SystemState.getTcb? at hStable
   simp only [hCur, hObj, Bool.and_eq_true] at hStable
   exact hStable.2
 

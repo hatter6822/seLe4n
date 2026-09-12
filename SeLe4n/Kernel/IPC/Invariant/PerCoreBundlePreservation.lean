@@ -586,7 +586,7 @@ theorem notificationSignal_passiveServerIdleFrameOnCore
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     passiveServerIdleFrameOnCore st st' c := by
-  simp only [notificationSignal] at hStep
+  simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     cases hWaiters : ntfn.waitingThreads.tail? with
@@ -627,7 +627,7 @@ theorem notificationWait_passiveServerIdleFrameOnCore
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     passiveServerIdleFrameOnCore st st' c := by
-  simp only [notificationWait] at hStep
+  simp only [notificationWait, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -666,7 +666,8 @@ theorem notificationWait_passiveServerIdleFrameOnCore
                 rw [lookupTcb]; rw [lookupTcb] at hLookup
                 by_cases hRes : waiter.isReserved
                 · rw [if_pos hRes] at hLookup; simp at hLookup
-                · rw [if_neg hRes, hOrig1]
+                · rw [if_neg hRes]
+                  exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hOrig1
               split at hStep
               next => contradiction
               next st2 hSI =>
@@ -696,7 +697,7 @@ theorem endpointSendDual_passiveServerIdleFrameOnCore
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     passiveServerIdleFrameOnCore st st' c := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -768,7 +769,7 @@ theorem endpointReceiveDual_passiveServerIdleFrameOnCore
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     passiveServerIdleFrameOnCore st st' c := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -916,7 +917,7 @@ theorem endpointCall_passiveServerIdleFrameOnCore
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     passiveServerIdleFrameOnCore st st' c := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by

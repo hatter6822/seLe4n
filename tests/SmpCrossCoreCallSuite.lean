@@ -815,7 +815,7 @@ theorem donationChainWitness_pop_chain
     SeLe4n.Model.storeObject_objects_eq sMid s2 _ _ hInvMid hS3
   have hLinks : replyStackLinksAt? s2 donationChainWitnessOuter
       = some (none, some (.head donationChainWitnessContext)) := by
-    unfold replyStackLinksAt?
+    unfold replyStackLinksAt? SystemState.getObject?
     rw [hOuter2]
     simp [replyStackLinks?, witnessChainOuterReply]
   rw [donationChainFrom_succ, hLinks]

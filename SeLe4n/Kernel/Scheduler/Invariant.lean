@@ -286,15 +286,16 @@ def effectiveBucketPriority (st : SystemState) (tcb : TCB) : SeLe4n.Priority :=
   let base : SeLe4n.Priority := match tcb.schedContextBinding with
     | .unbound => tcb.priority
     | .bound scId =>
-      -- AN10-B note: kept on the raw lookup (rather than migrated to
-      -- `getSchedContext?`) because `effectiveBucketPriority_frame` /
-      -- `_frame_weak` / `_lookup_non_sc` and ~15 downstream invariant
-      -- proofs case-split on this exact shape. Migrating cascades through
-      -- the entire scheduler invariant module without proof-correctness
-      -- benefit; tracked under DEF-AK7-F.reader.hygiene-residual.
-      match (st.objects[scId.toObjId]? : Option KernelObject) with
-      | some (.schedContext sc) => sc.priority
-      | _ => tcb.priority
+      -- Reads through `getSchedContext?`.  The AN10-B note that stood here
+      -- deferred this on the ground that the downstream invariant proofs
+      -- case-split on the raw shape and migrating would cascade "without
+      -- proof-correctness benefit".  The cascade is real and it is a
+      -- *simplification*: those splits enumerate the seven non-SchedContext
+      -- constructors, and the accessor has already collapsed all seven into
+      -- its own `none`, so each becomes two arms.
+      match st.getSchedContext? scId with
+      | some sc => sc.priority
+      | none => tcb.priority
     -- WS-OD (v0.35.3): a donee runs at its **own** base priority, so this arm
     -- reads no SchedContext at all — the `SchedContextBinding.ownScId?`
     -- classification, mirrored here because `Invariant.lean` sits below
@@ -311,7 +312,7 @@ def effectiveBucketPriority (st : SystemState) (tcb : TCB) : SeLe4n.Priority :=
     (st : SystemState) (tcb : TCB)
     (hUnbound : tcb.schedContextBinding = .unbound) :
     effectiveBucketPriority st tcb = effectiveRunQueuePriority tcb := by
-  unfold effectiveBucketPriority effectiveRunQueuePriority
+  unfold effectiveBucketPriority effectiveRunQueuePriority SystemState.getSchedContext?
   simp [hUnbound]
 
 /-- AK2-B: When a bound thread's SchedContext is missing (unreachable under
@@ -323,17 +324,15 @@ theorem effectiveBucketPriority_of_bound_sc_missing
       ∃ owner, tcb.schedContextBinding = .donated scId owner)
     (hMiss : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) :
     effectiveBucketPriority st tcb = effectiveRunQueuePriority tcb := by
-  unfold effectiveBucketPriority effectiveRunQueuePriority
+  unfold effectiveBucketPriority effectiveRunQueuePriority SystemState.getSchedContext?
   rcases hBound with hB | ⟨owner, hB⟩
   · rw [hB]
-    cases hLookup : (st.objects[scId.toObjId]? : Option KernelObject) with
-    | none => simp [hLookup]
-    | some obj =>
-      cases obj with
-      | schedContext sc => exact absurd hLookup (hMiss sc)
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | tcb _
-      | reply _ =>
-          simp [hLookup]
+    -- Two arms, not eight: `getSchedContext?` has already collapsed the six
+    -- other constructors and the absent key into its own `none`.
+    cases hLookup : st.getSchedContext? scId with
+    | none => simp
+    | some sc =>
+      exact absurd ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hLookup) (hMiss sc)
   · -- WS-OD (v0.35.3): the `.donated` arm reads no SchedContext at all, so it
     -- *is* the fallback and `hMiss` has nothing to discharge.  Stated by
     -- `effectiveBucketPriority_of_donated` without the hypothesis.
@@ -348,7 +347,7 @@ half of `effectiveBucketPriority_of_bound_sc_missing`, sharpened. -/
     (owner : SeLe4n.ThreadId)
     (hDonated : tcb.schedContextBinding = .donated scId owner) :
     effectiveBucketPriority st tcb = effectiveRunQueuePriority tcb := by
-  unfold effectiveBucketPriority effectiveRunQueuePriority
+  unfold effectiveBucketPriority effectiveRunQueuePriority SystemState.getSchedContext?
   rw [hDonated]
 
 /-- AK2-B helper: auxiliary "falls through to base" lemma. If a map lookup
@@ -382,7 +381,7 @@ theorem effectiveBucketPriority_frame
   | bound scId =>
     have hEq : st'.objects[scId.toObjId]? = st.objects[scId.toObjId]? :=
       hSc scId (Or.inl hBind)
-    simp only [hEq]
+    simp only [SystemState.getSchedContext?_congr_at hEq]
   -- WS-OD (v0.35.3): the `.donated` arm reads no object store, so the frame
   -- hypothesis is not needed on this branch.
   | donated _ _ => rfl
@@ -411,9 +410,21 @@ theorem effectiveBucketPriority_frame_weak
   | bound scId =>
     simp only [hBind]
     rcases hSc scId (Or.inl hBind) with ⟨sc, hOld, hNew⟩ | ⟨hOldN, hNewN⟩
-    · simp only [hOld, hNew]
-    · rw [effectiveBucketPriority_lookup_non_sc st' tcb scId hNewN]
-      rw [effectiveBucketPriority_lookup_non_sc st tcb scId hOldN]
+    · simp only [(SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hOld,
+        (SystemState.getSchedContext?_eq_some_iff st' scId sc).mpr hNew]
+    · -- Neither state holds a SchedContext at `scId`, so both sides take the
+      -- accessor's `none` arm.  The body is already unfolded here, so this
+      -- discharges the two lookups directly rather than rewriting with the
+      -- whole-function lemma, whose left-hand side is no longer present.
+      have hNone : ∀ (s : SystemState),
+          (∀ sc, s.objects[scId.toObjId]? ≠ some (.schedContext sc)) →
+          s.getSchedContext? scId = none := by
+        intro s hMiss
+        cases h : s.getSchedContext? scId with
+        | none => rfl
+        | some sc =>
+          exact absurd ((SystemState.getSchedContext?_eq_some_iff s scId sc).mp h) (hMiss sc)
+      simp only [hNone st hOldN, hNone st' hNewN]
   -- WS-OD (v0.35.3): the `.donated` arm reads no object store.
   | donated _ _ => rfl
 

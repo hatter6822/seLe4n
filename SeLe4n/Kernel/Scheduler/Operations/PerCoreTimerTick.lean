@@ -985,7 +985,7 @@ theorem saveOutgoingContextOnCore_preserves_objects_invExt (st : SystemState) (c
 register file, so the object store is unchanged. -/
 theorem restoreIncomingContext_objects_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).objects = st.objects := by
-  unfold restoreIncomingContext; split <;> rfl
+  unfold restoreIncomingContext SystemState.getTcb?; split <;> rfl
 
 -- ============================================================================
 -- WS-SM SM5.E (folded idle): `idleFallbackOnCore` invariant lemmas.  These
