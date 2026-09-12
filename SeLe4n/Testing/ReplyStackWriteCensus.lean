@@ -174,7 +174,31 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind,
       "`{ sc with boundThread := none, isActive := false }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.FrozenOps.frozenSetPriority,
-      "`{ sc with priority := _ }` on the bound SchedContext; `scReply` is untouched") ]
+      "`{ sc with priority := _ }` on the bound SchedContext; `scReply` is untouched")
+  , (`SeLe4n.Kernel.FrozenOps.frozenTimerTickBudget,
+      "rebuilds a SchedContext for its budget accounting; `scReply` is untouched")
+    -- ---------------------------------------------------------------------
+    -- Reached through a helper, which is what the frontier started following
+    -- at `v0.35.13`.  Each of these composes `Model.linkReply` and touches no
+    -- other chain field itself, so each is neutral for the reason that one is
+    -- — and each has to say so, because the frontier now sees them.
+  , (`SeLe4n.Model.SystemState.linkCallerReply,
+      "`linkReply` (caller only, gated on `Reply.isFree`) plus the caller TCB's `replyObject`, which is not chain data")
+  , (`SeLe4n.Model.SystemState.linkServerStashedReply,
+      "`linkCallerReply` plus the server TCB's `pendingReceiveReply`; no chain field")
+  , (`SeLe4n.Kernel.endpointReceiveDual,
+      "links a dequeued caller through `linkCallerReply`; writes no chain field itself")
+  , (`SeLe4n.Kernel.endpointReceiveDualOnCore,
+      "the per-core spelling of the same receive; same reason")
+    -- ---------------------------------------------------------------------
+    -- Inventories of THEOREMS.  Their values embed theorem statements, and a
+    -- statement about `storeObject` mentions `storeObject` — so they reach both
+    -- halves of the frontier while performing no store at all.  Specification
+    -- vocabulary, like the theorems they list.
+  , (`SeLe4n.Kernel.kernelOperationPerCoreNiTheorem,
+      "an inventory of non-interference theorem statements; performs no store")
+  , (`SeLe4n.Kernel.perCoreInvariantSuiteTheorems,
+      "an inventory of per-core invariant theorem statements; performs no store") ]
 
 /-- Where the derived frontier and the primitive list disagree.
 
@@ -214,13 +238,29 @@ def isProjectConstant (n : Name) : Bool :=
 contributor wrote: match arms, equation lemmas, proof terms and the like.  They
 inherit their parent's references, so counting them would report one site many
 times under names nobody can register. -/
-def isAuxiliary (n : Name) : Bool :=
+def isAuxiliary (env : Environment) (n : Name) : Bool :=
+  -- **Asked of the environment where the environment has an answer.**  Lean
+  -- knows which constants it generated, so `isAuxRecursor` / `isRecCore` /
+  -- `Name.isInternal` decide those exactly; a name-prefix list decided them by
+  -- resemblance and had already missed `casesOn`, `recOn`, `below`, `brecOn`
+  -- and `noConfusion`.  The prefix tests that remain cover what those
+  -- predicates do not name — matchers (`foo.match_1`), equation lemmas and
+  -- compilation artefacts — and `Meta.isMatcher`, which would decide the first
+  -- exactly, is monadic while this is a pure function of the environment.
+  -- **Not `Name.isInternal`**: it is true of the `_private.…` mangling, so
+  -- including it would have excluded every `private def` in the kernel — a
+  -- silent narrowing of exactly the kind this census exists to prevent,
+  -- introduced by the fix for one.  The witness below caught it, which is what
+  -- witnesses are for.
   (n.eraseMacroScopes != n) ||
+  isAuxRecursor env n || isRecCore env n ||
   n.components.any fun c => match c with
     | .str _ s =>
         "match_".isPrefixOf s || "proof_".isPrefixOf s || "eq_".isPrefixOf s ||
+        "noConfusion".isPrefixOf s || "below".isPrefixOf s || "brecOn".isPrefixOf s ||
+        s == "casesOn" || s == "recOn" || s == "rec" || s == "ind" ||
         s == "_sunfold" || s == "_unsafe_rec" || s == "eq_def" || s == "_cstage1" ||
-        s == "_cstage2" || s == "noConfusionType" || s == "_proof_1"
+        s == "_cstage2" || s == "_proof_1"
     | _ => false
 
 /-- `true` when `n`'s own body directly references any of `targets`. -/
@@ -258,22 +298,54 @@ the caller's, since deciding it needs `MetaM`. -/
 def directWriteCandidates (env : Environment) : List Name :=
   env.constants.toList.foldl
     (fun acc (n, _) =>
-      if isProjectConstant n && !isAuxiliary n && isDefinitionShaped env n &&
+      if isProjectConstant n && !isAuxiliary env n && isDefinitionShaped env n &&
           (chainWritePrimitives.contains n || usesDirectly env chainWritePrimitives n)
       then n :: acc else acc) []
 
+/-- `true` when `n` reaches a chain-bearing record constructor — in its own
+body, or through any chain of project definitions it calls.
+
+**Through helpers, because a conjunction over one body is not the question.**
+The frontier asks "does this definition build a chain record *and* store it",
+and an earlier cut asked both halves of `n` itself.  A writer that delegates the
+update splits the conjunction and defeats both: `clearPrev r` returns
+`{ r with prev := none }` and uses no store, while the caller passes
+`.reply (clearPrev r)` to `storeObject` and names no constructor.  Neither is a
+candidate, so the write lands with no chain result — the one thing this census
+exists to make impossible.
+
+Walked **backwards from the storing definitions** and memoised, rather than as a
+forward fixed point over the whole environment: nearly every definition in the
+tree reaches a constructor eventually, so the forward closure is both expensive
+and uninformative.  What makes the frontier small is that the *store* half stays
+direct — the site is where the store happens. -/
+partial def reachesChainConstructor (env : Environment)
+    (seen : Std.HashSet Name) (n : Name) : Bool × Std.HashSet Name :=
+  if seen.contains n then (false, seen) else
+  let seen := seen.insert n
+  match (env.find? n).bind (·.value? (allowOpaque := true)) with
+  | none => (false, seen)
+  | some v =>
+    let used := v.getUsedConstants
+    if used.any (fun c => chainRecordConstructors.contains c) then (true, seen)
+    else
+      used.foldl (fun (acc : Bool × Std.HashSet Name) c =>
+        if acc.1 then acc
+        else if isProjectConstant c then reachesChainConstructor env acc.2 c
+        else acc) (false, seen)
+
 /-- The derived candidate frontier for the primitive list: every project
-definition that both builds a chain-bearing record and reaches a store.
+definition that stores, and that reaches a chain-bearing record constructor.
 
 Deliberately over-approximating — it sees *that* a record was built, not which
-of its fields moved — so it fails closed: a definition it cannot classify is
-reported rather than skipped. -/
+of its fields moved, and it follows calls rather than values — so it fails
+closed: a definition it cannot classify is reported rather than skipped. -/
 def recordConstructingStoreCandidates (env : Environment) : List Name :=
   env.constants.toList.foldl
     (fun acc (n, _) =>
-      if isProjectConstant n && !isAuxiliary n && isDefinitionShaped env n &&
-          usesDirectly env chainRecordConstructors n &&
-          usesDirectly env objectStoreSpellings n
+      if isProjectConstant n && !isAuxiliary env n && isDefinitionShaped env n &&
+          usesDirectly env objectStoreSpellings n &&
+          (reachesChainConstructor env {} n).1
       then n :: acc else acc) []
 
 /-! ## What a write site owes
@@ -519,6 +591,24 @@ private def censusWitnessDirectLinkWrite (rid : SeLe4n.ReplyId) :
     | some r => SeLe4n.Model.storeObject rid.toObjId (.reply { r with next := none }) st
     | none => .ok ((), st)
 
+/-- The SPLIT-CONJUNCTION shape: the helper half.  Builds a chain-bearing
+record and names no store, so a frontier that conjoins both halves over one body
+sees it as harmless — which it is.  The *writer* below is the site. -/
+private def censusWitnessSplitHelper (r : SeLe4n.Kernel.Reply) : SeLe4n.Kernel.Reply :=
+  { r with prev := none }
+
+/-- ...and the writer half: it stores, and names no constructor.  Neither half
+was a candidate while the frontier asked both questions of one body, so the
+write landed with nothing saying what it did to the chain.  This witness is why
+`reachesChainConstructor` follows calls. -/
+private def censusWitnessSplitWriter (rid : SeLe4n.ReplyId) :
+    SeLe4n.Model.Kernel Unit :=
+  fun st =>
+    match st.getReply? rid with
+    | some r =>
+        SeLe4n.Model.storeObject rid.toObjId (.reply (censusWitnessSplitHelper r)) st
+    | none => .ok ((), st)
+
 /-- Writes no reply-stack data: reads a Reply and returns. -/
 private def censusWitnessNoWrite (st : SeLe4n.Model.SystemState) (rid : SeLe4n.ReplyId) :
     Option SeLe4n.Kernel.Reply :=
@@ -552,6 +642,17 @@ run_cmd Command.liftTermElabM do
   if usesDirectly env chainWritePrimitives ``censusWitnessDirectLinkWrite then
     throwError "reply-stack write census: the DIRECT LINK WRITE witness calls a chain-write \
       primitive, so it no longer stands for the shape the primitive list cannot see"
+  -- The split-conjunction witness, both directions: the WRITER is a candidate
+  -- (it stores and reaches a constructor through the helper) and the HELPER is
+  -- not (it constructs and stores nothing -- the site is where the store is).
+  unless (recordConstructingStoreCandidates env).contains ``censusWitnessSplitWriter do
+    throwError "reply-stack write census: the SPLIT-CONJUNCTION witness is not derived as a \
+      candidate — a writer that delegates its record update escapes the frontier, which is \
+      how a chain write can land with nothing saying what it does"
+  if (recordConstructingStoreCandidates env).contains ``censusWitnessSplitHelper then
+    throwError "reply-stack write census: the split-conjunction HELPER is derived as a \
+      candidate — the frontier is following construction into definitions that store \
+      nothing, so the site it names is not where the write happens"
   unless (recordConstructingStoreCandidates env).contains ``censusWitnessDirectLinkWrite do
     throwError "reply-stack write census: the DIRECT LINK WRITE witness is not derived as a \
       candidate -- a definition can rewrite a Reply's stack links with nothing noticing"
@@ -629,7 +730,8 @@ run_cmd Command.liftTermElabM do
   -- both directions; the witnesses above are excluded by name, since they are
   -- planted write sites rather than kernel ones.
   let witnesses : List Name :=
-    [``censusWitnessBareConsume, ``censusWitnessDirectLinkWrite]
+    [``censusWitnessBareConsume, ``censusWitnessDirectLinkWrite,
+     ``censusWitnessSplitWriter, ``censusWitnessSplitHelper]
   let mut derived : List Name := []
   for n in directWriteCandidates env do
     if witnesses.contains n then continue

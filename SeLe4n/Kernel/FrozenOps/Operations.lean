@@ -870,8 +870,22 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
                             -- detach reads the link the consume clears, so the
                             -- order is the content, exactly as it is live.
                             let st' := frozenDetachReplyFrameAboveOrSelf st'' replyId
+                            -- ...and the record stored is **`Reply.consumed`**, the
+                            -- live function, not an inline caller clear.  It is a
+                            -- pure function on a `Reply`, and this surface stores
+                            -- the live `Reply`, so there is no reason to spell the
+                            -- question twice — and spelling it twice got it wrong:
+                            -- `consumed` keeps the links only on a frame that
+                            -- **heads** a context (the pop that follows clears
+                            -- them) and clears `prev` and `next` on every other,
+                            -- where a bare `caller := none` leaves the frame with
+                            -- no caller and links intact.  That falsifies
+                            -- `Reply.wellFormed` at the frame, makes it fail
+                            -- `Reply.isFree` forever — so it can never be relinked
+                            -- or retyped — and diverges from the live transition
+                            -- under `frozenStateAgrees`.
                             match frozenStoreObject replyId.toObjId
-                                    (.reply { r with caller := none }) st' with
+                                    (.reply r.consumed) st' with
                             | .error e => .error e
                             | .ok ((), st'') =>
                               -- PR #873 round 15: the woken caller re-enters the

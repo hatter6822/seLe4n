@@ -76,7 +76,55 @@ BASELINE = REPO / "scripts" / "unsafe_justification_baseline.json"
 # **type**, which `tests::register_signature_pinned` uses to pin an ABI.  A type
 # performs nothing, so demanding a justification of one is a scanner matching a
 # keyword rather than asking about an operation.
-UNSAFE_SITE = re.compile(r"\bunsafe\s*(?:\{|fn\s+(?:r#)?[A-Za-z_])")
+UNSAFE_SITE = re.compile(
+    r"\bunsafe\s*\{"                                         # a block
+    r"|\bunsafe\s+(?:extern\s+\"[^\"]*\"\s+)?fn\s+(?:r#)?[A-Za-z_]"  # a declaration
+)
+
+# **Every form of the keyword this scanner knows, and nothing else passes.**
+#
+# An earlier cut matched `unsafe` followed immediately by `fn`, so the ordinary
+# FFI spelling `pub unsafe extern "C" fn f()` was not a site *at all* — absent
+# from the count and from the unjustified inventory alike, with an empty
+# baseline still reporting PASS.  That is the fail-OPEN direction: a scanner
+# that builds a set of obligations and does not recognise an input has dropped
+# an obligation, silently.
+#
+# So the default branch is explicit.  Each pattern below is a form the scanner
+# has a decision for; an `unsafe` matching none of them stops the gate with a
+# diagnostic, because a spelling Rust accepts and this gate does not is a gate
+# defect and should say so on the day it appears rather than quietly checking
+# less.
+UNSAFE_KNOWN_FORMS = [
+    (re.compile(r"\bunsafe\s*\{"), "block"),
+    (re.compile(r"\bunsafe\s+(?:extern\s+\"[^\"]*\"\s+)?fn\s+(?:r#)?[A-Za-z_]"),
+     "declaration"),
+    # `unsafe impl` / `unsafe trait` are not operations: they assert a trait
+    # contract, which carries its own review story and no per-site obligation.
+    (re.compile(r"\bunsafe\s+(?:impl|trait)\b"), "trait contract"),
+    # Rust 2024's `unsafe extern { … }` block header.  The items inside are
+    # declarations and are matched as such; the header itself performs nothing.
+    (re.compile(r"\bunsafe\s+extern\s*(?:\"[^\"]*\"\s*)?\{"), "extern block header"),
+    # A function-pointer TYPE — `unsafe fn(u8, T) -> R`, which
+    # `tests::register_signature_pinned` uses to pin an ABI.  A type performs
+    # nothing, so demanding a justification of one is a scanner matching a
+    # keyword rather than asking about an operation.
+    (re.compile(r"\bunsafe\s+(?:extern\s+\"[^\"]*\"\s+)?fn\s*\("), "function-pointer type"),
+]
+
+UNSAFE_KEYWORD = re.compile(r"\bunsafe\b")
+
+
+def unrecognised_unsafe_forms(path: Path, view: str) -> list[str]:
+    """Occurrences of `unsafe` this scanner has no decision for."""
+    out = []
+    for m in UNSAFE_KEYWORD.finditer(view):
+        if any(pat.match(view, m.start()) for pat, _ in UNSAFE_KNOWN_FORMS):
+            continue
+        line = view.count("\n", 0, m.start()) + 1
+        snippet = " ".join(view[m.start():m.start() + 48].split())
+        out.append(f"{path}:{line}: unrecognised `unsafe` form: {snippet!r}")
+    return out
 
 # **The two kinds ask different questions, so the gate asks each its own.**
 #
@@ -150,7 +198,8 @@ def justification_run(raw: str, view: str, at: int) -> str:
     return "\n".join(reversed(run))
 
 
-UNSAFE_FN_NAME = re.compile(r"\bunsafe\s+fn\s+(r#)?([A-Za-z_][A-Za-z0-9_]*)")
+UNSAFE_FN_NAME = re.compile(
+    r"\bunsafe\s+(?:extern\s+\"[^\"]*\"\s+)?fn\s+(r#)?([A-Za-z_][A-Za-z0-9_]*)")
 
 
 def sites(path: Path):
@@ -186,7 +235,7 @@ def sites(path: Path):
 
 
 def census(root: Path):
-    """(unjustified inventory, total sites, ARM-ARM-citing sites, declarations).
+    """(unjustified inventory, sites, ARM-ARM-citing sites, declarations, unreadable).
 
     The declaration count is reported because the two kinds are documented
     differently and prose cites the number: a figure nothing emits is a figure
@@ -197,8 +246,12 @@ def census(root: Path):
     total = 0
     cited = 0
     declarations = 0
+    unreadable: list[str] = []
     for path in sorted(root.glob("*/src/**/*.rs")):
         rel = str(path.relative_to(REPO))
+        unreadable += unrecognised_unsafe_forms(
+            path.relative_to(REPO), rust_code_view.code_no_strings(
+                path.read_text(encoding="utf-8")))
         for _off, decl, run, is_decl in sites(path):
             total += 1
             if is_decl:
@@ -207,7 +260,7 @@ def census(root: Path):
                 cited += 1
             if not justified(run, is_decl):
                 inventory[f"{rel}|{decl}"] = inventory.get(f"{rel}|{decl}", 0) + 1
-    return inventory, total, cited, declarations
+    return inventory, total, cited, declarations, unreadable
 
 
 def reconcile(current: dict[str, int], baseline: dict[str, int]) -> list[str]:
@@ -285,6 +338,20 @@ unsafe fn f() {}
 ///
 /// The caller holds the lock this reads.
 unsafe fn f() {}
+"""),
+    # THE ABI-QUALIFIER CASE.  `pub unsafe extern "C" fn` is the ordinary FFI
+    # spelling, and requiring `fn` immediately after `unsafe` made it not a site
+    # at all -- absent from the count and from the inventory alike, with an
+    # empty baseline still reporting PASS.  That is fail-OPEN: a dropped
+    # obligation, silently.
+    ("an undocumented `unsafe extern \"C\" fn`", False, """
+pub unsafe extern "C" fn f() {}
+"""),
+    ("a justified `unsafe extern \"C\" fn`", True, """
+/// # Safety
+///
+/// The caller upholds the C ABI contract.
+pub unsafe extern "C" fn f() {}
 """),
     # TOKEN-PRESERVING: the justification is there, in the idiom the *other*
     # site kind uses.  A declaration publishes its obligation to callers who
@@ -415,7 +482,15 @@ def _self_test() -> int:
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return _self_test()
-    inventory, total, cited, declarations = census(REPO / "rust")
+    inventory, total, cited, declarations, unreadable = census(REPO / "rust")
+    if unreadable:
+        # Fail CLOSED: a spelling Rust accepts and this gate does not is a gate
+        # defect, and it must say so rather than quietly checking less.
+        for u in unreadable:
+            print(f"FAIL: {u}", file=sys.stderr)
+        print("      Add the form to UNSAFE_KNOWN_FORMS with a decision for it.",
+              file=sys.stderr)
+        return 1
     if "--rows" in argv:
         for key, count in sorted(inventory.items()):
             print(f"UNJUSTIFIED_UNSAFE_SITE={key}|{count}")
@@ -446,6 +521,13 @@ def main(argv: list[str]) -> int:
           f"`# Safety` doc section on each of the {declarations} `unsafe fn` declaration(s); "
           f"{sum(inventory.values())} pinned at or below the floor across {len(baseline)} "
           f"key(s).  {cited}/{total} also cite the ARM ARM (diagnostic).")
+    # The claim, beside the number.  `125/125` reads as "every unsafe site in
+    # the crates"; what this gate can say is "every site it recognises".  The
+    # recognised forms are enumerated in UNSAFE_KNOWN_FORMS and anything else
+    # stops the gate, so the gap is bounded and visible -- but it is a gap, and
+    # the line says so rather than letting the ratio imply otherwise.
+    print(f"      scope: the forms in UNSAFE_KNOWN_FORMS ({len(UNSAFE_KNOWN_FORMS)} of them); "
+          f"an `unsafe` matching none of them fails this gate rather than being skipped.")
     return 0
 
 

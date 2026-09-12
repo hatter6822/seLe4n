@@ -12643,9 +12643,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenDetachReplyFrameAbove[^\n]*
 # non-reciprocating link a write instead of a refusal.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenDetachReplyFrameAbove[^\n]*(\n([ \t][^\n]*)?)*if a\.prev == some rid then \.error \.invalidArgument" SeLe4n/Kernel/FrozenOps/Core.lean'
 # The frozen reply detaches before it consumes, in the order the live one does.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*let st. := frozenDetachReplyFrameAboveOrSelf st.. replyId[^\n]*(\n([ \t][^\n]*)?)*caller := none" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*let st. := frozenDetachReplyFrameAboveOrSelf st.. replyId[^\n]*(\n([ \t][^\n]*)?)*\(\.reply r\.consumed\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # NEGATIVE, token-preserving -- it keeps both steps and swaps them.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*caller := none[^\n]*(\n([ \t][^\n]*)?)*frozenDetachReplyFrameAboveOrSelf" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*\(\.reply r\.consumed\)[^\n]*(\n([ \t][^\n]*)?)*frozenDetachReplyFrameAboveOrSelf" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# `Reply.consumed` is the record stored, not an inline `caller := none`: the
+# live function keeps a frame's links only when it HEADS a context and clears
+# them otherwise, and spelling that question a second time got the case wrong.
+# NEGATIVE, token-preserving -- it keeps the store and writes the clear inline.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*\(\.reply \{ r with caller := none \}\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # `Reply.isFree` is the ONE spelling of "may be linked to a new caller": it
 # reads both stack links, and the frozen guard read `caller` alone, so a frame
 # still on a live stack was linkable there while the live kernel refuses it.

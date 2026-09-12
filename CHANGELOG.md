@@ -1,3 +1,69 @@
+## v0.35.13 — PR #895 review round 2: a recognised set is not a derived set
+
+Five findings, all verified against the code first.  One is a defect in the
+kernel model; four are the same defect in four gates, and the cut treats them as
+one class rather than four patches.
+
+**The frozen reply left its own frame un-free.**  `Reply.consumed` keeps a
+frame's links only when it **heads** a scheduling context — the pop that follows
+clears them — and clears `prev` and `next` on every other frame.  `v0.35.12`'s
+frozen mirror stored `{ r with caller := none }` unconditionally, which is the
+head branch applied to every case: a non-head frame was left with no caller and
+its links intact, falsifying `Reply.wellFormed` there, failing `Reply.isFree`
+forever so the object could never be relinked or retyped, and diverging from the
+live transition under `frozenStateAgrees`.  It stores `r.consumed` now — the
+live function, which is where that question was already answered.
+
+**The gates: six of the eight findings across both rounds were one defect.**
+Every rule this project has written about scanners polices the *predicate* — what
+a gate asserts of an element it found.  None polices the *domain* — whether it
+found them all.  A predicate miss can fire on a real element; a domain miss is
+silent by construction, and the gate reports a number that reads as a
+measurement of absence.
+
+Where the domain **is** derivable, it is now derived:
+
+- `ReplyStackWriteCensus` asked "constructs **and** stores" of one body, which a
+  writer defeats by delegating the construction (`clearPrev r` builds it, the
+  caller stores it, neither is a candidate).  `reachesChainConstructor` follows
+  calls — walked backwards from the storing definitions and memoised, since
+  nearly everything reaches a constructor forwards — and the store half stays
+  direct, because the site is where the store happens.  Seven newly visible
+  definitions are classified with reasons; a planted split-conjunction witness
+  pins both directions.
+- Its auxiliary filter asks the environment (`isAuxRecursor`, `isRecCore`)
+  instead of matching name prefixes, which had already missed `casesOn`,
+  `recOn`, `below`, `brecOn` and `noConfusion`.
+
+Where the domain is a **coding convention over unbounded syntax**, there is no
+closed formulation — in text or in the environment — and the claim is fixed
+instead:
+
+- The store-read census recognises the qualified call (`RHTable.get? st.objects
+  k`, the third spelling in two rounds) and a `where` equation body, whose
+  signature never closed, so every read of such a declaration was filed as
+  specification and went unenforced.  It now prints `STORE_READ_SCOPE` beside
+  the number: *a floor, not a proof of absence.*
+- The unsafe-justification gate matches ABI qualifiers, so `pub unsafe extern
+  "C" fn` is a site rather than being skipped entirely, and keys it by its own
+  name.  Its `UNSAFE_KNOWN_FORMS` table makes the default branch explicit: an
+  `unsafe` matching no known form **fails the gate**, so the unrecognised set is
+  visible rather than assumed empty.
+
+Measured rather than asserted: **245** hand-written executable definitions
+mention the object-table projection — writing the store is what a transition
+does — so "never mention it" is not a stateable contract; and deriving a
+read-set from result types classified `FrozenMap.set`, a *write*, as a read.
+Both measurements are why the claim moved rather than the mechanism.
+
+One mechanical note, earned inside the remedy: `Name.isInternal` looks like the
+environment's answer to "did Lean generate this" and is true of the `_private.…`
+mangling, so adding it to the auxiliary filter would have excluded **every
+`private def` in the kernel** — the same class, inside its own fix.  The
+census's planted witness caught it before it built.
+
+All 33 frozen differential scenarios pass, including FO-031.
+
 ## v0.35.12 — PR #895 review: a spelling is not a read, two idioms are not one, and the frozen surface was never in the closure
 
 Three findings from the review of PR #895, each verified against the code before

@@ -72,7 +72,34 @@ import lean_code_view  # noqa: E402  (needs the path above)
 # `SchedContext` records verbatim, and the hazard is identical.  It has its own
 # accessor family now (`Model/FrozenState.lean`), so both tables answer the
 # same question the same way.
-READ = re.compile(r"\.objects(?:\[|\.get\?)")
+READ = re.compile(
+    r"\.objects(?:\[|\.get\?)"                       # `st.objects[k]?` / `st.objects.get? k`
+    r"|\b(?:RHTable|FrozenMap)\.get\?\s+[\w'.]*\.objects\b"  # the qualified call
+)
+
+# **What this gate can and cannot claim.**
+#
+# It recognises the spellings above.  It is NOT a proof that no executable
+# definition reads the object table: the set of ways to write that read is
+# unbounded -- notation, `open`, an alias, a qualified call, a helper that takes
+# the table -- and two review rounds each found one more.  A count over a
+# recognised set is a FLOOR, and reporting it as a bare `0` is what made each
+# widening read as a defect report rather than an improvement.
+#
+# The property this gate is named for -- "executable code obtains a typed object
+# through an accessor" -- is a coding convention over unbounded syntax, and it
+# has no closed formulation, in text or in the environment.  The elaborator
+# answers questions about *elaboration* (which declaration a name denotes, what
+# a term reaches); "is this occurrence a read rather than a write" is a question
+# about an API's meaning, and the environment has no opinion on it.  Measured
+# rather than assumed (`v0.35.13`): 245 hand-written executable definitions
+# mention the object-table projection, because writing the store is what a
+# transition does, so "never mention it" is not a stateable contract either.
+#
+# So the number is reported as a floor and the gate says so.  The ZERO_METRICS
+# entry still bites -- a recognised read fails Tier 0 outright -- and widening
+# the recogniser is an improvement to a diagnostic, not the closing of a hole
+# that was claimed shut.
 
 DECL = re.compile(
     r"^(?:@\[[^\]]*\]\s*)?"
@@ -96,6 +123,24 @@ def code_view(root: Path) -> Path:
     return out
 
 
+# A signature ends at the first top-level `:=` or `where`.  `where` must be a
+# whole word — `elsewhere` is not a terminator — and neither may sit inside a
+# string literal, which the code view has already blanked by the time the census
+# reads a file.
+SIG_END = re.compile(r":=|\bwhere\b")
+
+
+def _signature_end(line: str):
+    """The match that ends a signature on this line, or `None`."""
+    return SIG_END.search(line)
+
+
+def _signature_head(signature: str) -> str:
+    """The signature up to its terminator — what the result type is read from."""
+    m = SIG_END.search(signature)
+    return signature[: m.start()] if m else signature
+
+
 def classify(path: Path):
     """Yield (declaration, is_prop, occurrences) for each read-bearing line.
 
@@ -117,16 +162,28 @@ def classify(path: Path):
             signature, sig_open = line, True
         sig_part, body_part = line, ""
         if sig_open:
-            if ":=" in line:
-                sig_part, body_part = line.split(":=", 1)
+            # **Two ways a signature ends, because Lean has two.**  `:=` opens a
+            # term body; `where` opens an equation body (`def f : A → B where
+            # | a, b => …`), and a declaration written that way carries no `:=`
+            # at all.  Treating only `:=` as the terminator left `sig_open` true
+            # for the rest of the file, so every body read of such a declaration
+            # was emitted as *signature* — and the signature bucket is SPEC,
+            # which is diagnostic.  A raw executable read therefore passed an
+            # enforced zero by being written in a legal declaration form.
+            end = _signature_end(line)
+            if end is not None:
+                sig_part, body_part = line[:end.start()], line[end.end():]
                 sig_open = False
             if m is None and line.strip():
                 signature += " " + line.strip()
             if len(signature) > 4000:
+                # The runaway guard closes the signature, so what follows is
+                # read as a body: an unparsable declaration fails CLOSED (its
+                # reads count as code) rather than silently becoming spec.
                 sig_open = False
         else:
             sig_part, body_part = "", line
-        head = signature.split(":=", 1)[0]
+        head = _signature_head(signature)
         is_prop_decl = kind in PROP_KINDS or bool(PROP_RESULT.search(head))
         n_sig = len(READ.findall(sig_part))
         n_body = len(READ.findall(body_part))
@@ -288,6 +345,35 @@ def frozenStep (st : FrozenSystemState) (tid : ThreadId) : FrozenSystemState :=
   | some (.tcb t) => st
   | _ => st
 """, {("f.lean", "frozenStep"): 1}, {}),
+    # A `where` EQUATION body is a body: the declaration carries no `:=` at all,
+    # and reading only `:=` as the terminator put every read of it in the
+    # signature bucket -- which is SPEC, which is diagnostic, so a raw
+    # executable read passed the enforced zero by being legally spelled.
+    "where_equation_body": ("""
+def step : SystemState -> ObjId -> SystemState where
+  | st, oid => match st.objects[oid]? with
+    | some _ => st
+    | none => st
+""", {("f.lean", "step"): 1}, {}),
+    # ...and a `where` in a declaration that DOES have a `:=` body still ends
+    # the signature, so its auxiliary definitions read as body, not signature.
+    "where_after_term_body": ("""
+def step (st : SystemState) (oid : ObjId) : SystemState :=
+  go st
+where
+  go (s : SystemState) : SystemState :=
+    match s.objects[oid]? with
+    | _ => s
+""", {("f.lean", "step"): 1}, {}),
+    # The QUALIFIED call: `RHTable.get? st.objects k` is the same read again,
+    # with the namespace written out.  A third spelling in two review rounds --
+    # which is the evidence that this recogniser is a floor, not a proof.
+    "qualified_call_read": ("""
+def step (st : SystemState) (oid : ObjId) : SystemState :=
+  match RHTable.get? st.objects oid with
+  | some _ => st
+  | none => st
+""", {("f.lean", "step"): 1}, {}),
     # A comment quoting the pattern is not a read.
     "comment_only": ("""
 /-- Opens by matching `st.objects[oid]?`. -/
@@ -352,6 +438,12 @@ def main() -> int:
     if args.totals or not args.rows:
         print(f"STORE_READ_CODE={sum(code.values())}")
         print(f"STORE_READ_SPEC={sum(spec.values())}")
+        # The claim, beside the number.  A bare `0` reads as "there are none";
+        # what this gate can say is "none in the spellings it recognises", and
+        # saying so is what makes the next widening an improvement rather than
+        # a defect report.
+        print("STORE_READ_SCOPE=recognised spellings only "
+              "(subscript, method, qualified call); a floor, not a proof of absence")
     return 0
 
 

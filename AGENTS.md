@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.12.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.13.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1233,6 +1233,61 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   registering the parameter as a provider.  That is round 16's `.macro` hazard
   arriving through the fix for a different one; a preprocessor line is not split
   and contributes nothing.
+
+  **And a recognised set is not a derived set — so a count over one is a floor,
+  not a measurement** (PR #895 review, rounds 1 and 2, `v0.35.13`).  Every rule
+  above polices the **predicate**: what a scanner asserts of an element it
+  found.  None of them polices the **domain**: whether it found them all.  That
+  asymmetry is why this family keeps reappearing, because the two fail
+  differently — a predicate miss can fire on a real element, while a domain miss
+  is *silent by construction*: the element is never examined, the count stays
+  clean, and the gate reports a number that reads as a measurement of absence.
+
+  Six of the eight findings across two review rounds of one PR were that one
+  defect.  `.objects.get?`, then `RHTable.get? st.objects k`, then a `where`
+  equation body whose signature never closed — three spellings of one read.
+  `pub unsafe extern "C" fn`, skipped entirely rather than judged.  `FrozenOps`,
+  outside both library roots, so *every reply-stack write* meant every one in
+  the modules the census imported.  A frontier that asked "constructs **and**
+  stores" of one body, which a writer defeats by delegating the construction to
+  a helper.  Each fix was right and the next round found another, because the
+  boundary was being probed rather than the property.
+
+  **Two kinds of gate, and only one of them can be closed.**  Where the domain
+  is *derivable* — which constants a term uses, which modules an environment
+  imports, what a definition transitively calls — derive it and reconcile both
+  directions, and the class really does end there: the reply-stack write census
+  now follows construction through helpers (`reachesChainConstructor`, walked
+  backwards from the storing definitions and memoised, since nearly everything
+  reaches a constructor forwards), and asks the *environment* which constants it
+  generated rather than matching name prefixes.  Where the domain is a **coding
+  convention over unbounded syntax** — "obtain objects through an accessor",
+  "justify every unsafe site" — there is no closed formulation, in text *or* in
+  the environment: round 17's instruction sends questions about **elaboration**
+  to the elaborator, and "is this occurrence a read rather than a write" is a
+  question about an API's meaning, which the environment has no opinion on.
+  Measured rather than assumed: 245 hand-written executable definitions mention
+  the object-table projection, because writing the store is what a transition
+  does — so "never mention it" is not a stateable contract either, and the
+  attempt to derive a read-set from result types promptly classified
+  `FrozenMap.set`, a *write*, as a read.
+
+  So for the second kind, **fix the claim**: report the number as a floor over
+  recognised forms, in the gate's own output and in the prose that cites it
+  (`STORE_READ_SCOPE`, and the unsafe gate's `scope:` line).  The enforcement is
+  unchanged — a recognised violation still fails Tier 0 outright — but a
+  widening of the recogniser becomes an improvement to a diagnostic rather than
+  the closing of a hole that was claimed shut, which is the only way the reports
+  stop being findings.  And keep the other half of round 25's rule, which is
+  what bounds the gap: an input the scanner does not recognise **fails the
+  gate**, so the unrecognised set is visible rather than assumed empty.
+
+  One mechanical note, earned twice in this round: a fix for a domain defect can
+  introduce one.  `Name.isInternal` looked like the environment's own answer to
+  "did Lean generate this" and is true of the `_private.…` mangling, so adding
+  it to the auxiliary filter would have excluded **every `private def` in the
+  kernel** — the same class, inside its own remedy.  The census's planted
+  witness caught it, which is what witnesses are for.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

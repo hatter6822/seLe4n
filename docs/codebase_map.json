@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-faraday-gz9b3w",
-      "commit_sha": "f0c2e613fe1e5da2bda53f1dd3b4a7b47fe02afa",
-      "tree_sha": "8a51932f443f0dc986d1416ac45a9b3ab73efd67",
-      "committed_at_utc": "2026-09-12T17:49:33+00:00"
+      "commit_sha": "17cb32571b877cbab6deb957ab2f27408235ae06",
+      "tree_sha": "53ba81b40e5f168cff5e32ec4f588871551f438c",
+      "committed_at_utc": "2026-09-12T19:34:18+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "18a03c28b5a3c3973e0be474c0651875b5633cc93160028f27eb41e983d155f3"
+    "source_digest": "ca9ffcbf2bec9305d47c8c07cdeeef12a0bdbbb9a3317b78ec7cbe55b049ebcf"
   },
   "summary": {
     "module_count": 399,
-    "declaration_count": 21295
+    "declaration_count": 21298
   },
   "readme_sync": {
-    "version": "0.35.12",
+    "version": "0.35.13",
     "lean_toolchain": "v4.28.0",
     "production_files": 329,
-    "production_loc": 375325,
+    "production_loc": 375441,
     "test_files": 70,
     "test_loc": 75860,
     "proved_theorem_lemma_decls": 12606,
@@ -66081,6 +66081,7 @@
             "IpcMessage",
             "ReplyId",
             "ThreadId",
+            "consumed",
             "frozenDetachReplyFrameAboveOrSelf",
             "frozenEnsureRunnable",
             "frozenLookupTcb",
@@ -66097,7 +66098,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceLookup",
-          "line": 902,
+          "line": 916,
           "called": [
             "CPtr",
             "Capability",
@@ -66116,7 +66117,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceLookupSlot",
-          "line": 914,
+          "line": 928,
           "called": [
             "CPtr",
             "Capability",
@@ -66129,7 +66130,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceMint",
-          "line": 928,
+          "line": 942,
           "called": [
             "Capability",
             "FrozenCNode",
@@ -66147,7 +66148,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceDelete",
-          "line": 946,
+          "line": 960,
           "called": [
             "FrozenCNode",
             "FrozenKernel",
@@ -66163,7 +66164,7 @@
         {
           "kind": "def",
           "name": "frozenVspaceLookup",
-          "line": 965,
+          "line": 979,
           "called": [
             "ASID",
             "FrozenKernel",
@@ -66179,7 +66180,7 @@
         {
           "kind": "def",
           "name": "frozenLookupServiceByCap",
-          "line": 986,
+          "line": 1000,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -66193,7 +66194,7 @@
         {
           "kind": "def",
           "name": "frozenSchedContextConfigure",
-          "line": 1008,
+          "line": 1022,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -66211,7 +66212,7 @@
         {
           "kind": "def",
           "name": "frozenSchedContextBind",
-          "line": 1054,
+          "line": 1068,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -66230,7 +66231,7 @@
         {
           "kind": "def",
           "name": "frozenSchedContextUnbind",
-          "line": 1097,
+          "line": 1111,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -66247,7 +66248,7 @@
         {
           "kind": "def",
           "name": "frozenTimerTickBudget",
-          "line": 1145,
+          "line": 1159,
           "called": [
             "FrozenKernel",
             "cbsBudgetCheck",
@@ -66265,7 +66266,7 @@
         {
           "kind": "def",
           "name": "frozenSuspendThread",
-          "line": 1200,
+          "line": 1214,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -66280,7 +66281,7 @@
         {
           "kind": "def",
           "name": "frozenResumeThread",
-          "line": 1228,
+          "line": 1242,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -66296,7 +66297,7 @@
         {
           "kind": "def",
           "name": "frozenSetPriority",
-          "line": 1269,
+          "line": 1283,
           "called": [
             "FrozenKernel",
             "Priority",
@@ -66315,7 +66316,7 @@
         {
           "kind": "def",
           "name": "frozenSetMCPriority",
-          "line": 1299,
+          "line": 1313,
           "called": [
             "FrozenKernel",
             "Priority",
@@ -66331,7 +66332,7 @@
         {
           "kind": "def",
           "name": "frozenSetIPCBuffer",
-          "line": 1330,
+          "line": 1344,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -66351,7 +66352,7 @@
         {
           "kind": "def",
           "name": "frozenOpCoverage",
-          "line": 1381,
+          "line": 1395,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -66368,7 +66369,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_count",
-          "line": 1430,
+          "line": 1444,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -66387,7 +66388,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_exhaustive",
-          "line": 1445,
+          "line": 1459,
           "called": [
             "SyscallId",
             "frozenOpCoverage"
@@ -262852,7 +262853,7 @@
     {
       "module": "SeLe4n.Testing.ReplyStackWriteCensus",
       "path": "SeLe4n/Testing/ReplyStackWriteCensus.lean",
-      "declaration_count": 22,
+      "declaration_count": 25,
       "declarations": [
         {
           "kind": "namespace",
@@ -262900,19 +262901,26 @@
           "name": "chainNeutralConstructors",
           "line": 152,
           "called": [
+            "endpointReceiveDual",
+            "endpointReceiveDualOnCore",
             "frozenLinkCallerReply",
             "frozenSchedContextBind",
             "frozenSchedContextConfigure",
             "frozenSchedContextUnbind",
             "frozenSetPriority",
+            "frozenTimerTickBudget",
+            "kernelOperationPerCoreNiTheorem",
+            "linkCallerReply",
             "linkReply",
+            "linkServerStashedReply",
+            "perCoreInvariantSuiteTheorems",
             "schedContextConfigure"
           ]
         },
         {
           "kind": "def",
           "name": "primitiveCoverageViolations",
-          "line": 190,
+          "line": 214,
           "called": [
             "Reply",
             "SchedContext",
@@ -262927,7 +262935,7 @@
         {
           "kind": "def",
           "name": "isProjectConstant",
-          "line": 210,
+          "line": 234,
           "called": [
             "any"
           ]
@@ -262935,7 +262943,7 @@
         {
           "kind": "def",
           "name": "isAuxiliary",
-          "line": 217,
+          "line": 241,
           "called": [
             "any"
           ]
@@ -262943,7 +262951,7 @@
         {
           "kind": "def",
           "name": "usesDirectly",
-          "line": 227,
+          "line": 267,
           "called": [
             "any",
             "bind",
@@ -262955,13 +262963,13 @@
         {
           "kind": "def",
           "name": "isDefinitionShaped",
-          "line": 246,
+          "line": 286,
           "called": []
         },
         {
           "kind": "def",
           "name": "directWriteCandidates",
-          "line": 258,
+          "line": 298,
           "called": [
             "chainWritePrimitives",
             "contains",
@@ -262973,33 +262981,47 @@
         },
         {
           "kind": "def",
-          "name": "recordConstructingStoreCandidates",
-          "line": 271,
+          "name": "reachesChainConstructor",
+          "line": 322,
           "called": [
-            "chainRecordConstructors",
+            "any",
+            "bind",
+            "contains",
+            "insert",
+            "isProjectConstant",
+            "none",
+            "value"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "recordConstructingStoreCandidates",
+          "line": 343,
+          "called": [
             "isAuxiliary",
             "isDefinitionShaped",
             "isProjectConstant",
             "objectStoreSpellings",
+            "reachesChainConstructor",
             "usesDirectly"
           ]
         },
         {
           "kind": "inductive",
           "name": "ChainDiscipline",
-          "line": 289,
+          "line": 361,
           "called": []
         },
         {
           "kind": "def",
           "name": "isChainForm",
-          "line": 315,
+          "line": 387,
           "called": []
         },
         {
           "kind": "def",
           "name": "resultViolations",
-          "line": 326,
+          "line": 398,
           "called": [
             "any",
             "contains",
@@ -263011,7 +263033,7 @@
         {
           "kind": "def",
           "name": "chainWriteRegistry",
-          "line": 349,
+          "line": 421,
           "called": [
             "ChainDiscipline",
             "clearReplyObjectCaller",
@@ -263047,7 +263069,7 @@
         {
           "kind": "def",
           "name": "halfStepResolves",
-          "line": 425,
+          "line": 497,
           "called": [
             "ChainDiscipline",
             "length",
@@ -263057,7 +263079,7 @@
         {
           "kind": "def",
           "name": "disciplineViolations",
-          "line": 441,
+          "line": 513,
           "called": [
             "ChainDiscipline",
             "covers",
@@ -263071,7 +263093,7 @@
         {
           "kind": "def",
           "name": "reconciliationViolations",
-          "line": 481,
+          "line": 553,
           "called": [
             "Reply",
             "SchedContext",
@@ -263087,7 +263109,7 @@
         {
           "kind": "def",
           "name": "censusWitnessBareConsume",
-          "line": 504,
+          "line": 576,
           "called": [
             "Kernel",
             "ReplyId",
@@ -263098,7 +263120,7 @@
         {
           "kind": "def",
           "name": "censusWitnessDirectLinkWrite",
-          "line": 515,
+          "line": 587,
           "called": [
             "Kernel",
             "ReplyId",
@@ -263111,14 +263133,40 @@
         },
         {
           "kind": "def",
+          "name": "censusWitnessSplitHelper",
+          "line": 597,
+          "called": [
+            "Reply",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessSplitWriter",
+          "line": 604,
+          "called": [
+            "Kernel",
+            "ReplyId",
+            "censusWitnessSplitHelper",
+            "getReply",
+            "none",
+            "st",
+            "storeObject",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "censusWitnessNoWrite",
-          "line": 523,
+          "line": 613,
           "called": [
             "Reply",
             "ReplyId",
             "SystemState",
             "censusWitnessBareConsume",
             "censusWitnessDirectLinkWrite",
+            "censusWitnessSplitHelper",
+            "censusWitnessSplitWriter",
             "chainNeutralConstructors",
             "chainWritePrimitives",
             "chainWriteRegistry",
