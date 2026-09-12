@@ -604,4 +604,149 @@ theorem faultReplyOnCore_preserves_objects_invExt
                     faultAbandonOnCore_preserves_objects_invExt stR faulted
                       (determineTargetCore stR faulted) hRepObj
 
+-- ============================================================================
+-- WS-RM RM5.2 — the fault reply frames the donation chain
+-- ============================================================================
+
+/-- **WS-RM (`v0.35.6`)**: installing a restart frame carries no chain data.
+
+`applyFaultRestart`'s one write is a `.tcb` at a key that already held one
+(`getTcb?` is what selects the arm), so no Reply and no SchedContext is created,
+destroyed or rewritten. -/
+theorem applyFaultRestart_donationChainFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame)
+    (hObjInv : st.objects.invExt) :
+    donationChainFrame st (applyFaultRestart st tid frame) := by
+  unfold applyFaultRestart
+  cases hT : st.getTcb? tid with
+  | none => simp only []; exact donationChainFrame.refl st
+  | some tcb =>
+      simp only []
+      exact donationChainFrame_of_objects_insert hObjInv
+        (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hT]; rfl)
+        (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hT]; rfl)
+        (fun _ h => by cases h)
+
+/-- **WS-RM (`v0.35.6`)**: and so does abandoning the faulted thread — a
+deschedule, which writes no object at all, then the same shape of `.tcb`
+rewrite. -/
+theorem faultAbandonOnCore_donationChainFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) (hObjInv : st.objects.invExt) :
+    donationChainFrame st (faultAbandonOnCore st tid c) := by
+  have hObjsR : (removeRunnableOnCore st tid c).objects = st.objects :=
+    removeRunnableOnCore_preserves_objects st tid c
+  have hFrameR : donationChainFrame st (removeRunnableOnCore st tid c) :=
+    donationChainFrame.of_objects_eq hObjsR
+  have hInvR : (removeRunnableOnCore st tid c).objects.invExt := by
+    rw [hObjsR]; exact hObjInv
+  refine hFrameR.trans ?_
+  unfold faultAbandonOnCore
+  cases hT : (removeRunnableOnCore st tid c).getTcb? tid with
+  | none => simp only [hT]; exact donationChainFrame.refl _
+  | some tcb =>
+      simp only [hT]
+      exact donationChainFrame_of_objects_insert hInvR
+        (by rw [(SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT]; rfl)
+        (by rw [(SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT]; rfl)
+        (fun _ h => by cases h)
+
+/-- **WS-RM (`v0.35.6`)**: the fault reply's third stage frames the chain on
+both outcomes. -/
+theorem faultReplyApplyOnCore_donationChainFrame (st : SystemState)
+    (faulted : SeLe4n.ThreadId) (outcome : FaultReplyOutcome)
+    (hObjInv : st.objects.invExt) :
+    donationChainFrame st (faultReplyApplyOnCore st faulted outcome) := by
+  cases outcome with
+  | restart frame =>
+      simpa only [faultReplyApplyOnCore] using
+        applyFaultRestart_donationChainFrame st faulted frame hObjInv
+  | abandon =>
+      simpa only [faultReplyApplyOnCore] using
+        faultAbandonOnCore_donationChainFrame st faulted
+          (determineTargetCore st faulted) hObjInv
+
+/-- **WS-RM RM5.2**: the fault reply preserves the donation chain.
+
+Its second stage **is** the live `.reply` chain, so the reply path's own payoff
+(`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`) carries the
+whole of the chain reasoning; stage 3 writes a TCB and nothing else.  The
+hypothesis is therefore the reply payoff's own, at the same pre-state -- a fault
+reply that answers a caller whose reply frame *heads* a scheduling context leaves
+that context headless unless the donation pop beneath it re-heads the frame
+below, which is the relation `answeredHeadContextIsServerDonation` names. -/
+theorem faultReplyOnCore_preserves_donationChainWellFormed
+    (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
+    (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st)
+    (hHeadReturned : answeredHeadContextIsServerDonation st faulted) :
+    donationChainWellFormed (faultReplyOnCore replier faulted mi regs c st).1 := by
+  unfold faultReplyOnCore
+  cases hTcb : st.getTcb? faulted with
+  | none => simpa only [hTcb] using hChain
+  | some tcb =>
+    cases hFault : tcb.pendingFault with
+    | none => simpa only [hTcb, hFault] using hChain
+    | some tf =>
+      have hRepChain := endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
+        replier faulted IpcMessage.empty c st hObjInv hChain hHeadReturned
+      have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
+        faulted IpcMessage.empty c st hObjInv
+      rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st
+        with ⟨stR, res⟩
+      rw [hStep] at hRepChain hRepObj
+      simp only at hRepChain hRepObj
+      cases res with
+      | error e => simpa only [hTcb, hFault, hStep] using hChain
+      | ok sgi? =>
+          simp only [hFault]
+          exact donationChainWellFormed_of_frame
+            (faultReplyApplyOnCore_donationChainFrame stR faulted
+              (decodeFaultReply tf.fault tf.context mi regs) hRepObj) hRepChain
+
+/-- **WS-RM RM5.2**: and so does the reply *transfer* — seL4's
+`doReplyTransfer`, whose two branches are the two theorems above.
+
+**One** chain hypothesis, not one per branch: the fault branch replies with
+`IpcMessage.empty` and the ordinary branch with `msg`, which differed only in the
+post-state expression the condition used to be written over.  The message is not
+something the question reads — it asks which scheduling context a *pre-state*
+reply frame heads — so at the pre-state the two spellings are one proposition,
+and a caller supplies it once. -/
+theorem replyTransferOnCore_preserves_donationChainWellFormed
+    (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo)
+    (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (c : CoreId)
+    (st st' : SystemState) (u : Unit)
+    (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st)
+    (hHeadReturned : answeredHeadContextIsServerDonation st callerTid)
+    (hStep : replyTransferOnCore replier callerTid mi regs msg c st = .ok (u, st')) :
+    donationChainWellFormed st' := by
+  unfold replyTransferOnCore at hStep
+  by_cases hF : threadHasPendingFault st callerTid
+  · rw [if_pos hF] at hStep
+    have hChainF := faultReplyOnCore_preserves_donationChainWellFormed replier callerTid
+      mi regs c st hObjInv hChain hHeadReturned
+    rcases hFR : faultReplyOnCore replier callerTid mi regs c st with ⟨stF, resF⟩
+    rw [hFR] at hStep hChainF
+    simp only at hChainF
+    cases resF with
+    | error e => rw [show (Except.error e : Except KernelError _) = _ from rfl] at hStep; cases hStep
+    | ok _ =>
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact hStep.2 ▸ hChainF
+  · rw [if_neg hF] at hStep
+    have hChainR := endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
+      replier callerTid msg c st hObjInv hChain hHeadReturned
+    have hObjR := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier callerTid
+      msg c st hObjInv
+    rcases hRD : endpointReplyCrossCoreDispatch replier callerTid msg c st with ⟨stR, resR⟩
+    rw [hRD] at hStep hChainR hObjR
+    simp only at hChainR hObjR
+    cases resR with
+    | error e => simp only [] at hStep; cases hStep
+    | ok _ =>
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        refine hStep.2 ▸ donationChainWellFormed_of_frame ?_ hChainR
+        exact stageDeliveredMessage_donationChainFrame stR callerTid 0 hObjR
+
+
 end SeLe4n.Kernel

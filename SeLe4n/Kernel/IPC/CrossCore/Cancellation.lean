@@ -1410,7 +1410,7 @@ returned context — on every reachable state it is the cancelled caller's own
 reply object and merges with `consumedReplyId` by key, but a footprint is the
 union over all argument values and the operation writes whatever `scReply`
 names), and the **frame above** the cancelled caller's own
-(`detachedFrameAboveReplyId`), which `detachCancelledCallerFrame` unlinks when
+(`detachedFrameAboveReplyId`), which `detachFrameAboveThreadReply` unlinks when
 the caller is not the head of its stack — seL4's `reply_remove_tcb`, non-head
 arm.  The two are mutually exclusive on every reachable state (a caller whose
 frame has something above it is not the innermost live caller, so no reclaim is
@@ -1470,7 +1470,7 @@ def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
       -- from the returned context rather than assumed to be the consumed reply.
       (reclaimHeadReplyId.map (fun r => (replyLock r, AccessMode.write))))
       -- **WS-OD (`v0.35.4`)**: the frame above the cancelled caller's own,
-      -- which `detachCancelledCallerFrame` unlinks (`prev := none`) when the
+      -- which `detachFrameAboveThreadReply` unlinks (`prev := none`) when the
       -- caller is a middle caller of its stack — the write that stops a dead
       -- frame from heading a stack forever.
       (detachedFrameAboveReplyId.map (fun r => (replyLock r, AccessMode.write))))
@@ -1594,7 +1594,7 @@ theorem cancelReclaimHead?_of_donation (st : SystemState)
   rfl
 
 /-- **WS-OD (`v0.35.4`)**: the **frame above the cancelled caller's own** — the
-Reply `detachCancelledCallerFrame` rewrites (`prev := none`) when the caller is a
+Reply `detachFrameAboveThreadReply` rewrites (`prev := none`) when the caller is a
 *middle* caller of its stack, so that the frame above becomes the bottom of the
 stack it heads and the cancelled frame leaves the structure when its caller link
 is consumed.  Keyed on the reply arm, since only that arm detaches, and resolved
@@ -2362,7 +2362,7 @@ theorem lockSet_cancelIpcBlocking_reclaim_head_write_mem
   exact self_write_mem_insertOrMerge _ (replyLock r)
 
 /-- **WS-OD (`v0.35.4`)** (coverage): the **frame above the cancelled caller's
-own** — the one `detachCancelledCallerFrame` unlinks — is a declared write. -/
+own** — the one `detachFrameAboveThreadReply` unlinks — is a declared write. -/
 theorem lockSet_cancelIpcBlocking_detached_frame_above_write_mem
     (victimTid : SeLe4n.ThreadId)
     (blEp : Option SeLe4n.ObjId)
@@ -2639,6 +2639,103 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove (st : SystemSt
   simp only [hA]
   iterate 2 apply mem_write_lockSetExtendOpt
   exact lockSet_cancelIpcBlocking_detached_frame_above_write_mem _ _ _ _ _ _ _ _ _ _ _ _
+
+-- ============================================================================
+-- §7c  Coverage of the state-resolved donation-cancellation footprint
+-- ============================================================================
+-- Swept here at the WS-RM post-landing audit.  Every parametric member of
+-- `lockSet_cancelDonation` had its write-membership lemma and the `OnCore` form
+-- had none, so nothing tied a member to the **resolver** the footprint reads it
+-- from -- which is the whole content of a resolved coverage theorem, and the
+-- shape `lockSet_cancelIpcBlockingOnCore` above and both reply footprints carry.
+-- `_correct` and `_size_le` do not stand in for it: one is about the *kinds* of
+-- the members present and the other about how many there are, and neither says
+-- that the object a resolver names is among them.
+
+/-- The victim's own TCB write lock, on **both** arms of the resolution — the
+donor's binding is rewritten whether or not its TCB resolves. -/
+theorem lockSet_cancelDonationOnCore_covers_victim (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) :
+    (tcbLock victimTid, AccessMode.write)
+      ∈ (lockSet_cancelDonationOnCore st victimTid).pairs := by
+  unfold lockSet_cancelDonationOnCore
+  split
+  · exact lockSet_cancelDonation_victim_tcb_write_mem _ _ _ _ _ _
+  · exact lockSet_cancelDonation_victim_tcb_write_mem _ _ _ _ _ _
+
+/-- The SchedContext the cancellation rewrites — deactivated on the bound arm,
+re-bound on the donated one — resolved through `cancelBindingSc?`. -/
+theorem lockSet_cancelDonationOnCore_covers_bindingSchedContext (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+    (hT : st.getTcb? victimTid = some tcb)
+    (hSc : cancelBindingSc? tcb = some scId) :
+    (schedContextLock scId, AccessMode.write)
+      ∈ (lockSet_cancelDonationOnCore st victimTid).pairs := by
+  unfold lockSet_cancelDonationOnCore
+  rw [hT]
+  simp only [hSc]
+  exact lockSet_cancelDonation_binding_sc_write_mem _ _ _ _ _ _
+
+/-- ...and the `scThreadIndex` maintenance that rebinding takes, on the same
+resolver: the index is an `RHTable` whose insert may rehash, so no per-object
+member can cover it. -/
+theorem lockSet_cancelDonationOnCore_covers_stateLevel (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+    (hT : st.getTcb? victimTid = some tcb)
+    (hSc : cancelBindingSc? tcb = some scId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_cancelDonationOnCore st victimTid).pairs := by
+  unfold lockSet_cancelDonationOnCore
+  rw [hT]
+  simp only [hSc]
+  exact lockSet_cancelDonation_stateLevel_write_mem _ _ _ _ _ _
+
+/-- The original owner the donated arm hands the context back to, resolved
+through `cancelDonatedOwner?` — `none` on the bound arm, which re-binds nobody. -/
+theorem lockSet_cancelDonationOnCore_covers_donatedOwner (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (owner : SeLe4n.ThreadId)
+    (hT : st.getTcb? victimTid = some tcb)
+    (hOwner : cancelDonatedOwner? tcb = some owner) :
+    (tcbLock owner, AccessMode.write)
+      ∈ (lockSet_cancelDonationOnCore st victimTid).pairs := by
+  unfold lockSet_cancelDonationOnCore
+  rw [hT]
+  simp only [hOwner]
+  exact lockSet_cancelDonation_donated_owner_tcb_write_mem _ _ _ _ _ _
+
+/-- The donated arm's reply-stack pop: the head it clears and the frame below it
+re-heads, both resolved through `cancelDonationPopMembers?`. -/
+theorem lockSet_cancelDonationOnCore_covers_pop (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB)
+    (hT : st.getTcb? victimTid = some tcb) :
+    (∀ head, (cancelDonationPopMembers? st tcb).1 = some head →
+      (replyLock head, AccessMode.write)
+        ∈ (lockSet_cancelDonationOnCore st victimTid).pairs) ∧
+    (∀ below, (cancelDonationPopMembers? st tcb).2.1 = some below →
+      (replyLock below, AccessMode.write)
+        ∈ (lockSet_cancelDonationOnCore st victimTid).pairs) := by
+  unfold lockSet_cancelDonationOnCore
+  rw [hT]
+  refine ⟨?_, ?_⟩
+  · intro head hHead
+    simp only [hHead]
+    exact lockSet_cancelDonation_head_write_mem _ _ _ _ _ _
+  · intro below hBelow
+    simp only [hBelow]
+    exact lockSet_cancelDonation_below_head_write_mem _ _ _ _ _ _
+
+/-- ...and the outer caller the pop validates before it hands the context over,
+a declared **key** rather than a write: the pop reads that TCB to check it is a
+waiting donor, and rewrites the answered caller's binding, not its. -/
+theorem lockSet_cancelDonationOnCore_covers_outerCaller_key (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (outer : SeLe4n.ThreadId)
+    (hT : st.getTcb? victimTid = some tcb)
+    (hOuter : (cancelDonationPopMembers? st tcb).2.2 = some outer) :
+    (lockSet_cancelDonationOnCore st victimTid).containsKey (tcbLock outer) = true := by
+  unfold lockSet_cancelDonationOnCore
+  rw [hT]
+  simp only [hOuter]
+  exact lockSet_cancelDonation_outer_caller_containsKey _ _ _ _ _ _
 
 -- ============================================================================
 -- §8  The `.tcbSuspend` footprint — rooted at the cancellation footprint

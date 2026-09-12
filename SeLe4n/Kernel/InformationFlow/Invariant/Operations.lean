@@ -205,7 +205,7 @@ private theorem cdt_only_preserves_projection'
     (hMachine : st'.machine = st.machine) :
     projectState ctx observer st' = projectState ctx observer st := by
   simp only [projectState]; congr 1
-  · funext oid; simp only [projectObjects, hObjects]
+  · funext oid; simp only [projectObjects, hObjects, SystemState.getObject?]
   · simp [projectRunnable, hScheduler]
   · simp [projectCurrent, hScheduler]
   · funext sid; simp only [projectServicePresence, lookupService, hServices]
@@ -495,7 +495,7 @@ private theorem insert_rq_preserves_projection
 fields are identical to the original. -/
 private theorem saveOutgoingContext_machine (st : SystemState) :
     (saveOutgoingContext st).machine = st.machine := by
-  simp only [saveOutgoingContext]
+  simp only [saveOutgoingContext, SystemState.getTcb?]
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
@@ -505,7 +505,7 @@ private theorem saveOutgoingContext_machine (st : SystemState) :
 
 private theorem saveOutgoingContext_services (st : SystemState) :
     (saveOutgoingContext st).services = st.services := by
-  simp only [saveOutgoingContext]
+  simp only [saveOutgoingContext, SystemState.getTcb?]
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
@@ -515,7 +515,7 @@ private theorem saveOutgoingContext_services (st : SystemState) :
 
 private theorem saveOutgoingContext_irqHandlers (st : SystemState) :
     (saveOutgoingContext st).irqHandlers = st.irqHandlers := by
-  simp only [saveOutgoingContext]
+  simp only [saveOutgoingContext, SystemState.getTcb?]
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
@@ -525,7 +525,7 @@ private theorem saveOutgoingContext_irqHandlers (st : SystemState) :
 
 private theorem saveOutgoingContext_objectIndex (st : SystemState) :
     (saveOutgoingContext st).objectIndex = st.objectIndex := by
-  simp only [saveOutgoingContext]
+  simp only [saveOutgoingContext, SystemState.getTcb?]
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
@@ -540,10 +540,10 @@ private theorem saveOutgoingContext_preserves_projectObjects
     (hObjInv : st.objects.invExt) :
     projectObjects ctx observer (saveOutgoingContext st) oid =
     projectObjects ctx observer st oid := by
-  simp only [projectObjects]
+  simp only [projectObjects, SystemState.getObject?]
   split
   · next hObs =>
-      simp only [saveOutgoingContext]
+      simp only [saveOutgoingContext, SystemState.getTcb?]
       cases hCur : (st.scheduler.currentOnCore bootCoreId) with
       | none => rfl
       | some outTid =>
@@ -577,7 +577,7 @@ private theorem saveOutgoingContext_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (saveOutgoingContext st) = projectState ctx observer st := by
-  simp only [saveOutgoingContext]
+  simp only [saveOutgoingContext, SystemState.getTcb?]
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
@@ -592,7 +592,7 @@ private theorem saveOutgoingContext_preserves_projection
               congr 1
               · -- objects field
                 exact funext (fun oid => by
-                  simp only [projectObjects]
+                  simp only [projectObjects, SystemState.getObject?]
                   split
                   · simp only [Option.map]
                     simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
@@ -643,7 +643,7 @@ theorem writeReturnFrameToTcb_preserves_projection
       simp only [projectState]
       congr 1
       · exact funext (fun oid => by
-          simp only [projectObjects]
+          simp only [projectObjects, SystemState.getObject?]
           split
           · simp only [Option.map]
             simp only [RHTable_getElem?_eq_get?]
@@ -723,7 +723,7 @@ private theorem restoreIncomingContext_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) (tid : SeLe4n.ThreadId)
     (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t → threadObservable ctx observer t = false) :
     projectState ctx observer (restoreIncomingContext st tid) = projectState ctx observer st := by
-  simp only [restoreIncomingContext]
+  simp only [restoreIncomingContext, SystemState.getTcb?]
   cases hTcb : st.objects[tid.toObjId]? with
   | none => simp_all
   | some obj =>
@@ -752,7 +752,7 @@ private theorem projectObjects_ext_objects
     (hObjs : s₁.objects = s₂.objects) :
     (fun oid => projectObjects ctx observer s₁ oid) =
     (fun oid => projectObjects ctx observer s₂ oid) := by
-  ext oid; simp only [projectObjects, hObjs]
+  ext oid; simp only [projectObjects, hObjs, SystemState.getObject?]
 
 /-- WS-H12c: saveOutgoingContext with a scheduler override preserves projection
 relative to the same scheduler override on the original state. -/
@@ -762,7 +762,7 @@ private theorem saveOutgoingContext_with_sched_preserves_projection
     (hObjInv : st.objects.invExt) :
     projectState ctx observer { (saveOutgoingContext st) with scheduler := sched }
     = projectState ctx observer { st with scheduler := sched } := by
-  simp only [saveOutgoingContext]
+  simp only [saveOutgoingContext, SystemState.getTcb?]
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
@@ -779,7 +779,7 @@ private theorem saveOutgoingContext_with_sched_preserves_projection
               congr 1
               · -- objects field: same proof as saveOutgoingContext_preserves_projection
                 exact funext (fun oid => by
-                  simp only [projectObjects]
+                  simp only [projectObjects, SystemState.getObject?]
                   split
                   · simp only [Option.map]
                     simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
@@ -807,7 +807,7 @@ theorem schedule_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pair =>
@@ -880,7 +880,7 @@ theorem switchDomain_preserves_lowEquivalent
     (hStep₁ : switchDomain s₁ = .ok ((), s₁'))
     (hStep₂ : switchDomain s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  unfold switchDomain at hStep₁ hStep₂
+  unfold switchDomain SystemState.getTcb? at hStep₁ hStep₂
   unfold lowEquivalent at hLow ⊢
   have hDomSched : s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule := by
     have := congrArg ObservableState.domainSchedule hLow
@@ -915,9 +915,9 @@ theorem switchDomain_preserves_lowEquivalent
           (∀ t, (s.scheduler.currentOnCore bootCoreId) = some t → threadObservable ctx observer t = false) →
           (match (s.scheduler.currentOnCore bootCoreId) with
             | none => (s.scheduler.runQueueOnCore bootCoreId)
-            | some tid => match s.objects[tid.toObjId]? with
-              | some (KernelObject.tcb tcb) => (s.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)
-              | _ => (s.scheduler.runQueueOnCore bootCoreId)).toList.filter (threadObservable ctx observer)
+            | some tid => match s.getTcb? tid with
+              | some tcb => (s.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)
+              | none => (s.scheduler.runQueueOnCore bootCoreId)).toList.filter (threadObservable ctx observer)
           = (s.scheduler.runQueueOnCore bootCoreId).toList.filter (threadObservable ctx observer) := by
         intro s hCurH
         split
@@ -927,9 +927,9 @@ theorem switchDomain_preserves_lowEquivalent
           next tid hCur =>
           have hH := hCurH tid hCur
           split
-          · -- objects = some (.tcb tcb)
+          · -- the accessor resolved a TCB
             next tcb _ => exact RunQueue.toList_filter_insert_neg' _ _ _ _ hH
-          · -- objects = not tcb (catch-all)
+          · -- no TCB at that key: absent or wrong-kinded alike
             rfl
       -- U-M39: Rewrite past saveOutgoingContext using projection preservation
       rw [saveOutgoingContext_with_sched_preserves_projection ctx observer s₁ _ hObjInv₁,
@@ -1160,7 +1160,7 @@ theorem cspaceDeleteSlotCore_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold cspaceDeleteSlotCore at hStep
+  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -1226,7 +1226,7 @@ theorem cspaceRevoke_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold cspaceRevoke at hStep
+  unfold cspaceRevoke SystemState.getCNode? at hStep
   cases hL : cspaceLookupSlot addr st with
   | error e => simp [hL] at hStep
   | ok p =>
@@ -1243,7 +1243,7 @@ theorem cspaceRevoke_preserves_projection
         rw [revokeAndClearRefsState_preserves_projectState]
         simp only [projectState]; congr 1
         · funext oid; by_cases hObs : objectObservable ctx observer oid
-          · simp [projectObjects, hObs]
+          · simp [projectObjects, hObs, SystemState.getObject?]
             have hNe : oid ≠ addr.cnode := by
               intro hEq; subst hEq; simp [hAddrHigh] at hObs
             simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp [Ne.symm hNe]
@@ -1278,7 +1278,7 @@ private theorem cspaceInsertSlot_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   simp only [projectState]; congr 1
   · funext oid; by_cases hObs : objectObservable ctx observer oid
-    · simp [projectObjects, hObs]
+    · simp [projectObjects, hObs, SystemState.getObject?]
       by_cases hEq : oid = dst.cnode
       · subst hEq; simp [hDstHigh] at hObs
       · exact congrArg (Option.map (projectKernelObject ctx observer))
@@ -1483,7 +1483,7 @@ theorem endpointQueuePopHead_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1562,7 +1562,7 @@ theorem endpointQueueEnqueue_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1655,7 +1655,7 @@ theorem endpointSendDual_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   -- Eliminate bounds-check error branches
   simp only [show ¬(msg.registers.size > maxMessageRegisters) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -1856,7 +1856,7 @@ theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
     (hComplete : objectIndexSetComplete st)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
     objectIndexSetComplete st' ∧ st'.objectIndexSet.table.invExt := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1956,7 +1956,7 @@ theorem endpointReceiveDual_preserves_projection
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2231,9 +2231,13 @@ theorem endpointReply_preserves_projection
               ensureRunnable_preserves_objectIndexSetComplete stMid target
                 (storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete st stMid target _ _
                   hObjInv hObjSetInv hIdxComplete hStore)
-            rw [consumeCallerReply_preserves_projection ctx observer
+            have hObjSetInvMid : (ensureRunnable stMid target).objectIndexSet.table.invExt :=
+              ensureRunnable_preserves_objectIndexSet_invExt stMid target
+                (storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt st stMid target _ _
+                  hObjSetInv hStore)
+            rw [removeCallerReplyFrame_preserves_projection ctx observer
                   (ensureRunnable stMid target) st' target rid hTargetObjHigh hIdxMid
-                  hObjInvMid hStep,
+                  hObjInvMid hObjSetInvMid hStep,
                 hProjMid]
       · -- authorized = false
         simp at hStep
@@ -2304,7 +2308,7 @@ theorem endpointCall_preserves_projection
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   -- Eliminate bounds-check error branches
   simp only [show ¬(msg.registers.size > maxMessageRegisters) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -2455,6 +2459,25 @@ theorem consumeCallerReply_preserves_objectIndexSetComplete_and_invExt
       exact ⟨storeObject_preserves_objectIndexSetComplete st1 st' caller.toObjId _
           hObjInv1 hMid.2 hMid.1 hStep,
         storeObject_preserves_objectIndexSet_invExt st1 st' caller.toObjId _ hMid.2 hStep⟩
+
+/-- **WS-RM (`v0.35.6`)**: the *removal* preserves the pair.  Its extra leg is a
+`.reply` store at a key that already held a Reply, so `objectIndexSet.contains`
+is monotone across it for the same reason the consume's two legs are. -/
+theorem removeCallerReplyFrame_preserves_objectIndexSetComplete_and_invExt
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hComplete : objectIndexSetComplete st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    objectIndexSetComplete st' ∧ st'.objectIndexSet.table.invExt := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  refine consumeCallerReply_preserves_objectIndexSetComplete_and_invExt _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) ?_
+    (detachReplyFrameAboveOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
+      hComplete) hStep
+  rcases detachReplyFrameAboveOrSelf_store_cases st rid with h | ⟨above, a, _, hS⟩
+  · rw [h]; exact hObjSetInv
+  · exact storeObject_preserves_objectIndexSet_invExt st _ above.toObjId _ hObjSetInv hS
 
 /-- U4-C: endpointReplyRecv at non-observable targets preserves projection.
 
@@ -2617,23 +2640,23 @@ theorem endpointReplyRecv_preserves_projection
           | some rid =>
             simp only [hRO] at hStep
             -- `consumeCallerReply` is total — name its output state st3.
-            obtain ⟨st3, hCons⟩ := SystemState.consumeCallerReply_isOk
+            obtain ⟨st3, hCons⟩ := removeCallerReplyFrame_isOk
               (ensureRunnable stReply replyTarget) replyTarget rid
             simp only [hCons] at hStep
-            have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt
+            have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt
               (ensureRunnable stReply replyTarget) st3 replyTarget rid hObjInvEns hCons
             obtain ⟨hIdx3, hObjSet3⟩ :=
-              consumeCallerReply_preserves_objectIndexSetComplete_and_invExt
+              removeCallerReplyFrame_preserves_objectIndexSetComplete_and_invExt
                 (ensureRunnable stReply replyTarget) st3 replyTarget rid
                 hObjInvEns hObjSetInvMid hIdxMid hCons
             have hProjCons : projectState ctx observer st3 =
                 projectState ctx observer (ensureRunnable stReply replyTarget) :=
-              consumeCallerReply_preserves_projection ctx observer
+              removeCallerReplyFrame_preserves_projection ctx observer
                 (ensureRunnable stReply replyTarget) st3 replyTarget rid
-                hReplyTargetObjHigh hIdxMid hObjInvEns hCons
+                hReplyTargetObjHigh hIdxMid hObjInvEns hObjSetInvMid hCons
             -- Transport the endpoint/queue hypotheses across the consume: its two
             -- writes land on the consumed Reply's slot and the caller's `.tcb` slot.
-            have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree
+            have hNT := removeCallerReplyFrame_nonTcbNonReply_agree
               (ensureRunnable stReply replyTarget) st3 replyTarget rid hObjInvEns hCons
             have hEpBack3 : ∀ ep', st3.objects[endpointId]? = some (.endpoint ep') →
                 (ensureRunnable stReply replyTarget).objects[endpointId]? =
@@ -2654,7 +2677,7 @@ theorem endpointReplyRecv_preserves_projection
                 objectObservable ctx observer nextTid'.toObjId = false := by
               intro ep' sender' senderTcb' nextTid' hEp' hHead hSenderTcb hNext
               obtain ⟨ty, hTy, _, _, hQN, _⟩ :=
-                SystemState.consumeCallerReply_tcb_forward
+                removeCallerReplyFrame_tcb_forward
                   (ensureRunnable stReply replyTarget) st3 replyTarget rid hObjInvEns hCons
                   sender'.toObjId senderTcb' hSenderTcb
               exact hSQNH_mid ep' sender' ty nextTid' (hEpBack3 ep' hEp') hHead hTy
@@ -2784,7 +2807,7 @@ theorem handleYield_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- V5-F: handleYield now returns .error .invalidArgument when current = none
@@ -2864,7 +2887,7 @@ private theorem insert_tick_preserves_projection
         { st with objects := st.objects.insert oid obj, machine := tick st.machine }
       = projectState ctx observer st := by
   simp only [projectState]; congr 1
-  · funext o; simp only [projectObjects]
+  · funext o; simp only [projectObjects, SystemState.getObject?]
     by_cases hObs : objectObservable ctx observer o
     · simp only [hObs, ite_true]
       by_cases hEq : o = oid
@@ -2884,7 +2907,7 @@ theorem timerTick_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold timerTick at hStep
+  unfold timerTick SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; subst hStep
@@ -3042,7 +3065,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
   -- Propagate invExt through cspaceRevoke: cspaceRevoke does cspaceLookupSlot (preserves state)
   -- + storeObject (preserves invExt) + revokeAndClearRefsState (preserves objects)
   have hObjInvRevoked : stRevoked.objects.invExt := by
-    unfold cspaceRevoke at hRevoke
+    unfold cspaceRevoke SystemState.getCNode? at hRevoke
     cases hL : cspaceLookupSlot cleanup st with
     | error e => simp [hL] at hRevoke
     | ok p =>
@@ -3064,7 +3087,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
     -- U-H03: Discharge CDT children guard
     split at hDelete
     · simp at hDelete
-    · unfold cspaceDeleteSlotCore at hDelete
+    · unfold cspaceDeleteSlotCore SystemState.getCNode? at hDelete
       cases hObj : stRevoked.objects[cleanup.cnode]? with
       | none => simp [hObj] at hDelete
       | some obj =>
@@ -3130,7 +3153,7 @@ theorem registerService_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   -- registerService on success produces { st with serviceRegistry := ... }
   -- Extract the state equality from the success case
-  unfold registerService at hStep
+  unfold registerService SystemState.getObject? at hStep
   split at hStep <;> try simp at hStep
   split at hStep <;> try simp at hStep
   -- Match on CapTarget cases
@@ -3377,7 +3400,7 @@ private theorem updatePipBoost_preserves_projection
   simp only [projectState]; congr 1
   · -- projectObjects: updatePipBoost only modifies objects at tid.toObjId (non-observable)
     funext oid
-    simp only [projectObjects]
+    simp only [projectObjects, SystemState.getObject?]
     cases hObs : objectObservable ctx observer oid
     · rfl
     · simp only [ite_true]; congr 1
@@ -3581,7 +3604,7 @@ theorem objects_insert_preserves_projection_high
                     { st with objects := st.objects.insert oid obj } =
                   projectObjects ctx observer st := by
     funext o
-    simp only [projectObjects]
+    simp only [projectObjects, SystemState.getObject?]
     cases hObs : objectObservable ctx observer o with
     | true =>
       by_cases hEq : o = oid
@@ -4109,7 +4132,7 @@ theorem objects_insert_preserves_projection_of_proj_eq
   have hProjObj : projectObjects ctx observer { st with objects := st.objects.insert oid obj }
                 = projectObjects ctx observer st := by
     funext o
-    simp only [projectObjects]
+    simp only [projectObjects, SystemState.getObject?]
     cases hObs : objectObservable ctx observer o with
     | true =>
       simp only [RHTable_getElem?_eq_get?]

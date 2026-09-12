@@ -53,6 +53,8 @@ INDEX = "docs/CLAIM_EVIDENCE_INDEX.md"
 # rather than defaulted.
 CITATION_EXEMPTIONS: dict[str, str] = {
     "seL4_Fault_tag": "seL4's own ABI field name, cited for fidelity",
+    "seL4_ReplyRecv": "seL4's own syscall name, cited for fidelity",
+    "reply_remove": "seL4's own kernel function name, cited for fidelity",
     "seL4_MsgMaxExtraCaps": "seL4 constant, cited for fidelity",
     "seL4_MsgMaxLength": "seL4 constant, cited for fidelity",
     "native_decide": "a Lean tactic, not a declaration",

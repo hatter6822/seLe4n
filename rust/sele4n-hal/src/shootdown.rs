@@ -1172,6 +1172,9 @@ pub fn self_service_round(core_id: usize) -> bool {
 /// `bring_up_secondaries` (the [`crate::gic::register_sgi_handler`]
 /// contract — the table is write-once-at-boot, read-only after).
 pub unsafe fn register_tlb_shootdown_handler() {
+    // SAFETY: this function's own `# Safety` contract -- boot, single-core,
+    // IRQs disabled, before `bring_up_secondaries` -- is exactly
+    // `register_sgi_handler`'s write-once precondition.
     unsafe {
         crate::gic::register_sgi_handler(TLB_SHOOTDOWN_REQ_INTID, tlb_shootdown_req_handler);
     }

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.5.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.15.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,26 +203,26 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~62040 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22688 lines)
-- `tests/SmpInformationFlowSuite.lean` (~12165 lines)
+- `CHANGELOG.md` (~63040 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23254 lines)
+- `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/API.lean` (~7294 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6415 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5968 lines)
-- `SeLe4n/Platform/Boot.lean` (~5864 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~5480 lines)
-- `docs/spec/SELE4N_SPEC.md` (~5365 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~5275 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5044 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5008 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4976 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4840 lines)
-- `SeLe4n/Model/State.lean` (~4838 lines)
+- `SeLe4n/Kernel/API.lean` (~7362 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6673 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5986 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~5952 lines)
+- `SeLe4n/Platform/Boot.lean` (~5867 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~5683 lines)
+- `docs/spec/SELE4N_SPEC.md` (~5511 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5105 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5067 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5033 lines)
+- `SeLe4n/Model/State.lean` (~4959 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4842 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `SeLe4n/Kernel/CrossSubsystem.lean` (~4438 lines)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (~4440 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4220 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4225 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
@@ -234,52 +234,52 @@ To find files that need pagination today, run:
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3285 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3260 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3247 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3172 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3257 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3118 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3107 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2976 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3025 lines)
+- `tests/SmpIpcSuite.lean` (~3022 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2714 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
-- `tests/SmpIpcSuite.lean` (~2582 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2565 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2535 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2515 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `tests/ModelIntegritySuite.lean` (~2484 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2354 lines)
+- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2356 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
-- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2320 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2316 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2281 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2254 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2278 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2262 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2244 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2162 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2136 lines)
-- `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
+- `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2099 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2051 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2047 lines)
+- `SeLe4n/Kernel/Architecture/Invariant.lean` (~2044 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2043 lines)
-- `SeLe4n/Kernel/Architecture/Invariant.lean` (~2033 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1972 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~1963 lines)
@@ -288,64 +288,64 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `tests/InformationFlowSuite.lean` (~1895 lines)
+- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1891 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1886 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
 - `tests/SmpCancellationSuite.lean` (~1877 lines)
-- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1863 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1849 lines)
+- `tests/LockSetSuite.lean` (~1834 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
-- `tests/LockSetSuite.lean` (~1813 lines)
 - `tests/SyscallDispatchSuite.lean` (~1812 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~1800 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1795 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
-- `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1746 lines)
+- `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1748 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1664 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1644 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1616 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~1554 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1463 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1444 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1439 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1418 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1397 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1393 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1393 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1370 lines)
+- `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1375 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1359 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1340 lines)
-- `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1341 lines)
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1312 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1295 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1264 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1229 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1240 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
@@ -360,35 +360,36 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1105 lines)
 - `tests/SmpIdleSuite.lean` (~1105 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
+- `SeLe4n/Model/FrozenState.lean` (~1092 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1049 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `tests/PriorityManagementSuite.lean` (~1035 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1025 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
-- `SeLe4n/Model/FrozenState.lean` (~1007 lines)
 - `tests/SmpCbsSuite.lean` (~1001 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~995 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
+- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~958 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
-- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~956 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~949 lines)
-- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~942 lines)
+- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~947 lines)
 - `tests/SmpCrossCoreNotificationSuite.lean` (~937 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `SeLe4n/Kernel/InformationFlow/Declassification.lean` (~935 lines)
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
+- `tests/DeadlockFreedomSuite.lean` (~929 lines)
+- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~922 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~917 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
-- `tests/DeadlockFreedomSuite.lean` (~905 lines)
 - `tests/SmpTimerSuite.lean` (~904 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~897 lines)
@@ -407,6 +408,7 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
+- `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
@@ -746,6 +748,109 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `mod`-less, gate-less toy passes checks the real file would fail, which
   is how a missing `re.MULTILINE` and an unanchored `.file()` search both
   survived.
+
+  **And a count over two populations measures neither** (`v0.35.7`, prompted).
+  The same substitution again, and the one this file had not written because the
+  gate wearing it was *already* an inventory: `RAW_LOOKUP_TID` held raw
+  `st.objects[…]` reads at a whole-tree ceiling, and 96.9% of what it counted was
+  **specification vocabulary** — 1490 of 1711 lines in `theorem`s, 168 more in
+  `Prop`-valued `def`s, `structure` fields and `inductive` arguments — against 53
+  lines of executable code.  A proposition about the store has no helper form
+  (`getTcb? k = none` holds for an absent key and a wrong-kinded object alike, so
+  a frame statement quantified over every key cannot be phrased through a variant
+  accessor without weakening it), so the enforced number rose whenever anyone
+  wrote an invariant, and it was re-anchored **upward four times in three days**
+  (1609 → 1600 → 1678 → 1711).  A ceiling that every cut raises is a ratchet
+  running backwards; it reads as measurement because it prints a number.
+  Three further defects rode along, each a rule already in this file applied
+  everywhere but here: the metric was named `_TID` while **four** types carry
+  `.toObjId` (*a name is not the thing*); it was `grep -c`, so two reads on one
+  line counted once and a reflow lowered it (*a cardinality is not a set*, one
+  level down); and `RAW_LOOKUP_SITE` was keyed by `(file)` while its sibling
+  `RAW_SITE` had been refined to `(file, declaration, variant)` for the stated
+  reason that a per-file key cannot see a read moving between declarations —
+  *when a fix names a relation, grep for every other place that asks it*, unrun.
+
+  **Split the populations, enforce the one that can reach zero, and report the
+  other.**  `scripts/lean_store_read_census.py` classifies each read by whether it
+  sits in the *body* of a declaration whose result is not a `Prop` — a binder or a
+  result type is a proposition whatever the declaration's kind — and emits
+  `STORE_READ_CODE` beside `STORE_READ_SPEC` (diagnostic, the treatment
+  `RAW_MATCH_UNCLASSIFIED` already had).  The mutation for this class **moves a
+  read between the populations while holding their sum fixed**, which is all the
+  superseded figure could see: the gate's self-test has that case in both
+  directions, the spec→code one rejecting and the code→spec one passing, because
+  the second is the migration working.
+
+  **And a floor that reaches zero stops being a floor** (`v0.35.8`).  The split
+  was shipped with `STORE_READ_CODE` held to a **ceiling** and a per-key
+  inventory — which is the superseded metric's own shape, one population
+  narrower, and it carried the superseded metric's own escape: a cut that
+  exceeds a ceiling may re-anchor it, which is what happened four times in three
+  days.  So the residue was finished rather than registered.  The whole
+  executable population is **zero**: `SeLe4n/Kernel` and `SeLe4n/Platform` were
+  already there at `v0.35.7`, and the 76 that remained — 65 trace-harness
+  bodies, 10 runtime invariant helpers, and one proof case split whose enclosing
+  `def` returns a record of proofs — went in this cut, with the golden fixture
+  **byte-identical**, which is the measurement that retired the deferral's own
+  stated reason (*migrating it risks a fixture churn*).  The last of them came
+  out by restating two theorems' hypotheses in the accessor vocabulary rather
+  than bridging at the call site, so no `def` body mentions the store at all.
+  `STORE_READ_CODE` is now a `ZERO_METRICS` entry beside `SORRY_COUNT` and
+  `AXIOM_COUNT`: **regenerating the baseline does not clear it**, only fixing
+  the tree does, and the gate says so in its failure epilogue.  The only raw
+  reads left anywhere are the accessor bodies — which the census registers by
+  name — and propositions, which have no helper form.
+
+  **And a spelling is not a read** (PR #895 review, `v0.35.12`).  The zero above
+  was true of `s.objects[k]?` and blind to `s.objects.get? k`, which is *the same
+  read*: the `GetElem?` instance **is** `RHTable.get?`, and this tree proves it
+  outright (`objects_getElem?_eq_get?`, by `rfl`).  So the census measured a
+  spelling, and an enforced zero a rename walks around is worse than no zero,
+  because the number reads like a measurement.  Not theoretical either: forty
+  executable reads were hiding in the method form, and one of them —
+  `Concurrency.updateObjectAt` — **said so in its own docstring**, *"so the
+  AK7-cascade raw-match floor stays at its v0.31.2 baseline"*, which is choosing
+  a spelling to evade a metric and is the mirror image of this file's own rule
+  against contorting prose to satisfy a scanner.  Its second claim, that no typed
+  accessor applied, was false besides: `getObject?` is the kind-agnostic one.
+  `READ` reads both spellings now, and the self-test's decisive case keeps the
+  read and changes only how it is written.
+
+  Three things new code must respect.  (1) **The frozen surface is in scope, and
+  always was.**  `FrozenKernelObject.reply` carries the live
+  `SeLe4n.Kernel.Reply` and `Model.freeze` copies a live state's records
+  verbatim, so a frozen transition discriminating a variant at the call site is
+  the defect this census is named for — it had twenty-nine such reads, now zero,
+  routed through a frozen accessor family (`Model/FrozenState.lean`) that mirrors
+  the live one and which `FrozenOps.frozenLookup*` is stated over rather than
+  beside.  (2) **Where a site distinguishes "wrong kind" from "absent" the typed
+  accessor is the wrong tool**: it answers `none` to both, so collapsing the two
+  would change an error code.  Those sites read `getObject?` and keep their arms
+  — no raw table read, and the distinction that *is* the semantics survives.  (3)
+  **The exemption is per declaration, not per file.**  `Model/State.lean` was
+  skipped whole, which is a 4800-line module that is not only accessors, so a raw
+  read added anywhere in it was invisible; `ACCESSOR_BODIES` names the twenty-one
+  bodies that *are* the accessors and the store primitives, and is reconciled in
+  both directions in **every** mode — `--rows` included, since that is the mode
+  Tier 0 calls — so a stale exemption fails rather than reading like coverage.
+
+  Two mechanical notes, both the *one question, two answers* rule at the point
+  where the fix could have introduced it.  The per-key inventory for this metric
+  was **deleted**, not kept beside the zero: at zero a cardinality and a set say
+  the same thing, and carrying both would be this file's own duplication hazard
+  inside the gate written to close it.  What replaced it is the *relation* — the
+  gate asserts `STORE_READ_CODE` equals the sum of its own `STORE_READ_CODE_SITE`
+  rows, in the baseline and in the current capture, so a hand-edited or truncated
+  file claiming "none" beside a live site row is refused as a gate defect rather
+  than passed on the strength of the total; the rows are still emitted, because
+  when the zero breaks they are what names the offending declaration.  And the
+  self-test grew a second case shape, because the two claims are token-preserving
+  with respect to different things: the inventory cases hold every scalar fixed
+  and the harness asserts it, while the census cases move the scalars and the
+  harness asserts the fixture is internally consistent.  Its decisive case keeps
+  the baseline and the current value **equal at one** — everything a ceiling
+  asks, and exactly what a zero floor must still reject.
 
   **A region-scoped presence check is still a presence check** (PR #887
   review round 4).  Resolving the guard's block, the tail after a branch, or
@@ -1129,6 +1234,87 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   registering the parameter as a provider.  That is round 16's `.macro` hazard
   arriving through the fix for a different one; a preprocessor line is not split
   and contributes nothing.
+
+  **And a recognised set is not a derived set — so a count over one is a floor,
+  not a measurement** (PR #895 review, rounds 1 and 2, `v0.35.13`).  Every rule
+  above polices the **predicate**: what a scanner asserts of an element it
+  found.  None of them polices the **domain**: whether it found them all.  That
+  asymmetry is why this family keeps reappearing, because the two fail
+  differently — a predicate miss can fire on a real element, while a domain miss
+  is *silent by construction*: the element is never examined, the count stays
+  clean, and the gate reports a number that reads as a measurement of absence.
+
+  Six of the eight findings across two review rounds of one PR were that one
+  defect.  `.objects.get?`, then `RHTable.get? st.objects k`, then a `where`
+  equation body whose signature never closed — three spellings of one read.
+  `pub unsafe extern "C" fn`, skipped entirely rather than judged.  `FrozenOps`,
+  outside both library roots, so *every reply-stack write* meant every one in
+  the modules the census imported.  A frontier that asked "constructs **and**
+  stores" of one body, which a writer defeats by delegating the construction to
+  a helper.  Each fix was right and the next round found another, because the
+  boundary was being probed rather than the property.
+
+  **Two kinds of gate, and only one of them can be closed.**  Where the domain
+  is *derivable* — which constants a term uses, which modules an environment
+  imports, what a definition transitively calls — derive it and reconcile both
+  directions, and the class really does end there: the reply-stack write census
+  now follows construction through helpers (`reachesChainConstructor`, walked
+  backwards from the storing definitions and memoised, since nearly everything
+  reaches a constructor forwards), and asks the *environment* which constants it
+  generated rather than matching name prefixes.  Where the domain is a **coding
+  convention over unbounded syntax** — "obtain objects through an accessor",
+  "justify every unsafe site" — there is no closed formulation, in text *or* in
+  the environment: round 17's instruction sends questions about **elaboration**
+  to the elaborator, and "is this occurrence a read rather than a write" is a
+  question about an API's meaning, which the environment has no opinion on.
+  Measured rather than assumed: 245 hand-written executable definitions mention
+  the object-table projection, because writing the store is what a transition
+  does — so "never mention it" is not a stateable contract either, and the
+  attempt to derive a read-set from result types promptly classified
+  `FrozenMap.set`, a *write*, as a read.
+
+  So for the second kind, **fix the claim**: report the number as a floor over
+  recognised forms, in the gate's own output and in the prose that cites it
+  (`STORE_READ_SCOPE`, and the unsafe gate's `scope:` line).  The enforcement is
+  unchanged — a recognised violation still fails Tier 0 outright — but a
+  widening of the recogniser becomes an improvement to a diagnostic rather than
+  the closing of a hole that was claimed shut, which is the only way the reports
+  stop being findings.  And keep the other half of round 25's rule, which is
+  what bounds the gap: an input the scanner does not recognise **fails the
+  gate**, so the unrecognised set is visible rather than assumed empty.
+
+  One mechanical note, earned twice in this round: a fix for a domain defect can
+  introduce one.  `Name.isInternal` looked like the environment's own answer to
+  "did Lean generate this" and is true of the `_private.…` mangling, so adding
+  it to the auxiliary filter would have excluded **every `private def` in the
+  kernel** — the same class, inside its own remedy.  The census's planted
+  witness caught it, which is what witnesses are for.
+
+  **And a domain written as an exclusion is the same defect wearing a filter**
+  (PR #895 review round 3, `v0.35.15`).  Round 2 named the class and fixed it at
+  the four sites the review pointed at; round 3 found four more, and every one
+  was the gate's *domain* spelled as a hand-written exclusion rather than
+  derived: a glob naming `src` (so integration tests, `build.rs`, examples and
+  benches were never scanned), a prefix list naming `eq_` (so a contributor's
+  `eq_clearReply` was filtered out as a compiler auxiliary before its constants
+  were read), a regex naming `: Prop` that matched a *binder* (so
+  `def step (proof : Prop) … : SystemState` filed its raw store reads as
+  specification and walked around an enforced zero), and a `usesDirectly` naming
+  "direct" (so a writer that hands a built record to a store helper was in
+  neither derivation).  None was a new class; each was the round-2 rule applied
+  at one site and not swept onto its siblings, which is the failure mode this
+  file already documents.
+
+  The remedies are all the same shape — **derive the set, or name the shape
+  rather than the resemblance**: every tracked `.rs` file that is not build
+  output; a generated component is the prefix plus a *numeral*; the result type
+  is what follows the first depth-zero `:`; and the frontier pairs a transitive
+  side with a direct one on each disjunct.  That last is the point at which
+  derivation stops being possible: chasing stores transitively makes every IPC
+  composite a candidate, measured at 22, so the census states its frontier
+  (`chainWriteFrontier`) in its own output instead of letting the number read as
+  a proof of absence — the second-kind treatment this section already prescribes.
+  **A predicate over a domain you filtered is a measurement of the filter.**
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor
@@ -2122,17 +2308,220 @@ so the fail-closed direction is unchanged.  In the same cut
 `frozenSchedContextUnbind` gained the `isDonated` refusal its live counterpart
 has carried since `v0.35.4` and its own docstring already claimed.
 
-**One residual is registered rather than closed** (WS-RM).  The **reply** path
-does not yet run the detach: it relies on the answered frame being the head,
-which every reply of the nested Call pattern satisfies but which a *delegated*
-reply capability answering its caller out of order does not.  The consequence is
-fail-closed — the later pop's reciprocity test refuses the stale link and the
-reply returns `.invalidArgument`, writing nothing — so it is a wedged call chain
-rather than a corrupted one.  New code must not assume the reply path takes the
-answered frame off its stack.  Plan:
-[`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
+**The residual registered at `v0.35.4` is closed** (WS-RM, `v0.35.6`): both
+removal paths run seL4's `reply_remove`, and the reply path's own section below
+records what new code must respect.
 
 Plan: [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md).
+
+### WS-RM seL4's `reply_remove` on the reply path — COMPLETE (registered v0.35.4; RM1–RM6 v0.35.6)
+
+`v0.35.4` made the reply stack doubly linked and wired the detach into the
+**cancellation** path, leaving the **reply** path relying on the answered frame
+being the head — which every reply of the nested Call pattern satisfies and a
+*delegated* reply capability answering out of order does not.  Twenty-six
+sub-tasks across six phases, all at `v0.35.6`.  Seven things new code must
+respect.
+
+(1) **One removal step, and both spines call it.**  `removeCallerReplyFrame
+caller rid` is seL4's `reply_remove`: `detachReplyFrameAboveOrSelf` (the detach
+folded to the identity on refusal — a non-reciprocating upward link means
+"nothing above me on my stack", which the chain relation permits by design since
+it is stated *downward*), then `SystemState.consumeCallerReply`.
+`endpointReplyOnCore`, `endpointReply` and `endpointReplyRecv` all run it, and a
+Tier 3 negative refuses a bare consume in any of the three.  **The order inside
+it is the content** — the detach reads the link the consume clears — and a
+second negative refuses the swap.  `removeCallerReplyFrame_eq_consume_of_no_frame_above`
+is the definitional equality that makes every repair a case split whose `none`
+branch is the pre-WS-RM proof verbatim.
+
+(2) **The reply leg's head case is stated, not hidden.**  A frame that *heads* a
+scheduling context keeps its links when its caller is consumed (`Reply.consumed`,
+deliberately — the pop validates the head by them), so the leg's post-state
+satisfies `donationChainWellFormedExcept … rid` and nothing stronger.  It stands
+to the reply leg as `ipcInvariantFullExceptDonationOwner` stands to the bare
+reply, and `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` is
+the composite that discharges it: the donation pop that follows in the same
+transition re-heads the frame below.  `faultReplyOnCore_preserves_donationChainWellFormed`
+and `replyTransferOnCore_preserves_donationChainWellFormed` (seL4's
+`doReplyTransfer`) compose it; the staging writes frame the chain
+(`stageDeliveredMessage_donationChainFrame` and its two siblings).
+
+The composite carries **one** condition beyond the chain invariant, and it is a
+**pre-state** fact: `answeredHeadContextIsServerDonation` — the context the
+answered frame heads is the one the recorded reply server holds.  It is the
+third of the tree's *local coherence facts* about a single reply, beside
+`replyDonationOwnerIsAnsweredCaller` and `replyStackHeadIsAnsweredReply`, and
+like them it is **stated rather than derived**: `donationOwnerValid` relates a
+caller's recorded reply target to no donation, and `donationChainWellFormed`
+carries no binding clause at all, by its own *what is deliberately absent*.
+Vacuous wherever the answered frame heads nothing — every reply in a tree with
+no donation — with both vacuity discharges named
+(`answeredHeadContextIsServerDonation_of_no_caller` / `_of_no_reply`), and
+`tests/SmpIpcSuite.lean` §3.21 exhibits its premises and its conclusion on a
+state the live operations reach, since a hypothesis nothing exhibits is
+indistinguishable from one that cannot hold.  It is at the **pre**-state exactly
+as the bundle composite's `hDonationReturned` beside it is, and unlike
+`hStackValid`: `replyStackOuterCallerValid`'s subject is a state the pop runs on,
+whereas a `schedContextBinding` is something the reply leg provably does not
+write (`endpointReplyOnCore_donationOwnerFrameExcept`), so the transport belongs
+inside the proof rather than on every caller.  That is also what makes the reply
+*transfer* carry the fact **once**: its two branches reply with `IpcMessage.empty`
+and with `msg`, which at the post-state were two spellings differing only in a
+message the question never reads.
+
+(3) **`.reply` and `.replyRecv` declare the frame the detach writes.**
+`answeredReplyFrameAbove?` is resolved from the same
+`(st.getTcb? target).bind (·.replyObject)` expression the arm's existing reply
+member comes from, so the footprint and the transition cannot disagree about
+which frame is answered.  **`maxLockSetSize` is 22** and the RPi5 per-lock cost
+and envelope move with it, in the canonical sentence this file carries above.  No
+*reachable* footprint grew: the new member and the donation-return members are
+mutually exclusive, so `lockSet_endpointReplyRecvOnCore_size_le_eighteen` is
+unmoved.  **And declaring a member is not proving the transition writes it** —
+the Tier 3 anchor over each footprint's definition asks only that the resolver
+*occur* there, which is a presence check.  The relation is
+`lockSet_endpointReply_frameAbove_write_mem` and `lockSet_replyRecv_frameAbove_write_mem`
+at full arity, with `lockSet_endpointReplyOnCore_covers_detachedFrameAbove` and
+its `.replyRecv` twin resolved: the reply-path siblings of the coverage the
+cancellation path has carried since `v0.35.4`
+(`lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove`), which the cut that
+added the reply-path member did not sweep onto it.
+
+**And running that sweep over every resolved footprint found one more.**
+`lockSet_cancelDonationOnCore` had `_correct` and `_size_le` and no coverage
+layer at all, while each of its parametric members already carried a
+write-membership lemma — so nothing tied a member to the **resolver** the
+resolved footprint reads it from, which is the whole content of a resolved
+coverage theorem.  Neither neighbour stands in for it: `_correct` is about the
+*kinds* of the members present and `_size_le` about how many there are, and
+a footprint can satisfy both while naming the wrong object.  The six are
+`lockSet_cancelDonationOnCore_covers_victim` (both arms of the resolution),
+`…_covers_bindingSchedContext` and `…_covers_stateLevel` (through
+`cancelBindingSc?`), `…_covers_donatedOwner` (through `cancelDonatedOwner?`),
+`…_covers_pop` and `…_covers_outerCaller_key` (through
+`cancelDonationPopMembers?`) — the last a declared **key** rather than a write,
+because the pop *reads* that TCB to check it is a waiting donor, with a Tier 3
+negative refusing the write spelling.  `lockSet_notificationWaitOnCore` has no
+coverage layer and needs none: it resolves nothing, so its parametric lemmas are
+already the statement at full arity.
+
+(4) **`.replyRecv` pops the donation *between* its two legs**, which is
+seL4-MCS's own `doReplyTransfer` → `reply_remove` → `receiveIPC` order — and it
+has to be.  The receive leg re-links the very Reply `rid` the reply leg just
+answered, and `Reply.isFree` reads **both** stack links, so a frame still heading
+a context is not linkable: with the pop last, `linkCallerReply` and the
+server-first stash both refused `.replyCapInvalid` and **no passive server whose
+client had donated could ever complete a `seL4_ReplyRecv`**.  That was a live
+defect on the MCS steady state, found while closing this workstream and fixed in
+the same cut.  The fused `replyRecvReturnDonation` is retired and split into
+`replyRecvPopDonation` (between the legs) and `replyRecvPostReceiveDonation`
+(after the receive leg, taking the popped context as an argument), each with its
+own bundle theorem stated at the state its own step runs on.  New code must not
+read the fused name as live.
+
+(5) **The dispatch payoff's receive-leg hypotheses are stated at the post-pop
+state.**  `replyRecvPostPopState` and `replyRecvPoppedContext` are *total*
+accessors over the pop, so `syscallDispatchQuiescence.replyRecvStage` stays a
+flat pre-state-computable pack rather than a quantification nested under the
+pop's own success; the pop's two obligations (`hSrvIdle1`, `hStackValid1`) are
+stated at the reply leg's committed state, which is where it runs.  Stating the
+receive-leg fields at the reply leg's own state is a claim about a state the
+receive leg no longer runs on.
+
+(6) **Every reply-stack write names a chain result.**
+`SeLe4n/Testing/ReplyStackWriteCensus.lean` (Tier 1) derives the write-site set
+from the elaborated environment — a project definition whose own body references
+one of the chain-write primitives, `SystemState.consumeReply` and
+`SystemState.consumeCallerReply` among them — and reconciles it against a
+registry in both directions.  A site either **states** its chain results (each
+named theorem must mention the site *and* a `donationChain…` form) or is recorded
+as a **half-step** of the composite that completes it, and the half-step chain
+must terminate in a stating entry.  Seventeen sites, eight stating.  A new
+definition that consumes a caller's Reply bare is a build failure on the day it
+is written — which is the shape this workstream exists to close, and the one
+level above the frontier the census deliberately stops at (composites inherit by
+`donationChainFrame`'s algebra, which is a composition rather than a claim).
+
+**And "every" meant every module either root reaches** (PR #895 review,
+`v0.35.12`).  `SeLe4n/Kernel/FrozenOps/` is reached by neither, and it is in no
+staged allowlist: it is built only by its own `lean_exe` target
+(`tests.FrozenOpsSuite`), so the closure this census claims held for every
+module except one that writes the live `Reply` record — `FrozenKernelObject.reply` carries `SeLe4n.Kernel.Reply`, links and
+all, and `Model.freeze` copies a live state's Reply objects verbatim, so a
+frozen state taken mid-call-chain holds a real reply stack.  And the gap was not
+theoretical: `frozenEndpointReply` cleared a caller's Reply **bare**, which is
+WS-RM's own defect surviving on the surface nothing was looking at.  Bringing it
+in cost three things.  The frozen reply now runs a frozen `reply_remove`
+(`frozenDetachReplyFrameAboveOrSelf` then the consume, in that order, since the
+detach reads the link the consume clears).  `frozenLinkCallerReply`'s guard read
+`caller.isNone` where `Model.linkReply` reads `Reply.isFree` — a fifth guard
+deciding one question differently, so a frame still on a live stack was linkable
+there while the live kernel refuses it; it reads `isFree` now.  And the
+discipline gained a third constructor, `mirrors`: `donationChainWellFormed` is a
+predicate on `SystemState` and the frozen store is a `FrozenMap`, so demanding a
+`donationChain…` result of a frozen site would demand a theorem that cannot be
+written, while accepting no record would be the silence this census refuses.  A
+`mirrors` entry names the live twin, which must itself resolve to a stating
+entry — a frozen writer with no live twin is a transition the live kernel never
+performs, which is a finding rather than an exemption.
+
+(7) **`donationChainFrame_of_objects_insert` is public and lives beside the
+predicate.**  It was private to the cancellation shape module; the fault-reply
+path needs the same fact, and a second copy in a module the first does not import
+is the one-question-two-answers shape this tree keeps paying for.
+
+**And the removal does not preserve the donation accounting — the cost, measured,
+and whose it is** (the post-landing audit, corrected at `v0.35.14`).  Taking a
+caller out of the *middle* of a chain is destructive to which thread ends up
+owning the scheduling context: the removal moves no context, and the later pop
+donates to whatever the remaining stack says is outermost.  On
+`owner → middle → server`, a delegate answering `owner` out of order leaves
+`owner` **`.unbound` permanently**, and the server's in-order reply then settles
+the context **`.bound` on `middle`** — which the in-order unwind would instead
+have left `.donated … owner`, still owed outward.  So a callee that delegates
+its caller's reply capability to a confederate can capture that caller's
+reservation.  New code must not read WS-RM as accounting-preserving, and must not
+read a successful pop as evidence that the context reached its owner.
+
+**The cost is `cancelledMiddleCallerPolicy`'s, not the removal's, and a
+depth-two witness cannot tell the difference.**  A two-frame stack's lower frame
+is its *bottom*, so `severAtCut` (write `prev := none` into the frame above) and
+the alternative `spliceOutTheCut` (write the cut frame's own `prev`) write the
+same value, and §3.20 measures a shape both policies share.  §3.22 of
+`tests/SmpIpcSuite.lean` is the depth-three witness where they differ: every
+frame below the cut leaves the context's stack, so the reservation settles on a
+thread strictly *inside* the chain and its owner is left `.unbound` two hops
+outside the cut, while the same stack unwound in order delivers it outward still
+owed.  Three frames is the shallowest stack on which any of that is visible.
+
+**Why the splice is not taken, and the claim that is deliberately not made.**
+This kernel decides whether a reply pops a donation from the **recorded server's
+binding** (`endpointReplyServerDonation?`), not from whether the answered frame
+heads a context; `severAtCut` is exactly what keeps those two facts equivalent,
+and it is what the three *stated* pre-state coherence hypotheses
+(`replyStackHeadIsAnsweredReply`, `replyDonationOwnerIsAnsweredCaller`,
+`answeredHeadContextIsServerDonation`) need — no invariant in this tree entails
+them.  Splicing re-heads a frame whose recorded server is gone and `.unbound`, so
+answering it runs no pop and leaves a consumed frame heading a context: the state
+`replyStackOuterCaller?_of_consumed_frame` refuses and the pinning `v0.35.4`
+closed.  Recovering the accounting therefore means moving the pop's *trigger* to
+head-ness and its *source* to `SchedContext.boundThread` — registered debt with a
+closure target, not a preference.
+
+**And `severAtCut` is a divergence from seL4-MCS, not an inheritance of it.**
+Until `v0.35.14` this file asserted the opposite.  Checked against upstream
+source, `reply_remove`'s non-head branch **splices** —
+`REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
+reply->replyPrev` — so the frame above inherits the cut frame's own outward
+pointer and every frame below stays reachable from the head.  v1.0.0 must not
+claim seL4-MCS reply-stack semantics at chain depth ≥ 3.  **A `reply_remove_tcb`
+reference elsewhere in this tree names an operation's shape; it is not evidence
+about what upstream writes** — that conflation is how the false claim survived
+eight cuts.
+
+Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
+
 
 ### WS-SM SMP multi-core completion — IN FLIGHT (v0.31.2 → v1.0.0)
 
@@ -2317,7 +2706,7 @@ code may assume:
   a budget admits at the declared ceiling, with
   `WCRT_lockSet_le_budget_of_admissible` the payoff and
   `rpi5Tick_refuses_sixty_micro_sections` the `decide`-checked negative.  At
-  HEAD, the declared lock-set ceiling is **21**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3780 µs**.
+  HEAD, the declared lock-set ceiling is **22**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3960 µs**.
   Those three figures are **derived**, and since WS-OD OD3.15
   `scripts/check_lock_ceiling_figures.py` (Tier 0) holds every prose copy of them
   to the Lean sources: the constants and the formula that combines them are read
@@ -2464,7 +2853,7 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **172**
+  reports **zero** conjuncts bound on a post-state across all **176**
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements, measured over the comment-free code view with the conjunct set,
   the bundle family and each bundle's own pre-state all *derived* rather than
@@ -3296,12 +3685,48 @@ code may assume:
   (non-broadcast) call site to `scripts/tlbi_local_allowlist.txt`.
 - **An `unsafe fn` body is not an unsafe context** (`v0.34.129`).  `sele4n-abi`
   and `sele4n-hal` both deny `unsafe_op_in_unsafe_fn`, so a hardware operation,
-  a raw-pointer dereference or a foreign call inside one of the HAL's thirteen
+  a raw-pointer dereference or a foreign call inside one of the HAL's ten
   `unsafe fn`s must sit in its own `unsafe { … }` block with its own
   `// SAFETY:` comment — which is what makes the HAL's stated discipline
-  (*every unsafe block carries a `// SAFETY:` comment*, enforced by
-  `scripts/check_arm_arm_citations.sh`) reach the bodies where the hardware
-  access actually happens.  It also makes an *absence* checkable: the host
+  (*every unsafe block carries a `// SAFETY:` comment*) reach the bodies where
+  the hardware access actually happens.  **That discipline is enforced by
+  `scripts/check_unsafe_block_justifications.py` (Tier 0) since `v0.35.9`, and
+  was enforced by nothing before it**: this file and
+  `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` row F.3 both named
+  `scripts/check_arm_arm_citations.sh`, which the v0.30.11 audit planned as
+  R12.C and which no commit on any branch ever contained.  A claimed gate is
+  the worst kind of stale claim, because the discharge row it backs reads as
+  evidence.  The live gate asks each site kind its own question — a `// SAFETY:`
+  comment in the contiguous run above an `unsafe` **block**, a `# Safety` doc
+  section on an `unsafe fn` **declaration**, which are Rust's two idioms and not
+  interchangeable — and the tree is at **126 of 126 justified** (114 blocks and
+  12 declarations, both counts emitted by the gate rather than written down
+  here), so its baseline is empty and any new unjustified site fails outright
+  rather than raising a floor.
+
+  **The count was 125 until `v0.35.15`, and the missing site was a domain
+  defect** (PR #895 review round 3).  The census globbed `*/src/**/*.rs`, which
+  names the crate libraries and silently omits everything else cargo compiles —
+  integration tests, `build.rs`, examples, benches.  `rust/sele4n-hal/tests/`
+  carries a real `unsafe` block, so the figure described a subset of the tree
+  while reading as a measurement of it, and the empty baseline would have stayed
+  green over an unjustified site in any omitted file.  The set is derived now:
+  every `.rs` file under the workspace that is not build output.
+
+  **And the gate meant that sentence only from `v0.35.12`** (PR #895 review): it
+  accepted a `// SAFETY:` comment on a declaration too, as a fallback, under the
+  very comment saying the two are not interchangeable.  That is not leniency —
+  the idioms publish to different audiences.  A `// SAFETY:` comment is inside
+  the file, for the reviewer reading the next line; a `# Safety` section is
+  rustdoc, for the **caller** who must discharge the obligation and never opens
+  this file.  Taking the first for the second passes an `unsafe fn` that exposes
+  no contract at all to the people bound by it.  All twelve declarations already
+  carried a `# Safety` section, so removing the fallback failed nothing and
+  refuses the next one documented the wrong way; the self-test pins the
+  separation in **both** directions, each case keeping the justification and
+  writing it in the other kind's idiom.  The ARM ARM citation count is reported beside it and deliberately not
+  enforced: deciding which sites touch hardware needs the body, which is the
+  analysis-instead-of-a-contract shape this file retires twice above.  It also makes an *absence* checkable: the host
   `raw_syscall` mock is `unsafe fn` for signature parity alone, and its body
   compiling with no block is the compiler's statement of that, where before it
   was a docstring's.  The lint was added because the claim it replaces was

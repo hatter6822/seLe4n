@@ -1319,7 +1319,9 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
     refine ⟨h1, h1i, h2, h3, h4, advanceTimerState_preserves_serviceGraphInvariant ticks st h5,
            h6, h7, h8,
            PriorityInheritance.blockingAcyclic_frame st (advanceTimerState ticks st) h9
-             (fun _ => by simp [PriorityInheritance.blockingServer, advanceTimerState])
+             (fun _ => by
+               simp [PriorityInheritance.blockingServer,
+                 SystemState.getTcb?, advanceTimerState])
              (by simp [advanceTimerState]), ?_, ?_⟩
     · -- AM4-A: advanceTimerState preserves both `objects` and `lifecycle.objectTypes`,
       -- so the lockstep invariant transports unchanged.
@@ -1447,7 +1449,9 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
              hBound⟩
     -- blockingAcyclic
     · exact PriorityInheritance.blockingAcyclic_frame st (writeRegisterState reg value st) h9
-        (fun _ => by simp [PriorityInheritance.blockingServer, writeRegisterState])
+        (fun _ => by
+               simp [PriorityInheritance.blockingServer,
+                 SystemState.getTcb?, writeRegisterState])
         (by simp [writeRegisterState])
     -- AM4-A: lifecycleObjectTypeLockstep — writeRegisterState leaves
     -- objects and lifecycle.objectTypes unchanged.
@@ -1568,7 +1572,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
     (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile) (st : SystemState)
     (tcb : TCB)
     (hInv : proofLayerInvariantBundle st)
-    (hLookup : st.objects[newTid.toObjId]? = some (.tcb tcb))
+    (hTcb : st.getTcb? newTid = some tcb)
     (hRegs : (newRegs == tcb.registerContext) = true)
     (hNotRunnable : newTid ∉ st.scheduler.runnable)
     (hTimeSlice : tcb.timeSlice > 0)
@@ -1576,6 +1580,11 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
     (hDeadline : tcb.deadline.toNat = 0)
     (hBudgetPost : currentBudgetPositive (contextSwitchState newTid newRegs st)) :
     proofLayerInvariantBundle (contextSwitchState newTid newRegs st) := by
+  -- The caller reads the thread through the typed accessor; the interior's
+  -- downstream lemmas are stated over the store, so the two forms are bridged
+  -- once here rather than at the call site.
+  have hLookup : st.objects[newTid.toObjId]? = some (.tcb tcb) :=
+    (SystemState.getTcb?_eq_some_iff st newTid tcb).mp hTcb
   obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB, hPCT⟩ := hInv
   -- contextSwitchState changes machine.regs and scheduler.current; objects unchanged
   have hObjs : (contextSwitchState newTid newRegs st).objects = st.objects := rfl
@@ -1678,7 +1687,9 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
              hBound⟩
     -- blockingAcyclic
     · exact PriorityInheritance.blockingAcyclic_frame st (contextSwitchState newTid newRegs st) h9
-        (fun _ => by simp [PriorityInheritance.blockingServer, contextSwitchState])
+        (fun _ => by
+               simp [PriorityInheritance.blockingServer,
+                 SystemState.getTcb?, contextSwitchState])
         (by simp [contextSwitchState])
     -- AM4-A: lifecycleObjectTypeLockstep
     · intro oid obj hObj'

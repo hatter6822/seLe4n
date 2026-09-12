@@ -1342,6 +1342,9 @@ pub extern "C" fn sele4n_suspend_thread(tid: u64) -> u32 {
             // established before this bracket was entered.
             #[cfg(feature = "hw_target")]
             {
+                // SAFETY: as stated directly above -- the Lean-emitted
+                // `extern "C"` symbol, called from EL1 kernel context with this
+                // core's runtime initialized, inside the kernel-entry bracket.
                 unsafe { suspend_thread_cross_core(tid) }
             }
             // The host lane calls the Rust stand-in under a name of its own, so

@@ -104,7 +104,7 @@ theorem registerService_preserves_registryEndpointValid
     (hSvcInv : st.serviceRegistry.invExt) :
     registryEndpointValid st' := by
   have hObjEq := registerService_preserves_objects st st' newReg hStep
-  unfold registerService at hStep
+  unfold registerService SystemState.getObject? at hStep
   split at hStep
   · simp at hStep
   · split at hStep
@@ -140,7 +140,7 @@ theorem registerService_preserves_registryInterfaceValid
     (hInv : registryInterfaceValid st)
     (hSvcInv : st.serviceRegistry.invExt) :
     registryInterfaceValid st' := by
-  unfold registerService at hStep
+  unfold registerService SystemState.getObject? at hStep
   split at hStep
   · simp at hStep
   · split at hStep
@@ -485,7 +485,7 @@ theorem registerService_preserves_registryEndpointUnique
     (hInv : registryEndpointUnique st)
     (hSvcInv : st.serviceRegistry.invExt) :
     registryEndpointUnique st' := by
-  unfold registerService at hStep
+  unfold registerService SystemState.getObject? at hStep
   split at hStep
   · simp at hStep
   · split at hStep

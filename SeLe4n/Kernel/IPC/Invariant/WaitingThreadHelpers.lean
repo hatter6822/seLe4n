@@ -241,7 +241,7 @@ theorem storeTcbQueueLinks_preserves_blockedThreadsPendingMessageConsistent
       simp only [hSO, Except.ok.injEq] at hStore; subst hStore
       -- Extract objects lookup from lookupTcb
       have hObjOrig : st.objects[tid.toObjId]? = some (.tcb tcb) := by
-        unfold lookupTcb at hLk; split at hLk
+        unfold lookupTcb SystemState.getTcb? at hLk; split at hLk
         · simp at hLk
         · split at hLk
           next t hObj => exact Option.some.inj hLk ▸ hObj
@@ -288,7 +288,7 @@ theorem storeTcbPendingMessage_preserves_blockedThreadsPendingMessageConsistent
     | ok pair =>
       simp only [hSO, Except.ok.injEq] at hStore; subst hStore
       have hObjOrig : st.objects[tid.toObjId]? = some (.tcb tcb) := by
-        unfold lookupTcb at hLk; split at hLk
+        unfold lookupTcb SystemState.getTcb? at hLk; split at hLk
         · simp at hLk
         · split at hLk
           next t hObj => exact Option.some.inj hLk ▸ hObj
@@ -335,6 +335,21 @@ theorem consumeCallerReply_preserves_blockedThreadsPendingMessageConsistent
     (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
     blockedThreadsPendingMessageConsistent st' := by
   have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  intro tid tcb hObj
+  obtain ⟨ty, hSt, hIS, hPM, _⟩ := hFwd tid.toObjId tcb hObj
+  have hbase := hInv tid ty hSt
+  rw [hIS, hPM]
+  exact hbase
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves it — the detach it runs first
+writes a Reply, so every stored TCB keeps its `ipcState` and `pendingMessage`. -/
+theorem removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : blockedThreadsPendingMessageConsistent st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    blockedThreadsPendingMessageConsistent st' := by
+  have hFwd := removeCallerReplyFrame_tcb_forward st st' caller rid hObjInv hStep
   intro tid tcb hObj
   obtain ⟨ty, hSt, hIS, hPM, _⟩ := hFwd tid.toObjId tcb hObj
   have hbase := hInv tid ty hSt

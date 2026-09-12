@@ -929,7 +929,7 @@ private def donDelegateTcb : TCB :=
 /-- WS-RR RR2.20 (PR #885 review round 1): the **distinct queued caller**.
 
 The rendezvous arm below re-donates *this* thread's SchedContext rather than the
-one being replied to. That matters because `replyRecvReturnDonation` branches on
+one being replied to. That matters because `replyRecvPostReceiveDonation` branches on
 `nextThread`'s `.blockedOnReply` — and the thread being replied to is *already*
 `.blockedOnReply` from its own outgoing call, so passing it as `nextThread` lets
 the branch fire for a reason the live `.replyRecv` ordering would not produce
@@ -962,6 +962,26 @@ private def donCaller2Tcb : TCB :=
       ipcState := .blockedOnReply donEp (some donServer)
       replyObject := some donCaller2Reply
       threadState := ThreadState.Ready }
+
+/-- **WS-RM (`v0.35.6`)**: the two donation steps `replyRecvBody` performs, run
+back to back with the receive leg elided.
+
+`replyRecvBody` sequences `replyRecvPopDonation` (between the two legs, which is
+seL4-MCS's own `doReplyTransfer` -> `reply_remove` -> `receiveIPC` order) and
+`replyRecvPostReceiveDonation` (after the receive leg), passing the popped
+context from the first to the second.  The migration facts below are about that
+pair, and this driver runs them exactly as the arm does; the receive leg is
+elided because these checks supply `nextThread` directly rather than dequeuing
+it, which is the same elision the pre-WS-RM fused step allowed. -/
+private def runReplyRecvDonationSteps (tid recordedServer nextThread : SeLe4n.ThreadId)
+    (serverCore : CoreId) (st : SystemState) : Except KernelError SystemState :=
+  match replyRecvPopDonation recordedServer st with
+  | .error e => .error e
+  | .ok (returned?, st1) =>
+      match replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned?
+          st1 with
+      | .error e => .error e
+      | .ok ((), st2) => .ok st2
 
 private def replenishEntriesOn (st : SystemState) (c : CoreId) :
     List (SeLe4n.SchedContextId × Nat) :=
@@ -1023,9 +1043,9 @@ private def runDonationMigrationChecks : IO Unit := do
     -- round-trip arm alone cannot tell "both migrations ran" from "neither did":
     -- returning to the owner and re-donating to the same server lands the entries
     -- back where they started.
-    match replyRecvReturnDonation donServer donServer donServer c1 stCall with
+    match runReplyRecvDonationSteps donServer donServer donServer c1 stCall with
     | .error _ => assertBool "the .replyRecv return-only arm succeeds" false
-    | .ok ((), stRet) =>
+    | .ok stRet =>
       assertBool "the .replyRecv return-only arm succeeds" true
       assertBool "the .replyRecv return drains the SC's replenishments off the server's core 1"
         (decide (replenishCountFor stRet c1 scClient = 0))
@@ -1042,9 +1062,9 @@ private def runDonationMigrationChecks : IO Unit := do
     -- re-donation — and the third core is what makes them distinguishable.
     let stCallD : SystemState :=
       { stCall with objects := stCall.objects.insert donDelegate.toObjId (.tcb donDelegateTcb) }
-    match replyRecvReturnDonation donDelegate donServer donClient c1 stCallD with
+    match runReplyRecvDonationSteps donDelegate donServer donClient c1 stCallD with
     | .error _ => assertBool "the .replyRecv rendezvous arm succeeds" false
-    | .ok ((), stRr) =>
+    | .ok stRr =>
       assertBool "the .replyRecv rendezvous arm succeeds" true
       assertBool "the re-donated SC's replenishments leave the replier's core 1"
         (decide (replenishCountFor stRr c1 scClient = 0))
@@ -1075,9 +1095,9 @@ private def runDonationMigrationChecks : IO Unit := do
             ((ReplenishQueue.empty.insert scCaller2 400).insert scCaller2 500) }
     assertBool "pre: the queued caller's SC holds both replenishments on its home core 3"
       (decide (replenishCountFor stCallQ c3 scCaller2 = 2))
-    match replyRecvReturnDonation donDelegate donServer donCaller2 c1 stCallQ with
+    match runReplyRecvDonationSteps donDelegate donServer donCaller2 c1 stCallQ with
     | .error _ => assertBool "the .replyRecv distinct-caller rendezvous arm succeeds" false
-    | .ok ((), stQ) =>
+    | .ok stQ =>
       assertBool "the .replyRecv distinct-caller rendezvous arm succeeds" true
       -- The return hop, on the replied-to thread's context.
       assertBool "return hop: the returned SC leaves the server's core 1"
@@ -2336,7 +2356,7 @@ private def runMiddleCallerDetachChecks : IO Unit := do
     -- Step one: the detach's WRITING arm.  Every `detachReplyFrameAbove` result
     -- proved elsewhere is discharged on a state whose frame has nothing above
     -- it, where the step is the identity; this is the arm that stores.
-    let detached := Lifecycle.Suspend.detachCancelledCallerFrame pushed outerTcb
+    let detached := detachFrameAboveThreadReply pushed outerTcb
     assertBool "the detach clears the `prev` of the frame ABOVE the cancelled one"
       (pushLinksOf detached pushDonorReply == some (none, some (.head pushSc)))
     assertBool "...and writes nothing on the cancelled frame itself — the consume does that"
@@ -2399,11 +2419,11 @@ private def runMiddleCallerDetachChecks : IO Unit := do
        | .error e => e == KernelError.invalidArgument
        | .ok _ => false)
     assertBool "...and the cancellation wrapper folds that refusal to the identity"
-      (pushStackShape (Lifecycle.Suspend.detachCancelledCallerFrame detached outerTcb)
+      (pushStackShape (detachFrameAboveThreadReply detached outerTcb)
          == pushStackShape detached)
     assertBool "...so the caller below a cut can still be cancelled, and leaves cleanly"
       (match (Lifecycle.Suspend.consumeReplyLink
-                (Lifecycle.Suspend.detachCancelledCallerFrame detached outerTcb)
+                (detachFrameAboveThreadReply detached outerTcb)
                 pushOuter outerTcb).getReply? pushOuterReply with
        | some r => r.isFree
        | none => false)
@@ -2417,11 +2437,298 @@ private def runMiddleCallerDetachChecks : IO Unit := do
        | .error e => e == KernelError.objectNotFound
        | .ok _ => false)
     assertBool "the detach is the identity for a frame with nothing above it"
-      (pushStackShape (Lifecycle.Suspend.detachCancelledCallerFrame pushed
+      (pushStackShape (detachFrameAboveThreadReply pushed
          { outerTcb with replyObject := some pushDonorReply }) == pushStackShape pushed)
     assertBool "...and for a thread holding no reply object at all"
-      (pushStackShape (Lifecycle.Suspend.detachCancelledCallerFrame pushed
+      (pushStackShape (detachFrameAboveThreadReply pushed
          { outerTcb with replyObject := none }) == pushStackShape pushed)
+
+-- ============================================================================
+-- WS-RM — seL4's `reply_remove` on the reply path (`v0.35.6`)
+-- ============================================================================
+
+/-- **WS-RM**: the depth-2 chain's outer caller, carrying the reply object it is
+blocked on.
+
+`§3.19`'s detach witness builds the same TCB for the *cancellation* path; the
+reply path answers the very same frame, which is the point — one removal step,
+two callers of it. -/
+private def replyRemovalOuterTcb : TCB :=
+  { mkTcb 93 50 none with
+      ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
+      replyObject := some pushOuterReply }
+
+/-- **WS-RM**: a thread holding a *copy* of the outer caller's reply capability,
+homed on core 1 -- a **delegated** replier.
+
+`endpointReplyOnCore` deliberately does not gate on the replier being the thread
+the call recorded (PR #822 review): authority flows from holding the reply
+capability, and a copied or minted one held by another server is legitimate
+seL4-MCS delegation.  That is what lets this witness answer the outer caller
+**out of order** -- `pushDonor`, the thread the outer call recorded, has a call
+of its own still outstanding, so the frame the delegate answers is *not* the
+head of its stack. -/
+private def replyRemovalDelegate : SeLe4n.ThreadId := ⟨99⟩
+
+private def runReplyFrameRemovalChecks : IO Unit := do
+  IO.println "--- §3.20 WS-RM: the reply path takes the answered frame off its stack ---"
+  match donateSchedContext pushStore pushDonor pushServer pushSc with
+  | .error e =>
+    assertBool s!"the removal witness needs a depth-2 push (got {reprStr e})" false
+  | .ok pushed =>
+    -- The stack a depth-2 `Call` chain leaves: `pushDonorReply` heads the
+    -- context and links down to `pushOuterReply`, which links back up.
+    let stChain : SystemState :=
+      { pushed with
+          objects := (pushed.objects.insert pushOuter.toObjId (.tcb replyRemovalOuterTcb)).insert
+            replyRemovalDelegate.toObjId (.tcb (mkTcb 99 45 (some c1))) }
+    assertBool "pre: the donor's frame heads the context and links down to the outer one"
+      (pushLinksOf stChain pushDonorReply == some (some pushOuterReply, some (.head pushSc)))
+    assertBool "pre: the outer frame links up to the head, heading nothing"
+      (pushLinksOf stChain pushOuterReply == some (none, some (.frame pushDonorReply)))
+    -- The in-order contrast's own pre-state: `pushDonor` blocked on its own
+    -- reply to `pushServer`, which is what a live depth-2 chain looks like.
+    let inOrderDonorTcb : TCB :=
+      { mkTcb 91 40 none with
+          schedContextBinding := SchedContextBinding.unbound,
+          ipcState := ThreadIpcState.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer),
+          replyObject := some pushDonorReply }
+    let stChainInOrder : SystemState :=
+      { stChain with
+          objects := stChain.objects.insert pushDonor.toObjId (.tcb inOrderDonorTcb) }
+    -- The footprint declares the frame the removal writes, resolved from the
+    -- answered thread's own reply object.
+    assertBool "the footprint resolves the frame ABOVE the answered one"
+      (answeredReplyFrameAbove? stChain pushOuter == some pushDonorReply)
+    -- **Out of order**: the answered caller is the one BELOW the head, because
+    -- the recorded replier `pushDonor` has a call of its own still outstanding.
+    assertBool "pre: the outer caller records `pushDonor` as its replier"
+      (match stChain.getTcb? pushOuter with
+       | some t => t.ipcState == .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor)
+       | none => false)
+    -- Through the DELEGATE, which is what makes the reply out of order: the
+    -- recorded replier `pushDonor` has a call of its own still outstanding, so
+    -- the frame this answers sits below the head rather than being it.
+    let (postOoO, resOoO) :=
+      endpointReplyOnCore replyRemovalDelegate pushOuter IpcMessage.empty bootCoreId stChain
+    assertBool "the out-of-order reply through a DELEGATED reply capability succeeds"
+      (match resOoO with | .ok _ => true | .error _ => false)
+    assertBool "the frame ABOVE the answered one has its `prev` cleared"
+      (pushLinksOf postOoO pushDonorReply == some (none, some (.head pushSc)))
+    assertBool "...and the answered frame is off the stack entirely (`Reply.isFree`)"
+      (match postOoO.getReply? pushOuterReply with
+       | some r => r.isFree
+       | none => false)
+    assertBool "...and the context still heads the donor's frame"
+      (pushHeadOf postOoO == some (some pushDonorReply))
+    -- **PAYOFF**: the in-order reply that follows now succeeds.  Before WS-RM
+    -- the out-of-order reply left `pushDonorReply.prev` naming a consumed frame,
+    -- the walk's reciprocity test refused it, and this call returned
+    -- `.invalidArgument` — a wedged call chain reached from an ordinary reply.
+    assertBool "PAYOFF: the in-order reply that follows succeeds — the wedge is gone"
+      (match (endpointReplyOnCore pushServer pushDonor IpcMessage.empty bootCoreId
+                { postOoO with
+                    objects := postOoO.objects.insert pushDonor.toObjId
+                      (.tcb { mkTcb 91 40 none with
+                                schedContextBinding := .unbound,
+                                ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97)
+                                  (some pushServer),
+                                replyObject := some pushDonorReply }) }).2 with
+       | .ok _ => true
+       | .error _ => false)
+    -- ...and the pop the reply chain runs after it resolves, rather than
+    -- refusing a stale link.
+    assertBool "PAYOFF: the pop resolves the remaining stack to its bottom"
+      (match replyStackOuterCaller? postOoO pushSc with
+       | .ok none => true | _ => false)
+    assertBool "PAYOFF: ...so the donation return succeeds and settles the context"
+      (match returnDonatedSchedContextResolved postOoO pushServer pushSc pushDonor with
+       | .ok st' => pushBindingOf st' pushDonor == some (.bound pushSc)
+       | .error _ => false)
+    -- **THE COST, PINNED RATHER THAN DESCRIBED.**  Taking a caller out of the
+    -- middle of a chain is destructive to the donation accounting: the removal
+    -- moves no scheduling context, and the later pop donates to whatever the
+    -- remaining stack says is outermost.  So the context settles `.bound` on the
+    -- INTERMEDIATE caller above, and `pushOuter` -- which owned it -- is left
+    -- `.unbound` for good.  The in-order unwind below is the contrast: there the
+    -- intermediate caller receives it `.donated … pushOuter`, still owing it
+    -- outward.
+    --
+    -- This is a TWO-frame stack, where `pushOuterReply` is the bottom, so
+    -- `severAtCut` and `spliceOutTheCut` write the same value and the policy is
+    -- not what is being measured here.  §3.22 is the depth-three witness where
+    -- they differ and the cost is the policy's.
+    --
+    -- Asserted here because the project's standard for this trade is WS-OD's:
+    -- "its cost is stated rather than hidden".  A witness that checked only the
+    -- payoff would let the cost drift silently.
+    assertBool "COST: the original owner is left unbound, having lost its reservation"
+      (match returnDonatedSchedContextResolved postOoO pushServer pushSc pushDonor with
+       | .ok st' => pushBindingOf st' pushOuter == some .unbound
+       | .error _ => false)
+    assertBool "COST (contrast): an IN-ORDER unwind leaves it owed outward, not owned"
+      (match endpointReplyOnCore pushServer pushDonor IpcMessage.empty bootCoreId
+                stChainInOrder with
+       | (stIn, .ok _) =>
+           (match returnDonatedSchedContextResolved stIn pushServer pushSc pushDonor with
+            | .ok st' => pushBindingOf st' pushDonor == some (.donated pushSc pushOuter)
+            | .error _ => false)
+       | (_, .error _) => false)
+    -- NEGATIVE, and the reason this witness exists: the SAME reply with the
+    -- detach omitted.  Every object is present and every field the consume
+    -- writes is identical; what changes is the head's link down to a frame whose
+    -- caller is gone.  A fixture that exercised only the in-order path would
+    -- pass before this cut and after it.
+    let wedged := SystemState.consumeCallerReply pushOuter pushOuterReply stChain
+    assertBool "NEGATIVE: without the detach the head still links down to the answered frame"
+      (match wedged with
+       | .ok ((), st') => pushLinksOf st' pushDonorReply == some (some pushOuterReply,
+           some (.head pushSc))
+       | .error _ => false)
+    assertBool "NEGATIVE: ...and the outer-caller resolution refuses that stack"
+      (match wedged with
+       | .ok ((), st') =>
+           (match replyStackOuterCaller? st' pushSc with
+            | .error e => e == KernelError.invalidArgument
+            | .ok _ => false)
+       | .error _ => false)
+    assertBool "NEGATIVE: ...so the donation return wedges, writing nothing"
+      (match wedged with
+       | .ok ((), st') =>
+           (match returnDonatedSchedContextResolved st' pushServer pushSc pushDonor with
+            | .error e => e == KernelError.invalidArgument
+            | .ok _ => false)
+       | .error _ => false)
+    -- The in-order path is unchanged: the head has nothing above it, so the
+    -- removal is the bare consume and every pre-WS-RM result holds verbatim.
+    assertBool "the in-order reply's answered frame has nothing above it"
+      (answeredReplyFrameAbove? stChain pushDonor == none)
+
+/-- **WS-RM**: a second client for the passive server's steady state, with its
+own scheduling context — the request the `seL4_ReplyRecv` loop takes after
+answering the first. -/
+private def loopCaller2 : SeLe4n.ThreadId := ⟨861⟩
+private def loopCaller2Sc : SeLe4n.SchedContextId := SchedContextId.ofNat 862
+private def loopCaller2Reply : SeLe4n.ReplyId := ⟨863⟩
+
+private def loopCaller2SchedContext : SchedContext :=
+  { scId := loopCaller2Sc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨55⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    boundThread := some loopCaller2, isActive := true }
+
+/-- `stDonBase` plus a second, ready client holding its own context and its own
+free Reply object. -/
+private def stLoopBase : SystemState :=
+  { stDonBase with
+      objects := ((stDonBase.objects.insert loopCaller2Sc.toObjId
+          (.schedContext loopCaller2SchedContext)).insert loopCaller2.toObjId
+          (.tcb { mkTcb 861 55 none with schedContextBinding := .bound loopCaller2Sc })).insert
+          loopCaller2Reply.toObjId (.reply { replyId := loopCaller2Reply }) }
+
+private def runReplyRecvLoopCompletionChecks : IO Unit := do
+  IO.println "--- §3.21 WS-RM: the passive server's `seL4_ReplyRecv` loop completes ---"
+  -- The MCS passive-server steady state, built the way a real one arrives at it:
+  -- the server blocks on `Recv`, the first client `Call`s (donating its
+  -- context), the server's home core dispatches it, and a second client `Call`s
+  -- and queues behind the busy server.
+  match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stLoopBase) with
+  | none => assertBool "loop setup: the server's first `Recv` succeeds" false
+  | some (stRecv, _) =>
+    let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
+      AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
+    assertBool "loop setup: the first client's donating `Call` succeeds"
+      (match resCall with | .ok _ => true | .error _ => false)
+    match okExcept (handleRescheduleSgiOnCore stCall c1) with
+    | none => assertBool "loop setup: core 1 handles the call wake SGI" false
+    | some stDispatched =>
+      let (stQueued, resQueued) := endpointCallCrossCoreDispatch donEp loopCaller2
+        IpcMessage.empty AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stDispatched
+      assertBool "loop setup: the second client's `Call` queues behind the busy server"
+        (match resQueued with | .ok _ => true | .error _ => false)
+      -- The fact that makes the ORDER of the legs load-bearing: the answered
+      -- caller's Reply **heads** its scheduling context, and `Reply.consumed`
+      -- keeps a head's links deliberately (the pop validates the head by them).
+      assertBool "pre: the answered caller's Reply heads the donated context"
+        (match stQueued.getReply? donReply with
+         | some r => r.next == some (.head scClient)
+         | none => false)
+      -- **The chain payoff's own condition, exhibited on this state.**
+      -- `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` holds
+      -- under `answeredHeadContextIsServerDonation`, a pre-state fact neither
+      -- `ipcInvariantFull` nor `donationChainWellFormed` entails (the bundle
+      -- relates a caller's recorded reply target to no donation, and the chain
+      -- invariant carries no binding clause at all).  A hypothesis nothing
+      -- exhibits is indistinguishable from one that cannot hold, so here are its
+      -- premises and its conclusion at the only quadruple that satisfies them,
+      -- on a state a real MCS chain reaches through the live operations.
+      assertBool "the chain condition's premise: the answered caller records the server"
+        (recordedReplyServer? stQueued donClient == some donServer)
+      assertBool "...and its conclusion: that server holds the context that frame heads"
+        (replyDonationReturn? stQueued donServer == some (scClient, donClient))
+      -- Leg one alone: the caller is answered and the Reply is NOT free, because
+      -- it still heads the context.  `Reply.isFree` reads both links, so the
+      -- receive leg below cannot re-link this object yet.
+      let (stAfterReply, resAfterReply) :=
+        endpointReplyOnCore donServer donClient IpcMessage.empty c1 stQueued
+      assertBool "the reply leg succeeds"
+        (match resAfterReply with | .ok _ => true | .error _ => false)
+      assertBool "...and the answered Reply is NOT free: it still heads the context"
+        (match stAfterReply.getReply? donReply with
+         | some r => r.caller == none && !r.isFree && r.next == some (.head scClient)
+         | none => false)
+      -- **NEGATIVE — the defect.**  The pre-WS-RM order ran the receive leg
+      -- here, on exactly this state, and `linkCallerReply` refused the
+      -- still-heading Reply.  Every token is present: the reply leg ran, the
+      -- receive leg ran, the same Reply object was supplied.  What was wrong was
+      -- the order of the pop, and the consequence was that no passive server
+      -- whose client had donated could ever complete a `seL4_ReplyRecv`.
+      assertBool "NEGATIVE: the receive leg on the un-popped state refuses `.replyCapInvalid`"
+        (match (endpointReceiveDualWithCapsOnCore donEp donServer (some donReply) cnRoot
+                  (SeLe4n.Slot.ofNat 0) c1 stAfterReply).2 with
+         | .error e => e == KernelError.replyCapInvalid
+         | .ok _ => false)
+      -- Leg two, in the live order: the donation pop runs between the legs, and
+      -- it is what frees the Reply.
+      match replyRecvPopDonation donServer stAfterReply with
+      | .error e => assertBool s!"the donation pop must succeed (got {reprStr e})" false
+      | .ok (returned?, stPopped) =>
+        assertBool "the pop hands the context back to its original owner"
+          (returned? == some scClient)
+        assertBool "...and the answered Reply is free once its frame comes off the stack"
+          (match stPopped.getReply? donReply with
+           | some r => r.isFree
+           | none => false)
+        assertBool "...so the receive leg on the POPPED state succeeds"
+          (match (endpointReceiveDualWithCapsOnCore donEp donServer (some donReply) cnRoot
+                    (SeLe4n.Slot.ofNat 0) c1 stPopped).2 with
+           | .ok _ => true
+           | .error _ => false)
+      -- **PAYOFF**: the whole arm, in the live order, end to end.
+      match replyRecvBody donEp donServer donReply donClient IpcMessage.empty cnRoot
+          (SeLe4n.Slot.ofNat 0) c1 stQueued with
+      | .error e =>
+        assertBool s!"PAYOFF: the `ReplyRecv` loop must complete (got {reprStr e})" false
+      | .ok (_, stLoop) =>
+        assertBool "PAYOFF: the passive server's `seL4_ReplyRecv` completes" true
+        assertBool "PAYOFF: the first client is answered and holds its own context again"
+          (match stLoop.getTcb? donClient with
+           | some t => t.ipcState == .ready && t.schedContextBinding == .bound scClient
+           | none => false)
+        assertBool "PAYOFF: the queued second client is now the one awaiting a reply"
+          (match stLoop.getTcb? loopCaller2 with
+           | some t => match t.ipcState with
+                       | .blockedOnReply _ _ => true
+                       | _ => false
+           | none => false)
+        assertBool "PAYOFF: ...linked to the SAME Reply object (faithful one-object reuse)"
+          (match stLoop.getReply? donReply with
+           | some r => r.caller == some loopCaller2
+           | none => false)
+        assertBool "PAYOFF: ...and the server runs on the new request's donated context"
+          (match stLoop.getTcb? donServer with
+           | some t => t.schedContextBinding == .donated loopCaller2Sc loopCaller2
+           | none => false)
+
 
 -- ============================================================================
 -- WS-OD OD3.14 — the receive rendezvous' PRIORITY hand-off
@@ -2548,6 +2855,136 @@ private def runReceivePriorityHandoffChecks : IO Unit := do
              | some t => decide (t.pipBoost = none) | none => false)
       | .error _ => assertBool "OD3.14: the plain-send hand-off succeeds" false
 
+-- ============================================================================
+-- WS-RM — what a middle removal costs at stack depth three
+-- ============================================================================
+
+/-- **The innermost server of a three-frame chain, and its own reply frame.**
+
+`§3.20` removes the *bottom* frame of a two-frame stack.  A bottom frame has
+nothing below it, so "take the frame above off this frame's stack" and "splice
+this frame out of the list" write the same value -- `none` -- into the frame
+above, and the two readings of a middle removal cannot be told apart there.
+**Three frames is the shallowest stack on which they differ**, and that is what
+makes `cancelledMiddleCallerPolicy`'s stated cost measurable rather than
+described: the frames below the cut leave the context's stack, so the
+reservation settles on the thread *above* the cut instead of travelling on
+outward to the thread that owned it.
+
+Reachable with no more authority than `§3.20` needs -- three nested donating
+`Call`s (which the transitive chain makes ordinary since OD4) and one delegated
+reply capability. -/
+private def depth3Server : SeLe4n.ThreadId := ⟨101⟩
+private def depth3Reply : SeLe4n.ReplyId := ⟨102⟩
+
+/-- The three-frame stack, built by pushing twice: `pushOuter` lends to
+`pushDonor`, `pushDonor` lends on to `pushServer`, `pushServer` lends on to
+`depth3Server`.  Both pushes are the live `donateSchedContext`, so the shape
+this witness measures is the shape the kernel produces. -/
+private def depth3Chain : Except KernelError SystemState :=
+  match donateSchedContext pushStore pushDonor pushServer pushSc with
+  | .error e => .error e
+  | .ok depth2 =>
+      let stReady : SystemState :=
+        { depth2 with
+            objects := ((depth2.objects.insert depth3Reply.toObjId
+                (.reply { replyId := depth3Reply, caller := some pushServer })).insert
+                depth3Server.toObjId (.tcb (mkTcb 101 25 none))).insert
+                pushServer.toObjId
+                (.tcb { mkTcb 92 30 none with
+                          schedContextBinding := .donated pushSc pushDonor,
+                          ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97)
+                            (some depth3Server),
+                          replyObject := some depth3Reply }) }
+      match donateSchedContext stReady pushServer depth3Server pushSc with
+      | .error e => .error e
+      | .ok depth3 =>
+          -- Every intermediate caller of a live chain is blocked on its own
+          -- reply; `pushDonor` is left `.ready` by the fixture's first push, and
+          -- a state in which it is not blocked is one the pop's outer-caller
+          -- validation refuses (`outerCallerAcceptable`).  Patched here, so the
+          -- removal and the in-order contrast below run on the same live shape.
+          .ok { depth3 with
+                  objects := depth3.objects.insert pushDonor.toObjId
+                    (.tcb { mkTcb 91 40 none with
+                              schedContextBinding := .unbound,
+                              ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97)
+                                (some pushServer),
+                              replyObject := some pushDonorReply }) }
+
+private def runMiddleRemovalDepthThreeChecks : IO Unit := do
+  IO.println "--- §3.22 WS-RM: a middle removal at stack depth three ---"
+  match depth3Chain with
+  | .error e =>
+    assertBool s!"the witness needs a depth-3 chain (got {reprStr e})" false
+  | .ok chain =>
+    -- The stack, bottom to top: `pushOuterReply` → `pushDonorReply` → `depth3Reply`.
+    assertBool "pre: the innermost frame heads the context and links down to the middle one"
+      (pushLinksOf chain depth3Reply == some (some pushDonorReply, some (.head pushSc)))
+    assertBool "pre: the middle frame links both ways"
+      (pushLinksOf chain pushDonorReply
+        == some (some pushOuterReply, some (.frame depth3Reply)))
+    assertBool "pre: the bottom frame links up only"
+      (pushLinksOf chain pushOuterReply == some (none, some (.frame pushDonorReply)))
+    assertBool "pre: the context is held by the innermost server, owed to the one before it"
+      (pushBindingOf chain depth3Server == some (.donated pushSc pushServer))
+    -- The middle caller is blocked on its own call, which is what makes the
+    -- frame a delegate answers a MIDDLE frame rather than the head.
+    assertBool "pre: the middle caller is blocked on its own call"
+      (match chain.getTcb? pushDonor with
+       | some t => t.ipcState == .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)
+       | none => false)
+    assertBool "the footprint resolves the frame ABOVE the middle one"
+      (answeredReplyFrameAbove? chain pushDonor == some depth3Reply)
+    -- **The middle removal**, through a delegated reply capability.
+    let (post, res) :=
+      endpointReplyOnCore replyRemovalDelegate pushDonor IpcMessage.empty bootCoreId chain
+    assertBool "the out-of-order reply to the MIDDLE caller succeeds"
+      (match res with | .ok _ => true | .error _ => false)
+    assertBool "the answered frame leaves the structure entirely (`Reply.isFree`)"
+      (match post.getReply? pushDonorReply with | some r => r.isFree | none => false)
+    -- **THE COST, MEASURED.**  The head's link down is cleared rather than
+    -- re-pointed at the frame below the cut, so the bottom frame -- whose caller
+    -- `pushOuter` owns the reservation -- is no longer on the context's stack.
+    assertBool "COST: the head's link down is CLEARED, not re-pointed at the frame below the cut"
+      (pushLinksOf post depth3Reply == some (none, some (.head pushSc)))
+    assertBool "COST: ...so the bottom frame is off the stack, holding only a stale upward link"
+      (pushLinksOf post pushOuterReply == some (none, some (.frame pushDonorReply)))
+    assertBool "COST: ...and the pop therefore reads the remaining stack as bottomed out"
+      (match replyStackOuterCaller? post pushSc with | .ok none => true | _ => false)
+    assertBool "COST: ...so the reservation settles `.bound` on the thread ABOVE the cut"
+      (match returnDonatedSchedContextResolved post depth3Server pushSc pushServer with
+       | .ok st' => pushBindingOf st' pushServer == some (.bound pushSc)
+       | .error _ => false)
+    assertBool "COST: ...and its owner is left unbound, two hops outside the cut"
+      (match returnDonatedSchedContextResolved post depth3Server pushSc pushServer with
+       | .ok st' => pushBindingOf st' pushOuter == some .unbound
+       | .error _ => false)
+    -- **CONTRAST**: the same three-frame stack unwound IN ORDER keeps the debt
+    -- travelling outward -- the reservation reaches `pushDonor` still owed to
+    -- `pushOuter`.  This is the half that shows the loss is the removal's, not
+    -- the chain's.
+    assertBool "CONTRAST: an IN-ORDER pop on the same stack owes the context outward"
+      (match returnDonatedSchedContextResolved chain depth3Server pushSc pushServer with
+       | .ok st' => pushBindingOf st' pushServer == some (.donated pushSc pushDonor)
+       | .error _ => false)
+    -- **WHAT THE POLICY BUYS**, and why it is not merely a loss: a frame cut off
+    -- the stack carries no `.head` link, so consuming its caller clears it
+    -- outright (`Reply.consumed`'s non-head branch).  No object is pinned, and
+    -- no consumed frame is left heading a context -- which is the state
+    -- `replyStackOuterCaller?` refuses and the defect `v0.35.4` closed.
+    let stBottom : SystemState :=
+      { post with
+          objects := post.objects.insert pushOuter.toObjId (.tcb replyRemovalOuterTcb) }
+    let (postBottom, resBottom) :=
+      endpointReplyOnCore replyRemovalDelegate pushOuter IpcMessage.empty bootCoreId stBottom
+    assertBool "PAYOFF: the cut-off frame's own caller can still be answered"
+      (match resBottom with | .ok _ => true | .error _ => false)
+    assertBool "PAYOFF: ...and that frees it, so nothing is pinned by the cut"
+      (match postBottom.getReply? pushOuterReply with | some r => r.isFree | none => false)
+    assertBool "PAYOFF: ...leaving no consumed frame heading the context"
+      (pushHeadOf postBottom == some (some depth3Reply))
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -2571,6 +3008,9 @@ def runSmpIpcChecks : IO Unit := do
   runDonationReturnPopChecks
   runDonationPushChecks
   runMiddleCallerDetachChecks
+  runReplyFrameRemovalChecks
+  runReplyRecvLoopCompletionChecks
+  runMiddleRemovalDepthThreeChecks
   runReceivePriorityHandoffChecks
   runTraceFixtureCheck
   IO.println "===================================="

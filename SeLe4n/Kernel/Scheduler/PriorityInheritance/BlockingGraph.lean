@@ -21,12 +21,12 @@ open SeLe4n.Model
 True when `waiter` has `ipcState = .blockedOnReply epId (some server)`.
 Returns Bool for decidable runtime use. -/
 def blockedOnThread (st : SystemState) (waiter server : ThreadId) : Bool :=
-  match st.objects[waiter.toObjId]? with
-  | some (.tcb tcb) =>
+  match st.getTcb? waiter with
+  | some tcb =>
     match tcb.ipcState with
     | .blockedOnReply _ (some target) => target == server
     | _ => false
-  | _ => false
+  | none => false
 
 /-- D4-C1: Propositional form of `blockedOnThread`. -/
 def BlockedOnThread (st : SystemState) (waiter server : ThreadId) : Prop :=
@@ -41,7 +41,7 @@ def BlockedOnThread (st : SystemState) (waiter server : ThreadId) : Prop :=
 Folds over the object index, filtering for TCBs with `blockedOnReply _ (some tid)`. -/
 def waitersOf (st : SystemState) (tid : ThreadId) : List ThreadId :=
   st.objectIndex.filterMap fun objId =>
-    match st.objects[objId]? with
+    match st.getObject? objId with
     | some (KernelObject.tcb tcb) =>
       match tcb.ipcState with
       | .blockedOnReply _ (some target) =>
@@ -90,12 +90,12 @@ def blockingChain (st : SystemState) (tid : ThreadId) (fuel : Nat := st.objectIn
   match fuel with
   | 0 => []
   | fuel' + 1 =>
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    match st.getTcb? tid with
+    | some tcb =>
       match tcb.ipcState with
       | .blockedOnReply _ (some server) => server :: blockingChain st server fuel'
       | _ => []
-    | _ => []
+    | none => []
 
 -- ============================================================================
 -- D4-C4/C5: Helpers
@@ -108,7 +108,7 @@ def chainContains (chain : List ThreadId) (tid : ThreadId) : Bool :=
 /-- D4-C5: All blocking graph edges (waiter, server) pairs. -/
 def blockingGraphEdges (st : SystemState) : List (ThreadId × ThreadId) :=
   st.objectIndex.filterMap fun objId =>
-    match st.objects[objId]? with
+    match st.getObject? objId with
     | some (KernelObject.tcb tcb) =>
       match tcb.ipcState with
       | .blockedOnReply _ (some server) => some (tcb.tid, server)
@@ -158,12 +158,12 @@ theorem blockingChain_acyclic (st : SystemState)
 
 /-- D4-D: Helper — the blocking chain server lookup for a given thread. -/
 def blockingServer (st : SystemState) (tid : ThreadId) : Option ThreadId :=
-  match st.objects[tid.toObjId]? with
-  | some (KernelObject.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
     match tcb.ipcState with
     | .blockedOnReply _ (some server) => some server
     | _ => none
-  | _ => none
+  | none => none
 
 -- ============================================================================
 -- AK1-F (I-M04): PIP-boost / reply-blocked relation
@@ -184,34 +184,22 @@ theorem blockingServer_isSome_iff_blockedOnReply_some
     (st : SystemState) (tid : ThreadId) :
     (blockingServer st tid).isSome ↔
     ∃ (tcb : TCB) (epId : SeLe4n.ObjId) (server : ThreadId),
-      st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      st.getTcb? tid = some tcb ∧
       tcb.ipcState = .blockedOnReply epId (some server) := by
-  constructor
-  · intro hSome
-    unfold blockingServer at hSome
-    cases hObj : st.objects[tid.toObjId]? with
-    | none => rw [hObj] at hSome; simp at hSome
-    | some obj =>
-      rw [hObj] at hSome
-      cases obj with
-      | tcb tcb =>
-        simp only at hSome
-        cases hIpc : tcb.ipcState with
-        | blockedOnReply epId rt =>
-          rw [hIpc] at hSome
-          cases rt with
-          | none => simp at hSome
-          | some server =>
-            -- cases hObj rewrote the goal's `st.objects[tid.toObjId]?` to `some (.tcb tcb)`
-            exact ⟨tcb, epId, server, rfl, hIpc⟩
-        | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _
-          | blockedOnNotification _ =>
-          rw [hIpc] at hSome; simp at hSome
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-        | schedContext _ | reply _ =>
-        simp at hSome
-  · rintro ⟨tcb, epId, server, hObj, hIpc⟩
-    simp only [blockingServer, hObj, hIpc, Option.isSome_some]
+  -- Both sides now speak of `getTcb?`, so the proof is the accessor's own two
+  -- arms and then the `ipcState` split -- no enumeration of the seven non-TCB
+  -- constructors, which `getTcb?` has already collapsed into its `none`.
+  unfold blockingServer
+  cases hObj : st.getTcb? tid with
+  | none => simp
+  | some tcb =>
+    cases hIpc : tcb.ipcState with
+    | blockedOnReply epId rt =>
+      cases rt with
+      | none => simp [hIpc]
+      | some server => simp [hIpc]
+    | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _
+      | blockedOnNotification _ => simp [hIpc]
 
 /-- AK1-F (I-M04): Plan-named alias for the biconditional characterisation
     of `blockingServer`. The plan's nomenclature `pipBoost_attached_only_on_reply_blocked`
@@ -230,30 +218,18 @@ theorem blockingServer_some_implies_blockedOnReply
     (st : SystemState) (tid server : ThreadId)
     (h : blockingServer st tid = some server) :
     ∃ (tcb : TCB) (epId : SeLe4n.ObjId),
-      st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      st.getTcb? tid = some tcb ∧
       tcb.ipcState = .blockedOnReply epId (some server) := by
-  unfold blockingServer at h
-  cases hObj : st.objects[tid.toObjId]? with
-  | none => rw [hObj] at h; simp at h
-  | some obj =>
-    rw [hObj] at h
-    cases obj with
-    | tcb tcb =>
-      simp only at h
-      cases hIpc : tcb.ipcState with
-      | blockedOnReply epId rt =>
-        rw [hIpc] at h
-        cases rt with
-        | none => simp at h
-        | some server' =>
-          simp only [Option.some.injEq] at h
-          subst h
-          -- The cases on `st.objects[tid.toObjId]?` rewrote it to `some (.tcb tcb)` in the goal.
-          exact ⟨tcb, epId, rfl, hIpc⟩
-      | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _
-        | blockedOnNotification _ => rw [hIpc] at h; simp at h
-    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp at h
+  -- Derived from the biconditional above rather than re-running the case
+  -- analysis: one question, one answer.
+  have hSome : (blockingServer st tid).isSome := by rw [h]; rfl
+  obtain ⟨tcb, epId, server', hObj, hIpc⟩ :=
+    (blockingServer_isSome_iff_blockedOnReply_some st tid).mp hSome
+  refine ⟨tcb, epId, hObj, ?_⟩
+  have : blockingServer st tid = some server' := by
+    simp only [blockingServer, hObj, hIpc]
+  rw [h] at this
+  exact (Option.some.injEq _ _ ▸ this) ▸ hIpc
 
 -- ============================================================================
 -- AF1-B5: Blocking graph frame lemmas
@@ -267,28 +243,23 @@ theorem blockingChain_step (st : SystemState) (tid : ThreadId) (n : Nat) :
     match blockingServer st tid with
     | some server => server :: blockingChain st server n
     | none => [] := by
-  cases hObj : st.objects[tid.toObjId]? with
+  -- Both sides read the store through `getTcb?`, so the case analysis is the
+  -- accessor's own two arms.  Enumerating the seven non-TCB constructors, as
+  -- this proof did while both sides matched raw, restates the accessor's
+  -- definition at every call site instead of consuming it once.
+  cases hObj : st.getTcb? tid with
   | none => simp [blockingChain, blockingServer, hObj]
-  | some obj =>
-    cases obj with
-    | tcb tcb =>
-      cases hIpc : tcb.ipcState with
-      | blockedOnReply ep s =>
-        cases s with
-        | some server => simp [blockingChain, blockingServer, hObj, hIpc]
-        | none => simp [blockingChain, blockingServer, hObj, hIpc]
-      | ready => simp [blockingChain, blockingServer, hObj, hIpc]
-      | blockedOnSend _ => simp [blockingChain, blockingServer, hObj, hIpc]
-      | blockedOnReceive _ => simp [blockingChain, blockingServer, hObj, hIpc]
-      | blockedOnNotification _ => simp [blockingChain, blockingServer, hObj, hIpc]
-      | blockedOnCall _ => simp [blockingChain, blockingServer, hObj, hIpc]
-    | endpoint _ => simp [blockingChain, blockingServer, hObj]
-    | notification _ => simp [blockingChain, blockingServer, hObj]
-    | cnode _ => simp [blockingChain, blockingServer, hObj]
-    | vspaceRoot _ => simp [blockingChain, blockingServer, hObj]
-    | untyped _ => simp [blockingChain, blockingServer, hObj]
-    | schedContext _ => simp [blockingChain, blockingServer, hObj]
-    | reply _ => simp [blockingChain, blockingServer, hObj]
+  | some tcb =>
+    cases hIpc : tcb.ipcState with
+    | blockedOnReply ep s =>
+      cases s with
+      | some server => simp [blockingChain, blockingServer, hObj, hIpc]
+      | none => simp [blockingChain, blockingServer, hObj, hIpc]
+    | ready => simp [blockingChain, blockingServer, hObj, hIpc]
+    | blockedOnSend _ => simp [blockingChain, blockingServer, hObj, hIpc]
+    | blockedOnReceive _ => simp [blockingChain, blockingServer, hObj, hIpc]
+    | blockedOnNotification _ => simp [blockingChain, blockingServer, hObj, hIpc]
+    | blockedOnCall _ => simp [blockingChain, blockingServer, hObj, hIpc]
 
 /-- AF1-B5: `blockingChain` is congruent in the blocking server function.
     If `blockingServer` returns the same results for all threads in both states,
@@ -332,9 +303,12 @@ theorem blockingChain_length_le_fuel (st : SystemState) (tid : ThreadId)
   | zero => simp [blockingChain]
   | succ n ih =>
     simp only [blockingChain]
-    match hObj : st.objects[tid.toObjId]? with
+    -- Two-way on the typed accessor: `getTcb?` is `none` for an absent key and
+    -- for a wrong-kinded object alike, so the seven non-TCB store arms this
+    -- proof used to enumerate collapse into the one arm that means "no TCB".
+    match hObj : st.getTcb? tid with
     | none => simp
-    | some (KernelObject.tcb tcb) =>
+    | some tcb =>
       match hIpc : tcb.ipcState with
       | .blockedOnReply _ (some server) =>
         simp only [hIpc, List.length_cons]
@@ -345,13 +319,6 @@ theorem blockingChain_length_le_fuel (st : SystemState) (tid : ThreadId)
       | .blockedOnReceive _ => simp_all
       | .blockedOnNotification _ => simp_all
       | .blockedOnCall _ => simp_all
-    | some (KernelObject.endpoint _) => simp
-    | some (KernelObject.notification _) => simp
-    | some (KernelObject.cnode _) => simp
-    | some (KernelObject.vspaceRoot _) => simp
-    | some (KernelObject.untyped _) => simp
-    | some (KernelObject.schedContext _) => simp
-    | some (KernelObject.reply _) => simp
 
 /-- D4-E: blockingChain with default fuel is bounded by objectIndex length. -/
 theorem blockingChain_bounded (st : SystemState) (tid : ThreadId) :
@@ -361,7 +328,7 @@ theorem blockingChain_bounded (st : SystemState) (tid : ThreadId) :
 /-- D4-E: Count of TCB objects in the system. -/
 def countTCBs (st : SystemState) : Nat :=
   st.objectIndex.foldl (fun acc objId =>
-    match st.objects[objId]? with
+    match st.getObject? objId with
     | some (KernelObject.tcb _) => acc + 1
     | _ => acc) 0
 

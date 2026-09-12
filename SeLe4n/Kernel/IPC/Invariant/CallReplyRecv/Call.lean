@@ -48,7 +48,7 @@ theorem endpointCall_preserves_ipcInvariant
     (hObjInv : st.objects.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     ipcInvariant st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -120,7 +120,7 @@ theorem endpointCall_preserves_schedulerInvariantBundle
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -294,7 +294,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -549,7 +549,7 @@ theorem endpointCall_blocked_stays_blocked
     (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     caller ∉ st'.scheduler.runnable := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep

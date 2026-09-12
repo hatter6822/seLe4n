@@ -643,7 +643,7 @@ theorem storeTcbIpcState_preserves_dualQueueSystemInvariant
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
           have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
-            unfold lookupTcb at hLookup
+            unfold lookupTcb SystemState.getTcb? at hLookup
             split at hLookup
             · simp at hLookup
             · cases h : st.objects[tid.toObjId]? with
@@ -723,7 +723,7 @@ theorem storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
           have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
-            unfold lookupTcb at hLookup; split at hLookup
+            unfold lookupTcb SystemState.getTcb? at hLookup; split at hLookup
             · simp at hLookup
             · cases h : st.objects[tid.toObjId]? with
               | none => simp [h] at hLookup
@@ -773,7 +773,7 @@ theorem storeTcbReceiveComplete_preserves_dualQueueSystemInvariant
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
           have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
-            unfold lookupTcb at hLookup; split at hLookup
+            unfold lookupTcb SystemState.getTcb? at hLookup; split at hLookup
             · simp at hLookup
             · cases h : st.objects[tid.toObjId]? with
               | none => simp [h] at hLookup
@@ -818,7 +818,7 @@ theorem storeTcbPendingMessage_preserves_dualQueueSystemInvariant
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
           have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
-            unfold lookupTcb at hLookup; split at hLookup
+            unfold lookupTcb SystemState.getTcb? at hLookup; split at hLookup
             · simp at hLookup
             · cases h : st.objects[tid.toObjId]? with
               | none => simp [h] at hLookup
@@ -890,6 +890,31 @@ theorem consumeCallerReply_preserves_dualQueueSystemInvariant
         caller.toObjId tcb { tcb with replyObject := none } rfl rfl
         ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hObjInv1 hStep hInv1
 
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the detach preserves `dualQueueSystemInvariant` — one
+`.reply` store at a key that already holds a Reply, which is exactly the shape
+`storeObject_reply_preserves_dualQueueSystemInvariant` frames. -/
+theorem detachReplyFrameAboveOrSelf_preserves_dualQueueSystemInvariant
+    (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : dualQueueSystemInvariant st) :
+    dualQueueSystemInvariant (detachReplyFrameAboveOrSelf st rid) := by
+  rcases detachReplyFrameAboveOrSelf_store_cases st rid with h | ⟨above, a, hA, hS⟩
+  · rw [h]; exact hInv
+  · exact storeObject_reply_preserves_dualQueueSystemInvariant st _ above.toObjId
+      { a with prev := none } hObjInv hS (Or.inl ⟨a, hA⟩) hInv
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: and so does the removal — the detach then the consume. -/
+theorem removeCallerReplyFrame_preserves_dualQueueSystemInvariant
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : dualQueueSystemInvariant st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    dualQueueSystemInvariant st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact consumeCallerReply_preserves_dualQueueSystemInvariant _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv)
+    (detachReplyFrameAboveOrSelf_preserves_dualQueueSystemInvariant st rid hObjInv hInv) hStep
+
 /-- WS-H5: endpointReply preserves dualQueueSystemInvariant.
 endpointReply performs storeTcbIpcStateAndMessage + ensureRunnable —
 neither touches queue links or endpoint queue boundaries. -/
@@ -941,7 +966,7 @@ theorem endpointReply_preserves_dualQueueSystemInvariant
                   rw [← hStep]; exact hInvER
                 | some rid =>
                   simp only [hRO] at hStep
-                  exact consumeCallerReply_preserves_dualQueueSystemInvariant _ _ target rid
+                  exact removeCallerReplyFrame_preserves_dualQueueSystemInvariant _ _ target rid
                     hObjInvMid hInvER hStep
             · simp at hStep
 
@@ -1381,7 +1406,7 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   obtain ⟨hEpInv, hLink, hAcyclic⟩ := hInv
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -1757,7 +1782,7 @@ theorem endpointQueueEnqueue_preserves_dualQueueSystemInvariant
           (if isReceiveQ then ep'.sendQ else ep'.receiveQ).tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
   obtain ⟨hEpInv, hLink, hAcyclic⟩ := hInv
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>

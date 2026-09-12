@@ -516,9 +516,10 @@ def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
   if tid.isReserved then
     none
   else
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) => some tcb
-    | _ => none
+    -- Composes the canonical reader rather than re-implementing it: this is
+    -- `getTcb?` plus the reserved-id refusal, and spelling the store read a
+    -- second time here is how the two could come to disagree.
+    st.getTcb? tid
 
 /-- WS-RR RR3.12: a successful `lookupTcb` witnesses that the tid is not reserved —
 the half of `lookupTcb`'s guard that lets a lookup be *re-established* in another
@@ -526,7 +527,7 @@ state at the same tid. -/
 theorem lookupTcb_some_not_reserved
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : lookupTcb st tid = some tcb) : ¬ tid.isReserved := by
-  unfold lookupTcb at h
+  unfold lookupTcb SystemState.getTcb? at h
   intro hRes
   rw [if_pos hRes] at h
   cases h
@@ -538,7 +539,7 @@ theorem lookupTcb_of_objects_of_not_reserved
     (hObj : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hNotReserved : ¬ tid.isReserved) :
     lookupTcb st tid = some tcb := by
-  unfold lookupTcb
+  unfold lookupTcb SystemState.getTcb?
   rw [if_neg hNotReserved, hObj]
 
 /-- If lookupTcb succeeds, the underlying objects map has a TCB at tid.toObjId. -/
@@ -546,7 +547,7 @@ theorem lookupTcb_some_objects
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : lookupTcb st tid = some tcb) :
     st.objects[tid.toObjId]? = some (.tcb tcb) := by
-  unfold lookupTcb at h
+  unfold lookupTcb SystemState.getTcb? at h
   cases hRes : tid.isReserved
   · -- false
     simp [hRes] at h; revert h
@@ -660,7 +661,7 @@ theorem lookupTcb_preserved_by_storeObject_notification
   have hNe : tid.toObjId ≠ notifId := by
     intro heq; rw [← heq] at hNtfn; rw [hNtfn] at hTcbObj; cases hTcbObj
   have hPreserved := storeObject_objects_ne st pair.2 notifId tid.toObjId obj hNe hObjInv hStore'
-  unfold lookupTcb at hLookup ⊢
+  unfold lookupTcb SystemState.getTcb? at hLookup ⊢
   rw [hPreserved]
   exact hLookup
 
@@ -2085,6 +2086,21 @@ theorem replyStackHead?_eq (st : SystemState) (scId : SeLe4n.SchedContextId)
     (h : st.getSchedContext? scId = none) : replyStackHead? st scId = none := by
   unfold replyStackHead?; rw [h]; rfl
 
+/-- **WS-RM (`v0.35.6`)**: a context that heads no stack has nothing below the
+head either — the resolver bottoms out at `donationHeadOf?`, which answers
+`.ok none` on a context with no `scReply` and is never reached when the context
+does not resolve at all. -/
+theorem replyStackBelowHead?_of_no_head (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (h : replyStackHead? st scId = none) :
+    replyStackBelowHead? st scId = (none, none) := by
+  unfold replyStackBelowHead?
+  cases hSc : st.getSchedContext? scId with
+  | none => rfl
+  | some sc =>
+    have hNoHead : sc.scReply = none := by
+      rw [replyStackHead?_eq st scId sc hSc] at h; exact h
+    simp only [donationHeadOf?_of_no_stack st scId sc hNoHead]
+
 /-- WS-OD (`v0.35.4`): **the frame two below the head, and its caller** -- what
 the *second* pop of a suspend pipeline writes and reads.
 
@@ -3025,15 +3041,22 @@ theorem storeDonationHeadPop_non_reply_backward
     exact hPost
 
 -- ----------------------------------------------------------------------------
--- WS-OD (`v0.35.4`): the frame detach — seL4's `reply_remove_tcb`, non-head arm
+-- WS-OD (`v0.35.4`): the frame detach — the non-head removal arm
 -- ----------------------------------------------------------------------------
 
-/-- **Take a frame that is not a head off its stack, in `O(1)`.**  seL4's
-`reply_remove_tcb` for a non-head frame: the frame *above* the cancelled one
-(`next = .frame above`) stops linking down to it (`above.prev := none`), which
-makes it the bottom of the stack it heads — so the next pop that reaches it binds
-that thread outright, which is the `severAtCut` policy — and cuts everything
-below off the context's stack.  The cancelled frame's own links are cleared when
+/-- **Take a frame that is not a head off its stack, in `O(1)`.**  The frame
+*above* the cut one (`next = .frame above`) stops linking down to it
+(`above.prev := none`), which makes it the bottom of the stack it heads — so the
+next pop that reaches it binds that thread outright — and cuts everything below
+off the context's stack.
+
+**This writes `none`, not the cut frame's own `prev`**, and that is the
+`cancelledMiddleCallerPolicy` decision rather than an omission: the alternative
+(`spliceOutTheCut`) keeps the frames below on the stack — it is what seL4-MCS's
+`reply_remove` does — and taking it would require moving the reply path's pop
+trigger from the recorded server's binding to the answered frame's head-ness.  The two write the same value whenever the cut
+frame is the bottom of its stack, which is every stack of depth two;
+`tests/SmpIpcSuite.lean` §3.22 is the depth-three witness where they differ.  The cancelled frame's own links are cleared when
 its caller link is consumed (`Reply.consumed`), and the frame below it keeps an
 upward link the structure never trusts (see `Reply.consumed`).
 
@@ -3135,6 +3158,24 @@ theorem replyFrameAbove?_of_detach_store {st st' : SystemState} {rid : SeLe4n.Re
   · exact Or.inl hEq
   · refine Or.inr ⟨above, a, ?_, hA, hS⟩
     simp [replyFrameAbove?, hR, hN]
+
+/-- **WS-RM (`v0.35.6`)**: the resolver, characterised — a `some` answer is a
+resolving frame whose `next` names the frame it returns. -/
+theorem replyFrameAbove?_eq_some {st : SystemState} {rid above : SeLe4n.ReplyId}
+    (h : replyFrameAbove? st rid = some above) :
+    ∃ r : Reply, st.getReply? rid = some r ∧ r.next = some (.frame above) := by
+  unfold replyFrameAbove? at h
+  revert h
+  cases hR : st.getReply? rid with
+  | none => intro h; cases h
+  | some r =>
+    simp only []
+    cases hN : r.next with
+    | none => intro h; cases h
+    | some link =>
+      cases link with
+      | head _ => intro h; cases h
+      | frame ab => intro h; exact ⟨r, rfl, by rw [hN, Option.some.inj h]⟩
 
 @[simp] theorem replyFrameAbove?_of_none (st : SystemState) (rid : SeLe4n.ReplyId)
     (h : st.getReply? rid = none) : replyFrameAbove? st rid = none := by
@@ -3270,6 +3311,640 @@ theorem detachReplyFrameAbove_reply_rewrite {st st' : SystemState} {rid : SeLe4n
     · exact ⟨r, (storeObject_objects_ne st st' above.toObjId oid _ hk hObjInv hS).trans hReply,
         replyStackRewrite.refl r⟩
 
+/-- WS-RM (`v0.35.6`): **the detach folded to the identity on a refusal** — the
+one spelling of "take the frame above off this frame's stack, or leave the state
+alone".  Both removal paths need it and neither may fail on it, so it is defined
+once here rather than answered separately at each.
+
+The fold is sound because a refusal *is* the statement that nothing references
+this frame.  `detachReplyFrameAbove` refuses exactly when the frame `next` names
+either does not resolve or does not point back; under
+`donationChainWellFormed.prevLinkReciprocal` the only frame whose `prev` can name
+`rid` is the one `rid`'s own `next` names, so in either refusal no stored Reply
+links down to `rid` and clearing its links breaks no reciprocity
+(`detachReplyFrameAboveOrSelf_unreferenced`).  Committing nothing there is also
+the trust the structure withholds from a stale upward link: rewriting a frame
+that does not point back would be acting on one. -/
+def detachReplyFrameAboveOrSelf (st : SystemState) (rid : SeLe4n.ReplyId) : SystemState :=
+  match detachReplyFrameAbove st rid with
+  | .ok st' => st'
+  | .error _ => st
+
+/-- The fold, decomposed: the identity, or a `detachReplyFrameAbove` that ran. -/
+theorem detachReplyFrameAboveOrSelf_cases (st : SystemState) (rid : SeLe4n.ReplyId) :
+    detachReplyFrameAboveOrSelf st rid = st ∨
+      detachReplyFrameAbove st rid = .ok (detachReplyFrameAboveOrSelf st rid) := by
+  unfold detachReplyFrameAboveOrSelf
+  split
+  · rename_i st' h; exact Or.inr h
+  · exact Or.inl rfl
+
+/-- WS-RM (`v0.35.6`): **sever a thread's reply frame from the frame above it** —
+seL4's `reply_remove_tcb`, non-head arm, keyed on the thread's own forward link.
+
+This is the TCB-keyed wrapper over `detachReplyFrameAboveOrSelf`; the removal
+paths that hold a `ReplyId` directly (the reply leg, `removeCallerReplyFrame`)
+call that fold, so there is exactly one answer to "what does a detach do when it
+cannot repair the frame above".
+
+**Order.**  On the cancellation path this runs after the donation reclaim, on
+whose success the frame is already unlinked and this is the identity
+(`detachReplyFrameAbove_of_no_frame_above`); on a head it is the identity too,
+deliberately — a head is popped by the reclaim, never detached, and a reclaim
+that *declined* on a head is an invariant violation this step must not paper over
+by dropping a stack. -/
+def detachFrameAboveThreadReply (st : SystemState) (tcb : TCB) : SystemState :=
+  match tcb.replyObject with
+  | none => st
+  | some rid => detachReplyFrameAboveOrSelf st rid
+
+/-- **WS-RM (`v0.35.6`): the fold, decomposed as a store.**  Either the identity,
+or exactly one `.reply` store at a key that already holds a Reply — so every
+"this predicate survives a Reply store" lemma in the tree transports across the
+removal's first leg without a new argument. -/
+theorem detachReplyFrameAboveOrSelf_store_cases (st : SystemState) (rid : SeLe4n.ReplyId) :
+    detachReplyFrameAboveOrSelf st rid = st ∨
+      ∃ (above : SeLe4n.ReplyId) (a : Reply),
+        st.objects[above.toObjId]? = some (.reply a) ∧
+        storeObject above.toObjId (.reply { a with prev := none }) st
+          = .ok ((), detachReplyFrameAboveOrSelf st rid) := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · exact Or.inl h
+  · rcases detachReplyFrameAbove_cases h with hEq | ⟨_, above, a, _, _, hA, _, hS⟩
+    · exact Or.inl hEq
+    · exact Or.inr ⟨above, a, (SystemState.getReply?_eq_some_iff _ _ _).mp hA, hS⟩
+
+/-- The fold's one write sets a `prev`, so **every Reply's `next` and `caller`
+are exactly where they were** — sharper than `replyStackRewrite`, which permits
+`next` to move too and so cannot answer "does this frame still head a stack?". -/
+theorem detachReplyFrameAboveOrSelf_reply_next (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) (q : SeLe4n.ReplyId) (rq : Reply)
+    (hq : (detachReplyFrameAboveOrSelf st rid).getReply? q = some rq) :
+    ∃ rp, st.getReply? q = some rp ∧ rq.next = rp.next ∧ rq.caller = rp.caller := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · exact ⟨rq, by rw [← h]; exact hq, rfl, rfl⟩
+  · rcases detachReplyFrameAbove_cases h with hEq | ⟨_, above, a, _, _, hA, _, hS⟩
+    · exact ⟨rq, by rw [← hEq]; exact hq, rfl, rfl⟩
+    · rw [SystemState.getReply?_eq_some_iff] at hq
+      by_cases hk : q.toObjId = above.toObjId
+      · rw [hk, storeObject_objects_eq' st _ _ _ hInv hS] at hq
+        refine ⟨a, ?_, ?_, ?_⟩
+        · rw [SeLe4n.ReplyId.toObjId_injective _ _ hk]; exact hA
+        · rw [← KernelObject.reply.inj (Option.some.inj hq)]
+        · rw [← KernelObject.reply.inj (Option.some.inj hq)]
+      · rw [storeObject_objects_ne st _ above.toObjId q.toObjId _ hk hInv hS] at hq
+        exact ⟨rq, (SystemState.getReply?_eq_some_iff _ _ _).mpr hq, rfl, rfl⟩
+
+-- ----------------------------------------------------------------------------
+-- WS-RM (`v0.35.6`): the TCB-keyed detach's read/write algebra
+-- ----------------------------------------------------------------------------
+
+/-- `v0.35.4`: the detach, decomposed — the identity (no reply link, no frame
+above, or a refused repair), or one `detachReplyFrameAbove` that succeeded. -/
+theorem detachFrameAboveThreadReply_cases (st : SystemState) (tcb : TCB) :
+    detachFrameAboveThreadReply st tcb = st ∨
+    ∃ rid, tcb.replyObject = some rid ∧
+      detachReplyFrameAbove st rid = .ok (detachFrameAboveThreadReply st tcb) := by
+  unfold detachFrameAboveThreadReply
+  split
+  · exact Or.inl rfl
+  · rename_i rid hRid
+    rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+    · exact Or.inl h
+    · exact Or.inr ⟨rid, hRid, h⟩
+
+/-- `v0.35.4`: the detach is the identity on a frame with nothing above it — the
+shape every cancellation of a head or bottom frame, and every successful reclaim,
+leaves. -/
+theorem detachFrameAboveThreadReply_eq_self_of_no_frame_above (st : SystemState) (tcb : TCB)
+    (hNoFrameAbove : ∀ (rid : SeLe4n.ReplyId) (r : Reply) (above : SeLe4n.ReplyId),
+      tcb.replyObject = some rid → st.getReply? rid = some r →
+      r.next ≠ some (.frame above)) :
+    detachFrameAboveThreadReply st tcb = st := by
+  rcases detachFrameAboveThreadReply_cases st tcb with h | ⟨rid, hRid, h⟩
+  · exact h
+  · rcases detachReplyFrameAbove_cases h with h' | ⟨r, above, _, hR, hN, _, _, _⟩
+    · exact h'
+    · exact absurd hN (hNoFrameAbove rid r above hRid hR)
+
+theorem detachFrameAboveThreadReply_scheduler_eq (st : SystemState) (tcb : TCB) :
+    (detachFrameAboveThreadReply st tcb).scheduler = st.scheduler := by
+  rcases detachFrameAboveThreadReply_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]
+  · exact detachReplyFrameAbove_scheduler_eq h
+
+theorem detachFrameAboveThreadReply_machine_eq (st : SystemState) (tcb : TCB) :
+    (detachFrameAboveThreadReply st tcb).machine = st.machine := by
+  rcases detachFrameAboveThreadReply_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]
+  · exact detachReplyFrameAbove_machine_eq h
+
+theorem detachFrameAboveThreadReply_serviceRegistry_eq (st : SystemState) (tcb : TCB) :
+    (detachFrameAboveThreadReply st tcb).serviceRegistry = st.serviceRegistry := by
+  rcases detachFrameAboveThreadReply_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]
+  · exact detachReplyFrameAbove_serviceRegistry_eq h
+
+theorem detachFrameAboveThreadReply_preserves_objects_invExt (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) : (detachFrameAboveThreadReply st tcb).objects.invExt := by
+  rcases detachFrameAboveThreadReply_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]; exact hInv
+  · exact detachReplyFrameAbove_preserves_objects_invExt hInv h
+
+/-- The detach writes at most one Reply, so every stored TCB is where it was. -/
+theorem detachFrameAboveThreadReply_tcb_eq (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hk : st.objects[k]? = some (.tcb t0)) :
+    (detachFrameAboveThreadReply st tcb).objects[k]? = some (.tcb t0) := by
+  rcases detachFrameAboveThreadReply_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]; exact hk
+  · exact detachReplyFrameAbove_tcb_eq hInv h k t0 hk
+
+theorem detachFrameAboveThreadReply_tcb_backward (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hk : (detachFrameAboveThreadReply st tcb).objects[k]? = some (.tcb t0)) :
+    st.objects[k]? = some (.tcb t0) := by
+  rcases detachFrameAboveThreadReply_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h] at hk; exact hk
+  · exact detachReplyFrameAbove_tcb_backward hInv h k t0 hk
+
+theorem detachFrameAboveThreadReply_getTcb?_eq (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId) :
+    (detachFrameAboveThreadReply st tcb).getTcb? tid = st.getTcb? tid := by
+  rcases detachFrameAboveThreadReply_cases st tcb with h | ⟨_, _, h⟩
+  · rw [h]
+  · exact detachReplyFrameAbove_getTcb?_eq hInv h tid
+
+/-- WS-RM (`v0.35.6`): **take a caller's reply frame off its stack and consume its
+caller link** — seL4's `reply_remove`: the non-head branch clears the frame
+above's `replyPrev`, then `reply_unlink` severs the caller↔Reply pair.
+
+The detach runs **first** and the consume second, and that order is the whole
+point: `Reply.consumed` clears both stack links on a frame that is not a head, so
+a frame still named by the `prev` of the frame above it would falsify
+`donationChainWellFormed.prevLinkReciprocal` there — a wedge the later pop
+refuses fail-closed.  Detaching first is what leaves nothing pointing down at the
+frame being consumed (`detachReplyFrameAboveOrSelf_unreferenced`).
+
+It is deliberately **not** folded into `consumeCallerReply`: that operation's
+two-key frame (`consumeCallerReply_objects_frame`) is what the whole IPC
+invariant surface rests on, and a third write inside it would falsify the
+statement outright.  Sequencing leaves every one of those theorems untouched, and
+is also what seL4 does.
+
+On a frame with nothing above it — every head, every bottom frame, and every
+Reply the tree consumed before the stack became doubly linked — the detach is the
+identity and this **is** `consumeCallerReply`, definitionally
+(`removeCallerReplyFrame_eq_consume_of_no_frame_above`). -/
+def removeCallerReplyFrame (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
+    Kernel Unit :=
+  fun st => SystemState.consumeCallerReply caller rid (detachReplyFrameAboveOrSelf st rid)
+
+-- ----------------------------------------------------------------------------
+-- WS-RM (`v0.35.6`): the folded detach's read/write algebra
+-- ----------------------------------------------------------------------------
+--
+-- Each entry is the identity on the refusal arm and the corresponding
+-- `detachReplyFrameAbove` fact on the other, so nothing new is argued here: the
+-- fold inherits the primitive's algebra verbatim.
+
+/-- The `cdt` is not an object-store field, so the detach leaves it alone. -/
+theorem detachReplyFrameAbove_cdt_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (h : detachReplyFrameAbove st rid = .ok st') : st'.cdt = st.cdt := by
+  rcases detachReplyFrameAbove_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩
+  · rfl
+  · exact storeObject_cdt_eq st st' _ _ hS
+
+theorem detachReplyFrameAbove_cdtNodeSlot_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (h : detachReplyFrameAbove st rid = .ok st') : st'.cdtNodeSlot = st.cdtNodeSlot := by
+  rcases detachReplyFrameAbove_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩
+  · rfl
+  · exact storeObject_cdtNodeSlot_eq st st' _ _ hS
+
+/-- The detach refuses only where there is a frame above to repair, so a `rid`
+with none is the identity on either arm. -/
+theorem detachReplyFrameAboveOrSelf_eq_self_of_no_frame_above (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hNone : replyFrameAbove? st rid = none) :
+    detachReplyFrameAboveOrSelf st rid = st := by
+  have hDet : detachReplyFrameAbove st rid = .ok st := by
+    cases hR : st.getReply? rid with
+    | none => exact detachReplyFrameAbove_of_absent st rid hR
+    | some r =>
+      cases hN : r.next with
+      | none => exact detachReplyFrameAbove_of_no_frame_above st rid r hR hN
+      | some l =>
+        cases l with
+        | head sc => exact detachReplyFrameAbove_of_head st rid r sc hR hN
+        | frame above =>
+          exact absurd (show replyFrameAbove? st rid = some above by
+            simp [replyFrameAbove?, hR, hN]) (by rw [hNone]; exact fun h => by cases h)
+  unfold detachReplyFrameAboveOrSelf; rw [hDet]
+
+theorem detachReplyFrameAboveOrSelf_scheduler_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (detachReplyFrameAboveOrSelf st rid).scheduler = st.scheduler := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]
+  · exact detachReplyFrameAbove_scheduler_eq h
+
+theorem detachReplyFrameAboveOrSelf_machine_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (detachReplyFrameAboveOrSelf st rid).machine = st.machine := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]
+  · exact detachReplyFrameAbove_machine_eq h
+
+theorem detachReplyFrameAboveOrSelf_serviceRegistry_eq (st : SystemState)
+    (rid : SeLe4n.ReplyId) :
+    (detachReplyFrameAboveOrSelf st rid).serviceRegistry = st.serviceRegistry := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]
+  · exact detachReplyFrameAbove_serviceRegistry_eq h
+
+theorem detachReplyFrameAboveOrSelf_cdt_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (detachReplyFrameAboveOrSelf st rid).cdt = st.cdt := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]
+  · exact detachReplyFrameAbove_cdt_eq h
+
+theorem detachReplyFrameAboveOrSelf_cdtNodeSlot_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (detachReplyFrameAboveOrSelf st rid).cdtNodeSlot = st.cdtNodeSlot := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]
+  · exact detachReplyFrameAbove_cdtNodeSlot_eq h
+
+theorem detachReplyFrameAboveOrSelf_preserves_objects_invExt (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) :
+    (detachReplyFrameAboveOrSelf st rid).objects.invExt := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]; exact hInv
+  · exact detachReplyFrameAbove_preserves_objects_invExt hInv h
+
+/-- The fold writes at most the frame `replyFrameAbove?` names. -/
+theorem detachReplyFrameAboveOrSelf_objects_ne (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId)
+    (hk : ∀ above, replyFrameAbove? st rid = some above → k ≠ above.toObjId) :
+    (detachReplyFrameAboveOrSelf st rid).objects[k]? = st.objects[k]? := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]
+  · refine detachReplyFrameAbove_objects_ne hInv h k ?_
+    intro r above hR hN
+    exact hk above (by simp [replyFrameAbove?, hR, hN])
+
+theorem detachReplyFrameAboveOrSelf_tcb_eq (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hk : st.objects[k]? = some (.tcb t0)) :
+    (detachReplyFrameAboveOrSelf st rid).objects[k]? = some (.tcb t0) := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]; exact hk
+  · exact detachReplyFrameAbove_tcb_eq hInv h k t0 hk
+
+theorem detachReplyFrameAboveOrSelf_tcb_backward (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hk : (detachReplyFrameAboveOrSelf st rid).objects[k]? = some (.tcb t0)) :
+    st.objects[k]? = some (.tcb t0) := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h] at hk; exact hk
+  · exact detachReplyFrameAbove_tcb_backward hInv h k t0 hk
+
+theorem detachReplyFrameAboveOrSelf_getTcb?_eq (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId) :
+    (detachReplyFrameAboveOrSelf st rid).getTcb? tid = st.getTcb? tid := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]
+  · exact detachReplyFrameAbove_getTcb?_eq hInv h tid
+
+theorem detachReplyFrameAboveOrSelf_non_reply_eq (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId)
+    (hNotReply : ∀ r : Reply, st.objects[k]? ≠ some (.reply r)) :
+    (detachReplyFrameAboveOrSelf st rid).objects[k]? = st.objects[k]? := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]
+  · exact detachReplyFrameAbove_non_reply_eq hInv h k hNotReply
+
+/-- A key the fold rewrites holds a Reply on **both** sides, so a read whose value
+is not a Reply crosses the fold unchanged in either direction — the iff form
+`consumeCallerReply_nonTcbNonReply_agree` composes with. -/
+theorem detachReplyFrameAboveOrSelf_non_reply_agree (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) (s : SeLe4n.ObjId) (k : KernelObject)
+    (hkR : ∀ rr, k ≠ .reply rr) :
+    ((detachReplyFrameAboveOrSelf st rid).objects[s]? = some k ↔ st.objects[s]? = some k) := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]
+  · rcases detachReplyFrameAbove_cases h with hEq | ⟨_, above, a, _, _, hA, _, hS⟩
+    · rw [hEq]
+    · by_cases hk : s = above.toObjId
+      · subst hk
+        refine iff_of_false ?_ ?_
+        · rw [storeObject_objects_eq' st _ _ _ hInv hS]
+          intro hx
+          exact hkR { a with prev := none } (Option.some.inj hx).symm
+        · rw [(SystemState.getReply?_eq_some_iff _ _ _).mp hA]
+          intro hx
+          exact hkR a (Option.some.inj hx).symm
+      · rw [storeObject_objects_ne st _ above.toObjId s _ hk hInv hS]
+
+theorem detachReplyFrameAboveOrSelf_notification_backward (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hNtfn : (detachReplyFrameAboveOrSelf st rid).objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h] at hNtfn; exact hNtfn
+  · exact detachReplyFrameAbove_notification_backward hInv h oid ntfn hNtfn
+
+/-- Every Reply survives the fold, with at most its stack links rewritten. -/
+theorem detachReplyFrameAboveOrSelf_reply_rewrite (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) (r : Reply)
+    (hReply : st.objects[oid]? = some (.reply r)) :
+    ∃ r', (detachReplyFrameAboveOrSelf st rid).objects[oid]? = some (.reply r') ∧
+      replyStackRewrite r' r := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · exact ⟨r, by rw [h]; exact hReply, replyStackRewrite.refl r⟩
+  · exact detachReplyFrameAbove_reply_rewrite hInv h oid r hReply
+
+/-- **WS-RM (`v0.35.6`): the fold's *decision*, read off the object store.**
+Either `replyFrameAbove?` names a frame that resolves and reciprocates — and the
+fold is exactly that one store — or it does not, and the fold is the identity.
+Both branches are distinguished by a predicate over `getReply?` alone, which is
+what lets any relation that agrees on objects transport the decision: without it
+a congruence would have to re-derive the branch on each side and could not rule
+out the two sides taking different ones. -/
+theorem detachReplyFrameAboveOrSelf_decision (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (∃ (above : SeLe4n.ReplyId) (a : Reply),
+        replyFrameAbove? st rid = some above ∧ st.getReply? above = some a ∧
+        a.prev = some rid ∧
+        storeObject above.toObjId (.reply { a with prev := none }) st
+          = .ok ((), detachReplyFrameAboveOrSelf st rid)) ∨
+      (detachReplyFrameAboveOrSelf st rid = st ∧
+        ∀ (above : SeLe4n.ReplyId) (a : Reply),
+          replyFrameAbove? st rid = some above → st.getReply? above = some a →
+          a.prev ≠ some rid) := by
+  unfold detachReplyFrameAboveOrSelf detachReplyFrameAbove replyFrameAbove?
+  cases hR : st.getReply? rid with
+  | none => exact Or.inr ⟨by simp, by intro above a h _; simp at h⟩
+  | some r =>
+    cases hN : r.next with
+    | none => exact Or.inr ⟨by simp [hN], by intro above a h _; simp [hN] at h⟩
+    | some link =>
+      cases link with
+      | head sc => exact Or.inr ⟨by simp [hN], by intro above a h _; simp [hN] at h⟩
+      | frame above =>
+        cases hA : st.getReply? above with
+        | none =>
+          refine Or.inr ⟨by simp [hN, hA], ?_⟩
+          intro ab a h hA2
+          simp only [hN] at h
+          cases h
+          rw [hA] at hA2; cases hA2
+        | some a =>
+          by_cases hP : a.prev = some rid
+          · exact Or.inl ⟨above, a, by simp [hN], hA, hP, by simp [hN, hA, hP, storeObject]⟩
+          · refine Or.inr ⟨by simp [hN, hA, hP], ?_⟩
+            intro ab a2 h hA2
+            simp only [hN] at h
+            cases h
+            rw [hA] at hA2; cases hA2
+            exact hP
+
+/-- **WS-RM (`v0.35.6`): the fold's frame at *every* key.**  A key is either
+untouched, or it held a Reply that survives with only its stack links rewritten.
+Stated as a disjunction rather than as `objects_ne` plus a side condition because
+the consumers below cannot always *exclude* the frame above — the answered
+caller's reply-stack neighbour is not a key any reply-path hypothesis names — and
+a rewrite is invisible to every conjunct that reads a Reply's `caller` rather
+than its `prev` / `next`, which is all of them. -/
+theorem detachReplyFrameAboveOrSelf_objects_rewrite (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (x : SeLe4n.ObjId) :
+    (detachReplyFrameAboveOrSelf st rid).objects[x]? = st.objects[x]? ∨
+      ∃ r r', st.objects[x]? = some (.reply r) ∧
+        (detachReplyFrameAboveOrSelf st rid).objects[x]? = some (.reply r') ∧
+        replyStackRewrite r' r := by
+  rcases detachReplyFrameAboveOrSelf_store_cases st rid with h | ⟨above, a, hA, hS⟩
+  · exact Or.inl (by rw [h])
+  · by_cases hk : x = above.toObjId
+    · subst hk
+      exact Or.inr ⟨a, { a with prev := none }, hA,
+        storeObject_objects_eq' st _ _ _ hInv hS, ⟨none, a.next, rfl⟩⟩
+    · exact Or.inl (storeObject_objects_ne st _ above.toObjId x _ hk hInv hS)
+
+-- ----------------------------------------------------------------------------
+-- WS-RM (`v0.35.6`): `removeCallerReplyFrame`'s read/write algebra
+-- ----------------------------------------------------------------------------
+--
+-- Each entry composes the fold's fact above with `consumeCallerReply`'s, which
+-- is why none of them needs an argument of its own.
+
+/-- The removal is the consume, run at the state the detach left. -/
+theorem removeCallerReplyFrame_eq (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) :
+    removeCallerReplyFrame caller rid st
+      = SystemState.consumeCallerReply caller rid (detachReplyFrameAboveOrSelf st rid) := rfl
+
+/-- **WS-RM (`v0.35.6`): on a frame with nothing above it the removal *is* the
+consume**, definitionally.  Every repair of an existing reply-path proof is
+therefore a case split on `answeredReplyFrameAbove?` whose `none` branch is that
+proof verbatim, and every state the tree reached before the reply path detached
+is in that branch. -/
+theorem removeCallerReplyFrame_eq_consume_of_no_frame_above (st : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hNone : replyFrameAbove? st rid = none) :
+    removeCallerReplyFrame caller rid st = SystemState.consumeCallerReply caller rid st := by
+  rw [removeCallerReplyFrame_eq, detachReplyFrameAboveOrSelf_eq_self_of_no_frame_above st rid hNone]
+
+/-- The removal is **total**: both legs are. -/
+theorem removeCallerReplyFrame_isOk (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) :
+    ∃ st', removeCallerReplyFrame caller rid st = .ok ((), st') := by
+  rw [removeCallerReplyFrame_eq]
+  exact SystemState.consumeCallerReply_isOk _ caller rid
+
+theorem removeCallerReplyFrame_scheduler_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact (SystemState.consumeCallerReply_scheduler_eq _ st' caller rid hStep).trans
+    (detachReplyFrameAboveOrSelf_scheduler_eq st rid)
+
+theorem removeCallerReplyFrame_machine_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact (SystemState.consumeCallerReply_machine_eq _ st' caller rid hStep).trans
+    (detachReplyFrameAboveOrSelf_machine_eq st rid)
+
+theorem removeCallerReplyFrame_cdt_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    st'.cdt = st.cdt := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact (SystemState.consumeCallerReply_cdt_eq _ st' caller rid hStep).trans
+    (detachReplyFrameAboveOrSelf_cdt_eq st rid)
+
+theorem removeCallerReplyFrame_cdtNodeSlot_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    st'.cdtNodeSlot = st.cdtNodeSlot := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact (SystemState.consumeCallerReply_cdtNodeSlot_eq _ st' caller rid hStep).trans
+    (detachReplyFrameAboveOrSelf_cdtNodeSlot_eq st rid)
+
+theorem removeCallerReplyFrame_preserves_objects_invExt (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    st'.objects.invExt := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact SystemState.consumeCallerReply_preserves_objects_invExt _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep
+
+theorem removeCallerReplyFrame_nonTcbNonReply_agree (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ∀ (s : SeLe4n.ObjId) (k : KernelObject),
+      (∀ tt, k ≠ .tcb tt) → (∀ rr, k ≠ .reply rr) →
+      (st'.objects[s]? = some k ↔ st.objects[s]? = some k) := by
+  intro s k hkT hkR
+  rw [removeCallerReplyFrame_eq] at hStep
+  rw [SystemState.consumeCallerReply_nonTcbNonReply_agree _ st' caller rid
+      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep s k hkT hkR]
+  exact detachReplyFrameAboveOrSelf_non_reply_agree st rid hObjInv s k hkR
+
+/-- Every stored TCB survives the removal, with only the answered caller's
+`replyObject` cleared: the detach writes no TCB and the consume's TCB rewrite
+preserves every field the IPC surface reads. -/
+theorem removeCallerReplyFrame_tcb_forward (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
+      ∃ ty, st.objects[s]? = some (.tcb ty) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
+        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
+        tx.timeoutBudget = ty.timeoutBudget := by
+  intro s tx hx
+  rw [removeCallerReplyFrame_eq] at hStep
+  obtain ⟨ty, hy, hFields⟩ := SystemState.consumeCallerReply_tcb_forward _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep s tx hx
+  exact ⟨ty, detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv s ty hy, hFields⟩
+
+theorem removeCallerReplyFrame_tcb_backward (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
+      ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
+        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
+        tx.timeoutBudget = ty.timeoutBudget := by
+  intro s ty hy
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact SystemState.consumeCallerReply_tcb_backward _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep s ty
+    (detachReplyFrameAboveOrSelf_tcb_eq st rid hObjInv s ty hy)
+
+/-- The answered caller's forward link is gone after the removal. -/
+theorem removeCallerReplyFrame_replyObject_none (st : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
+    ∀ result tcb', removeCallerReplyFrame caller rid st = .ok ((), result) →
+      result.getTcb? caller = some tcb' → tcb'.replyObject = none := by
+  intro result tcb' hRun hGetT
+  rw [removeCallerReplyFrame_eq] at hRun
+  exact SystemState.consumeCallerReply_replyObject_none _ caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) result tcb' hRun hGetT
+
+/-- The consumed Reply reads back as `Reply.consumed` of the record the *detach*
+left — which is the pre-state record whenever the consumed frame is not itself
+the frame above (it never is: a frame is not above itself under
+`prevLinkReciprocal`, and `replyFrameAbove?` names a different key). -/
+theorem removeCallerReplyFrame_getReply?_caller_none (st : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (r : Reply)
+    (hObjInv : st.objects.invExt)
+    (hGet : (detachReplyFrameAboveOrSelf st rid).getReply? rid = some r) :
+    ∀ result, removeCallerReplyFrame caller rid st = .ok ((), result) →
+      result.getReply? rid = some r.consumed := by
+  intro result hRun
+  rw [removeCallerReplyFrame_eq] at hRun
+  exact SystemState.consumeCallerReply_getReply?_caller_none _ caller rid r
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hGet result hRun
+
+/-- **WS-RM (`v0.35.6`): the removal frees the consumed Reply**, stated on the
+*pre-state's* Reply.  The detach rewrites `rid`'s own frame only in the
+degenerate case where it links to itself, which no state satisfying
+`donationChainWellFormed` has; the existential tolerates that rather than
+assuming it away, and `caller = none` — the only projection the linkage
+conjuncts read here — is the same either way. -/
+theorem removeCallerReplyFrame_getReply?_free (st : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (r : Reply)
+    (hObjInv : st.objects.invExt)
+    (hGet : st.getReply? rid = some r) :
+    ∀ result, removeCallerReplyFrame caller rid st = .ok ((), result) →
+      ∃ r', result.getReply? rid = some r' ∧ r'.caller = none := by
+  intro result hRun
+  obtain ⟨rd, hrd, _⟩ := detachReplyFrameAboveOrSelf_reply_rewrite st rid hObjInv rid.toObjId r
+    ((SystemState.getReply?_eq_some_iff st rid r).mp hGet)
+  exact ⟨rd.consumed,
+    removeCallerReplyFrame_getReply?_caller_none st caller rid rd hObjInv
+      ((SystemState.getReply?_eq_some_iff _ rid rd).mpr hrd) result hRun,
+    Reply.consumed_caller rd⟩
+
+/-- **WS-RM (`v0.35.6`): a stack *head* keeps its links across the removal.**
+`Reply.consumed_of_head` is deliberate — the donation pop that follows in the same
+transition validates the head by exactly this link — and the detach is the
+identity on a head (a `.head` names no frame above), so the frame a reply answered
+still heads the same context afterwards.  This is what lets the composite payoff
+locate the relaxed frame as the one the pop is about to clear. -/
+theorem removeCallerReplyFrame_head_getReply?_next (st : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (r : Reply)
+    (scId : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt)
+    (hR : st.getReply? rid = some r) (hHead : r.next = some (.head scId))
+    (st' : SystemState) (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ∃ r', st'.getReply? rid = some r' ∧ r'.next = some (.head scId) := by
+  have hFold : detachReplyFrameAboveOrSelf st rid = st :=
+    detachReplyFrameAboveOrSelf_eq_self_of_no_frame_above st rid
+      (replyFrameAbove?_of_head st rid r scId hR hHead)
+  refine ⟨r.consumed,
+    removeCallerReplyFrame_getReply?_caller_none st caller rid r hObjInv
+      (by rw [hFold]; exact hR) st' hStep, ?_⟩
+  rw [Reply.consumed_of_head r scId hHead]; exact hHead
+
+/-- Every object present before the removal is present after it: both legs
+rewrite records in place and neither erases a key. -/
+theorem removeCallerReplyFrame_objects_isSome (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ∀ (x : SeLe4n.ObjId), st.objects[x]? ≠ none → st'.objects[x]? ≠ none := by
+  intro x hSome
+  rw [removeCallerReplyFrame_eq] at hStep
+  refine SystemState.consumeCallerReply_objects_isSome _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep x ?_
+  intro hNone
+  cases hPre : st.objects[x]? with
+  | none => exact hSome hPre
+  | some k =>
+    cases k with
+    | reply r0 =>
+      obtain ⟨r1, hr1, _⟩ := detachReplyFrameAboveOrSelf_reply_rewrite st rid hObjInv x r0 hPre
+      rw [hr1] at hNone; cases hNone
+    | tcb t0 =>
+      rw [detachReplyFrameAboveOrSelf_tcb_eq st rid hObjInv x t0 hPre] at hNone; cases hNone
+    | _ =>
+      rw [detachReplyFrameAboveOrSelf_non_reply_eq st rid hObjInv x (by intro r hr; cases hPre.symm.trans hr), hPre] at hNone
+      cases hNone
+
+/-- Every Reply present before the removal is still a Reply after it. -/
+theorem removeCallerReplyFrame_getReply?_isSome (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ∀ (rid' : SeLe4n.ReplyId) (r' : Reply), st.getReply? rid' = some r' →
+      ∃ r'', st'.getReply? rid' = some r'' := by
+  intro rid' r' hGet'
+  rw [removeCallerReplyFrame_eq] at hStep
+  obtain ⟨r1, hr1, _⟩ := detachReplyFrameAboveOrSelf_reply_rewrite st rid hObjInv rid'.toObjId r'
+    ((SystemState.getReply?_eq_some_iff _ _ _).mp hGet')
+  exact SystemState.consumeCallerReply_getReply?_isSome _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep rid' r1
+    ((SystemState.getReply?_eq_some_iff _ _ _).mpr hr1)
+
 /-- Z7-C2: Return a donated SchedContext from a server back to the thread that
 donated it, and pop that donation off the context's reply stack.
 
@@ -3316,8 +3991,8 @@ def returnDonatedSchedContext
     (originalOwner : SeLe4n.ThreadId)
     (newOwner? : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
   -- Step 1: Look up and update SchedContext to point back to original owner
-  match st.objects[scId.toObjId]? with
-  | some (.schedContext sc) =>
+  match st.getSchedContext? scId with
+  | some sc =>
     -- WS-RR RR2.8 (symmetry with `donateSchedContext`'s AUD-3b guard): verify the
     -- SchedContext is actually bound to the **server** before handing it back.
     -- The donation path checks its own direction (`sc.boundThread != some
@@ -3388,7 +4063,7 @@ def returnDonatedSchedContext
                     (scThreadIndexAdd
                       (scThreadIndexRemove st4.scThreadIndex scId serverTid)
                       scId originalOwner) }
-  | _ => .error .objectNotFound
+  | none => .error .objectNotFound
 
 
 /-- WS-OD OD4.4: **the donation return with its new owner resolved from the state
@@ -3723,7 +4398,7 @@ theorem returnDonatedSchedContext_ok_storeChain
       storeObject serverTid.toObjId
         (.tcb { serverTcb with schedContextBinding := .unbound }) s3 = .ok ((), s4) ∧
       st' = { s4 with scThreadIndex := st'.scThreadIndex } := by
-  unfold returnDonatedSchedContext at h
+  unfold returnDonatedSchedContext SystemState.getSchedContext? at h
   revert h
   cases hObj : st.objects[scId.toObjId]? with
   | none => intro h; cases h
@@ -3854,7 +4529,7 @@ theorem returnDonatedSchedContext_eq_legacy_of_none
     show ({ sc with boundThread := some originalOwner,
                     scReply := (none : Option SeLe4n.ReplyId) } : SchedContext) = _
     rw [← hNoHead]
-  unfold returnDonatedSchedContext
+  unfold returnDonatedSchedContext SystemState.getSchedContext?
   rw [hSc]
   -- WS-OD OD4.4: at the bottom of the reply stack the outer-caller guard demands
   -- nothing, so it reduces away and the body is the pre-OD3 one exactly.
@@ -4629,7 +5304,7 @@ with preservation theorems in IPC/Invariant/WaitingThreadHelpers.lean
 structural (entry path analysis above) AND formally verified. -/
 def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : Kernel Unit :=
   fun st =>
-    match st.objects[notificationId]? with
+    match st.getObject? notificationId with
     | some (.notification ntfn) =>
         -- WS-RC R4.C: pop via the structural `NoDupList.tail?` smart accessor;
         -- it returns the head and a `NoDupList`-typed tail with the Nodup
@@ -4703,7 +5378,7 @@ def notificationWait
     (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) : Kernel (Option SeLe4n.Badge) :=
   fun st =>
-    match st.objects[notificationId]? with
+    match st.getObject? notificationId with
     | some (.notification ntfn) =>
         match ntfn.pendingBadge with
         | some badge =>
@@ -4820,7 +5495,7 @@ theorem storeTcbIpcState_preserves_notification
   · subst hEq
     unfold storeTcbIpcState at hStep
     have hLookup : lookupTcb st tid = none := by
-      unfold lookupTcb; simp [hNtfn]
+      unfold lookupTcb SystemState.getTcb?; simp [hNtfn]
     simp [hLookup] at hStep
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc notifId hEq hObjInv hStep]
     exact hNtfn
@@ -4864,7 +5539,7 @@ theorem storeTcbIpcStateAndMessage_preserves_notification
   by_cases hEq : notifId = tid.toObjId
   · subst hEq
     unfold storeTcbIpcStateAndMessage at hStep
-    have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hNtfn]
+    have hLookup : lookupTcb st tid = none := by unfold lookupTcb SystemState.getTcb?; simp [hNtfn]
     simp [hLookup] at hStep
   · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg notifId hEq hObjInv hStep]
     exact hNtfn
@@ -4948,7 +5623,7 @@ theorem storeTcbIpcState_preserves_endpoint
   · subst hEq
     unfold storeTcbIpcState at hStep
     have hLookup : lookupTcb st tid = none := by
-      unfold lookupTcb; simp [hEp]
+      unfold lookupTcb SystemState.getTcb?; simp [hEp]
     simp [hLookup] at hStep
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc epId hEq hObjInv hStep]
     exact hEp
@@ -4968,7 +5643,7 @@ theorem storeTcbIpcState_preserves_cnode
   · subst hEq
     unfold storeTcbIpcState at hStep
     have hLookup : lookupTcb st tid = none := by
-      unfold lookupTcb; simp [hCn]
+      unfold lookupTcb SystemState.getTcb?; simp [hCn]
     simp [hLookup] at hStep
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc cnodeId hEq hObjInv hStep]
     exact hCn
@@ -4988,7 +5663,7 @@ theorem storeTcbIpcState_preserves_vspaceRoot
   · subst hEq
     unfold storeTcbIpcState at hStep
     have hLookup : lookupTcb st tid = none := by
-      unfold lookupTcb; simp [hVs]
+      unfold lookupTcb SystemState.getTcb?; simp [hVs]
     simp [hLookup] at hStep
   · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hObjInv hStep]
     exact hVs
@@ -5089,7 +5764,7 @@ theorem notificationWait_error_alreadyWaiting
     (hTcb : lookupTcb st waiter = some tcb)
     (hBlocked : tcb.ipcState = .blockedOnNotification notifId) :
     notificationWait notifId waiter st = .error .alreadyWaiting := by
-  unfold notificationWait
+  unfold notificationWait SystemState.getObject?
   simp [hObj, hNoBadge, hTcb, hBlocked]
 
 /-- Decomposition: on the badge-consumed path, the post-state notification
@@ -5107,7 +5782,9 @@ theorem notificationWait_badge_path_notification
     (hStep : notificationWait notifId waiter st = .ok (some badge, st')) :
     ∃ ntfn', st'.objects[notifId]? = some (.notification ntfn') ∧
       ntfn'.waitingThreads.val = [] := by
-  unfold notificationWait at hStep
+  -- The proof reasons about the object store directly, so the kind-agnostic
+  -- accessor the transition now reads through is unfolded once, here.
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -5194,7 +5871,7 @@ theorem notificationWait_wait_path_notification
       ntfn.pendingBadge = none ∧
       st'.objects[notifId]? = some (.notification ntfn') ∧
       ntfn'.waitingThreads.val = waiter :: ntfn.waitingThreads.val := by
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hStep
   | some obj =>

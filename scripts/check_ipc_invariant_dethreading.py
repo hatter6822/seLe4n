@@ -337,6 +337,11 @@ MACHINERY_PINS = {
     # compares each bound's TYPE against the definition's own telescope; it
     # mints no declaration.
     ("SeLe4n/Testing/LockFootprintBoundCensus.lean", "run_cmd"): 1,
+    # WS-RM RM5.3: the reply-stack write census, decided over the elaborated
+    # environment.  One `run_cmd` -- the witnesses, the derived/registry
+    # reconciliation and the per-site discipline check; it mints no
+    # declaration.
+    ("SeLe4n/Testing/ReplyStackWriteCensus.lean", "run_cmd"): 1,
 }
 
 # The declaration modifiers and top-level commands this gate's grammars

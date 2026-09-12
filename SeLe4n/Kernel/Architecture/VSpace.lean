@@ -43,9 +43,9 @@ def asidBoundToRoot (st : SystemState) (asid : SeLe4n.ASID) (rootId : SeLe4n.Obj
 def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.ObjId × VSpaceRoot) :=
   match st.asidTable[asid]? with
   | some oid =>
-    match st.objects[oid]? with
-    | some (.vspaceRoot root) => if root.asid = asid then some (oid, root) else none
-    | _ => none
+    match st.getVSpaceRoot? oid with
+    | some root => if root.asid = asid then some (oid, root) else none
+    | none => none
   | none => none
 
 /-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit LPA maximum).
@@ -662,7 +662,7 @@ theorem resolveAsidRoot_some_implies_obj
     st.asidTable[asid]? = some rootId ∧
     st.objects[rootId]? = some (KernelObject.vspaceRoot root) ∧
     root.asid = asid := by
-  unfold resolveAsidRoot at hResolve
+  unfold resolveAsidRoot SystemState.getVSpaceRoot? at hResolve
   cases hTable : st.asidTable[asid]? with
   | none => simp [hTable] at hResolve
   | some oid =>
@@ -701,7 +701,7 @@ theorem resolveAsidRoot_of_asidTable_entry
     (hObj : st.objects[rootId]? = some (KernelObject.vspaceRoot root))
     (hAsid : root.asid = asid) :
     resolveAsidRoot st asid = some (rootId, root) := by
-  unfold resolveAsidRoot
+  unfold resolveAsidRoot SystemState.getVSpaceRoot?
   simp [hTable, hObj, hAsid]
 
 -- ============================================================================
@@ -762,7 +762,7 @@ private theorem resolveAsidRoot_some_facts
     st.asidTable[asid]? = some rootId ∧
     st.objects[rootId]? = some (.vspaceRoot root) ∧
     root.asid = asid := by
-  unfold resolveAsidRoot at h
+  unfold resolveAsidRoot SystemState.getVSpaceRoot? at h
   cases hA : st.asidTable[asid]? with
   | none => simp [hA] at h
   | some oid =>
@@ -874,7 +874,7 @@ theorem vspaceMapPage_entry_consistent_frame
               (by intro h; exact hAsidEq (eq_of_beq h).symm) hAsidK
           -- Show resolveAsidRoot is preserved for different ASIDs
           have hResolveEq : resolveAsidRoot stMid entry.asid = resolveAsidRoot st entry.asid := by
-            simp only [resolveAsidRoot]; rw [hAsidPreserved]
+            simp only [resolveAsidRoot, SystemState.getVSpaceRoot?]; rw [hAsidPreserved]
             cases hEntryLookup : st.asidTable[entry.asid]? with
             | none => rfl
             | some oid =>
@@ -975,7 +975,7 @@ theorem vspaceUnmapPage_entry_consistent_frame
             (by intro h; exact hAsidEq (eq_of_beq h).symm) hAsidK
         -- Show resolveAsidRoot is preserved for different ASIDs
         have hResolveEq : resolveAsidRoot stMid entry.asid = resolveAsidRoot st entry.asid := by
-          simp only [resolveAsidRoot]; rw [hAsidPreserved]
+          simp only [resolveAsidRoot, SystemState.getVSpaceRoot?]; rw [hAsidPreserved]
           cases hEntryLookup : st.asidTable[entry.asid]? with
           | none => rfl
           | some oid =>
@@ -1044,7 +1044,7 @@ theorem vspaceUnmapPage_resolveAsidRoot_isSome
           exact st.asidTable.getElem?_erase_ne_K asid a
             (by intro hh; exact hAsidEq (eq_of_beq hh).symm) hAsidK
         have hResolveEq : resolveAsidRoot stMid a = resolveAsidRoot st a := by
-          simp only [resolveAsidRoot]; rw [hAsidPreserved]
+          simp only [resolveAsidRoot, SystemState.getVSpaceRoot?]; rw [hAsidPreserved]
           cases hEntryLookup : st.asidTable[a]? with
           | none => rfl
           | some oid =>
@@ -1123,7 +1123,7 @@ theorem vspaceMapPage_resolveAsidRoot_isSome
             exact st.asidTable.getElem?_erase_ne_K asid a
               (by intro hh; exact hAsidEq (eq_of_beq hh).symm) hAsidK
           have hResolveEq : resolveAsidRoot stMid a = resolveAsidRoot st a := by
-            simp only [resolveAsidRoot]; rw [hAsidPreserved]
+            simp only [resolveAsidRoot, SystemState.getVSpaceRoot?]; rw [hAsidPreserved]
             cases hEntryLookup : st.asidTable[a]? with
             | none => rfl
             | some oid =>

@@ -75,7 +75,7 @@ def lifecycleRetypeWithCleanup
     if ¬ newObj.wellFormed st.objects then
       .error .illegalState
     else
-      match st.objects[target]? with
+      match st.getObject? target with
       | none => lifecycleRetypeObject authority target newObj st
       | some currentObj =>
           -- AJ1-A (M-14): Propagate cleanup errors instead of silently ignoring
@@ -99,7 +99,7 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
     (hObj : st.objects[target]? = some (.tcb tcb))
     (hStep : lifecycleRetypeWithCleanup authority target newObj st = .ok ((), st')) :
     ¬(tcb.tid ∈ (st'.scheduler.runQueueOnCore bootCoreId)) := by
-  unfold lifecycleRetypeWithCleanup at hStep
+  unfold lifecycleRetypeWithCleanup SystemState.getObject? at hStep
   -- T5-D: wellFormed guard — since hStep is .ok, the guard must have passed
   simp only [] at hStep
   split at hStep
@@ -262,7 +262,7 @@ def lifecycleRetypeDirect
     (authCap : Capability) (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
   fun st =>
-    match st.objects[target]? with
+    match st.getObject? target with
     | none => .error .objectNotFound
     | some currentObj =>
         if st.lifecycle.objectTypes[target]? = some currentObj.objectType then
@@ -297,7 +297,7 @@ def lifecycleRetypeDirectWithCleanup
     if ¬ newObj.wellFormed st.objects then
       .error .illegalState
     else
-      match st.objects[target]? with
+      match st.getObject? target with
       | none => lifecycleRetypeDirect authCap target newObj st
       | some currentObj =>
           -- AJ1-A (M-14): Propagate cleanup errors instead of silently ignoring
@@ -857,7 +857,7 @@ theorem lifecycleRetypeDirect_tlbShootdown_eq
     (st st' : SystemState)
     (h : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
     st'.tlbShootdown = st.tlbShootdown := by
-  unfold lifecycleRetypeDirect at h
+  unfold lifecycleRetypeDirect SystemState.getObject? at h
   revert h
   cases hObj : st.objects[target]? with
   | none => intro h; cases h
@@ -880,7 +880,7 @@ theorem lifecycleRetypeDirectWithCleanup_tlbShootdown_eq
     (h : lifecycleRetypeDirectWithCleanup authCap target newObj st
       = .ok ((), st')) :
     st'.tlbShootdown = st.tlbShootdown := by
-  unfold lifecycleRetypeDirectWithCleanup at h
+  unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at h
   revert h
   split
   · intro h; cases h
@@ -911,7 +911,7 @@ theorem lifecycleRetypeWithCleanup_tlbShootdown_eq
     (h : lifecycleRetypeWithCleanup authority target newObj st
       = .ok ((), st')) :
     st'.tlbShootdown = st.tlbShootdown := by
-  unfold lifecycleRetypeWithCleanup at h
+  unfold lifecycleRetypeWithCleanup SystemState.getObject? at h
   revert h
   split
   · intro h; cases h
@@ -1303,7 +1303,7 @@ private theorem resolveAsidRoot_facts_local
     st.asidTable[asid]? = some rootId ∧
     st.objects[rootId]? = some (.vspaceRoot root) ∧
     root.asid = asid := by
-  unfold Architecture.resolveAsidRoot at h
+  unfold Architecture.resolveAsidRoot SystemState.getVSpaceRoot? at h
   cases hA : st.asidTable[asid]? with
   | none => simp [hA] at h
   | some oid =>
@@ -1343,12 +1343,12 @@ theorem lifecycleRetypeDirectWithCleanup_vspaceRoot_storeObject
     storeObject target newObj
         (scrubObjectMemory st target (KernelObject.vspaceRoot root).objectType)
       = .ok ((), stB) := by
-  unfold lifecycleRetypeDirectWithCleanup at hStep
+  unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at hStep
   split at hStep
   · cases hStep
   · simp only [hVsp] at hStep
     rw [lifecyclePreRetypeCleanup_vspaceRoot_id] at hStep
-    unfold lifecycleRetypeDirect at hStep
+    unfold lifecycleRetypeDirect SystemState.getObject? at hStep
     simp only [scrubObjectMemory_objects_eq, hVsp] at hStep
     split at hStep
     · split at hStep
@@ -1367,7 +1367,7 @@ theorem lifecycleRetypeWithCleanup_vspaceRoot_storeObject
     storeObject target newObj
         (scrubObjectMemory st target (KernelObject.vspaceRoot root).objectType)
       = .ok ((), stB) := by
-  unfold lifecycleRetypeWithCleanup at hStep
+  unfold lifecycleRetypeWithCleanup SystemState.getObject? at hStep
   split at hStep
   · cases hStep
   · simp only [hVsp] at hStep

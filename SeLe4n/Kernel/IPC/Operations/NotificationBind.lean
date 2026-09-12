@@ -54,7 +54,7 @@ theorem endpointQueueRemoveDual_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     st'.objects.invExt := by
-  unfold endpointQueueRemoveDual at hStep; revert hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -200,7 +200,7 @@ def bindNotification (notificationId : SeLe4n.ObjId) (tcbId : SeLe4n.ThreadId) :
                   | .error e => .error e
                   | .ok ((), st2) => .ok ((), st2)
     | none =>
-        if (st.objects[notificationId]?).isSome then .error .invalidCapability
+        if (st.getObject? notificationId).isSome then .error .invalidCapability
         else .error .objectNotFound
 
 /-- WS-SM SM6.B (`UnbindNotification`): unbind TCB `tcbId` from its bound

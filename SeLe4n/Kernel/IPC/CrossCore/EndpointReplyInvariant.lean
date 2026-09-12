@@ -69,7 +69,7 @@ theorem endpointReplyOnCore_state_eq
               (endpointReplyOnCore replier target msg executingCore st).1
                 = (wakeThread st' target executingCore).1)
            ∨ ∃ rid, tcb.replyObject = some rid ∧
-              SystemState.consumeCallerReply target rid
+              removeCallerReplyFrame target rid
                   (wakeThread st' target executingCore).1
                 = .ok ((), (endpointReplyOnCore replier target msg executingCore st).1)) := by
   unfold endpointReplyOnCore
@@ -95,7 +95,7 @@ theorem endpointReplyOnCore_state_eq
           | none =>
             exact Or.inr ⟨tcb, st', hLk, hStore, Or.inl ⟨hRO, rfl⟩⟩
           | some rid =>
-            obtain ⟨stC, hCons⟩ := SystemState.consumeCallerReply_isOk
+            obtain ⟨stC, hCons⟩ := removeCallerReplyFrame_isOk
               (wakeThread st' target executingCore).1 target rid
             simp only [hCons]
             exact Or.inr ⟨tcb, st', hLk, hStore, Or.inr ⟨rid, hRO, hCons⟩⟩
@@ -122,7 +122,7 @@ theorem endpointReplyOnCore_preserves_objects_invExt
     rcases hTail with ⟨_, hEq⟩ | ⟨rid, _, hCons⟩
     · rw [hEq]; exact hWake
     · -- PR #827 #3 fold: the consume is two object-store writes; invExt carries.
-      exact SystemState.consumeCallerReply_preserves_objects_invExt _ _ target rid hWake hCons
+      exact removeCallerReplyFrame_preserves_objects_invExt _ _ target rid hWake hCons
 
 -- ============================================================================
 -- §3  `ipcInvariant` (notification well-formedness) preservation
@@ -155,7 +155,7 @@ theorem endpointReplyOnCore_preserves_ipcInvariant
     · -- PR #827 #3 fold: the consume touches only a `.reply` and a `.tcb` slot.
       have hWakeObjInv : (wakeThread st' target executingCore).1.objects.invExt :=
         wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
-      exact consumeCallerReply_preserves_ipcInvariant _ _ target rid hWakeObjInv hWakeInv hCons
+      exact removeCallerReplyFrame_preserves_ipcInvariant _ _ target rid hWakeObjInv hWakeInv hCons
 
 -- ============================================================================
 -- §4  SM6.D: per-core passive-server frame for the cross-core reply
@@ -190,7 +190,7 @@ theorem endpointReplyOnCore_passiveServerIdleFrameOnCore
     · have hWakeInv : (wakeThread st' target executingCore).1.objects.invExt :=
         wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
       exact hFWake.trans
-        (consumeCallerReply_passiveServerIdleFrameOnCore _ _ target rid hWakeInv hCons)
+        (removeCallerReplyFrame_passiveServerIdleFrameOnCore _ _ target rid hWakeInv hCons)
 
 -- ============================================================================
 -- §5  SM6.D: cross-core / single-core off-scheduler agreement dichotomy (reply)
@@ -258,7 +258,7 @@ theorem endpointReplyOnCore_post_agrees
                   if_pos (beq_self_eq_true expected), hStore, hRO]
               | some rid =>
                 simp only
-                cases hConsOC : SystemState.consumeCallerReply target rid
+                cases hConsOC : removeCallerReplyFrame target rid
                     (wakeThread st' target executingCore).1 with
                 | error e => left; rfl
                 | ok pr =>
@@ -269,13 +269,13 @@ theorem endpointReplyOnCore_post_agrees
                   have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
                     wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
                   obtain ⟨r1, hCons1⟩ :=
-                    SystemState.consumeCallerReply_isOk (ensureRunnable st' target) target rid
+                    removeCallerReplyFrame_isOk (ensureRunnable st' target) target rid
                   refine ⟨expected, r1, ?_, ?_⟩
                   · unfold endpointReply
                     simp only [if_neg hSize, if_neg hCaps, hLk, hIpc,
                       if_pos (beq_self_eq_true expected), hStore, hRO]
                     exact hCons1
-                  · exact consumeCallerReply_offSchedulerAgrees target rid hRel0
+                  · exact removeCallerReplyFrame_offSchedulerAgrees target rid hRel0
                       hInvEns hInvWake hCons1 hConsOC
 
 -- ============================================================================
@@ -627,7 +627,7 @@ theorem endpointReceiveDualOnCore_post_agrees
                 | ok st4 =>
                   right
                   refine ⟨sender, st4, ?_, OffSchedulerAgrees.refl st4⟩
-                  unfold endpointReceiveDual
+                  unfold endpointReceiveDual SystemState.getObject?
                   simp only [hEpRaw, hHead, hPop, hSIpc, hStore1, hLink, hStore2, ↓reduceIte]
         | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
         | blockedOnReply _ _ =>
@@ -663,7 +663,7 @@ theorem endpointReceiveDualOnCore_post_agrees
                   storeTcbIpcStateAndMessage_offSchedulerAgrees receiver .ready
                     senderTcb.pendingMessage hRel0 hInvEns hInvWake hStore2
                 refine ⟨sender, st4SC, ?_, hAgree4⟩
-                unfold endpointReceiveDual
+                unfold endpointReceiveDual SystemState.getObject?
                 simp only [hEpRaw, hHead, hPop, hSIpc, if_neg Bool.false_ne_true,
                   hStore1, hStore2SC]
     | none =>
@@ -684,7 +684,7 @@ theorem endpointReceiveDualOnCore_post_agrees
             | none =>
               right
               refine ⟨receiver, removeRunnable st2 receiver, ?_, ?_⟩
-              · unfold endpointReceiveDual
+              · unfold endpointReceiveDual SystemState.getObject?
                 simp only [hEpRaw, hHead, hClean, hEnq, hStore1, hGetR]
               · exact (removeRunnable_offSchedulerAgrees st2 receiver).symm.trans
                   (removeRunnableOnCore_offSchedulerAgrees st2 receiver executingCore)
@@ -699,7 +699,7 @@ theorem endpointReceiveDualOnCore_post_agrees
                   obtain ⟨⟨⟩, stStashed⟩ := pStash
                   right
                   refine ⟨receiver, removeRunnable stStashed receiver, ?_, ?_⟩
-                  · unfold endpointReceiveDual
+                  · unfold endpointReceiveDual SystemState.getObject?
                     simp only [hEpRaw, hHead, hClean, hEnq, hStore1, hGetR, if_pos hValid, hStash]
                   · exact (removeRunnable_offSchedulerAgrees stStashed receiver).symm.trans
                       (removeRunnableOnCore_offSchedulerAgrees stStashed receiver executingCore)
@@ -909,6 +909,24 @@ theorem consumeCallerReply_tcb_fields_backward
         exact ⟨t1, hT1, hEq1, hEq2, hEq3, hEq4⟩
 
 open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the removal's pullback — the detach writes no TCB at
+all, so the four fields agree for the same reason they do across the consume. -/
+theorem removeCallerReplyFrame_tcb_fields_backward
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
+      ∃ ty, st.objects[s]? = some (.tcb ty) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.pendingReceiveReply = ty.pendingReceiveReply ∧
+        tx.timeoutBudget = ty.timeoutBudget := by
+  intro s tx hObj
+  rw [removeCallerReplyFrame_eq] at hStep
+  obtain ⟨ty, hTy, h1, h2, h3, h4⟩ := consumeCallerReply_tcb_fields_backward _ st' caller rid
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep s tx hObj
+  exact ⟨ty, detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv s ty hTy, h1, h2, h3, h4⟩
+
+open SeLe4n.Model.SystemState in
 /-- SM6.D transport (T1): every TCB observable after `endpointReplyOnCore`
 pulls back to a pre-state TCB agreeing on `pendingReceiveReply` and
 `timeoutBudget`, and is either woken `.ready` or agrees on
@@ -956,7 +974,7 @@ theorem endpointReplyOnCore_tcb_backward
         wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
       have hRaw' := (getTcb?_eq_some_iff _ tid tcb').mp hTcb'
       obtain ⟨t1, hT1, hIpc1, hPend1, hStash1, hBudget1⟩ :=
-        consumeCallerReply_tcb_fields_backward _ _ target rid hInvWake hCons tid.toObjId tcb' hRaw'
+        removeCallerReplyFrame_tcb_fields_backward _ _ target rid hInvWake hCons tid.toObjId tcb' hRaw'
       rw [hWakeEq] at hT1
       obtain ⟨ty, hty, hStash, hBudget, hDisj⟩ :=
         storeTcbIpcStateAndMessage_tcb_backward_fields st st' target .ready (some msg)
@@ -1000,7 +1018,7 @@ theorem endpointReplyOnCore_endpoint_backward
         oid ep hObjInv hStore' hEp
     · have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
         wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
-      have hEpWake := (SystemState.consumeCallerReply_nonTcbNonReply_agree _ _ target rid
+      have hEpWake := (removeCallerReplyFrame_nonTcbNonReply_agree _ _ target rid
         hInvWake hCons oid (.endpoint ep) (fun _ => by simp) (fun _ => by simp)).mp hEp
       rw [hWakeEq] at hEpWake
       exact storeTcbIpcStateAndMessage_endpoint_backward st st' target .ready (some msg)
@@ -1042,7 +1060,7 @@ theorem endpointReplyOnCore_preserves_replyIdEstablishFresh
     · rw [hPostEq]; exact hFreshW
     · have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
         wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
-      exact consumeCallerReply_preserves_replyIdEstablishFresh _ _ target rid' rid
+      exact removeCallerReplyFrame_preserves_replyIdEstablishFresh _ _ target rid' rid
         hInvWake hFreshW hCons
 
 open SeLe4n.Model.SystemState in
@@ -1104,7 +1122,7 @@ theorem endpointReplyOnCore_reuse_freshens
         | error e => simp only [hStore] at hStep; simp at hStep
         | ok st' =>
           simp only [hStore, hRO] at hStep
-          cases hCons : SystemState.consumeCallerReply target rid
+          cases hCons : removeCallerReplyFrame target rid
               (wakeThread st' target executingCore).1 with
           | error e => simp only [hCons] at hStep; simp at hStep
           | ok pr =>
@@ -1131,9 +1149,7 @@ theorem endpointReplyOnCore_reuse_freshens
               rw [hWakeEq, storeTcbIpcStateAndMessage_preserves_objects_ne st st' target .ready
                 (some msg) rid.toObjId (fun h => hNeSlot h.symm) hObjInv hStore']
               exact (getReply?_eq_some_iff st rid r).mp hGetR
-            exact ⟨r.consumed,
-              SystemState.consumeCallerReply_getReply?_caller_none _ target rid r hInvWake
-                hRWake stC hCons, Reply.consumed_caller r⟩
+            exact removeCallerReplyFrame_getReply?_free _ target rid r hInvWake hRWake stC hCons
 
 -- ============================================================================
 -- §11  SM6.D: the composed cross-core reply-receive (compositional closure)
@@ -1783,22 +1799,28 @@ theorem endpointReplyOnCore_observer_atomic
     -- WS-OD OD3.7: and the two objects the donation return reads below the
     -- reply-stack head, for the same reason the reply object is here.
     (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
+    -- WS-OD (`v0.35.4`) / WS-RM (`v0.35.6`): and the head the pop clears and the
+    -- frame above the answered reply, which the removal's detach writes -- every
+    -- argument of the footprint this theorem names, for the reason above.
+    (donatedHead? answeredFrameAbove? : Option SeLe4n.ReplyId)
     (s : SystemState) (hInv : s.objects.invExt) :
     threadIpcStateObserver observed
         (acquireAll executingCore
           (lockSet_endpointReply replier cnRoot target donatedSc?
-            donatedOwner? replyId belowHeadReply? outerCaller?).lockAcquireSequence s)
+            donatedOwner? replyId belowHeadReply? outerCaller? donatedHead?
+            answeredFrameAbove?).lockAcquireSequence s)
       = threadIpcStateObserver observed s
     ∧ threadIpcStateObserver observed
         (withLockSet
           (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? replyId
-            belowHeadReply? outerCaller?)
+            belowHeadReply? outerCaller? donatedHead? answeredFrameAbove?)
           executingCore (endpointReplyOnCore replier target msg executingCore) s).1
       = threadIpcStateObserver observed
           (endpointReplyOnCore replier target msg executingCore
             (acquireAll executingCore
               (lockSet_endpointReply replier cnRoot target donatedSc?
-                donatedOwner? replyId belowHeadReply? outerCaller?).lockAcquireSequence s)).1 :=
+                donatedOwner? replyId belowHeadReply? outerCaller? donatedHead?
+                answeredFrameAbove?).lockAcquireSequence s)).1 :=
   lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
     (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
     (fun s' h => endpointReplyOnCore_preserves_objects_invExt replier target msg
@@ -1821,17 +1843,30 @@ theorem endpointReplyRecvOnCore_observer_atomic
     -- WS-OD OD3.7: and the two below-head reads, declared explicitly for the
     -- same reason.
     (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
+    -- WS-OD OD3.13 / (`v0.35.4`) / PR #894 review / WS-RM (`v0.35.6`): and every
+    -- remaining argument -- the queue-structure neighbour, the two heads, the
+    -- invoker's own pre-receive return and the frame the reply leg detaches.
+    (queueNeighbour? : Option SeLe4n.ThreadId)
+    (redonationOldHead? donatedHead? : Option SeLe4n.ReplyId)
+    (preReturnSc? : Option SeLe4n.SchedContextId) (preReturnOwner? : Option SeLe4n.ThreadId)
+    (preReturnHead? preReturnBelowHead? : Option SeLe4n.ReplyId)
+    (preReturnOuterCaller? : Option SeLe4n.ThreadId)
+    (answeredFrameAbove? : Option SeLe4n.ReplyId)
     (s : SystemState) (hInv : s.objects.invExt) :
     threadIpcStateObserver observed
         (acquireAll executingCore
           (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc?
             donatedOwner? replyId installsCaps donationServer? redonatedSc?
-            belowHeadReply? outerCaller?).lockAcquireSequence s)
+            belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
+            preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
+            preReturnOuterCaller? answeredFrameAbove?).lockAcquireSequence s)
       = threadIpcStateObserver observed s
     ∧ threadIpcStateObserver observed
         (withLockSet (lockSet_replyRecv receiver cnRoot target endpointId newSender?
             donatedSc? donatedOwner? replyId installsCaps donationServer? redonatedSc?
-            belowHeadReply? outerCaller?)
+            belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
+            preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
+            preReturnOuterCaller? answeredFrameAbove?)
           executingCore
           (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore) s).1
       = threadIpcStateObserver observed
@@ -1839,7 +1874,9 @@ theorem endpointReplyRecvOnCore_observer_atomic
             (acquireAll executingCore
               (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc?
                 donatedOwner? replyId installsCaps donationServer? redonatedSc?
-            belowHeadReply? outerCaller?).lockAcquireSequence s)).1 :=
+            belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
+            preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
+            preReturnOuterCaller? answeredFrameAbove?).lockAcquireSequence s)).1 :=
   lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
     (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
     (fun s' h => endpointReplyRecvOnCore_preserves_objects_invExt endpointId receiver

@@ -45,15 +45,15 @@ def registerContextStableCheckOnCore (_st st' : SystemState) (c : CoreId) : Bool
   match (st'.scheduler.currentOnCore c) with
   | none => true
   | some tid =>
-    match st'.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    match st'.getTcb? tid with
+    | some tcb =>
       st'.machine.regsOnCore c == tcb.registerContext &&
       !(st'.scheduler.runQueueOnCore c).toList.contains tid &&
       (tcb.timeSlice > 0) &&
       (tcb.ipcState == .ready) &&
       (tcb.deadline.toNat == 0) &&
       budgetSufficientCheck st' tcb
-    | _ => false
+    | none => false
 
 /-- SM4.D: `Prop`-level per-core register-context stability. -/
 def registerContextStablePredOnCore (st st' : SystemState) (c : CoreId) : Prop :=

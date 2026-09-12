@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.5` (`lakefile.toml`) |
+| **Package version** | `0.35.15` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 370,721 across 328 Lean files |
-| **Test LoC** | 75,430 across 70 Lean test suites |
-| **Proved declarations** | 12,428 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 375,663 across 329 Lean files |
+| **Test LoC** | 75,996 across 70 Lean test suites |
+| **Proved declarations** | 12,606 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1868,7 +1868,19 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    generic `default_objects_get?_none` helper rather than the bare
    `match s.objects[…]?` bracket idiom and the `.toObjId]?` boundary
    idiom; the cumulative `RAW_MATCH_TOTAL` floor stays at the v0.31.2
-   baseline (122) and `RAW_LOOKUP_TID` drops from 759 to 757.
+   baseline (122) and `RAW_LOOKUP_TID` drops from 759 to 757.  (That
+   second metric was retired at v0.35.7: it summed store reads in
+   *propositions* and store reads in *transitions* into one enforced
+   ceiling, and 96.9% of what it counted was specification vocabulary.
+   Its successors are `STORE_READ_CODE` — the executable population,
+   **zero** and enforced as zero since v0.35.8 — and `STORE_READ_SPEC`,
+   a diagnostic.  Since v0.35.12 that zero counts **both** spellings of
+   the read, `s.objects[k]?` and `s.objects.get? k`, which the
+   `GetElem?` instance makes one operation; it counted the bracket
+   alone before, and forty executable reads were in the method form.
+   The frozen execution surface is in scope on the same footing and is
+   also at zero, through the accessor family in
+   `SeLe4n/Model/FrozenState.lean`.)
 
    **Axiom budget for SM3.C**: 0 Lean axioms, 0 sorries.  Every
    theorem depends only on the standard Lean foundational axioms
@@ -2958,7 +2970,7 @@ alongside the latent inventory (closing SMP-H3).
    produce over all argument values, which is what
    `boundedWait_under_2pl` and the WCRT surface must consume.
 
-   **At HEAD, the declared lock-set ceiling is **21**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3780 µs**.**
+   **At HEAD, the declared lock-set ceiling is **22**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3960 µs**.**
    All three are *derived* — from `maxLockSetSize`, `numCores` and
    `rpi5TickBudgetMicros`, through `admissibleCriticalSection`'s own
    formula — and since WS-OD OD3.15 (v0.34.142)
@@ -4046,7 +4058,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **172** statements in the family (the
+bound on a post-state across all **176** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to
@@ -4447,15 +4459,119 @@ now carried out by a **detach**:
   stated once, in this document's canonical ceiling sentence.  A footprint that omits an object the
   transition writes is false, which this project rates worse than a wide one.
 
-**One residual is registered rather than closed** (WS-RM).  The **reply** path
-does not yet run the detach: it relies on the answered frame being the head,
-which every reply of the nested Call pattern satisfies but which a *delegated*
-reply capability answering its caller out of order does not.  The consequence is
-fail-closed — the later pop's reciprocity test refuses the stale link and the
-reply returns `.invalidArgument`, writing nothing — so it is a wedged call chain
-rather than a corrupted one, and there is no confused deputy.  See
-`docs/REGISTERED_DEBT.md` and
-[`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](../planning/REPLY_FRAME_REMOVAL_PLAN.md).
+#### 8.12.8 The reply path runs `reply_remove` too — WS-RM (`v0.35.6`)
+
+`v0.35.4` wired the detach into the **cancellation** path and left the **reply**
+path relying on the answered frame being the head: every reply of the nested
+Call pattern satisfies that, and a *delegated* reply capability answering its
+caller out of order does not.  WS-RM closes it.  Seven things new code must
+respect.
+
+1. **One removal step, and both spines call it.**
+   `removeCallerReplyFrame caller rid` is seL4's `reply_remove`: the detach
+   (folded to the identity when nothing links down to the answered frame, which
+   the chain relation permits by design since it is stated downward), then the
+   consume.  `endpointReplyOnCore`, `endpointReply` and `endpointReplyRecv` all
+   run it; a Tier 3 negative refuses a bare `SystemState.consumeCallerReply` in
+   any of the three.  The order inside it is the content — the detach reads the
+   link the consume clears — and a second negative refuses the swap.
+2. **`.reply` and `.replyRecv` declare the frame the detach writes.**
+   `answeredReplyFrameAbove?` resolves it from the same
+   `(st.getTcb? target).bind (·.replyObject)` expression the arm's existing
+   reply member comes from, so the footprint and the transition cannot disagree
+   about which frame is answered.  **`maxLockSetSize` is 22**, and the per-lock
+   cost and envelope that implies are stated once, in this document's canonical
+   ceiling sentence.  No *reachable* footprint grew: the new member and the
+   donation-return members are mutually exclusive.  And declaring a member is
+   not proving the transition writes it — the Tier 3 anchor over each
+   footprint's definition asks only that the resolver *occur* there, which is a
+   presence check.  `lockSet_endpointReply_frameAbove_write_mem` and
+   `lockSet_replyRecv_frameAbove_write_mem` at full arity, with
+   `lockSet_endpointReplyOnCore_covers_detachedFrameAbove` and its `.replyRecv`
+   twin resolved, are the relation: the reply-path siblings of the coverage the
+   cancellation path has carried since `v0.35.4`.  Running that sweep over every
+   resolved footprint closed one more — `lockSet_cancelDonationOnCore` had
+   `_correct` and `_size_le` and no coverage layer, so nothing tied a member to
+   the resolver the footprint reads it from; the six `…_covers_` theorems do,
+   with the pop's outer caller a declared *key* rather than a write because the
+   pop reads that TCB to validate it.  `lockSet_notificationWaitOnCore` resolves
+   nothing, so its parametric lemmas are already the statement at full arity.
+3. **The head case is stated, not hidden.**  A frame that heads a scheduling
+   context keeps its links when its caller is consumed (`Reply.consumed`,
+   deliberately — the pop validates the head by them), so the reply leg's
+   post-state satisfies `donationChainWellFormedExcept … rid` and nothing
+   stronger.  `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`
+   is the composite: the donation pop that follows in the same transition
+   discharges the transient, exactly as `returnDonatedSchedContext` discharges
+   the relaxed donation-owner conjunct.  The fault reply and the reply
+   *transfer* (seL4's `doReplyTransfer`) compose it.  It carries **one**
+   condition beyond the chain invariant, and it is a **pre-state** fact:
+   `answeredHeadContextIsServerDonation`, that the context the answered frame
+   heads is the one the recorded reply server holds — the third local coherence
+   fact about a single reply, beside `replyDonationOwnerIsAnsweredCaller` and
+   `replyStackHeadIsAnsweredReply`, stated rather than derived for the reason
+   those are, vacuous wherever the answered frame heads nothing, and exhibited
+   on a live-operation state by `tests/SmpIpcSuite.lean` §3.21.  It is at the
+   pre-state as the bundle composite's `hDonationReturned` is, which is what
+   lets the reply *transfer* carry it once rather than once per branch.
+4. **`.replyRecv`'s donation pop runs *between* the legs.**  seL4-MCS's own
+   order is `doReplyTransfer` → `reply_remove` → `receiveIPC`, and it has to be:
+   the receive leg re-links the very Reply the reply leg just answered, and
+   `Reply.isFree` reads *both* stack links, so a frame still heading a context
+   is not linkable.  With the pop last, `linkCallerReply` and the server-first
+   stash both refused `.replyCapInvalid` and no passive server whose client had
+   donated could complete a `seL4_ReplyRecv`.  The fused resolution is split
+   into `replyRecvPopDonation` and `replyRecvPostReceiveDonation`, each with its
+   own bundle theorem stated at the state its own step runs on.
+5. **The receive-leg hypotheses are stated at the post-pop state.**
+   `replyRecvPostPopState` is a total accessor over the pop, so the staged
+   dispatch payoff's pack stays flat and pre-state-computable; stating them at
+   the reply leg's own state is a claim about a state the receive leg no longer
+   runs on.
+6. **Every reply-stack write names a chain result.**
+   `SeLe4n/Testing/ReplyStackWriteCensus.lean` (Tier 1) derives the write-site
+   set from the elaborated environment and reconciles it against a registry in
+   both directions: a site either states what it does to the chain, or is
+   recorded as a half-step of the composite that does.  A new definition that
+   consumes a caller's Reply bare is a build failure on the day it is written.
+   The primitive list the derivation starts from is itself held to the code by a
+   second, independent derivation (`primitiveCoverageViolations`): a definition
+   that builds a `Reply` or `SchedContext` record and stores it must be a
+   primitive, a registered site, or carry a stated reason for being
+   chain-neutral, because `storeObject` takes a whole object and a record update
+   can rewrite a stack link without naming any helper.
+7. **The removal does not preserve the donation accounting, and that cost is
+   the `severAtCut` policy's.**  Taking a caller out of the *middle* of a chain
+   is destructive to which thread ends up owning the scheduling context: the
+   removal moves no context, and the later pop donates to whatever the remaining
+   stack says is outermost.  On `owner → middle → server`, a delegate answering
+   `owner` out of order leaves `owner` `.unbound` permanently and the server's
+   in-order reply then settles the context `.bound` on `middle` — where the
+   in-order unwind would have left it `.donated … owner`, still owed outward.  A
+   callee that delegates its caller's reply capability to a confederate can
+   therefore capture that caller's reservation; the authority required is
+   already the authority to unblock the victim.  New code must not read a
+   successful pop as evidence that the context reached its owner.
+
+   **It is the policy's, not the chain's, and depth two cannot show that.**  A
+   two-frame stack's lower frame is its bottom, so `severAtCut` and the named
+   alternative `spliceOutTheCut` write the same value into the frame above and
+   the two are indistinguishable.  `tests/SmpIpcSuite.lean` §3.22 is the
+   depth-three witness where they differ: the frames below the cut leave the
+   stack, the reservation settles on a thread strictly *inside* the chain, and
+   its owner is left `.unbound` two hops outside the cut — while the same stack
+   unwound in order delivers it outward still owed.  §3.20 pins the depth-two
+   halves.
+
+   **It is also a confirmed divergence from seL4-MCS**, checked against upstream
+   source at `v0.35.14`: `reply_remove`'s non-head branch splices, writing the
+   cut frame's own `replyPrev` into the frame above, so every frame below stays
+   reachable from the head there.  Moving to `spliceOutTheCut` requires moving
+   the reply path's pop trigger from the recorded server's binding to the
+   answered frame's head-ness; that is registered in
+   `docs/REGISTERED_DEBT.md` with owner WS-CB and closure target before v1.0.0,
+   and until it closes v1.0.0 must not claim seL4-MCS reply-stack semantics at
+   chain depth ≥ 3.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

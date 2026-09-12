@@ -69,7 +69,7 @@ theorem cspaceInsertSlot_preserves_projectObjectIndex
     (hOidHigh : objectObservable ctx observer addr.cnode = false)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     projectObjectIndex ctx observer st' = projectObjectIndex ctx observer st := by
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -137,7 +137,7 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
         have hObjBase : (s₁.objects[oid]?).map (projectKernelObject ctx observer) =
             (s₂.objects[oid]?).map (projectKernelObject ctx observer) := by
           have hBase := congrFun hObjLow oid
-          simp only [projectObjects, hObs, ite_true] at hBase
+          simp only [projectObjects, hObs, ite_true, SystemState.getObject?] at hBase
           exact hBase
         simpa [projectObjects, hObs, hObj₁, hObj₂] using hObjBase
     · simp [projectObjects, hObs]
@@ -213,7 +213,7 @@ theorem revokeAndClearRefsState_preserves_projectState
     projectState ctx observer (revokeAndClearRefsState cn sourceSlot target cnodeId st) =
       projectState ctx observer st := by
   simp only [projectState]; congr 1
-  · funext oid; simp [projectObjects, revokeAndClearRefsState_preserves_objects]
+  · funext oid; simp [projectObjects, revokeAndClearRefsState_preserves_objects, SystemState.getObject?]
   · simp [projectRunnable, revokeAndClearRefsState_preserves_scheduler]
   · simp [projectCurrent, revokeAndClearRefsState_preserves_scheduler]
   · funext sid; simp [projectServicePresence, revokeAndClearRefsState_lookupService]
@@ -364,7 +364,7 @@ theorem storeTcbIpcState_preserves_projection
       · -- projectObjects: storeObject at non-observable tid.toObjId
         funext oid
         by_cases hObs : objectObservable ctx observer oid
-        · simp [projectObjects, hObs]
+        · simp [projectObjects, hObs, SystemState.getObject?]
           by_cases hEq : oid = tid.toObjId
           · subst hEq; simp [hTidObjHigh] at hObs
           · exact congrArg (Option.map (projectKernelObject ctx observer))
@@ -415,7 +415,7 @@ theorem storeTcbPendingMessage_preserves_projection
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
       simp only [projectState]; congr 1
       · funext oid; by_cases hObs : objectObservable ctx observer oid
-        · simp [projectObjects, hObs]
+        · simp [projectObjects, hObs, SystemState.getObject?]
           by_cases hEq : oid = tid.toObjId
           · subst hEq; simp [hTidObjHigh] at hObs
           · exact congrArg (Option.map (projectKernelObject ctx observer))
@@ -458,7 +458,7 @@ theorem storeTcbIpcStateAndMessage_preserves_projection
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
       simp only [projectState]; congr 1
       · funext oid; by_cases hObs : objectObservable ctx observer oid
-        · simp [projectObjects, hObs]
+        · simp [projectObjects, hObs, SystemState.getObject?]
           by_cases hEq : oid = tid.toObjId
           · subst hEq; simp [hTidObjHigh] at hObs
           · exact congrArg (Option.map (projectKernelObject ctx observer))
@@ -491,7 +491,7 @@ theorem storeObject_preserves_projection
   simp only [projectState]; congr 1
   · funext o
     by_cases hObs : objectObservable ctx observer o
-    · simp [projectObjects, hObs]
+    · simp [projectObjects, hObs, SystemState.getObject?]
       by_cases hEq : o = oid
       · subst hEq; simp [hOidHigh] at hObs
       · exact congrArg (Option.map (projectKernelObject ctx observer))
@@ -564,7 +564,7 @@ theorem storeObject_projectionStable_preserves_projection
   simp only [projectState]; congr 1
   · funext o
     by_cases hObs : objectObservable ctx observer o
-    · simp [projectObjects, hObs]
+    · simp [projectObjects, hObs, SystemState.getObject?]
       by_cases hEq : o = oid
       · subst hEq
         rw [storeObject_objects_eq st st' o _ hObjInv hStore, hPrev]
@@ -813,6 +813,54 @@ theorem consumeCallerReply_preserves_projection
       rw [storeObject_preserves_projection ctx observer st1 st' caller.toObjId _
             hCallerObjHigh hObjInv1 hStep, hProj1]
 
+/-- WS-RM (`v0.35.6`): the fold preserves the projection unconditionally — its one
+write clears a Reply's `prev`, which `projectKernelObject` strips. -/
+theorem detachReplyFrameAboveOrSelf_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (detachReplyFrameAboveOrSelf st rid)
+      = projectState ctx observer st := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]
+  · exact detachReplyFrameAbove_preserves_projection ctx observer hIdxComplete hObjInv h
+
+/-- WS-RM (`v0.35.6`): the fold preserves index-set completeness — it stores at a
+key that already resolves, so the set it would have to name already names it. -/
+theorem detachReplyFrameAboveOrSelf_preserves_objectIndexSetComplete
+    (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st) :
+    SeLe4n.Model.objectIndexSetComplete (detachReplyFrameAboveOrSelf st rid) := by
+  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  · rw [h]; exact hIdxComplete
+  · rcases detachReplyFrameAbove_cases h with hEq | ⟨_, above, a, _, _, _, _, hS⟩
+    · rw [hEq]; exact hIdxComplete
+    · exact storeObject_preserves_objectIndexSetComplete st _ above.toObjId _ hObjInv
+        hObjSetInv hIdxComplete hS
+
+/-- **WS-RM (`v0.35.6`): `removeCallerReplyFrame` preserves the projection** under
+exactly the hypothesis the consume alone needed.  The detach half is
+unconditional (`projectKernelObject` erases `Reply.prev`), so taking the frame off
+its stack costs the information-flow surface one rewrite and no new obligation. -/
+theorem removeCallerReplyFrame_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  rw [consumeCallerReply_preserves_projection ctx observer _ st' caller rid hCallerObjHigh
+      (detachReplyFrameAboveOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
+        hIdxComplete)
+      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep]
+  exact detachReplyFrameAboveOrSelf_preserves_projection ctx observer st rid hIdxComplete hObjInv
+
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the low-observer
 projection when both the caller and server objects are non-observable (high).  It
 composes `linkCallerReply` (caller-side, projection-preserving at a high caller) with
@@ -931,10 +979,10 @@ theorem cspaceMint_preserves_lowEquivalent
         · have hNeDst : oid ≠ dst.cnode := by intro hEq; subst hEq; simp [hDstHigh] at hObs
           have hObj₁ := cspaceInsertSlot_preserves_objects_ne s₁ s₁' dst c₁ oid hNeDst hObjInv₁ hInsert₁
           have hObj₂ := cspaceInsertSlot_preserves_objects_ne s₂ s₂' dst c₂ oid hNeDst hObjInv₂ hInsert₂
-          simp only [projectObjects, hObs, ite_true]
+          simp only [projectObjects, hObs, ite_true, SystemState.getObject?]
           rw [hObj₁, hObj₂]
           have hBase := congrFun hObjLow oid
-          simp only [projectState, projectObjects, hObs, ite_true] at hBase
+          simp only [projectState, projectObjects, hObs, ite_true, SystemState.getObject?] at hBase
           exact hBase
         · simp [projectObjects, hObs]
       · simpa [projectRunnable, hSched₁, hSched₂] using hRunLow
@@ -999,7 +1047,7 @@ theorem cspaceRevoke_preserves_lowEquivalent
   have hRunLow := congrArg ObservableState.runnable hLow
   have hCurLow := congrArg ObservableState.current hLow
   have hSvcLow := congrArg ObservableState.services hLow
-  unfold cspaceRevoke at hStep₁ hStep₂
+  unfold cspaceRevoke SystemState.getCNode? at hStep₁ hStep₂
   cases hL₁ : cspaceLookupSlot addr s₁ with
   | error e => simp [hL₁] at hStep₁
   | ok p₁ =>
@@ -1035,7 +1083,7 @@ theorem cspaceRevoke_preserves_lowEquivalent
                     intro hEq; subst hEq; simp [hCNodeHigh] at hObs
                   have hBase : projectObjects ctx observer s₁ oid = projectObjects ctx observer s₂ oid :=
                     congrFun hObjLow oid
-                  simp [projectObjects, hObs] at hBase ⊢
+                  simp [projectObjects, hObs, SystemState.getObject?] at hBase ⊢
                   rw [revokeAndClearRefsState_preserves_objects, revokeAndClearRefsState_preserves_objects]
                   simp only [RHTable_getElem?_eq_get?]
                   rw [RHTable_getElem?_insert _ _ _ hObjInv₁, RHTable_getElem?_insert _ _ _ hObjInv₂]
@@ -1140,7 +1188,7 @@ theorem notificationSignal_projection_preserved
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -1223,7 +1271,7 @@ theorem notificationWait_projection_preserved
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -1323,11 +1371,11 @@ theorem cspaceInsertSlot_preserves_lowEquivalent
   · funext oid
     by_cases hObs : objectObservable ctx observer oid
     · have hNe : oid ≠ dst.cnode := by intro hEq; subst hEq; simp [hDstHigh] at hObs
-      simp only [projectObjects, hObs, ite_true]
+      simp only [projectObjects, hObs, ite_true, SystemState.getObject?]
       rw [cspaceInsertSlot_preserves_objects_ne s₁ s₁' dst cap oid hNe hObjInv₁ hStep₁,
           cspaceInsertSlot_preserves_objects_ne s₂ s₂' dst cap oid hNe hObjInv₂ hStep₂]
       have h := congrFun (congrArg ObservableState.objects hLow) oid
-      simp only [projectState, projectObjects, hObs, ite_true] at h
+      simp only [projectState, projectObjects, hObs, ite_true, SystemState.getObject?] at h
       exact h
     · simp [projectObjects, hObs]
   · simpa [projectRunnable, hSched₁, hSched₂] using congrArg ObservableState.runnable hLow

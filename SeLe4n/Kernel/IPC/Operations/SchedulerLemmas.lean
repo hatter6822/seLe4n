@@ -377,7 +377,7 @@ theorem storeTcbIpcStateAndMessage_preserves_endpoint
   by_cases hEq : epId = tid.toObjId
   · subst hEq
     unfold storeTcbIpcStateAndMessage at hStep
-    have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hEp]
+    have hLookup : lookupTcb st tid = none := by unfold lookupTcb SystemState.getTcb?; simp [hEp]
     simp [hLookup] at hStep
   · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg epId hEq hObjInv hStep]; exact hEp
 
@@ -394,7 +394,7 @@ theorem storeTcbReceiveComplete_preserves_endpoint
   by_cases hEq : epId = tid.toObjId
   · subst hEq
     unfold storeTcbReceiveComplete at hStep
-    have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hEp]
+    have hLookup : lookupTcb st tid = none := by unfold lookupTcb SystemState.getTcb?; simp [hEp]
     simp [hLookup] at hStep
   · rw [storeTcbReceiveComplete_preserves_objects_ne st st' tid msg epId hEq hObjInv hStep]; exact hEp
 
@@ -604,7 +604,7 @@ theorem storeTcbPendingMessage_preserves_endpoint
     st'.objects[epId]? = some (.endpoint ep) := by
   by_cases hEq : epId = tid.toObjId
   · subst hEq; unfold storeTcbPendingMessage at hStep
-    have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hEp]
+    have hLookup : lookupTcb st tid = none := by unfold lookupTcb SystemState.getTcb?; simp [hEp]
     simp [hLookup] at hStep
   · rw [storeTcbPendingMessage_preserves_objects_ne st st' tid msg epId hEq hObjInv hStep]; exact hEp
 
@@ -916,7 +916,9 @@ theorem notificationSignal_respects_pipBoost
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     waiter ∈ (st'.scheduler.runQueueOnCore bootCoreId) := by
-  unfold notificationSignal at hStep
+  -- The transition reads through the kind-agnostic accessor; this proof works
+  -- in store terms, so it is unfolded once here.
+  unfold notificationSignal SystemState.getObject? at hStep
   -- WS-RC R4.C: `notificationSignal` pops via `tail?`; the hypothesis
   -- `hWaiters` reduces the `match` directly to the cons branch.
   simp only [hNtfn, hWaiters] at hStep

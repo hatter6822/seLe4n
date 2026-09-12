@@ -2092,7 +2092,8 @@ theorem refillSchedContext_getTcb?_eq (st : SystemState) (scId : SeLe4n.SchedCon
   split
   · rename_i sc hsc
     exact getTcb?_insert_schedContext_eq st _ scId sc _ hInv
-      (by rw [← RHTable_getElem?_eq_get?]; exact hsc) rfl tid
+      (by rw [← RHTable_getElem?_eq_get?]
+          exact (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hsc) rfl tid
   · rfl
 
 /-- WS-SM SM5.I.8 (tick phase 1 atom): `refillSchedContext` preserves the base
@@ -2369,10 +2370,12 @@ theorem updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp (updatePipBoost st tid) := by
-  simp only [updatePipBoost]
+  simp only [updatePipBoost, SystemState.getTcb?]
   split
   · rename_i tcb heq
-    have hOld : st.getTcb? tid = some tcb := by simp only [SystemState.getTcb?, heq]
+    -- `updatePipBoost` splits on `getTcb?` itself, so the branch hypothesis
+    -- already is the accessor equation.
+    have hOld : st.getTcb? tid = some tcb := heq
     split
     · exact hPre
     · -- the boost changed: `st' = insert tid {tcb with pipBoost := newBoost}`.
@@ -3004,7 +3007,7 @@ run-queue write is the boot-core rebucket). -/
 theorem updatePipBoost_runQueueOnCore_ne (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) (hc : c ≠ bootCoreId) :
     (updatePipBoost st tid).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c := by
-  simp only [updatePipBoost]
+  simp only [updatePipBoost, SystemState.getTcb?]
   repeat' split
   all_goals simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)]
 
@@ -3031,7 +3034,7 @@ theorem updatePipBoost_preserves_runQueueSafetyOnCore (st : SystemState)
     runQueueSafetyOnCore (updatePipBoost st tid) c := by
   by_cases hc : c = bootCoreId
   · subst hc
-    simp only [updatePipBoost]
+    simp only [updatePipBoost, SystemState.getTcb?]
     split
     · rename_i tcb heq
       split
@@ -3244,7 +3247,8 @@ private theorem updatePipBoost_self_timeSlice (st : SystemState) (tid : SeLe4n.T
       tcb'.timeSlice = tcb.timeSlice by
     obtain ⟨tcb', hLook, hTS⟩ := h; simp only [hLook, hTS]
   unfold PriorityInheritance.updatePipBoost
-  simp only [hObj]
+  have hGet : st.getTcb? tid = some tcb := by unfold SystemState.getTcb?; rw [hObj]
+  simp only [hGet]
   split
   · exact ⟨tcb, hObj, rfl⟩
   · have hSelf : (st.objects.insert tid.toObjId
@@ -3275,13 +3279,11 @@ theorem updatePipBoost_preserves_allThreadsTimeSlicePositive (st : SystemState)
     · exfalso
       have heq : PriorityInheritance.updatePipBoost st tid = st := by
         unfold PriorityInheritance.updatePipBoost
-        cases hpre : st.objects[tid.toObjId]? with
+        -- The transition splits on `getTcb?`; its `none` arm is exactly "no TCB
+        -- here", which is the hypothesis `hc` denies in the other arm.
+        cases hpre : st.getTcb? tid with
         | none => rfl
-        | some obj =>
-          cases obj with
-          | tcb t => exact absurd ⟨t, hpre⟩ hc
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-          | schedContext _ | reply _ => rfl
+        | some t => exact absurd ⟨t, (SystemState.getTcb?_eq_some_iff st tid t).mp hpre⟩ hc
       rw [heq] at hx
       exact hc ⟨tcb', hx⟩
   · have hEq : (PriorityInheritance.updatePipBoost st tid).getTcb? x = st.getTcb? x := by
@@ -3408,7 +3410,7 @@ theorem endpointQueueRemove_preserves_allThreadsTimeSlicePositive
     (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
     (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive st' := by
   have hAgree : tsAgree st.objects st'.objects := by
-    unfold endpointQueueRemove at hStep
+    unfold endpointQueueRemove SystemState.getObject? at hStep
     cases hep : st.objects[endpointId]? with
     | none => simp [hep] at hStep
     | some obj =>

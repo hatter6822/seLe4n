@@ -429,7 +429,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     { st1 with
       objects := st1.objects.insert ⟨200⟩ (.cnode deepRadixCNode)
     }
-  IO.println s!"[SST-021] deep cnode radix fixture: {reprStr <| (stDeepCNode.objects[(⟨200⟩ : SeLe4n.ObjId)]?).map (fun obj => match obj with | KernelObject.cnode cn => cn.radixWidth | _ => 0)}"
+  IO.println s!"[SST-021] deep cnode radix fixture: {reprStr <| (stDeepCNode.getCNode? ⟨200⟩).map (fun cn => cn.radixWidth)}"
   match SeLe4n.Kernel.cspaceLookupPath { cnode := ⟨200⟩, cptr := SeLe4n.CPtr.ofNat 13312, depth := 14 } stDeepCNode with
   | .error err => IO.println s!"[SST-022] deep cnode path lookup error: {reprStr err}"
   | .ok (cap, _) => IO.println s!"[SST-023] deep cnode path lookup rights: {reprStr cap.rights}"
@@ -562,7 +562,7 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
       (.endpoint {}) st1 with
   | .error err => IO.println s!"[LEP-005] lifecycle retype error: {reprStr err}"
   | .ok (_, stLifecycle) =>
-      IO.println s!"[LEP-006] lifecycle retype success object kind: {reprStr <| (stLifecycle.objects[(⟨12⟩ : SeLe4n.ObjId)]?).map KernelObject.objectType}"
+      IO.println s!"[LEP-006] lifecycle retype success object kind: {reprStr <| stLifecycle.getObjectType? ⟨12⟩}"
   -- LIFE-10: WS-H2/H-05 lifecycleRetypeWithCleanup removes old TCB tid from run queue
   match SeLe4n.Kernel.lifecycleRetypeWithCleanup lifecycleAuthSlot ⟨12⟩
       (.endpoint {}) st1 with
@@ -683,10 +683,10 @@ private def runCapabilityIpcTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   match SeLe4n.Kernel.endpointSendDual dualEpId ⟨1⟩ .empty stDual with
   | .error err => IO.println s!"[CIC-006] endpointSendDual error: {reprStr err}"
   | .ok (_, stSent) =>
-      match (stSent.objects[dualEpId]?) with
-      | some (.endpoint ep) =>
+      match stSent.getEndpoint? dualEpId with
+      | some ep =>
           IO.println s!"[CIC-007] dual-queue sender blocked on sendQ non-empty: {ep.sendQ.head.isSome}"
-      | _ => IO.println "[CIC-008] dual-queue endpoint missing after send"
+      | none => IO.println "[CIC-008] dual-queue endpoint missing after send"
   -- V8-C: Post-mutation invariant checks on cspaceCopy and dual-queue send
   match SeLe4n.Kernel.cspaceCopy rootSlot copyDst st1 with
   | .ok (_, stCopyMut) => checkInvariants counter "post-cspaceCopy-mutated" stCopyMut
@@ -748,10 +748,10 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
   | .error err => IO.println s!"[STD-003] timer tick decrement error: {reprStr err}"
   | .ok ((), stTicked) =>
       -- After one tick with timeSlice=2, slice becomes 1 (decrement path)
-      match (stTicked.objects[SeLe4n.ThreadId.toObjId ⟨1⟩]? : Option KernelObject) with
-      | some (KernelObject.tcb tcb) =>
+      match stTicked.getTcb? ⟨1⟩ with
+      | some tcb =>
           IO.println s!"[STD-004] timer tick remaining slice: {tcb.timeSlice}"
-      | _ => IO.println "[STD-005] timer tick: thread not found after tick"
+      | none => IO.println "[STD-005] timer tick: thread not found after tick"
   -- Now tick again — this should trigger expiry and reschedule
   let expiryTcb : KernelObject := .tcb {
     tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
@@ -764,10 +764,10 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
   | .error err => IO.println s!"[STD-006] timer tick expiry error: {reprStr err}"
   | .ok ((), stExpired) =>
       IO.println s!"[STD-007] timer tick expiry rescheduled current: {reprStr ((stExpired.scheduler.currentOnCore bootCoreId).map SeLe4n.ThreadId.toNat)}"
-      match (stExpired.objects[SeLe4n.ThreadId.toObjId ⟨1⟩]? : Option KernelObject) with
-      | some (KernelObject.tcb tcb) =>
+      match stExpired.getTcb? ⟨1⟩ with
+      | some tcb =>
           IO.println s!"[STD-008] timer tick expiry reset slice: {tcb.timeSlice}"
-      | _ => IO.println "[STD-009] timer tick expiry: thread not found"
+      | none => IO.println "[STD-009] timer tick expiry: thread not found"
 
   -- V8-C: Post-mutation invariant check on timerTick expiry result
   match SeLe4n.Kernel.timerTick stExpiry with
@@ -1060,13 +1060,13 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childEp newEp epAllocSize st1 with
   | .error err => IO.println s!"[UMT-001] retype-from-untyped success path error: {reprStr err}"
   | .ok (_, stRetyped) =>
-      IO.println s!"[UMT-002] retype-from-untyped success object kind: {reprStr <| (stRetyped.objects[childEp]?).map KernelObject.objectType}"
+      IO.println s!"[UMT-002] retype-from-untyped success object kind: {reprStr <| stRetyped.getObjectType? childEp}"
       -- Check watermark advanced
-      match stRetyped.objects[demoUntyped]? with
-      | some (.untyped ut) =>
+      match stRetyped.getUntyped? demoUntyped with
+      | some ut =>
           IO.println s!"[UMT-003] untyped watermark after retype: {ut.watermark}"
           IO.println s!"[UMT-004] untyped children count: {ut.children.length}"
-      | _ => IO.println "[UMT-005] untyped object missing after retype"
+      | none => IO.println "[UMT-005] untyped object missing after retype"
       -- F2-02: Retype a second object (TCB) from the same untyped
       let childTcb : SeLe4n.ObjId := ⟨51⟩
       let newTcb : KernelObject := .tcb {
@@ -1077,10 +1077,10 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
       match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childTcb newTcb tcbAllocSize stRetyped with
       | .error err => IO.println s!"[UMT-006] retype-from-untyped second alloc error: {reprStr err}"
       | .ok (_, stRetyped2) =>
-          match stRetyped2.objects[demoUntyped]? with
-          | some (.untyped ut2) =>
+          match stRetyped2.getUntyped? demoUntyped with
+          | some ut2 =>
               IO.println s!"[UMT-007] untyped watermark after second retype: {ut2.watermark}"
-          | _ => IO.println "[UMT-008] untyped object missing after second retype"
+          | none => IO.println "[UMT-008] untyped object missing after second retype"
   -- T7-B: Post-mutation invariant check after double retype from untyped
   let newEpUT : KernelObject := .endpoint {}
   let epAllocSizeUT : Nat := SeLe4n.Kernel.objectTypeAllocSize .endpoint
@@ -1241,9 +1241,9 @@ private def runInlineContextSwitchTrace (counter : IO.Ref Nat) (st1 : SystemStat
       let regsMatchIncoming := stSwitched.machine.regs == incomingRegs
       IO.println s!"[ICS-002] H12f context switch regs match incoming: {regsMatchIncoming}"
       -- Verify outgoing thread's registerContext was saved
-      let outgoingSaved := match stSwitched.objects[(⟨1⟩ : SeLe4n.ObjId)]? with
-        | some (.tcb tcb) => tcb.registerContext == outgoingRegs
-        | _ => false
+      let outgoingSaved := match stSwitched.getTcb? (⟨1⟩ : SeLe4n.ThreadId) with
+        | some tcb => tcb.registerContext == outgoingRegs
+        | none => false
       IO.println s!"[ICS-003] H12f outgoing context saved: {outgoingSaved}"
       -- Verify current is now the incoming thread
       let newCurrent := (stSwitched.scheduler.currentOnCore bootCoreId).map SeLe4n.ThreadId.toNat
@@ -1500,11 +1500,11 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.buildChecked)
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRdt with
   | .ok (_, stPost) =>
-      match stPost.objects[rdtEp]? with
-      | some (.endpoint ep) =>
+      match stPost.getEndpoint? rdtEp with
+      | some ep =>
           let hasSender := ep.sendQ.head.isSome
           IO.println s!"[RDT-003] syscallEntry send success, endpoint has sender: {hasSender}"
-      | _ => IO.println "[RDT-004] syscallEntry send success, but endpoint not found"
+      | none => IO.println "[RDT-004] syscallEntry send success, but endpoint not found"
   | .error err =>
       IO.println s!"[RDT-005] syscallEntry send error: {reprStr err}"
 
@@ -1696,7 +1696,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       match SeLe4n.Kernel.lifecycleRetypeDirect retypeCap ksdRetypeTargetId newObj stRetype with
       | .error e => IO.println s!"[KSD-004] lifecycleRetypeDirect error: {reprStr e}"
       | .ok (_, stRetyped) =>
-        let objKind := (stRetyped.objects[ksdRetypeTargetId]?).map KernelObject.objectType
+        let objKind := stRetyped.getObjectType? ksdRetypeTargetId
         IO.println s!"[KSD-004] lifecycle retype via decoded regs new type: {reprStr objKind}"
 
   -- KSD-005: VSpace map via decoded registers — success path
@@ -1853,11 +1853,11 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
   | .error e => IO.println s!"[PIP-004] A4 syscallEntryChecked error: {reprStr e}"
   | .ok (_, stChecked) =>
     -- Verify the send succeeded: endpoint should have a sender in sendQ
-    match stChecked.objects[pipeEp]? with
-    | some (.endpoint ep) =>
+    match stChecked.getEndpoint? pipeEp with
+    | some ep =>
       let hasSender := ep.sendQ.head.isSome
       IO.println s!"[PIP-004] A4 syscallEntryChecked send success, endpoint has sender: {hasSender}"
-    | _ => IO.println "[PIP-005] A4 syscallEntryChecked endpoint not found post-dispatch"
+    | none => IO.println "[PIP-005] A4 syscallEntryChecked endpoint not found post-dispatch"
 
     -- A5: Post-dispatch invariant preservation check
     let pipeObjIds : List SeLe4n.ObjId := [pipeTid, pipeEp, pipeNtfn, pipeCn, pipeVs]
@@ -1875,8 +1875,8 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
     | .error e => IO.println s!"[PIP-007] A6 unchecked syscallEntry error: {reprStr e}"
     | .ok (_, stUnchecked) =>
       -- Compare object stores: both endpoints should have same sendQ state
-      let checkedEp := stChecked.objects[pipeEp]?
-      let uncheckedEp := stUnchecked.objects[pipeEp]?
+      let checkedEp := stChecked.getObject? pipeEp
+      let uncheckedEp := stUnchecked.getObject? pipeEp
       let objectsMatch := checkedEp == uncheckedEp
       -- Compare scheduler current thread (simpler than full scheduler BEq)
       let schedMatch := (stChecked.scheduler.currentOnCore bootCoreId) == (stUnchecked.scheduler.currentOnCore bootCoreId)
@@ -2171,9 +2171,9 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                     | none => none
                   IO.println s!"[MEI-002] multi-ep recv2 registers: {reprStr recvRegs2}"
                   -- Verify cross-endpoint independence: ep1 queue is empty
-                  let ep1Empty := match stRecv2.objects[epId1]? with
-                    | some (.endpoint ep) => ep.sendQ.head.isNone && ep.receiveQ.head.isNone
-                    | _ => false
+                  let ep1Empty := match stRecv2.getEndpoint? epId1 with
+                    | some ep => ep.sendQ.head.isNone && ep.receiveQ.head.isNone
+                    | none => false
                   IO.println s!"[MEI-003] multi-ep endpoint1 queues empty: {ep1Empty}"
                   -- L4-D2/D3: 3rd endpoint out-of-order receive
                   -- Send on EP3 via sender, receive EP3 out-of-order (before EP1 second round)
@@ -2205,9 +2205,9 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                                   IO.println s!"[MEI-005] multi-ep ep1 FIFO second recv registers: {reprStr recvRegs4}"
                                   -- Verify all 3 endpoints are now drained
                                   let allEmpty := [epId1, epId2, epId3].all fun eid =>
-                                    match stRecv4.objects[eid]? with
-                                    | some (.endpoint ep) => ep.sendQ.head.isNone && ep.receiveQ.head.isNone
-                                    | _ => false
+                                    match stRecv4.getEndpoint? eid with
+                                    | some ep => ep.sendQ.head.isNone && ep.receiveQ.head.isNone
+                                    | none => false
                                   IO.println s!"[MEI-006] multi-ep all 3 endpoints drained: {allEmpty}"
 
   checkInvariants counter "post-multi-endpoint-interleaving-trace" st1
@@ -2249,10 +2249,10 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   | .error err =>
     IO.println s!"[SCO-006] schedContextConfigure success: error {reprStr err}"
   | .ok ((), stConfigured) =>
-    match stConfigured.objects[scId]? with
-    | some (.schedContext sc) =>
+    match stConfigured.getSchedContext? (SeLe4n.SchedContextId.ofObjId scId) with
+    | some sc =>
       IO.println s!"[SCO-006] schedContextConfigure success budget={sc.budget.val} period={sc.period.val}"
-    | _ => IO.println s!"[SCO-006] schedContextConfigure success: object not found"
+    | none => IO.println s!"[SCO-006] schedContextConfigure success: object not found"
 
   -- Z5-AUD-07: schedContextBind — success path
   let tid : SeLe4n.ThreadId := ⟨1⟩
@@ -2265,12 +2265,12 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   | .error err =>
     IO.println s!"[SCO-007] schedContextBind success: error {reprStr err}"
   | .ok ((), stBound) =>
-    let scBound := match stBound.objects[scId]? with
-      | some (.schedContext sc) => sc.boundThread == some tid
-      | _ => false
-    let tcbBound := match stBound.objects[tid.toObjId]? with
-      | some (.tcb tcb) => tcb.schedContextBinding.isBound
-      | _ => false
+    let scBound := match stBound.getSchedContext? (SeLe4n.SchedContextId.ofObjId scId) with
+      | some sc => sc.boundThread == some tid
+      | none => false
+    let tcbBound := match stBound.getTcb? tid with
+      | some tcb => tcb.schedContextBinding.isBound
+      | none => false
     IO.println s!"[SCO-007] schedContextBind success: sc.boundThread={scBound} tcb.bound={tcbBound}"
 
   -- Z5-AUD-08: schedContextBind — already bound rejected
@@ -2297,12 +2297,12 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   | .error err =>
     IO.println s!"[SCO-009] schedContextUnbind success: error {reprStr err}"
   | .ok ((), stUnbound) =>
-    let scCleared := match stUnbound.objects[scId]? with
-      | some (.schedContext sc) => sc.boundThread.isNone
-      | _ => false
-    let tcbCleared := match stUnbound.objects[tid.toObjId]? with
-      | some (.tcb tcb) => !tcb.schedContextBinding.isBound
-      | _ => false
+    let scCleared := match stUnbound.getSchedContext? (SeLe4n.SchedContextId.ofObjId scId) with
+      | some sc => sc.boundThread.isNone
+      | none => false
+    let tcbCleared := match stUnbound.getTcb? tid with
+      | some tcb => !tcb.schedContextBinding.isBound
+      | none => false
     IO.println s!"[SCO-009] schedContextUnbind success: sc.cleared={scCleared} tcb.unbound={tcbCleared}"
 
   -- Z5-AUD-10: schedContextUnbind — not bound rejected
@@ -2327,12 +2327,12 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       targetId (.schedContext targetSc) }
   let stAfterYield := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
     stYield ⟨5001⟩ ⟨5002⟩
-  let fromRemaining := match stAfterYield.objects[fromId]? with
-    | some (.schedContext sc) => sc.budgetRemaining.val
-    | _ => 9999
-  let targetRemaining := match stAfterYield.objects[targetId]? with
-    | some (.schedContext sc) => sc.budgetRemaining.val
-    | _ => 9999
+  let fromRemaining := match stAfterYield.getSchedContext? (SeLe4n.SchedContextId.ofObjId fromId) with
+    | some sc => sc.budgetRemaining.val
+    | none => 9999
+  let targetRemaining := match stAfterYield.getSchedContext? (SeLe4n.SchedContextId.ofObjId targetId) with
+    | some sc => sc.budgetRemaining.val
+    | none => 9999
   IO.println s!"[SCO-011] schedContextYieldTo from={fromRemaining} target={targetRemaining}"
 
   -- Z5-AUD-12: admission control — excludeId prevents double-counting
@@ -2444,9 +2444,9 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let stAfterYieldStarve := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
     stYieldStarve ⟨5001⟩ ⟨5002⟩
   let targetEnqueued := (stAfterYieldStarve.scheduler.runQueueOnCore bootCoreId).contains tidTarget
-  let targetBudget := match stAfterYieldStarve.objects[targetIdS]? with
-    | some (.schedContext sc) => sc.budgetRemaining.val
-    | _ => 9999
+  let targetBudget := match stAfterYieldStarve.getSchedContext? (SeLe4n.SchedContextId.ofObjId targetIdS) with
+    | some sc => sc.budgetRemaining.val
+    | none => 9999
   IO.println s!"[SCO-016] schedContextYieldTo starved-enqueue: enqueued={targetEnqueued} budget={targetBudget}"
 
   -- Z5-AUD-17: admission control — failure when bandwidth exceeds 100%
@@ -2511,12 +2511,12 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     objects := st1.objects.insert selfScId (.schedContext selfSc) }
   let stAfterSelf := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
     stSelfYield ⟨5003⟩ ⟨5003⟩
-  let selfRemaining := match stAfterSelf.objects[selfScId]? with
-    | some (.schedContext sc) => sc.budgetRemaining.val
-    | _ => 0
-  let selfActive := match stAfterSelf.objects[selfScId]? with
-    | some (.schedContext sc) => sc.isActive
-    | _ => false
+  let selfRemaining := match stAfterSelf.getSchedContext? (SeLe4n.SchedContextId.ofObjId selfScId) with
+    | some sc => sc.budgetRemaining.val
+    | none => 0
+  let selfActive := match stAfterSelf.getSchedContext? (SeLe4n.SchedContextId.ofObjId selfScId) with
+    | some sc => sc.isActive
+    | none => false
   -- AK6-D invariant: self-yield leaves budgetRemaining and isActive UNCHANGED
   IO.println s!"[SCO-019a] schedContextYieldTo self-guard (AK6-D): remaining={selfRemaining} isActive={selfActive}"
 
@@ -2550,12 +2550,12 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     IO.println s!"[SCO-020] endpointQueueRemove head: error {reprStr err}"
   | .ok stRm =>
     -- After removing head (tid1), head should now be tid2
-    match stRm.objects[epId]? with
-    | some (.endpoint ep') =>
+    match stRm.getEndpoint? epId with
+    | some ep' =>
       let newHead := ep'.sendQ.head == some tid2
       let newTail := ep'.sendQ.tail == some tid2
       IO.println s!"[SCO-020] endpointQueueRemove head: newHead=tid2:{newHead} newTail=tid2:{newTail}"
-    | _ => IO.println s!"[SCO-020] endpointQueueRemove head: endpoint not found"
+    | none => IO.println s!"[SCO-020] endpointQueueRemove head: endpoint not found"
 
   -- SCO-020a (WS-OD OD1.1): the removal hands the successor the removed
   -- thread's own `queuePPrev`, and the successor can still be dequeued by the
@@ -2568,9 +2568,9 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   match SeLe4n.Kernel.endpointQueueRemove epId false tid1 stQ with
   | .error _ => IO.println s!"[SCO-020a] successor pprev: removal failed"
   | .ok stRm =>
-    let succPPrev := match stRm.objects[tid2.toObjId]? with
-      | some (.tcb t) => t.queuePPrev == some QueuePPrev.endpointHead
-      | _ => false
+    let succPPrev := match stRm.getTcb? tid2 with
+      | some t => t.queuePPrev == some QueuePPrev.endpointHead
+      | none => false
     let succDequeues := match SeLe4n.Kernel.endpointQueueRemoveDual epId false tid2 stRm with
       | .ok _ => true
       | .error _ => false
@@ -2613,18 +2613,18 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       |>.insert vTid.toObjId (.tcb victimTcb)
       |>.insert hTid.toObjId (.tcb holderTcb) }
   let stAfter := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking stR vTid victimTcb
-  let holderIdle := match stAfter.objects[hTid.toObjId]? with
-    | some (.tcb t) => t.ipcState == ThreadIpcState.ready
-    | _ => false
-  let holderUnbound := match stAfter.objects[hTid.toObjId]? with
-    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
-    | _ => false
-  let victimRebound := match stAfter.objects[vTid.toObjId]? with
-    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scH
-    | _ => false
-  let holderOffQueue := match stAfter.objects[epH]? with
-    | some (.endpoint e) => e.sendQ.head == none && e.sendQ.tail == none
-    | _ => false
+  let holderIdle := match stAfter.getTcb? hTid with
+    | some t => t.ipcState == ThreadIpcState.ready
+    | none => false
+  let holderUnbound := match stAfter.getTcb? hTid with
+    | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+    | none => false
+  let victimRebound := match stAfter.getTcb? vTid with
+    | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scH
+    | none => false
+  let holderOffQueue := match stAfter.getEndpoint? epH with
+    | some e => e.sendQ.head == none && e.sendQ.tail == none
+    | none => false
   IO.println s!"[SCO-020b] reclaim holder_ready={holderIdle} holder_unbound={holderUnbound} caller_rebound={victimRebound} holder_spliced={holderOffQueue}"
 
   -- SCO-020c (WS-OD OD1.5): **and the abort's reach is exactly the two states
@@ -2641,15 +2641,15 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     objects := (stR.objects.insert epH (.endpoint epRecv))
       |>.insert hTid.toObjId (.tcb holderRecvTcb) }
   let stRecvAfter := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking stRecv vTid victimTcb
-  let recvHolderUntouched := match stRecvAfter.objects[hTid.toObjId]? with
-    | some (.tcb t) => t.ipcState == ThreadIpcState.blockedOnReceive epH
-    | _ => false
-  let recvHolderUnbound := match stRecvAfter.objects[hTid.toObjId]? with
-    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
-    | _ => false
-  let recvQueueUntouched := match stRecvAfter.objects[epH]? with
-    | some (.endpoint e) => e.receiveQ.head == some hTid && e.receiveQ.tail == some hTid
-    | _ => false
+  let recvHolderUntouched := match stRecvAfter.getTcb? hTid with
+    | some t => t.ipcState == ThreadIpcState.blockedOnReceive epH
+    | none => false
+  let recvHolderUnbound := match stRecvAfter.getTcb? hTid with
+    | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+    | none => false
+  let recvQueueUntouched := match stRecvAfter.getEndpoint? epH with
+    | some e => e.receiveQ.head == some hTid && e.receiveQ.tail == some hTid
+    | none => false
   IO.println s!"[SCO-020c] reclaim allowed_holder untouched={recvHolderUntouched} unbound={recvHolderUnbound} queue_intact={recvQueueUntouched}"
 
   -- SCO-020d (WS-OD OD1.7): **and the reclaim puts the aborted holder back on a
@@ -2688,15 +2688,15 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   | .error err =>
     IO.println s!"[SCO-023] timeoutThread blocked: error {reprStr err}"
   | .ok (stTimeout, _sgi) =>
-    match stTimeout.objects[tid1.toObjId]? with
-    | some (.tcb tcbAfter) =>
+    match stTimeout.getTcb? tid1 with
+    | some tcbAfter =>
       let stateReady := tcbAfter.ipcState == .ready
       let threadReady := tcbAfter.threadState == .Ready
       let budgetCleared := tcbAfter.timeoutBudget == none
       let timedOutSet := tcbAfter.timedOut  -- AG8-A: explicit timedOut flag
       let linksCleared := tcbAfter.queuePrev == none && tcbAfter.queueNext == none
       IO.println s!"[SCO-023] timeoutThread blocked: ready={stateReady} threadReady={threadReady} budgetCleared={budgetCleared} errCode={timedOutSet} linksCleared={linksCleared}"
-    | _ => IO.println s!"[SCO-023] timeoutThread blocked: tcb not found after timeout"
+    | none => IO.println s!"[SCO-023] timeoutThread blocked: tcb not found after timeout"
 
   -- SCO-024: timeoutThread — thread not found returns error
   match SeLe4n.Kernel.timeoutThread epId false ⟨9999⟩ bootCoreId stQ with
@@ -2732,22 +2732,22 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- AG1-B audit: surface diagnostic errors if any
   if !timeoutErrs.isEmpty then
     IO.println s!"[SCO-027] DIAGNOSTIC: timeoutBlockedThreads returned {timeoutErrs.length} error(s)"
-  match stAfterTimeout.objects[tid1.toObjId]? with
-  | some (.tcb tcbAfter) =>
+  match stAfterTimeout.getTcb? tid1 with
+  | some tcbAfter =>
     let wasTimedOut := tcbAfter.ipcState == .ready
     IO.println s!"[SCO-027] timeoutBlockedThreads: tid1_timed_out={wasTimedOut}"
-  | _ => IO.println s!"[SCO-027] timeoutBlockedThreads: tcb1 not found"
+  | none => IO.println s!"[SCO-027] timeoutBlockedThreads: tcb1 not found"
 
   -- SCO-028: timeoutBlockedThreads — skips threads with non-matching SchedContext
   let otherScId : SeLe4n.SchedContextId := ⟨6011⟩
   let (stAfterOther, otherErrs, _otherSgis) := SeLe4n.Kernel.timeoutBlockedThreads stBound otherScId bootCoreId
   if !otherErrs.isEmpty then
     IO.println s!"[SCO-028] DIAGNOSTIC: timeoutBlockedThreads returned {otherErrs.length} error(s)"
-  match stAfterOther.objects[tid1.toObjId]? with
-  | some (.tcb tcbAfter) =>
+  match stAfterOther.getTcb? tid1 with
+  | some tcbAfter =>
     let stillBlocked := tcbAfter.ipcState == .blockedOnSend epId
     IO.println s!"[SCO-028] timeoutBlockedThreads non-matching: still_blocked={stillBlocked}"
-  | _ => IO.println s!"[SCO-028] timeoutBlockedThreads non-matching: tcb1 not found"
+  | none => IO.println s!"[SCO-028] timeoutBlockedThreads non-matching: tcb1 not found"
 
   -- SCO-029: timeoutAwareReceive — detects timeout via timedOut flag (AG8-A)
   -- Build a thread with timedOut := true and ready state
@@ -2786,12 +2786,12 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   | .error err =>
     IO.println s!"[SCO-031] endpointQueueRemove tail: error {reprStr err}"
   | .ok stRm =>
-    match stRm.objects[epId]? with
-    | some (.endpoint ep') =>
+    match stRm.getEndpoint? epId with
+    | some ep' =>
       let headStill := ep'.sendQ.head == some tid1
       let newTail := ep'.sendQ.tail == some tid1
       IO.println s!"[SCO-031] endpointQueueRemove tail: head=tid1:{headStill} tail=tid1:{newTail}"
-    | _ => IO.println s!"[SCO-031] endpointQueueRemove tail: endpoint not found"
+    | none => IO.println s!"[SCO-031] endpointQueueRemove tail: endpoint not found"
 
   -- SCO-032: endpointQueueRemove — mid-queue removal from a 3-thread queue
   -- Build 3-thread send queue: tid1 → tid2 → tid3, remove tid2 (middle)
@@ -2822,20 +2822,20 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     IO.println s!"[SCO-032] endpointQueueRemove mid: error {reprStr err}"
   | .ok stRm =>
     -- After removing mid (tid2): head=tid1, tail=tid3, tid1.next=tid3, tid3.prev=tid1
-    match stRm.objects[epId]? with
-    | some (.endpoint ep') =>
+    match stRm.getEndpoint? epId with
+    | some ep' =>
       let headOk := ep'.sendQ.head == some tid1
       let tailOk := ep'.sendQ.tail == some tid3
       -- Check tid1's queueNext now points to tid3
-      let t1NextOk := match stRm.objects[tid1.toObjId]? with
-        | some (.tcb t1) => t1.queueNext == some tid3
-        | _ => false
+      let t1NextOk := match stRm.getTcb? tid1 with
+        | some t1 => t1.queueNext == some tid3
+        | none => false
       -- Check tid3's queuePrev now points to tid1
-      let t3PrevOk := match stRm.objects[tid3.toObjId]? with
-        | some (.tcb t3) => t3.queuePrev == some tid1
-        | _ => false
+      let t3PrevOk := match stRm.getTcb? tid3 with
+        | some t3 => t3.queuePrev == some tid1
+        | none => false
       IO.println s!"[SCO-032] endpointQueueRemove mid: head=tid1:{headOk} tail=tid3:{tailOk} tid1.next=tid3:{t1NextOk} tid3.prev=tid1:{t3PrevOk}"
-    | _ => IO.println s!"[SCO-032] endpointQueueRemove mid: endpoint not found"
+    | none => IO.println s!"[SCO-032] endpointQueueRemove mid: endpoint not found"
 
   -- SCO-033: endpointQueueRemove — removal from receiveQ (not just sendQ)
   let epRecv : Endpoint := { sendQ := {}, receiveQ := { head := some tid1, tail := some tid2 } }
@@ -2857,12 +2857,12 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   | .error err =>
     IO.println s!"[SCO-033] endpointQueueRemove receiveQ: error {reprStr err}"
   | .ok stRm =>
-    match stRm.objects[epId]? with
-    | some (.endpoint ep') =>
+    match stRm.getEndpoint? epId with
+    | some ep' =>
       let newHead := ep'.receiveQ.head == some tid2
       let sendUnchanged := ep'.sendQ.head == none
       IO.println s!"[SCO-033] endpointQueueRemove receiveQ: head=tid2:{newHead} sendQ_unchanged:{sendUnchanged}"
-    | _ => IO.println s!"[SCO-033] endpointQueueRemove receiveQ: endpoint not found"
+    | none => IO.println s!"[SCO-033] endpointQueueRemove receiveQ: endpoint not found"
 
   -- SCO-034: timeoutThread on a blockedOnCall thread
   let tcb1Call : TCB := {
@@ -2878,12 +2878,12 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   | .error err =>
     IO.println s!"[SCO-034] timeoutThread blockedOnCall: error {reprStr err}"
   | .ok (stTimeout, _sgi) =>
-    match stTimeout.objects[tid1.toObjId]? with
-    | some (.tcb tcbAfter) =>
+    match stTimeout.getTcb? tid1 with
+    | some tcbAfter =>
       let stateReady := tcbAfter.ipcState == .ready
       let timedOutSet := tcbAfter.timedOut  -- AG8-A: explicit timedOut flag
       IO.println s!"[SCO-034] timeoutThread blockedOnCall: ready={stateReady} errCode={timedOutSet}"
-    | _ => IO.println s!"[SCO-034] timeoutThread blockedOnCall: tcb not found"
+    | none => IO.println s!"[SCO-034] timeoutThread blockedOnCall: tcb not found"
 
   -- SCO-035: timeoutBlockedThreads — multiple threads with same SC all timed out
   let scIdMulti : SeLe4n.SchedContextId := ⟨6020⟩
@@ -2912,12 +2912,12 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let (stAfterMulti, multiErrs, _multiSgis) := SeLe4n.Kernel.timeoutBlockedThreads stMulti scIdMulti bootCoreId
   if !multiErrs.isEmpty then
     IO.println s!"[SCO-035] DIAGNOSTIC: timeoutBlockedThreads returned {multiErrs.length} error(s)"
-  let t1Ready := match stAfterMulti.objects[tid1.toObjId]? with
-    | some (.tcb t) => t.ipcState == ThreadIpcState.ready
-    | _ => false
-  let t2Ready := match stAfterMulti.objects[tid2.toObjId]? with
-    | some (.tcb t) => t.ipcState == ThreadIpcState.ready
-    | _ => false
+  let t1Ready := match stAfterMulti.getTcb? tid1 with
+    | some t => t.ipcState == ThreadIpcState.ready
+    | none => false
+  let t2Ready := match stAfterMulti.getTcb? tid2 with
+    | some t => t.ipcState == ThreadIpcState.ready
+    | none => false
   IO.println s!"[SCO-035] timeoutBlockedThreads multi: tid1_ready={t1Ready} tid2_ready={t2Ready}"
 
 -- ============================================================================
@@ -2959,12 +2959,12 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   | .error err =>
     IO.println s!"[Z7D-001] donateSchedContext: error {reprStr err}"
   | .ok stAfter =>
-    let serverBound := match stAfter.objects[serverTid.toObjId]? with
-      | some (.tcb t) => t.schedContextBinding.isBound
-      | _ => false
-    let scPointsToServer := match stAfter.objects[scId.toObjId]? with
-      | some (.schedContext s) => s.boundThread == some serverTid
-      | _ => false
+    let serverBound := match stAfter.getTcb? serverTid with
+      | some t => t.schedContextBinding.isBound
+      | none => false
+    let scPointsToServer := match stAfter.getSchedContext? scId with
+      | some s => s.boundThread == some serverTid
+      | none => false
     IO.println s!"[Z7D-001] donateSchedContext: server_bound={serverBound} sc_points_server={scPointsToServer}"
 
   -- Z7D-002: returnDonatedSchedContext — successful return
@@ -2985,15 +2985,15 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   | .error err =>
     IO.println s!"[Z7D-002] returnDonatedSchedContext: error {reprStr err}"
   | .ok stReturned =>
-    let serverUnbound := match stReturned.objects[serverTid.toObjId]? with
-      | some (.tcb t) => !t.schedContextBinding.isBound
-      | _ => false
-    let callerRebound := match stReturned.objects[callerTid.toObjId]? with
-      | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
-      | _ => false
-    let scPointsCaller := match stReturned.objects[scId.toObjId]? with
-      | some (.schedContext s) => s.boundThread == some callerTid
-      | _ => false
+    let serverUnbound := match stReturned.getTcb? serverTid with
+      | some t => !t.schedContextBinding.isBound
+      | none => false
+    let callerRebound := match stReturned.getTcb? callerTid with
+      | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
+      | none => false
+    let scPointsCaller := match stReturned.getSchedContext? scId with
+      | some s => s.boundThread == some callerTid
+      | none => false
     IO.println s!"[Z7D-002] returnDonatedSchedContext: server_unbound={serverUnbound} caller_rebound={callerRebound} sc_points_caller={scPointsCaller}"
 
   -- Z7D-003: applyCallDonation — passive server gets SchedContext
@@ -3006,9 +3006,9 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let serverVtid : SeLe4n.ValidThreadId := ⟨serverTid, by decide⟩
   let stAfterCall := match SeLe4n.Kernel.applyCallDonation stApply callerVtid serverVtid with
     | .ok s => s | .error _ => stApply
-  let serverGotSc := match stAfterCall.objects[serverTid.toObjId]? with
-    | some (.tcb t) => t.schedContextBinding.isBound
-    | _ => false
+  let serverGotSc := match stAfterCall.getTcb? serverTid with
+    | some t => t.schedContextBinding.isBound
+    | none => false
   IO.println s!"[Z7D-003] applyCallDonation passive: server_got_sc={serverGotSc}"
 
   -- Z7D-004: applyCallDonation — active server skips donation
@@ -3030,12 +3030,12 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
       serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
   let stAfterReply := match SeLe4n.Kernel.applyReplyDonation stReplyDon serverVtid with
     | .ok s => s | .error _ => stReplyDon
-  let callerGotBack := match stAfterReply.objects[callerTid.toObjId]? with
-    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
-    | _ => false
-  let serverPassive := match stAfterReply.objects[serverTid.toObjId]? with
-    | some (.tcb t) => !t.schedContextBinding.isBound
-    | _ => false
+  let callerGotBack := match stAfterReply.getTcb? callerTid with
+    | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
+    | none => false
+  let serverPassive := match stAfterReply.getTcb? serverTid with
+    | some t => !t.schedContextBinding.isBound
+    | none => false
   IO.println s!"[Z7D-005] applyReplyDonation: caller_got_back={callerGotBack} server_passive={serverPassive}"
 
   -- Z7D-006: applyReplyDonation — non-donated server is noop
@@ -3052,9 +3052,9 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
       serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
   let stCleaned := match SeLe4n.Kernel.cleanupDonatedSchedContext stCleanup serverTid with
     | .ok s => s | .error _ => stCleanup
-  let callerRecovered := match stCleaned.objects[callerTid.toObjId]? with
-    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
-    | _ => false
+  let callerRecovered := match stCleaned.getTcb? callerTid with
+    | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
+    | none => false
   IO.println s!"[Z7D-007] cleanupDonatedSchedContext: caller_recovered={callerRecovered}"
 
   -- Z7D-008: cleanupPreReceiveDonation — stale donation cleaned up
@@ -3062,9 +3062,9 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
       serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
   let stPreRecv := SeLe4n.Kernel.cleanupPreReceiveDonation stStale serverTid
-  let callerBack := match stPreRecv.objects[callerTid.toObjId]? with
-    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
-    | _ => false
+  let callerBack := match stPreRecv.getTcb? callerTid with
+    | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
+    | none => false
   IO.println s!"[Z7D-008] cleanupPreReceiveDonation: caller_back={callerBack}"
 
   -- SCN-DONATION-PUSH-DEPTH-TWO (WS-OD OD4.1/OD4.2/OD6.4): the **depth-≥ 2
@@ -3103,16 +3103,16 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   | .error err =>
     IO.println s!"[SCN-DONATION-PUSH-DEPTH-TWO] depth-2 donateSchedContext: error {reprStr err}"
   | .ok stPushed =>
-    let serverHolds := match stPushed.objects[serverTid.toObjId]? with
-      | some (.tcb t) =>
+    let serverHolds := match stPushed.getTcb? serverTid with
+      | some t =>
           t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.donated scId callerTid
-      | _ => false
-    let headPushed := match stPushed.objects[scId.toObjId]? with
-      | some (.schedContext s) => s.scReply == some callerReplyId
-      | _ => false
-    let frameLinked := match stPushed.objects[callerReplyId.toObjId]? with
-      | some (.reply r) => r.next == some (SeLe4n.Kernel.ReplyStackLink.head scId) && r.prev == some outerReplyId
-      | _ => false
+      | none => false
+    let headPushed := match stPushed.getSchedContext? scId with
+      | some s => s.scReply == some callerReplyId
+      | none => false
+    let frameLinked := match stPushed.getReply? callerReplyId with
+      | some r => r.next == some (SeLe4n.Kernel.ReplyStackLink.head scId) && r.prev == some outerReplyId
+      | none => false
     IO.println s!"[SCN-DONATION-PUSH-DEPTH-TWO] depth-2 donateSchedContext: server_holds={serverHolds} head_pushed={headPushed} frame_linked={frameLinked}"
 
     -- SCN-DONATION-RETURN-RESOLVED-OUTER (WS-OD OD3.4/OD4.4/OD6.4): ...and the
@@ -3123,16 +3123,16 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     | .error err =>
       IO.println s!"[SCN-DONATION-RETURN-RESOLVED-OUTER] depth-2 resolved return: error {reprStr err}"
     | .ok stPopped =>
-      let midRebound := match stPopped.objects[callerTid.toObjId]? with
-        | some (.tcb t) =>
+      let midRebound := match stPopped.getTcb? callerTid with
+        | some t =>
             t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.donated scId outerTid
-        | _ => false
-      let headPopped := match stPopped.objects[scId.toObjId]? with
-        | some (.schedContext s) => s.scReply == some outerReplyId
-        | _ => false
-      let frameCleared := match stPopped.objects[callerReplyId.toObjId]? with
-        | some (.reply r) => r.next == none && r.prev == none
-        | _ => false
+        | none => false
+      let headPopped := match stPopped.getSchedContext? scId with
+        | some s => s.scReply == some outerReplyId
+        | none => false
+      let frameCleared := match stPopped.getReply? callerReplyId with
+        | some r => r.next == none && r.prev == none
+        | none => false
       IO.println s!"[SCN-DONATION-RETURN-RESOLVED-OUTER] depth-2 resolved return: mid_rebound_donated={midRebound} head_popped={headPopped} frame_cleared={frameCleared}"
 
 -- ============================================================================
@@ -3157,24 +3157,24 @@ private def runBudgetLifecycleTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   | .error err =>
     IO.println s!"[Z8J-001] SchedContext create+configure: error {reprStr err}"
   | .ok ((), stConfigured) =>
-    match stConfigured.objects[scId]? with
-    | some (.schedContext sc) =>
+    match stConfigured.getSchedContext? (SeLe4n.SchedContextId.ofObjId scId) with
+    | some sc =>
       IO.println s!"[Z8J-001] SchedContext create+configure: budget={sc.budget.val} period={sc.period.val} remaining={sc.budgetRemaining.val}"
-    | _ => IO.println s!"[Z8J-001] SchedContext create+configure: not found"
+    | none => IO.println s!"[Z8J-001] SchedContext create+configure: not found"
 
     -- Z8-J2: Bind thread to SchedContext, verify binding
     match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨tid, by decide⟩ stConfigured with
     | .error err =>
       IO.println s!"[Z8J-002] SchedContext bind: error {reprStr err}"
     | .ok ((), stBound) =>
-      let tcbBound := match stBound.objects[tid.toObjId]? with
-        | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scIdTyped
-        | _ => false
+      let tcbBound := match stBound.getTcb? tid with
+        | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scIdTyped
+        | none => false
       IO.println s!"[Z8J-002] SchedContext bind: bound={tcbBound}"
 
       -- Z8-J2 cont: Decrement budget via cbsBudgetCheck (simulating 1 tick)
-      match stBound.objects[scId]? with
-      | some (.schedContext scBound) =>
+      match stBound.getSchedContext? (SeLe4n.SchedContextId.ofObjId scId) with
+      | some scBound =>
         let (scTick1, preempt1) := SeLe4n.Kernel.cbsBudgetCheck scBound 10 1
         IO.println s!"[Z8J-003] budget after 1 tick: remaining={scTick1.budgetRemaining.val} preempted={preempt1}"
 
@@ -3194,7 +3194,7 @@ private def runBudgetLifecycleTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
         let budgetRestored := scReplenished.budgetRemaining.val != 0
         IO.println s!"[Z8J-006] after replenishment: remaining={scReplenished.budgetRemaining.val} restored={budgetRestored}"
 
-      | _ => IO.println s!"[Z8J-003] SchedContext lookup after bind: not found"
+      | none => IO.println s!"[Z8J-003] SchedContext lookup after bind: not found"
 
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds

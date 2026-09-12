@@ -705,92 +705,11 @@ holder whose binding is not a donation naming this caller. -/
   unfold returnDonationToCancelledCaller
   rw [h]
 
--- ============================================================================
--- `v0.35.4` — the cancelled caller's frame detach
--- ============================================================================
-
-/-- `v0.35.4`: the detach, decomposed — the identity (no reply link, no frame
-above, or a refused repair), or one `detachReplyFrameAbove` that succeeded. -/
-theorem detachCancelledCallerFrame_cases (st : SystemState) (tcb : TCB) :
-    detachCancelledCallerFrame st tcb = st ∨
-    ∃ rid, tcb.replyObject = some rid ∧
-      detachReplyFrameAbove st rid = .ok (detachCancelledCallerFrame st tcb) := by
-  unfold detachCancelledCallerFrame
-  split
-  · exact Or.inl rfl
-  · rename_i rid hRid
-    split
-    · rename_i st' h
-      exact Or.inr ⟨rid, hRid, h⟩
-    · exact Or.inl rfl
-
-/-- `v0.35.4`: the detach is the identity on a frame with nothing above it — the
-shape every cancellation of a head or bottom frame, and every successful reclaim,
-leaves. -/
-theorem detachCancelledCallerFrame_eq_self_of_no_frame_above (st : SystemState) (tcb : TCB)
-    (hNoFrameAbove : ∀ (rid : SeLe4n.ReplyId) (r : Reply) (above : SeLe4n.ReplyId),
-      tcb.replyObject = some rid → st.getReply? rid = some r →
-      r.next ≠ some (.frame above)) :
-    detachCancelledCallerFrame st tcb = st := by
-  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨rid, hRid, h⟩
-  · exact h
-  · rcases detachReplyFrameAbove_cases h with h' | ⟨r, above, _, hR, hN, _, _, _⟩
-    · exact h'
-    · exact absurd hN (hNoFrameAbove rid r above hRid hR)
-
-theorem detachCancelledCallerFrame_scheduler_eq (st : SystemState) (tcb : TCB) :
-    (detachCancelledCallerFrame st tcb).scheduler = st.scheduler := by
-  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
-  · rw [h]
-  · exact detachReplyFrameAbove_scheduler_eq h
-
-theorem detachCancelledCallerFrame_machine_eq (st : SystemState) (tcb : TCB) :
-    (detachCancelledCallerFrame st tcb).machine = st.machine := by
-  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
-  · rw [h]
-  · exact detachReplyFrameAbove_machine_eq h
-
-theorem detachCancelledCallerFrame_serviceRegistry_eq (st : SystemState) (tcb : TCB) :
-    (detachCancelledCallerFrame st tcb).serviceRegistry = st.serviceRegistry := by
-  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
-  · rw [h]
-  · exact detachReplyFrameAbove_serviceRegistry_eq h
-
-theorem detachCancelledCallerFrame_preserves_objects_invExt (st : SystemState) (tcb : TCB)
-    (hInv : st.objects.invExt) : (detachCancelledCallerFrame st tcb).objects.invExt := by
-  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
-  · rw [h]; exact hInv
-  · exact detachReplyFrameAbove_preserves_objects_invExt hInv h
-
-/-- The detach writes at most one Reply, so every stored TCB is where it was. -/
-theorem detachCancelledCallerFrame_tcb_eq (st : SystemState) (tcb : TCB)
-    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
-    (hk : st.objects[k]? = some (.tcb t0)) :
-    (detachCancelledCallerFrame st tcb).objects[k]? = some (.tcb t0) := by
-  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
-  · rw [h]; exact hk
-  · exact detachReplyFrameAbove_tcb_eq hInv h k t0 hk
-
-theorem detachCancelledCallerFrame_tcb_backward (st : SystemState) (tcb : TCB)
-    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
-    (hk : (detachCancelledCallerFrame st tcb).objects[k]? = some (.tcb t0)) :
-    st.objects[k]? = some (.tcb t0) := by
-  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
-  · rw [h] at hk; exact hk
-  · exact detachReplyFrameAbove_tcb_backward hInv h k t0 hk
-
-theorem detachCancelledCallerFrame_getTcb?_eq (st : SystemState) (tcb : TCB)
-    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId) :
-    (detachCancelledCallerFrame st tcb).getTcb? tid = st.getTcb? tid := by
-  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
-  · rw [h]
-  · exact detachReplyFrameAbove_getTcb?_eq hInv h tid
-
 /-- The detach writes a Reply, never a notification. -/
-theorem detachCancelledCallerFrame_preserves_ipcInvariant (st : SystemState) (tcb : TCB)
+theorem detachFrameAboveThreadReply_preserves_ipcInvariant (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
-    ipcInvariant (detachCancelledCallerFrame st tcb) := by
-  rcases detachCancelledCallerFrame_cases st tcb with h | ⟨_, _, h⟩
+    ipcInvariant (detachFrameAboveThreadReply st tcb) := by
+  rcases detachFrameAboveThreadReply_cases st tcb with h | ⟨_, _, h⟩
   · rw [h]; exact hIpc
   · intro oid ntfn hN
     exact hIpc oid ntfn (detachReplyFrameAbove_notification_backward hInv h oid ntfn hN)
@@ -814,7 +733,7 @@ theorem cancelIpcBlocking_scheduler_eq
     -- three `storeObject`s leave the scheduler alone, which is why the
     -- replenishment migration sits at the `OnCore` layer and not here.
     rw [consumeReplyLink_scheduler_eq, restoreToReadyCancelled_scheduler_eq,
-      detachCancelledCallerFrame_scheduler_eq, returnDonationToCancelledCaller_scheduler_eq]
+      detachFrameAboveThreadReply_scheduler_eq, returnDonationToCancelledCaller_scheduler_eq]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
 
@@ -839,7 +758,7 @@ theorem cancelIpcBlocking_machine_eq
     rw [restoreToReadyCancelled_machine_eq, removeFromAllEndpointQueues_machine_eq]
   | blockedOnReply _ _ =>
     rw [consumeReplyLink_machine_eq, restoreToReadyCancelled_machine_eq,
-      detachCancelledCallerFrame_machine_eq, returnDonationToCancelledCaller_machine_eq]
+      detachFrameAboveThreadReply_machine_eq, returnDonationToCancelledCaller_machine_eq]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_machine_eq, removeFromAllNotificationWaitLists_machine_eq]
 
@@ -915,7 +834,7 @@ theorem cancelIpcBlocking_serviceRegistry_eq
     rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllEndpointQueues_serviceRegistry_eq]
   | blockedOnReply _ _ =>
     rw [consumeReplyLink_serviceRegistry_eq, restoreToReadyCancelled_serviceRegistry_eq,
-      detachCancelledCallerFrame_serviceRegistry_eq,
+      detachFrameAboveThreadReply_serviceRegistry_eq,
       returnDonationToCancelledCaller_serviceRegistry_eq]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllNotificationWaitLists_serviceRegistry_eq]
@@ -1026,7 +945,7 @@ theorem cancelIpcBlocking_lifecycle_eq
   | blockedOnReply _ _ =>
     rw [consumeReplyLink_lifecycle_eq, restoreToReadyCancelled_lifecycle_eq,
       returnDonationToCancelledCaller_none st tid tcb hNoDonation,
-      detachCancelledCallerFrame_eq_self_of_no_frame_above st tcb hNoFrameAbove]
+      detachFrameAboveThreadReply_eq_self_of_no_frame_above st tcb hNoFrameAbove]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_lifecycle_eq, removeFromAllNotificationWaitLists_lifecycle_eq]
 
@@ -1222,7 +1141,10 @@ theorem restoreToReady_blockingServer_subgraph
         show (st.objects.insert tid.toObjId _).get? t.toObjId = _
         rw [hEq]
         exact RobinHood.RHTable.getElem?_insert_self _ tid.toObjId _ hObjInv
-      rw [hRRObj]
+      -- `blockingServer` discriminates through `getTcb?`; this hypothesis is a
+      -- *value* at one key rather than a state-to-state congruence, so it
+      -- crosses to accessor form through `getTcb?_eq_some_iff`.
+      rw [(SystemState.getTcb?_eq_some_iff _ t _).mpr hRRObj]
   · -- t.toObjId ≠ tid.toObjId: lookup matches pre-state.
     right
     unfold PriorityInheritance.blockingServer
@@ -1237,7 +1159,7 @@ theorem restoreToReady_blockingServer_subgraph
         have hNe : ¬(tid.toObjId == t.toObjId) = true := by
           intro h; apply hEq; exact (beq_iff_eq.mp h).symm
         exact RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId t.toObjId _ hNe hObjInv
-    rw [hRRObj]
+    rw [SystemState.getTcb?_congr_at hRRObj]
 
 /-- WS-RC R5.B.2 / Phase Q1: `restoreToReady` preserves `blockingAcyclic`.
 
@@ -1280,8 +1202,9 @@ theorem ensureRunnable_blockingServer_eq
         = PriorityInheritance.blockingServer st t := by
   intro t
   unfold PriorityInheritance.blockingServer
-  rw [show (ensureRunnable st tid).objects[t.toObjId]? = st.objects[t.toObjId]? from
-        congrArg (fun o => o[t.toObjId]?) (ensureRunnable_objects_eq st tid)]
+  rw [SystemState.getTcb?_congr_at
+        (show (ensureRunnable st tid).objects[t.toObjId]? = st.objects[t.toObjId]? from
+          congrArg (fun o => o[t.toObjId]?) (ensureRunnable_objects_eq st tid))]
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase Q2: computeMaxWaiterPriority frame for ensureRunnable
@@ -1308,7 +1231,7 @@ theorem ensureRunnable_preserves_computeMaxWaiterPriority
 theorem restoreIncomingContext_objects_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).objects = st.objects := by
-  unfold restoreIncomingContext
+  unfold restoreIncomingContext SystemState.getTcb?
   split
   · rfl
   · rename_i obj _
@@ -1319,7 +1242,7 @@ theorem restoreIncomingContext_objects_eq
 theorem restoreIncomingContext_objectIndex_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).objectIndex = st.objectIndex := by
-  unfold restoreIncomingContext
+  unfold restoreIncomingContext SystemState.getTcb?
   split
   · rfl
   · rename_i obj _
@@ -1350,7 +1273,7 @@ theorem saveOutgoingContext_lookup_equiv
               (saveOutgoingContext st) objId := by
   intro objId
   unfold PriorityInheritance.computeMaxWaiterPriority_lookup_equiv
-  unfold saveOutgoingContext
+  unfold saveOutgoingContext SystemState.getTcb?
   cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
   | none => left; simp only []
   | some outTid =>
@@ -1396,7 +1319,7 @@ theorem saveOutgoingContext_getSchedContext?_eq
     (st : SystemState) (scId : SeLe4n.SchedContextId)
     (hObjInv : st.objects.invExt) :
     (saveOutgoingContext st).getSchedContext? scId = st.getSchedContext? scId := by
-  unfold SystemState.getSchedContext? saveOutgoingContext
+  unfold SystemState.getSchedContext? saveOutgoingContext SystemState.getTcb?
   cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
   | none => simp only []
   | some outTid =>
@@ -1436,7 +1359,7 @@ theorem saveOutgoingContext_getSchedContext?_eq
     `objectIndex`. -/
 theorem saveOutgoingContext_objectIndex_eq (st : SystemState) :
     (saveOutgoingContext st).objectIndex = st.objectIndex := by
-  unfold saveOutgoingContext
+  unfold saveOutgoingContext SystemState.getTcb?
   -- saveOutgoingContext returns either st (in three branches) or a record-with
   -- on objects only.  In every branch, .objectIndex agrees with st.objectIndex.
   split
@@ -1451,7 +1374,7 @@ theorem chooseThread_state_eq (st : SystemState) (optTid : Option SeLe4n.ThreadI
     (stChoose : SystemState) (hChoose : chooseThread st = .ok (optTid, stChoose)) :
     stChoose = st := by
   unfold chooseThread chooseThreadOnCore at hChoose
-  cases hPick : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId)
+  cases hPick : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore bootCoreId)
                                    (st.scheduler.activeDomainOnCore bootCoreId) with
   | error _ => simp [hPick] at hChoose
   | ok best =>
@@ -1476,7 +1399,7 @@ theorem schedule_lookup_equiv
   -- We show: st'.objects = (saveOutgoingContext st).objects (since the post-saveOutgoingContext
   -- state's objects survive through dequeue/restoreIncomingContext/setCurrentThread unchanged).
   -- Then defer to saveOutgoingContext_lookup_equiv.
-  unfold schedule at hOk
+  unfold schedule SystemState.getTcb? at hOk
   cases hChoose : chooseThread st with
   | error _ => simp [hChoose] at hOk
   | ok pair =>
@@ -1530,7 +1453,7 @@ theorem schedule_getSchedContext?_eq
     (hObjInv : st.objects.invExt)
     (hOk : schedule st = .ok ((), st')) :
     st'.getSchedContext? scId = st.getSchedContext? scId := by
-  unfold schedule at hOk
+  unfold schedule SystemState.getTcb? at hOk
   cases hChoose : chooseThread st with
   | error _ => simp [hChoose] at hOk
   | ok pair =>
@@ -1579,7 +1502,7 @@ theorem schedule_getSchedContext?_eq
 theorem schedule_objectIndex_eq
     (st st' : SystemState) (hOk : schedule st = .ok ((), st')) :
     st'.objectIndex = st.objectIndex := by
-  unfold schedule at hOk
+  unfold schedule SystemState.getTcb? at hOk
   cases hChoose : chooseThread st with
   | error _ => simp [hChoose] at hOk
   | ok pair =>
@@ -1705,12 +1628,13 @@ theorem resumeThread_preserves_blockingAcyclic
       left
       unfold PriorityInheritance.blockingServer
       obtain ⟨tcb', hLook, hIpc⟩ := hAtTid
-      rw [show st'.objects[t.toObjId]? = some (.tcb tcb') from by rw [hTEq]; exact hLook]
+      rw [show st'.getTcb? t = some tcb' from by
+            unfold SystemState.getTcb?; rw [hTEq]; rw [hLook]]
       simp [hIpc]
     · -- Elsewhere: lookup matches pre-state.
       right
       unfold PriorityInheritance.blockingServer
-      rw [hOther t hTEq]
+      rw [SystemState.getTcb?_congr_at (hOther t hTEq)]
   · -- Object-index preservation.
     exact congrArg List.length hObjIdx
 
@@ -1823,7 +1747,7 @@ theorem cancelIpcBlocking_preserves_objects_invExt
   | blockedOnReply _ _ =>
     exact consumeReplyLink_preserves_objects_invExt _ _ _
       (restoreToReadyCancelled_invExt _ _
-        (detachCancelledCallerFrame_preserves_objects_invExt _ tcb
+        (detachFrameAboveThreadReply_preserves_objects_invExt _ tcb
           (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv)))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_invExt _ _
@@ -1966,16 +1890,16 @@ theorem cancelIpcBlocking_tcb_lookup
       returnDonationToCancelledCaller_tcb_lookup st tid tcb hInv k t0 hPre
     have hInvR := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
     -- `v0.35.4`: the frame detach writes at most a Reply, so the TCB is untouched.
-    have hLD := detachCancelledCallerFrame_tcb_eq _ tcb hInvR k t₀ hL0
-    have hInvD := detachCancelledCallerFrame_preserves_objects_invExt _ tcb hInvR
+    have hLD := detachFrameAboveThreadReply_tcb_eq _ tcb hInvR k t₀ hL0
+    have hInvD := detachFrameAboveThreadReply_preserves_objects_invExt _ tcb hInvR
     obtain ⟨t₁, hL1, hAff1⟩ :=
       restoreToReadyCancelled_tcb_lookup
-        (detachCancelledCallerFrame (returnDonationToCancelledCaller st tid tcb) tcb) tid k _
+        (detachFrameAboveThreadReply (returnDonationToCancelledCaller st tid tcb) tcb) tid k _
         hInvD hLD
     obtain ⟨t₂, hL2, hAff2⟩ :=
       consumeReplyLink_tcb_lookup
         (restoreToReadyCancelled
-          (detachCancelledCallerFrame (returnDonationToCancelledCaller st tid tcb) tcb) tid)
+          (detachFrameAboveThreadReply (returnDonationToCancelledCaller st tid tcb) tcb) tid)
         tid tcb k t₁ (restoreToReadyCancelled_invExt _ tid hInvD) hL1
     exact ⟨t₂, hL2, ((hAff2.trans hAff1).trans hAff0)⟩
   | blockedOnNotification _ =>
@@ -2072,22 +1996,22 @@ theorem cancelIpcBlocking_getTcb?_none
   | blockedOnReply _ _ =>
     show (consumeReplyLink
       (restoreToReadyCancelled
-        (detachCancelledCallerFrame (returnDonationToCancelledCaller st tid tcb) tcb) tid)
+        (detachFrameAboveThreadReply (returnDonationToCancelledCaller st tid tcb) tcb) tid)
       tid tcb).getTcb? tid = none
     rw [returnDonationToCancelledCaller_eq_self_of_getTcb?_none st tid tcb hT]
     -- `v0.35.4`: the frame detach writes at most a Reply, so the victim's key
     -- still holds no TCB after it.
-    have hTD : (detachCancelledCallerFrame st tcb).getTcb? tid = none := by
-      rw [detachCancelledCallerFrame_getTcb?_eq st tcb hInv tid]; exact hT
-    have hInvD : (detachCancelledCallerFrame st tcb).objects.invExt :=
-      detachCancelledCallerFrame_preserves_objects_invExt st tcb hInv
+    have hTD : (detachFrameAboveThreadReply st tcb).getTcb? tid = none := by
+      rw [detachFrameAboveThreadReply_getTcb?_eq st tcb hInv tid]; exact hT
+    have hInvD : (detachFrameAboveThreadReply st tcb).objects.invExt :=
+      detachFrameAboveThreadReply_preserves_objects_invExt st tcb hInv
     have hNoD : ∀ t : TCB,
-        (detachCancelledCallerFrame st tcb).objects[tid.toObjId]? ≠ some (.tcb t) := by
+        (detachFrameAboveThreadReply st tcb).objects[tid.toObjId]? ≠ some (.tcb t) := by
       intro t h
       have hSome := (SystemState.getTcb?_eq_some_iff _ tid t).mpr h
       rw [hTD] at hSome
       cases hSome
-    generalize hD : detachCancelledCallerFrame st tcb = sD at hTD hInvD hNoD ⊢
+    generalize hD : detachFrameAboveThreadReply st tcb = sD at hTD hInvD hNoD ⊢
     rw [restoreToReadyCancelled_eq_self_of_getTcb?_none sD tid hTD]
     unfold consumeReplyLink
     cases tcb.replyObject with
@@ -2272,11 +2196,11 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
       (removeFromAllEndpointQueues_preserves_ipcInvariant st tid hInv hIpc)
   | blockedOnReply _ _ =>
     have hInvR := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
-    have hInvD := detachCancelledCallerFrame_preserves_objects_invExt _ tcb hInvR
+    have hInvD := detachFrameAboveThreadReply_preserves_objects_invExt _ tcb hInvR
     exact consumeReplyLink_preserves_ipcInvariant _ tid tcb
       (restoreToReadyCancelled_invExt _ tid hInvD)
       (restoreToReadyCancelled_preserves_ipcInvariant _ tid hInvD
-        (detachCancelledCallerFrame_preserves_ipcInvariant _ tcb hInvR
+        (detachFrameAboveThreadReply_preserves_ipcInvariant _ tcb hInvR
           (returnDonationToCancelledCaller_preserves_ipcInvariant st tid tcb hInv hIpc)))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_preserves_ipcInvariant _ tid

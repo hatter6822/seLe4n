@@ -401,7 +401,7 @@ theorem sharedViewUnchanged_of_state_frames (ctx : LabelingContext) (observer : 
     sharedViewUnchanged ctx observer st st' := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · funext oid
-    simp only [projectObjects]
+    simp only [projectObjects, SystemState.getObject?]
     by_cases hObs : objectObservable ctx observer oid = true
     · rw [if_pos hObs, if_pos hObs, hObjects oid hObs]
     · simp only [Bool.not_eq_true] at hObs
@@ -866,6 +866,17 @@ theorem consumeCallerReply_confinedToCore (st st' : SystemState) (caller : SeLe4
     (SystemState.consumeCallerReply_scheduler_eq st st' caller rid hStep)
     (SystemState.consumeCallerReply_machine_eq st st' caller rid hStep)
 
+/-- **WS-RM (`v0.35.6`)**: the removal touches neither the scheduler nor the
+machine, so it is confined on every core — the detach writes one Reply and the
+consume two objects, none of them scheduler or machine state. -/
+theorem removeCallerReplyFrame_confinedToCore (st st' : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (c₀ : CoreId)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    observableSlotsConfinedToCore st st' c₀ :=
+  observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+    (removeCallerReplyFrame_scheduler_eq st st' caller rid hStep)
+    (removeCallerReplyFrame_machine_eq st st' caller rid hStep)
+
 theorem cleanupPreReceiveDonation_confinedToCore (st : SystemState)
     (receiver : SeLe4n.ThreadId) (c₀ : CoreId) :
     observableSlotsConfinedToCore st (cleanupPreReceiveDonation st receiver) c₀ :=
@@ -910,7 +921,7 @@ theorem setCurrentThread_confinedToBootCore (st st' : SystemState)
 theorem saveOutgoingContext_confinedToCore (st : SystemState) (c₀ : CoreId) :
     observableSlotsConfinedToCore st (saveOutgoingContext st) c₀ := by
   refine observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ ?_ ?_ <;>
-    unfold saveOutgoingContext <;>
+    unfold saveOutgoingContext SystemState.getTcb? <;>
     (split
      · rfl
      · split <;> rfl)
@@ -919,7 +930,7 @@ theorem saveOutgoingContext_confinedToCore (st : SystemState) (c₀ : CoreId) :
 theorem restoreIncomingContext_confinedToBootCore (st : SystemState) (tid : SeLe4n.ThreadId) :
     observableSlotsConfinedToCore st (restoreIncomingContext st tid) bootCoreId := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
-    unfold restoreIncomingContext <;> split <;>
+    unfold restoreIncomingContext SystemState.getTcb? <;> split <;>
     simp [MachineState.regsOnCore_setRegsOnCore_ne _ _ _ _ (Ne.symm hc)]
 
 
@@ -952,7 +963,7 @@ theorems carry for the same operation. -/
 theorem schedule_confinedToBootCore (st st' : SystemState)
     (hStep : SeLe4n.Kernel.schedule st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
-  unfold SeLe4n.Kernel.schedule at hStep
+  unfold SeLe4n.Kernel.schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pair =>
@@ -989,7 +1000,7 @@ core's run queue, then `schedule`). -/
 theorem handleYield_confinedToBootCore (st st' : SystemState)
     (hStep : SeLe4n.Kernel.handleYield st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
-  unfold SeLe4n.Kernel.handleYield at hStep
+  unfold SeLe4n.Kernel.handleYield SystemState.getTcb? at hStep
   cases hCur : st.scheduler.currentOnCore bootCoreId with
   | none => simp [hCur] at hStep
   | some tid =>
@@ -1005,7 +1016,7 @@ the boot core's run queue and delegates to `schedule`. -/
 theorem timerTick_confinedToBootCore (st st' : SystemState)
     (hStep : SeLe4n.Kernel.timerTick st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
-  unfold SeLe4n.Kernel.timerTick at hStep
+  unfold SeLe4n.Kernel.timerTick SystemState.getTcb? at hStep
   cases hCur : st.scheduler.currentOnCore bootCoreId with
   | none =>
     simp only [hCur, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -1065,7 +1076,7 @@ theorem notificationSignal_confinedToBootCore (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hStep : SeLe4n.Kernel.notificationSignal notificationId badge st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
-  unfold SeLe4n.Kernel.notificationSignal at hStep
+  unfold SeLe4n.Kernel.notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -1102,7 +1113,7 @@ theorem notificationWait_confinedToBootCore (st st' : SystemState)
     (result : Option SeLe4n.Badge)
     (hStep : SeLe4n.Kernel.notificationWait notificationId waiter st = .ok (result, st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
-  unfold SeLe4n.Kernel.notificationWait at hStep
+  unfold SeLe4n.Kernel.notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -1158,7 +1169,7 @@ theorem endpointSendDual_confinedToBootCore (st st' : SystemState)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -1259,7 +1270,7 @@ theorem endpointReceiveDual_confinedToBootCore (st st' : SystemState)
     (replyId : Option SeLe4n.ReplyId)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -1390,7 +1401,7 @@ theorem endpointCall_confinedToBootCore (st st' : SystemState)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -1484,7 +1495,7 @@ theorem endpointReply_confinedToBootCore (st st' : SystemState)
               refine observableSlotsConfinedToCore_trans hStoreC ?_
               refine observableSlotsConfinedToCore_trans
                 (ensureRunnable_confinedToBootCore st1 target) ?_
-              exact consumeCallerReply_confinedToCore _ st' target rid bootCoreId hStep
+              exact removeCallerReplyFrame_confinedToCore _ st' target rid bootCoreId hStep
             · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep
               subst hEq
@@ -1527,7 +1538,7 @@ theorem endpointReplyRecv_confinedToBootCore (st st' : SystemState)
                   bootCoreId := by
                 split at hConsume
                 · next rid _ =>
-                  exact consumeCallerReply_confinedToCore _ st3 replyTarget rid bootCoreId hConsume
+                  exact removeCallerReplyFrame_confinedToCore _ st3 replyTarget rid bootCoreId hConsume
                 · simp only [Except.ok.injEq, Prod.mk.injEq] at hConsume
                   exact observableSlotsConfinedToCore_of_eq bootCoreId hConsume.2.symm
               split at hStep
@@ -1585,7 +1596,7 @@ theorem cspaceInsertSlot_confinedToCore (st st' : SystemState) (dst : CSpaceAddr
 theorem cspaceDeleteSlotCore_confinedToCore (st st' : SystemState) (addr : CSpaceAddr)
     (c₀ : CoreId) (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
-  unfold cspaceDeleteSlotCore at hStep
+  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -1721,7 +1732,7 @@ reference map. -/
 theorem cspaceRevoke_confinedToCore (st st' : SystemState) (addr : CSpaceAddr) (c₀ : CoreId)
     (hStep : SeLe4n.Kernel.cspaceRevoke addr st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
-  unfold SeLe4n.Kernel.cspaceRevoke at hStep
+  unfold SeLe4n.Kernel.cspaceRevoke SystemState.getCNode? at hStep
   cases hL : cspaceLookupSlot addr st with
   | error e => simp [hL] at hStep
   | ok pair =>
@@ -1758,7 +1769,7 @@ theorem cspaceMutate_confinedToCore (st st' : SystemState) (addr : CSpaceAddr)
     (rights : AccessRightSet) (badge : Option SeLe4n.Badge) (c₀ : CoreId)
     (hStep : SeLe4n.Kernel.cspaceMutate addr rights badge st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
-  unfold SeLe4n.Kernel.cspaceMutate at hStep
+  unfold SeLe4n.Kernel.cspaceMutate SystemState.getCNode? at hStep
   cases hL : cspaceLookupSlot addr st with
   | error e => simp [hL] at hStep
   | ok pair =>
@@ -1878,7 +1889,7 @@ theorem registerService_confinedToCore (st st' : SystemState) (reg : ServiceRegi
     observableSlotsConfinedToCore st st' c₀ := by
   refine observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
     (registerService_preserves_scheduler st st' reg hStep) ?_
-  unfold registerService at hStep
+  unfold registerService SystemState.getObject? at hStep
   split at hStep
   · cases hStep
   · split at hStep
@@ -2637,7 +2648,7 @@ theorem updateObjectAt_updateLock_preserves_projectObjects (ctx : LabelingContex
   | none => rfl
   | some obj =>
     funext o
-    simp only [projectObjects]
+    simp only [projectObjects, SystemState.getObject?]
     by_cases hObs : objectObservable ctx observer o = true
     · rw [if_pos hObs, if_pos hObs]
       simp only [RHTable_getElem?_eq_get?]

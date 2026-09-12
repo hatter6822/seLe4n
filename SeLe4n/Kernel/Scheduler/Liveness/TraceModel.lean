@@ -105,11 +105,11 @@ def stepPost (step : SchedulerStep) (st : SystemState) : Except KernelError Syst
   | .processReplenishmentsDue currentTime =>
     let (rq', dueIds) := (st.scheduler.replenishQueueOnCore bootCoreId).popDue currentTime
     let st' := dueIds.foldl (fun acc scId =>
-      match acc.objects[scId.toObjId]? with
-      | some (.schedContext sc) =>
+      match acc.getSchedContext? scId with
+      | some sc =>
         let sc' := processReplenishments sc currentTime
         { acc with objects := acc.objects.insert scId.toObjId (.schedContext sc') }
-      | _ => acc
+      | none => acc
     ) { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq' }
     .ok st'
   | .ipcTimeoutTick scId =>
@@ -231,9 +231,9 @@ theorem budget_available_when_positive
     semantics-preserving under the invariant. -/
 def resolveEffectivePriority (st : SystemState) (tid : ThreadId)
     : Option (Priority × Deadline × DomainId) :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) => some (effectiveSchedParams st tcb)
-  | _ => none
+  match st.getTcb? tid with
+  | some tcb => some (effectiveSchedParams st tcb)
+  | none => none
 
 /-- D5-C: Count threads in the run queue with effective priority ≥ target's
 effective priority in the same domain. -/
@@ -255,17 +255,17 @@ def maxBudgetInBand (st : SystemState) (targetPrio : Priority)
     match resolveEffectivePriority st otherTid with
     | some (p, _, d) =>
       if d.val = targetDomain.val && p.val ≥ targetPrio.val then
-        match st.objects[otherTid.toObjId]? with
-        | some (.tcb otherTcb) =>
+        match st.getTcb? otherTid with
+        | some otherTcb =>
           match otherTcb.schedContextBinding with
           | .bound scId | .donated scId _ =>
-            match st.objects[scId.toObjId]? with
-            | some (.schedContext sc) => Nat.max maxB sc.budget.val
-            | _ => maxB
+            match st.getSchedContext? scId with
+            | some sc => Nat.max maxB sc.budget.val
+            | none => maxB
           -- AC2-C: Unbound threads use the system default time-slice as their
           -- effective budget for liveness analysis.
           | .unbound => Nat.max maxB st.scheduler.configDefaultTimeSlice
-        | _ => maxB
+        | none => maxB
       else maxB
     | none => maxB
   ) 0
@@ -278,15 +278,15 @@ def maxPeriodInBand (st : SystemState) (targetPrio : Priority)
     match resolveEffectivePriority st otherTid with
     | some (p, _, d) =>
       if d.val = targetDomain.val && p.val ≥ targetPrio.val then
-        match st.objects[otherTid.toObjId]? with
-        | some (.tcb otherTcb) =>
+        match st.getTcb? otherTid with
+        | some otherTcb =>
           match otherTcb.schedContextBinding with
           | .bound scId | .donated scId _ =>
-            match st.objects[scId.toObjId]? with
-            | some (.schedContext sc) => Nat.max maxP sc.period.val
-            | _ => maxP
+            match st.getSchedContext? scId with
+            | some sc => Nat.max maxP sc.period.val
+            | none => maxP
           | .unbound => maxP
-        | _ => maxP
+        | none => maxP
       else maxP
     | none => maxP
   ) 0
@@ -379,15 +379,15 @@ def maxBudgetInBandOnCore (st : SystemState) (targetPrio : Priority)
     match resolveEffectivePriority st otherTid with
     | some (p, _, d) =>
       if d.val = targetDomain.val && p.val ≥ targetPrio.val then
-        match st.objects[otherTid.toObjId]? with
-        | some (.tcb otherTcb) =>
+        match st.getTcb? otherTid with
+        | some otherTcb =>
           match otherTcb.schedContextBinding with
           | .bound scId | .donated scId _ =>
-            match st.objects[scId.toObjId]? with
-            | some (.schedContext sc) => Nat.max maxB sc.budget.val
-            | _ => maxB
+            match st.getSchedContext? scId with
+            | some sc => Nat.max maxB sc.budget.val
+            | none => maxB
           | .unbound => Nat.max maxB st.scheduler.configDefaultTimeSlice
-        | _ => maxB
+        | none => maxB
       else maxB
     | none => maxB
   ) 0
@@ -407,15 +407,15 @@ def maxPeriodInBandOnCore (st : SystemState) (targetPrio : Priority)
     match resolveEffectivePriority st otherTid with
     | some (p, _, d) =>
       if d.val = targetDomain.val && p.val ≥ targetPrio.val then
-        match st.objects[otherTid.toObjId]? with
-        | some (.tcb otherTcb) =>
+        match st.getTcb? otherTid with
+        | some otherTcb =>
           match otherTcb.schedContextBinding with
           | .bound scId | .donated scId _ =>
-            match st.objects[scId.toObjId]? with
-            | some (.schedContext sc) => Nat.max maxP sc.period.val
-            | _ => maxP
+            match st.getSchedContext? scId with
+            | some sc => Nat.max maxP sc.period.val
+            | none => maxP
           | .unbound => maxP
-        | _ => maxP
+        | none => maxP
       else maxP
     | none => maxP
   ) 0

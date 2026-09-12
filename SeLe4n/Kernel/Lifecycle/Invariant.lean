@@ -497,7 +497,7 @@ theorem retypeFromUntyped_ok_childId_ne
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     childId ≠ untypedId := by
   intro h
-  unfold retypeFromUntyped at hStep
+  unfold retypeFromUntyped SystemState.getObject? at hStep
   cases hObj : st.objects[untypedId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -530,7 +530,7 @@ theorem retypeFromUntyped_ok_childId_fresh
   have hNe : childId ≠ untypedId :=
     retypeFromUntyped_ok_childId_ne st st' authority untypedId childId newObj allocSize hStep
   have hStep' := hStep
-  unfold retypeFromUntyped at hStep'
+  unfold retypeFromUntyped SystemState.getObject? at hStep'
   simp only [hObj] at hStep'
   -- S4-B: discharge capacity check
   have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by

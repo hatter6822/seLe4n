@@ -1544,30 +1544,26 @@ private theorem blockingChain_objects_congr
   | zero => rfl
   | succ fuel' ih =>
     unfold PriorityInheritance.blockingChain
-    have hLookup : st'.objects[tid.toObjId]? = st.objects[tid.toObjId]? := by rw [hObj]
-    cases h : (st.objects[tid.toObjId]? : Option KernelObject) with
+    -- `blockingChain` walks through `getTcb?`, so the congruence it needs is the
+    -- accessor's frame and the case analysis is the accessor's two arms: the
+    -- six non-TCB constructors this proof used to enumerate are all the one
+    -- `none`.
+    have hLookup : st'.getTcb? tid = st.getTcb? tid := SystemState.getTcb?_frame hObj tid
+    cases h : st.getTcb? tid with
     | none => simp [hLookup, h]
-    | some obj =>
-      cases obj with
-      | tcb tcb =>
-        cases hIpc : tcb.ipcState with
-        | ready => simp [hLookup, h, hIpc]
-        | blockedOnSend _ => simp [hLookup, h, hIpc]
-        | blockedOnReceive _ => simp [hLookup, h, hIpc]
-        | blockedOnNotification _ => simp [hLookup, h, hIpc]
-        | blockedOnReply _ srv =>
-          cases srv with
-          | none => simp [hLookup, h, hIpc]
-          | some server =>
-            simp only [hLookup, h, hIpc]
-            exact congrArg (server :: ·) (ih server)
-        | blockedOnCall _ => simp [hLookup, h, hIpc]
-      | endpoint _ => simp [hLookup, h]
-      | notification _ => simp [hLookup, h]
-      | cnode _ => simp [hLookup, h]
-      | vspaceRoot _ => simp [hLookup, h]
-      | untyped _ => simp [hLookup, h]
-      | schedContext _ | reply _ => simp [hLookup, h]
+    | some tcb =>
+      cases hIpc : tcb.ipcState with
+      | ready => simp [hLookup, h, hIpc]
+      | blockedOnSend _ => simp [hLookup, h, hIpc]
+      | blockedOnReceive _ => simp [hLookup, h, hIpc]
+      | blockedOnNotification _ => simp [hLookup, h, hIpc]
+      | blockedOnReply _ srv =>
+        cases srv with
+        | none => simp [hLookup, h, hIpc]
+        | some server =>
+          simp only [hLookup, h, hIpc]
+          exact congrArg (server :: ·) (ih server)
+      | blockedOnCall _ => simp [hLookup, h, hIpc]
 
 /-- Frame lemma for `priorityInheritance_perCore`: depends on the entire
 object store *and* `objectIndex` (the latter feeds `blockingChain`'s

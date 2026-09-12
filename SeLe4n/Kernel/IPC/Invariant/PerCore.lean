@@ -31,15 +31,15 @@ SM4.D strictly *adds* the per-core layer SM5's per-core scheduler consumes.
 
 **AK7 typed-accessor discipline** (matching SM4.C): every per-core
 predicate routes its TCB lookups through the typed `getTcb?` accessor
-rather than a raw object-store projection keyed by `tid`, so the per-core
-layer adds zero `tid`-keyed raw-lookup sites (`RAW_LOOKUP_TID` unchanged)
-and grows `GETTCB_ADOPTION`.  The boot-core bridges therefore go through
-`getTcb?_eq_some_iff` (the per-core `getTcb?` form is equivalent to the
-legacy raw `= some (.tcb …)` object-store form).  The endpoint /
-notification predicates keep their raw `objects[oid]?` lookup (an
-`ObjId`, not a `tid`-keyed projection, so outside `RAW_LOOKUP_TID`) so
-they stay textually parallel to the single-core surface and their bridges
-close by `Iff.rfl`.
+rather than a raw object-store projection, growing `GETTCB_ADOPTION`.
+The boot-core bridges therefore go through `getTcb?_eq_some_iff` (the
+per-core `getTcb?` form is equivalent to the legacy raw
+`= some (.tcb …)` object-store form).  The endpoint / notification
+predicates keep their raw `objects[oid]?` lookup so they stay textually
+parallel to the single-core surface and their bridges close by
+`Iff.rfl`; they are propositions, so they sit in the census's diagnostic
+`STORE_READ_SPEC` population rather than the enforced `STORE_READ_CODE`
+one, which is **zero**.
 
 ## What this module provides
 

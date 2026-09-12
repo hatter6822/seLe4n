@@ -1,3 +1,997 @@
+## v0.35.15 — PR #895 review round 3: a domain written as an exclusion
+
+Seven findings across two review rounds, all verified against the code first,
+and all one defect: **the gate's *domain* spelled as a hand-written exclusion
+rather than derived.**  Round 2 named that class (*a recognised set is not a
+derived set*) and fixed it at the four sites the review pointed at.  Round 3
+found four more, each the same rule unswept onto a sibling.
+
+**The unsafe census scanned `*/src/**/*.rs`** — the crate libraries, and
+silently not the integration tests, `build.rs`, examples or benches that cargo
+also compiles.  `rust/sele4n-hal/tests/readiness_gate_after_mark.rs` carries a
+real `unsafe` block, so the reported 125 described a subset of the tree while
+reading as a measurement of it.  The set is derived now: **126 of 126
+justified** (114 blocks, 12 declarations).
+
+**Its declaration idiom accepted an ordinary block comment.**  `SAFETY_DECL`'s
+`\*` alternative matched a continuation line of any `/* … */`, so
+`/*\n * # Safety\n */` passed while rustdoc published nothing to the caller
+bound by the obligation — the fail-open direction, and the mirror image of
+`v0.35.12`'s own fix.  A heading counts now only from `///`, `//!`, a `/**` or
+`/*!` block, or Rust's `#[doc = "# Safety"]` attribute form, which publishes the
+identical section and had been rejected.
+
+**The store-read census read a binder as a result.**  `PROP_RESULT` was
+`:\s*Prop\b` over the whole signature, so
+`def step (proof : Prop) (st : SystemState) : SystemState` classified as
+Prop-valued and a raw store read in its body was filed `SPEC` — walking around
+the enforced `STORE_READ_CODE = 0` floor.  The terminal result type is parsed
+now (first `:` at bracket depth zero, last top-level arrow); the tree is still
+at zero under the stricter classifier, which is the measurement that no
+executable read was hiding there.
+
+**The reply-stack census filtered user names as compiler auxiliaries.**
+`"eq_".isPrefixOf` is true of a contributor's `eq_clearReply`, so such a
+definition was excluded from both derivations *before* its used constants were
+read and could write the stack unregistered.  A generated component carries the
+prefix plus a **numeral**; that shape is required now, and a generated form the
+test misses is reported rather than skipped.
+
+**And its chain-result check was a presence check.**  It asked
+`getUsedConstants` of the whole theorem type, so a registry entry could name a
+theorem taking `donationChainWellFormed st` as an unused *hypothesis* and
+concluding nothing.  The chain predicate must appear in the **conclusion** now,
+and must be a predicate rather than any `donationChain`-prefixed constant —
+`donationChainWitnessContext` is a record, not a claim.
+
+**The frontier's store half was direct, and the fix is bounded on purpose.**  A
+writer that builds `.reply { r with prev := none }` and hands it to a store
+helper was in neither derivation.  Making the store half transitive to match the
+constructor half reports **22 composites** — `endpointCall`, `endpointReply`,
+`dispatchWithCap` — which is the frontier this census deliberately stops at.  So
+each disjunct pairs a transitive side with a direct one: reached through helpers
+and stored directly, or built directly and stored through one hop.  Delegating
+both at once is outside the frontier, and `chainWriteFrontier` says so in the
+census's own output rather than letting the count read as a proof of absence.
+
+Every fix carries a witness that fails without it, mutation-verified in both
+directions on the live tree: the prefix-only auxiliary test fires the
+user-named-writer witness, and the direct-only store half fires the
+delegated-store witness.  `CLAUDE.md` / `AGENTS.md` record the class — *a
+predicate over a domain you filtered is a measurement of the filter*.
+
+No kernel transition changes; `maxLockSetSize` is unmoved at 22.
+
+Refs: #895
+Refs: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md row F.3
+
+## v0.35.14 — the middle-removal cost is the policy's, measured at depth three
+
+A question about WS-RM's stated residual — *"the removal does not preserve the
+donation accounting, and that is a stated cost rather than a defect"* — turned
+out to have two wrong halves: the cost is **larger** than the statement said,
+and the justification for accepting it rested on a claim about source this
+repository does not vendor.
+
+**The cost belongs to `severAtCut`, and a depth-two witness cannot see it.**
+`detachReplyFrameAbove` writes `above.prev := none`, so every frame *below* a cut
+leaves the context's reply stack.  `§3.20` measures a **two**-frame stack, whose
+lower frame is its bottom — there `severAtCut` and the ordinary
+doubly-linked-list splice write the same value into the frame above, so the
+witness was measuring a shape both policies share and the cost read as inherent
+to removing a middle frame.  It is not.  `tests/SmpIpcSuite.lean` **§3.22** is
+the depth-three witness, built by pushing the live `donateSchedContext` twice:
+the frames below the cut leave the stack, the reservation settles `.bound` on a
+thread strictly *inside* the chain, its owner is left `.unbound` two hops
+outside the cut, and the **same stack unwound in order** delivers it outward
+still owed.  Three frames is the shallowest stack on which any of that is
+visible.  Seventeen assertions, including the payoff half — a frame cut off the
+stack carries no `.head` link, so its own caller can still be answered and the
+frame is freed outright, which is why the policy pins no object.
+
+**The justification was false, and it was checked rather than argued.**  Three
+docstrings asserted that severing is seL4-MCS's structural answer (*"`reply_remove_tcb`
+on a non-head frame breaks the stack at it"*), and the policy inductive's premise
+read *"`Reply` carries `prev` and no `next`, so a middle frame cannot be spliced
+out"* — which stopped being true at `v0.35.4`, when the stack became doubly
+linked.  Checked against upstream source, seL4-MCS **splices**: `reply_remove`'s
+non-head branch writes
+`REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
+reply->replyPrev`, so the frame above inherits the cut frame's own outward
+pointer and every frame below stays reachable from the head.  The link
+orientation this tree assumes (`next` toward the head/context, `prev` outward)
+was confirmed to match, which is what makes that reading sound.
+
+So `severAtCut` is a **divergence** from upstream, not an inheritance of it — the
+reverse of what the tree said for eight cuts — and the divergence is what §3.22
+measures.  The conflation that let it survive: a `reply_remove_tcb` reference
+naming an operation's *shape* was read as evidence about what upstream *writes*.
+
+What carries the decision instead is an in-tree fact: **this kernel pops on the
+recorded server's binding** (`endpointReplyServerDonation?`), not on whether the
+answered frame heads a context, and `severAtCut` is exactly what keeps those two
+equivalent.  Splicing re-heads a frame whose recorded server is by then
+`.unbound`, so answering it runs no pop, `Reply.consumed` keeps a head's links,
+and the state is a consumed frame heading a context — what
+`replyStackOuterCaller?_of_consumed_frame` refuses and what `v0.35.4` closed.
+The three *stated* pre-state coherence hypotheses
+(`replyStackHeadIsAnsweredReply`, `replyDonationOwnerIsAnsweredCaller`,
+`answeredHeadContextIsServerDonation`) are that equivalence in the form their
+consumers need, and no invariant in this tree entails them.
+
+`CancelledMiddleCallerPolicy` gains a third constructor, **`spliceOutTheCut`**,
+so upstream's answer — the candidate the doubly linked stack made available here
+— is named rather than absent; `cancelledMiddleCallerPolicy` still reads `.severAtCut` and every
+theorem over it is unchanged.  Recovering the accounting means moving the pop's
+*trigger* to head-ness and its *source* to `SchedContext.boundThread` — a
+workstream, registered in `docs/REGISTERED_DEBT.md` table C with owner **WS-CB**
+and closure target **before v1.0.0**, with two interim contracts: new code must
+not read a successful pop as evidence the context reached its owner, and v1.0.0
+must not claim seL4-MCS reply-stack semantics at chain depth ≥ 3.  That
+table's closing claim (*"every one strengthens a surface that is already
+correct"*) is corrected in the same cut, since the new row is neither a
+soundness gap nor a strengthening.
+
+No transition changes; no proof is weakened; `maxLockSetSize` is unmoved at 22.
+
+Refs: docs/REGISTERED_DEBT.md table C (donation accounting at depth ≥ 3)
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md §9
+
+## v0.35.13 — PR #895 review round 2: a recognised set is not a derived set
+
+Five findings, all verified against the code first.  One is a defect in the
+kernel model; four are the same defect in four gates, and the cut treats them as
+one class rather than four patches.
+
+**The frozen reply left its own frame un-free.**  `Reply.consumed` keeps a
+frame's links only when it **heads** a scheduling context — the pop that follows
+clears them — and clears `prev` and `next` on every other frame.  `v0.35.12`'s
+frozen mirror stored `{ r with caller := none }` unconditionally, which is the
+head branch applied to every case: a non-head frame was left with no caller and
+its links intact, falsifying `Reply.wellFormed` there, failing `Reply.isFree`
+forever so the object could never be relinked or retyped, and diverging from the
+live transition under `frozenStateAgrees`.  It stores `r.consumed` now — the
+live function, which is where that question was already answered.
+
+**The gates: six of the eight findings across both rounds were one defect.**
+Every rule this project has written about scanners polices the *predicate* — what
+a gate asserts of an element it found.  None polices the *domain* — whether it
+found them all.  A predicate miss can fire on a real element; a domain miss is
+silent by construction, and the gate reports a number that reads as a
+measurement of absence.
+
+Where the domain **is** derivable, it is now derived:
+
+- `ReplyStackWriteCensus` asked "constructs **and** stores" of one body, which a
+  writer defeats by delegating the construction (`clearPrev r` builds it, the
+  caller stores it, neither is a candidate).  `reachesChainConstructor` follows
+  calls — walked backwards from the storing definitions and memoised, since
+  nearly everything reaches a constructor forwards — and the store half stays
+  direct, because the site is where the store happens.  Seven newly visible
+  definitions are classified with reasons; a planted split-conjunction witness
+  pins both directions.
+- Its auxiliary filter asks the environment (`isAuxRecursor`, `isRecCore`)
+  instead of matching name prefixes, which had already missed `casesOn`,
+  `recOn`, `below`, `brecOn` and `noConfusion`.
+
+Where the domain is a **coding convention over unbounded syntax**, there is no
+closed formulation — in text or in the environment — and the claim is fixed
+instead:
+
+- The store-read census recognises the qualified call (`RHTable.get? st.objects
+  k`, the third spelling in two rounds) and a `where` equation body, whose
+  signature never closed, so every read of such a declaration was filed as
+  specification and went unenforced.  It now prints `STORE_READ_SCOPE` beside
+  the number: *a floor, not a proof of absence.*
+- The unsafe-justification gate matches ABI qualifiers, so `pub unsafe extern
+  "C" fn` is a site rather than being skipped entirely, and keys it by its own
+  name.  Its `UNSAFE_KNOWN_FORMS` table makes the default branch explicit: an
+  `unsafe` matching no known form **fails the gate**, so the unrecognised set is
+  visible rather than assumed empty.
+
+Measured rather than asserted: **245** hand-written executable definitions
+mention the object-table projection — writing the store is what a transition
+does — so "never mention it" is not a stateable contract; and deriving a
+read-set from result types classified `FrozenMap.set`, a *write*, as a read.
+Both measurements are why the claim moved rather than the mechanism.
+
+One mechanical note, earned inside the remedy: `Name.isInternal` looks like the
+environment's answer to "did Lean generate this" and is true of the `_private.…`
+mangling, so adding it to the auxiliary filter would have excluded **every
+`private def` in the kernel** — the same class, inside its own fix.  The
+census's planted witness caught it before it built.
+
+All 33 frozen differential scenarios pass, including FO-031.
+
+## v0.35.12 — PR #895 review: a spelling is not a read, two idioms are not one, and the frozen surface was never in the closure
+
+Three findings from the review of PR #895, each verified against the code before
+being acted on, and each against a gate this range itself wrote.
+
+**A spelling is not a read** (`scripts/lean_store_read_census.py`).  The
+`STORE_READ_CODE` zero that `v0.35.8` made a `ZERO_METRICS` entry counted
+`s.objects[k]?` and not `s.objects.get? k` — *the same read*, since the
+`GetElem?` instance is `RHTable.get?` and this tree proves it by `rfl`
+(`objects_getElem?_eq_get?`).  Forty executable reads were in the method form,
+and one of them said so in its own docstring: `Concurrency.updateObjectAt` was
+written that way *"so the AK7-cascade raw-match floor stays at its v0.31.2
+baseline"*, which is choosing a spelling to evade a metric, and its second claim
+— that no typed accessor applied — was false, `getObject?` being the
+kind-agnostic one.  The census reads both spellings now and the tree is back to
+**zero** honestly:
+
+- `chooseBestRunnableEffective` reads `getTcb?` and `chooseThreadOnCore` passes
+  `getObject?`, with `chooseBestRunnableEffective_unbound_equiv` and the
+  `PerCoreChooseThread` inductions restated in accessor vocabulary; the seven-way
+  kind analyses collapse to the accessor's two arms, which is what an accessor is
+  for.
+- The **frozen** execution surface gains the accessor family it never had
+  (`FrozenSystemState.getObject?` and seven typed siblings in
+  `Model/FrozenState.lean`), `FrozenOps.frozenLookup*` are stated over them
+  rather than beside them, and twenty-nine frozen transitions stop discriminating
+  variants at the call site.  Where a site distinguishes *wrong kind* from
+  *absent* — two different error codes — it reads `getObject?` and keeps its
+  arms, since the typed accessor answers `none` to both and collapsing them would
+  change behaviour.
+- The exemption is now **per declaration**, not per file: `Model/State.lean` was
+  skipped whole, which is a 4800-line module that is not only accessors.
+  `ACCESSOR_BODIES` names the twenty-one bodies that *are* the accessors and the
+  store primitives, reconciled in both directions in **every** mode — `--rows`
+  included, since that is the mode Tier 0 calls.
+
+**Two idioms are not one** (`scripts/check_unsafe_block_justifications.py`).  The
+gate accepted a `// SAFETY:` comment on an `unsafe fn` *declaration* as a
+fallback, under the comment saying the two idioms are not interchangeable.  They
+address different readers — a comment is for the reviewer of the next line, a
+`# Safety` section is rustdoc for the caller who must discharge the obligation —
+so the fallback passed a declaration publishing no contract to the people bound
+by it.  All twelve declarations already carried a `# Safety` section, so removing
+it failed nothing; the self-test pins the separation in both directions, each
+case keeping the justification and writing it in the other kind's idiom.  The
+gate also emits the block and declaration counts, because prose cited a figure
+nothing produced and it had gone stale — `CLAUDE.md` said the HAL has thirteen
+`unsafe fn`s where it has ten.
+
+**The frozen surface was never in the closure**
+(`SeLe4n/Testing/ReplyStackWriteCensus.lean`).  WS-RM's closure statement —
+*every reply-stack write names a chain result* — held for every module either
+library root reaches, and `SeLe4n/Kernel/FrozenOps/` is reached by neither and is
+in no staged allowlist.  `FrozenKernelObject.reply` carries the live
+`SeLe4n.Kernel.Reply`, links and all, and `Model.freeze` copies a live state's
+Reply objects verbatim, so a frozen state taken mid-call-chain holds a real reply
+stack — and `frozenEndpointReply` was clearing a caller's Reply **bare**, which
+is WS-RM's own defect surviving on the surface nothing watched.  Bringing it in
+cost three things:
+
+- `frozenDetachReplyFrameAbove` / `…OrSelf`, the frozen `reply_remove`, and the
+  frozen reply runs the detach **before** the consume, in the order the live one
+  does, since the detach reads the link the consume clears.
+- `frozenLinkCallerReply` read `caller.isNone` where `Model.linkReply` reads
+  `Reply.isFree` — a fifth guard deciding one question differently, so a frame
+  still on a live reply stack was linkable there while the live kernel refuses
+  it.  It reads `isFree` now.
+- `ChainDiscipline` gains `mirrors`: `donationChainWellFormed` is a predicate on
+  `SystemState` and the frozen store is a `FrozenMap`, so requiring a
+  `donationChain…` result of a frozen site would require a theorem that cannot be
+  written, while accepting no record would be the silence the census refuses.  A
+  `mirrors` entry names the live twin, which must itself resolve to a stating
+  entry.  Seventeen sites, eight stating, three mirroring.
+
+Every gate change is mutation-verified on the live tree: the census's decisive
+self-test case keeps the read and changes only its spelling, and fails under the
+old regex; the registry's staleness check fires in `--rows`; the unsafe gate's
+two new cases keep the justification and swap the idiom; the reply-stack census
+rejects a freshly injected bare frozen consume; and the three new Tier 3
+negatives are silent on a clean tree and fire on a token-preserving mutation.
+One of them did not, the first time — a gap opening at a newline cannot cross a
+token that sits mid-line — which is how the flaw was found before it shipped; a
+sweep of every anchor in the file found no second instance.
+
+All 33 frozen differential scenarios pass, including `FO-031`, which is the
+agreement between the frozen reply and the live one.
+
+## v0.35.11 — The sweep, run over every resolved footprint
+
+`v0.35.10` closed the reply path's missing coverage and observed, without acting
+on it, that `lockSet_cancelDonationOnCore` had none either.  Leaving it there is
+this project's own sweep rule failing in the way it describes — *a fix applied
+at one site and not its siblings leaves the class open and reads as closed* — so
+the class is closed here instead, over **every** state-resolved footprint in the
+tree rather than the two a finding happened to name.
+
+### The census, and the one real gap it found
+
+Ten footprints resolve members from the state.  Nine carry a coverage layer
+tying each member to the resolver it comes from; `lockSet_cancelDonationOnCore`
+carried `lockSet_cancelDonationOnCore_correct` and `…_size_le` and nothing else,
+while every one of its *parametric* members already had a write-membership
+lemma.  So the relation the resolved layer exists to state — that the object a
+resolver names is a declared member, in the mode the operation needs — was
+stated nowhere for that footprint.
+
+Neither neighbour stands in for it, and the distinction is the point:
+`_correct` quantifies over the members that *are* present and constrains their
+`LockKind`, and `_size_le` bounds how many there are.  A footprint that resolved
+the wrong SchedContext, or dropped the donated arm's original owner, satisfies
+both unchanged.
+
+Six theorems close it: `lockSet_cancelDonationOnCore_covers_victim` (proved on
+both arms of the resolution, since the donor's binding is rewritten whether or
+not its TCB resolves), `…_covers_bindingSchedContext` and `…_covers_stateLevel`
+through `cancelBindingSc?`, `…_covers_donatedOwner` through
+`cancelDonatedOwner?`, and `…_covers_pop` and `…_covers_outerCaller_key` through
+`cancelDonationPopMembers?`.  The last is a declared **key** rather than a
+write, because the pop *reads* that TCB to check it is a waiting donor and
+rewrites the answered caller's binding, not its — a Tier 3 negative refuses the
+write spelling, verified silent on the clean tree and firing on a mutation that
+keeps the member and changes only its mode.
+
+`lockSet_notificationWaitOnCore` is the tenth and needs nothing: it takes no
+state and resolves nothing, so its parametric lemmas already are the statement
+at full arity.  That is a reasoned zero, recorded rather than left to look like
+the gap this cut just closed.
+
+No footprint, resolver or transition changed, so `maxLockSetSize` is unmoved at
+22 and every figure derived from it with it.  What changed is that the
+declarations are now checkable.  Six Tier 3 anchors, `SELE4N_SPEC.md` §8.12.8,
+`CLAUDE.md`, `AGENTS.md` and `CLAIM_EVIDENCE_INDEX.md`.
+
+Version bumped 0.35.10 -> 0.35.11.
+
+## v0.35.10 — The chain payoff was never unconditional, and the detach's member was declared but never proved written
+
+A second, deeper audit of the WS-RM cut (`v0.35.6`), reading the code rather than
+what the documents say about it.  The workstream's substance holds under every
+check the first pass made and several it did not: the removal's fail-closed
+arms, the fold's soundness on the refusal arm, the three live spines, the
+`.replyRecv` leg order, the total accessors over the pop, the axiom surface of
+every chain theorem, five Tier 3 negatives re-run under token-preserving
+mutation of the live tree, and the Tier 1 census re-run against a freshly
+injected bare reply-stack writer.  Two findings, both closed here, and both the
+same shape one level apart: a claim about a relation that only a presence had
+been established for.
+
+### 1. The composite's condition existed, was stated at the wrong state, and was carried twice
+
+`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` is not
+unconditional and never was.  It carries `hHeadReturned` — *if the answered
+frame heads a scheduling context, the recorded reply server holds that context*
+— and the WS-RM plan's own acceptance gate item 3 said the theorem "holds
+unconditionally, head case included".  It does not, and it cannot: the condition
+relates a reply frame to a **binding**, `donationOwnerValid` relates a caller's
+recorded reply target to no donation, and `donationChainWellFormed` carries no
+binding clause at all by its own *what is deliberately absent*.  It belongs to
+the same species as `replyDonationOwnerIsAnsweredCaller`,
+`replyStackHeadIsAnsweredReply` and `donationHolderIsReplyTarget`: a local
+coherence fact the model states because the invariants do not entail it.
+
+What was genuinely wrong is where it was stated.  Its sibling on the same
+transition, four hundred lines above it in the same file, states the analogous
+`hDonationReturned` on the **pre**-state and transports it across the reply leg
+inside the proof — the reply leg provably writes no `schedContextBinding`
+(`endpointReplyOnCore_donationOwnerFrameExcept`).  WS-RM's condition was written
+against the post-reply-leg state instead, pushing that transport onto every
+caller, and its docstring justified this by analogy with `hStackValid` — whose
+subject, `replyStackOuterCallerValid`, genuinely *is* a property of the state the
+pop runs on.  The cost was concrete and visible in the tree:
+`replyTransferOnCore_preserves_donationChainWellFormed` took **two** such
+hypotheses, `hHeadReturnedFault` and `hHeadReturned`, differing only in the
+message appearing inside the post-state expression — a message the question
+never reads.  At the pre-state they are one proposition, and a caller now
+supplies it once.
+
+Closed by naming it: `answeredHeadContextIsServerDonation st target`
+(`SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean`), stated on the
+pre-state, with the transport inside the composite's proof and both vacuity
+discharges named (`_of_no_caller`, `_of_no_reply`).  The three consumers take the
+named fact; the reply transfer's hypothesis count falls from two to one, which is
+a strictly stronger theorem.  `tests/SmpIpcSuite.lean` §3.21 now exhibits the
+condition's premises *and* its conclusion on a state built by the live
+operations, because a hypothesis nothing exhibits is indistinguishable from one
+that cannot hold.  A Tier 3 positive pins the pre-state spelling and a
+token-preserving negative refuses the post-state one — verified silent on the
+clean tree and firing on a mutation that keeps every token and moves only the
+state the binding is read at.
+
+The plan's acceptance item 3, `SELE4N_SPEC.md` §8.12.8 item 3, GitBook 12,
+`CLAUDE.md`, `AGENTS.md` and `CLAIM_EVIDENCE_INDEX.md` all say what the theorem
+actually proves.
+
+### 2. The detach's footprint member was declared, and nothing proved the transition writes it
+
+`.reply` and `.replyRecv` declare `answeredReplyFrameAbove? st target` for the
+frame the removal's detach rewrites, and the Tier 3 anchors over those footprints
+ask that the resolver *occur* in each definition.  That is a presence check.
+Every sibling member of the family has the relation as well —
+`lockSet_endpointReplyOnCore_covers_pop`, `…_covers_preReturn`,
+`…_covers_queueNeighbour`, `…_covers_cdt`, `…_covers_redonationOldHead` — and so
+does the **cancellation** path's own detach member, which has carried
+`lockSet_cancelIpcBlocking_detached_frame_above_write_mem` and
+`lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove` since `v0.35.4`.  The
+cut that added the reply-path member did not sweep that coverage onto it, which
+is this project's own rule failing in the way it describes: *when a fix names a
+relation, grep for every other place that asks it.*
+
+Closed with the four theorems the family's shape requires:
+`lockSet_endpointReply_frameAbove_write_mem` and
+`lockSet_replyRecv_frameAbove_write_mem` at full arity, and
+`lockSet_endpointReplyOnCore_covers_detachedFrameAbove` with its `.replyRecv`
+twin resolved.  No footprint changed, so `maxLockSetSize` is unmoved at 22 and
+every derived figure with it; what changed is that the declaration is now
+checkable.  Four Tier 3 anchors, `SELE4N_SPEC.md` §8.12.8 item 2, GitBook 12,
+`CLAUDE.md`, `AGENTS.md` and `CLAIM_EVIDENCE_INDEX.md`.
+
+### What the audit re-verified rather than changed
+
+The removal itself: `detachReplyFrameAbove`'s two refusal arms are reachable on a
+well-formed state — the chain invariant deliberately carries no converse for
+upward `.frame` links — and `detachReplyFrameAboveOrSelf_unreferenced` is what
+licenses folding them to the identity, on all three arms.  The reciprocity test
+before the one write is what confines the detach to the frame that genuinely sits
+above the answered one, so the authority a reply capability carries is not
+widened by it.  `removeCallerReplyFrame`'s `rid` comes from the answered thread's
+own `replyObject` at all three call sites.  The `.replyRecv` leg order is
+seL4-MCS's, with the receive leg's dequeue target read from the post-pop state.
+Every chain theorem depends on `propext`, `Classical.choice` and `Quot.sound`
+alone.
+
+Version bumped 0.35.9 -> 0.35.10.
+
+## v0.35.9 — WS-RM post-landing audit: a claimed gate that never existed, and five claims the code had moved out from under
+
+A deep audit of the WS-RM cut (`v0.35.6`) and the branch around it.  The
+workstream's own claims hold — one removal step, both spines calling it, the
+order pinned, the chain payoff unconditional, the `.replyRecv` pop between the
+legs, the runtime witness exercising the defect with a paired negative, and every
+Tier 3 negative firing under a token-preserving mutation of the live tree.  Five
+findings, all closed here; the fifth and sixth were found outside WS-RM — one in
+the assurance machinery the whole tree rests on, one in a lock-coverage docstring
+the tree had moved out from under.
+
+### 1. The removal does not preserve the donation accounting, and nothing said so
+
+Taking a caller out of the **middle** of a chain is destructive to which thread
+ends up owning the scheduling context.  On `owner → middle → server`, a delegate
+answering `owner` out of order leaves `owner` **`.unbound` permanently**, and the
+server's in-order reply then settles the context **`.bound` on `middle`** — where
+the in-order unwind would have left it `.donated … owner`, still owed outward.  A
+callee that delegates its caller's reply capability to a confederate can
+therefore capture that caller's reservation.
+
+This is seL4-MCS's own `reply_remove` answer — a non-head removal moves no
+scheduling context, and the later `reply_pop` donates to the head frame's own
+caller — and the authority required is already the authority to unblock the
+victim, so it is a **cost, not a defect**.  What was wrong is that it was
+unstated: before `v0.35.6` the same input wedged fail-closed, and WS-OD states
+the identical cost for the cancellation path (`severAtCut`: "the original owner's
+reservation ends up with that caller") while the reply path acquired it silently.
+
+It is now pinned rather than described.  `tests/SmpIpcSuite.lean` §3.20 asserts
+both halves — the owner left `.unbound` after the out-of-order removal, and the
+in-order contrast leaving the intermediate caller `.donated … owner` — so a cut
+that changed the accounting would fail rather than drift.  Stated in the WS-RM
+plan §9, `SELE4N_SPEC.md` §8.12.8 (now seven items), GitBook 12, `CLAUDE.md` and
+`AGENTS.md`.
+
+### 2. The census's primitive list was an enumeration standing in for a derivation
+
+`ReplyStackWriteCensus` derives its write-site set with
+`usesDirectly env chainWritePrimitives`, and that list is nine hand-written
+names.  `storeObject` takes a whole `KernelObject`, so a definition writing
+`{ r with next := … }` directly — calling none of the nine — was invisible to the
+census *and* to the registry it drives, which is the one mechanism this project
+points at for "every reply-stack write names a chain result".
+
+`primitiveCoverageViolations` is the independent second derivation: a project
+definition that builds a `Reply` or `SchedContext` record **and** reaches a store
+must be a primitive, a registered site, or carry a stated reason in
+`chainNeutralConstructors`.  It over-approximates on purpose — it sees *that* a
+record was built, not which field moved — so it fails closed, and narrowing it in
+the scanner would be the analysis-instead-of-contract shape this project has
+retired twice.
+
+Run on the live tree it yields exactly two exemptions, each a property of the
+code rather than a convention: `linkReply` writes `Reply.caller` only and is
+gated on `Reply.isFree` (no link in either direction), and
+`schedContextConfigure` rebuilds a SchedContext for its CBS parameters with
+`scReply` outside the update's assignment list.  Both directions are reconciled,
+so a stale exemption fails too.
+
+`censusWitnessDirectLinkWrite` is the witness, and it is asserted to be
+**invisible** to the name-based derivation and **visible** to the record-based
+one — a witness the old mechanism could see would assert nothing about the hole.
+Mutation-tested on the real tree: removing its exclusion fails the build with the
+offending declaration named.
+
+### 3. The claim-evidence index claimed more than the step proves
+
+Row: "the answered frame comes off its reply stack before its caller link is
+consumed, so no frame is left on a stack with its caller gone whichever way it
+leaves".  For a frame that *heads* a scheduling context the removal does neither:
+`Reply.consumed` keeps a head's links deliberately, because the pop validates the
+head by them, and the step's own statement is the relaxed
+`…_head_preserves_donationChainWellFormedExcept` — which the row's own evidence
+column already listed.  The claim is true of the **transition**, not of the step
+it named.  `SELE4N_SPEC.md` §8.12.8 item 3 had it right; only the index row was
+overstated, and it now says which artefact carries which half.
+
+### 4. A census docstring described a filter the filter does not implement
+
+`isDefinitionShaped`'s docstring said a `Prop`-valued `def` — "predicates,
+well-formedness conditions" — is excluded "by the type check the caller performs
+in `MetaM`".  `Meta.isProp` asks whether a declaration's **type is** a
+proposition, so it answers `false` for `def p : SystemState → Prop`, whose type
+is a `Type`.  The filter excludes a proof written with `def` and nothing else.
+
+Fail-closed (such a definition would be *reported* as an unregistered site, not
+skipped) and the tree contains none, so the mechanism is sound; the docstring was
+not.  It now says which shape each half excludes and which direction the gap
+fails in.
+
+### 5. A gate `CLAUDE.md` and the discharge index both named had never been written
+
+`CLAUDE.md` states the HAL's discipline — *every unsafe block carries a
+`// SAFETY:` comment* — and attributed its enforcement to
+`scripts/check_arm_arm_citations.sh`.
+`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` row F.3 names the same script as
+the **discharge mechanism** for findings DEEP-RUST-01/02, with
+`bash scripts/check_arm_arm_citations.sh` in its "reachability check" column.
+
+**That script does not exist and never did.**  No commit on any branch of this
+repository contains it, `scripts/test_tier0_hygiene.sh` never referenced it, and
+no SAFETY-comment gate existed anywhere in `scripts/`.  So the discipline was
+stated in the project's top-level guidance, recorded as discharging two audit
+findings, and checked by nothing — for four minor versions, across a branch that
+added 4191 lines of Rust to the HAL.
+
+`scripts/check_unsafe_block_justifications.py` is the gate, written against what
+the tree actually is and wired into Tier 0.  It asks **each site kind its own
+question**, because Rust has two idioms and they are not interchangeable: an
+`unsafe` **block** *discharges* an obligation locally and takes a `// SAFETY:`
+comment (what `clippy::undocumented_unsafe_blocks` reads); an `unsafe fn`
+**declaration** *publishes* one to its callers and takes a `# Safety` doc
+section.  The relation is the **contiguous comment run above the site** — a line
+carrying code ends it — rather than a fixed window, because a window is a
+presence check an unrelated comment satisfies.
+
+**The tree is at 125 of 125 justified.**  The fourteen sites that were not are
+fixed in this cut rather than baselined: three host cache tests, the DTB header
+read, the cross-core suspend upcall, five GIC SGI-table sites, the shootdown and
+reschedule handler registrations, and the timer and reschedule Lean entries.
+Each justification is derived from the code around it — most were the enclosing
+`unsafe fn`'s own `# Safety` contract discharging the callee's precondition, or
+an existing explanation that needed attaching to the block Rust's convention puts
+it on.  So the baseline is **empty** and the gate is a prohibition, not a floor.
+
+The ARM ARM citation count the original finding named — **50 of 125** — is
+reported beside the enforced figure and deliberately not enforced: requiring an
+architecture-manual citation of a raw-pointer dereference that touches no
+hardware would be a scanner matching a keyword, and deciding which sites touch
+hardware needs the body, which is the analysis-instead-of-a-contract shape this
+project has retired twice.
+
+The discharge row is corrected rather than deleted, because what it records is
+the finding: an evidence index whose reachability check names a command that does
+not exist is worse than an open row, since an open row is visible.
+
+**Three corrections the gate needed, all of the class this project documents.**
+Written as a presence check on `SAFETY`, it reported every correctly documented
+`unsafe fn` in the tree (34 sites) — the wrong token for that kind.  Given
+statement-scoped attachment to resolve four formatting cases, it reported 108 —
+the anchor was wrong, and the right answer was to move the comments in the code
+rather than make the scanner cleverer.  And it counted `unsafe fn(u8) -> T` in a
+type position as a site, which performs nothing.  Sixteen self-test cases, each
+token-preserving: the comment below the block, a statement between them, the
+token in a string literal, a `# Safety` section offered for a block, an
+`unsafe fn` pointer type, `unsafe impl`.  Mutation-tested on the live tree.
+
+### 6. Three stale claims in a lock-coverage docstring, from footprints that moved
+
+`SeLe4n/Kernel/InformationFlow/FineLockFlow.lean`'s SM8.D.5 umbrella theorem is
+the statement that an endpoint's write lock authorizes the link writes of every
+TCB in its queue — a security-relevant claim about lock coverage.  Its docstring
+carried three claims the tree had moved out from under, all from WS-OD's
+`v0.35.4` footprint rename and the ceiling raises after it:
+
+- it cited `lockSet_tcbSuspend_blocked_endpoint_write_mem` in the **present
+  tense** ("already says"), a theorem retired with the parametric
+  `lockSet_tcbSuspend` footprint it was about;
+- it described "the `lockSet_tcbSuspend_*_write_mem` family" as the live family,
+  and no member of it exists under that name;
+- and its "why the footprint is not simply widened" argument rested on
+  `maxLockSetSize` being **eleven** and the suspend footprint **nine**, "so the
+  two would fit exactly".  The ceiling is 22 and
+  `lockSet_tcbSuspendOnCore_size_le_sixteen` is the live bound, so the two fit
+  with room over and "exactly" is false.
+
+The conclusion the paragraph reaches is unaffected — the neighbour locks are
+redundant rather than unaffordable, which was always the load-bearing reason, and
+the paragraph's own closing sentence already said the decision does not rest on
+the arithmetic.  What is fixed is the prose: the retired names are described by
+what they were rather than cited as live, and the paragraph now quotes **neither**
+derived figure, pointing at the canonical ceiling sentence
+`scripts/check_lock_ceiling_figures.py` enforces instead.  That gate did not catch
+this and was right not to: `CLAUDE.md` deliberately lets narrative name an old
+value ("OD3.5 raised the ceiling to 11"), and the defect was a *live* arithmetic
+conclusion drawn from narrative figures — a shape the gate cannot see and a
+reader can.
+
+### Verified, not assumed
+
+- Every WS-RM Tier 3 negative fires under a token-preserving mutation of the live
+  tree: the removal's order swapped, the cross-core spine reverted to a bare
+  `consumeCallerReply`, and `.replyRecv`'s receive leg fed the pre-pop state.
+  Each paired positive goes silent on the same mutation.
+- `consumeCallerReply` has exactly one call site outside its own theorems —
+  inside `removeCallerReplyFrame` — read off the comment-free code view, and the
+  unqualified spelling does not resolve in either spine's namespace, so the
+  negatives are exact for the revert they exist to catch.
+- The reply arm's authority is capability-gated at the dispatch layer: the arm
+  requires `cap.target = .replyCap rid` and takes the answered thread from
+  `replyAnsweredCaller?`, so neither the victim nor the frame is caller-chosen.
+- `maxLockSetSize = 22` with `admissibleCriticalSection` at 15 µs and a uniform
+  60 µs envelope of 3960 µs — arithmetically consistent and gate-enforced.
+- 125 of 125 Rust `unsafe` sites carry a justification of the kind their form
+  calls for, enforced at zero from this cut.
+- Zero `sorry`, zero `axiom`, zero in-source TODO/FIXME; `lake build` clean;
+  `cargo clippy -D warnings` clean; `cargo fmt --check` clean; 1344 host Rust
+  tests and 112 conformance tests pass; the aarch64 cross build passes; every
+  multi-line Tier 3 anchor is declaration-bounded (zero unbounded gaps).
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md §9
+
+## v0.35.8 — AK7 reader hygiene: the executable residue is zero, and the floor is a prohibition
+
+Closes the `docs/REGISTERED_DEBT.md` §C row **AK7 reader hygiene, the executable
+residue** by finishing the migration rather than carrying it, and replaces the
+metric's rolling ceiling with a zero that regenerating the baseline cannot clear.
+
+`v0.35.7` split `RAW_LOOKUP_TID` into `STORE_READ_CODE` (raw object-store reads
+in the body of a declaration whose result is not a `Prop`) and `STORE_READ_SPEC`
+(everything else, diagnostic), and drove the kernel and platform trees to zero.
+It then registered the remaining **76** — 65 `Testing/MainTraceHarness.lean`
+trace bodies, 10 `Testing/InvariantChecks.lean` helpers, and one proof case
+split in `Platform/RPi5/ProofHooks.lean` — as post-v1.0.0 debt, held at a
+per-key inventory floor.  That is the superseded metric's own shape one
+population narrower, and it carried the superseded metric's own escape: a cut
+that exceeds a ceiling may re-anchor it, which `RAW_LOOKUP_TID` did four times
+in three days.
+
+**`STORE_READ_CODE` is now 0** and is enforced as a `ZERO_METRICS` entry beside
+`SORRY_COUNT` and `AXIOM_COUNT`.  Every raw store read left in the tree is
+either a proposition — which has no helper form, since `getTcb? k = none` holds
+for an absent key and a wrong-kinded object alike — or one of the typed
+accessors' own bodies in `SeLe4n/Model/State.lean`, which the census exempts by
+name.
+
+### The migration
+
+- **`SeLe4n/Testing/MainTraceHarness.lean`, 65 → 0.**  Every site was a
+  single-variant `match st.objects[k]? with | some (.tcb t) => … | _ => …`, so
+  each became the typed accessor with a two-arm match: `getTcb?`,
+  `getSchedContext?`, `getReply?`, `getEndpoint?`, `getUntyped?`, `getCNode?`.
+  Three `.map KernelObject.objectType` reads became `getObjectType?`
+  (definitional), and the trace-equivalence comparison stayed kind-agnostic
+  through `getObject?` (also definitional), because it compares whole objects
+  and the typed read would be weaker there.
+- **`SeLe4n/Testing/InvariantChecks.lean`, 10 → 0.**  The CSpace, capability
+  rights, VSpace ASID and ASID-table checks discriminate a variant and now read
+  it; `lifecycleMetadataChecks` and `checkLifecycleObjectTypeLockstep` are
+  variant-agnostic by intent and read `getObject?`.  One check strengthened: a
+  `.cnodeSlot` capability's backing is now `getCNode?`, since that capability
+  names the CNode it descends and a non-CNode target is not backed for the
+  purpose the check states.
+- **`SeLe4n/Platform/RPi5/ProofHooks.lean`, 1 → 0.**  The remaining read was a
+  bridge — `have hObj : st.objects[…]? = some (.tcb tcb)` — needed only because
+  `registerContextStableCheck_budget` and
+  `contextSwitchState_preserves_proofLayerInvariantBundle` took the store form
+  as a hypothesis.  Each has exactly one caller, so both hypotheses are restated
+  in the accessor vocabulary and the bridge moved inside the theorems, where it
+  belongs.  The hook's own eight-arm store split became the two-arm accessor
+  split its comment had claimed since `v0.35.7`.
+- **The golden fixture is byte-identical.**  That is the measurement, not an
+  assumption: the deferral's stated reason was that migrating the harness
+  "risks a fixture churn with no proof-correctness gain", and running
+  `lake exe sele4n` against `tests/fixtures/main_trace_smoke.expected` after the
+  migration shows no churn at all.
+
+### Two specification predicates went with them
+
+Found while fixing a linter warning the `v0.35.7` sweep left in
+`Platform/RPi5/RuntimeContract.lean`, and fixed rather than documented:
+
+- `budgetPositive` and `currentBudgetPositive` (`Kernel/Scheduler/Invariant.lean`)
+  read the store raw while their per-core twins `budgetPositiveOnCore` and
+  `currentBudgetPositiveOnCore` have used the typed accessors since SM4.C — one
+  question with two answers, with the boot-core one the worse.  Both now read
+  `getTcb?` / `getSchedContext?`, which is the same proposition: the seven
+  non-matching constructors and the absent key all map to the accessor's `none`.
+  `budgetPositive_subset` (`Scheduler/Operations/Preservation.lean`) restates
+  that body inline and follows.
+- `registerContextStableCheck_budget`'s proof is rewritten around
+  `SystemState.getTcb?_frame` / `getSchedContext?_frame`: the context switch
+  writes `machine` and `scheduler` only, so each post-state read frames back to
+  `st` and one two-arm case analysis serves the check and the predicate
+  together.
+
+`STORE_READ_SPEC` fell 4373 → 4365 as a side effect.  It remains unenforced in
+both directions, by design.
+
+### The gate
+
+- `STORE_READ_CODE` moved from the should-drop list into `ZERO_METRICS`.  A
+  ceiling invites the next cut that exceeds it to raise the ceiling; a zero can
+  only be relaxed by editing the gate's own list, which is visible and
+  reviewable.  The failure epilogue now says this in as many words, so a reader
+  is not told to re-anchor a baseline that will not help.
+- **The per-key inventory for this metric was deleted, not kept.**  At zero a
+  cardinality and a set say the same thing, and keeping both would be the
+  duplication hazard this project keeps paying for, inside the gate written to
+  close it.  What replaced it is the *relation*: the gate asserts that
+  `STORE_READ_CODE` equals the sum of its own `STORE_READ_CODE_SITE` rows, in
+  the baseline and in the current capture, so a hand-edited or truncated file
+  claiming "none" beside a live site row is refused as a gate defect.  The rows
+  are still emitted, because when the zero breaks they are what names the
+  offending `(file, declaration)` — the failure message prints them.
+- **The self-test grew a second case shape** (10 cases, all passing).  The two
+  claims are token-preserving with respect to different things, so the harness
+  asserts a different invariant for each: the six inventory cases hold every
+  scalar byte-identical, and the three census cases move the scalars while the
+  harness asserts the fixture is internally consistent.  The decisive case keeps
+  the baseline and the current value **equal at one** — everything a `:drop`
+  metric asks, and exactly what a zero floor must still reject.  A tenth case
+  covers the inconsistent capture.  The inert-mutation guard was verified to
+  fire on both shapes.
+
+### Metrics
+
+`RAW_MATCH_TOTAL` 50 → 44 (TCB 25 → 22, SchedContext 10 → 7); `RAW_SITE` pinned
+sites 45 → 39; `STORE_READ_CODE` 76 → **0**; `STORE_READ_SPEC` 4373 → 4365;
+`GETTCB_ADOPTION` 2369 → 2403, `GETSCHEDCTX_ADOPTION` 385 → 402,
+`GETENDPOINT_ADOPTION` 179 → 190, `GETUNTYPED_ADOPTION` 14 → 16,
+`GETCNODE_ADOPTION` 142 → 146, `GETVSPACEROOT_ADOPTION` 48 → 51.
+
+Refs: docs/REGISTERED_DEBT.md §C (AK7 reader hygiene, the executable residue)
+
+## v0.35.7 — Every kernel store read goes through a typed accessor, and the AK7 lookup floor stops being a ratchet
+
+**The raw object-store read is gone from executable kernel code.**  `SeLe4n/Kernel`
+and `SeLe4n/Platform` held **89** raw `st.objects[…]?` reads in transition bodies;
+they hold **none**.  Each one had a typed reader available and declined to use it:
+the variant-discriminating two-way matches became `getTcb?` / `getSchedContext?` /
+`getReply?` / `getEndpoint?` / `getCNode?` / `getVSpaceRoot?` / `getUntyped?`, the
+three-way ones (right variant / wrong kind / absent) became `getObject?`, and the
+type-only read became `getObjectType?`.  `lookupTcb` is now `getTcb?` behind its
+reserved-id refusal rather than a second spelling of the same store read, and
+`replyStackLinksAt?` reads `getObject?`.
+
+Six sites in `SeLe4n/Kernel` still match `.objects[`; every one is a **hypothesis
+binder or a result type** (`mkRetypeTarget`'s `hTypeMeta`, `bridgeSignatureWitness`'s
+antecedent), which is a proposition, not a read.  One in
+`Platform/RPi5/ProofHooks.lean` is a proof case split inside a `def` returning a
+record of proofs; it is recorded in place as the census's single known over-count
+rather than contorted to satisfy the scanner.
+
+**The migration is a simplification, not a translation.**  A raw variant match
+forces a proof to enumerate all eight `KernelObject` constructors; the accessor has
+already collapsed seven of them into its own `none`, so each such case analysis
+became two arms.  Sixteen eight-way splits went this way across `BlockingGraph`,
+`Preservation`, `PerCore`, `PerCoreInvariantSuite`, `RuntimeContract` and
+`Selection`.  `effectiveBucketPriority` carried a note deferring exactly this on
+the ground that it would "cascade through the entire scheduler invariant module
+without proof-correctness benefit"; the cascade was three sites in one file and all
+three got shorter.  The note is replaced by what was measured.
+
+**The object-table frame family is stated once.**  `getTcb?_congr_at` and its nine
+siblings (pointwise: a read depends on the table only at its own key) and the ten
+`…_frame` corollaries now sit in `SeLe4n/Model/State.lean` beside the accessors they
+are about.  The tree had answered that question in four places — a
+`getTcb?_congr_objects` in `Architecture/InvariantPerCore.lean` and another in
+`IPC/Invariant/PerCore.lean`, both `private` so neither could serve the other, a
+third in `IPC/Invariant/PerCoreBundlePreservation.lean`, and a
+`getSchedContext?_frame` spelled differently again in
+`Scheduler/PriorityInheritance/Compute.lean`.  The pointwise form comes first
+because that is the one a per-slot hypothesis supplies; the frame is its corollary.
+
+### The AK7 lookup floor was measuring the wrong population
+
+`RAW_LOOKUP_TID` is retired and replaced by `STORE_READ_CODE` (enforced) and
+`STORE_READ_SPEC` (diagnostic), derived by `scripts/lean_store_read_census.py`.
+The superseded metric was wrong in four ways at once, and the fourth is why it had
+been re-anchored upward four times in three days (1609 → 1600 → 1678 → 1711):
+
+1. **It summed two populations.**  Of its 1711 counted lines, 1490 were in
+   `theorem`s, 114 in `Prop`-valued `def`s, 48 in `structure` fields and 6 in
+   `inductive`s — **96.9% specification vocabulary** — against 53 lines of
+   executable code.  So the number tracked how much invariant text the project had
+   written, and an invariant cut could not help but raise it.  A proposition about
+   the store has no helper form: `getTcb? k = none` holds for an absent key and a
+   wrong-kinded object alike, so a frame statement quantified over every key cannot
+   be phrased through a variant accessor without weakening it.  `STORE_READ_SPEC`
+   is therefore reported and never enforced, exactly as `RAW_MATCH_UNCLASSIFIED` is
+   and for the same stated reason.
+2. **It was not `_TID`.**  The pattern was `grep -c "\.toObjId\]?"` and four types
+   carry `.toObjId` — `ThreadId`, `SchedContextId`, `ReplyId`, `KindedObjId` — so
+   WS-OD's and WS-RM's reply-stack and scheduling-context vocabulary moved a figure
+   whose name claimed it was about threads.
+3. **It counted lines, not occurrences.**  Two reads on one line counted once, and
+   a reflow that joined two lines lowered it.
+4. **`RAW_LOOKUP_SITE` was keyed by `(file)` alone.**  Its sibling `RAW_SITE` was
+   refined to `(file, declaration, variant)` in PR #893 review round 6, with the
+   reason recorded in the gate's own header — a per-file key is a cardinality one
+   level up, so hygienizing one declaration while another starts reading raw leaves
+   the row unmoved.  That refinement was never swept onto the sibling: this is the
+   project's own sweep rule failing in the way it describes.
+
+`STORE_READ_CODE_SITE` is keyed by `(file, declaration)` with an occurrence count,
+and the monotonic gate's self-test gains three token-preserving cases the
+superseded figure admitted by construction: a read moved between declarations of
+one file, a read moved **from a proposition into a transition** (the sum unchanged,
+which is all the old metric could see) and its converse moved the other way, which
+must pass because it is the migration working.  `lean_store_read_census.py` carries
+its own nine-case self-test — body vs binder, `Prop`-valued `def` vs transition,
+occurrences vs lines, and the wiring through the comment-free view — run in Tier 0.
+
+At this cut `STORE_READ_CODE` is **76**, of which **75** are in `SeLe4n/Testing`
+(the executable trace harness and the invariant-check helpers) and one is the
+`ProofHooks` over-count above.  The kernel's own figure is zero.
+
+Refs: docs/REGISTERED_DEBT.md (AK7 reader-hygiene residual)
+
+## v0.35.6 — WS-RM: the reply path runs seL4's `reply_remove`, and the passive server's `ReplyRecv` loop completes
+
+**WS-RM closes in one cut — all twenty-six sub-tasks across RM1..RM6 — and
+closing it turned up a second defect in the same arm, fixed here too.**
+
+### 1. The reply path did not take the answered frame off its reply stack
+
+Registered at `v0.35.4` and the remaining shape of the finding that cut was
+opened to fix.  `v0.35.4` made the reply stack doubly linked so a frame can be
+cut out of the middle in `O(1)`, and wired that detach into the **cancellation**
+path.  The **reply** path was left as it was: `endpointReplyOnCore` ran
+`SystemState.consumeCallerReply` with no detach, and `Reply.consumed` clears both
+stack links on any frame that is not a head — so when the answered frame had a
+frame above it, the consume falsified
+`donationChainWellFormed.prevLinkReciprocal` at that frame.
+
+Reachable, because authority to reply flows from *holding the reply capability*
+and a copied or minted one held by a different server is legitimate delegated
+authority: on a chain `C1 → C2 → S` a delegate can answer `C1` out of order while
+`S` has pushed a frame above `C1`'s.  Fail-closed rather than corrupting — the
+later pop's reciprocity test refuses the stale link and returns
+`.invalidArgument` having written nothing — so the cost was a **wedge**: that
+reply failed permanently, the intermediate caller stayed blocked and the
+scheduling context stayed with the server.  **Medium**, availability only, and
+not exploitable today (nothing boots).
+
+`removeCallerReplyFrame caller rid` is seL4's `reply_remove`: the detach folded
+to the identity on refusal — a non-reciprocating upward link means "nothing above
+me on my stack", which the chain relation permits by design since it is stated
+*downward* — then the consume.  `endpointReplyOnCore`, `endpointReply` and
+`endpointReplyRecv` all run it.  The order inside it is the content, because the
+detach reads the link the consume clears; Tier 3 negatives refuse a bare consume
+in any of the three spines and refuse the swap inside the composite, each
+mutation-tested in both directions.
+`removeCallerReplyFrame_eq_consume_of_no_frame_above` is the definitional
+equality that makes every repair a case split whose `none` branch is the
+pre-WS-RM proof verbatim.
+
+**The head case is stated, not hidden.**  A frame that *heads* a scheduling
+context keeps its links when its caller is consumed (`Reply.consumed`,
+deliberately — the pop validates the head by them), so the reply leg's post-state
+satisfies `donationChainWellFormedExcept … rid` and nothing stronger.  It stands
+to the reply leg as `ipcInvariantFullExceptDonationOwner` stands to the bare
+reply, and `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` is
+the composite that discharges it: the donation pop that follows in the same
+transition re-heads the frame below.  `faultReplyOnCore_preserves_donationChainWellFormed`
+and `replyTransferOnCore_preserves_donationChainWellFormed` — seL4's
+`doReplyTransfer` — compose it.
+
+**`.reply` and `.replyRecv` declare the frame the detach writes.**
+`answeredReplyFrameAbove?` is resolved from the same
+`(st.getTcb? target).bind (·.replyObject)` expression the arm's existing reply
+member comes from, so the footprint and the transition cannot disagree about
+which frame is answered.  The declared ceiling `maxLockSetSize` moves 21 → **22**
+and every figure derived from it moves with it: `admissibleCriticalSection` for
+the 1 ms RPi5 tick is now **15 µs** and the uniform 60 µs envelope **3960 µs**,
+in the canonical spelling `scripts/check_lock_ceiling_figures.py` holds at its
+five pinned sites.  **No *reachable* footprint grew**: the new member and the
+donation-return members are mutually exclusive, so
+`lockSet_endpointReplyRecvOnCore_size_le_eighteen` is unmoved.
+
+### 2. ...and `.replyRecv` popped its donation too late to complete its own loop
+
+**Found while threading RM5.2's payoff through `replyRecvBody`, reported before
+being fixed, and fixed here under RM5.2 — which already owns that function.**
+
+`replyRecvBody`'s legs ran reply → receive → donation.  The receive leg re-links
+the very Reply `rid` the reply leg just answered — faithful seL4-MCS one-object
+reuse — and `Reply.isFree` reads **both** stack links, deliberately (`v0.35.4`
+made the stash admission and the link guard ask one question after they had
+disagreed).  On the MCS passive-server steady state the answered Reply *heads*
+the donated scheduling context, and `Reply.consumed` keeps a head's links — so
+after the reply leg that object was consumed and **not** free, and both admission
+paths refused: `linkCallerReply` and the server-first stash each returned
+`.replyCapInvalid`.
+
+So **no passive server whose client had donated could ever complete a
+`seL4_ReplyRecv`** — the steady state of the pattern the arm exists for (`Recv`
+once, then `ReplyRecv` forever).  Fail-closed, a **liveness** defect rather than
+a safety one, and not exploitable today.  Nothing caught it: every runtime
+witness of `.replyRecv` ran on a state where the answered Reply headed no
+context, and refusing is invariant-preserving, so no bundle theorem is false of
+the refusing program.
+
+The pop now runs **between** the legs, which is seL4-MCS's own `doReplyTransfer`
+→ `reply_remove` → `receiveIPC` order.  `replyRecvReturnDonation` is retired and
+split into `replyRecvPopDonation` (the return, on the reply leg's committed
+state) and `replyRecvPostReceiveDonation` (the re-donation, the deschedule and
+the priority-inheritance walk, on the receive leg's committed state, **taking the
+popped context as an argument** rather than re-reading a binding the pop has
+already cleared).  Each carries its own `_preserves_ipcInvariantFull` and
+`_preserves_replenishQueueAffinityConsistent_smp`, stated at the state its own
+step runs on, and `PerCoreDonationStep` gains a constructor for each in place of
+the fused one.  `replyRecvPostPopState` / `replyRecvPoppedContext` are *total*
+accessors over the pop, so `syscallDispatchQuiescence.replyRecvStage` stays a
+flat pre-state-computable pack while its receive-leg fields move to the post-pop
+state.
+
+This is **not** the reversal the plan's §9 declines.  That bullet is about
+`.reply`'s own ordering — running the donation pop before the reply leg, which
+would erase the head transient RM2.3 states and RM5.1 discharges.  Here the reply
+leg still runs first.
+
+### 3. Every reply-stack write names a chain result — derived, not listed
+
+`SeLe4n/Testing/ReplyStackWriteCensus.lean` (Tier 1) collects the write-site set
+from the **elaborated environment** — a project definition whose own body
+references one of the chain-write primitives, `SystemState.consumeReply` and
+`SystemState.consumeCallerReply` among them — and reconciles it against a
+registry in both directions.  A site either **states** its chain results (each
+named theorem must mention the site *and* a `donationChain…` form, so a name is
+not taken for a subject) or is recorded as a **half-step** of the composite that
+completes it, with the half-step chain required to terminate in a stating entry.
+Fourteen sites, eight stating.  A new definition that consumes a caller's Reply
+bare is a build failure on the day it is written.
+
+The frontier is deliberately one level above the primitives rather than the
+transitive closure — taken transitively it is the whole dispatcher — and that
+loses nothing, because it is closed under refinement: every path from a composite
+down to a primitive passes through some direct site, and composites inherit by
+`donationChainFrame`'s algebra, which is a composition rather than a claim.  Its
+witnesses run in both directions, including a planted bare consume that the
+derived half must refuse.
+
+### 4. Witnesses
+
+`tests/SmpIpcSuite.lean` §3.20 builds a depth-2 chain, answers the outer caller
+**out of order through a delegated reply capability**, asserts the frame above
+has its `prev` cleared and the answered frame is `Reply.isFree`, and then
+completes the in-order reply that used to fail — with the same consume minus the
+detach as its paired negative, since a fixture exercising only the in-order path
+would pass before this cut and after it.  §3.21 runs the passive server's
+`seL4_ReplyRecv` loop end to end, with the un-popped receive leg's
+`.replyCapInvalid` refusal as *its* paired negative.
+`tests/SmpCrossCoreReplySuite.lean` §3.9 pins the removal inert on the in-order
+path and firing exactly once otherwise.
+
+### 5. Housekeeping
+
+- `donationChainFrame_of_objects_insert` was `private` to the cancellation shape
+  module and the fault-reply path needs the same fact; it is public and lives in
+  `IPC/Invariant/Defs.lean`, beside the predicate it is about, rather than being
+  copied into a module the first does not import.
+- The `ipcInvariantFull` bundle family measures **176** statements, up from 172:
+  the two `.replyRecv` half-steps and the two fault-reply forms.  Still zero
+  conjuncts bound on a post-state.
+- The AK7 `raw_lookup_tid` floor is re-anchored 1678 → 1711.  The thirty-three
+  new occurrences are all *statement* vocabulary in the donation-chain family —
+  hypotheses and conclusions quantifying over the object store at `ReplyId` and
+  `SchedContextId` keys, phrased exactly as `donationChainWellFormed`'s own
+  fields are — and not object-store reads inside transitions, which is what the
+  metric is about; every `raw_match_*` variant-discriminating count is unmoved,
+  and the typed-helper adoption floors rise with the cut.
+
 ## v0.35.5 — the `.replyRecv` footprint declares the invoker's own pre-receive return
 
 **One P1 and two P2 findings from an automated review of PR #894, all three

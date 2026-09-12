@@ -545,8 +545,8 @@ theorem effectiveBucketPriority_eq_resolveEffective
   -- AN10-B: `resolveEffectivePrioDeadline` now reads via `getSchedContext?`
   -- but `effectiveBucketPriority` still reads via the raw object-store
   -- lookup; unfold both helpers locally to expose the shared raw form.
-  unfold effectiveBucketPriority resolveEffectivePrioDeadline
-    SystemState.getSchedContext?
+  unfold effectiveBucketPriority resolveEffectivePrioDeadline SystemState.getSchedContext?
+
   cases hBind : tcb.schedContextBinding with
   | unbound =>
     simp only [hBind]
@@ -583,8 +583,8 @@ def chooseBestRunnableEffective
   match runnable with
   | [] => .ok best
   | tid :: rest =>
-      match st.objects.get? tid.toObjId with
-      | some (.tcb tcb) =>
+      match st.getTcb? tid with
+      | some tcb =>
           let best' :=
             if eligible tcb && hasSufficientBudget st tcb then
               let (prio, dl) := resolveEffectivePrioDeadline st tcb
@@ -675,7 +675,7 @@ priority/EDF/FIFO via `chooseBestInBucket` (no budget filter — the
 budget-aware variant is `chooseThreadEffective`). -/
 def chooseThreadOnCore (st : SystemState) (c : CoreId) :
     Except KernelError (Option SeLe4n.ThreadId) :=
-  match chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore c)
+  match chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) with
   | .error e => .error e
   | .ok none => .ok none
@@ -797,11 +797,11 @@ def saveOutgoingContext (st : SystemState) : SystemState :=
   match (st.scheduler.currentOnCore bootCoreId) with
   | none => st
   | some outTid =>
-      match st.objects[outTid.toObjId]? with
-      | some (.tcb outTcb) =>
+      match st.getTcb? outTid with
+      | some outTcb =>
           let obj := KernelObject.tcb { outTcb with registerContext := st.machine.regs }
           { st with objects := st.objects.insert outTid.toObjId obj }
-      | _ => st
+      | none => st
 
 /-- V5-D (M-DEF-4): Checked variant of `saveOutgoingContext` that returns a
     success indicator. Returns `(state, true)` on successful save (or no current
@@ -814,11 +814,11 @@ def saveOutgoingContextChecked (st : SystemState) : SystemState × Bool :=
   match (st.scheduler.currentOnCore bootCoreId) with
   | none => (st, true)
   | some outTid =>
-      match st.objects[outTid.toObjId]? with
-      | some (.tcb outTcb) =>
+      match st.getTcb? outTid with
+      | some outTcb =>
           let obj := KernelObject.tcb { outTcb with registerContext := st.machine.regs }
           ({ st with objects := st.objects.insert outTid.toObjId obj }, true)
-      | _ => (st, false)
+      | none => (st, false)
 
 /-- AI3-C (L-09): Under `currentThreadValid`, `saveOutgoingContext` always succeeds.
 The silent-return-on-TCB-miss path (line 495) is unreachable because
@@ -845,7 +845,9 @@ theorem saveOutgoingContext_always_succeeds_under_currentThreadValid
   | some outTid =>
     simp only [hCur] at hCTV
     obtain ⟨tcb, hTcb⟩ := hCTV
-    simp only [hTcb]
+    -- `currentThreadValid` is stated over the store; the transition reads
+    -- through `getTcb?`, so the witness crosses by the accessor's own iff.
+    simp only [(SystemState.getTcb?_eq_some_iff st outTid tcb).mpr hTcb]
 
 /-- V5-D: The checked variant agrees with the unchecked variant on the state component. -/
 theorem saveOutgoingContextChecked_fst_eq (st : SystemState) :
@@ -854,10 +856,11 @@ theorem saveOutgoingContextChecked_fst_eq (st : SystemState) :
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
-      cases h : st.objects[outTid.toObjId]? with
+      -- Two-way on the accessor both sides read: the seven non-TCB store arms
+      -- are all its `none`.
+      cases h : st.getTcb? outTid with
       | none => simp_all
-      | some obj =>
-          cases obj <;> simp_all
+      | some _ => simp_all
 
 /-- WS-H12c/H-03/V5-E: Restore the incoming thread's register context into the
 machine register file. If the incoming TCB is not found, returns the state
@@ -867,10 +870,10 @@ V5-E (M-DEF-5): When the TCB lookup fails, the restore is silently skipped.
 Under `currentThreadValid`, this branch is unreachable. The checked variant
 `restoreIncomingContextChecked` provides an explicit success indicator. -/
 def restoreIncomingContext (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb inTcb) =>
+  match st.getTcb? tid with
+  | some inTcb =>
       { st with machine := st.machine.setRegsOnCore bootCoreId inTcb.registerContext }
-  | _ => st
+  | none => st
 
 /-- V5-E (M-DEF-5): Checked variant of `restoreIncomingContext` that returns a
     success indicator. Returns `(state, true)` on successful restore,
@@ -879,20 +882,19 @@ def restoreIncomingContext (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSt
     Under `currentThreadValid`, the `false` branch is unreachable. -/
 def restoreIncomingContextChecked (st : SystemState)
     (tid : SeLe4n.ThreadId) : SystemState × Bool :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb inTcb) =>
+  match st.getTcb? tid with
+  | some inTcb =>
       ({ st with machine := st.machine.setRegsOnCore bootCoreId inTcb.registerContext }, true)
-  | _ => (st, false)
+  | none => (st, false)
 
 /-- V5-E: The checked variant agrees with the unchecked variant on the state component. -/
 theorem restoreIncomingContextChecked_fst_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) :
     (restoreIncomingContextChecked st tid).1 = restoreIncomingContext st tid := by
   unfold restoreIncomingContextChecked restoreIncomingContext
-  cases h : st.objects[tid.toObjId]? with
+  cases h : st.getTcb? tid with
   | none => simp_all
-  | some obj =>
-      cases obj <;> simp_all
+  | some _ => simp_all
 
 -- ============================================================================
 -- WS-SM SM5.I — per-core context restore (writes the *operated* core's bank)
@@ -908,10 +910,10 @@ invariant (a dispatch on core `c` touches only `c`'s bank, leaving every sibling
 core's bank framed). -/
 def restoreIncomingContextOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb inTcb) =>
+  match st.getTcb? tid with
+  | some inTcb =>
       { st with machine := st.machine.setRegsOnCore c inTcb.registerContext }
-  | _ => st
+  | none => st
 
 /-- WS-SM SM5.I: the per-core restore leaves the scheduler unchanged. -/
 @[simp] theorem restoreIncomingContextOnCore_scheduler (st : SystemState) (c : CoreId)
@@ -946,9 +948,9 @@ core `c`, core `c`'s register bank equals `tid`'s saved register context. -/
 theorem restoreIncomingContextOnCore_regsOnCore_self (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
     (restoreIncomingContextOnCore st c tid).machine.regsOnCore c = tcb.registerContext := by
-  -- Route the discriminant rewrite through the typed `getTcb?` accessor
-  -- (`getTcb?_eq_some_iff`) so callers pass the typed form (AK7-clean).
-  simp only [restoreIncomingContextOnCore, (st.getTcb?_eq_some_iff tid tcb).mp hTcb,
+  -- The transition discriminates on `getTcb?` itself, so the caller's typed
+  -- hypothesis drives the match directly; no crossing to the store form.
+  simp only [restoreIncomingContextOnCore, hTcb,
     MachineState.regsOnCore_setRegsOnCore_self]
 
 /-- WS-SM SM5.I (sibling-core frame): the per-core restore on core `c` leaves
@@ -1040,31 +1042,49 @@ theorem chooseBestRunnableEffective_unbound_equiv
     (runnable : List SeLe4n.ThreadId)
     (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
     (hAllUnbound : ∀ tid ∈ runnable, ∀ tcb : TCB,
-      st.objects.get? tid.toObjId = some (.tcb tcb) →
+      st.getTcb? tid = some tcb →
       tcb.schedContextBinding = .unbound ∧ tcb.pipBoost = none) :
     chooseBestRunnableEffective st eligible runnable best =
-    chooseBestRunnableBy st.objects.get? eligible runnable best := by
+    chooseBestRunnableBy st.getObject? eligible runnable best := by
   induction runnable generalizing best with
   | nil => simp [chooseBestRunnableEffective, chooseBestRunnableBy]
   | cons tid rest ih =>
     simp only [chooseBestRunnableEffective, chooseBestRunnableBy]
     have hRest : ∀ t ∈ rest, ∀ tcb : TCB,
-        st.objects.get? t.toObjId = some (.tcb tcb) →
+        st.getTcb? t = some tcb →
         tcb.schedContextBinding = .unbound ∧ tcb.pipBoost = none :=
       fun t hMemRest => hAllUnbound t (List.mem_cons_of_mem _ hMemRest)
-    cases hObj : st.objects.get? tid.toObjId with
-    | none => exact ih best hRest
+    -- The two sides scrutinise different accessors — `getTcb?` on the left,
+    -- `getObject?` on the right — so the split is taken on the kind-agnostic
+    -- one and the typed reading is derived from it.  `getTcb?_eq_some_iff` is
+    -- what relates them, and the `_ => ` arms are where they agree by both
+    -- answering "not a TCB here".
+    cases hObj : st.getObject? tid.toObjId with
+    | none =>
+      have hT : st.getTcb? tid = none := by
+        unfold SeLe4n.Model.SystemState.getTcb?
+        rw [show st.objects[tid.toObjId]? = none from hObj]
+      rw [hT]; exact ih best hRest
     | some obj =>
       cases obj with
       | tcb tcb =>
+        have hT : st.getTcb? tid = some tcb :=
+          (SeLe4n.Model.SystemState.getTcb?_eq_some_iff st tid tcb).mpr hObj
         have hMem : tid ∈ tid :: rest := List.mem_cons_self ..
-        have ⟨hUnb, hNoPip⟩ := hAllUnbound tid hMem tcb hObj
+        have ⟨hUnb, hNoPip⟩ := hAllUnbound tid hMem tcb hT
+        rw [hT]
         simp [hasSufficientBudget_unbound st tcb hUnb, Bool.and_true,
               resolveEffectivePrioDeadline, hUnb, hNoPip]
         apply ih
         intro t hMemRest
         exact hAllUnbound t (List.mem_cons_of_mem _ hMemRest)
-      | _ => exact ih best hRest
+      | _ =>
+        all_goals (
+          first
+          | (have hT : st.getTcb? tid = none := by
+               unfold SeLe4n.Model.SystemState.getTcb?
+               rw [show st.objects[tid.toObjId]? = _ from hObj]
+             rw [hT]; exact ih best hRest))
 
 -- ============================================================================
 -- WS-SM SM5.B — Per-core context switch (`switchToThreadOnCore`)

@@ -456,6 +456,11 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
             // kernel-entry paths run with IRQs masked, so a tick cannot
             // preempt a syscall on the same core and queue behind a ticket
             // that core already holds.
+            // SAFETY: `lean_per_core_timer_tick` is the Lean-emitted
+            // `extern "C"` entry; calling it is sound from EL1 IRQ context once
+            // this core's Lean runtime is initialized (the readiness gate above
+            // established that) and inside the kernel-entry bracket, which
+            // serialises its `IO.Ref` commit against every other entry.
             crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
                 lean_per_core_timer_tick(core_id);
             });

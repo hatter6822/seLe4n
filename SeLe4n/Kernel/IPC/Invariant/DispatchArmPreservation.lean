@@ -851,7 +851,7 @@ private theorem cspaceInsertSlot_cnode_shape
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     ∃ cn : CNode, st.objects[addr.cnode]? = some (.cnode cn) ∧
       st'.objects[addr.cnode]? = some (.cnode (cn.insert addr.slot cap)) := by
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -916,7 +916,7 @@ private theorem cspaceDeleteSlotCore_shape
       st'.objects[addr.cnode]? = some (.cnode (cn.remove addr.slot)) ∧
       (∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]?) ∧
       st'.scheduler = st.scheduler := by
-  unfold cspaceDeleteSlotCore at hStep
+  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -3528,7 +3528,7 @@ private theorem cleanupTcbReferences_id_of_detached
     cleanupTcbReferences stX tcb.tid = stX := by
   have hLkT : ∀ tcbX : TCB, lookupTcb stX tcb.tid = some tcbX → tcbX = tcb := by
     intro tcbX hLk
-    unfold lookupTcb at hLk
+    unfold lookupTcb SystemState.getTcb? at hLk
     split at hLk
     · cases hLk
     · rw [hO, hDet.tcbSelfId tcb hObj, hObj] at hLk
@@ -3580,7 +3580,7 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
       have hND : ∀ tcbX : TCB, lookupTcb st tcb.tid = some tcbX →
           ∀ scId owner, tcbX.schedContextBinding ≠ .donated scId owner := by
         intro tcbX hLk scId owner
-        unfold lookupTcb at hLk
+        unfold lookupTcb SystemState.getTcb? at hLk
         split at hLk
         · cases hLk
         · rw [hDet.tcbSelfId tcb hObj, hObj] at hLk
@@ -3679,7 +3679,7 @@ theorem lifecycleRetypeDirect_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st)
     (hStep : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  unfold lifecycleRetypeDirect at hStep
+  unfold lifecycleRetypeDirect SystemState.getObject? at hStep
   cases hObj : st.objects[target]? with
   | none => simp [hObj] at hStep
   | some currentObj =>
@@ -3706,7 +3706,7 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st)
     (hStep : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  unfold lifecycleRetypeDirectWithCleanup at hStep
+  unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at hStep
   split at hStep
   · contradiction
   · cases hObj : st.objects[target]? with
@@ -4416,7 +4416,7 @@ private theorem cancelDonatedDonationOnCore_preserves_ipcInvariantFull
     cases tval
     simp_all [SeLe4n.ThreadId.sentinel]
   have hLk : lookupTcb st tval = some tcb := by
-    unfold lookupTcb
+    unfold lookupTcb SystemState.getTcb?
     rw [if_neg hNotRes, (SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored]
   unfold cancelDonatedDonationOnCore at hStep
   cases hB : tcb.schedContextBinding with
@@ -4550,7 +4550,7 @@ private theorem cancelDonatedDonationOnCore_victim_shape
     cases tval
     simp_all [SeLe4n.ThreadId.sentinel]
   have hLk : lookupTcb st tval = some tcb := by
-    unfold lookupTcb
+    unfold lookupTcb SystemState.getTcb?
     rw [if_neg hNotRes, (SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored]
   unfold cancelDonatedDonationOnCore at hStep
   cases hB : tcb.schedContextBinding with
@@ -4679,8 +4679,10 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
         rw [Lifecycle.Suspend.cancelIpcBlockingValid_eq,
           cancelIpcBlocking_ready_id st vtid.val tcb hReady] at hStep
         have hBS : PriorityInheritance.blockingServer st vtid.val = none := by
+          -- `blockingServer` reads `getTcb?`, which is what `hLk` already says;
+          -- the raw restatement `hPre` is no longer the vocabulary it needs.
           unfold PriorityInheritance.blockingServer
-          simp [hPre, hReady]
+          simp [hLk, hReady]
         rw [hBS] at hStep
         dsimp only [] at hStep
         rw [hLk] at hStep
@@ -4972,5 +4974,60 @@ theorem stageWokenSendCompletion_objects_invExt
             | none => exact hObjInv
             | some tcb2 => exact RHTable_insert_preserves_invExt _ _ _ hObjInv
           · exact hObjInv
+
+/-- **WS-RM (`v0.35.6`)**: a return-frame writeback carries no chain data.  Its
+one write is a `.tcb` at a key that already held one (`getTcb?` is what selects
+the arm), so no Reply and no SchedContext is created, destroyed or rewritten. -/
+theorem writeReturnFrameToTcb_donationChainFrame
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : Architecture.SyscallReturnFrame)
+    (hObjInv : st.objects.invExt) :
+    donationChainFrame st (Architecture.writeReturnFrameToTcb st tid frame) := by
+  unfold Architecture.writeReturnFrameToTcb
+  cases hLk : st.getTcb? tid with
+  | none => simp only []; exact donationChainFrame.refl st
+  | some tcb =>
+      simp only []
+      exact donationChainFrame_of_objects_insert hObjInv
+        (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk]; rfl)
+        (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk]; rfl)
+        (fun _ h => by cases h)
+
+/-- **WS-RM (`v0.35.6`)**: and so does delivery staging — every arm is that
+writeback or the identity. -/
+theorem stageDeliveredMessage_donationChainFrame
+    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat)
+    (hObjInv : st.objects.invExt) :
+    donationChainFrame st (Architecture.stageDeliveredMessage st tid installedCaps) := by
+  unfold Architecture.stageDeliveredMessage
+  cases hLk : st.getTcb? tid with
+  | none => simp only []; exact donationChainFrame.refl st
+  | some tcb =>
+      simp only []
+      split
+      · cases hPm : tcb.pendingMessage with
+        | none => simp only []; exact donationChainFrame.refl st
+        | some msg =>
+            simp only []
+            exact writeReturnFrameToTcb_donationChainFrame st tid _ hObjInv
+      · exact donationChainFrame.refl st
+
+/-- **WS-RM (`v0.35.6`)**: and so does the woken sender's completion frame. -/
+theorem stageWokenSendCompletion_donationChainFrame
+    (st : SystemState) (woken? : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) :
+    donationChainFrame st (Architecture.stageWokenSendCompletion st woken?) := by
+  unfold Architecture.stageWokenSendCompletion
+  cases woken? with
+  | none => exact donationChainFrame.refl st
+  | some tid =>
+      dsimp only []
+      cases hLk : st.getTcb? tid with
+      | none => simp only []; exact donationChainFrame.refl st
+      | some tcb =>
+          simp only []
+          split
+          · exact writeReturnFrameToTcb_donationChainFrame st tid _ hObjInv
+          · exact donationChainFrame.refl st
+
 
 end SeLe4n.Kernel

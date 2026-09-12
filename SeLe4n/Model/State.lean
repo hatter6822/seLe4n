@@ -3141,6 +3141,127 @@ the characterisation every consumer reasons through. -/
   simp [getObjectType?, h]
 
 -- ============================================================================
+-- The object-table frame family, stated once, beside the accessors.
+--
+-- Every typed accessor reads `objects` and nothing else, so a step that leaves
+-- the object table alone leaves every accessor's answer alone.  That is one
+-- question, and before this block the tree answered it in four places: a
+-- `getTcb?_congr_objects` in `Architecture/InvariantPerCore.lean` and in
+-- `IPC/Invariant/PerCore.lean` (both `private`, so neither could serve the
+-- other), a third in `IPC/Invariant/PerCoreBundlePreservation.lean`, and a
+-- `getSchedContext?_frame` spelled differently again in
+-- `Scheduler/PriorityInheritance/Compute.lean`.  Four implementations of one
+-- fact is the shape this project keeps paying for; the accessors are defined
+-- here, so their frame lemmas belong here too.
+--
+-- They are the *accessor-level* replacement for rewriting a raw
+-- `st'.objects[…]` with an `objects` equation: a consumer that reads the store
+-- through `getTcb?` can no longer `rw [hObjects]`, because the store subscript
+-- is inside the accessor rather than at the call site -- which is exactly the
+-- point of reading through it.
+-- ============================================================================
+
+-- The *pointwise* congruences come first and the whole-table frames are their
+-- corollaries, because the pointwise fact is the one a per-slot hypothesis
+-- supplies -- a `lookup_equiv`-style relation states an equation at one key and
+-- says nothing about the rest of the table.  Deriving the frame from it keeps
+-- one proof per accessor; stating the frame alone would force every per-slot
+-- consumer to unfold the accessor, which desynchronises an induction
+-- hypothesis that still speaks of the accessor.
+
+/-- A TCB read depends on the object table only at that thread's own key. -/
+theorem getTcb?_congr_at {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    (h : st'.objects[tid.toObjId]? = st.objects[tid.toObjId]?) :
+    st'.getTcb? tid = st.getTcb? tid := by
+  unfold getTcb?; rw [h]
+
+/-- A SchedContext read depends on the object table only at that context's key. -/
+theorem getSchedContext?_congr_at {st st' : SystemState} {scId : SeLe4n.SchedContextId}
+    (h : st'.objects[scId.toObjId]? = st.objects[scId.toObjId]?) :
+    st'.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold getSchedContext?; rw [h]
+
+/-- A Reply read depends on the object table only at that reply's key. -/
+theorem getReply?_congr_at {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (h : st'.objects[rid.toObjId]? = st.objects[rid.toObjId]?) :
+    st'.getReply? rid = st.getReply? rid := by
+  unfold getReply?; rw [h]
+
+/-- An Endpoint read depends on the object table only at that endpoint's key. -/
+theorem getEndpoint?_congr_at {st st' : SystemState} {id : SeLe4n.ObjId}
+    (h : st'.objects[id]? = st.objects[id]?) :
+    st'.getEndpoint? id = st.getEndpoint? id := by
+  unfold getEndpoint?; rw [h]
+
+/-- A Notification read depends on the object table only at that key. -/
+theorem getNotification?_congr_at {st st' : SystemState} {id : SeLe4n.ObjId}
+    (h : st'.objects[id]? = st.objects[id]?) :
+    st'.getNotification? id = st.getNotification? id := by
+  unfold getNotification?; rw [h]
+
+/-- A CNode read depends on the object table only at that key. -/
+theorem getCNode?_congr_at {st st' : SystemState} {id : SeLe4n.ObjId}
+    (h : st'.objects[id]? = st.objects[id]?) :
+    st'.getCNode? id = st.getCNode? id := by
+  unfold getCNode?; rw [h]
+
+/-- A kind-agnostic read depends on the object table only at that key. -/
+theorem getObject?_congr_at {st st' : SystemState} {id : SeLe4n.ObjId}
+    (h : st'.objects[id]? = st.objects[id]?) :
+    st'.getObject? id = st.getObject? id := h
+
+/-- A step that preserves the object table preserves every TCB read. -/
+theorem getTcb?_frame {st st' : SystemState} (h : st'.objects = st.objects)
+    (tid : SeLe4n.ThreadId) : st'.getTcb? tid = st.getTcb? tid :=
+  getTcb?_congr_at (by rw [h])
+
+/-- A step that preserves the object table preserves every SchedContext read. -/
+theorem getSchedContext?_frame {st st' : SystemState} (h : st'.objects = st.objects)
+    (scId : SeLe4n.SchedContextId) :
+    st'.getSchedContext? scId = st.getSchedContext? scId :=
+  getSchedContext?_congr_at (by rw [h])
+
+/-- A step that preserves the object table preserves every Reply read. -/
+theorem getReply?_frame {st st' : SystemState} (h : st'.objects = st.objects)
+    (rid : SeLe4n.ReplyId) : st'.getReply? rid = st.getReply? rid :=
+  getReply?_congr_at (by rw [h])
+
+/-- A step that preserves the object table preserves every Endpoint read. -/
+theorem getEndpoint?_frame {st st' : SystemState} (h : st'.objects = st.objects)
+    (id : SeLe4n.ObjId) : st'.getEndpoint? id = st.getEndpoint? id := by
+  unfold getEndpoint?; rw [h]
+
+/-- A step that preserves the object table preserves every Notification read. -/
+theorem getNotification?_frame {st st' : SystemState} (h : st'.objects = st.objects)
+    (id : SeLe4n.ObjId) : st'.getNotification? id = st.getNotification? id := by
+  unfold getNotification?; rw [h]
+
+/-- A step that preserves the object table preserves every Untyped read. -/
+theorem getUntyped?_frame {st st' : SystemState} (h : st'.objects = st.objects)
+    (id : SeLe4n.ObjId) : st'.getUntyped? id = st.getUntyped? id := by
+  unfold getUntyped?; rw [h]
+
+/-- A step that preserves the object table preserves every CNode read. -/
+theorem getCNode?_frame {st st' : SystemState} (h : st'.objects = st.objects)
+    (id : SeLe4n.ObjId) : st'.getCNode? id = st.getCNode? id := by
+  unfold getCNode?; rw [h]
+
+/-- A step that preserves the object table preserves every VSpace-root read. -/
+theorem getVSpaceRoot?_frame {st st' : SystemState} (h : st'.objects = st.objects)
+    (id : SeLe4n.ObjId) : st'.getVSpaceRoot? id = st.getVSpaceRoot? id := by
+  unfold getVSpaceRoot?; rw [h]
+
+/-- A step that preserves the object table preserves every kind-agnostic read. -/
+theorem getObject?_frame {st st' : SystemState} (h : st'.objects = st.objects)
+    (id : SeLe4n.ObjId) : st'.getObject? id = st.getObject? id := by
+  unfold getObject?; rw [h]
+
+/-- A step that preserves the object table preserves every object-type read. -/
+theorem getObjectType?_frame {st st' : SystemState} (h : st'.objects = st.objects)
+    (id : SeLe4n.ObjId) : st'.getObjectType? id = st.getObjectType? id := by
+  unfold getObjectType?; rw [h]
+
+-- ============================================================================
 -- AL2-B (WS-AL / AK7-F.cascade): kind-discrimination sanity lemmas.
 --
 -- Each lemma witnesses the property that if the stored object at `id`

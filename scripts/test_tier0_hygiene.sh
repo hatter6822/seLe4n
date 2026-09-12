@@ -322,6 +322,16 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/rust_code_view.py" --self-test
 # symbol exists only in a comment.
 run_check "HYGIENE" "${SCRIPT_DIR}/test_code_view_wiring.sh"
 
+# ... and the store-read census, which decides which POPULATION each raw
+# `st.objects[…]` read belongs to.  Its failure mode is the one that made
+# `RAW_LOOKUP_TID` meaningless: classify a proposition's vocabulary as a
+# transition's and the enforced number becomes dominated by invariant text, so
+# every cut re-anchors it upward and the ceiling stops meaning anything.  The
+# self-test pins the classification (body vs binder, `Prop`-valued `def` vs
+# transition, occurrences not lines) and the wiring through the comment-free
+# view, on fixtures rather than on the tree.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/lean_store_read_census.py" --self-test
+
 # ... and the acceptance-gate skip accounting, whose failure mode is the
 # same shape: a sub-test that cannot run used to `exit 0`, `run_check`
 # scored it PASS, and tier 4 printed "All checks passed" over fourteen
@@ -442,6 +452,18 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py"
 # calling PE is the only one that needs the entry gone.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py"
+
+# The unsafe-justification gate (post-landing audit of WS-RM, v0.35.9).
+# `CLAUDE.md` stated the HAL's discipline -- every unsafe block carries a
+# `// SAFETY:` comment -- and attributed its enforcement to
+# `scripts/check_arm_arm_citations.sh`, which the v0.30.11 audit planned as
+# R12.C and whose discharge index row F.3 names as the mechanism discharging
+# DEEP-RUST-01/02.  That script was never written: no commit on any branch
+# contains it and Tier 0 never ran it.  So the discipline was stated, relied on
+# by a discharge row, and checked by nothing; this is the gate, and the tree is
+# at **zero** unjustified sites, so its baseline is empty and any new one fails.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_unsafe_block_justifications.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_unsafe_block_justifications.py"
 
 # WS-RR RR3.1: `ipcInvariantFull` de-threading.  A bundle that binds a
 # conjunct applied to its own post-state proves "*if* the post-state already

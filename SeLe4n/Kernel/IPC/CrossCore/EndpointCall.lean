@@ -354,11 +354,12 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
               | .ok st'' => (removeRunnableOnCore st'' caller executingCore, .ok none)
   | none =>
       -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
-      -- `none` for both an absent object and a wrong-kinded one. Recover the
-      -- single-core `endpointCall` error distinction without a raw object-store
-      -- variant match: a present-but-wrong-kind object fails with
-      -- `.invalidCapability`, a genuinely absent one with `.objectNotFound`.
-      if (st.objects[endpointId]?).isSome then (st, .error .invalidCapability)
+      -- `none` for both an absent object and a wrong-kinded one, so the
+      -- presence question is asked of the kind-agnostic accessor `getObject?`
+      -- -- a present-but-wrong-kind object fails with `.invalidCapability`, a
+      -- genuinely absent one with `.objectNotFound`.  Reading the store raw
+      -- here would have been the very pattern the comment claimed to avoid.
+      if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
 -- ============================================================================

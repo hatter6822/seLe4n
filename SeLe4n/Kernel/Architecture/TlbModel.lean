@@ -322,7 +322,7 @@ theorem tlbConsistent_of_objects_eq
   rw [hTlb]
   intro entry hMem rootId root hResolve
   have hResolve' : resolveAsidRoot st entry.asid = some (rootId, root) := by
-    unfold resolveAsidRoot at hResolve ⊢
+    unfold resolveAsidRoot SystemState.getVSpaceRoot? at hResolve ⊢
     rw [hAsidTable, hObjects] at hResolve
     exact hResolve
   exact hConsist entry hMem rootId root hResolve'

@@ -721,7 +721,9 @@ theorem chooseThreadOnCore_frame (s₁ s₂ : SystemState) (c : CoreId)
     (hAD : s₁.scheduler.activeDomainOnCore c = s₂.scheduler.activeDomainOnCore c) :
     chooseThreadOnCore s₁ c = chooseThreadOnCore s₂ c := by
   unfold chooseThreadOnCore
-  rw [hObj, hRQ, hAD]
+  have hGet : s₁.getObject? = s₂.getObject? := by
+    unfold SeLe4n.Model.SystemState.getObject?; rw [hObj]
+  rw [hGet, hRQ, hAD]
 
 /-- WS-SM SM5.A.3 (Theorem 3.1.2): per-core independence under a run-queue
 write.  Writing core `c'`'s run-queue slot (for `c' ≠ c`) leaves
@@ -960,9 +962,9 @@ theorem chooseBestRunnableEffective_always_ok
   | cons hd tl ih =>
     intro best
     unfold chooseBestRunnableEffective
-    cases st.objects.get? hd.toObjId with
+    cases st.getTcb? hd with
     | none => exact ih _
-    | some obj => cases obj <;> exact ih _
+    | some _ => exact ih _
 
 /-- SM5.A.4 helper: the result of a fold (from any `best`) over a list of
 genuine TCBs whose recorded candidate is `some (rt, _, _)` has `rt ∈ list`
@@ -1119,10 +1121,10 @@ theorem chooseBestInBucket_result_mem
 bucket-first scan to be `.ok none`. -/
 theorem chooseThreadOnCore_eq_none_imp_bucket_none
     (st : SystemState) (c : CoreId) (h : chooseThreadOnCore st c = .ok none) :
-    chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore c)
+    chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) = .ok none := by
   unfold chooseThreadOnCore at h
-  cases hB : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore c)
+  cases hB : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) with
   | error e => rw [hB] at h; simp at h
   | ok val =>
@@ -1135,10 +1137,10 @@ selected `(tid, priority, deadline)` triple from the bucket-first scan. -/
 theorem chooseThreadOnCore_eq_some_imp_bucket_some
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (h : chooseThreadOnCore st c = .ok (some tid)) :
-    ∃ p d, chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore c)
+    ∃ p d, chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) = .ok (some (tid, p, d)) := by
   unfold chooseThreadOnCore at h
-  cases hB : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore c)
+  cases hB : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) with
   | error e => rw [hB] at h; simp at h
   | ok val =>
@@ -1157,7 +1159,7 @@ from `chooseThreadOnCore` (the wrapper only renames `some (tid, _, _)` to
 theorem chooseThreadOnCore_ok_of_bucket_ok
     (st : SystemState) (c : CoreId)
     (val : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
-    (h : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore c)
+    (h : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) = .ok val) :
     ∃ r, chooseThreadOnCore st c = .ok r := by
   unfold chooseThreadOnCore
@@ -1321,7 +1323,7 @@ theorem chooseThreadOnCore_selects_highest
         isBetterCandidate selTcb.priority selTcb.deadline tcb.priority tcb.deadline = false := by
   intro t ht tcb htTcb htDom
   obtain ⟨resPrio, resDl, hbucket⟩ := chooseThreadOnCore_eq_some_imp_bucket_some st c tid hSel
-  have hSelObj : st.objects.get? tid.toObjId = some (.tcb selTcb) :=
+  have hSelObj : st.getObject? tid.toObjId = some (.tcb selTcb) :=
     (SystemState.getTcb?_eq_some_iff st tid selTcb).mp hSelTcb
   have hTObj : st.objects.get? t.toObjId = some (.tcb tcb) :=
     (SystemState.getTcb?_eq_some_iff st t tcb).mp htTcb
@@ -1334,7 +1336,7 @@ theorem chooseThreadOnCore_selects_highest
   have hElig : (fun tc : TCB => tc.domain == st.scheduler.activeDomainOnCore c) tcb = true := by
     simp [htDom]
   rw [bucketFirst_fullScan_equivalence] at hbucket
-  cases hMax : chooseBestRunnableInDomain st.objects.get?
+  cases hMax : chooseBestRunnableInDomain st.getObject?
       (st.scheduler.runQueueOnCore c).maxPriorityBucket
       (st.scheduler.activeDomainOnCore c) none with
   | error e => rw [hMax] at hbucket; simp at hbucket
@@ -1345,12 +1347,12 @@ theorem chooseThreadOnCore_selects_highest
       simp only [Except.ok.injEq, Option.some.injEq] at hbucket
       rw [hbucket] at hMax
       obtain ⟨resTcb, hResTcb, hResP, hResD⟩ :=
-        chooseBestRunnableBy_result_fields st.objects.get?
+        chooseBestRunnableBy_result_fields st.getObject?
           (fun tc => tc.domain == st.scheduler.activeDomainOnCore c)
           (st.scheduler.runQueueOnCore c).maxPriorityBucket none tid resPrio resDl hMax
           (by intro _ _ _ h; simp at h)
       rw [hSelObj] at hResTcb; cases hResTcb
-      have hOpt := chooseBestRunnableBy_optimal st.objects.get?
+      have hOpt := chooseBestRunnableBy_optimal st.getObject?
         (fun tc => tc.domain == st.scheduler.activeDomainOnCore c)
         (st.scheduler.runQueueOnCore c).maxPriorityBucket tid resPrio resDl hMax hMaxAll
       have hNoBeat := hOpt t ht tcb hTObj hElig
@@ -1482,7 +1484,8 @@ theorem chooseBestRunnableEffective_ok_of_allTcb
     have hAllTl : ∀ t ∈ tl, ∃ tcb : TCB, st.objects.get? t.toObjId = some (.tcb tcb) :=
       fun t ht => hAll t (List.mem_cons_of_mem _ ht)
     unfold chooseBestRunnableEffective
-    rw [hHdObj]
+    rw [show st.getTcb? hd = some hdTcb from
+      (SeLe4n.Model.SystemState.getTcb?_eq_some_iff st hd hdTcb).mpr hHdObj]
     exact ih _ hAllTl
 
 /-- SM5.A budget helper: `hasSufficientBudget` reads the state only through
@@ -1517,26 +1520,23 @@ theorem chooseBestRunnableEffective_objects_congr (s₁ s₂ : SystemState)
   | cons hd tl ih =>
     intro best
     have h' : s₂.objects = s₁.objects := h.symm
-    cases hObj : s₁.objects.get? hd.toObjId with
+    -- The fold reads the store through `getTcb?`, and that accessor depends on
+    -- the state only through `objects`, so the two sides agree on it outright.
+    have hTcb : s₁.getTcb? hd = s₂.getTcb? hd := by
+      unfold SeLe4n.Model.SystemState.getTcb?; rw [h]
+    cases hObj : s₁.getTcb? hd with
     | none =>
-      have hObj2 : s₂.objects.get? hd.toObjId = none := by rw [h']; exact hObj
+      have hObj2 : s₂.getTcb? hd = none := by rw [← hTcb]; exact hObj
       -- Round 15: both sides skip the entry, so both reduce to the tail fold.
       unfold chooseBestRunnableEffective
       simp only [hObj, hObj2]
       exact ih _
-    | some obj =>
-      have hObj2 : s₂.objects.get? hd.toObjId = some obj := by rw [h']; exact hObj
-      cases obj with
-      | tcb tcb =>
-        unfold chooseBestRunnableEffective
-        simp only [hObj, hObj2, hasSufficientBudget_objects_congr s₁ s₂ tcb h,
-          resolveEffectivePrioDeadline_objects_congr s₁ s₂ tcb h]
-        exact ih _
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ =>
-        unfold chooseBestRunnableEffective
-        simp only [hObj, hObj2]
-        exact ih _
+    | some tcb =>
+      have hObj2 : s₂.getTcb? hd = some tcb := by rw [← hTcb]; exact hObj
+      unfold chooseBestRunnableEffective
+      simp only [hObj, hObj2, hasSufficientBudget_objects_congr s₁ s₂ tcb h,
+        resolveEffectivePrioDeadline_objects_congr s₁ s₂ tcb h]
+      exact ih _
 
 /-- SM5.A budget helper: the bucket-first effective selector is objects-only
 dependent. -/
@@ -1608,18 +1608,21 @@ private theorem chooseBestRunnableEffective_result_props_aux
   | cons hd tl ih =>
     intro best rt rp rd h
     unfold chooseBestRunnableEffective at h
-    cases hObj : st.objects.get? hd.toObjId with
-    -- Round 15: a non-TCB head is skipped with `best` untouched, so both
-    -- outcomes carry over from the tail unchanged.
+    cases hObj : st.getTcb? hd with
+    -- Round 15: a head that is not a TCB — absent, or stored under another
+    -- kind, which `getTcb?` answers `none` for alike — is skipped with `best`
+    -- untouched, so both outcomes carry over from the tail unchanged.
     | none =>
       rw [hObj] at h
       rcases ih _ rt rp rd h with hprops | hb
       · exact Or.inl ⟨List.mem_cons_of_mem _ hprops.1, hprops.2⟩
       · exact Or.inr hb
-    | some obj =>
-      cases obj with
-      | tcb tcb =>
-        rw [hObj] at h
+    | some tcb =>
+      -- The conclusion is phrased over the raw store read, so the accessor's
+      -- answer is converted once, here, rather than at each use.
+      have hObjRaw : st.objects.get? hd.toObjId = some (.tcb tcb) :=
+        (SeLe4n.Model.SystemState.getTcb?_eq_some_iff st hd tcb).mp hObj
+      · rw [hObj] at h
         by_cases hCond : (eligible tcb && hasSufficientBudget st tcb) = true
         · obtain ⟨hEl, hBu⟩ := And.intro
             (by simpa using (Bool.and_eq_true _ _ ▸ hCond).1)
@@ -1632,7 +1635,7 @@ private theorem chooseBestRunnableEffective_result_props_aux
             · exact Or.inl ⟨List.mem_cons_of_mem _ hprops.1, hprops.2⟩
             · simp only [Option.some.injEq, Prod.mk.injEq] at hb
               exact Or.inl ⟨List.mem_cons.mpr (Or.inl hb.1.symm),
-                tcb, hb.1.symm ▸ hObj, hEl, hBu⟩
+                tcb, hb.1.symm ▸ hObjRaw, hEl, hBu⟩
           | some y =>
             obtain ⟨yt, yp, yd⟩ := y
             by_cases hBetter : isBetterCandidate yp yd
@@ -1642,7 +1645,7 @@ private theorem chooseBestRunnableEffective_result_props_aux
               · exact Or.inl ⟨List.mem_cons_of_mem _ hprops.1, hprops.2⟩
               · simp only [Option.some.injEq, Prod.mk.injEq] at hb
                 exact Or.inl ⟨List.mem_cons.mpr (Or.inl hb.1.symm),
-                  tcb, hb.1.symm ▸ hObj, hEl, hBu⟩
+                  tcb, hb.1.symm ▸ hObjRaw, hEl, hBu⟩
             · simp only [hCond, if_true, hBetter] at h
               rcases ih _ rt rp rd h with hprops | hb
               · exact Or.inl ⟨List.mem_cons_of_mem _ hprops.1, hprops.2⟩
@@ -1652,12 +1655,6 @@ private theorem chooseBestRunnableEffective_result_props_aux
           rcases ih _ rt rp rd h with hprops | hb
           · exact Or.inl ⟨List.mem_cons_of_mem _ hprops.1, hprops.2⟩
           · exact Or.inr hb
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ =>
-        rw [hObj] at h
-        rcases ih _ rt rp rd h with hprops | hb
-        · exact Or.inl ⟨List.mem_cons_of_mem _ hprops.1, hprops.2⟩
-        · exact Or.inr hb
 
 /-- SM5.A budget helper: a `none`-seeded effective scan that selects `rt`
 witnesses that `rt` is a member of the scanned list, resolves to a TCB, and
@@ -1699,42 +1696,40 @@ theorem chooseBestRunnableEffective_result_fields
       exact hInit resTid resPrio resDl rfl
   | cons hd tl ih =>
       unfold chooseBestRunnableEffective at hOk
-      cases hHdObj : st.objects.get? hd.toObjId with
-      -- Round 15: a non-TCB head is skipped with `init` untouched.
-      | none => rw [hHdObj] at hOk; exact ih init hOk hInit
-      | some obj =>
-          cases obj with
-          | tcb hdTcb =>
-              rw [hHdObj] at hOk
-              by_cases hCond : (eligible hdTcb && hasSufficientBudget st hdTcb) = true
-              · cases init with
-                | none =>
-                    simp only [hCond, if_true] at hOk
-                    refine ih (some (hd, (resolveEffectivePrioDeadline st hdTcb).1,
-                      (resolveEffectivePrioDeadline st hdTcb).2)) hOk ?_
-                    intro iTid iPrio iDl hEq
-                    simp only [Option.some.injEq, Prod.mk.injEq] at hEq
-                    obtain ⟨rfl, rfl, rfl⟩ := hEq
-                    exact ⟨hdTcb, hHdObj, rfl, rfl⟩
-                | some triple =>
-                    obtain ⟨initTid, initPrio, initDl⟩ := triple
-                    by_cases hBeat : isBetterCandidate initPrio initDl
-                        (resolveEffectivePrioDeadline st hdTcb).1
-                        (resolveEffectivePrioDeadline st hdTcb).2
-                    · simp only [hCond, if_true, hBeat] at hOk
-                      refine ih (some (hd, (resolveEffectivePrioDeadline st hdTcb).1,
-                        (resolveEffectivePrioDeadline st hdTcb).2)) hOk ?_
-                      intro iTid iPrio iDl hEq
-                      simp only [Option.some.injEq, Prod.mk.injEq] at hEq
-                      obtain ⟨rfl, rfl, rfl⟩ := hEq
-                      exact ⟨hdTcb, hHdObj, rfl, rfl⟩
-                    · simp only [hCond, if_true, hBeat] at hOk
-                      exact ih (some (initTid, initPrio, initDl)) hOk hInit
-              · rw [Bool.not_eq_true] at hCond
-                simp only [hCond, Bool.false_eq_true, if_false] at hOk
-                exact ih init hOk hInit
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-              rw [hHdObj] at hOk; exact ih init hOk hInit
+      cases hHd : st.getTcb? hd with
+      -- Round 15: a head that is not a TCB is skipped with `init` untouched.
+      | none => rw [hHd] at hOk; exact ih init hOk hInit
+      | some hdTcb =>
+          have hHdObj : st.objects.get? hd.toObjId = some (.tcb hdTcb) :=
+            (SeLe4n.Model.SystemState.getTcb?_eq_some_iff st hd hdTcb).mp hHd
+          rw [hHd] at hOk
+          by_cases hCond : (eligible hdTcb && hasSufficientBudget st hdTcb) = true
+          · cases init with
+            | none =>
+                simp only [hCond, if_true] at hOk
+                refine ih (some (hd, (resolveEffectivePrioDeadline st hdTcb).1,
+                  (resolveEffectivePrioDeadline st hdTcb).2)) hOk ?_
+                intro iTid iPrio iDl hEq
+                simp only [Option.some.injEq, Prod.mk.injEq] at hEq
+                obtain ⟨rfl, rfl, rfl⟩ := hEq
+                exact ⟨hdTcb, hHdObj, rfl, rfl⟩
+            | some triple =>
+                obtain ⟨initTid, initPrio, initDl⟩ := triple
+                by_cases hBeat : isBetterCandidate initPrio initDl
+                    (resolveEffectivePrioDeadline st hdTcb).1
+                    (resolveEffectivePrioDeadline st hdTcb).2
+                · simp only [hCond, if_true, hBeat] at hOk
+                  refine ih (some (hd, (resolveEffectivePrioDeadline st hdTcb).1,
+                    (resolveEffectivePrioDeadline st hdTcb).2)) hOk ?_
+                  intro iTid iPrio iDl hEq
+                  simp only [Option.some.injEq, Prod.mk.injEq] at hEq
+                  obtain ⟨rfl, rfl, rfl⟩ := hEq
+                  exact ⟨hdTcb, hHdObj, rfl, rfl⟩
+                · simp only [hCond, if_true, hBeat] at hOk
+                  exact ih (some (initTid, initPrio, initDl)) hOk hInit
+          · rw [Bool.not_eq_true] at hCond
+            simp only [hCond, Bool.false_eq_true, if_false] at hOk
+            exact ih init hOk hInit
 
 /-- WS-SM SM5.I (PR-B): the effective analogue of `chooseBestRunnableBy_optimal_combined`.
 The budget-aware `none`-or-`init`-seeded effective scan's result is not
@@ -1771,7 +1766,8 @@ private theorem chooseBestRunnableEffective_optimal_combined
     have hAllTl : ∀ t, t ∈ tl → ∃ tcb, st.objects.get? t.toObjId = some (.tcb tcb) :=
       fun t hMem => hAllTcb t (List.mem_cons.mpr (Or.inr hMem))
     obtain ⟨hdTcb, hHdObj⟩ := hAllTcb hd (List.mem_cons.mpr (Or.inl rfl))
-    rw [hHdObj] at hOk
+    rw [show st.getTcb? hd = some hdTcb from
+      (SeLe4n.Model.SystemState.getTcb?_eq_some_iff st hd hdTcb).mpr hHdObj] at hOk
     cases hEligB : (eligible hdTcb && hasSufficientBudget st hdTcb) with
     | false =>
       simp only [hEligB] at hOk
@@ -2010,20 +2006,18 @@ theorem chooseBestRunnableEffective_some_ne_ok_none
     intro x h
     obtain ⟨xt, xp, xd⟩ := x
     unfold chooseBestRunnableEffective at h
-    cases hObj : st.objects.get? hd.toObjId with
-    -- Round 15: skipped, so the incumbent carries into the tail.
+    cases hObj : st.getTcb? hd with
+    -- Round 15: skipped, so the incumbent carries into the tail.  A head that
+    -- is absent and one stored under another kind are one arm here, which is
+    -- what the accessor decides once.
     | none => rw [hObj] at h; exact ih _ h
-    | some obj =>
-      cases obj with
-      | tcb tcb =>
-        rw [hObj] at h
-        by_cases hCond : (eligible tcb && hasSufficientBudget st tcb) = true
-        · simp only [hCond, if_true] at h
-          split at h <;> exact ih _ h
-        · simp only [Bool.not_eq_true] at hCond
-          simp only [hCond] at h; exact ih _ h
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rw [hObj] at h; exact ih _ h
+    | some tcb =>
+      rw [hObj] at h
+      by_cases hCond : (eligible tcb && hasSufficientBudget st tcb) = true
+      · simp only [hCond, if_true] at h
+        split at h <;> exact ih _ h
+      · simp only [Bool.not_eq_true] at hCond
+        simp only [hCond] at h; exact ih _ h
 
 /-- SM5.A budget helper: a `none`-seeded effective scan returning `.ok none`
 witnesses that **no** scanned TCB was both domain-eligible and had sufficient
@@ -2044,30 +2038,26 @@ theorem chooseBestRunnableEffective_none_no_eligible
     unfold chooseBestRunnableEffective at hHdReduce
     rcases List.mem_cons.mp hmem with hEq | hMemTl
     · subst hEq
-      rw [hObjTid] at hHdReduce
+      rw [show st.getTcb? tid = some tcb from
+        (SeLe4n.Model.SystemState.getTcb?_eq_some_iff st tid tcb).mpr hObjTid] at hHdReduce
       by_cases hCond : (eligible tcb && hasSufficientBudget st tcb) = true
       · exfalso
         simp only [hCond, if_true] at hHdReduce
         exact chooseBestRunnableEffective_some_ne_ok_none st eligible tl _ hHdReduce
       · simpa using hCond
-    · cases hHdObj : st.objects.get? hd.toObjId with
-      -- Round 15: a non-TCB head is skipped, leaving the same `none`-seeded fold
-      -- over the tail, so the inductive hypothesis applies directly.
-      | none => rw [hHdObj] at hHdReduce; exact ih hHdReduce tid hMemTl tcb hObjTid
-      | some obj =>
-        cases obj with
-        | tcb hdTcb =>
-          rw [hHdObj] at hHdReduce
-          by_cases hHdCond : (eligible hdTcb && hasSufficientBudget st hdTcb) = true
-          · exfalso
-            simp only [hHdCond, if_true] at hHdReduce
-            exact chooseBestRunnableEffective_some_ne_ok_none st eligible tl _ hHdReduce
-          · simp only [Bool.not_eq_true] at hHdCond
-            simp only [hHdCond] at hHdReduce
-            exact ih hHdReduce tid hMemTl tcb hObjTid
-        | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-        | schedContext _ | reply _ =>
-          rw [hHdObj] at hHdReduce
+    · cases hHd : st.getTcb? hd with
+      -- Round 15: a head that is not a TCB is skipped, leaving the same
+      -- `none`-seeded fold over the tail, so the inductive hypothesis applies
+      -- directly.
+      | none => rw [hHd] at hHdReduce; exact ih hHdReduce tid hMemTl tcb hObjTid
+      | some hdTcb =>
+        rw [hHd] at hHdReduce
+        by_cases hHdCond : (eligible hdTcb && hasSufficientBudget st hdTcb) = true
+        · exfalso
+          simp only [hHdCond, if_true] at hHdReduce
+          exact chooseBestRunnableEffective_some_ne_ok_none st eligible tl _ hHdReduce
+        · simp only [Bool.not_eq_true] at hHdCond
+          simp only [hHdCond] at hHdReduce
           exact ih hHdReduce tid hMemTl tcb hObjTid
 
 /-- WS-SM SM5.I (PR-B capstone): the budget-aware analogue of

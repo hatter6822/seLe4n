@@ -94,35 +94,26 @@ abbrev FrozenKernel := KernelM FrozenSystemState KernelError
 Uses `FrozenMap.get?` — one hash in indexMap + one array access. -/
 def frozenLookupObject (id : SeLe4n.ObjId) : FrozenKernel FrozenKernelObject :=
   fun st =>
-    match st.objects.get? id with
+    match st.getObject? id with
     | some obj => .ok (obj, st)
     | none => .error .objectNotFound
 
 /-- Q7-A: Look up a TCB by ThreadId in frozen state.
 Mirrors `lookupTcb` from builder phase: sentinel check + type match. -/
 def frozenLookupTcb (st : FrozenSystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
-  if tid.isReserved then none
-  else match st.objects.get? tid.toObjId with
-  | some (.tcb tcb) => some tcb
-  | _ => none
+  if tid.isReserved then none else st.getTcb? tid
 
 /-- Q7-A: Look up an endpoint by ObjId in frozen state. -/
 def frozenLookupEndpoint (st : FrozenSystemState) (epId : SeLe4n.ObjId) : Option Endpoint :=
-  match st.objects.get? epId with
-  | some (.endpoint ep) => some ep
-  | _ => none
+  st.getEndpoint? epId
 
 /-- Q7-A: Look up a notification by ObjId in frozen state. -/
 def frozenLookupNotification (st : FrozenSystemState) (nId : SeLe4n.ObjId) : Option Notification :=
-  match st.objects.get? nId with
-  | some (.notification n) => some n
-  | _ => none
+  st.getNotification? nId
 
 /-- Q7-A: Look up a frozen CNode by ObjId in frozen state. -/
 def frozenLookupCNode (st : FrozenSystemState) (cnId : SeLe4n.ObjId) : Option FrozenCNode :=
-  match st.objects.get? cnId with
-  | some (.cnode cn) => some cn
-  | _ => none
+  st.getCNode? cnId
 
 -- ============================================================================
 -- Q7-B: Core Mutation Primitives (Value-Only)
@@ -324,9 +315,15 @@ transition later consumes. Without it the frozen receive woke the caller, which
 is a transition the live kernel never performs. -/
 def frozenLinkCallerReply (st : FrozenSystemState) (caller : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) : Except KernelError FrozenSystemState :=
-  match st.objects.get? rid.toObjId with
+  match st.getObject? rid.toObjId with
   | some (.reply r) =>
-      if r.caller.isNone then
+      -- **`Reply.isFree`, not `caller.isNone`** — the one spelling of "this
+      -- Reply may be linked to a new caller", which reads *both* stack links as
+      -- well.  This guard read the caller alone, so a frame still on a live
+      -- reply stack was linkable here while `Model.linkReply` refuses it; that
+      -- is the fifth guard deciding one question differently, and `isFree`'s own
+      -- docstring records the last time this tree paid for it.
+      if r.isFree then
         match st.objects.set rid.toObjId (.reply { r with caller := some caller }) with
         | none => .error .objectNotFound
         | some objects' =>
@@ -342,6 +339,46 @@ def frozenLinkCallerReply (st : FrozenSystemState) (caller : SeLe4n.ThreadId)
                 else .error .replyCapInvalid
       else .error .replyCapInvalid
   | _ => .error .replyCapInvalid
+
+/-- **WS-RM, frozen mirror**: detach the reply-stack frame sitting *above* `rid`.
+
+`FrozenKernelObject.reply` carries the **live** `SeLe4n.Kernel.Reply`, links and
+all, and `Model.freeze` copies a live state's Reply objects verbatim — so a
+frozen state taken mid-call-chain holds a doubly linked reply stack exactly as
+the live one does.  Consuming a frame's `caller` while leaving it on that stack
+therefore falsifies the chain's `prevLinkReciprocal` on this surface for the same
+reason it did on the live one, and the frozen reply was doing precisely that.
+
+This is `detachReplyFrameAbove`'s counterpart, clause for clause: no Reply at
+`rid` and a frame that heads a context or sits at the top are the identity; an
+upward `.frame` link whose target is missing is `.objectNotFound`; and a target
+that does **not** reciprocate is `.invalidArgument` rather than a write, which
+is what confines the one store to the genuine frame above. -/
+def frozenDetachReplyFrameAbove (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
+    Except KernelError FrozenSystemState :=
+  match st.getReply? rid with
+  | none => .ok st
+  | some r =>
+    match r.next with
+    | some (.frame above) =>
+      match st.getReply? above with
+      | none => .error .objectNotFound
+      | some a =>
+        if a.prev != some rid then .error .invalidArgument
+        else
+          match st.objects.set above.toObjId (.reply { a with prev := none }) with
+          | none => .error .objectNotFound
+          | some objects' => .ok { st with objects := objects' }
+    | _ => .ok st
+
+/-- **WS-RM, frozen mirror**: the detach folded to the identity on its refusal.
+
+The live `detachReplyFrameAboveOrSelf` and this one make the same reading: a
+non-reciprocating upward link means "nothing above me on my stack", which the
+chain relation permits by design since it is stated downward. -/
+def frozenDetachReplyFrameAboveOrSelf (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
+    FrozenSystemState :=
+  (frozenDetachReplyFrameAbove st rid).toOption.getD st
 
 /-- Q7-B: Store a TCB's IPC state in frozen state. -/
 def frozenStoreTcbIpcState (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
@@ -383,8 +420,8 @@ def frozenSaveOutgoingContext (st : FrozenSystemState)
   match (st.scheduler.current) with
   | none => .ok st
   | some outTid =>
-      match st.objects.get? outTid.toObjId with
-      | some (.tcb outTcb) =>
+      match st.getTcb? outTid with
+      | some outTcb =>
           let obj := FrozenKernelObject.tcb { outTcb with registerContext := st.machine.regs }
           match st.objects.set outTid.toObjId obj with
           | some objects' => .ok { st with objects := objects' }
@@ -396,8 +433,8 @@ Returns explicit error if the thread's object is missing or not a TCB.
 Mirrors `restoreIncomingContext` from builder phase. -/
 def frozenRestoreIncomingContext (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     : Except KernelError FrozenSystemState :=
-  match st.objects.get? tid.toObjId with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
       .ok { st with machine := st.machine.setRegsOnCore bootCoreId tcb.registerContext }
   | _ => .error .objectNotFound
 
@@ -474,7 +511,7 @@ def frozenQueuePushTailObjects (objects : FrozenMap SeLe4n.ObjId FrozenKernelObj
 def frozenQueuePushTail (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st : FrozenSystemState)
     : Except KernelError FrozenSystemState :=
-  match st.objects.get? endpointId with
+  match st.getObject? endpointId with
   | some (.endpoint ep) =>
       match frozenLookupTcb st tid with
       | none => .error .objectNotFound
@@ -505,7 +542,7 @@ A thread with no `queuePPrev` is on no queue at all and is refused
 def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st : FrozenSystemState)
     : Except KernelError FrozenSystemState :=
-  match st.objects.get? endpointId with
+  match st.getObject? endpointId with
   | some (.endpoint ep) =>
       match frozenLookupTcb st tid with
       | none => .error .objectNotFound

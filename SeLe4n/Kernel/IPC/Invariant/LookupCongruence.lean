@@ -100,7 +100,7 @@ theorem getEndpoint?_congr_getElem {s1 s2 : SystemState}
 theorem lookupTcb_congr_getElem {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
     (tid : SeLe4n.ThreadId) : lookupTcb s2 tid = lookupTcb s1 tid := by
-  unfold lookupTcb; rw [hEq]
+  unfold lookupTcb SystemState.getTcb?; rw [hEq]
 
 -- ============================================================================
 -- §1  Per-conjunct pointwise-lookup transports
@@ -718,6 +718,37 @@ theorem consumeReply_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
       exact storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 h1 h2
 
 open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)** step congruence: the removal's *detach* leg maps
+off-scheduler-agreeing inputs to off-scheduler-agreeing outputs.  Its decision is
+read off `getReply?` alone (`detachReplyFrameAboveOrSelf_decision`), so agreeing
+object stores take the same branch; the one write is a `storeObject`, whose
+congruence carries every other field. -/
+theorem detachReplyFrameAboveOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
+    (rid : SeLe4n.ReplyId)
+    (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt) :
+    OffSchedulerAgrees (detachReplyFrameAboveOrSelf s1 rid)
+      (detachReplyFrameAboveOrSelf s2 rid) := by
+  have hGR : ∀ q, s2.getReply? q = s1.getReply? q :=
+    fun q => getReply?_congr_getElem hRel.objects q
+  have hFA : replyFrameAbove? s2 rid = replyFrameAbove? s1 rid := by
+    unfold replyFrameAbove?; rw [hGR rid]
+  rcases detachReplyFrameAboveOrSelf_decision s1 rid with
+    ⟨above, a, hFA1, hA1, hP1, hS1⟩ | ⟨hId1, hNo1⟩
+  · rcases detachReplyFrameAboveOrSelf_decision s2 rid with
+      ⟨above', a', hFA2, hA2, _hP2, hS2⟩ | ⟨_, hNo2⟩
+    · have hAb : above = above' := Option.some.inj (hFA1.symm.trans (hFA.symm.trans hFA2))
+      subst hAb
+      have hAe : a' = a := Option.some.inj (hA2.symm.trans ((hGR above).trans hA1))
+      subst hAe
+      exact storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hS1 hS2
+    · exact absurd hP1 (hNo2 above a (hFA.trans hFA1) ((hGR above).trans hA1))
+  · rcases detachReplyFrameAboveOrSelf_decision s2 rid with
+      ⟨above, a, hFA2, hA2, hP2, _⟩ | ⟨hId2, _⟩
+    · exact absurd hP2 (hNo1 above a (hFA.symm.trans hFA2) ((hGR above).symm.trans hA2))
+    · rw [hId1, hId2]; exact hRel
+
+open SeLe4n.Model.SystemState in
 /-- SM6.D step congruence: `consumeCallerReply` (total) maps
 off-scheduler-agreeing inputs to off-scheduler-agreeing outputs — the
 reply-side `consumeReply` then the caller-side `replyObject` clear, both
@@ -764,6 +795,24 @@ theorem consumeCallerReply_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
       | some tcb =>
           simp only [hG] at h1 h2
           exact storeObject_offSchedulerAgrees _ _ hRelM hInvM1 hInvM2 h1 h2
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)** step congruence: the removal (total) maps
+off-scheduler-agreeing inputs to off-scheduler-agreeing outputs — the detach,
+then the consume.  This is what lets the cross-core reply's post-state be
+compared with the single-core spine's now that both detach. -/
+theorem removeCallerReplyFrame_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
+    (h1 : removeCallerReplyFrame caller rid s1 = .ok ((), r1))
+    (h2 : removeCallerReplyFrame caller rid s2 = .ok ((), r2)) :
+    OffSchedulerAgrees r1 r2 := by
+  rw [removeCallerReplyFrame_eq] at h1 h2
+  exact consumeCallerReply_offSchedulerAgrees caller rid
+    (detachReplyFrameAboveOrSelf_offSchedulerAgrees rid hRel hInv1 hInv2)
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt s1 rid hInv1)
+    (detachReplyFrameAboveOrSelf_preserves_objects_invExt s2 rid hInv2) h1 h2
 
 -- ============================================================================
 -- §5  Read-view agreement: transports for transitions that rewrite only

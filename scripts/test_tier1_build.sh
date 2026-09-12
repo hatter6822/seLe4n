@@ -88,6 +88,16 @@ run_check "BUILD" lake build SeLe4n.Testing.ExportCommitDisciplineCensus
 # check.
 run_check "BUILD" lake build SeLe4n.Testing.LockFootprintBoundCensus
 
+# WS-RM RM5.3: every definition that writes reply-stack data names a chain
+# result, or is recorded as a half-step of the composite that does.  `v0.35.4`
+# made the reply stack doubly linked and `donationChainWellFormed` says the
+# links agree; what keeps that true is that the next writer cannot quietly skip
+# it, which is exactly how the reply path came to consume a caller's Reply and
+# leave its frame on the stack.  The write-site set is derived from the
+# environment and reconciled against the registry in both directions; building
+# the module IS the check.
+run_check "BUILD" lake build SeLe4n.Testing.ReplyStackWriteCensus
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each
