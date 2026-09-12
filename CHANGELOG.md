@@ -1,3 +1,116 @@
+## v0.35.8 — AK7 reader hygiene: the executable residue is zero, and the floor is a prohibition
+
+Closes the `docs/REGISTERED_DEBT.md` §C row **AK7 reader hygiene, the executable
+residue** by finishing the migration rather than carrying it, and replaces the
+metric's rolling ceiling with a zero that regenerating the baseline cannot clear.
+
+`v0.35.7` split `RAW_LOOKUP_TID` into `STORE_READ_CODE` (raw object-store reads
+in the body of a declaration whose result is not a `Prop`) and `STORE_READ_SPEC`
+(everything else, diagnostic), and drove the kernel and platform trees to zero.
+It then registered the remaining **76** — 65 `Testing/MainTraceHarness.lean`
+trace bodies, 10 `Testing/InvariantChecks.lean` helpers, and one proof case
+split in `Platform/RPi5/ProofHooks.lean` — as post-v1.0.0 debt, held at a
+per-key inventory floor.  That is the superseded metric's own shape one
+population narrower, and it carried the superseded metric's own escape: a cut
+that exceeds a ceiling may re-anchor it, which `RAW_LOOKUP_TID` did four times
+in three days.
+
+**`STORE_READ_CODE` is now 0** and is enforced as a `ZERO_METRICS` entry beside
+`SORRY_COUNT` and `AXIOM_COUNT`.  Every raw store read left in the tree is
+either a proposition — which has no helper form, since `getTcb? k = none` holds
+for an absent key and a wrong-kinded object alike — or one of the typed
+accessors' own bodies in `SeLe4n/Model/State.lean`, which the census exempts by
+name.
+
+### The migration
+
+- **`SeLe4n/Testing/MainTraceHarness.lean`, 65 → 0.**  Every site was a
+  single-variant `match st.objects[k]? with | some (.tcb t) => … | _ => …`, so
+  each became the typed accessor with a two-arm match: `getTcb?`,
+  `getSchedContext?`, `getReply?`, `getEndpoint?`, `getUntyped?`, `getCNode?`.
+  Three `.map KernelObject.objectType` reads became `getObjectType?`
+  (definitional), and the trace-equivalence comparison stayed kind-agnostic
+  through `getObject?` (also definitional), because it compares whole objects
+  and the typed read would be weaker there.
+- **`SeLe4n/Testing/InvariantChecks.lean`, 10 → 0.**  The CSpace, capability
+  rights, VSpace ASID and ASID-table checks discriminate a variant and now read
+  it; `lifecycleMetadataChecks` and `checkLifecycleObjectTypeLockstep` are
+  variant-agnostic by intent and read `getObject?`.  One check strengthened: a
+  `.cnodeSlot` capability's backing is now `getCNode?`, since that capability
+  names the CNode it descends and a non-CNode target is not backed for the
+  purpose the check states.
+- **`SeLe4n/Platform/RPi5/ProofHooks.lean`, 1 → 0.**  The remaining read was a
+  bridge — `have hObj : st.objects[…]? = some (.tcb tcb)` — needed only because
+  `registerContextStableCheck_budget` and
+  `contextSwitchState_preserves_proofLayerInvariantBundle` took the store form
+  as a hypothesis.  Each has exactly one caller, so both hypotheses are restated
+  in the accessor vocabulary and the bridge moved inside the theorems, where it
+  belongs.  The hook's own eight-arm store split became the two-arm accessor
+  split its comment had claimed since `v0.35.7`.
+- **The golden fixture is byte-identical.**  That is the measurement, not an
+  assumption: the deferral's stated reason was that migrating the harness
+  "risks a fixture churn with no proof-correctness gain", and running
+  `lake exe sele4n` against `tests/fixtures/main_trace_smoke.expected` after the
+  migration shows no churn at all.
+
+### Two specification predicates went with them
+
+Found while fixing a linter warning the `v0.35.7` sweep left in
+`Platform/RPi5/RuntimeContract.lean`, and fixed rather than documented:
+
+- `budgetPositive` and `currentBudgetPositive` (`Kernel/Scheduler/Invariant.lean`)
+  read the store raw while their per-core twins `budgetPositiveOnCore` and
+  `currentBudgetPositiveOnCore` have used the typed accessors since SM4.C — one
+  question with two answers, with the boot-core one the worse.  Both now read
+  `getTcb?` / `getSchedContext?`, which is the same proposition: the seven
+  non-matching constructors and the absent key all map to the accessor's `none`.
+  `budgetPositive_subset` (`Scheduler/Operations/Preservation.lean`) restates
+  that body inline and follows.
+- `registerContextStableCheck_budget`'s proof is rewritten around
+  `SystemState.getTcb?_frame` / `getSchedContext?_frame`: the context switch
+  writes `machine` and `scheduler` only, so each post-state read frames back to
+  `st` and one two-arm case analysis serves the check and the predicate
+  together.
+
+`STORE_READ_SPEC` fell 4373 → 4365 as a side effect.  It remains unenforced in
+both directions, by design.
+
+### The gate
+
+- `STORE_READ_CODE` moved from the should-drop list into `ZERO_METRICS`.  A
+  ceiling invites the next cut that exceeds it to raise the ceiling; a zero can
+  only be relaxed by editing the gate's own list, which is visible and
+  reviewable.  The failure epilogue now says this in as many words, so a reader
+  is not told to re-anchor a baseline that will not help.
+- **The per-key inventory for this metric was deleted, not kept.**  At zero a
+  cardinality and a set say the same thing, and keeping both would be the
+  duplication hazard this project keeps paying for, inside the gate written to
+  close it.  What replaced it is the *relation*: the gate asserts that
+  `STORE_READ_CODE` equals the sum of its own `STORE_READ_CODE_SITE` rows, in
+  the baseline and in the current capture, so a hand-edited or truncated file
+  claiming "none" beside a live site row is refused as a gate defect.  The rows
+  are still emitted, because when the zero breaks they are what names the
+  offending `(file, declaration)` — the failure message prints them.
+- **The self-test grew a second case shape** (10 cases, all passing).  The two
+  claims are token-preserving with respect to different things, so the harness
+  asserts a different invariant for each: the six inventory cases hold every
+  scalar byte-identical, and the three census cases move the scalars while the
+  harness asserts the fixture is internally consistent.  The decisive case keeps
+  the baseline and the current value **equal at one** — everything a `:drop`
+  metric asks, and exactly what a zero floor must still reject.  A tenth case
+  covers the inconsistent capture.  The inert-mutation guard was verified to
+  fire on both shapes.
+
+### Metrics
+
+`RAW_MATCH_TOTAL` 50 → 44 (TCB 25 → 22, SchedContext 10 → 7); `RAW_SITE` pinned
+sites 45 → 39; `STORE_READ_CODE` 76 → **0**; `STORE_READ_SPEC` 4373 → 4365;
+`GETTCB_ADOPTION` 2369 → 2403, `GETSCHEDCTX_ADOPTION` 385 → 402,
+`GETENDPOINT_ADOPTION` 179 → 190, `GETUNTYPED_ADOPTION` 14 → 16,
+`GETCNODE_ADOPTION` 142 → 146, `GETVSPACEROOT_ADOPTION` 48 → 51.
+
+Refs: docs/REGISTERED_DEBT.md §C (AK7 reader hygiene, the executable residue)
+
 ## v0.35.7 — Every kernel store read goes through a typed accessor, and the AK7 lookup floor stops being a ratchet
 
 **The raw object-store read is gone from executable kernel code.**  `SeLe4n/Kernel`

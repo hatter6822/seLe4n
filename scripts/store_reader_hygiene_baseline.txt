@@ -8,27 +8,26 @@
 
 ## Reader-side raw patterns (should-drop)
 
-raw_match_tcb            = 25
-raw_match_schedcontext   = 10
+raw_match_tcb            = 22
+raw_match_schedcontext   = 7
 raw_match_endpoint       = 1
 raw_match_notification   = 0
 raw_match_untyped        = 0
 raw_match_cnode          = 0
 raw_match_vspaceroot     = 14
-raw_match_total          = 50
+raw_match_total          = 44
 raw_match_unclassified   = 3
-store_read_code          = 76   (enforced)
-store_read_spec          = 4373 (diagnostic)
+store_read_spec          = 4365 (diagnostic)
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 2369
-getschedctx_adoption     = 385
-getendpoint_adoption     = 179
+gettcb_adoption          = 2403
+getschedctx_adoption     = 402
+getendpoint_adoption     = 190
 getnotification_adoption = 85
-getuntyped_adoption      = 14
-getcnode_adoption        = 142
-getvspaceroot_adoption   = 48
+getuntyped_adoption      = 16
+getcnode_adoption        = 146
+getvspaceroot_adoption   = 51
 
 ## Writer-side wrapper adoption (should-grow)
 
@@ -43,20 +42,28 @@ sentinel_check_dispatch  = 57
 reader_hygiene_suite_tests           = 45
 kerrormatrix_rows        = 47
 
-## Proof-surface health (should-stay-zero)
+## Proof-surface health and reader hygiene (should-stay-zero)
 
 sorry_count              = 0
 axiom_count              = 0
+store_read_code          = 0
 
 ## Machine-diffable block
 ##
-## RAW_SITE and STORE_READ_CODE_SITE rows are the binding floors: the gate
-## refuses any key absent from the baseline, and holds every key present to its
-## recorded count.  Both are keyed by the enclosing DECLARATION, because a
-## per-file key is a cardinality one level up -- hygienizing one declaration
-## while another starts reading raw leaves a per-file row unmoved, which is the
-## movement the inventory exists to catch.  STORE_READ_SPEC_SITE rows are
-## recorded but not enforced.  The scalars below are derived from these rows.
+## RAW_SITE rows are the binding floor: the gate refuses any key absent from
+## the baseline, and holds every key present to its recorded count.  They are
+## keyed by the enclosing DECLARATION, because a per-file key is a cardinality
+## one level up -- hygienizing one declaration while another starts reading raw
+## leaves a per-file row unmoved, which is the movement the inventory exists to
+## catch.
+##
+## STORE_READ_CODE_SITE rows get no inventory floor, because STORE_READ_CODE is
+## enforced at zero and at zero a cardinality and a set say the same thing.
+## They are emitted anyway, for two reasons: the gate asserts that the total is
+## their sum, so a capture claiming "none" beside a live row is refused as a
+## defect rather than passed; and when the zero is broken they are what tells
+## the reader WHERE.  STORE_READ_SPEC_SITE rows are recorded but not enforced.
+## The scalars below are derived from these rows.
 
 RAW_SITE=SeLe4n/Kernel/Architecture/VSpace.lean|vspaceMapPage_entry_consistent_frame|vspaceRoot|1
 RAW_SITE=SeLe4n/Kernel/Architecture/VSpace.lean|vspaceMapPage_resolveAsidRoot_isSome|vspaceRoot|1
@@ -79,11 +86,7 @@ RAW_SITE=SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean|schedContextConf
 RAW_SITE=SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean|schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly|tcb|1
 RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|boundThreadDomainConsistent|schedContext|1
 RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|boundThreadDomainConsistent|tcb|1
-RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|budgetPositive|schedContext|1
-RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|budgetPositive|tcb|1
 RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|contextMatchesCurrent|tcb|1
-RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|currentBudgetPositive|schedContext|1
-RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|currentBudgetPositive|tcb|1
 RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|currentThreadInActiveDomain|tcb|1
 RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|currentTimeSlicePositive|tcb|1
 RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|edfCurrentHasEarliestDeadline|tcb|2
@@ -97,34 +100,10 @@ RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|schedulerPriorityMatch_insert|tc
 RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|timeSlicePositive|tcb|1
 RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|endpointQueueRemove_preserves_allThreadsTimeSlicePositive|tcb|2
 RAW_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|updatePipBoost_self_timeSlice|tcb|1
-RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|budgetPositive_subset|schedContext|1
-RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|budgetPositive_subset|tcb|1
 RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|chooseBestInBucket_edf_bridge|tcb|1
 RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|setCurrentThread_some_preserves_currentTimeSlicePositive|tcb|1
 RAW_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline|tcb|1
 RAW_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean|updatePipBoost_self_ipcState|tcb|1
-STORE_READ_CODE_SITE=SeLe4n/Platform/RPi5/ProofHooks.lean|rpi5ProductionAdapterProofHooks|1
-STORE_READ_CODE_SITE=SeLe4n/Testing/InvariantChecks.lean|asidTableConsistencyChecks|2
-STORE_READ_CODE_SITE=SeLe4n/Testing/InvariantChecks.lean|capabilityRightsStructuralChecks|1
-STORE_READ_CODE_SITE=SeLe4n/Testing/InvariantChecks.lean|checkLifecycleObjectTypeLockstep|1
-STORE_READ_CODE_SITE=SeLe4n/Testing/InvariantChecks.lean|checkRegistryEndpointValid|1
-STORE_READ_CODE_SITE=SeLe4n/Testing/InvariantChecks.lean|cspaceSlotCoherencyChecks|3
-STORE_READ_CODE_SITE=SeLe4n/Testing/InvariantChecks.lean|lifecycleMetadataChecks|1
-STORE_READ_CODE_SITE=SeLe4n/Testing/InvariantChecks.lean|vspaceAsidUniquenessChecks|1
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runBudgetLifecycleTrace|3
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runCapabilityIpcTrace|1
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runCheckedPipelineTrace|3
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runDonationTrace|16
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runInlineContextSwitchTrace|1
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runLifecycleAndEndpointTrace|1
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runMultiEndpointInterleavingTrace|2
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runRegisterDecodeTrace|1
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runSchedContextOpsTrace|10
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runSchedulerTimingDomainTrace|2
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runServiceAndStressTrace|1
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runSyscallDispatchTrace|1
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runTimeoutEndpointTrace|20
-STORE_READ_CODE_SITE=SeLe4n/Testing/MainTraceHarness.lean|runUntypedMemoryTrace|3
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/API.lean|capabilityDispatchQuiescence|3
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/API.lean|storeObject_tcb_preserveReplyLinkFields_preserves_replyCallerLinkage|4
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Architecture/Invariant.lean|advanceTimerState_preserves_ipcInvariantFull|2
@@ -1669,10 +1648,8 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/SchedContext/Invariant/PriorityPreservation.l
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/SchedContext/Invariant/PriorityPreservation.lean|setPriority_authority_bounded|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/SchedLockBracket.lean|schedFootprintCoversWrites|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|boundThreadDomainConsistent|2
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|budgetPositive|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|contextMatchesCurrent|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|contextMatchesCurrent_of_regs_eq|1
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|currentBudgetPositive|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|currentThreadInActiveDomain|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|currentThreadValid|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|currentTimeSlicePositive|1
@@ -1760,7 +1737,6 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.le
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean|enqueueRunnableOnCore_objects_getElem_eq_of_ready|3
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean|handleRescheduleSgiOnCore_notification_backward|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean|wakeThread_objects_getElem_eq_of_ready|2
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|budgetPositive_subset|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|chooseBestInBucket_edf_bridge|5
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|contextMatchesCurrent_frame|3
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|handleYield_preserves_contextMatchesCurrent|1
@@ -1885,7 +1861,6 @@ STORE_READ_SPEC_SITE=SeLe4n/Platform/FFI.lean|syscallCapFaultOf_none_of_no_fault
 STORE_READ_SPEC_SITE=SeLe4n/Platform/FFI.lean|syscallCapFaultOf_none_of_resolve_ok|2
 STORE_READ_SPEC_SITE=SeLe4n/Platform/FFI.lean|writeFfiRegistersToTcb_id_when_not_tcb|2
 STORE_READ_SPEC_SITE=SeLe4n/Platform/RPi5/ProofHooks.lean|registerContextStable_writeRegister_contextMatch|1
-STORE_READ_SPEC_SITE=SeLe4n/Platform/RPi5/RuntimeContract.lean|registerContextStableCheck_budget|2
 STORE_READ_SPEC_SITE=SeLe4n/Platform/RPi5/RuntimeContract.lean|registerContextStableCheck_budget_conjunct|1
 STORE_READ_SPEC_SITE=SeLe4n/Platform/RPi5/RuntimeContract.lean|registerContextStableCheck_dequeue_on_dispatch|1
 STORE_READ_SPEC_SITE=SeLe4n/Platform/RPi5/RuntimeContract.lean|registerContextStableCheck_edfCompatible|1
@@ -1894,24 +1869,24 @@ STORE_READ_SPEC_SITE=SeLe4n/Platform/RPi5/RuntimeContract.lean|registerContextSt
 STORE_READ_SPEC_SITE=SeLe4n/Platform/RPi5/RuntimeContract.lean|registerContextStableCheck_register_match|1
 STORE_READ_SPEC_SITE=SeLe4n/Platform/RPi5/RuntimeContract.lean|registerContextStableCheck_timeSlice_positive|1
 
-RAW_MATCH_TCB=25
-RAW_MATCH_SCHEDCONTEXT=10
+RAW_MATCH_TCB=22
+RAW_MATCH_SCHEDCONTEXT=7
 RAW_MATCH_ENDPOINT=1
 RAW_MATCH_NOTIFICATION=0
 RAW_MATCH_UNTYPED=0
 RAW_MATCH_CNODE=0
 RAW_MATCH_VSPACEROOT=14
-RAW_MATCH_TOTAL=50
+RAW_MATCH_TOTAL=44
 RAW_MATCH_UNCLASSIFIED=3
-STORE_READ_CODE=76
-STORE_READ_SPEC=4373
-GETTCB_ADOPTION=2369
-GETSCHEDCTX_ADOPTION=385
-GETENDPOINT_ADOPTION=179
+STORE_READ_CODE=0
+STORE_READ_SPEC=4365
+GETTCB_ADOPTION=2403
+GETSCHEDCTX_ADOPTION=402
+GETENDPOINT_ADOPTION=190
 GETNOTIFICATION_ADOPTION=85
-GETUNTYPED_ADOPTION=14
-GETCNODE_ADOPTION=142
-GETVSPACEROOT_ADOPTION=48
+GETUNTYPED_ADOPTION=16
+GETCNODE_ADOPTION=146
+GETVSPACEROOT_ADOPTION=51
 STOREOBJECTCHECKED_ADOPTION=15
 SENTINEL_CHECK_DISPATCH=57
 READER_HYGIENE_SUITE_TESTS=45

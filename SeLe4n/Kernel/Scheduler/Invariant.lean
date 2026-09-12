@@ -705,15 +705,15 @@ For bound threads, the SchedContext must have `budgetRemaining > 0` to be in
 the run queue. This is the CBS analog of `timeSlicePositive`. -/
 def budgetPositive (st : SystemState) : Prop :=
   ∀ tid, tid ∈ st.scheduler.runnable →
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    match st.getTcb? tid with
+    | some tcb =>
       match tcb.schedContextBinding with
       | .unbound => True
       | .bound scId | .donated scId _ =>
-        match st.objects[scId.toObjId]? with
-        | some (.schedContext sc) => sc.budgetRemaining.val > 0
-        | _ => True
-    | _ => True
+        match st.getSchedContext? scId with
+        | some sc => sc.budgetRemaining.val > 0
+        | none => True
+    | none => True
 
 /-- Z4-K: Default state has empty run queue — vacuously true. -/
 theorem default_budgetPositive :
@@ -734,15 +734,15 @@ def currentBudgetPositive (st : SystemState) : Prop :=
   match (st.scheduler.currentOnCore bootCoreId) with
   | none => True
   | some tid =>
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    match st.getTcb? tid with
+    | some tcb =>
       match tcb.schedContextBinding with
       | .unbound => True
       | .bound scId | .donated scId _ =>
-        match st.objects[scId.toObjId]? with
-        | some (.schedContext sc) => sc.budgetRemaining.val > 0
-        | _ => True
-    | _ => True
+        match st.getSchedContext? scId with
+        | some sc => sc.budgetRemaining.val > 0
+        | none => True
+    | none => True
 
 /-- Z4-L: Default state has no current thread — vacuously true. -/
 theorem default_currentBudgetPositive :

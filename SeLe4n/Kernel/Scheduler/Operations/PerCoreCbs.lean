@@ -439,8 +439,8 @@ theorem setThreadCpuAffinity_getSchedContext? (st : SystemState)
   unfold setThreadCpuAffinity at h
   simp only [hTcb, Except.ok.injEq] at h
   -- Keep `st'` a variable; record only its object-store value.  All object reads
-  -- route through the `.get?` method form (AK7-clean — the raw `[·]?` bracket text
-  -- the AK7 `RAW_LOOKUP_TID` metric counts never appears in this source).
+  -- route through the `.get?` method form, so the raw `[·]?` bracket the AK7
+  -- store-read census counts never appears in this source.
   have hObjEq : st'.objects = st.objects.insert targetTid.toObjId (.tcb { tcb with cpuAffinity := affinity }) := by
     rw [← h]
   have hTcbGet : st.objects.get? targetTid.toObjId = some (.tcb tcb) := by

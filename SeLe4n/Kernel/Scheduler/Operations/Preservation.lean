@@ -3768,15 +3768,15 @@ theorem budgetPositive_subset
     (hBp : budgetPositive st)
     (tid : SeLe4n.ThreadId) :
     ∀ tid', tid' ∈ st.scheduler.runnable → tid' ≠ tid →
-      match st.objects[tid'.toObjId]? with
-      | some (.tcb tcb) =>
+      match st.getTcb? tid' with
+      | some tcb =>
         match tcb.schedContextBinding with
         | .unbound => True
         | .bound scId | .donated scId _ =>
-          match st.objects[scId.toObjId]? with
-          | some (.schedContext sc) => sc.budgetRemaining.val > 0
-          | _ => True
-      | _ => True :=
+          match st.getSchedContext? scId with
+          | some sc => sc.budgetRemaining.val > 0
+          | none => True
+      | none => True :=
   fun tid' hMem' _ => hBp tid' hMem'
 
 -- Z4-U: Backward compatibility and yield preservation.

@@ -177,26 +177,25 @@ def rpi5ProductionAdapterProofHooks :
       unfold rpi5RuntimeContract at hStable; exact hStable
     -- Extract all conditions from registerContextStablePred
     unfold rpi5RuntimeContract at hStable
-    -- The check reads the *post*-state through `getTcb?`; unfolding the
-    -- accessor lets projection reduction identify it with the pre-state read
-    -- this proof matches on (`contextSwitchState` leaves `objects` alone).
-    --
-    -- The split below stays over the store deliberately.  This is a PROOF case
-    -- analysis inside a `def` returning a record of proofs, so it is
-    -- specification rather than a transition reading the store raw --  but
-    -- `scripts/lean_store_read_census.py` classifies by the enclosing
-    -- declaration's result type, and a record of proofs is not syntactically a
-    -- `Prop`, so this is the census's one known over-count.  Recorded here
-    -- rather than worked around, because contorting the proof to satisfy a
-    -- scanner is what this project's key conventions forbid.
-    simp only [registerContextStablePred, registerContextStableCheck,
-      SystemState.getTcb?,
-      contextSwitchState, SchedulerState.setCurrentOnCore_currentOnCore_self,
+    -- `contextSwitchState` writes `machine` and `scheduler` only, so the check's
+    -- post-state store read frames back to `st`.  Establishing that reduction
+    -- once, in the accessor vocabulary the check is written in, lets a single
+    -- two-arm case analysis drive the whole extraction: `getTcb?`'s `none`
+    -- already is "absent or wrong-kinded", which is what the seven enumerated
+    -- non-TCB arms used to say one constructor at a time.
+    have hCur : (contextSwitchState newTid newRegs st).scheduler.currentOnCore
+        bootCoreId = some newTid := by
+      simp [contextSwitchState, SchedulerState.setCurrentOnCore_currentOnCore_self]
+    have hFrame : (contextSwitchState newTid newRegs st).getTcb? newTid
+        = st.getTcb? newTid :=
+      SystemState.getTcb?_frame (st := st) rfl newTid
+    simp only [registerContextStablePred, registerContextStableCheck] at hStable
+    simp only [hCur, hFrame] at hStable
+    simp only [contextSwitchState,
       MachineState.regs_setRegsOnCore_bootCore] at hStable
-    -- Match on objects[newTid.toObjId]?
-    match hObj : st.objects[newTid.toObjId]? with
-    | some (.tcb tcb) =>
-      simp only [hObj, Bool.and_eq_true] at hStable
+    match hTcb : st.getTcb? newTid with
+    | some tcb =>
+      simp only [hTcb, Bool.and_eq_true] at hStable
       have hRegs : (newRegs == tcb.registerContext) = true :=
         hStable.1.1.1.1.1
       have hNotRunnable : newTid ∉ st.scheduler.runnable := by
@@ -208,13 +207,12 @@ def rpi5ProductionAdapterProofHooks :
       have hDeadline : tcb.deadline.toNat = 0 := by
         have h := hStable.1.2; exact eq_of_beq h
       have hBudgetPost : currentBudgetPositive (contextSwitchState newTid newRegs st) :=
-        registerContextStableCheck_budget newTid newRegs st tcb hObj hRaw
+        registerContextStableCheck_budget newTid newRegs st tcb hTcb hRaw
       exact contextSwitchState_preserves_proofLayerInvariantBundle
-        newTid newRegs st tcb hInv hObj hRegs hNotRunnable hTimeSlice
+        newTid newRegs st tcb hInv hTcb hRegs hNotRunnable hTimeSlice
         hIpcReady hDeadline hBudgetPost
-    | some (.endpoint _) | some (.notification _) | some (.cnode _) |
-      some (.vspaceRoot _) | some (.schedContext _) | some (.untyped _) | some (.reply _) | none =>
-      simp [hObj] at hStable
+    | none =>
+      simp [hTcb] at hStable
 
 /-- AG7-D/F: End-to-end context-switch preservation for RPi5 production contract.
     When `adapterContextSwitch` succeeds under the production runtime contract,

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-faraday-gz9b3w",
-      "commit_sha": "10b09b3f0eb3916ffa505b13b1a974b5ac36cd6b",
-      "tree_sha": "d1d2d17d8791ccf85076adedd747afb66d245e46",
-      "committed_at_utc": "2026-09-12T04:34:46+00:00"
+      "commit_sha": "4581a3386c4c1080323ea4f0d7f465a3b5a482c6",
+      "tree_sha": "9a3eadd1b97a63333ce9882fa2497c69f101764e",
+      "committed_at_utc": "2026-09-12T07:33:30+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d40f19c470a0a359c77e1d90c6edb5973d4ece6e72cc9744d7dbd155cefffbea"
+    "source_digest": "fec4ccac9a09e0951e2c86938a2d9a66f8e93f039d2167499c167fa9e00254a2"
   },
   "summary": {
     "module_count": 399,
     "declaration_count": 21266
   },
   "readme_sync": {
-    "version": "0.35.7",
+    "version": "0.35.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 329,
-    "production_loc": 374685,
+    "production_loc": 374707,
     "test_files": 70,
     "test_loc": 75813,
     "proved_theorem_lemma_decls": 12593,
@@ -8296,7 +8296,7 @@
         {
           "kind": "def",
           "name": "registerDecodeConsistent",
-          "line": 1742,
+          "line": 1747,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -8308,7 +8308,7 @@
         {
           "kind": "theorem",
           "name": "default_registerDecodeConsistent",
-          "line": 1748,
+          "line": 1753,
           "called": [
             "SystemState",
             "default",
@@ -8319,7 +8319,7 @@
         {
           "kind": "theorem",
           "name": "registerDecodeConsistent_of_proofLayerInvariantBundle",
-          "line": 1755,
+          "line": 1760,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -8331,7 +8331,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_registerDecodeConsistent",
-          "line": 1769,
+          "line": 1774,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -8342,7 +8342,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_registerDecodeConsistent",
-          "line": 1777,
+          "line": 1782,
           "called": [
             "RegName",
             "RegValue",
@@ -8356,7 +8356,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild",
-          "line": 1845,
+          "line": 1850,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -8378,7 +8378,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_objectOfKernelType_preserves_untypedRegionsDisjoint",
-          "line": 1899,
+          "line": 1904,
           "called": [
             "CSpaceAddr",
             "KernelObjectType",
@@ -8395,7 +8395,7 @@
         {
           "kind": "theorem",
           "name": "objectOfKernelType_untyped_hardcodes_zero_regionBase",
-          "line": 1976,
+          "line": 1981,
           "called": [
             "UntypedObject",
             "objectOfKernelType",
@@ -8405,7 +8405,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_via_objectOfKernelType_untyped_child_has_zero_regionBase",
-          "line": 1995,
+          "line": 2000,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -8425,7 +8425,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented",
-          "line": 2032,
+          "line": 2037,
           "called": [
             "UntypedObject",
             "objectOfKernelType",
@@ -102386,13 +102386,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 76,
+          "line": 81,
           "called": []
         },
         {
           "kind": "def",
           "name": "threadHomeCore",
-          "line": 92,
+          "line": 97,
           "called": [
             "CoreId",
             "TCB",
@@ -102402,7 +102402,7 @@
         {
           "kind": "def",
           "name": "ipcStateQueueMembershipConsistent_perCore",
-          "line": 105,
+          "line": 110,
           "called": [
             "CoreId",
             "SystemState",
@@ -102418,7 +102418,7 @@
         {
           "kind": "def",
           "name": "endpointQueueNoDup_perCore",
-          "line": 134,
+          "line": 139,
           "called": [
             "CoreId",
             "Endpoint",
@@ -102436,7 +102436,7 @@
         {
           "kind": "def",
           "name": "queueNextBlockingConsistent_perCore",
-          "line": 145,
+          "line": 150,
           "called": [
             "CoreId",
             "SystemState",
@@ -102451,7 +102451,7 @@
         {
           "kind": "def",
           "name": "queueHeadBlockedConsistent_perCore",
-          "line": 155,
+          "line": 160,
           "called": [
             "CoreId",
             "Endpoint",
@@ -102469,7 +102469,7 @@
         {
           "kind": "def",
           "name": "tcbQueueLinkIntegrity_perCore",
-          "line": 166,
+          "line": 171,
           "called": [
             "CoreId",
             "SystemState",
@@ -102483,7 +102483,7 @@
         {
           "kind": "def",
           "name": "tcbQueueChainAcyclic_perCore",
-          "line": 181,
+          "line": 186,
           "called": [
             "CoreId",
             "QueueNextPath",
@@ -102498,7 +102498,7 @@
         {
           "kind": "def",
           "name": "dualQueueSystemInvariant_perCore",
-          "line": 190,
+          "line": 195,
           "called": [
             "CoreId",
             "Endpoint",
@@ -102514,7 +102514,7 @@
         {
           "kind": "def",
           "name": "allPendingMessagesBounded_perCore",
-          "line": 198,
+          "line": 203,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -102530,7 +102530,7 @@
         {
           "kind": "def",
           "name": "blockedThreadsPendingMessageConsistent_perCore",
-          "line": 205,
+          "line": 210,
           "called": [
             "CoreId",
             "SystemState",
@@ -102545,7 +102545,7 @@
         {
           "kind": "def",
           "name": "blockedThreadTimeoutConsistent_perCore",
-          "line": 218,
+          "line": 223,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -102562,7 +102562,7 @@
         {
           "kind": "def",
           "name": "donationChainAcyclic_perCore",
-          "line": 230,
+          "line": 235,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -102577,7 +102577,7 @@
         {
           "kind": "def",
           "name": "donationOwnerValid_perCore",
-          "line": 244,
+          "line": 249,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -102595,7 +102595,7 @@
         {
           "kind": "def",
           "name": "donationBudgetTransfer_perCore",
-          "line": 257,
+          "line": 262,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -102611,7 +102611,7 @@
         {
           "kind": "def",
           "name": "blockedOnReplyHasTarget_perCore",
-          "line": 268,
+          "line": 273,
           "called": [
             "CoreId",
             "ObjId",
@@ -102627,7 +102627,7 @@
         {
           "kind": "def",
           "name": "replyCallerLinkageReciprocal_perCore",
-          "line": 281,
+          "line": 286,
           "called": [
             "CoreId",
             "ObjId",
@@ -102645,7 +102645,7 @@
         {
           "kind": "def",
           "name": "blockedOnReplyHasReplyObject_perCore",
-          "line": 294,
+          "line": 299,
           "called": [
             "CoreId",
             "ObjId",
@@ -102660,7 +102660,7 @@
         {
           "kind": "def",
           "name": "replyCallerLinkage_perCore",
-          "line": 302,
+          "line": 307,
           "called": [
             "CoreId",
             "SystemState",
@@ -102672,7 +102672,7 @@
         {
           "kind": "def",
           "name": "pendingReceiveReplyWellFormed_perCore",
-          "line": 308,
+          "line": 313,
           "called": [
             "CoreId",
             "ReplyId",
@@ -102689,7 +102689,7 @@
         {
           "kind": "def",
           "name": "donationOwnerUnique_perCore",
-          "line": 322,
+          "line": 327,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -102704,7 +102704,7 @@
         {
           "kind": "def",
           "name": "endpointQueueTailBlockedConsistent_perCore",
-          "line": 334,
+          "line": 339,
           "called": [
             "CoreId",
             "Endpoint",
@@ -102722,7 +102722,7 @@
         {
           "kind": "def",
           "name": "queueNextTargetBlocked_perCore",
-          "line": 345,
+          "line": 350,
           "called": [
             "CoreId",
             "SystemState",
@@ -102736,7 +102736,7 @@
         {
           "kind": "theorem",
           "name": "ipcStateQueueMembershipConsistent_perCore_of_global",
-          "line": 358,
+          "line": 363,
           "called": [
             "CoreId",
             "SystemState",
@@ -102750,7 +102750,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueNoDup_perCore_of_global",
-          "line": 389,
+          "line": 394,
           "called": [
             "CoreId",
             "SystemState",
@@ -102763,7 +102763,7 @@
         {
           "kind": "theorem",
           "name": "queueNextBlockingConsistent_perCore_of_global",
-          "line": 396,
+          "line": 401,
           "called": [
             "CoreId",
             "SystemState",
@@ -102776,7 +102776,7 @@
         {
           "kind": "theorem",
           "name": "queueHeadBlockedConsistent_perCore_of_global",
-          "line": 402,
+          "line": 407,
           "called": [
             "CoreId",
             "SystemState",
@@ -102790,7 +102790,7 @@
         {
           "kind": "theorem",
           "name": "tcbQueueLinkIntegrity_perCore_of_global",
-          "line": 408,
+          "line": 413,
           "called": [
             "CoreId",
             "SystemState",
@@ -102803,7 +102803,7 @@
         {
           "kind": "theorem",
           "name": "tcbQueueChainAcyclic_perCore_of_global",
-          "line": 417,
+          "line": 422,
           "called": [
             "CoreId",
             "SystemState",
@@ -102815,7 +102815,7 @@
         {
           "kind": "theorem",
           "name": "dualQueueSystemInvariant_perCore_of_global",
-          "line": 422,
+          "line": 427,
           "called": [
             "CoreId",
             "SystemState",
@@ -102829,7 +102829,7 @@
         {
           "kind": "theorem",
           "name": "allPendingMessagesBounded_perCore_of_global",
-          "line": 428,
+          "line": 433,
           "called": [
             "CoreId",
             "SystemState",
@@ -102842,7 +102842,7 @@
         {
           "kind": "theorem",
           "name": "blockedThreadsPendingMessageConsistent_perCore_of_global",
-          "line": 433,
+          "line": 438,
           "called": [
             "CoreId",
             "SystemState",
@@ -102855,7 +102855,7 @@
         {
           "kind": "theorem",
           "name": "blockedThreadTimeoutConsistent_perCore_of_global",
-          "line": 438,
+          "line": 443,
           "called": [
             "CoreId",
             "SystemState",
@@ -102870,7 +102870,7 @@
         {
           "kind": "theorem",
           "name": "donationChainAcyclic_perCore_of_global",
-          "line": 445,
+          "line": 450,
           "called": [
             "CoreId",
             "SystemState",
@@ -102883,7 +102883,7 @@
         {
           "kind": "theorem",
           "name": "donationOwnerValid_perCore_of_global",
-          "line": 451,
+          "line": 456,
           "called": [
             "CoreId",
             "SystemState",
@@ -102898,7 +102898,7 @@
         {
           "kind": "theorem",
           "name": "donationBudgetTransfer_perCore_of_global",
-          "line": 460,
+          "line": 465,
           "called": [
             "CoreId",
             "SystemState",
@@ -102912,7 +102912,7 @@
         {
           "kind": "theorem",
           "name": "blockedOnReplyHasTarget_perCore_of_global",
-          "line": 466,
+          "line": 471,
           "called": [
             "CoreId",
             "SystemState",
@@ -102926,7 +102926,7 @@
         {
           "kind": "theorem",
           "name": "replyCallerLinkageReciprocal_perCore_of_global",
-          "line": 472,
+          "line": 477,
           "called": [
             "CoreId",
             "SystemState",
@@ -102940,7 +102940,7 @@
         {
           "kind": "theorem",
           "name": "blockedOnReplyHasReplyObject_perCore_of_global",
-          "line": 482,
+          "line": 487,
           "called": [
             "CoreId",
             "SystemState",
@@ -102953,7 +102953,7 @@
         {
           "kind": "theorem",
           "name": "replyCallerLinkage_perCore_of_global",
-          "line": 487,
+          "line": 492,
           "called": [
             "CoreId",
             "SystemState",
@@ -102967,7 +102967,7 @@
         {
           "kind": "theorem",
           "name": "pendingReceiveReplyWellFormed_perCore_of_global",
-          "line": 493,
+          "line": 498,
           "called": [
             "CoreId",
             "SystemState",
@@ -102979,7 +102979,7 @@
         {
           "kind": "theorem",
           "name": "donationOwnerUnique_perCore_of_global",
-          "line": 499,
+          "line": 504,
           "called": [
             "CoreId",
             "SystemState",
@@ -102992,7 +102992,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueTailBlockedConsistent_perCore_of_global",
-          "line": 505,
+          "line": 510,
           "called": [
             "CoreId",
             "SystemState",
@@ -103006,7 +103006,7 @@
         {
           "kind": "theorem",
           "name": "queueNextTargetBlocked_perCore_of_global",
-          "line": 511,
+          "line": 516,
           "called": [
             "CoreId",
             "SystemState",
@@ -103019,7 +103019,7 @@
         {
           "kind": "theorem",
           "name": "ipcStateQueueMembershipConsistent_of_forall_perCore",
-          "line": 526,
+          "line": 531,
           "called": [
             "SystemState",
             "epId",
@@ -103033,7 +103033,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueNoDup_of_forall_perCore",
-          "line": 557,
+          "line": 562,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -103047,7 +103047,7 @@
         {
           "kind": "theorem",
           "name": "queueNextBlockingConsistent_of_forall_perCore",
-          "line": 564,
+          "line": 569,
           "called": [
             "SystemState",
             "getTcb",
@@ -103060,7 +103060,7 @@
         {
           "kind": "theorem",
           "name": "queueHeadBlockedConsistent_of_forall_perCore",
-          "line": 570,
+          "line": 575,
           "called": [
             "SystemState",
             "epId",
@@ -103074,7 +103074,7 @@
         {
           "kind": "theorem",
           "name": "tcbQueueLinkIntegrity_of_forall_perCore",
-          "line": 576,
+          "line": 581,
           "called": [
             "SystemState",
             "getTcb",
@@ -103087,7 +103087,7 @@
         {
           "kind": "theorem",
           "name": "tcbQueueChainAcyclic_of_forall_perCore",
-          "line": 587,
+          "line": 592,
           "called": [
             "SystemState",
             "firstEdge",
@@ -103101,7 +103101,7 @@
         {
           "kind": "theorem",
           "name": "dualQueueSystemInvariant_of_forall_perCore",
-          "line": 594,
+          "line": 599,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -103115,7 +103115,7 @@
         {
           "kind": "theorem",
           "name": "allPendingMessagesBounded_of_forall_perCore",
-          "line": 601,
+          "line": 606,
           "called": [
             "SystemState",
             "allPendingMessagesBounded",
@@ -103128,7 +103128,7 @@
         {
           "kind": "theorem",
           "name": "blockedThreadsPendingMessageConsistent_of_forall_perCore",
-          "line": 607,
+          "line": 612,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -103141,7 +103141,7 @@
         {
           "kind": "theorem",
           "name": "blockedThreadTimeoutConsistent_of_forall_perCore",
-          "line": 613,
+          "line": 618,
           "called": [
             "SystemState",
             "blockedThreadTimeoutConsistent",
@@ -103156,7 +103156,7 @@
         {
           "kind": "theorem",
           "name": "donationChainAcyclic_of_forall_perCore",
-          "line": 621,
+          "line": 626,
           "called": [
             "SystemState",
             "donationChainAcyclic",
@@ -103169,7 +103169,7 @@
         {
           "kind": "theorem",
           "name": "donationOwnerValid_of_forall_perCore",
-          "line": 628,
+          "line": 633,
           "called": [
             "SystemState",
             "donationOwnerValid",
@@ -103184,7 +103184,7 @@
         {
           "kind": "theorem",
           "name": "donationBudgetTransfer_of_forall_perCore",
-          "line": 637,
+          "line": 642,
           "called": [
             "SystemState",
             "donationBudgetTransfer",
@@ -103198,7 +103198,7 @@
         {
           "kind": "theorem",
           "name": "blockedOnReplyHasTarget_of_forall_perCore",
-          "line": 644,
+          "line": 649,
           "called": [
             "SystemState",
             "blockedOnReplyHasTarget",
@@ -103212,7 +103212,7 @@
         {
           "kind": "theorem",
           "name": "replyCallerLinkageReciprocal_of_forall_perCore",
-          "line": 650,
+          "line": 655,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -103227,7 +103227,7 @@
         {
           "kind": "theorem",
           "name": "blockedOnReplyHasReplyObject_of_forall_perCore",
-          "line": 661,
+          "line": 666,
           "called": [
             "SystemState",
             "blockedOnReplyHasReplyObject",
@@ -103240,7 +103240,7 @@
         {
           "kind": "theorem",
           "name": "replyCallerLinkage_of_forall_perCore",
-          "line": 667,
+          "line": 672,
           "called": [
             "SystemState",
             "blockedOnReplyHasReplyObject_of_forall_perCore",
@@ -103253,7 +103253,7 @@
         {
           "kind": "theorem",
           "name": "pendingReceiveReplyWellFormed_of_forall_perCore",
-          "line": 673,
+          "line": 678,
           "called": [
             "SystemState",
             "pendingReceiveReplyWellFormed",
@@ -103265,7 +103265,7 @@
         {
           "kind": "theorem",
           "name": "donationOwnerUnique_of_forall_perCore",
-          "line": 681,
+          "line": 686,
           "called": [
             "SystemState",
             "donationOwnerUnique",
@@ -103278,7 +103278,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueTailBlockedConsistent_of_forall_perCore",
-          "line": 688,
+          "line": 693,
           "called": [
             "SystemState",
             "endpointQueueTailBlockedConsistent",
@@ -103292,7 +103292,7 @@
         {
           "kind": "theorem",
           "name": "queueNextTargetBlocked_of_forall_perCore",
-          "line": 694,
+          "line": 699,
           "called": [
             "SystemState",
             "getTcb",
@@ -103305,7 +103305,7 @@
         {
           "kind": "theorem",
           "name": "ipcStateQueueMembershipConsistent_smp_iff",
-          "line": 707,
+          "line": 712,
           "called": [
             "SystemState",
             "ipcStateQueueMembershipConsistent",
@@ -103318,7 +103318,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueNoDup_smp_iff",
-          "line": 714,
+          "line": 719,
           "called": [
             "SystemState",
             "endpointQueueNoDup",
@@ -103331,7 +103331,7 @@
         {
           "kind": "theorem",
           "name": "queueNextBlockingConsistent_smp_iff",
-          "line": 720,
+          "line": 725,
           "called": [
             "SystemState",
             "queueNextBlockingConsistent",
@@ -103344,7 +103344,7 @@
         {
           "kind": "theorem",
           "name": "queueHeadBlockedConsistent_smp_iff",
-          "line": 726,
+          "line": 731,
           "called": [
             "SystemState",
             "queueHeadBlockedConsistent",
@@ -103357,7 +103357,7 @@
         {
           "kind": "structure",
           "name": "ipcInvariantFull_perCore",
-          "line": 756,
+          "line": 761,
           "called": [
             "CoreId",
             "SystemState",
@@ -103405,7 +103405,7 @@
         {
           "kind": "def",
           "name": "ipcInvariantFull_smp",
-          "line": 780,
+          "line": 785,
           "called": [
             "CoreId",
             "SystemState",
@@ -103416,7 +103416,7 @@
         {
           "kind": "theorem",
           "name": "ipcInvariantFull_smp_at",
-          "line": 783,
+          "line": 788,
           "called": [
             "CoreId",
             "SystemState",
@@ -103428,7 +103428,7 @@
         {
           "kind": "theorem",
           "name": "ipcInvariantFull_perCore_of_full",
-          "line": 790,
+          "line": 795,
           "called": [
             "CoreId",
             "SystemState",
@@ -103478,7 +103478,7 @@
         {
           "kind": "theorem",
           "name": "ipcInvariantFull_of_smp",
-          "line": 824,
+          "line": 829,
           "called": [
             "SystemState",
             "allPendingMessagesBounded",
@@ -103528,7 +103528,7 @@
         {
           "kind": "theorem",
           "name": "ipcInvariantCore_of_smp",
-          "line": 854,
+          "line": 859,
           "called": [
             "SystemState",
             "ipcInvariantCore",
@@ -103541,7 +103541,7 @@
         {
           "kind": "theorem",
           "name": "ipcInvariantFull_smp_iff_full_and_passive_smp",
-          "line": 864,
+          "line": 869,
           "called": [
             "SystemState",
             "ipcInvariantFull",
@@ -103556,7 +103556,7 @@
         {
           "kind": "theorem",
           "name": "default_objects_getElem_none'",
-          "line": 875,
+          "line": 880,
           "called": [
             "ObjId",
             "RHTable.getElem",
@@ -103569,7 +103569,7 @@
         {
           "kind": "theorem",
           "name": "default_getTcb",
-          "line": 881,
+          "line": 886,
           "called": [
             "SystemState",
             "ThreadId",
@@ -103582,7 +103582,7 @@
         {
           "kind": "theorem",
           "name": "default_no_tcb",
-          "line": 887,
+          "line": 892,
           "called": [
             "SystemState",
             "TCB",
@@ -103595,7 +103595,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcInvariantFull_perCore",
-          "line": 895,
+          "line": 900,
           "called": [
             "CoreId",
             "SystemState",
@@ -103634,7 +103634,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcInvariantFull_smp",
-          "line": 939,
+          "line": 944,
           "called": [
             "Kernel",
             "SystemState",
@@ -199271,10 +199271,12 @@
           "line": 706,
           "called": [
             "SystemState",
+            "getSchedContext",
+            "getTcb",
+            "none",
             "runnable",
             "scId",
-            "st",
-            "toObjId"
+            "st"
           ]
         },
         {
@@ -199296,10 +199298,11 @@
             "SystemState",
             "bootCoreId",
             "currentOnCore",
+            "getSchedContext",
+            "getTcb",
             "none",
             "scId",
-            "st",
-            "toObjId"
+            "st"
           ]
         },
         {
@@ -219749,10 +219752,12 @@
             "SystemState",
             "ThreadId",
             "budgetPositive",
+            "getSchedContext",
+            "getTcb",
+            "none",
             "runnable",
             "scId",
-            "st",
-            "toObjId"
+            "st"
           ]
         },
         {
@@ -254979,9 +254984,11 @@
             "AdapterProofHooks",
             "MachineState.regs_setRegsOnCore_bootCore",
             "advanceTimerState_preserves_proofLayerInvariantBundle",
+            "bootCoreId",
             "contextSwitchState",
             "contextSwitchState_preserves_proofLayerInvariantBundle",
             "currentBudgetPositive",
+            "currentOnCore",
             "getTcb",
             "none",
             "registerContextStableCheck",
@@ -254993,7 +255000,6 @@
             "setCurrentOnCore_currentOnCore_self",
             "st",
             "toNat",
-            "toObjId",
             "value",
             "writeRegisterState_preserves_proofLayerInvariantBundle"
           ]
@@ -255001,7 +255007,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Production_adapterContextSwitch_preserves",
-          "line": 225,
+          "line": 223,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -255017,7 +255023,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Production_adapterAdvanceTimer_preserves",
-          "line": 235,
+          "line": 233,
           "called": [
             "SystemState",
             "adapterAdvanceTimer",
@@ -255031,7 +255037,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Production_adapterWriteRegister_preserves",
-          "line": 247,
+          "line": 245,
           "called": [
             "RegName",
             "RegValue",
@@ -255194,6 +255200,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "bootCoreId",
             "budgetSufficientCheck",
             "contextSwitchState",
             "currentBudgetPositive",
@@ -255206,13 +255213,13 @@
             "scId",
             "setCurrentOnCore",
             "st",
-            "toObjId"
+            "trans"
           ]
         },
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_none_current",
-          "line": 306,
+          "line": 312,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -255226,7 +255233,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_implies_tcb_present",
-          "line": 316,
+          "line": 322,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -255241,7 +255248,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_register_match",
-          "line": 347,
+          "line": 353,
           "called": [
             "SystemState",
             "TCB",
@@ -255258,7 +255265,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_dequeue_on_dispatch",
-          "line": 361,
+          "line": 367,
           "called": [
             "SystemState",
             "TCB",
@@ -255275,7 +255282,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_timeSlice_positive",
-          "line": 375,
+          "line": 381,
           "called": [
             "SystemState",
             "TCB",
@@ -255291,7 +255298,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_ipcReady",
-          "line": 389,
+          "line": 395,
           "called": [
             "SystemState",
             "TCB",
@@ -255307,7 +255314,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_edfCompatible",
-          "line": 403,
+          "line": 409,
           "called": [
             "SystemState",
             "TCB",
@@ -255324,7 +255331,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_budget_conjunct",
-          "line": 418,
+          "line": 424,
           "called": [
             "SystemState",
             "TCB",
@@ -260377,11 +260384,12 @@
           "name": "cspaceSlotCoherencyChecks",
           "line": 144,
           "called": [
-            "KernelObject",
             "ObjId",
             "SystemState",
             "fold",
             "foldr",
+            "getCNode",
+            "getObject",
             "getReply",
             "st"
           ]
@@ -260389,15 +260397,15 @@
         {
           "kind": "def",
           "name": "capabilityRightsStructuralChecks",
-          "line": 168,
+          "line": 174,
           "called": [
-            "KernelObject",
             "ObjId",
             "SystemState",
             "badge",
             "empty",
             "fold",
             "foldr",
+            "getCNode",
             "none",
             "st"
           ]
@@ -260405,11 +260413,12 @@
         {
           "kind": "def",
           "name": "lifecycleMetadataChecks",
-          "line": 181,
+          "line": 187,
           "called": [
             "ObjId",
             "SystemState",
             "foldr",
+            "getObject",
             "objectType",
             "st"
           ]
@@ -260417,7 +260426,7 @@
         {
           "kind": "def",
           "name": "serviceGraphAcyclicityChecks",
-          "line": 190,
+          "line": 196,
           "called": [
             "ServiceId",
             "SystemState",
@@ -260432,13 +260441,13 @@
         {
           "kind": "def",
           "name": "vspaceAsidUniquenessChecks",
-          "line": 200,
+          "line": 206,
           "called": [
             "ASID",
-            "KernelObject",
             "ObjId",
             "SystemState",
             "filter",
+            "getVSpaceRoot",
             "isEmpty",
             "none",
             "st",
@@ -260448,11 +260457,11 @@
         {
           "kind": "def",
           "name": "asidTableConsistencyChecks",
-          "line": 211,
+          "line": 217,
           "called": [
-            "KernelObject",
             "ObjId",
             "SystemState",
+            "getVSpaceRoot",
             "none",
             "st",
             "toNat"
@@ -260461,7 +260470,7 @@
         {
           "kind": "def",
           "name": "untypedWatermarkChecks",
-          "line": 234,
+          "line": 240,
           "called": [
             "ObjId",
             "SystemState",
@@ -260477,7 +260486,7 @@
         {
           "kind": "def",
           "name": "notificationWaiterConsistentChecks",
-          "line": 247,
+          "line": 253,
           "called": [
             "ObjId",
             "SystemState",
@@ -260492,7 +260501,7 @@
         {
           "kind": "def",
           "name": "runQueueThreadPriorityConsistentB",
-          "line": 263,
+          "line": 269,
           "called": [
             "SystemState",
             "all",
@@ -260504,7 +260513,7 @@
         {
           "kind": "def",
           "name": "blockedOnSendNotRunnableChecks",
-          "line": 270,
+          "line": 276,
           "called": [
             "ObjId",
             "SystemState",
@@ -260519,7 +260528,7 @@
         {
           "kind": "def",
           "name": "blockedOnReceiveNotRunnableChecks",
-          "line": 287,
+          "line": 293,
           "called": [
             "ObjId",
             "SystemState",
@@ -260534,7 +260543,7 @@
         {
           "kind": "def",
           "name": "blockedThreadPendingMessageChecks",
-          "line": 316,
+          "line": 322,
           "called": [
             "ObjId",
             "SystemState",
@@ -260548,7 +260557,7 @@
         {
           "kind": "def",
           "name": "currentThreadInActiveDomainB",
-          "line": 338,
+          "line": 344,
           "called": [
             "SystemState",
             "activeDomainOnCore",
@@ -260562,7 +260571,7 @@
         {
           "kind": "def",
           "name": "uniqueWaitersCheck",
-          "line": 350,
+          "line": 356,
           "called": [
             "ObjId",
             "SystemState",
@@ -260577,7 +260586,7 @@
         {
           "kind": "def",
           "name": "cdtChildMapConsistentCheck",
-          "line": 365,
+          "line": 371,
           "called": [
             "SystemState",
             "any",
@@ -260589,7 +260598,7 @@
         {
           "kind": "def",
           "name": "cdtParentMapConsistentCheck",
-          "line": 382,
+          "line": 388,
           "called": [
             "SystemState",
             "any",
@@ -260600,7 +260609,7 @@
         {
           "kind": "def",
           "name": "stateInvariantChecksFor",
-          "line": 396,
+          "line": 402,
           "called": [
             "ObjId",
             "ServiceId",
@@ -260646,7 +260655,7 @@
         {
           "kind": "def",
           "name": "stateInvariantChecks",
-          "line": 456,
+          "line": 462,
           "called": [
             "SystemState",
             "st",
@@ -260656,7 +260665,7 @@
         {
           "kind": "def",
           "name": "failedChecks",
-          "line": 459,
+          "line": 465,
           "called": [
             "none"
           ]
@@ -260664,7 +260673,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariantsFor",
-          "line": 466,
+          "line": 472,
           "called": [
             "ObjId",
             "ServiceId",
@@ -260682,7 +260691,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariants",
-          "line": 477,
+          "line": 483,
           "called": [
             "SystemState",
             "assertStateInvariantsFor",
@@ -260692,7 +260701,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariantsWithoutSync",
-          "line": 484,
+          "line": 490,
           "called": [
             "ObjId",
             "ServiceId",
@@ -260709,7 +260718,7 @@
         {
           "kind": "def",
           "name": "assertLiveThreadStateInvariantsFor",
-          "line": 503,
+          "line": 509,
           "called": [
             "ObjId",
             "SystemState",
@@ -260725,7 +260734,7 @@
         {
           "kind": "def",
           "name": "assertLiveThreadStateInvariants",
-          "line": 513,
+          "line": 519,
           "called": [
             "SystemState",
             "assertLiveThreadStateInvariantsFor",
@@ -260735,7 +260744,7 @@
         {
           "kind": "def",
           "name": "collectQueueMembersB",
-          "line": 528,
+          "line": 534,
           "called": [
             "SystemState",
             "ThreadId",
@@ -260747,7 +260756,7 @@
         {
           "kind": "def",
           "name": "checkNoStaleEndpointQueueRefs",
-          "line": 542,
+          "line": 548,
           "called": [
             "SystemState",
             "all",
@@ -260763,7 +260772,7 @@
         {
           "kind": "def",
           "name": "checkNoStaleNotificationWaitRefs",
-          "line": 564,
+          "line": 570,
           "called": [
             "SystemState",
             "all",
@@ -260776,7 +260785,7 @@
         {
           "kind": "def",
           "name": "checkRegistryDependencyConsistent",
-          "line": 574,
+          "line": 580,
           "called": [
             "SystemState",
             "all",
@@ -260787,7 +260796,7 @@
         {
           "kind": "def",
           "name": "checkSchedContextStoreConsistent",
-          "line": 581,
+          "line": 587,
           "called": [
             "SystemState",
             "all",
@@ -260802,7 +260811,7 @@
         {
           "kind": "def",
           "name": "checkSchedContextNotDualBound",
-          "line": 593,
+          "line": 599,
           "called": [
             "SystemState",
             "all",
@@ -260816,7 +260825,7 @@
         {
           "kind": "def",
           "name": "checkSchedContextRunQueueConsistent",
-          "line": 608,
+          "line": 614,
           "called": [
             "SystemState",
             "all",
@@ -260832,7 +260841,7 @@
         {
           "kind": "def",
           "name": "checkBlockingAcyclic",
-          "line": 623,
+          "line": 629,
           "called": [
             "ObjId",
             "SystemState",
@@ -260848,11 +260857,12 @@
         {
           "kind": "def",
           "name": "checkRegistryEndpointValid",
-          "line": 651,
+          "line": 657,
           "called": [
             "SystemState",
             "all",
             "epId",
+            "getObject",
             "none",
             "st"
           ]
@@ -260860,7 +260870,7 @@
         {
           "kind": "def",
           "name": "checkRegistryInterfaceValid",
-          "line": 659,
+          "line": 667,
           "called": [
             "SystemState",
             "all",
@@ -260871,7 +260881,7 @@
         {
           "kind": "def",
           "name": "checkServiceGraphInvariant",
-          "line": 665,
+          "line": 673,
           "called": [
             "SystemState",
             "acyclic",
@@ -260888,10 +260898,11 @@
         {
           "kind": "def",
           "name": "checkLifecycleObjectTypeLockstep",
-          "line": 681,
+          "line": 689,
           "called": [
             "SystemState",
             "all",
+            "getObject",
             "none",
             "objectType",
             "st"
@@ -260900,7 +260911,7 @@
         {
           "kind": "def",
           "name": "checkCrossSubsystemInvariant",
-          "line": 699,
+          "line": 707,
           "called": [
             "SystemState",
             "checkBlockingAcyclic",
@@ -260920,7 +260931,7 @@
         {
           "kind": "def",
           "name": "assertCrossSubsystemInvariant",
-          "line": 713,
+          "line": 721,
           "called": [
             "SystemState",
             "checkCrossSubsystemInvariant",
@@ -260935,7 +260946,7 @@
         {
           "kind": "def",
           "name": "assertCrossSubsystemInvariants",
-          "line": 733,
+          "line": 741,
           "called": [
             "SystemState",
             "checkCrossSubsystemInvariant",
@@ -261564,7 +261575,6 @@
             "InterfaceId",
             "InterfaceSpec",
             "KernelObject",
-            "ObjId",
             "RegisterFile",
             "ServiceGraphEntry",
             "ServiceId",
@@ -261582,6 +261592,7 @@
             "empty",
             "endpointReceiveDual",
             "endpointSendDualChecked",
+            "getCNode",
             "harnessLabelingContext",
             "hasIsolationEdge",
             "insert",
@@ -261624,7 +261635,6 @@
           "name": "runLifecycleAndEndpointTrace",
           "line": 542,
           "called": [
-            "ObjId",
             "SystemState",
             "any",
             "badge",
@@ -261639,6 +261649,7 @@
             "empty",
             "endpointReceiveDual",
             "endpointSendDualChecked",
+            "getObjectType",
             "harnessLabelingContext",
             "insert",
             "lifecycleAuthSlot",
@@ -261650,7 +261661,6 @@
             "none",
             "notificationSignal",
             "notificationWait",
-            "objectType",
             "ofList",
             "ofNat",
             "ofNatMasked",
@@ -261684,6 +261694,7 @@
             "empty",
             "endpointReply",
             "endpointSendDual",
+            "getEndpoint",
             "insert",
             "lookup",
             "none",
@@ -261712,6 +261723,7 @@
             "currentOnCore",
             "decrement",
             "domainTimeRemainingOnCore",
+            "getTcb",
             "insert",
             "length",
             "mkRunQueue",
@@ -261727,8 +261739,7 @@
             "switchDomain",
             "tick",
             "timerTick",
-            "toNat",
-            "toObjId"
+            "toNat"
           ]
         },
         {
@@ -261800,11 +261811,12 @@
             "checkInvariants",
             "count",
             "demoUntyped",
+            "getObjectType",
+            "getUntyped",
             "insert",
             "length",
             "lifecycleAuthSlot",
             "none",
-            "objectType",
             "objectTypeAllocSize",
             "ofList",
             "ofListWF",
@@ -261847,15 +261859,17 @@
           "line": 1215,
           "called": [
             "KernelObject",
-            "ObjId",
             "Priority",
             "RegisterFile",
             "SystemState",
+            "ThreadId",
             "bootCoreId",
             "checkInvariants",
             "currentOnCore",
+            "getTcb",
             "handleYield",
             "insert",
+            "none",
             "ofList",
             "ofNat",
             "regs",
@@ -261975,6 +261989,7 @@
             "decode",
             "decodeSyscallArgs",
             "empty",
+            "getEndpoint",
             "none",
             "of",
             "ofList",
@@ -262022,6 +262037,7 @@
             "decodeVSpaceMapArgs",
             "empty",
             "extractMessageRegisters",
+            "getObjectType",
             "length",
             "lifecycleRetypeDirect",
             "lookup",
@@ -262029,7 +262045,6 @@
             "lookupSlotCap",
             "none",
             "objectOfKernelType",
-            "objectType",
             "ofList",
             "ofListWF",
             "ofNat",
@@ -262062,6 +262077,8 @@
             "decode",
             "decodeSyscallArgs",
             "empty",
+            "getEndpoint",
+            "getObject",
             "harnessLabelingContext",
             "invariant",
             "isEmpty",
@@ -262191,6 +262208,7 @@
             "empty",
             "endpointReceiveDual",
             "endpointSendDual",
+            "getEndpoint",
             "insert",
             "lookupTcb",
             "none",
@@ -262214,12 +262232,15 @@
             "currentOnCore",
             "empty",
             "get",
+            "getSchedContext",
+            "getTcb",
             "insert",
             "isBound",
             "length",
             "mkRunQueue",
             "none",
             "ofNat",
+            "ofObjId",
             "runQueueOnCore",
             "scId",
             "schedContextBind",
@@ -262256,6 +262277,8 @@
             "endpointQueueRemove",
             "endpointQueueRemoveDual",
             "epId",
+            "getEndpoint",
+            "getTcb",
             "head",
             "insert",
             "isEmpty",
@@ -262296,6 +262319,9 @@
             "currentOnCore",
             "donateSchedContext",
             "empty",
+            "getReply",
+            "getSchedContext",
+            "getTcb",
             "head",
             "insert",
             "isBound",
@@ -262323,9 +262349,13 @@
             "bind",
             "cbsBudgetCheck",
             "empty",
+            "getSchedContext",
+            "getTcb",
             "insert",
             "lookup",
+            "none",
             "ofNat",
+            "ofObjId",
             "scId",
             "schedContextBind",
             "schedContextConfigure",

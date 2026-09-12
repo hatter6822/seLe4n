@@ -250,35 +250,41 @@ theorem mmioAccess_ram_kind_disjoint :
 theorem registerContextStableCheck_budget
     (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile) (st : SeLe4n.Model.SystemState)
     (tcb : SeLe4n.Model.TCB)
-    (hObj : st.objects[newTid.toObjId]? = some (.tcb tcb))
+    (hTcbPre : st.getTcb? newTid = some tcb)
     (hStable : registerContextStableCheck st (contextSwitchState newTid newRegs st) = true) :
     SeLe4n.Kernel.currentBudgetPositive (contextSwitchState newTid newRegs st) := by
-  unfold registerContextStableCheck contextSwitchState SystemState.getTcb? at hStable
-  simp only [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
-    PerCoreVector.get_set_eq, hObj, Bool.and_eq_true] at hStable
-  unfold SeLe4n.Kernel.currentBudgetPositive contextSwitchState
-  simp only [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
-    PerCoreVector.get_set_eq, hObj]
+  -- The context switch writes `machine` and `scheduler` only, so every store
+  -- read of the post-state frames back to `st`.  Establishing the three
+  -- reductions once, in the accessor vocabulary both the check and the
+  -- predicate are written in, lets one case analysis serve both.
+  have hCur : (contextSwitchState newTid newRegs st).scheduler.currentOnCore
+      bootCoreId = some newTid := by
+    simp [contextSwitchState, SchedulerState.setCurrentOnCore,
+      SchedulerState.currentOnCore, PerCoreVector.get_set_eq]
+  have hTcb : (contextSwitchState newTid newRegs st).getTcb? newTid = some tcb :=
+    (SystemState.getTcb?_frame (st := st) rfl newTid).trans hTcbPre
+  simp only [registerContextStableCheck, hCur, hTcb, Bool.and_eq_true] at hStable
+  simp only [SeLe4n.Kernel.currentBudgetPositive, hCur, hTcb]
   have hBud := hStable.2
-  -- budgetSufficientCheck mirrors currentBudgetPositive structure
+  -- `budgetSufficientCheck` mirrors `currentBudgetPositive`'s structure.
   match hBind : tcb.schedContextBinding with
   | .unbound => trivial
   | .bound scId | .donated scId _ =>
-    -- The check reads `getSchedContext?` of the *post*-state, whose `objects`
-    -- field is `st.objects` by construction; the accessor is unfolded so that
-    -- projection reduction makes the two states' reads the same term.
-    simp only [hBind, budgetSufficientCheck, SystemState.getSchedContext?] at hBud
-    simp only [SystemState.getSchedContext?]
+    have hScFrame : (contextSwitchState newTid newRegs st).getSchedContext? scId
+        = st.getSchedContext? scId :=
+      SystemState.getSchedContext?_frame (st := st) rfl scId
+    simp only [budgetSufficientCheck, hBind, hScFrame] at hBud
+    simp only [hScFrame]
     -- Two arms, not eight: `getSchedContext?`'s `none` already is "absent or
     -- wrong-kinded", which is what the seven enumerated non-SchedContext arms
     -- said one constructor at a time.
-    match hSc : st.objects[scId.toObjId]? with
-    | some (.schedContext sc) =>
+    match hSc : st.getSchedContext? scId with
+    | some sc =>
       simp only [hSc] at hBud ⊢
-      simp at hBud; exact hBud
-    | some (.endpoint _) | some (.notification _) | some (.tcb _) |
-      some (.cnode _) | some (.vspaceRoot _) | some (.untyped _) | some (.reply _) | none =>
-      simp [hSc] at hBud
+      simpa using hBud
+    | none =>
+      simp only [hSc] at hBud
+      exact absurd hBud (by simp)
 
 /-! ## AN7-C (H-16): Per-conjunct soundness theorems for `registerContextStableCheck`
 

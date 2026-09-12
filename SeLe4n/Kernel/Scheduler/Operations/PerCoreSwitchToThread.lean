@@ -275,7 +275,7 @@ branch already discharged the equal case); so the lookup at `incoming` is
 framed out.  Proved through the typed `getTcb?` accessor + the `.get?`-method
 form of `RHTable.getElem?_insert_ne` (no raw object-store `[·]?` bracket in the
 proof source), so it composes the `currentThreadValidOnCore` establishment
-below without growing the AK7 `RAW_LOOKUP_TID` metric. -/
+below without adding to the AK7 store-read census. -/
 theorem preemptCurrentOnCore_getTcb?_incoming (st : SystemState) (c : CoreId)
     (incoming : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     (preemptCurrentOnCore st c incoming).getTcb? incoming = st.getTcb? incoming := by
@@ -702,7 +702,7 @@ establish the two SM4.C current-thread conjuncts a successful switch must
 discharge.  The proof routes entirely through the typed `getTcb?` accessor and
 the `.get?`-method-form frame `preemptCurrentOnCore_getTcb?_incoming` (no raw
 object-store `[·]?` bracket in the proof source), so it adds nothing to the AK7
-`RAW_LOOKUP_TID` metric.  SM5.I.8 ("preservation by every transition") composes
+store-read census.  SM5.I.8 ("preservation by every transition") composes
 this with `_establishes_queueCurrentConsistentOnCore`,
 `_preserves_runQueueOnCore_wellFormed`, and `_preserves_objects_invExt` into the
 full `schedulerInvariant_perCore` preservation. -/

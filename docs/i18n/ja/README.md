@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.35.7-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.35.8-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -91,9 +91,9 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 
 | 属性 | 値 |
 |------|-----|
-| **バージョン** | `0.35.7` |
+| **バージョン** | `0.35.8` |
 | **Lean ツールチェーン** | `v4.28.0` |
-| **本番 Lean コード行数** | 329 ファイルにわたる 374,685 行 |
+| **本番 Lean コード行数** | 329 ファイルにわたる 374,707 行 |
 | **テスト Lean コード行数** | 70 テストスイートにわたる 75,813 行 |
 | **証明済み宣言数** | 12,593 件の定理/補題宣言（sorry/axiom ゼロ） |
 | **ターゲットハードウェア** | Raspberry Pi 5（BCM2712 / ARM Cortex-A76 / ARMv8-A） |

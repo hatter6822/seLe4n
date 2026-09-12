@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.7.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.8.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -774,17 +774,50 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   other.**  `scripts/lean_store_read_census.py` classifies each read by whether it
   sits in the *body* of a declaration whose result is not a `Prop` — a binder or a
   result type is a proposition whatever the declaration's kind — and emits
-  `STORE_READ_CODE` (enforced, per `(file, declaration)` with occurrence counts)
-  beside `STORE_READ_SPEC` (diagnostic, the treatment `RAW_MATCH_UNCLASSIFIED`
-  already had).  The mutation for this class **moves a read between the
-  populations while holding their sum fixed**, which is all the superseded figure
-  could see: the gate's self-test has that case in both directions, the
-  spec→code one rejecting and the code→spec one passing, because the second is
-  the migration working.  With the split enforced, the executable count in
-  `SeLe4n/Kernel` and `SeLe4n/Platform` is **zero** — every store read there goes
-  through a typed accessor, and the only raw reads left in the tree are the
-  accessors' own bodies in `Model/State.lean`, the trace harness, and one proof
-  case split recorded in place.
+  `STORE_READ_CODE` beside `STORE_READ_SPEC` (diagnostic, the treatment
+  `RAW_MATCH_UNCLASSIFIED` already had).  The mutation for this class **moves a
+  read between the populations while holding their sum fixed**, which is all the
+  superseded figure could see: the gate's self-test has that case in both
+  directions, the spec→code one rejecting and the code→spec one passing, because
+  the second is the migration working.
+
+  **And a floor that reaches zero stops being a floor** (`v0.35.8`).  The split
+  was shipped with `STORE_READ_CODE` held to a **ceiling** and a per-key
+  inventory — which is the superseded metric's own shape, one population
+  narrower, and it carried the superseded metric's own escape: a cut that
+  exceeds a ceiling may re-anchor it, which is what happened four times in three
+  days.  So the residue was finished rather than registered.  The whole
+  executable population is **zero**: `SeLe4n/Kernel` and `SeLe4n/Platform` were
+  already there at `v0.35.7`, and the 76 that remained — 65 trace-harness
+  bodies, 10 runtime invariant helpers, and one proof case split whose enclosing
+  `def` returns a record of proofs — went in this cut, with the golden fixture
+  **byte-identical**, which is the measurement that retired the deferral's own
+  stated reason (*migrating it risks a fixture churn*).  The last of them came
+  out by restating two theorems' hypotheses in the accessor vocabulary rather
+  than bridging at the call site, so no `def` body mentions the store at all.
+  `STORE_READ_CODE` is now a `ZERO_METRICS` entry beside `SORRY_COUNT` and
+  `AXIOM_COUNT`: **regenerating the baseline does not clear it**, only fixing
+  the tree does, and the gate says so in its failure epilogue.  The only raw
+  reads left anywhere are the accessors' own bodies in `Model/State.lean` —
+  which the census exempts by name — and propositions, which have no helper
+  form.
+
+  Two mechanical notes, both the *one question, two answers* rule at the point
+  where the fix could have introduced it.  The per-key inventory for this metric
+  was **deleted**, not kept beside the zero: at zero a cardinality and a set say
+  the same thing, and carrying both would be this file's own duplication hazard
+  inside the gate written to close it.  What replaced it is the *relation* — the
+  gate asserts `STORE_READ_CODE` equals the sum of its own `STORE_READ_CODE_SITE`
+  rows, in the baseline and in the current capture, so a hand-edited or truncated
+  file claiming "none" beside a live site row is refused as a gate defect rather
+  than passed on the strength of the total; the rows are still emitted, because
+  when the zero breaks they are what names the offending declaration.  And the
+  self-test grew a second case shape, because the two claims are token-preserving
+  with respect to different things: the inventory cases hold every scalar fixed
+  and the harness asserts it, while the census cases move the scalars and the
+  harness asserts the fixture is internally consistent.  Its decisive case keeps
+  the baseline and the current value **equal at one** — everything a ceiling
+  asks, and exactly what a zero floor must still reject.
 
   **A region-scoped presence check is still a presence check** (PR #887
   review round 4).  Resolving the guard's block, the tail after a branch, or

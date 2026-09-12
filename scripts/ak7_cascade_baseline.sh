@@ -6,8 +6,10 @@
 #   * `RAW_MATCH_*`         — raw `match st.objects[id]?` patterns by variant.
 #                             SHOULD-DROP metric (every commit ≤ baseline floor).
 #   * `STORE_READ_CODE`     — raw object-store reads in executable positions.
+#                             SHOULD-STAY-ZERO metric: the migration reached
+#                             zero, so this is a prohibition rather than a
+#                             ceiling anyone may re-anchor.
 #   * `STORE_READ_SPEC`     — the same reads in propositions (diagnostic).
-#                             SHOULD-DROP metric.
 #   * `GETTCB_ADOPTION`,
 #     `GETSCHEDCTX_ADOPTION` — typed-helper call sites in production / tests.
 #                             SHOULD-GROW metric (every commit ≥ baseline floor).
@@ -332,7 +334,11 @@ count_classified_match_sites() {
 #
 # The census answers the two questions separately.  `STORE_READ_CODE` is the
 # migratable population -- a raw read in the body of a declaration whose result
-# is not a `Prop` -- and is enforced.  `STORE_READ_SPEC` is everything else and
+# is not a `Prop` -- and is enforced AT ZERO: every store read in the tree
+# outside `SeLe4n/Model/State.lean`, where the typed accessors are defined and
+# the raw read IS their body, now sits in a proposition, so the honest floor is
+# "none" rather than "no more than last time".  `STORE_READ_SPEC` is everything
+# else and
 # is a diagnostic, for the same reason `RAW_MATCH_UNCLASSIFIED` is: a
 # proposition about the store has no helper form (`getTcb? k = none` holds both
 # for an absent key and for a wrong-kinded object, so a frame statement
@@ -481,7 +487,6 @@ raw_match_cnode          = $RAW_MATCH_CNODE
 raw_match_vspaceroot     = $RAW_MATCH_VSPACEROOT
 raw_match_total          = $RAW_MATCH_TOTAL
 raw_match_unclassified   = $RAW_MATCH_UNCLASSIFIED
-store_read_code          = $STORE_READ_CODE   (enforced)
 store_read_spec          = $STORE_READ_SPEC (diagnostic)
 
 ## Typed-helper adoption (should-grow)
@@ -507,20 +512,28 @@ sentinel_check_dispatch  = $SENTINEL_CHECK_DISPATCH
 reader_hygiene_suite_tests           = $READER_HYGIENE_SUITE_TESTS
 kerrormatrix_rows        = $KERRORMATRIX_ROWS
 
-## Proof-surface health (should-stay-zero)
+## Proof-surface health and reader hygiene (should-stay-zero)
 
 sorry_count              = $SORRY_COUNT
 axiom_count              = $AXIOM_COUNT
+store_read_code          = $STORE_READ_CODE
 
 ## Machine-diffable block
 ##
-## RAW_SITE and STORE_READ_CODE_SITE rows are the binding floors: the gate
-## refuses any key absent from the baseline, and holds every key present to its
-## recorded count.  Both are keyed by the enclosing DECLARATION, because a
-## per-file key is a cardinality one level up -- hygienizing one declaration
-## while another starts reading raw leaves a per-file row unmoved, which is the
-## movement the inventory exists to catch.  STORE_READ_SPEC_SITE rows are
-## recorded but not enforced.  The scalars below are derived from these rows.
+## RAW_SITE rows are the binding floor: the gate refuses any key absent from
+## the baseline, and holds every key present to its recorded count.  They are
+## keyed by the enclosing DECLARATION, because a per-file key is a cardinality
+## one level up -- hygienizing one declaration while another starts reading raw
+## leaves a per-file row unmoved, which is the movement the inventory exists to
+## catch.
+##
+## STORE_READ_CODE_SITE rows get no inventory floor, because STORE_READ_CODE is
+## enforced at zero and at zero a cardinality and a set say the same thing.
+## They are emitted anyway, for two reasons: the gate asserts that the total is
+## their sum, so a capture claiming "none" beside a live row is refused as a
+## defect rather than passed; and when the zero is broken they are what tells
+## the reader WHERE.  STORE_READ_SPEC_SITE rows are recorded but not enforced.
+## The scalars below are derived from these rows.
 
 $(printf '%s\n' "${RAW_MATCH_ROWS}" | awk 'NF {print "RAW_SITE=" $1 "|" $2 "|" $3 "|" $4}')
 $(printf '%s\n' "${STORE_READ_ROWS}")

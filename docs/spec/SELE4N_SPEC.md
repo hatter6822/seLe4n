@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.7` (`lakefile.toml`) |
+| **Package version** | `0.35.8` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 374,685 across 329 Lean files |
+| **Production LoC** | 374,707 across 329 Lean files |
 | **Test LoC** | 75,813 across 70 Lean test suites |
 | **Proved declarations** | 12,593 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -1868,7 +1868,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    generic `default_objects_get?_none` helper rather than the bare
    `match s.objects[…]?` bracket idiom and the `.toObjId]?` boundary
    idiom; the cumulative `RAW_MATCH_TOTAL` floor stays at the v0.31.2
-   baseline (122) and `RAW_LOOKUP_TID` drops from 759 to 757.
+   baseline (122) and `RAW_LOOKUP_TID` drops from 759 to 757.  (That
+   second metric was retired at v0.35.7: it summed store reads in
+   *propositions* and store reads in *transitions* into one enforced
+   ceiling, and 96.9% of what it counted was specification vocabulary.
+   Its successors are `STORE_READ_CODE` — the executable population,
+   **zero** and enforced as zero since v0.35.8 — and `STORE_READ_SPEC`,
+   a diagnostic.)
 
    **Axiom budget for SM3.C**: 0 Lean axioms, 0 sorries.  Every
    theorem depends only on the standard Lean foundational axioms

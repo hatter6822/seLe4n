@@ -143,12 +143,18 @@ def threadInactiveFlagConsistentBool (st : SystemState) : Bool :=
 object present in the object store. -/
 private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match (st.objects[oid]? : Option KernelObject) with
-    | some (.cnode cn) =>
+    match st.getCNode? oid with
+    | some cn =>
         cn.slots.fold acc (fun inner slot cap =>
           let ok := match cap.target with
-            | .object targetId => (st.objects[targetId]?).isSome
-            | .cnodeSlot cnId _ => (st.objects[cnId]?).isSome
+            -- Kind-agnostic by intent: the claim is that *some* object backs
+            -- the target, whatever its variant, so `getObject?` is the reader
+            -- that says it.
+            | .object targetId => (st.getObject? targetId).isSome
+            -- A `.cnodeSlot` names the CNode it descends, so the typed read is
+            -- the stronger and the honest one: a capability pointing at a
+            -- non-CNode is not backed for this purpose.
+            | .cnodeSlot cnId _ => (st.getCNode? cnId).isSome
             -- WS-SM SM6.D: a reply cap must target an actual `.reply` object, not
             -- merely *some* object sharing that ObjId namespace — `getReply?`
             -- returns `some` only for a `.reply` at `rid.toObjId`.
@@ -167,8 +173,8 @@ tracked at runtime, we validate that badge-carrying caps have non-empty rights a
 rights belong to the canonical set. This is a conservative structural check. -/
 private def capabilityRightsStructuralChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match (st.objects[oid]? : Option KernelObject) with
-    | some (.cnode cn) =>
+    match st.getCNode? oid with
+    | some cn =>
         cn.slots.fold acc (fun inner slot cap =>
           let ok := match cap.badge with
             | some _ => cap.rights.bits != 0  -- WS-F5/D2: non-empty rights (bitmask)
@@ -180,7 +186,7 @@ private def capabilityRightsStructuralChecks (objectIds : List SeLe4n.ObjId) (st
 for a materialized object, it must agree with the actual object type. -/
 private def lifecycleMetadataChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match st.objects[oid]?, st.lifecycle.objectTypes[oid]? with
+    match st.getObject? oid, st.lifecycle.objectTypes[oid]? with
     | some obj, some metaTy =>
         (s!"lifecycle objectType metadata consistent: oid={oid}", metaTy == obj.objectType) :: acc
     | _, _ => acc) []
@@ -199,9 +205,9 @@ private def serviceGraphAcyclicityChecks (serviceIds : List ServiceId) (st : Sys
 /-- M-11 VSpace ASID uniqueness: no two VSpace root objects share the same ASID. -/
 private def vspaceAsidUniquenessChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   let roots : List (SeLe4n.ObjId × SeLe4n.ASID) := objectIds.filterMap fun oid =>
-    match (st.objects[oid]? : Option KernelObject) with
-    | some (.vspaceRoot root) => some (oid, root.asid)
-    | _ => none
+    match st.getVSpaceRoot? oid with
+    | some root => some (oid, root.asid)
+    | none => none
   roots.map fun (oid, asid) =>
     let duplicates := roots.filter fun (oid', asid') => asid' == asid && oid' != oid
     (s!"vspace ASID unique: oid={oid} asid={asid.toNat}", duplicates.isEmpty)
@@ -211,22 +217,22 @@ to the correct ObjId, and every asidTable entry points to a valid VSpaceRoot. -/
 private def asidTableConsistencyChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   -- Completeness: every VSpaceRoot has its ASID in the table
   let completenessChecks := objectIds.filterMap fun oid =>
-    match (st.objects[oid]? : Option KernelObject) with
-    | some (.vspaceRoot root) =>
+    match st.getVSpaceRoot? oid with
+    | some root =>
         let ok := st.asidTable[root.asid]? == some oid
         some (s!"asidTable completeness: oid={oid} asid={root.asid.toNat}", ok)
-    | _ => none
+    | none => none
   -- Soundness: every asidTable entry points to a valid VSpaceRoot with matching ASID
   let soundnessChecks := objectIds.filterMap fun oid =>
-    match (st.objects[oid]? : Option KernelObject) with
-    | some (.vspaceRoot root) =>
+    match st.getVSpaceRoot? oid with
+    | some root =>
         match st.asidTable[root.asid]? with
         | some tableOid =>
             let ok := tableOid == oid
             some (s!"asidTable soundness: asid={root.asid.toNat} → oid={oid}", ok)
         | none =>
             some (s!"asidTable soundness: asid={root.asid.toNat} missing", false)
-    | _ => none
+    | none => none
   completenessChecks ++ soundnessChecks
 
 /-- WS-F2: Untyped watermark validity: watermark ≤ regionSize for every untyped object.
@@ -651,7 +657,9 @@ targets an existing kernel object. -/
 private def checkRegistryEndpointValid (st : SystemState) : Bool :=
   st.serviceRegistry.toList.all fun (_, reg) =>
     match reg.endpointCap.target with
-    | .object epId => st.objects[epId]? != none
+    -- Kind-agnostic by intent: the AG1-F claim is that the endpoint capability
+    -- names a live object, not that the object is an Endpoint.
+    | .object epId => st.getObject? epId != none
     | _ => false
 
 /-- AG1-F audit: checkRegistryInterfaceValid — every registered service references
@@ -679,10 +687,10 @@ For every populated ObjId, the stored object's `objectType` must match
 the recorded entry in `lifecycle.objectTypes`. Walks `objectIndex` once
 and compares each entry pair; `true` when all match. -/
 private def checkLifecycleObjectTypeLockstep (st : SystemState) : Bool :=
-  -- Leaves the generic `objects[oid]?` read here: the check is
-  -- variant-agnostic, so no typed helper would apply.
+  -- Variant-agnostic by intent, so the kind-agnostic member of the typed
+  -- accessor family is the reader that says it.
   st.objectIndex.all fun oid =>
-    match st.objects[oid]? with
+    match st.getObject? oid with
     | some obj =>
       match st.lifecycle.objectTypes[oid]? with
       | some ty => ty == obj.objectType
