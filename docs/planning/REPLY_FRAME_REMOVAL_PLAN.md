@@ -300,6 +300,27 @@ document existing.
   reply capabilities are documented as legitimate, seL4 supports answering a
   non-head frame, and refusing would trade a wedge for a lost capability.
 
+- **It does not preserve the donation accounting across the removal, and that
+  cost is real.**  Taking a caller out of the *middle* of a chain is destructive
+  to which thread ends up owning the scheduling context, and this plan inherits
+  seL4-MCS's answer rather than inventing one: `reply_remove` on a non-head frame
+  moves no scheduling context, and the later `reply_pop` donates to the head
+  frame's own caller.  On a chain `owner → middle → server`, a delegate that
+  answers `owner` out of order leaves `owner` `.unbound` permanently, and the
+  server's in-order reply then settles the context `.bound` on `middle` — which
+  in the in-order unwind would instead have received it `.donated … owner`, still
+  owed outward.  So a callee that delegates its caller's reply capability to a
+  confederate can arrange to capture that caller's reservation.
+
+  The authority required is already the authority to unblock the victim, and the
+  behaviour is upstream seL4's, so this is a stated cost rather than a defect —
+  but it is stated, because WS-OD's `severAtCut` states the identical cost for
+  the cancellation path ("the original owner's reservation ends up with that
+  caller") and the reply path acquiring it silently would be the asymmetry this
+  project's own rules refuse.  RM6.1's witness asserts both halves — the owner
+  left `.unbound`, and the in-order contrast — so the cost is pinned rather than
+  described.  Recorded by the post-landing audit of this workstream.
+
 ## 10. What closing this workstream found
 
 ### 10.1 `.replyRecv` popped its donation *after* the receive leg, and the loop could not complete

@@ -218,8 +218,16 @@ fault reply and the reply *transfer* composing it); and `.replyRecv`'s pop moved
 `Reply.isFree` reads both stack links.  What keeps the surface closed is derived
 rather than listed: `ReplyStackWriteCensus` (Tier 1) collects every definition
 that writes reply-stack data from the elaborated environment and requires each to
-name a chain result or to be recorded as a half-step of the composite that does.
-See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.8 for the canonical text.
+name a chain result or to be recorded as a half-step of the composite that does —
+with the primitive list it starts from held to the code by a second, independent
+derivation, since `storeObject` takes a whole object and a record update can
+rewrite a stack link without naming any helper.  The cost is stated with the fix:
+removing a caller from the *middle* of a chain does not preserve the donation
+accounting, so a delegate answering an owner out of order leaves that owner
+`.unbound` and the context settles on the intermediate caller — seL4-MCS's own
+`reply_remove` answer, pinned by `tests/SmpIpcSuite.lean` §3.20 rather than
+described.  See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.8 for the
+canonical text.
 
 **A donation moves budget, period and deadline — not priority or domain**
 (`v0.35.3`).  Closing WS-OD surfaced an authority crossing in both directions:

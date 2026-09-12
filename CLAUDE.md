@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.8.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.9.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2285,6 +2285,24 @@ predicate.**  It was private to the cancellation shape module; the fault-reply
 path needs the same fact, and a second copy in a module the first does not import
 is the one-question-two-answers shape this tree keeps paying for.
 
+**And the removal does not preserve the donation accounting — the cost, stated**
+(the post-landing audit of this workstream).  Taking a caller out of the *middle*
+of a chain is destructive to which thread ends up owning the scheduling context,
+and this kernel inherits seL4-MCS's answer rather than inventing one: a non-head
+`reply_remove` moves no context, and the later `reply_pop` donates to the head
+frame's own caller.  On `owner → middle → server`, a delegate answering `owner`
+out of order leaves `owner` **`.unbound` permanently**, and the server's in-order
+reply then settles the context **`.bound` on `middle`** — which the in-order
+unwind would instead have left `.donated … owner`, still owed outward.  So a
+callee that delegates its caller's reply capability to a confederate can capture
+that caller's reservation.  The authority required is already the authority to
+unblock the victim, so this is a cost rather than a defect — but new code must
+not read WS-RM as accounting-preserving, and it must not read a successful pop
+as evidence that the context reached its owner.  It is stated because WS-OD's
+`severAtCut` states the identical cost for the cancellation path, and
+`tests/SmpIpcSuite.lean` §3.20 asserts both halves — the owner left `.unbound`,
+and the in-order contrast — so the cost is pinned rather than described.
+
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
@@ -3453,9 +3471,22 @@ code may assume:
   a raw-pointer dereference or a foreign call inside one of the HAL's thirteen
   `unsafe fn`s must sit in its own `unsafe { … }` block with its own
   `// SAFETY:` comment — which is what makes the HAL's stated discipline
-  (*every unsafe block carries a `// SAFETY:` comment*, enforced by
-  `scripts/check_arm_arm_citations.sh`) reach the bodies where the hardware
-  access actually happens.  It also makes an *absence* checkable: the host
+  (*every unsafe block carries a `// SAFETY:` comment*) reach the bodies where
+  the hardware access actually happens.  **That discipline is enforced by
+  `scripts/check_unsafe_block_justifications.py` (Tier 0) since `v0.35.9`, and
+  was enforced by nothing before it**: this file and
+  `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` row F.3 both named
+  `scripts/check_arm_arm_citations.sh`, which the v0.30.11 audit planned as
+  R12.C and which no commit on any branch ever contained.  A claimed gate is
+  the worst kind of stale claim, because the discharge row it backs reads as
+  evidence.  The live gate asks each site kind its own question — a `// SAFETY:`
+  comment in the contiguous run above an `unsafe` **block**, a `# Safety` doc
+  section on an `unsafe fn` **declaration**, which are Rust's two idioms and not
+  interchangeable — and the tree is at **125 of 125 justified**, so its baseline
+  is empty and any new unjustified site fails outright rather than raising a
+  floor.  The ARM ARM citation count is reported beside it and deliberately not
+  enforced: deciding which sites touch hardware needs the body, which is the
+  analysis-instead-of-a-contract shape this file retires twice above.  It also makes an *absence* checkable: the host
   `raw_syscall` mock is `unsafe fn` for signature parity alone, and its body
   compiling with no block is the compiler's statement of that, where before it
   was a docstring's.  The lint was added because the claim it replaces was

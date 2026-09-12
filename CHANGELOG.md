@@ -1,3 +1,206 @@
+## v0.35.9 — WS-RM post-landing audit: a claimed gate that never existed, and five claims the code had moved out from under
+
+A deep audit of the WS-RM cut (`v0.35.6`) and the branch around it.  The
+workstream's own claims hold — one removal step, both spines calling it, the
+order pinned, the chain payoff unconditional, the `.replyRecv` pop between the
+legs, the runtime witness exercising the defect with a paired negative, and every
+Tier 3 negative firing under a token-preserving mutation of the live tree.  Five
+findings, all closed here; the fifth and sixth were found outside WS-RM — one in
+the assurance machinery the whole tree rests on, one in a lock-coverage docstring
+the tree had moved out from under.
+
+### 1. The removal does not preserve the donation accounting, and nothing said so
+
+Taking a caller out of the **middle** of a chain is destructive to which thread
+ends up owning the scheduling context.  On `owner → middle → server`, a delegate
+answering `owner` out of order leaves `owner` **`.unbound` permanently**, and the
+server's in-order reply then settles the context **`.bound` on `middle`** — where
+the in-order unwind would have left it `.donated … owner`, still owed outward.  A
+callee that delegates its caller's reply capability to a confederate can
+therefore capture that caller's reservation.
+
+This is seL4-MCS's own `reply_remove` answer — a non-head removal moves no
+scheduling context, and the later `reply_pop` donates to the head frame's own
+caller — and the authority required is already the authority to unblock the
+victim, so it is a **cost, not a defect**.  What was wrong is that it was
+unstated: before `v0.35.6` the same input wedged fail-closed, and WS-OD states
+the identical cost for the cancellation path (`severAtCut`: "the original owner's
+reservation ends up with that caller") while the reply path acquired it silently.
+
+It is now pinned rather than described.  `tests/SmpIpcSuite.lean` §3.20 asserts
+both halves — the owner left `.unbound` after the out-of-order removal, and the
+in-order contrast leaving the intermediate caller `.donated … owner` — so a cut
+that changed the accounting would fail rather than drift.  Stated in the WS-RM
+plan §9, `SELE4N_SPEC.md` §8.12.8 (now seven items), GitBook 12, `CLAUDE.md` and
+`AGENTS.md`.
+
+### 2. The census's primitive list was an enumeration standing in for a derivation
+
+`ReplyStackWriteCensus` derives its write-site set with
+`usesDirectly env chainWritePrimitives`, and that list is nine hand-written
+names.  `storeObject` takes a whole `KernelObject`, so a definition writing
+`{ r with next := … }` directly — calling none of the nine — was invisible to the
+census *and* to the registry it drives, which is the one mechanism this project
+points at for "every reply-stack write names a chain result".
+
+`primitiveCoverageViolations` is the independent second derivation: a project
+definition that builds a `Reply` or `SchedContext` record **and** reaches a store
+must be a primitive, a registered site, or carry a stated reason in
+`chainNeutralConstructors`.  It over-approximates on purpose — it sees *that* a
+record was built, not which field moved — so it fails closed, and narrowing it in
+the scanner would be the analysis-instead-of-contract shape this project has
+retired twice.
+
+Run on the live tree it yields exactly two exemptions, each a property of the
+code rather than a convention: `linkReply` writes `Reply.caller` only and is
+gated on `Reply.isFree` (no link in either direction), and
+`schedContextConfigure` rebuilds a SchedContext for its CBS parameters with
+`scReply` outside the update's assignment list.  Both directions are reconciled,
+so a stale exemption fails too.
+
+`censusWitnessDirectLinkWrite` is the witness, and it is asserted to be
+**invisible** to the name-based derivation and **visible** to the record-based
+one — a witness the old mechanism could see would assert nothing about the hole.
+Mutation-tested on the real tree: removing its exclusion fails the build with the
+offending declaration named.
+
+### 3. The claim-evidence index claimed more than the step proves
+
+Row: "the answered frame comes off its reply stack before its caller link is
+consumed, so no frame is left on a stack with its caller gone whichever way it
+leaves".  For a frame that *heads* a scheduling context the removal does neither:
+`Reply.consumed` keeps a head's links deliberately, because the pop validates the
+head by them, and the step's own statement is the relaxed
+`…_head_preserves_donationChainWellFormedExcept` — which the row's own evidence
+column already listed.  The claim is true of the **transition**, not of the step
+it named.  `SELE4N_SPEC.md` §8.12.8 item 3 had it right; only the index row was
+overstated, and it now says which artefact carries which half.
+
+### 4. A census docstring described a filter the filter does not implement
+
+`isDefinitionShaped`'s docstring said a `Prop`-valued `def` — "predicates,
+well-formedness conditions" — is excluded "by the type check the caller performs
+in `MetaM`".  `Meta.isProp` asks whether a declaration's **type is** a
+proposition, so it answers `false` for `def p : SystemState → Prop`, whose type
+is a `Type`.  The filter excludes a proof written with `def` and nothing else.
+
+Fail-closed (such a definition would be *reported* as an unregistered site, not
+skipped) and the tree contains none, so the mechanism is sound; the docstring was
+not.  It now says which shape each half excludes and which direction the gap
+fails in.
+
+### 5. A gate `CLAUDE.md` and the discharge index both named had never been written
+
+`CLAUDE.md` states the HAL's discipline — *every unsafe block carries a
+`// SAFETY:` comment* — and attributed its enforcement to
+`scripts/check_arm_arm_citations.sh`.
+`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` row F.3 names the same script as
+the **discharge mechanism** for findings DEEP-RUST-01/02, with
+`bash scripts/check_arm_arm_citations.sh` in its "reachability check" column.
+
+**That script does not exist and never did.**  No commit on any branch of this
+repository contains it, `scripts/test_tier0_hygiene.sh` never referenced it, and
+no SAFETY-comment gate existed anywhere in `scripts/`.  So the discipline was
+stated in the project's top-level guidance, recorded as discharging two audit
+findings, and checked by nothing — for four minor versions, across a branch that
+added 4191 lines of Rust to the HAL.
+
+`scripts/check_unsafe_block_justifications.py` is the gate, written against what
+the tree actually is and wired into Tier 0.  It asks **each site kind its own
+question**, because Rust has two idioms and they are not interchangeable: an
+`unsafe` **block** *discharges* an obligation locally and takes a `// SAFETY:`
+comment (what `clippy::undocumented_unsafe_blocks` reads); an `unsafe fn`
+**declaration** *publishes* one to its callers and takes a `# Safety` doc
+section.  The relation is the **contiguous comment run above the site** — a line
+carrying code ends it — rather than a fixed window, because a window is a
+presence check an unrelated comment satisfies.
+
+**The tree is at 125 of 125 justified.**  The fourteen sites that were not are
+fixed in this cut rather than baselined: three host cache tests, the DTB header
+read, the cross-core suspend upcall, five GIC SGI-table sites, the shootdown and
+reschedule handler registrations, and the timer and reschedule Lean entries.
+Each justification is derived from the code around it — most were the enclosing
+`unsafe fn`'s own `# Safety` contract discharging the callee's precondition, or
+an existing explanation that needed attaching to the block Rust's convention puts
+it on.  So the baseline is **empty** and the gate is a prohibition, not a floor.
+
+The ARM ARM citation count the original finding named — **50 of 125** — is
+reported beside the enforced figure and deliberately not enforced: requiring an
+architecture-manual citation of a raw-pointer dereference that touches no
+hardware would be a scanner matching a keyword, and deciding which sites touch
+hardware needs the body, which is the analysis-instead-of-a-contract shape this
+project has retired twice.
+
+The discharge row is corrected rather than deleted, because what it records is
+the finding: an evidence index whose reachability check names a command that does
+not exist is worse than an open row, since an open row is visible.
+
+**Three corrections the gate needed, all of the class this project documents.**
+Written as a presence check on `SAFETY`, it reported every correctly documented
+`unsafe fn` in the tree (34 sites) — the wrong token for that kind.  Given
+statement-scoped attachment to resolve four formatting cases, it reported 108 —
+the anchor was wrong, and the right answer was to move the comments in the code
+rather than make the scanner cleverer.  And it counted `unsafe fn(u8) -> T` in a
+type position as a site, which performs nothing.  Sixteen self-test cases, each
+token-preserving: the comment below the block, a statement between them, the
+token in a string literal, a `# Safety` section offered for a block, an
+`unsafe fn` pointer type, `unsafe impl`.  Mutation-tested on the live tree.
+
+### 6. Three stale claims in a lock-coverage docstring, from footprints that moved
+
+`SeLe4n/Kernel/InformationFlow/FineLockFlow.lean`'s SM8.D.5 umbrella theorem is
+the statement that an endpoint's write lock authorizes the link writes of every
+TCB in its queue — a security-relevant claim about lock coverage.  Its docstring
+carried three claims the tree had moved out from under, all from WS-OD's
+`v0.35.4` footprint rename and the ceiling raises after it:
+
+- it cited `lockSet_tcbSuspend_blocked_endpoint_write_mem` in the **present
+  tense** ("already says"), a theorem retired with the parametric
+  `lockSet_tcbSuspend` footprint it was about;
+- it described "the `lockSet_tcbSuspend_*_write_mem` family" as the live family,
+  and no member of it exists under that name;
+- and its "why the footprint is not simply widened" argument rested on
+  `maxLockSetSize` being **eleven** and the suspend footprint **nine**, "so the
+  two would fit exactly".  The ceiling is 22 and
+  `lockSet_tcbSuspendOnCore_size_le_sixteen` is the live bound, so the two fit
+  with room over and "exactly" is false.
+
+The conclusion the paragraph reaches is unaffected — the neighbour locks are
+redundant rather than unaffordable, which was always the load-bearing reason, and
+the paragraph's own closing sentence already said the decision does not rest on
+the arithmetic.  What is fixed is the prose: the retired names are described by
+what they were rather than cited as live, and the paragraph now quotes **neither**
+derived figure, pointing at the canonical ceiling sentence
+`scripts/check_lock_ceiling_figures.py` enforces instead.  That gate did not catch
+this and was right not to: `CLAUDE.md` deliberately lets narrative name an old
+value ("OD3.5 raised the ceiling to 11"), and the defect was a *live* arithmetic
+conclusion drawn from narrative figures — a shape the gate cannot see and a
+reader can.
+
+### Verified, not assumed
+
+- Every WS-RM Tier 3 negative fires under a token-preserving mutation of the live
+  tree: the removal's order swapped, the cross-core spine reverted to a bare
+  `consumeCallerReply`, and `.replyRecv`'s receive leg fed the pre-pop state.
+  Each paired positive goes silent on the same mutation.
+- `consumeCallerReply` has exactly one call site outside its own theorems —
+  inside `removeCallerReplyFrame` — read off the comment-free code view, and the
+  unqualified spelling does not resolve in either spine's namespace, so the
+  negatives are exact for the revert they exist to catch.
+- The reply arm's authority is capability-gated at the dispatch layer: the arm
+  requires `cap.target = .replyCap rid` and takes the answered thread from
+  `replyAnsweredCaller?`, so neither the victim nor the frame is caller-chosen.
+- `maxLockSetSize = 22` with `admissibleCriticalSection` at 15 µs and a uniform
+  60 µs envelope of 3960 µs — arithmetically consistent and gate-enforced.
+- 125 of 125 Rust `unsafe` sites carry a justification of the kind their form
+  calls for, enforced at zero from this cut.
+- Zero `sorry`, zero `axiom`, zero in-source TODO/FIXME; `lake build` clean;
+  `cargo clippy -D warnings` clean; `cargo fmt --check` clean; 1344 host Rust
+  tests and 112 conformance tests pass; the aarch64 cross build passes; every
+  multi-line Tier 3 anchor is declaration-bounded (zero unbounded gaps).
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md §9
+
 ## v0.35.8 — AK7 reader hygiene: the executable residue is zero, and the floor is a prohibition
 
 Closes the `docs/REGISTERED_DEBT.md` §C row **AK7 reader hygiene, the executable

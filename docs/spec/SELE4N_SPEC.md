@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.8` (`lakefile.toml`) |
+| **Package version** | `0.35.9` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 374,707 across 329 Lean files |
-| **Test LoC** | 75,813 across 70 Lean test suites |
+| **Production LoC** | 374,875 across 329 Lean files |
+| **Test LoC** | 75,847 across 70 Lean test suites |
 | **Proved declarations** | 12,593 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -4458,7 +4458,7 @@ now carried out by a **detach**:
 `v0.35.4` wired the detach into the **cancellation** path and left the **reply**
 path relying on the answered frame being the head: every reply of the nested
 Call pattern satisfies that, and a *delegated* reply capability answering its
-caller out of order does not.  WS-RM closes it.  Six things new code must
+caller out of order does not.  WS-RM closes it.  Seven things new code must
 respect.
 
 1. **One removal step, and both spines call it.**
@@ -4506,6 +4506,26 @@ respect.
    both directions: a site either states what it does to the chain, or is
    recorded as a half-step of the composite that does.  A new definition that
    consumes a caller's Reply bare is a build failure on the day it is written.
+   The primitive list the derivation starts from is itself held to the code by a
+   second, independent derivation (`primitiveCoverageViolations`): a definition
+   that builds a `Reply` or `SchedContext` record and stores it must be a
+   primitive, a registered site, or carry a stated reason for being
+   chain-neutral, because `storeObject` takes a whole object and a record update
+   can rewrite a stack link without naming any helper.
+7. **The removal does not preserve the donation accounting, and that is a
+   stated cost.**  Taking a caller out of the *middle* of a chain is destructive
+   to which thread ends up owning the scheduling context, and this kernel
+   inherits seL4-MCS's answer: a non-head `reply_remove` moves no context, and
+   the later `reply_pop` donates to the head frame's own caller.  On
+   `owner → middle → server`, a delegate answering `owner` out of order leaves
+   `owner` `.unbound` permanently and the server's in-order reply then settles
+   the context `.bound` on `middle` — where the in-order unwind would have left
+   it `.donated … owner`, still owed outward.  A callee that delegates its
+   caller's reply capability to a confederate can therefore capture that
+   caller's reservation; the authority required is already the authority to
+   unblock the victim.  New code must not read a successful pop as evidence that
+   the context reached its owner.  `tests/SmpIpcSuite.lean` §3.20 asserts both
+   halves, so the cost is pinned rather than described.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

@@ -2863,13 +2863,14 @@ prose: an endpoint **owns** its queue, so the endpoint's write lock authorizes t
 link writes of every TCB in that queue.  The sub-operation footprint names the
 neighbours explicitly because it is the finer-grained authority; the syscall
 footprint sits under the coarser umbrella.  Both are sound — but only one of them
-was checked, and the `lockSet_tcbSuspend_*_write_mem` family stopped at six
-members, exactly where the umbrella began.  This is the seventh.
+was checked, and the write-membership family of the (then parametric) suspend
+footprint stopped at six members, exactly where the umbrella began.  This is the
+seventh.
 
 **Why the conclusion has three parts, not one.**  A first cut concluded only
 `(endpointLock ep, .write) ∈ S.pairs`, with the neighbour clause discharged by a
 constant function that ignored its arguments.  That proved the endpoint lock is
-*present*, which `lockSet_tcbSuspend_blocked_endpoint_write_mem` already says —
+*present*, which the family's endpoint member already said —
 and it would have kept elaborating had the splice rewritten arbitrary unrelated
 TCBs, so it established nothing about coverage.  The umbrella's actual content is
 that each neighbour **is in the queue the endpoint owns**, so the second and third
@@ -2885,12 +2886,16 @@ footprint reads, so it is a theorem about the splice rather than about the
 endpoint lock in isolation.
 
 **Why the footprint is not simply widened instead.**  Until WS-OD OD3.5 the
-answer was arithmetic: `lockSet_tcbSuspend` was eight members at full resolution
+answer was arithmetic: the suspend footprint was eight members at full resolution
 against a ceiling of nine, so two neighbour locks did not fit.  That reason is
-now spent — OD3.5 raised `maxLockSetSize` to eleven and the suspend footprint to
-nine, so the two would fit exactly — and the reason that remains is the one that
-was always load-bearing: the members would be **redundant**, not merely
-affordable.  The finer authority is already declared where it belongs, in the
+spent — every raise since has left room, and at the time of writing
+`lockSet_tcbSuspendOnCore_size_le_sixteen` sits well inside `maxLockSetSize`, so
+the two would fit with room over.  (Both figures are derived and both have moved
+repeatedly; the canonical live statement is the ceiling sentence
+`scripts/check_lock_ceiling_figures.py` holds, and this paragraph deliberately
+quotes neither, because the decision below does not rest on them.)  The reason
+that remains is the one that was always load-bearing: the members would be
+**redundant**, not merely affordable.  The finer authority is already declared where it belongs, in the
 sub-operation footprint (`lockSet_cancelIpcBlockingOnCore` names both
 neighbours), and WS-RR RR7.38 turned the endpoint lock from an authorization
 into an *exclusion* mechanism by making every footprint that can write a queued

@@ -2486,6 +2486,16 @@ private def runReplyFrameRemovalChecks : IO Unit := do
       (pushLinksOf stChain pushDonorReply == some (some pushOuterReply, some (.head pushSc)))
     assertBool "pre: the outer frame links up to the head, heading nothing"
       (pushLinksOf stChain pushOuterReply == some (none, some (.frame pushDonorReply)))
+    -- The in-order contrast's own pre-state: `pushDonor` blocked on its own
+    -- reply to `pushServer`, which is what a live depth-2 chain looks like.
+    let inOrderDonorTcb : TCB :=
+      { mkTcb 91 40 none with
+          schedContextBinding := SchedContextBinding.unbound,
+          ipcState := ThreadIpcState.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer),
+          replyObject := some pushDonorReply }
+    let stChainInOrder : SystemState :=
+      { stChain with
+          objects := stChain.objects.insert pushDonor.toObjId (.tcb inOrderDonorTcb) }
     -- The footprint declares the frame the removal writes, resolved from the
     -- answered thread's own reply object.
     assertBool "the footprint resolves the frame ABOVE the answered one"
@@ -2535,6 +2545,30 @@ private def runReplyFrameRemovalChecks : IO Unit := do
       (match returnDonatedSchedContextResolved postOoO pushServer pushSc pushDonor with
        | .ok st' => pushBindingOf st' pushDonor == some (.bound pushSc)
        | .error _ => false)
+    -- **THE COST, PINNED RATHER THAN DESCRIBED.**  Taking a caller out of the
+    -- middle of a chain is destructive to the donation accounting, and that is
+    -- seL4-MCS's own answer: `reply_remove` on a non-head frame moves no
+    -- scheduling context, and the later `reply_pop` donates to the head frame's
+    -- own caller.  So the context settles `.bound` on the INTERMEDIATE caller
+    -- above, and `pushOuter` -- which owned it -- is left `.unbound` for good.
+    -- The in-order unwind below is the contrast: there the intermediate caller
+    -- receives it `.donated … pushOuter`, still owing it outward.
+    --
+    -- Asserted here because the project's standard for this trade is WS-OD's:
+    -- "its cost is stated rather than hidden".  A witness that checked only the
+    -- payoff would let the cost drift silently.
+    assertBool "COST: the original owner is left unbound, having lost its reservation"
+      (match returnDonatedSchedContextResolved postOoO pushServer pushSc pushDonor with
+       | .ok st' => pushBindingOf st' pushOuter == some .unbound
+       | .error _ => false)
+    assertBool "COST (contrast): an IN-ORDER unwind leaves it owed outward, not owned"
+      (match endpointReplyOnCore pushServer pushDonor IpcMessage.empty bootCoreId
+                stChainInOrder with
+       | (stIn, .ok _) =>
+           (match returnDonatedSchedContextResolved stIn pushServer pushSc pushDonor with
+            | .ok st' => pushBindingOf st' pushDonor == some (.donated pushSc pushOuter)
+            | .error _ => false)
+       | (_, .error _) => false)
     -- NEGATIVE, and the reason this witness exists: the SAME reply with the
     -- detach omitted.  Every object is present and every field the consume
     -- writes is identical; what changes is the head's link down to a frame whose

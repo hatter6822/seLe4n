@@ -1072,6 +1072,12 @@ fn reschedule_sgi_handler(_intid: u8, _source_cpu: u8) {
             extern "C" {
                 fn lean_per_core_reschedule(core_id: u64);
             }
+            // SAFETY: `lean_per_core_reschedule` is the Lean-emitted
+            // `extern "C"` entry declared just above; calling it is sound from
+            // EL1 IRQ context under the two conditions stated there -- this
+            // core's per-core hardware init has completed and its Lean runtime
+            // is initialized -- and inside the kernel-entry bracket, which
+            // serialises its `IO.Ref` commit against every other entry.
             crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
                 lean_per_core_reschedule(core_id);
             });
@@ -1089,6 +1095,9 @@ fn reschedule_sgi_handler(_intid: u8, _source_cpu: u8) {
 /// `bring_up_secondaries` — the [`crate::gic::register_sgi_handler`]
 /// write-once contract, same as the shootdown and haltAll handlers.
 pub unsafe fn register_reschedule_sgi_handler() {
+    // SAFETY: this function's own `# Safety` contract -- boot, single-core,
+    // IRQs disabled, before `bring_up_secondaries` -- is exactly
+    // `register_sgi_handler`'s write-once precondition.
     unsafe {
         crate::gic::register_sgi_handler(RESCHEDULE_INTID, reschedule_sgi_handler);
     }

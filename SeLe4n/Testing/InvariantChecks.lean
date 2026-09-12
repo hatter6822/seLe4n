@@ -140,7 +140,18 @@ def threadInactiveFlagConsistentBool (st : SystemState) : Bool :=
   (threadInactiveFlagConsistentChecks st.objectIndex st).all (·.2)
 
 /-- M-11 CSpace coherency: every CNode slot whose capability targets an object has that
-object present in the object store. -/
+object present in the object store — and, where the capability names the object's
+*kind*, an object of that kind.
+
+Three arms, and the difference between them is what each capability form claims.
+An `.object` target claims only that something is there, so the kind-agnostic
+`getObject?` is the reader that says it.  A `.cnodeSlot` names the CNode it
+descends and a `.replyCap` names a Reply, so those read the typed accessor: a
+capability pointing at an object of the wrong kind is not backed *for the purpose
+this check states*, and reporting it as backed would be the check agreeing with a
+dangling descent.  No fixture in the tree installs a `.cnodeSlot` capability whose
+target is a non-CNode, so the discriminating case is unexercised; the arm is
+stated this way because it is what the claim means, not because a test drove it. -/
 private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
     match st.getCNode? oid with

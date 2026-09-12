@@ -222,8 +222,30 @@ Expected rows:
 |---|------------------|------------------|---------------------|---------------------|--------------------|
 | F.1 | DEEP-CAP-02 (`cspaceMutate` rejects null caps; runtime guard at `Capability/Operations.lean`) | R4.D | Two Lean theorems: `cspaceMutate_rejects_null_cap`, `cspaceMutate_null_cap_rejected` (in `Capability/Invariant/Preservation/CopyMoveMutate.lean`) + regression tests `cspaceMutate_from_null_rejected` (`tests/ModelIntegritySuite.lean`) and `NEG-MUTATE-NULL` (`tests/NegativeStateSuite.lean::runAuditCoverageChecks`) | Lean elaborator (proof obligation) + Tier-2 negative suite | `#check @SeLe4n.Kernel.cspaceMutate_rejects_null_cap` and `#check @SeLe4n.Kernel.cspaceMutate_null_cap_rejected` (**LANDED** commit `7da2572`, regression test extended this commit) |
 | F.2 | DEEP-ARCH-01 (audit-text verification error; CacheModel/TimerModel/ExceptionModel/TlbCacheComposition correctly outside production chain) | R12.B | CI gate `scripts/check_production_staging_partition.sh` (already LANDED — verified at R0.1 baseline) | tier-0 hygiene script (gate run on every CI) | `bash scripts/check_production_staging_partition.sh` |
-| F.3 | DEEP-RUST-01 / DEEP-RUST-02 (MMIO + register `unsafe` blocks have ARM ARM citations) | R12.C | CI gate `scripts/check_arm_arm_citations.sh` (NEW — added in R12.C PR) | tier-0 hygiene script | `bash scripts/check_arm_arm_citations.sh` |
+| F.3 | DEEP-RUST-01 / DEEP-RUST-02 (MMIO + register `unsafe` blocks are justified) | R12.C | CI gate `scripts/check_unsafe_block_justifications.py` + baseline `scripts/unsafe_justification_baseline.json` (**discharged at `v0.35.9`, not at R12.C — see the correction below**) | tier-0 hygiene script | `python3 scripts/check_unsafe_block_justifications.py` |
 | F.4 | DEEP-ARCH-02 (`*_fields` defs all have ≥1 consumer; not dead code) | R12.D | CI gate `scripts/check_no_orphan_fields.sh` (already LANDED — verified at R0.1 baseline) | tier-0 hygiene script | `bash scripts/check_no_orphan_fields.sh` |
+
+**Correction to F.3 (post-landing audit of WS-RM, `v0.35.9`).**  This row
+recorded `scripts/check_arm_arm_citations.sh` as the discharge mechanism, with
+`bash scripts/check_arm_arm_citations.sh` as its reachability check.  **That
+script was never written.**  No commit on any branch of this repository contains
+it, `scripts/test_tier0_hygiene.sh` never referenced it, and the discipline
+`CLAUDE.md` attributed to it was checked by nothing — so this row asserted a
+discharge that had not occurred, for four minor versions.  The row is corrected
+above rather than deleted, because what it records is the finding: an evidence
+index whose "reachability check" column names a command that does not exist is
+worse than an open row, since an open row is visible.
+
+The discharge is now real.  `scripts/check_unsafe_block_justifications.py` runs
+in Tier 0, asks each site kind Rust's own question (a `// SAFETY:` comment in
+the contiguous comment run above an `unsafe` **block**; a `# Safety` doc section
+on an `unsafe fn` **declaration**), and the tree is at **125 of 125 sites
+justified** — the fourteen that were not are fixed in the same cut, so the
+baseline is empty and the gate is a prohibition rather than a floor.  The ARM ARM
+citation count the original finding named (**50 of 125**) is reported as a
+diagnostic and not enforced: requiring an architecture-manual citation of a
+raw-pointer dereference that touches no hardware would be a scanner matching a
+keyword, and deciding which sites touch hardware needs the body.
 
 **Note on F.2 and F.4 status.** Per CLAUDE.md "active workstream
 context" and the WS-RC plan §3.1 phase summary, the partition gate

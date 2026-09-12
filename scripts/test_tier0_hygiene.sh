@@ -453,6 +453,18 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py"
 
+# The unsafe-justification gate (post-landing audit of WS-RM, v0.35.9).
+# `CLAUDE.md` stated the HAL's discipline -- every unsafe block carries a
+# `// SAFETY:` comment -- and attributed its enforcement to
+# `scripts/check_arm_arm_citations.sh`, which the v0.30.11 audit planned as
+# R12.C and whose discharge index row F.3 names as the mechanism discharging
+# DEEP-RUST-01/02.  That script was never written: no commit on any branch
+# contains it and Tier 0 never ran it.  So the discipline was stated, relied on
+# by a discharge row, and checked by nothing; this is the gate, and the tree is
+# at **zero** unjustified sites, so its baseline is empty and any new one fails.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_unsafe_block_justifications.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_unsafe_block_justifications.py"
+
 # WS-RR RR3.1: `ipcInvariantFull` de-threading.  A bundle that binds a
 # conjunct applied to its own post-state proves "*if* the post-state already
 # satisfies the conjunct, the transition is fine" -- not that the transition

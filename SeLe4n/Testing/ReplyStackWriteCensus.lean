@@ -72,10 +72,17 @@ open Lean Elab Command
 `caller` in the *clearing* direction (linking a caller cannot falsify the
 frame's `callerKept` field; consuming one can).
 
-Each entry writes one of those fields in its own body — this list is a pin on
-what the tree contains, and the reconciliation below is what keeps it honest:
-a definition that writes a chain field through a helper not listed here is not a
-primitive, it is a *site*, and it must appear in the registry. -/
+Each entry writes one of those fields in its own body.  This list is a **pin**,
+not the derivation: what keeps it honest is `primitiveCoverageViolations` below,
+which derives the candidate frontier from what the code does — a definition that
+constructs a `Reply` or a `SchedContext` record *and* reaches a store — and
+requires every candidate to be a primitive, a registered site, or a member of
+`chainNeutralConstructors` with a stated reason.
+
+Without that, this list would be an enumeration standing in for a derivation:
+`storeObject` takes a whole `KernelObject`, so a definition writing
+`{ r with next := … }` directly, calling none of the nine names here, would be
+invisible to this census and to the registry it drives. -/
 def chainWritePrimitives : List Name :=
   [ -- The caller clear, and the link clear off a frame that heads nothing.
     `SeLe4n.Kernel.Reply.consumed
@@ -95,6 +102,74 @@ def chainWritePrimitives : List Name :=
   , `SeLe4n.Kernel.storeDonationHeadClear
   , `SeLe4n.Kernel.storeReplyReHead
   , `SeLe4n.Kernel.storeDonationHeadPop ]
+
+/-- The record constructors a chain write has to go through.
+
+`storeObject` takes a whole `KernelObject`, so the only way to change a
+`Reply`'s links or a `SchedContext`'s stack head is to *build* one of those
+records — a `{ r with … }` update elaborates to the constructor like any other
+application.  That makes "constructs one of these" the derivable half of the
+frontier, where a helper's *name* is not. -/
+def chainRecordConstructors : List Name :=
+  [ `SeLe4n.Kernel.Reply.mk, `SeLe4n.Kernel.SchedContext.mk ]
+
+/-- The stores a built record has to reach to become state. -/
+def objectStoreSpellings : List Name :=
+  [ `SeLe4n.Model.storeObject
+  , `SeLe4n.Model.SystemState.storeObject
+  , `SeLe4n.Model.storeObjectKindChecked ]
+
+/-- Definitions that build a chain-bearing record and store it, and yet write no
+chain field — each with the reason, which is a property of the code rather than
+a convention.
+
+The derivation over-approximates on purpose: it cannot see *which* fields a
+record update changes, so a definition rebuilding a `SchedContext` to set its
+budget looks exactly like one rebuilding it to re-head its stack.  Narrowing
+that in the scanner would mean reading the term's field assignments, which is
+the analysis-instead-of-contract shape this project has retired twice.  Stating
+the reason here is the contract, and adding an entry is a reviewed act. -/
+def chainNeutralConstructors : List (Name × String) :=
+  [ -- `caller` only, and only on a Reply the `isFree` guard has proved carries
+    -- no link in either direction.  Linking a caller cannot falsify a chain
+    -- clause (`Reply.wellFormed`'s antecedent becomes false, and the walk reads
+    -- `prev` / `next` / `scReply`), and the guard is what makes that structural
+    -- rather than incidental.
+    (`SeLe4n.Model.SystemState.linkReply,
+      "writes `Reply.caller` only, gated on `Reply.isFree` — no link in either direction")
+    -- A `{ sc with budget := …, period := …, … }` update: `scReply` is not in
+    -- the assignment list, so the stored record carries the value it read.
+  , (`SeLe4n.Kernel.SchedContextOps.schedContextConfigure,
+      "rebuilds a SchedContext for its CBS parameters; `scReply` is untouched by the update") ]
+
+/-- Where the derived frontier and the primitive list disagree.
+
+A candidate — a project definition that builds a chain-bearing record and
+reaches a store — must be a primitive, a registered write site, or carry a
+stated reason in `chainNeutralConstructors`.  Anything else is a definition that
+can write chain data with nothing saying what it does to the chain, which is the
+one thing this census exists to make impossible.
+
+Also reconciles `chainNeutralConstructors` in the other direction: an entry that
+is no longer a candidate is a stale exemption, and a stale exemption reads like
+coverage. -/
+def primitiveCoverageViolations (candidates recorded : List Name)
+    (neutral : List (Name × String)) : List String :=
+  let neutralNames := neutral.map (·.1)
+  let uncovered := candidates.filter fun n =>
+    !(chainWritePrimitives.contains n) && !(recorded.contains n) &&
+      !(neutralNames.contains n)
+  let staleNeutral := neutralNames.filter fun n => !(candidates.contains n)
+  (if uncovered.isEmpty then [] else
+    [s!"{uncovered.length} definition(s) build a `Reply` or `SchedContext` record and store \
+        it, and are neither a chain-write primitive, nor a registered write site, nor a \
+        stated chain-neutral constructor ({uncovered}).  A definition that can write \
+        `Reply.prev` / `Reply.next` / `Reply.caller` or `SchedContext.scReply` through a \
+        record update is a write site whatever helper it does or does not call"]) ++
+  (if staleNeutral.isEmpty then [] else
+    [s!"{staleNeutral.length} chain-neutral exemption(s) name definitions that no longer \
+        build a chain-bearing record and store it ({staleNeutral}) — a stale exemption \
+        reads like coverage"])
 
 /-- `true` for a constant this project defines, auxiliaries and private
 manglings included. -/
@@ -120,11 +195,20 @@ def usesDirectly (env : Environment) (targets : List Name) (n : Name) : Bool :=
   | none => false
   | some v => v.getUsedConstants.any (fun c => targets.contains c)
 
-/-- `true` when `n` is a *definition* rather than a proof.  A theorem whose
-statement mentions a primitive is a result *about* a write, not a write; and a
-`Prop`-valued `def` (this tree has several: predicates, well-formedness
-conditions) is a statement too.  Both are excluded, the first structurally and
-the second by the type check the caller performs in `MetaM`. -/
+/-- `true` when `n` is a *definition* rather than a proof.
+
+A theorem whose statement mentions a primitive is a result *about* a write, not
+a write, and is excluded here structurally.  The caller's `Meta.isProp` check
+excludes the other shape a proof takes — a proof written with `def`, whose
+**type is** a proposition.
+
+It does **not** exclude a *predicate*: `def p : SystemState → Prop` has type
+`SystemState → Prop`, which is a `Type` rather than a `Prop`, so `Meta.isProp`
+answers `false` for it.  That is the safe direction — such a definition would be
+reported as an unregistered write site rather than silently skipped — and the
+tree currently contains none, since the census's own reconciliation passes.  A
+predicate written in terms of a chain-write primitive would therefore fail this
+gate and want an explicit decision, not a silent pass. -/
 def isDefinitionShaped (env : Environment) (n : Name) : Bool :=
   match env.find? n with
   | some (.defnInfo _) => true
@@ -142,6 +226,20 @@ def directWriteCandidates (env : Environment) : List Name :=
     (fun acc (n, _) =>
       if isProjectConstant n && !isAuxiliary n && isDefinitionShaped env n &&
           (chainWritePrimitives.contains n || usesDirectly env chainWritePrimitives n)
+      then n :: acc else acc) []
+
+/-- The derived candidate frontier for the primitive list: every project
+definition that both builds a chain-bearing record and reaches a store.
+
+Deliberately over-approximating — it sees *that* a record was built, not which
+of its fields moved — so it fails closed: a definition it cannot classify is
+reported rather than skipped. -/
+def recordConstructingStoreCandidates (env : Environment) : List Name :=
+  env.constants.toList.foldl
+    (fun acc (n, _) =>
+      if isProjectConstant n && !isAuxiliary n && isDefinitionShaped env n &&
+          usesDirectly env chainRecordConstructors n &&
+          usesDirectly env objectStoreSpellings n
       then n :: acc else acc) []
 
 /-! ## What a write site owes
@@ -328,6 +426,20 @@ private def censusWitnessBareConsume (caller : SeLe4n.ThreadId) (rid : SeLe4n.Re
     SeLe4n.Model.Kernel Unit :=
   SeLe4n.Model.SystemState.consumeCallerReply caller rid
 
+/-- **The write that calls no primitive**: a transition that rewrites a Reply's
+upward stack link through a record update and `storeObject`, naming none of the
+nine helpers in `chainWritePrimitives`.
+
+This is what makes that list a pin rather than the definition of the frontier.
+Nothing in `usesDirectly env chainWritePrimitives` can see it; only
+`recordConstructingStoreCandidates` can. -/
+private def censusWitnessDirectLinkWrite (rid : SeLe4n.ReplyId) :
+    SeLe4n.Model.Kernel Unit :=
+  fun st =>
+    match st.getReply? rid with
+    | some r => SeLe4n.Model.storeObject rid.toObjId (.reply { r with next := none }) st
+    | none => .ok ((), st)
+
 /-- Writes no reply-stack data: reads a Reply and returns. -/
 private def censusWitnessNoWrite (st : SeLe4n.Model.SystemState) (rid : SeLe4n.ReplyId) :
     Option SeLe4n.Kernel.Reply :=
@@ -355,6 +467,32 @@ run_cmd Command.liftTermElabM do
   if usesDirectly env chainWritePrimitives ``censusWitnessNoWrite then
     throwError "reply-stack write census: a definition that only reads a Reply is seen to \
       write reply-stack data"
+  -- The primitive list's own witness, in both directions.  The direct-link write
+  -- must be INVISIBLE to the name-based derivation -- that is the hole -- and
+  -- VISIBLE to the record-based one, or the coverage check below asserts nothing.
+  if usesDirectly env chainWritePrimitives ``censusWitnessDirectLinkWrite then
+    throwError "reply-stack write census: the DIRECT LINK WRITE witness calls a chain-write \
+      primitive, so it no longer stands for the shape the primitive list cannot see"
+  unless (recordConstructingStoreCandidates env).contains ``censusWitnessDirectLinkWrite do
+    throwError "reply-stack write census: the DIRECT LINK WRITE witness is not derived as a \
+      candidate -- a definition can rewrite a Reply's stack links with nothing noticing"
+  unless (recordConstructingStoreCandidates env).contains ``censusWitnessNoWrite = false do
+    throwError "reply-stack write census: a definition that only reads a Reply is derived as \
+      a record-constructing store candidate"
+  -- ...and the coverage check rejects it when it is not excluded, accepts the
+  -- real frontier, and refuses a stale exemption.
+  if (primitiveCoverageViolations [``censusWitnessDirectLinkWrite]
+      (chainWriteRegistry.map (·.1)) chainNeutralConstructors).isEmpty then
+    throwError "reply-stack write census: an unregistered record-constructing store was \
+      accepted -- the shape the primitive list cannot see"
+  unless (primitiveCoverageViolations (chainNeutralConstructors.map (·.1))
+      (chainWriteRegistry.map (·.1)) chainNeutralConstructors).isEmpty do
+    throwError "reply-stack write census: a stated chain-neutral constructor was refused"
+  if (primitiveCoverageViolations []
+      (chainWriteRegistry.map (·.1)) [(`SeLe4n.Kernel.thisIsNotACandidate, "stale")]).isEmpty then
+    throwError "reply-stack write census: a STALE chain-neutral exemption was accepted -- an \
+      exemption for a definition that no longer builds a chain-bearing record reads like \
+      coverage"
   -- The result-shape check refuses a theorem about another subject, and one
   -- that says nothing about the chain.
   unless (resultViolations env `SeLe4n.Kernel.removeCallerReplyFrame
@@ -411,7 +549,8 @@ run_cmd Command.liftTermElabM do
   -- The census.  The set is derived; the registry is reconciled against it in
   -- both directions; the witnesses above are excluded by name, since they are
   -- planted write sites rather than kernel ones.
-  let witnesses : List Name := [``censusWitnessBareConsume]
+  let witnesses : List Name :=
+    [``censusWitnessBareConsume, ``censusWitnessDirectLinkWrite]
   let mut derived : List Name := []
   for n in directWriteCandidates env do
     if witnesses.contains n then continue
@@ -422,6 +561,19 @@ run_cmd Command.liftTermElabM do
   let mismatches := reconciliationViolations derived recorded
   unless mismatches.isEmpty do
     throwError "reply-stack write census: {mismatches}"
+  -- The primitive list itself, held to what the code does.  `derived` above is
+  -- read off `chainWritePrimitives`, so it can only ever confirm that list; this
+  -- is the independent half, and it is what stops the nine names from becoming
+  -- an enumeration standing in for a derivation.
+  let mut candidates : List Name := []
+  for n in recordConstructingStoreCandidates env do
+    if witnesses.contains n then continue
+    let some info := env.find? n | continue
+    if (← Meta.isProp info.type) then continue
+    candidates := n :: candidates
+  let coverage := primitiveCoverageViolations candidates recorded chainNeutralConstructors
+  unless coverage.isEmpty do
+    throwError "reply-stack write census: {coverage}"
   for (n, d) in chainWriteRegistry do
     let violations := disciplineViolations env chainWriteRegistry n d
     unless violations.isEmpty do
