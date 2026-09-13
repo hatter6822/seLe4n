@@ -856,10 +856,7 @@ does not accept one. -/
 def replyRecvServerDeschedule (tid recordedServer : SeLe4n.ThreadId)
     (st : SystemState) : SystemState :=
   if recordedServer = tid then st
-  else
-    match placedCoreOf? st recordedServer with
-    | some c => removeRunnableOnCore st recordedServer c
-    | none => st
+  else descheduleAtPlacement st recordedServer
 
 /-- **WS-RM (`v0.35.6`): the post-receive half** — everything the donation
 resolution cannot decide until the receive leg has run.
@@ -917,8 +914,17 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
             | .ok st2 =>
                 .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer serverCore).1)
         else
+            -- **The same deschedule, resolved the same way** (PR #895 review
+            -- round 11).  This arm passed `serverCore` — which `replyRecvBody`
+            -- computes as `determineExecutingCore st recordedServer`, a core the
+            -- server is *current* on, else the boot core — so a server preempted
+            -- on a non-boot queue was removed from a queue it was not on and
+            -- stayed runnable while `.unbound`.  Round 10 removed that proxy
+            -- from the sibling arm above and left this one, because the fix
+            -- protected a named wrapper while `removeRunnableOnCore` still
+            -- accepted a core from anyone.  Both arms call one step now.
             .ok ((), (PriorityInheritance.propagatePipChainCrossCore
-              (removeRunnableOnCore st recordedServer serverCore) recordedServer serverCore).1)
+              (descheduleAtPlacement st recordedServer) recordedServer serverCore).1)
 
 /-- **WS-RM (`v0.35.6`)**: the pop preserves object-store integrity — the return
 is a store chain over existing keys and the replenishment migration writes no
@@ -1039,6 +1045,16 @@ theorem replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_
   have hDeschedInv : ∀ (s : SystemState), s.objects.invExt →
       (removeRunnableOnCore s recordedServer serverCore).objects.invExt := by
     intro s hInv; rw [removeRunnableOnCore_preserves_objects]; exact hInv
+  -- ...and the same two facts for the step BOTH arms now run, proved once at
+  -- the step itself rather than per core at each consumer (round 11).
+  have hDAInv : ∀ (s : SystemState), s.objects.invExt →
+      (descheduleAtPlacement s recordedServer).objects.invExt := by
+    intro s hInv; rw [descheduleAtPlacement_preserves_objects]; exact hInv
+  have hDA : ∀ (s : SystemState), replenishQueueAffinityConsistent_smp s →
+      replenishQueueAffinityConsistent_smp (descheduleAtPlacement s recordedServer) :=
+    fun s hc c => (replenishQueueAffinityConsistentOnCore_frame
+      (descheduleAtPlacement_replenishQueueOnCore _ _ _)
+      (descheduleAtPlacement_preserves_objects _ _)).mpr (hc c)
   unfold replyRecvPostReceiveDonation at h
   cases returned? with
   | none => simp only [] at h; cases h; exact hPip st hObjInv hCons
@@ -1047,7 +1063,7 @@ theorem replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_
     cases hCall : rendezvousDequeuedCall st nextThread with
     | false =>
         rw [hCall] at h; simp only [Bool.false_eq_true, if_false] at h; cases h
-        exact hPip _ (hDeschedInv _ hObjInv) (hDesched _ hCons)
+        exact hPip _ (hDAInv _ hObjInv) (hDA _ hCons)
     | true =>
         rw [hCall] at h; simp only [if_true] at h
         -- The deschedule runs first on this arm, so the donation's own
@@ -1062,17 +1078,13 @@ theorem replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_
           unfold replyRecvServerDeschedule
           split
           · exact hObjInv
-          · split
-            · exact hDeschedInv _ hObjInv
-            · exact hObjInv
+          · exact hDAInv _ hObjInv
         have hSCons : replenishQueueAffinityConsistent_smp
             (replyRecvServerDeschedule tid recordedServer st) := by
           unfold replyRecvServerDeschedule
           split
           · exact hCons
-          · split
-            · exact hDesched _ hCons
-            · exact hCons
+          · exact hDA _ hCons
         cases hDon : applyRendezvousCallDonation
             (replyRecvServerDeschedule tid recordedServer st) tid nextThread with
         | error e => rw [hDon] at h; simp only [] at h; cases h
@@ -1362,16 +1374,22 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
     | false =>
         rw [hCall] at h; simp only [Bool.false_eq_true, if_false, Except.ok.injEq,
           Prod.mk.injEq] at h
-        have hDesched : ipcInvariantFull
-            (removeRunnableOnCore st recordedServer serverCore) := by
-          refine ipcInvariantFull_of_descheduleFrame _ _ hInv
-            (removeRunnableOnCore_preserves_objects _ _ _)
-            (removeRunnableOnCore_passiveServerIdleFrame _ recordedServer serverCore ?_)
-          intro tcb hTcb
-          right
-          exact hServerIdleAllowed tcb ((SystemState.getTcb?_eq_some_iff _ recordedServer tcb).mpr hTcb)
-        have hDeschedInvExt : (removeRunnableOnCore st recordedServer serverCore).objects.invExt := by
-          rw [removeRunnableOnCore_preserves_objects]; exact hObjInv
+        -- Both arms run `descheduleAtPlacement` now, so this branch splits on
+        -- the resolver exactly as the Call arm below does (round 11).
+        have hDesched : ipcInvariantFull (descheduleAtPlacement st recordedServer) := by
+          unfold descheduleAtPlacement
+          split
+          · rename_i c _
+            refine ipcInvariantFull_of_descheduleFrame _ _ hInv
+              (removeRunnableOnCore_preserves_objects _ _ _)
+              (removeRunnableOnCore_passiveServerIdleFrame _ recordedServer c ?_)
+            intro tcb hTcb
+            right
+            exact hServerIdleAllowed tcb
+              ((SystemState.getTcb?_eq_some_iff _ recordedServer tcb).mpr hTcb)
+          · exact hInv
+        have hDeschedInvExt : (descheduleAtPlacement st recordedServer).objects.invExt := by
+          rw [descheduleAtPlacement_preserves_objects]; exact hObjInv
         exact h.2 ▸ propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
           serverCore _ hDeschedInvExt hDesched
     | true =>
@@ -1385,14 +1403,12 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
           unfold replyRecvServerDeschedule
           split
           · rfl
-          · split
-            · exact removeRunnableOnCore_preserves_objects _ _ _
-            · rfl
+          · exact descheduleAtPlacement_preserves_objects _ _
         have hSObj : (replyRecvServerDeschedule tid recordedServer st).objects.invExt := by
           rw [hObjEq]; exact hObjInv
         have hSInv : ipcInvariantFull
             (replyRecvServerDeschedule tid recordedServer st) := by
-          unfold replyRecvServerDeschedule
+          unfold replyRecvServerDeschedule descheduleAtPlacement
           split
           · exact hInv
           · split

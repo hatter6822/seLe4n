@@ -1999,27 +1999,42 @@ theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingC
 -- no core (`replyRecvPopDonation_confinedToCores`), so the arm's declared set is
 -- unchanged by the move.
 
+/-- The step's own confinement, stated once where both consumers can reach it. -/
+theorem descheduleAtPlacement_confinedToCores (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (descheduleAtPlacement st tid)
+      (descheduleAtPlacementCores st tid) := by
+  unfold descheduleAtPlacement descheduleAtPlacementCores
+  cases hp : placedCoreOf? st tid with
+  | none => exact observableSlotsConfinedToCores_refl st []
+  | some c => exact removeRunnableOnCore_confinedToCores st tid c
+
 /-- SM8.B.2: the tail the post-receive half's non-rendezvous arm takes —
 deschedule the now-passive recorded server on its own core, then revert its chain
 from the post-deschedule state. -/
 def replyRecvDescheduleAndWalkWriteSet (recordedServer : SeLe4n.ThreadId)
     (serverCore : CoreId) (st : SystemState) : List CoreId :=
-  serverCore :: pipChainWriteSet (removeRunnableOnCore st recordedServer serverCore)
-    recordedServer serverCore
-    (removeRunnableOnCore st recordedServer serverCore).objectIndex.length
+  -- The deschedule's cores come from the SAME resolver the step uses, not from
+  -- `serverCore`: this arm removed the server at `determineExecutingCore`'s
+  -- answer until round 11, so the footprint named a core the transition did not
+  -- write and omitted the one it did.
+  descheduleAtPlacementCores st recordedServer
+    ++ pipChainWriteSet (descheduleAtPlacement st recordedServer)
+      recordedServer serverCore
+      (descheduleAtPlacement st recordedServer).objectIndex.length
 
 theorem replyRecvDescheduleAndWalk_confinedToCores (recordedServer : SeLe4n.ThreadId)
     (serverCore : CoreId) (st : SystemState) :
     observableSlotsConfinedToCores st
-      (propagatePipChainCrossCore (removeRunnableOnCore st recordedServer serverCore)
+      (propagatePipChainCrossCore (descheduleAtPlacement st recordedServer)
         recordedServer serverCore
-        (removeRunnableOnCore st recordedServer serverCore).objectIndex.length).1
+        (descheduleAtPlacement st recordedServer).objectIndex.length).1
       (replyRecvDescheduleAndWalkWriteSet recordedServer serverCore st) :=
   observableSlotsConfinedToCores_trans
-    (removeRunnableOnCore_confinedToCores st recordedServer serverCore)
+    (descheduleAtPlacement_confinedToCores st recordedServer)
     (propagatePipChainCrossCore_confinedToCores serverCore
-      (removeRunnableOnCore st recordedServer serverCore).objectIndex.length
-      (removeRunnableOnCore st recordedServer serverCore) recordedServer)
+      (descheduleAtPlacement st recordedServer).objectIndex.length
+      (descheduleAtPlacement st recordedServer) recordedServer)
 
 /-- **WS-RM (`v0.35.6`)**: the pop half writes **no** core.  Both its effects are
 per-core silent — the donation return writes neither a scheduler slot nor the
@@ -2069,10 +2084,7 @@ core on a delegated one, where it is a real deschedule. -/
 def replyRecvServerDescheduleWriteSet (tid recordedServer : SeLe4n.ThreadId)
     (st : SystemState) : List CoreId :=
   if recordedServer = tid then []
-  else
-    match placedCoreOf? st recordedServer with
-    | some c => [c]
-    | none => []
+  else descheduleAtPlacementCores st recordedServer
 
 /-- ...and it stays inside them, by the same two facts the unconditional
 deschedule above uses. -/
@@ -2086,11 +2098,8 @@ theorem replyRecvServerDeschedule_confinedToCores (tid recordedServer : SeLe4n.T
   · rw [if_pos h, if_pos h]; exact observableSlotsConfinedToCores_refl st []
   · rw [if_neg h, if_neg h]
     -- **One resolver, read by both.**  The transition and its footprint match
-    -- because they are the same `placedCoreOf?` call, not two spellings that
-    -- happen to agree — which is exactly how the round-9 cut went wrong.
-    cases hp : placedCoreOf? st recordedServer with
-    | none => exact observableSlotsConfinedToCores_refl st []
-    | some c => exact removeRunnableOnCore_confinedToCores st recordedServer c
+    -- because they are the same step, not two spellings that happen to agree.
+    exact descheduleAtPlacement_confinedToCores st recordedServer
 
 /-- SM8.B.2 / WS-RR RR2.20 / **WS-RM (`v0.35.6`)**: **the cores the post-receive
 half may write**, mirroring its own control flow.  Three shapes: the

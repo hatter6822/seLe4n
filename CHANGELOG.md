@@ -1,3 +1,95 @@
+## v0.35.24 — PR #895 review round 11: a witness drawn from a finding tests the finding
+
+Four findings, and **three of them are in the code written to close round 10's**,
+whose findings were in round 9's.  Three rounds running is no longer evidence
+about the instances; the entry below fixes them and then says what the shape is.
+
+**The deschedule was wired on one arm of two.**  Round 10 replaced the proxy core
+inside `replyRecvServerDeschedule` — and `replyRecvPostReceiveDonation`'s *other*
+arm, twenty-five lines away, still called `removeRunnableOnCore st recordedServer
+serverCore` directly with the same proxy.  So the temporal-isolation defect
+reported closed at round 9 and re-closed at round 10 was still live on the
+non-Call path: a server queued on core 2 had core 0's run queue edited.
+
+- `descheduleAtPlacement` (`IPC/CrossCore/EndpointCall.lean`) is the one step —
+  `placedCoreOf?` resolved *inside* it, so no caller can supply a core at all —
+  and **both** arms call it.  `replyRecvServerDeschedule` is its
+  self-reply-guarded instance; the non-Call arm is the bare call.
+- `descheduleAtPlacementCores` is the write-set half, read by both
+  `replyRecvDescheduleAndWalkWriteSet` and `replyRecvServerDescheduleWriteSet`,
+  so the footprint and the transition resolve placement by the same expression.
+- **The Tier 3 negative is re-scoped to the transition.**  Round 10 bounded it to
+  `replyRecvServerDeschedule`, which is a declaration-bounded anchor for a
+  relation about *every* deschedule of the recorded server — so it was silent on
+  the live sibling and its silence read as coverage.  The two positives that
+  pinned `placedCoreOf?` *inside* the helper and its write-set half are retired
+  for anchors on the delegation, and `placedCoreOf?` is pinned in exactly the two
+  definitions that read it: a resolver spelled a third time is a third answer.
+
+**`opaque` with a body was read as valueless.**  Round 6 taught
+`lean_store_read_census.py` the keyword and round 7 made an unterminated
+signature a named failure; together they closed the signature region eagerly for
+every `opaque`, so an `opaque` *with* a body had its body filed as signature —
+`sig`, the region no verdict judges.  That is round 7's own *a skip is a sink*,
+inside the fix for it.  `_declaration_is_valueless` looks ahead for a real body,
+testing the **declaration boundary first** so a later declaration's `:=` cannot
+answer for this one.  The live tree is unmoved (`STORE_READ_CODE=0`,
+`STORE_READ_SPEC=4637`); all 73 `opaque`s in the tree carry bodies and were
+being misfiled.
+
+**Attribute-shaped text inside a string donated a heading it never publishes.**
+`declaration_documents_safety` searched the whole kept view for `#[doc = …]`, so
+`#[allow(unused, reason = r##"#[doc = \"# Safety\"]"##)]` documented the
+`unsafe fn` below it.  Real attribute extents now come from
+`rust_code_view.attribute_spans` on the **string-free** view and their values are
+read off the byte-aligned kept one — structure from one view, the text a
+predicate is about from the other.
+
+**And the case lists became a form matrix** — which is the round's actual
+subject.  Three rounds running, the witnesses here were drawn from the
+*findings*: each round added a case for exactly the defect reported plus a
+control, and the next round supplied a spelling nobody had enumerated.  That is
+this project's own *a recognised set is not a derived set*, applied to its own
+test cases — and the remedy is the one `per_core_state_matrix` already used for
+the lock: enumerate the space.  Every marker FORM crossed with every ENCLOSURE,
+the verdict a property of the enclosure alone, so a spelling this gate has not
+considered is a missing **row** rather than the next round's finding.
+
+Its first run found **five defects no review round had reported**, one
+fail-closed and four fail-open:
+
+- A `SAFETY:` marker in an **undecorated** block comment (`/*\nSAFETY: …\n*/`)
+  was rejected — the only fail-closed cell, and a form `rust/` may legitimately
+  write.
+- A `/**` written inside a line comment, inside a string literal, or nested in
+  another block comment **published a `# Safety` section**.  `block_comment_spans`
+  gates every opener on the code view — a `/` the view blanked — and the nesting
+  walk only measures extent; a line comment's extent is its line, so a `/*`
+  inside one is never examined.
+- `doc_block_bodies` returned the span *including* its `/**` delimiter, which
+  defeats the line-anchored heading pattern, so the legitimate bare doc block was
+  rejected once the enclosure gate landed.  The body is what sits between the
+  delimiters.
+- A `///` heading at the start of a line **inside a string literal** satisfied the
+  line-anchored `///` scan.  That scan reads comment text now
+  (`comment_text_of` of the block-blanked run), not the run.
+- `rust_code_view.UnterminatedLiteral` was in **no** handler, so a file the shared
+  lexer cannot finish reached the operator as a traceback rather than as the
+  refusal the gate's own "one failure channel" comment claims.  The three
+  hand-written handler tuples are now one `REFUSALS` constant — which is also
+  what makes the omission *detectable*: the harness's private copy had been
+  silently absorbing what the scanner would have crashed on.
+
+`_DECL_ENCLOSURES` also gained the plain string-literal enclosure its sibling
+table had carried since round 10; the asymmetry between the two tables was the
+same defect one level up, and it is what hid the `///` cell.
+
+All five are mutation-verified against pre-fix behaviour: each revert makes a
+named matrix cell — or the refusal case — fail.  The gate is unmoved on the live
+tree at 136/136 (114 blocks, 22 declarations).
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md
+
 ## v0.35.23 — PR #895 review round 10: a proxy is not the fact, at the scheduler
 
 Five findings.  **Two are defects in the previous cut's own fixes** — one of them

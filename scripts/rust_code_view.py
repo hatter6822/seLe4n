@@ -652,6 +652,54 @@ _EXTERN_NON_FN_ITEM = re.compile(
     r"|".join(keyword(w) for w in ("static", "type", "use")))
 
 
+def attribute_spans(view: str) -> list[tuple[int, int]]:
+    """Byte spans of every `#[…]` / `#![…]` attribute in a STRING-FREE view.
+
+    **Structure from the string-free view; the text a predicate is about from
+    the aligned kept one.**  That rule is written down in this project and round
+    10 did not follow it: moving doc-attribute recognition onto
+    `rust_code_view.code` fixed the commented-out case and left the view's
+    *strings* intact, so attribute-shaped text inside an unrelated literal —
+    `#[allow(unused, reason = r##"#[doc = "# Safety"]"##)]` — was read as a real
+    attached attribute and justified an undocumented `unsafe fn`
+    (PR #895 review round 11).
+
+    Pass `code_no_strings` here to find where the attributes *are*, then read
+    their values out of the byte-aligned `code` view.  Brackets are matched, so
+    a nested `#[…]` inside an attribute's own arguments does not end it early.
+    """
+    spans: list[tuple[int, int]] = []
+    i, n = 0, len(view)
+    while i < n:
+        if view[i] != "#":
+            i += 1
+            continue
+        j = i + 1
+        if j < n and view[j] == "!":
+            j += 1
+        if j >= n or view[j] != "[":
+            i += 1
+            continue
+        depth, k = 0, j
+        while k < n:
+            if view[k] == "[":
+                depth += 1
+            elif view[k] == "]":
+                depth -= 1
+                if depth == 0:
+                    spans.append((i, k + 1))
+                    break
+            k += 1
+        else:
+            # Unterminated: the scanner cannot say where this attribute ends, so
+            # it reports nothing rather than guessing an extent.  Callers that
+            # build justifications treat a missing attribute as undocumented,
+            # which is the fail-closed direction for them.
+            break
+        i = k + 1
+    return spans
+
+
 def skip_rust_space(view: str, at: int) -> int:
     """Past the whitespace at `at`.  Comments are already blanked in the view,
     so whitespace is all there is to skip."""

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.23.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.24.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1669,6 +1669,49 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   on the deschedule were mutation-tested in both directions, silent on the clean
   tree and firing on a mutation that keeps every token and moves the pre-fix
   spelling back inside the declaration.
+
+  **And a witness drawn from a finding tests the finding** (PR #895 review round
+  11, `v0.35.24`).  Round 10's reading was that a fix's *shape* is the defect
+  when two rounds land in each other's fixes; round 11 makes it three, with
+  three of its four findings inside round 10's own code, and names where the
+  shape comes from.  Every case list in these gates had been grown the same way:
+  a round reports a spelling, the fix adds a witness for **that spelling** plus a
+  control, and the next round supplies one nobody enumerated — a raw doc
+  literal, a `#[unsafe(…)]` attribute, a scope opener, a `*`-decorated block
+  comment, attribute-shaped text inside a string.  That is this file's own *a
+  recognised set is not a derived set*, applied to a gate's **test cases** rather
+  than to its input, and it fails the same way: silently, because the cases that
+  exist all pass.
+
+  **So enumerate the space instead of the findings.**  The remedy already existed
+  one file over — `per_core_state_matrix` pins the lock by classifying every
+  entry point in every per-core state — and it is a *matrix*, not a list: every
+  marker FORM crossed with every ENCLOSURE, with the verdict a property of the
+  enclosure alone (a real comment justifies; a literal or a commented-out
+  spelling never does).  A spelling the gate has not considered is then a missing
+  **row** — visible, and addable without waiting for a review round to supply
+  it.  Its first run on `check_unsafe_block_justifications.py` found **five**
+  defects no round had reported: one fail-closed (an undecorated `/*\nSAFETY: …*/`
+  refused), and four fail-open — a `/**` inside a line comment, inside a string,
+  or nested in another block comment each publishing a `# Safety` section; a
+  `///` heading at the start of a line *inside a string literal* satisfying the
+  line-anchored scan; and `UnterminatedLiteral` in no handler, so a file the
+  shared lexer cannot finish reached the operator as a traceback rather than as
+  the refusal the gate's own "one failure channel" claims.
+
+  Three things fall out of running it.  **Keep the tables symmetric**: the
+  declaration side omitted the plain string-literal enclosure the block side had
+  carried since round 10, and that asymmetry is what hid the `///` cell — the
+  same defect one level up, inside the matrix meant to close it.  **A
+  declaration-bounded negative is a statement about that declaration**: round
+  10's Tier 3 anchor was scoped to `replyRecvServerDeschedule` while the relation
+  is about *every* deschedule of the recorded server, so the sibling arm
+  twenty-five lines away kept the retired spelling and the anchor's silence read
+  as coverage.  And **a harness that re-spells the gate's own decision absorbs
+  the defect it is there to find**: the refusal handler was written out three
+  times, `UnterminatedLiteral` was missing from two of them, and the self-test's
+  private copy caught what the scanner would have crashed on — one `REFUSALS`
+  constant now, which is also what makes dropping a member *detectable*.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

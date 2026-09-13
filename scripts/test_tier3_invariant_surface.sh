@@ -1802,16 +1802,31 @@ run_check "INVARIANT" rg -n '^def replyRecvServerDeschedule' SeLe4n/Kernel/API.l
 # core the server is CURRENT on, else `bootCoreId` -- so a preempted server was
 # descheduled on a queue it was not on and the defect survived untouched
 # (PR #895 review round 10).  The negative below is that pre-fix spelling.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvServerDeschedule[^\n]*(\n([ \t][^\n]*)?)*placedCoreOf\? st recordedServer" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvServerDeschedule[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacement st recordedServer" SeLe4n/Kernel/API.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvServerDeschedule[^\n]*(\n([ \t][^\n]*)?)*removeRunnableOnCore st recordedServer serverCore" SeLe4n/Kernel/API.lean'
+# ...and the negative is scoped to the whole TRANSITION, not to the helper.
+# Round 10 bounded it to `replyRecvServerDeschedule` and the sibling arm of
+# `replyRecvPostReceiveDonation` kept calling `removeRunnableOnCore` directly
+# with the same proxy, twenty-five lines away -- so the anchor was silent on a
+# live defect and its silence was read as coverage (PR #895 review round 11).
+# A declaration-bounded negative only ever says something about the declaration
+# it names; the relation here is about every deschedule of the recorded server.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*removeRunnableOnCore st recordedServer serverCore" SeLe4n/Kernel/API.lean'
+# ...and both arms reach the one step that resolves placement itself.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacement st recordedServer" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleAtPlacement[^\n]*(\n([ \t][^\n]*)?)*placedCoreOf\? st tid" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*applyRendezvousCallDonation st tid nextThread" SeLe4n/Kernel/API.lean'
 # ...and the write set names the cores that deschedule writes, or it is false of
 # exactly that arm.
 run_check "INVARIANT" rg -n '^def replyRecvServerDescheduleWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonationWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvServerDescheduleWriteSet tid recordedServer st" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
 # ...and the footprint reads the SAME resolver the transition does, so the two
-# cannot name different cores -- which is how round 9's cut went wrong.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvServerDescheduleWriteSet[^\n]*(\n([ \t][^\n]*)?)*placedCoreOf\? st recordedServer" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+# cannot name different cores -- which is how round 9's cut went wrong.  Both
+# halves delegate, and `placedCoreOf?` is read in exactly the two definitions
+# anchored below: a resolver spelled a third time is a third answer.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvServerDescheduleWriteSet[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st recordedServer" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvDescheduleAndWalkWriteSet[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st recordedServer" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleAtPlacementCores[^\n]*(\n([ \t][^\n]*)?)*placedCoreOf\? st tid" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
 # The guard IS the donation's caller-blocked obligation, not a second reading
 # of it: a receiving arm discharges the hypothesis from the predicate it
 # branches on, so the two cannot disagree about which states donate.

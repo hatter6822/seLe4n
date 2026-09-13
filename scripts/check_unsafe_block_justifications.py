@@ -222,7 +222,22 @@ def unrecognised_unsafe_forms(path: Path, view: str) -> list[str]:
 # names, is `// SAFETY:`.  Measured before changing it: all 138 markers in the
 # tree already carry the colon, so the tightening refuses the next disclaimer
 # without touching a single live site.
-SAFETY_BLOCK = re.compile(r"//[/!]?\s*SAFETY\s*:|/\*+\s*SAFETY\s*:", re.IGNORECASE)
+# **...and a block comment's body lines carry decoration** (PR #895 review
+# round 11).  The conventional multiline form
+#
+#     /*
+#      * SAFETY: the pointer is valid …
+#      */
+#
+# puts a `*` between the opening delimiter and the marker, and requiring only
+# whitespace there rejected a genuinely documented block — Tier 0 refusing the
+# very spelling the gate says it supports.  The marker may therefore be preceded
+# on its line by comment decoration and nothing else: slashes, asterisks and
+# whitespace.  It is still anchored to a line start, so `let x = 1; // SAFETY:`
+# after real code does not qualify, and it is still read over `comment_text_of`,
+# so nothing inside a string can supply it.
+SAFETY_BLOCK = re.compile(r"^[ \t]*(?:(?://[/!]?|/?\*+)[ \t*]*)?SAFETY\s*:",
+                          re.IGNORECASE | re.MULTILINE)
 # **Rustdoc, and only rustdoc.**  The heading has to reach the *caller*, so the
 # line carrying it must be a doc comment (`///`, `//!`) or a line inside a doc
 # BLOCK (`/**`, `/*!`) -- an ordinary `/* … * # Safety … */` publishes nothing
@@ -270,8 +285,8 @@ DOC_BLOCK_OPEN = re.compile(r"/\*\*(?![*/])")
 DOC_BLOCK_LINE = re.compile(r"^\s*\*?\s*#+[ \t]+Safety\b", re.IGNORECASE | re.MULTILINE)
 
 
-def _split_block_comments(run: str) -> tuple[str, list[str]]:
-    """`(run with every block comment blanked, the TOP-LEVEL doc-block bodies)`.
+def block_comment_spans(raw: str, view: str) -> list[tuple[int, int, bool]]:
+    """`(start, end, is_doc)` for each real block comment in `raw`.
 
     **Rust block comments nest, and a marker nested inside one publishes
     nothing.**  `/* … /** # Safety … */ … */` is a single ordinary comment as
@@ -280,44 +295,64 @@ def _split_block_comments(run: str) -> tuple[str, list[str]]:
     inner marker as an independently attached doc block and accepted the
     `unsafe fn` (PR #895 review round 6).
 
-    One walk settles the same relation for the siblings, which is this
-    project's sweep rule rather than an extra: `SAFETY_DECL_LINE` and
-    the doc-attribute scan run over the whole run, so a `///` line or a
-    `#[doc = …]` attribute *spelled inside* an ordinary block comment matched
-    them too.  Blanking every block comment's extent — newlines
-    kept, so line-anchored patterns keep their geometry — leaves exactly the
-    markers that are really attached to the item, and the doc blocks are
-    returned separately because their bodies genuinely are published.
+    **And a `/*` opens a comment only where the view says a comment begins**
+    (PR #895 review round 11).  The nesting walk answers *extent* and says
+    nothing about whether the text is code: `let m = "/** # Safety */";` opens
+    nothing, and neither does a `/**` written inside a `//` line.  So an opener
+    is a `/` the code view blanked — which is this file's one derivation of
+    "that byte is comment text" — and the walk only measures how far it
+    reaches.  A line comment's extent is its line, so scanning resumes at the
+    newline and a `/*` inside it is never examined; a nested `/*` is consumed
+    by the walk.  Reading the question off one walk and the enclosure off
+    another is what left three fail-OPEN cells for the form matrix to find.
+    """
+    spans: list[tuple[int, int, bool]] = []
+    i, n = 0, len(raw)
+    while i < n:
+        if view[i] != " " or raw[i] != "/":
+            i += 1
+            continue
+        if raw.startswith("//", i):
+            newline = raw.find("\n", i)
+            i = n if newline < 0 else newline
+            continue
+        if not raw.startswith("/*", i):
+            i += 1
+            continue
+        is_doc = DOC_BLOCK_OPEN.match(raw, i) is not None
+        depth, j = 1, i + 2
+        while j < n and depth:
+            if raw.startswith("/*", j):
+                depth += 1
+                j += 2
+            elif raw.startswith("*/", j):
+                depth -= 1
+                j += 2
+            else:
+                j += 1
+        spans.append((i, j, is_doc))
+        i = j
+    return spans
+
+
+def blank_block_comments(raw: str, spans: list[tuple[int, int, bool]]) -> str:
+    """`raw` with every block comment's extent blanked, newlines kept.
+
+    A `///` line or a `#[doc = …]` attribute *spelled inside* an ordinary block
+    comment is attached to nothing, so the line-anchored scans must not see it;
+    keeping the newlines leaves their geometry intact.
 
     Deliberately not applied to `SAFETY_BLOCK`: a `// SAFETY:` comment is for
     the reviewer reading this file, who sees a nested one as readily as a
     top-level one.  The relation here is *rustdoc publication*, which is a
     property of declarations alone.
     """
-    out: list[str] = []
-    bodies: list[str] = []
-    i, n = 0, len(run)
-    while i < n:
-        if run.startswith("/*", i):
-            is_doc = DOC_BLOCK_OPEN.match(run, i) is not None
-            depth, j = 1, i + 2
-            while j < n and depth:
-                if run.startswith("/*", j):
-                    depth += 1
-                    j += 2
-                elif run.startswith("*/", j):
-                    depth -= 1
-                    j += 2
-                else:
-                    j += 1
-            if is_doc:
-                bodies.append(run[i + 3:(j - 2) if depth == 0 else n])
-            out.append("".join(c if c == "\n" else " " for c in run[i:j]))
-            i = j
-        else:
-            out.append(run[i])
-            i += 1
-    return "".join(out), bodies
+    out = list(raw)
+    for start, end, _ in spans:
+        for j in range(start, min(end, len(out))):
+            if out[j] != "\n":
+                out[j] = " "
+    return "".join(out)
 
 
 #: An OUTER rustdoc `#[doc = "…"]` attribute, up to the opening quote of its
@@ -332,6 +367,13 @@ def _split_block_comments(run: str) -> tuple[str, list[str]]:
 #: witness for that round caught on the spot.  The sibling classification of
 #: `#![unsafe(…)]` is correctly inner-tolerant, because *which item is an unsafe
 #: attribute attached to* is not a question that scan asks.
+#: An OUTER doc attribute's HEAD, matched at the start of an attribute span on
+#: the string-free view.  This is what decides *whether a span is a doc
+#: attribute at all*; `DOC_ATTR_OPEN` then locates its value inside.  Splitting
+#: the two is the round-11 fix: searching for the opener anywhere let an
+#: unrelated attribute's string literal supply one.
+DOC_ATTR_HEAD = re.compile(r"#\[\s*doc\s*=")
+
 DOC_ATTR_OPEN = re.compile(r"(?<!!)#\[\s*doc\s*=\s*(?P<raw>r(?P<hashes>\#*))?\"")
 
 #: A `#[doc = …]` whose value is NOT a plain string literal.  Matched so the
@@ -529,8 +571,15 @@ SAFETY_HEADING_LINE = re.compile(r"^[ \t]*#+[ \t]+Safety\b", re.IGNORECASE)
 
 def declaration_documents_safety(run: str) -> bool:
     """Does this run publish a rustdoc `# Safety` section?"""
-    attached, doc_bodies = _split_block_comments(run)
-    if SAFETY_DECL_LINE.search(attached):
+    view = rust_code_view.code(run)
+    attached = blank_block_comments(run, block_comment_spans(run, view))
+    # The `///` scan reads COMMENT TEXT, not the run: `let _m = "\n/// # Safety";`
+    # is a string literal that publishes nothing, and a line-anchored pattern
+    # over the raw run matched its second line (PR #895 review round 11).  With
+    # the block comments already blanked, the only comments left are line ones,
+    # so this is exactly "the `///` lines attached to the item".
+    if SAFETY_DECL_LINE.search(comment_text_of(attached,
+                                               rust_code_view.code(attached))):
         return True
     # The attribute form is decided on the DECODED value, never on its spelling:
     # a raw literal's `\n` is two characters and starts no line.  And it is read
@@ -538,12 +587,29 @@ def declaration_documents_safety(run: str) -> bool:
     # comment that publishes nothing -- round 9 introduced this scan over raw
     # text and round 10 found that hole in it.  `rust_code_view.code` keeps
     # string contents, which is what the decoder needs, and blanks the comment.
+    # Real attribute extents are located on the STRING-FREE view and their
+    # values read from the byte-aligned kept one — structure from one view, the
+    # text a predicate is about from the other.  Searching the kept view whole
+    # let attribute-shaped text inside an unrelated string literal count as an
+    # attached doc attribute (round 11).
+    kept = rust_code_view.code(attached)
+    bare = rust_code_view.code_no_strings(attached)
+    # An attribute's *contents* are not attributes.  Filtering to spans that
+    # ARE outer doc attributes — decided on the string-free head, so a literal
+    # cannot supply one — is what stops `#[allow(reason = r##"#[doc = …]"##)]`
+    # from donating a heading it never publishes.
+    doc_spans = [(lo, hi) for lo, hi in rust_code_view.attribute_spans(bare)
+                 if DOC_ATTR_HEAD.match(bare, lo)]
     if any(any(SAFETY_HEADING_LINE.match(line) for line in value.splitlines())
-           for value in _doc_attribute_values(rust_code_view.code(attached))):
+           for lo, hi in doc_spans
+           for value in _doc_attribute_values(kept[lo:hi])):
         return True
     # A `# Safety` inside a doc *block* counts; inside an ordinary block comment
-    # -- or nested inside any block comment at all -- it does not.
-    return any(DOC_BLOCK_LINE.search(body) for body in doc_bodies)
+    # -- or nested inside any block comment at all, or inside a line comment, or
+    # inside a string literal -- it does not.  The bodies come from the same
+    # view-gated walk, so the enclosure decides and not the spelling.
+    return any(DOC_BLOCK_LINE.search(body)
+               for body in doc_block_bodies(run, view))
 ARM_ARM = re.compile(r"\(ARM ARM [A-Z][0-9]+(?:\.[0-9]+)*\)")
 
 
@@ -567,22 +633,58 @@ def comment_text_of(raw: str, view: str) -> str:
     itself and so is never mistaken for one.
     """
     out = [" "] * len(raw)
+    for start, end in comment_spans(raw, view):
+        for j in range(start, end):
+            out[j] = raw[j]
+    for j, ch in enumerate(view):
+        if ch == "\n":
+            out[j] = "\n"
+    return "".join(out)
+
+
+def comment_spans(raw: str, view: str) -> list[tuple[int, int]]:
+    """Byte spans of the comments in `raw`, derived from its code `view`.
+
+    A maximal run of bytes the view blanked, holding at least one byte the raw
+    text did not blank, is a comment; ordinary whitespace between code tokens
+    blanks to itself and never qualifies.  Exposed separately from
+    `comment_text_of` because *which kind* of comment a span is decides what it
+    can publish: a `/**` sitting inside a `//` line is text, not a doc block
+    (PR #895 review round 11).
+    """
+    spans: list[tuple[int, int]] = []
     i, n = 0, len(raw)
     while i < n:
-        if view[i] == "\n":
-            out[i] = "\n"
-            i += 1
-            continue
         if view[i] != " ":
             i += 1
             continue
         start = i
         while i < n and view[i] == " ":
             i += 1
-        if any(raw[j] != " " for j in range(start, i)):
-            for j in range(start, i):
-                out[j] = raw[j]
-    return "".join(out)
+        if any(raw[j] not in " \n" for j in range(start, i)):
+            spans.append((start, i))
+    return spans
+
+
+def doc_block_bodies(raw: str, view: str) -> list[str]:
+    """The bodies of the real rustdoc BLOCK comments in `raw`.
+
+    A comment counts only when it opens `/**` (and not `/***`, which the
+    reference makes an ordinary comment), and the body is what sits *between*
+    the delimiters — `DOC_BLOCK_LINE` asks a line-start question, which the
+    opener itself would defeat.  Taking the comments from `block_comment_spans`
+    rather than searching the run is what stops a `/**` written inside a line
+    comment, inside a string literal, or inside another block comment from
+    publishing a section it never publishes — three fail-OPEN cells the form
+    matrix found on its first run, none of which any review round reported.
+    """
+    bodies: list[str] = []
+    for start, end, is_doc in block_comment_spans(raw, view):
+        if not is_doc:
+            continue
+        closed = raw[end - 2:end] == "*/"
+        bodies.append(raw[start + 3:end - 2 if closed else end])
+    return bodies
 
 
 def justified(run: str, is_declaration: bool) -> bool:
@@ -931,6 +1033,24 @@ class UnreadableExternItem(Exception):
         self.kind = kind
 
 
+#: What "this gate cannot read its input" looks like, in ONE place.
+#:
+#: Three sites answered this question with three hand-written tuples — the
+#: scanner, the refusal harness and the form matrix — so `UnterminatedLiteral`
+#: could be, and was, absent from two of them while the third looked complete
+#: (PR #895 review round 11).  A shared refusal set also makes the omission
+#: *detectable*: drop a member and the refusal cases stop being caught anywhere,
+#: where before the harness's own copy silently absorbed what the gate would
+#: have tracebacked on.
+#:
+#: Membership is a decision, not a catch-all: every entry is a refusal this gate
+#: reports by name.  An exception that is not one of these is a defect in the
+#: gate and must reach the operator as a traceback.
+REFUSALS = (UnreadableExternItem, UnreadableDocAttribute,
+            rust_code_view.UnbalancedExternBlock,
+            rust_code_view.UnterminatedLiteral)
+
+
 def sites(path: Path):
     """Yield (offset, enclosing declaration, justification run) per unsafe site.
 
@@ -1023,10 +1143,14 @@ def census(root: Path):
     unreadable: list[str] = []
     for path in sorted(compiled_rust_sources(root)):
         rel = str(path.relative_to(REPO))
-        unreadable += unrecognised_unsafe_forms(
-            path.relative_to(REPO), rust_code_view.code_no_strings(
-                path.read_text(encoding="utf-8")))
         try:
+            # Inside the try with everything else: this call builds a code view
+            # too, so it raises on exactly the input the handler below exists
+            # for, and sitting above it was a second escape route out of the
+            # "one failure channel" (PR #895 review round 11).
+            unreadable += unrecognised_unsafe_forms(
+                path.relative_to(REPO), rust_code_view.code_no_strings(
+                    path.read_text(encoding="utf-8")))
             file_sites = list(sites(path))
             # The verdicts are computed INSIDE the try: a refusal can come from
             # reading a site's documentation as well as from finding the site,
@@ -1036,8 +1160,7 @@ def census(root: Path):
             # half of the work it did not wrap.
             verdicts = [(decl, is_decl, run, justified(run, is_decl))
                         for _off, decl, run, is_decl in file_sites]
-        except (UnreadableExternItem, UnreadableDocAttribute,
-                rust_code_view.UnbalancedExternBlock) as refusal:
+        except REFUSALS as refusal:
             # One failure channel, so a refusal reads like every other gate
             # defect instead of leaving a traceback.  `UnreadableExternBlock`
             # used to be raised and caught nowhere at all.
@@ -1602,7 +1725,91 @@ unsafe extern "C" {
 unsafe extern "C" {
     fn documented();
 """),
+    # ...and the shared VIEW's own refusal, which reached the gate as a
+    # traceback rather than as a refusal until PR #895 review round 11: a file
+    # the lexer cannot finish is exactly the input the "one failure channel"
+    # exists for, and `UnterminatedLiteral` was in neither handler.  Found by
+    # the form matrix, whose `commented-out` enclosure leaves a real one.
+    ("a source with an unterminated literal is refused", "unterminated", """
+// #[doc = r"
+# Safety
+The caller must hold the entry lock."]
+pub unsafe fn f() {}
+"""),
 ]
+
+
+#: **The justification predicates, as a cross-product of forms rather than a
+#: list of cases** (PR #895 review round 11).
+#:
+#: Three rounds running, the witnesses here were drawn from the *findings* —
+#: each round added cases for exactly the defect reported plus a control or
+#: two, and the next round supplied a spelling nobody had enumerated: a raw
+#: doc literal, a `#[unsafe(…)]` attribute, a scope opener, a `*`-decorated
+#: block comment, attribute-shaped text inside a string.  That is this
+#: project's own *a recognised set is not a derived set*, applied to its own
+#: test cases.
+#:
+#: So the space is enumerated instead.  Every MARKER form crossed with every
+#: ENCLOSURE, and the expected verdict is a property of the enclosure alone:
+#: a real comment justifies, and a literal or a commented-out spelling never
+#: does.  A spelling this gate has not considered is then a missing ROW —
+#: visible, and addable without waiting for a review round to supply it.
+#:
+#: `rust/` is the authority for which marker forms occur; the enclosures are
+#: the ways Rust lets the same bytes mean something else.
+_BLOCK_MARKER_FORMS = {
+    "line": "// SAFETY: the pointer is valid for the lifetime of the call.",
+    "doc-line": "/// SAFETY: the pointer is valid for the lifetime of the call.",
+    "inner-doc-line": "//! SAFETY: the pointer is valid for the lifetime of the call.",
+    "block-one-line": "/* SAFETY: the pointer is valid. */",
+    "block-decorated": "/*\n * SAFETY: the pointer is valid.\n */",
+    "block-undecorated": "/*\nSAFETY: the pointer is valid.\n*/",
+    "spaced-colon": "// SAFETY : the pointer is valid.",
+}
+
+#: How a marker can be *enclosed*, and whether that enclosure publishes it.
+#: `{}` is the marker form.  A justification must be something the compiler
+#: discards; anything a compiler keeps is data.
+_BLOCK_ENCLOSURES = {
+    "bare": ("{}", True),
+    "in-attribute-string": ('#[allow(unused, reason = "{}")]', False),
+    "in-raw-attribute-string": ('#[allow(unused, reason = r##"{}"##)]', False),
+    "in-let-binding-string": ('let _m = "{}";', False),
+}
+
+#: The declaration side: every way a `# Safety` section can be spelled, crossed
+#: with the enclosures that decide whether rustdoc publishes it.
+_DECL_SECTION_FORMS = {
+    "triple-slash": "/// # Safety\n/// The caller must hold the entry lock.",
+    "doc-block": "/** # Safety\n * The caller must hold the entry lock.\n */",
+    "attr-escaped": '#[doc = "# Safety\\nThe caller must hold the entry lock."]',
+    "attr-raw-real-newline": '#[doc = r"\n# Safety\nThe caller must hold the entry lock."]',
+    "attr-concat": '#[doc = concat!("# Safety\\n", "The caller must hold the entry lock.")]',
+}
+
+#: The enclosure tables are deliberately the SAME shape on both sides.  They
+#: were not: the declaration side omitted the plain string-literal enclosures
+#: the block side had carried since round 10, which is this project's
+#: *a recognised set is not a derived set* applied to the test matrix itself —
+#: and it hid a live fail-OPEN cell, a `///` at the start of a line *inside* a
+#: string literal satisfying the line-anchored `///` scan.
+_DECL_ENCLOSURES = {
+    "bare": ("{}", True),
+    "commented-out": ("// {}", False),
+    "inner-doc": ("#![doc = \"# Safety\"]\n// {}", False),
+    "in-attribute-string": ('#[allow(unused, reason = r##"{}"##)]', False),
+    "in-let-binding-string": ('let _m = r##"\n{}"##;', False),
+}
+
+#: Forms that are NOT markers however they are enclosed — the fail-open
+#: direction's own row.  Kept in the matrix rather than beside it so the
+#: negative space is enumerated too.
+_NON_MARKERS = {
+    "no-colon": "// SAFETY is not established for this call.",
+    "no-colon-block": "/* SAFETY unknown */",
+    "heading-no-space": "/// #Safety\n/// text",
+}
 
 
 def _self_test() -> int:
@@ -1630,6 +1837,56 @@ def _self_test() -> int:
                 failures += 1
             else:
                 print(f"  OK   self-test '{name}' ({'accept' if expect_ok else 'reject'})")
+    # **The form matrix.**  Every marker form crossed with every enclosure, with
+    # the verdict a property of the ENCLOSURE alone — a real comment justifies,
+    # a literal never does.  A spelling this gate has not considered shows up as
+    # a missing row rather than as the next review round's finding.
+    matrix_failures = 0
+    matrix_cells = 0
+
+    def verdict(run: str, is_decl: bool) -> bool:
+        """`justified`, with an unreadable run counting as REFUSED.
+
+        A run the shared view cannot lex reaches the gate as a refusal rather
+        than as a verdict (`main`'s one failure channel), so that is the answer
+        the matrix must compare against: an expectation of `False` is satisfied
+        by either kind of refusal, and an expectation of `True` is satisfied by
+        neither.  Swallowing the exception silently would let a cell that CANNOT
+        be decided read as a cell that was.
+        """
+        try:
+            return justified(run, is_decl)
+        except REFUSALS:
+            return False
+    for form_name, marker in _BLOCK_MARKER_FORMS.items():
+        for enc_name, (shape, expected) in _BLOCK_ENCLOSURES.items():
+            matrix_cells += 1
+            run = shape.format(marker)
+            got = verdict(run, False)
+            if got != expected:
+                print(f"  SELF-TEST FAIL: matrix block[{form_name}][{enc_name}]: "
+                      f"got {got}, want {expected}")
+                matrix_failures += 1
+    for form_name, section in _DECL_SECTION_FORMS.items():
+        for enc_name, (shape, expected) in _DECL_ENCLOSURES.items():
+            matrix_cells += 1
+            run = shape.format(section)
+            got = verdict(run, True)
+            if got != expected:
+                print(f"  SELF-TEST FAIL: matrix decl[{form_name}][{enc_name}]: "
+                      f"got {got}, want {expected}")
+                matrix_failures += 1
+    for form_name, text in _NON_MARKERS.items():
+        for kind, is_decl in (("block", False), ("decl", True)):
+            matrix_cells += 1
+            if verdict(text, is_decl):
+                print(f"  SELF-TEST FAIL: matrix non-marker[{form_name}][{kind}] "
+                      f"was accepted")
+                matrix_failures += 1
+    failures += matrix_failures
+    if matrix_failures == 0:
+        print(f"  OK   self-test 'form matrix' ({matrix_cells} cells)")
+
     # **The DOMAIN, on a synthetic tree.**  `compiled_rust_sources` reads the
     # real workspace, so nothing in the case lists above can exercise it -- and
     # round 10's fix to it was initially shipped with no witness at all, caught
@@ -1687,8 +1944,7 @@ def _self_test() -> int:
             p.write_text(src, encoding="utf-8")
             try:
                 list(sites(p))
-            except (UnreadableExternItem, UnreadableDocAttribute,
-                rust_code_view.UnbalancedExternBlock) as refusal:
+            except REFUSALS as refusal:
                 if word not in str(refusal):
                     print(f"  SELF-TEST FAIL: '{name}' refused without naming {word!r}: "
                           f"{refusal}")

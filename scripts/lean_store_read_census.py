@@ -426,6 +426,33 @@ def _signature_head(signature: str) -> str:
     return signature[: m.start()] if m is not None else signature
 
 
+def _declaration_is_valueless(lines: list[str], at: int) -> bool:
+    """Does the declaration starting at `lines[at]` reach its end with no body?
+
+    Looks ahead to the next column-zero declaration keyword and reports whether
+    any line before it carries a signature terminator.  An `opaque` that reaches
+    the next declaration without one is genuinely valueless and its signature is
+    its whole text; one that meets a `:=` has a body, and closing early would
+    file that body's reads under a head missing its result type.
+
+    Bounded by the next declaration rather than by a line budget, so a long
+    multi-line signature is read whole; a declaration at end of file ends there.
+    """
+    depth = 0
+    offset = 0
+    for line in lines[at:]:
+        # The declaration boundary is tested FIRST: a later declaration's own
+        # `:=` is not this one's body, and checking the terminator first made
+        # every valueless `opaque` in the tree look like it had one.
+        if offset and DECL.match(line):
+            return True
+        end, depth = _signature_end(line, depth)
+        if end is not None:
+            return False
+        offset += 1
+    return True
+
+
 def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None):
     """Yield (declaration, is_prop, occurrences, line, region) per read-bearing line.
 
@@ -464,7 +491,7 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None):
         if unparsed is not None:
             unparsed.append((decl, kind, decl_line, reason))
 
-    for lineno, line in enumerate(lines, start=1):
+    for idx, (lineno, line) in enumerate(zip(range(1, len(lines) + 1), lines)):
         m = DECL.match(line)
         if m:
             if sig_open:
@@ -498,12 +525,23 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None):
                 refuse("the signature exceeded 4000 characters")
                 sig_open = False
             if sig_open and kind in BODYLESS_KINDS and sig_depth == 0:
-                # `opaque` and `axiom` have no body: their signature is their
-                # own bracket-balanced text and ends with it.  Without this they
-                # are the one form that legitimately never reaches a terminator,
-                # and the refusal below would fire on correct input — measured
-                # at 73 declarations, every one of them a single line.
-                sig_open = False
+                # **A declaration that MAY be valueless is not one that IS.**
+                # `axiom` never carries a body, so its balanced text is its whole
+                # signature.  `opaque` may: `opaque f : T := v` is legal, and so
+                # is the same split across lines.  Closing the signature at the
+                # first balanced line therefore cut `opaque holds` off before its
+                # own `: Prop :=`, the accumulated head never saw the result
+                # type, and a raw read in the body filed CODE against the
+                # enforced zero — Tier 0 rejecting valid specification text
+                # (PR #895 review round 11).
+                #
+                # The eager close was justified by a MEASUREMENT — 73 `opaque`s
+                # in the tree, every one a single line — and stated as a fact
+                # about the language.  A measurement of today's tree cannot say
+                # what a contributor may write tomorrow, which is why the close
+                # now waits for the declaration to actually end.
+                if kind == "axiom" or _declaration_is_valueless(lines, idx):
+                    sig_open = False
         else:
             sig_part, body_part = "", line
         head = _signature_head(signature)
@@ -948,6 +986,25 @@ opaque ffiReadObject : UInt64 → BaseIO UInt32
 def step (st : SystemState) (oid : ObjId) : Option KernelObject :=
   st.objects[oid]?
 """, {("f.lean", "step"): 1}, {}),
+    # **...and an `opaque` that DOES have a body keeps its signature open until
+    # it** (PR #895 review round 11).  Closing at the first balanced line cut
+    # `opaque holds` off before its own `: Prop :=`, so the head never saw the
+    # result type and the body's read filed CODE against the enforced zero —
+    # Tier 0 rejecting valid specification text.  Token-preserving against the
+    # case above: the keyword, the name and the type all survive; only the body
+    # is added.
+    "multiline_opaque_with_a_body_is_spec": ("""
+opaque holds
+    : Prop :=
+  (st.objects[oid]?).isSome
+""", {}, {("f.lean", "holds"): 1}),
+    # The same declaration written as a `def` must classify identically — the
+    # two differ in a keyword, not in whether their body is a proposition.
+    "multiline_def_with_a_body_is_spec": ("""
+def holds
+    : Prop :=
+  (st.objects[oid]?).isSome
+""", {}, {("f.lean", "holds"): 1}),
 }
 
 #: Cases whose fixture the parser must REFUSE, and how many declarations it must
