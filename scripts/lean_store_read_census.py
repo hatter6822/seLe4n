@@ -223,6 +223,47 @@ def _top_level_assign(line: str, depth: int = 0):
     return (m.start() if m is not None else None), depth
 
 
+#: A term-level binder keyword whose own `:=` is not a binder default's.
+_TERM_BINDERS = ("let", "have", "suffices", "show")
+
+_TERM_BINDER_SCAN = re.compile(
+    r"(?<![A-Za-z0-9_'!?.])(" + "|".join(_TERM_BINDERS) + r")(?![A-Za-z0-9_'!?.])")
+
+
+def _binding_open_at(text: str, at: int, depth: int) -> bool:
+    """Does the `:=` at `at` belong to a `let`/`have` rather than to a binder?
+
+    **Not every `:=` inside a binder group is a default** (PR #895 review
+    round 12).  A binder *type* may contain a term-level binding —
+    `(h : (let obj := st.objects[oid]?; obj = none))`, which Lean accepts — and
+    reading that `:=` as the start of an executable default filed the read as
+    CODE, so a valid declaration was refused against the enforced
+    `STORE_READ_CODE = 0`.  The Tier 1 reconciliation cannot correct it either:
+    a declaration-level verdict does not distinguish a default from a type.
+
+    The discriminator is that a binder's default separator is the FIRST `:=`
+    after the group's own `:` with no term-level binder keyword between them —
+    a `let` opens a binding whose `:=` is its own.  Scanning back to the
+    group's opener rather than to the line start is what keeps a `let` in a
+    *previous* binder group from suppressing this one's default.
+
+    Over-approximating here files the whole group as specification, which is the
+    fail-open direction against the zero — so the scan is deliberately narrow:
+    only a whole-word keyword at or below this `:=`'s own depth counts.
+    """
+    start, level = 0, depth
+    for j in range(at - 1, -1, -1):
+        ch = text[j]
+        if ch in _CLOSERS:
+            level += 1
+        elif ch in _OPENERS:
+            level -= 1
+            if level < depth:
+                start = j + 1
+                break
+    return _TERM_BINDER_SCAN.search(text, start, at) is not None
+
+
 def _split_binder_defaults(text: str, depth: int = 0, default_depth=None):
     """Split signature text into binder TYPES and binder DEFAULT VALUES.
 
@@ -260,7 +301,8 @@ def _split_binder_defaults(text: str, depth: int = 0, default_depth=None):
                 spec.append(ch)
             else:
                 (code if default_depth is not None else spec).append(ch)
-        elif default_depth is None and depth > 0 and text.startswith(":=", i):
+        elif (default_depth is None and depth > 0 and text.startswith(":=", i)
+              and not _binding_open_at(text, i, depth)):
             default_depth = depth
             i += 2
             continue
@@ -273,6 +315,11 @@ def _split_binder_defaults(text: str, depth: int = 0, default_depth=None):
 # A declaration whose VALUE is a single name: `abbrev Pred := Prop`.  Chained
 # through `prop_aliases` below, this is what makes a predicate written
 # `… : Pred` read as specification.
+#: `namespace A.B` and its `end`.  Lean's `section` also scopes `variable`s but
+#: introduces no name prefix, so it is deliberately not matched here.
+NAMESPACE_OPEN = re.compile(r"^\s*namespace\s+([A-Za-z_][A-Za-z0-9_'!?.]*)\s*$")
+NAMESPACE_END = re.compile(r"^\s*end\b")
+
 PROP_ALIAS = re.compile(
     r"^\s*(?:@\[[^\]]*\]\s*)?"
     r"(?:private\s+|protected\s+|scoped\s+|noncomputable\s+|partial\s+|unsafe\s+)*"
@@ -300,10 +347,28 @@ def prop_aliases(view: Path) -> frozenset:
     """
     direct = {}
     for f in sorted(view.rglob("SeLe4n/**/*.lean")):
+        scope: list[str] = []
         for line in f.read_text().splitlines():
+            opened = NAMESPACE_OPEN.match(line)
+            if opened is not None:
+                scope.append(opened.group(1))
+                continue
+            if NAMESPACE_END.match(line) is not None:
+                if scope:
+                    scope.pop()
+                continue
             m = PROP_ALIAS.match(line)
             if m:
-                direct[m.group(1)] = m.group(2)
+                # **A qualified identity, not a last component** (PR #895 review
+                # round 12).  Two namespaces may each declare a `Pred`, one an
+                # alias of `Prop` and one of `Nat`, and a set of bare names
+                # cannot tell a use of the second from a use of the first — so
+                # an executable declaration read as specification and its raw
+                # store reads walked around the enforced zero.
+                here = ".".join(scope + [m.group(1)])
+                target = m.group(2)
+                direct[here] = (target if target == "Prop"
+                                else ".".join(scope + [target]))
     names = set()
     for name in direct:
         seen, cur = set(), name
@@ -315,7 +380,8 @@ def prop_aliases(view: Path) -> frozenset:
     return frozenset(names)
 
 
-def _returns_prop(head: str, aliases: frozenset = frozenset()) -> bool:
+def _returns_prop(head: str, aliases: frozenset = frozenset(),
+                  scope: tuple = ()) -> bool:
     """Does this signature's terminal result type return `Prop`?"""
     result = _result_type(head)
     if not result:
@@ -353,12 +419,18 @@ def _returns_prop(head: str, aliases: frozenset = frozenset()) -> bool:
     if head_token is None:
         return False
     tok = head_token.group(1)
-    # Both spellings, since an alias declared inside a `namespace` is written
-    # qualified at a use site outside it.  A bare last component is accepted on
-    # purpose: the alternative is resolving Lean names by text, which this file
-    # does not do -- and the direction of any over-match is SPEC, which the
-    # elaborator reconciliation judges.
-    return tok in aliases or tok.split(".")[-1] in aliases
+    # **Resolved against the use site's namespaces, never by last component**
+    # (PR #895 review round 12).  Accepting any alias with the same final
+    # component let `B.Pred := Nat` be read as specification because some other
+    # namespace declared a `Pred := Prop`, and a raw store read in that
+    # declaration then merged into `sig` and escaped both the enforced zero and
+    # the Tier 1 reconciliation, which skips that region.  Lean resolves a
+    # reference against the enclosing namespaces, longest prefix first, so that
+    # is what is tried — and nothing else is.
+    for depth in range(len(scope), -1, -1):
+        if ".".join(list(scope[:depth]) + [tok]) in aliases:
+            return True
+    return False
 
 
 def code_view(root: Path) -> Path:
@@ -486,12 +558,24 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None):
     in_default, body_depth, sig_depth, field_col = False, 0, 0, None
     binder_depth, binder_default = 0, None
     decl_line = 0
+    # The enclosing namespaces of the line being classified: what a bare alias
+    # reference at this point resolves against (PR #895 review round 12).
+    scope: list[str] = []
 
     def refuse(reason: str) -> None:
         if unparsed is not None:
             unparsed.append((decl, kind, decl_line, reason))
 
     for idx, (lineno, line) in enumerate(zip(range(1, len(lines) + 1), lines)):
+        if not sig_open:
+            opened = NAMESPACE_OPEN.match(line)
+            if opened is not None:
+                scope.append(opened.group(1))
+                continue
+            if NAMESPACE_END.match(line) is not None:
+                if scope:
+                    scope.pop()
+                continue
         m = DECL.match(line)
         if m:
             if sig_open:
@@ -545,7 +629,7 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None):
         else:
             sig_part, body_part = "", line
         head = _signature_head(signature)
-        is_prop_decl = kind in PROP_KINDS or kind in FIELD_KINDS or _returns_prop(head, aliases)
+        is_prop_decl = kind in PROP_KINDS or kind in FIELD_KINDS or _returns_prop(head, aliases, tuple(scope))
         # Split a structure/class body line into its field-type half and its
         # default half.  Once a default has opened it stays open for the rest of
         # the declaration: a default may span lines, there is no terminator a
@@ -556,7 +640,7 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None):
         # A `Prop`-sorted structure has no executable content: every field is a
         # proof and so is every default, so it is spec whole and the split below
         # does not apply to it.
-        if kind in FIELD_KINDS and body_part and not _returns_prop(head, aliases):
+        if kind in FIELD_KINDS and body_part and not _returns_prop(head, aliases, tuple(scope)):
             # **A default ends where the next field begins.**  Carrying
             # `in_default` to the end of the declaration classified every later
             # field TYPE as executable, so `tag : Nat := 0` followed by a
@@ -646,6 +730,94 @@ ACCESSOR_BODIES = {
     ("SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean", "updateObjectAt"):
         "lock-domain store primitive; kind-agnostic, `f : KernelObject → KernelObject`",
 }
+
+
+#: The kernel-state tables this census's read patterns are ABOUT, each with the
+#: head of its field type.
+#:
+#: **A field name is not a receiver type** (PR #895 review round 12).  The read
+#: patterns key on the spelling `.objects[…]?` / `.objects.get? …`, so a
+#: definition over any other type carrying an `objects` field — `cache.objects[0]?`
+#: — is emitted as `STORE_READ_CODE` and refused by the enforced zero, though it
+#: never touches kernel state.  Resolving the receiver's type is a question for
+#: the elaborator and this gate runs in Tier 0, before any build.
+#:
+#: So the *ambiguity* is bounded instead of the receiver resolved: the owners are
+#: derived from the Lean sources and reconciled against this list, so a third
+#: type declaring an `objects` field is a **named** Tier 0 failure on the day it
+#: is written — "teach the census or rename the field" — rather than a silent
+#: false positive against a zero.  Two of the four live owners are function-valued
+#: and cannot be indexed at all, which is why they are recorded here rather than
+#: assumed away: recording them is what makes their becoming indexable visible.
+#: `{structure: (field-type head, is the field INDEXABLE by these patterns)}`.
+#: Derived once and pinned; `objects_owner_violations` reconciles both ways.
+OBJECTS_FIELD_OWNERS = {
+    # The two kernel-state tables this census is actually about.
+    "SystemState": ("RHTable", True),
+    "FrozenSystemState": ("FrozenMap", True),
+    # Function-valued: `v.objects oid` is application, so no `[…]?` or `.get?`
+    # spelling reaches them.  Registered anyway, because recording them is what
+    # makes their becoming indexable visible.
+    "ObservableState": ("SeLe4n.ObjId", False),
+    "SharedObservableFragment": ("SeLe4n.ObjId", False),
+    # A `Prop`-valued structure whose `objects` field is an equation.
+    "sharedViewUnchanged": ("projectObjects", False),
+    # **A live ambiguity, not a hypothetical one.**  `List` has a `GetElem?`
+    # instance, so `builder.objects[0]?` in the test state builder would be
+    # counted as a kernel-state read and refused by the enforced zero.  There
+    # is no such read today; the entry is what makes the first one fail with
+    # an explanation rather than with a bare zero-floor rejection.
+    "BootstrapBuilder": ("List", True),
+}
+
+#: A `structure`/`class` header, and a field named `objects` inside one.
+STRUCTURE_HEAD = re.compile(
+    r"^\s*(?:@\[[^\]]*\]\s*)?"
+    r"(?:private\s+|protected\s+|scoped\s+|noncomputable\s+|unsafe\s+)*"
+    r"(?:structure|class)\s+([A-Za-z_][A-Za-z0-9_'!?.]*)")
+OBJECTS_FIELD = re.compile(r"^\s+objects\s*:\s*([A-Za-z_][A-Za-z0-9_'!?.]*)")
+
+
+def objects_field_owners(view: Path) -> dict:
+    """`{structure: field-type head}` for every declared field named `objects`."""
+    owners: dict = {}
+    for f in sorted(view.rglob("SeLe4n/**/*.lean")):
+        current = None
+        for line in f.read_text().splitlines():
+            head = STRUCTURE_HEAD.match(line)
+            if head is not None:
+                current = head.group(1)
+                continue
+            if DECL.match(line) is not None:
+                current = None
+                continue
+            field = OBJECTS_FIELD.match(line)
+            if field is not None and current is not None:
+                owners[current] = field.group(1)
+    return owners
+
+
+def objects_owner_violations(view: Path) -> list[str]:
+    """Owners of an `objects` field that this census's patterns do not expect."""
+    found = objects_field_owners(view)
+    added = {k: v for k, v in found.items() if k not in OBJECTS_FIELD_OWNERS}
+    changed = {k: (OBJECTS_FIELD_OWNERS[k][0], v) for k, v in found.items()
+               if k in OBJECTS_FIELD_OWNERS and v != OBJECTS_FIELD_OWNERS[k][0]}
+    gone = sorted(set(OBJECTS_FIELD_OWNERS) - set(found))
+    out = []
+    if added:
+        out.append(f"{len(added)} type(s) declare an `objects` field this census does "
+                   f"not know ({added}).  Its read patterns key on the FIELD NAME, so "
+                   f"a read through the new type would be counted as a kernel-state "
+                   f"read and refused by the enforced zero.  Register it in "
+                   f"OBJECTS_FIELD_OWNERS, or rename the field.")
+    if changed:
+        out.append(f"{len(changed)} `objects` field(s) changed type ({changed}); a "
+                   f"field that becomes indexable becomes readable by these patterns.")
+    if gone:
+        out.append(f"{len(gone)} registered `objects` owner(s) no longer exist ({gone}) "
+                   f"-- a stale entry reads like coverage.")
+    return out
 
 
 def accessor_registry_violations(code: dict, exempt_hits: dict) -> list[str]:
@@ -913,6 +1085,62 @@ def step (st : SystemState) (obj : Option KernelObject := st.objects[oid]?) :=
     "binder_default_in_theorem_is_spec": ("""
 theorem keep (h : Option KernelObject := st.objects[oid]?) : True := by trivial
 """, {}, {("f.lean", "keep"): 1}),
+    # **An alias is resolved against the use site's namespaces** (PR #895
+    # review round 12).  `Beta.Pred` IS `Prop`; `Alpha.Pred` is `Nat`, and a
+    # bare-last-component test read the second as the first, so an executable
+    # declaration filed SPEC and its raw reads walked around the enforced zero.
+    "alias_is_resolved_by_namespace": ("""
+namespace Beta
+abbrev Pred := Prop
+end Beta
+
+namespace Alpha
+def Pred := Nat
+
+def usesLocalAlias (st : SystemState) (oid : ObjId)
+    (k : Nat := (st.objects[oid]?).isSome.toNat) : Pred :=
+  0
+end Alpha
+""", {("f.lean", "usesLocalAlias"): 1}, {}),
+    # ...and the control that keeps the fix from being "aliases never resolve":
+    # the SAME file, the same alias set, a declaration returning the qualified
+    # `Beta.Pred`, which really is `Prop`.
+    "qualified_alias_still_resolves": ("""
+namespace Beta
+abbrev Pred := Prop
+end Beta
+
+def usesRealAlias (st : SystemState) (oid : ObjId) : Beta.Pred :=
+  st.objects[oid]? = none
+""", {}, {("f.lean", "usesRealAlias"): 1}),
+    # ...and the third case, which stops the fix from degrading into "a bare
+    # alias never resolves" -- that would refuse valid SPECIFICATION text,
+    # which round 6 recorded as a defect in its own right.  A bare `Pred`
+    # written inside the namespace that declares it IS `Prop`.
+    "bare_alias_resolves_in_its_own_namespace": ("""
+namespace Beta
+abbrev Pred := Prop
+
+def usesBareInOwnNamespace (st : SystemState) (oid : ObjId) : Pred :=
+  st.objects[oid]? = none
+end Beta
+""", {}, {("f.lean", "usesBareInOwnNamespace"): 1}),
+    # **A `let` inside a binder TYPE owns its own `:=`** (PR #895 review
+    # round 12).  Lean accepts this, and reading that `:=` as a default's start
+    # filed a type-level read as CODE -- refusing a valid declaration against
+    # the enforced zero, which the declaration-level Tier 1 reconciliation
+    # cannot correct because it does not adjudicate a binder.
+    "nested_let_in_binder_type_is_spec": ("""
+def step (st : SystemState) (h : (let obj := st.objects[oid]?; obj = none)) : Nat :=
+  0
+""", {}, {("f.lean", "step"): 1}),
+    # ...and the decisive control: the SAME declaration with a real default
+    # stays CODE, so the fix above narrows the rule rather than disabling it.
+    "binder_default_beside_a_let_is_code": ("""
+def step (st : SystemState) (h : (let a := 1; a = 1))
+    (obj : Option KernelObject := st.objects[oid]?) : Nat :=
+  0
+""", {("f.lean", "step"): 1}, {}),
     # ...while a hypothesis binder's TYPE is spec in an executable declaration
     # too, which is the distinction the region split exists to preserve.
     "binder_type_stays_spec": ("""
@@ -1043,6 +1271,53 @@ def self_test() -> int:
                 failed += 1
             else:
                 print(f"  ok   {name}")
+    # **The DOMAIN, on a synthetic tree.**  `objects_field_owners` reads the
+    # real repository, so nothing in FIXTURES can reach it -- and the property
+    # it pins is precisely that this census's read patterns key on a field NAME
+    # whose owning types it must therefore know.  A fix whose revert breaks
+    # nothing is indistinguishable from no fix.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "SeLe4n"
+        root.mkdir(parents=True)
+        (root / "s.lean").write_text(
+            "structure SystemState where\n  objects : RHTable K V\n\n"
+            "structure FrozenSystemState where\n  objects : FrozenMap K V\n")
+        for case, extra, expect in [
+            ("a new owner is reported", "", False),
+            ("an UNREGISTERED owner fails",
+             "structure Cache where\n  objects : List Entry\n", True),
+            ("a registered owner whose type CHANGED fails",
+             "", True),
+        ]:
+            (root / "extra.lean").write_text(extra)
+            if case.startswith("a registered owner whose type"):
+                (root / "s.lean").write_text(
+                    "structure SystemState where\n  objects : List V\n\n"
+                    "structure FrozenSystemState where\n  objects : FrozenMap K V\n")
+            known = dict(OBJECTS_FIELD_OWNERS)
+            try:
+                globals()["OBJECTS_FIELD_OWNERS"] = {
+                    "SystemState": ("RHTable", True),
+                    "FrozenSystemState": ("FrozenMap", True),
+                }
+                drifted = bool(objects_owner_violations(Path(td)))
+            finally:
+                globals()["OBJECTS_FIELD_OWNERS"] = known
+            if drifted != expect:
+                print(f"  SELF-TEST FAIL: owner-domain '{case}': "
+                      f"reported {drifted}, want {expect}")
+                failed += 1
+            else:
+                print(f"  ok   owner-domain '{case}'")
+    # ...and the live registry must agree with the live tree, in both
+    # directions, so a stale entry cannot read like coverage.
+    live = objects_owner_violations(REPO)
+    if live:
+        for line in live:
+            print(f"  SELF-TEST FAIL: {line}")
+        failed += len(live)
+    else:
+        print("  ok   owner-domain 'the live registry reconciles both ways'")
     if failed:
         print(f"[store-read-census] self-test: {failed} case(s) failed")
         return 1
@@ -1065,6 +1340,15 @@ def main() -> int:
     if args.self_test:
         return self_test()
     view = code_view(REPO)
+    # Checked in EVERY mode, beside the registry, for the same reason: these
+    # patterns key on a FIELD NAME, so the set of types carrying that name is
+    # the domain they are silently assuming.  A new one is a named failure
+    # here rather than a mystery rejection at the zero floor later.
+    drifted = objects_owner_violations(view)
+    if drifted:
+        for line in drifted:
+            print(f"FAIL: {line}")
+        return 1
     code, spec, exempt_hits, attribution, unparsed = census(view)
     # Refused in EVERY mode, for the same reason the registry is reconciled in
     # every mode: `--rows` is what Tier 0 calls, and a check only the unused

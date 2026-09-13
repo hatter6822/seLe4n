@@ -652,6 +652,37 @@ _EXTERN_NON_FN_ITEM = re.compile(
     r"|".join(keyword(w) for w in ("static", "type", "use")))
 
 
+#: **One attribute opener, and every scanner composes it** (PR #895 review
+#: round 12).
+#:
+#: Rust treats a comment as whitespace *between tokens*, so
+#: `#/* explanation */[doc = "# Safety"]` is a valid attribute that rustfmt
+#: accepts and rustdoc publishes — and on a code view a comment is blanked to
+#: spaces, so the `#` and the `[` are simply not adjacent.  Seven scanners in
+#: this tree asked "is this an attribute" with a literal `#[`, which made the
+#: correctly documented item below that line read as undocumented.
+#:
+#: The fragment is shared rather than corrected seven times, because this
+#: project has now measured twice that stating the sweep rule does not make a
+#: new pattern inherit what the old ones learned.  `ATTRIBUTE_OPEN` accepts the
+#: inner form too; `OUTER_ATTRIBUTE_OPEN` is the one for a question about the
+#: item *below* the line, since `#![…]` documents the enclosing module.
+ATTRIBUTE_OPEN = r"#\s*(?:!\s*)?\["
+OUTER_ATTRIBUTE_OPEN = r"#\s*(?!!)\["
+
+_ATTRIBUTE_OPEN_RE = re.compile(ATTRIBUTE_OPEN)
+
+
+def attribute_opens_at(view: str, at: int = 0):
+    """End offset of the attribute opener starting at `at`, or `None`.
+
+    The opener is `#`, an optional `!`, and `[`, with token-separating
+    whitespace — which is what a blanked comment becomes — permitted between.
+    """
+    match = _ATTRIBUTE_OPEN_RE.match(view, at)
+    return None if match is None else match.end()
+
+
 def attribute_spans(view: str) -> list[tuple[int, int]]:
     """Byte spans of every `#[…]` / `#![…]` attribute in a STRING-FREE view.
 
@@ -674,9 +705,11 @@ def attribute_spans(view: str) -> list[tuple[int, int]]:
         if view[i] != "#":
             i += 1
             continue
-        j = i + 1
-        if j < n and view[j] == "!":
-            j += 1
+        opened = attribute_opens_at(view, i)
+        if opened is None:
+            i += 1
+            continue
+        j = opened - 1
         if j >= n or view[j] != "[":
             i += 1
             continue

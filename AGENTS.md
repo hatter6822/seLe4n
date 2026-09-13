@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.24.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.25.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1712,6 +1712,68 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   times, `UnterminatedLiteral` was missing from two of them, and the self-test's
   private copy caught what the scanner would have crashed on — one `REFUSALS`
   constant now, which is also what makes dropping a member *detectable*.
+
+  **And a matrix enumerates the dimensions you thought of** (PR #895 review
+  round 12, `v0.35.25`).  Round 11's remedy was to stop drawing witnesses from
+  findings and enumerate the space instead — every marker FORM crossed with
+  every ENCLOSURE.  Round 12 then found three more in the same gate, and the
+  useful reading is *where* they landed: not in a cell, but **off the grid**.  A
+  `# Safety` inside a fenced code block is a markdown enclosure; `#/* c */[doc
+  = …]` is a token-separation form; `pub unsafe fn λ()` is a *name* form, a
+  dimension of the site scanner the justification matrix does not reach at all.
+  The matrix worked exactly as designed — each is now a row — and the lesson is
+  that its **axes** were themselves a recognised set.
+
+  **So take the axes from the artefact's grammar, not from the findings.**  The
+  question a gate asks has a small number of dimensions, and they are readable
+  off the language rather than off a review: for a doc comment they are *which
+  marker*, *what encloses it lexically*, *what encloses it in the rendered
+  markup*, and *how the item is named*.  Each round-12 finding added an axis and
+  then all of its values at once, which is why one cut closed six defects
+  including two the review did not report.
+
+  **And when the property is about the whole artefact, build the artefact.**
+  That is the sharper half.  A fence is a property of the *rendered document*,
+  and three separate line-oriented patterns — a `///` scan, a doc-block scan, a
+  decoded-attribute scan — structurally could not see it, however many spellings
+  each one learned.  rustdoc concatenates every doc source on an item into one
+  markdown input, so `rendered_doc_markdown` now does too and
+  `publishes_safety_heading` asks the single question of it.  Three patterns
+  became one, a cross-form fence (opened in a `///`, closing after a `#[doc]`)
+  became answerable at all, and every rule about which markers attach to the
+  item moved to the one place that builds the document.  **Reconstructing what
+  the real tool consumes is not a bigger scanner; it is the end of a class of
+  scanner defect** — and it is the same payoff shape as round 7's *give the
+  sweep an artefact*, one level up.
+
+  Two corollaries this round paid for.  **A field name is not a receiver
+  type**: the store census matched `.objects[…]?` by spelling, so an executable
+  definition over any other type with an `objects` field was counted as a
+  kernel-state read and refused by an enforced zero.  Resolving the receiver is
+  an elaborator question and this gate runs before any build, so the *ambiguity*
+  is bounded instead — `OBJECTS_FIELD_OWNERS` is derived from the sources and
+  reconciled both ways, making a new owner a **named** Tier 0 failure rather
+  than a mystery rejection.  Running that derivation found six owners where the
+  first guess named four, one of them (`BootstrapBuilder.objects : List`)
+  already indexable: the ambiguity was live, not hypothetical.  And **a name is
+  not a definition, in Lean too**: `Prop`-alias resolution accepted any alias
+  with the same final component, so `B.Pred := Nat` read as specification
+  because some other namespace declared a `Pred := Prop`.  Aliases carry
+  qualified identities now and resolve against the use site's enclosing
+  namespaces, longest prefix first — which is what the elaborator does, and the
+  third case in its witness set is the one that stops the fix from degrading
+  into *a bare alias never resolves*, since refusing valid specification text is
+  a defect in its own right.
+
+  Finally, the round's own mechanical lesson, and the second time this PR has
+  paid for it: **an inline mutation with no assertion is an inert mutation.**
+  Two of this round's mutation checks reported the fix as unverified and one
+  reported it as verified when the edit had silently matched nothing — the
+  difference being a `assert s.count(old) == 1` the throwaway script omitted.
+  The harness asserts it; a one-off mutation run by hand must too.  And **a
+  mutation must revert the whole defect**: the alias fix has two halves, and
+  reverting either alone left a witness passing, while reverting both — the
+  actual pre-fix state — failed immediately.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

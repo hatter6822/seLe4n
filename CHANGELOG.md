@@ -1,3 +1,82 @@
+## v0.35.25 — PR #895 review round 12: a matrix enumerates the dimensions you thought of
+
+Six findings, and where they landed is the point: round 11 replaced this gate's
+case lists with a **form matrix**, and three of round 12's findings are not cells
+in it — they are **axes it did not have**.
+
+**A `# Safety` inside a fenced code block published nothing and was accepted**
+(P1, fail-open, reproduced on all three doc forms).  rustdoc renders
+
+```rust
+/// ```text
+/// # Safety
+/// ```
+```
+
+as literal text, so the declaration exposes no caller-facing contract at all —
+and three separate line-oriented patterns each accepted it, because the enclosure
+is a property of the *rendered document* and no per-line predicate can see one.
+
+The fix is the artefact rather than a fourth pattern.  rustdoc concatenates every
+doc source on an item — `///` lines, `/** … */` blocks, `#[doc = …]` attributes —
+into one markdown input, so `rendered_doc_markdown` now builds exactly that, in
+source order and de-decorated the way rustdoc de-decorates it, and
+`publishes_safety_heading` asks the single question of it (CommonMark fences,
+indented code, and the ATX heading rule).  Three patterns became one, a
+cross-form fence — opened in a `///`, closing after a `#[doc]` — became
+answerable at all, and `SAFETY_DECL_LINE`, `DOC_BLOCK_LINE` and
+`SAFETY_HEADING_LINE` are deleted rather than left beside their replacement.
+
+**And two more axes, with all of their values:**
+
+- **Token separation.**  Rust treats a comment as whitespace *between tokens*, so
+  `#/* why */[doc = "# Safety"]` is one valid attribute that rustfmt accepts and
+  rustdoc publishes — and **seven** scanners here required a literal `#[`, which
+  made the documented item below read as undocumented.  They compose
+  `rust_code_view.ATTRIBUTE_OPEN` now; sharing the fragment is the remedy because
+  this PR has twice measured that restating the sweep rule does not make a new
+  pattern inherit what the old ones learned.
+- **The name.**  `pub unsafe fn λ()` compiles, and an ASCII-only class made it
+  **no site at all**, so its obligation was never raised and the explicit default
+  branch then failed the whole file.  Rust identifiers are UAX#31; the four
+  askers of that question are swept together, and `_SITE_NAME_FORMS` is the new
+  dimension.
+
+**The store census: two name-resolution defects, one of them live.**
+
+- **A field name is not a receiver type.**  The read patterns key on the spelling
+  `.objects[…]?`, so an executable definition over any *other* type with an
+  `objects` field is counted as a kernel-state read and refused by the enforced
+  `STORE_READ_CODE = 0`.  Resolving the receiver is an elaborator question and
+  this gate runs in Tier 0, before any build — so the **ambiguity** is bounded
+  instead: `OBJECTS_FIELD_OWNERS` is derived from the sources and reconciled in
+  both directions, making a new owner a *named* Tier 0 failure rather than a
+  mystery rejection.  Running that derivation found **six** owners where the
+  first guess named four, and one of them — `BootstrapBuilder.objects : List`,
+  which `GetElem?` makes indexable — is a live ambiguity, not a hypothetical.
+- **A `let` inside a binder type owns its own `:=`.**  `(h : (let obj :=
+  st.objects[oid]?; obj = none))` is valid Lean, and reading that `:=` as the
+  start of an executable default filed a type-level read as CODE — refusing a
+  valid declaration against the enforced zero, which the declaration-level Tier 1
+  reconciliation structurally cannot correct.
+- **A `Prop` alias is resolved by qualified name.**  The fallback accepted any
+  alias with the same final component, so `B.Pred := Nat` read as specification
+  because another namespace declared a `Pred := Prop`, and a raw store read in
+  that declaration merged into `sig` and escaped both gates.  Aliases carry
+  qualified identities now and resolve against the use site's enclosing
+  namespaces, longest prefix first.
+
+Live figures unmoved: the unsafe gate at 136/136 (114 blocks, 22 declarations),
+`STORE_READ_CODE=0`, `STORE_READ_SPEC=4637`.  The matrix is at 79 cells.
+
+Every fix is mutation-verified against **pre-fix** behaviour and each revert
+fails a *named* case.  Two of those runs were themselves defective first — an
+inline mutation with no `assert` matched nothing and reported the fix as
+verified, and the alias mutation reverted one of the fix's two halves and passed
+— both of which this entry's `CLAUDE.md` section records.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md
+
 ## v0.35.24 — PR #895 review round 11: a witness drawn from a finding tests the finding
 
 Four findings, and **three of them are in the code written to close round 10's**,
