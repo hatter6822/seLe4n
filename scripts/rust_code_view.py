@@ -62,6 +62,10 @@ from __future__ import annotations
 
 import functools
 import re
+import ast
+import io
+import tokenize
+from pathlib import Path
 import sys
 
 FILE_SCOPE = "<file scope>"
@@ -263,13 +267,165 @@ def code_no_strings(text: str) -> str:
     return "".join(out)
 
 
+def keyword(word: str) -> str:
+    """The regex fragment matching the Rust keyword `word`, and not an
+    identifier that merely spells it.
+
+    **One spelling, because three review rounds proved that two diverge.**
+    `r#unsafe`, `r#extern` and `r#fn` are ordinary identifiers -- Rust's raw
+    escape lets any keyword name an item -- and a bare word-boundary spelling
+    matches inside one, because `#` is a non-word character and the boundary
+    falls between it and the letter.  A scanner using the bare form therefore
+    reads `struct r#extern { … }` as a foreign block and `struct r#unsafe { … }`
+    as an unsafe block: it invents an obligation against safe code, and Tier 0
+    refuses valid Rust.
+
+    The rule itself was never in doubt.  What kept failing is that each gate
+    spelled the question again: `v0.35.17` put the exclusion on the unsafe
+    gate's keyword scan for `r#unsafe`, `v0.35.21` put the identical exclusion
+    on this module's `extern` scan for `r#extern`, and the review round after
+    *that* found six more bare spellings in the same file as the one carrying
+    the rule -- one of them ten lines below the comment explaining it.
+
+    That is this project's enumeration-versus-derivation rule at the level of a
+    regex fragment, and it does not close by patching a sixth site.  It closes
+    by there being one fragment to compose and a check that refuses a new bare
+    one: `bare_keyword_literals` reads the gate sources and reports any
+    word-boundary keyword spelling written outside this helper, so the next
+    pattern cannot be written without the rule rather than merely being
+    reviewed for it.
+    """
+    return r"(?<!r#)\b" + word + r"\b"
+
+
+#: The keywords a scanner in this tree matches, and therefore the ones
+#: `bare_keyword_literals` refuses to see spelled bare.  Deliberately the set
+#: the gates actually ask about rather than Rust's whole reserved list: a
+#: keyword nothing scans for needs no fragment, and listing it would be an
+#: enumeration with no consumer.
+SCANNED_KEYWORDS = ("unsafe", "extern", "impl", "trait", "mod", "struct", "fn")
+
+
+def _gate_sources() -> list[Path]:
+    """The gate sources the keyword discipline governs.
+
+    Derived from the directory rather than listed, so a gate added later is
+    scanned the day it lands -- the enumeration-versus-derivation rule applied
+    to this check's own domain, since a hand-written file list is exactly what
+    would let the eighth bare spelling in.
+    """
+    here = Path(__file__).resolve().parent
+    return sorted(
+        path for path in here.glob("*.py")
+        if path.name.startswith(("check_", "rust_code_view", "lean_code_view"))
+    )
+
+
+#: A word-boundary spelling of a Rust keyword, which `keyword()` exists to
+#: replace.  Built from `SCANNED_KEYWORDS` so the two cannot drift, and spelled
+#: through `chr(92)` so this pattern is not itself an instance of what it
+#: forbids -- a scanner that trips on its own definition is the kind of
+#: self-reference that gets "fixed" by weakening the check.
+_BARE_KEYWORD_LITERAL = re.compile(
+    chr(92) * 2 + "b(?:" + "|".join(SCANNED_KEYWORDS) + ")" + chr(92) * 2 + "b")
+
+
+def _python_code_view(text: str) -> str:
+    """`text` with comments and docstrings blanked, byte-aligned, code kept.
+
+    **Gates read code, prose reads prose**, applied to this project's own
+    scanners.  The subject here is a regex *fragment* -- a string literal that
+    is evaluated -- so a `#` comment and a docstring are both prose, and both
+    are blanked.  That is not a convenience: `keyword`'s own docstring quotes
+    the bad spelling precisely in order to say why it is wrong, and a check that
+    counted it would force this file to stop explaining itself, which is this
+    project's rule against contorting prose to satisfy a scanner.
+
+    The docstring spans come from `ast`, not from a quote-state walk, because
+    which string literals are documentation is a question about Python's grammar
+    and Python answers it exactly: a bare string expression statement is a
+    docstring wherever it appears, while an f-string, a concatenation or a
+    string in argument position is not.  Byte alignment is preserved so the line
+    numbers reported are the file's own.
+    """
+    out = list(text)
+
+    def blank(lo: int, hi: int) -> None:
+        for index in range(lo, min(hi, len(out))):
+            if out[index] != "\n":
+                out[index] = " "
+
+    line_starts = [0]
+    for line in text.splitlines(keepends=True):
+        line_starts.append(line_starts[-1] + len(line))
+
+    def offset(lineno: int, col: int) -> int:
+        return line_starts[lineno - 1] + col
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        # A file that does not parse is not one this check can read.  Leaving
+        # the text unscrubbed is the fail-CLOSED direction here, because this
+        # scanner produces a set of *violations*: reading too much reports a
+        # spurious one and stops the build, where reading too little passes
+        # silently.
+        tree = None
+
+    if tree is not None:
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Expr):
+                continue
+            value = node.value
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                blank(offset(value.lineno, value.col_offset),
+                      offset(value.end_lineno, value.end_col_offset))
+
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, IndentationError):
+        tokens = []
+    for token in tokens:
+        if token.type == tokenize.COMMENT:
+            blank(offset(*token.start), offset(*token.end))
+
+    return "".join(out)
+
+
+def bare_keyword_literals() -> list[str]:
+    """Every word-boundary Rust-keyword spelling written outside `keyword()`.
+
+    **The mechanism, rather than a sixth patch.**  Three review rounds in a row
+    found a keyword pattern missing the raw-identifier exclusion that a sibling
+    pattern -- once ten lines away, in the same file, under a comment explaining
+    the rule -- already carried.  Each round's remedy was correct and none of
+    them stopped the next one: fixing a site does not reach the site nobody has
+    written yet, and sharing a walk does not make a *new* regex inherit what the
+    old one learned.
+
+    So the rule is enforced where it can fail closed.  A contributor who writes
+    the bare spelling in a gate gets a self-test failure naming the file and the
+    line, on the day they write it, instead of a review round finding it two
+    cuts later.
+    """
+    out: list[str] = []
+    for path in _gate_sources():
+        text = path.read_text(encoding="utf-8")
+        scrubbed = _python_code_view(text)
+        for match in _BARE_KEYWORD_LITERAL.finditer(scrubbed):
+            line = scrubbed.count("\n", 0, match.start()) + 1
+            out.append(f"{path.name}:{line}: {match.group(0)} "
+                       f"-- compose rust_code_view.keyword(...) instead")
+    return out
+
+
 #: A `fn` and its name.  `r#` is Rust's raw-identifier escape and is part of
 #: the *spelling*, not the name — `fn r#lean_real()` is the function
 #: `lean_real` and links under that symbol (PR #889 review round 25, swept
 #: from the sibling finding against `check_kernel_entry_exports.py`).  Without
 #: it the name read as `r`, so every allowlist entry, exemption and dominance
 #: attribution keyed on the enclosing function's name looked at the wrong one.
-_FN_RE = re.compile(r"\bfn\s+(?:r#)?([A-Za-z_][A-Za-z0-9_]*)")
+_FN_RE = re.compile(keyword("fn") + r"\s+(?:r#)?([A-Za-z_][A-Za-z0-9_]*)")
 
 
 @functools.lru_cache(maxsize=None)
@@ -482,17 +638,18 @@ def binding_statement_before(
 #: `UNSAFE_KEYWORD` in `check_unsafe_block_justifications.py`, added for
 #: `r#unsafe` one review round earlier and not swept here — which is this
 #: project's sweep rule failing inside the cut that moved this scanner.
-_EXTERN_KEYWORD = re.compile(r"(?<!r#)\bextern\b")
+_EXTERN_KEYWORD = re.compile(keyword("extern"))
 #: An item macro at item position — `name!(`, `name![` or `name!{`, the three
 #: bracket forms Rust accepts.  Matched on a string-free view, so a `!` inside a
 #: literal is not one.
 _MACRO_INVOCATION = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\s*!\s*[(\[{]")
 #: A `fn` item.  `r#` is Rust's raw-identifier escape and part of the spelling,
 #: not the name.
-_EXTERN_FN_ITEM = re.compile(r"\bfn\s+(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*\(")
+_EXTERN_FN_ITEM = re.compile(keyword("fn") + r"\s+(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*\(")
 #: An item a foreign block may hold that declares no function: a `static`, a
 #: type alias, or a `use`.
-_EXTERN_NON_FN_ITEM = re.compile(r"\b(?:static|type|use)\b")
+_EXTERN_NON_FN_ITEM = re.compile(
+    r"|".join(keyword(w) for w in ("static", "type", "use")))
 
 
 def skip_rust_space(view: str, at: int) -> int:
@@ -940,6 +1097,25 @@ def _self_test() -> int:
     # An item form the view does not know is `unknown`, never silently skipped.
     check("an unknown item form is named", kinds_of('extern "C" { const K: u32; }')
           == ["unknown"])
+
+    # --- the keyword fragment, and the discipline that keeps it one ------
+    # Token-preserving in the way this class demands: the keyword letters and
+    # the following brace both survive; only the `r#` escape is added.
+    check("a raw identifier is not the keyword",
+          re.search(keyword("unsafe"), "struct r#unsafe { x: u32 }") is None)
+    check("the keyword is still the keyword",
+          re.search(keyword("unsafe"), "unsafe { f(); }") is not None)
+    check("a raw identifier is not `extern`",
+          re.search(keyword("extern"), "mod r#extern { }") is None)
+    # A longer identifier merely CONTAINING the keyword is not it either, which
+    # is what the trailing boundary is for.
+    check("a longer identifier is not the keyword",
+          re.search(keyword("fn"), "let fnord = 1;") is None)
+    # The discipline itself: no gate may spell a keyword bare.  This is the
+    # check that reaches the pattern nobody has written yet, which is the one
+    # thing three rounds of site-by-site fixes could not do.
+    bare = bare_keyword_literals()
+    check("no gate spells a Rust keyword bare", not bare, "; ".join(bare))
 
     for problem in failures:
         print(f"FAIL  {problem}")

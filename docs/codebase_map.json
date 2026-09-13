@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-faraday-gz9b3w",
-      "commit_sha": "f856c176c132c9221a3567625fece3439f2aad91",
-      "tree_sha": "d5ba0500ac2d00c0d98ac58d9cf67a3d0597ac62",
-      "committed_at_utc": "2026-09-13T04:03:12+00:00"
+      "commit_sha": "85b06182f3f7e359a288b9d158ea4a0f8bd25a6b",
+      "tree_sha": "8912e45675abace5d171bcacc8e8b4c7e24103ca",
+      "committed_at_utc": "2026-09-13T04:55:58+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 21333
   },
   "readme_sync": {
-    "version": "0.35.21",
+    "version": "0.35.22",
     "lean_toolchain": "v4.28.0",
     "production_files": 330,
     "production_loc": 376395,

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.21.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.22.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1559,6 +1559,63 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `_private.<Module>.0.<name>` and a numeric component is not an identifier — so
   the entry is built with Lean's own `mkPrivateNameCore` rather than with a
   resemblance to it.
+
+
+  **And a rule stated is not a rule enforced — give it a check, not a third
+  telling** (PR #895 review round 9, `v0.35.22`).  Round 8 closed with *sharing
+  an answer stops two answers from diverging; it does not make a new answer
+  inherit what the old one learned*, and recorded it in this file.  Round 9 found
+  **six more** bare keyword spellings in the very file whose one correct pattern
+  carries the rule, ten lines below the comment explaining it.  Measured:
+  `check_unsafe_block_justifications.py` held **seven** `\bunsafe` regex literals
+  and exactly one had the raw-identifier exclusion, so `struct r#unsafe { … }`
+  read as an unsafe block and Tier 0 demanded a justification of safe Rust.
+
+  That is this file's own enumeration-versus-derivation rule at the level of a
+  **regex fragment**, and the two previous remedies could not reach it: fixing a
+  site does not reach the site nobody has written yet, and consolidating a *walk*
+  does not constrain a *new pattern* written beside it.  Writing the lesson down
+  a third time would have been the move that had already failed twice.
+
+  **So the remedy is a mechanism.**  `rust_code_view.keyword(word)` is the one
+  fragment every keyword pattern composes, and `bare_keyword_literals()` reads
+  the gate sources and refuses any bare word-boundary keyword spelling written
+  outside it, wired into the view's self-test.  The next such pattern fails on
+  the day it is written.  Two things make it honest: it reads **code, not
+  prose** — `_python_code_view` blanks `#` comments and, via `ast`, docstrings,
+  because `keyword`'s own docstring quotes the bad spelling in order to explain
+  it and a check that counted it would force the file to stop explaining itself
+  — and it is mutation-tested in all three directions, since a discipline check
+  that cannot fire is indistinguishable from one that is wrong.  **When a rule
+  has been restated twice, the third response is not prose.**
+
+  Two corollaries this round paid for.  **An inert witness reads as coverage
+  while asserting nothing**: the first case written for the unsafe-attribute
+  classification was a *site* case, and a file whose only `unsafe` is an
+  attribute produces no sites, so it passed vacuously with the fix reverted —
+  the mutation harness caught it by **not** failing, and the witness moved to the
+  scan the fix actually lives on.  And **a fix can reopen a closed finding**: the
+  new doc-attribute scan was first written `#!?\[`, accepting the *inner*
+  `#![doc]` form, which is round 4's *inner rustdoc documents the enclosing
+  module* — round 4's own witness failed immediately, which is what witnesses are
+  for.
+
+  The round's other three findings are each a question this file already answers,
+  asked of the wrong artefact.  Rust 2024's `#[unsafe(no_mangle)]` is the only
+  spelling a 2024 crate may use for those attributes and matched no known form,
+  so the explicit default branch failed the whole file — classified now, with
+  **no** per-site obligation, because it attaches to an item and asserts
+  something about the linker namespace that two other gates already enforce.  A
+  `///` attaches to the item that *follows*, so the comment after a scope opener
+  documents the first item inside it; the run takes the trailing portion after
+  the last code character, which is the other side of round 6's rule rather than
+  a widening of it, since that one was documentation sitting *before* an
+  intervening item.  And `#[doc = r"…\n# Safety"]` is a **raw** literal whose
+  `\n` is two characters, so rustdoc publishes no heading: two rounds had
+  narrowed that regex and the question itself was wrong, so the value is
+  **decoded** by its literal kind and a real line-start question asked of the
+  result — *a spelling is not the text*, which is *a spelling is not a read* one
+  artefact over.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

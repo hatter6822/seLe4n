@@ -94,9 +94,23 @@ BASELINE = REPO / "scripts" / "unsafe_justification_baseline.json"
 # loud failure rather than a silent one.
 ABI = r'(?:r(?P<rawhash>\#*)\"[^\"]*\"(?P=rawhash)|\"[^\"]*\")'
 
+#: **Every keyword below is `rust_code_view.keyword(...)`, never `\bword\b`.**
+#: A raw identifier such as `r#unsafe` spells the keyword and is not it, and a
+#: bare `\bunsafe\b` matches inside one -- so `struct r#unsafe { x: u32 }` was
+#: read as an unsafe block and Tier 0 demanded a justification of safe Rust
+#: (PR #895 review round 9).  The exclusion had been on `UNSAFE_KEYWORD` since
+#: `v0.35.17`, ten lines below, with a comment explaining it; six sibling
+#: patterns in this file were written without it anyway.  The helper is what
+#: makes that unrepeatable, and `verify_keyword_discipline` is what refuses the
+#: next bare spelling rather than trusting review to catch it.
+KW_UNSAFE = rust_code_view.keyword("unsafe")
+KW_EXTERN = rust_code_view.keyword("extern")
+KW_FN = rust_code_view.keyword("fn")
+
 UNSAFE_SITE = re.compile(
-    r"\bunsafe\s*\{"                                         # a block
-    r"|\bunsafe\s+(?:extern\s+" + ABI + r"\s+)?fn\s+(?:r#)?[A-Za-z_]"  # a declaration
+    KW_UNSAFE + r"\s*\{"                                       # a block
+    r"|" + KW_UNSAFE + r"\s+(?:" + KW_EXTERN + r"\s+" + ABI + r"\s+)?"
+    + KW_FN + r"\s+(?:r#)?[A-Za-z_]"                            # a declaration
 )
 
 # **Every form of the keyword this scanner knows, and nothing else passes.**
@@ -114,20 +128,53 @@ UNSAFE_SITE = re.compile(
 # defect and should say so on the day it appears rather than quietly checking
 # less.
 UNSAFE_KNOWN_FORMS = [
-    (re.compile(r"\bunsafe\s*\{"), "block"),
-    (re.compile(r"\bunsafe\s+(?:extern\s+" + ABI + r"\s+)?fn\s+(?:r#)?[A-Za-z_]"),
+    (re.compile(KW_UNSAFE + r"\s*\{"), "block"),
+    (re.compile(KW_UNSAFE + r"\s+(?:" + KW_EXTERN + r"\s+" + ABI + r"\s+)?"
+                 + KW_FN + r"\s+(?:r#)?[A-Za-z_]"),
      "declaration"),
     # `unsafe impl` / `unsafe trait` are not operations: they assert a trait
     # contract, which carries its own review story and no per-site obligation.
-    (re.compile(r"\bunsafe\s+(?:impl|trait)\b"), "trait contract"),
+    (re.compile(KW_UNSAFE + r"\s+(?:" + rust_code_view.keyword("impl")
+                 + r"|" + rust_code_view.keyword("trait") + r")"),
+     "trait contract"),
     # Rust 2024's `unsafe extern { … }` block header.  The items inside are
     # declarations and are matched as such; the header itself performs nothing.
-    (re.compile(r"\bunsafe\s+extern\s*(?:" + ABI + r"\s*)?\{"), "extern block header"),
+    (re.compile(KW_UNSAFE + r"\s+" + KW_EXTERN + r"\s*(?:" + ABI + r"\s*)?\{"),
+     "extern block header"),
     # A function-pointer TYPE — `unsafe fn(u8, T) -> R`, which
     # `tests::register_signature_pinned` uses to pin an ABI.  A type performs
     # nothing, so demanding a justification of one is a scanner matching a
     # keyword rather than asking about an operation.
-    (re.compile(r"\bunsafe\s+(?:extern\s+" + ABI + r"\s+)?fn\s*\("), "function-pointer type"),
+    (re.compile(KW_UNSAFE + r"\s+(?:" + KW_EXTERN + r"\s+" + ABI + r"\s+)?"
+                 + KW_FN + r"\s*\("),
+     "function-pointer type"),
+    # **Rust 2024's unsafe ATTRIBUTE** — `#[unsafe(no_mangle)]`,
+    # `#[unsafe(export_name = "…")]`, `#[unsafe(link_section = "…")]`.  The
+    # 2024 edition requires the wrapper on the attributes that can make a
+    # symbol collide, so this is the *only* spelling a 2024 crate may use, and
+    # the gate rejected the whole file for it: `UNSAFE_KEYWORD` found the token
+    # and no form accepted the position, which is the fail-CLOSED branch of the
+    # explicit default above.
+    #
+    # **It carries no per-site obligation, and that is a decision.**  The
+    # attribute attaches to an ITEM and asserts something about the linker
+    # namespace, not about an operation — the same shape as `unsafe impl` two
+    # entries up, whose review story is the trait's contract rather than a
+    # comment at a call site.  Here the story is the one this tree already
+    # enforces on exported symbols: `check_kernel_entry_exports.py` reconciles
+    # every exported name against the archive, and `check_identifier_naming.py`
+    # reads `#[export_name = "…"]` as a linker-visible name.  Demanding a
+    # `// SAFETY:` here would put the justification in a third place and check
+    # it in none.
+    # Anchored at the keyword, because `unrecognised_unsafe_forms` matches each
+    # form at the token's own offset -- a pattern opening with `#[` would never
+    # fire.  `unsafe` followed by `(` is unambiguous in Rust's grammar: the
+    # keyword otherwise takes `{`, `fn`, `impl`, `trait` or `extern`, and there
+    # is no parenthesised `unsafe` expression, so the attribute wrapper is the
+    # only thing this can be -- which also means an inner `#![unsafe(...)]` and
+    # a whitespace-separated `#[ unsafe(...) ]` are both covered, where a
+    # lookbehind on the bracket would have refused the second.
+    (re.compile(KW_UNSAFE + r"\s*\("), "unsafe attribute"),
 ]
 
 # **A raw identifier is not the keyword.**  `r#unsafe` names an ordinary item
@@ -141,7 +188,7 @@ UNSAFE_KNOWN_FORMS = [
 # `v0.35.13` (`fn\s+(?:r#)?[A-Za-z_]`, for `r#lean_real`) and not onto the
 # keyword scan beside it, which is this project's sweep rule failing in the way
 # it describes.
-UNSAFE_KEYWORD = re.compile(r"(?<!r#)\bunsafe\b")
+UNSAFE_KEYWORD = re.compile(KW_UNSAFE)
 
 
 def unrecognised_unsafe_forms(path: Path, view: str) -> list[str]:
@@ -164,7 +211,17 @@ def unrecognised_unsafe_forms(path: Path, view: str) -> list[str]:
 # demanded `// SAFETY:` of a declaration would report every correctly documented
 # `unsafe fn` in the tree, which is a scanner asking the wrong question rather
 # than a discipline the code fails.
-SAFETY_BLOCK = re.compile(r"//[/!]?\s*SAFETY\b|/\*+\s*SAFETY\b", re.IGNORECASE)
+# **The marker is `SAFETY:`, and the colon is part of it** (PR #895 review
+# round 9).  Requiring only a word boundary let a comment that explicitly
+# DISCLAIMS the obligation satisfy it: `// SAFETY is not established.` and
+# `/* SAFETY unknown */` both justified an unsafe block and kept the empty
+# baseline green.  That is the fail-OPEN direction, and it is a presence check
+# standing in for the contract -- the convention this gate enforces, the one
+# `clippy::undocumented_unsafe_blocks` reads, and the one every docstring here
+# names, is `// SAFETY:`.  Measured before changing it: all 138 markers in the
+# tree already carry the colon, so the tightening refuses the next disclaimer
+# without touching a single live site.
+SAFETY_BLOCK = re.compile(r"//[/!]?\s*SAFETY\s*:|/\*+\s*SAFETY\s*:", re.IGNORECASE)
 # **Rustdoc, and only rustdoc.**  The heading has to reach the *caller*, so the
 # line carrying it must be a doc comment (`///`, `//!`) or a line inside a doc
 # BLOCK (`/**`, `/*!`) -- an ordinary `/* … * # Safety … */` publishes nothing
@@ -189,15 +246,16 @@ SAFETY_BLOCK = re.compile(r"//[/!]?\s*SAFETY\b|/\*+\s*SAFETY\b", re.IGNORECASE)
 # accepted -- its interior line matches the doc-block body pattern like any
 # other.  Both are now refused for the reason, not by accident.
 SAFETY_DECL_LINE = re.compile(r"^\s*///(?!/)\s*#+[ \t]+Safety\b", re.IGNORECASE | re.MULTILINE)
-# **A heading begins a line.**  `[^"]*` let arbitrary text precede the `#`, so
-# `#[doc = "This function has no # Safety section."]` satisfied the pattern while
-# Markdown renders that fragment as ordinary prose — an `unsafe fn` passed
-# publishing no caller-facing section at all (PR #895 review round 5).  The `#`
-# must open the attribute's value or follow an escaped newline, which is how a
-# heading is spelled in a single-line doc attribute.
-SAFETY_DECL_ATTR = re.compile(
-    r"#\[\s*doc\s*=\s*(?:r#*)?\"(?:[^\"]*\\n)?\s*#+[ \t]+Safety\b",
-    re.IGNORECASE)
+# **The attribute form is no longer a pattern over the spelling.**  Two rounds
+# narrowed a regex that asked whether `# Safety` followed an escaped newline
+# inside the literal -- round 5 stopped arbitrary prose preceding the `#`, round
+# 8 required the whitespace after it -- and round 9 showed the question itself
+# was wrong: in a RAW literal `\n` is two characters and starts no line, so the
+# pattern could not be narrowed into correctness.  `_doc_attribute_values`
+# DECODES each literal and `SAFETY_HEADING_LINE` asks a real line-start question
+# of the result.  The superseded `SAFETY_DECL_ATTR` is deleted rather than left
+# beside its replacement: a retired pattern that once decided this question is
+# what a later cut reaches for by name.
 # **A heading marker needs whitespace after it** (PR #895 review round 8).  The
 # three patterns above and below spelled the gap `\s*`, which is satisfied by
 # NOTHING — so `/// #Safety` passed while CommonMark (and therefore rustdoc)
@@ -223,9 +281,9 @@ def _split_block_comments(run: str) -> tuple[str, list[str]]:
 
     One walk settles the same relation for the siblings, which is this
     project's sweep rule rather than an extra: `SAFETY_DECL_LINE` and
-    `SAFETY_DECL_ATTR` are `re.MULTILINE` searches over the whole run, so a
-    `///` line or a `#[doc = …]` attribute *spelled inside* an ordinary block
-    comment matched them too.  Blanking every block comment's extent — newlines
+    the doc-attribute scan run over the whole run, so a `///` line or a
+    `#[doc = …]` attribute *spelled inside* an ordinary block comment matched
+    them too.  Blanking every block comment's extent — newlines
     kept, so line-anchored patterns keep their geometry — leaves exactly the
     markers that are really attached to the item, and the doc blocks are
     returned separately because their bodies genuinely are published.
@@ -261,10 +319,134 @@ def _split_block_comments(run: str) -> tuple[str, list[str]]:
     return "".join(out), bodies
 
 
+#: An OUTER rustdoc `#[doc = "…"]` attribute, up to the opening quote of its
+#: value.  The value itself is NOT matched here: deciding where a Rust string
+#: literal ends is a question about its own kind, which `_doc_attribute_values`
+#: answers by reading the literal rather than by a pattern over it.
+#:
+#: **Outer only, deliberately.**  `#![doc = …]` documents the ENCLOSING module,
+#: not the item below it, so a module opening with an inner Safety section
+#: publishes nothing about the first `unsafe fn` under it -- round 4's finding,
+#: which this pattern reopened when it was first written `#!?\[` and which the
+#: witness for that round caught on the spot.  The sibling classification of
+#: `#![unsafe(…)]` is correctly inner-tolerant, because *which item is an unsafe
+#: attribute attached to* is not a question that scan asks.
+DOC_ATTR_OPEN = re.compile(r"(?<!!)#\[\s*doc\s*=\s*(?P<raw>r(?P<hashes>\#*))?\"")
+
+
+def _decode_rust_string(body: str, is_raw: bool) -> str:
+    """A Rust string literal's body as the text it denotes.
+
+    **A spelling is not the text** (PR #895 review round 9).  In a RAW literal
+    there are no escapes, so `r"a\\nb"` is eleven characters with a backslash in
+    the middle and renders as one markdown line; in an ordinary literal the same
+    two characters are a newline and the text has two lines.  Asking a regex
+    whether `# Safety` follows a `\\n` conflates them, and it conflates them in
+    the fail-OPEN direction: an `unsafe fn` documented `#[doc = r"not a heading
+    \\n# Safety"]` published no heading at all and satisfied the gate.
+
+    So the value is decoded before it is read, which is this project's own
+    instruction to resolve the text into the structure it stands for -- here,
+    the markdown a caller is actually shown.  Only the escapes that can produce
+    a line start or hide one need to be exact; every other escape is passed
+    through as its own character, since the question asked of the result is
+    whether any LINE begins a `# Safety` heading.
+    """
+    if is_raw:
+        return body
+    out: list[str] = []
+    i, n = 0, len(body)
+    simple = {"n": "\n", "r": "\r", "t": "\t", "0": "\0",
+              "\\": "\\", "'": "'", '"': '"'}
+    while i < n:
+        ch = body[i]
+        if ch != "\\" or i + 1 >= n:
+            out.append(ch)
+            i += 1
+            continue
+        nxt = body[i + 1]
+        if nxt in simple:
+            out.append(simple[nxt])
+            i += 2
+            continue
+        if nxt == "x" and i + 3 < n:
+            try:
+                out.append(chr(int(body[i + 2:i + 4], 16)))
+                i += 4
+                continue
+            except ValueError:
+                pass
+        if nxt == "u" and body[i + 2:i + 3] == "{":
+            close = body.find("}", i + 3)
+            if close != -1:
+                try:
+                    out.append(chr(int(body[i + 3:close], 16)))
+                    i = close + 1
+                    continue
+                except ValueError:
+                    pass
+        if nxt == "\n":
+            # A line continuation: the newline and the leading whitespace of the
+            # next line are both consumed, so it produces NO line start.
+            i += 2
+            while i < n and body[i] in " \t\r\n":
+                i += 1
+            continue
+        # An escape this decoder does not know.  Dropping the backslash is the
+        # fail-CLOSED choice: it can only merge text onto one line, never invent
+        # the line start a heading needs.
+        out.append(nxt)
+        i += 2
+    return "".join(out)
+
+
+def _doc_attribute_values(text: str) -> list[str]:
+    """The decoded value of every `#[doc = "…"]` attribute in `text`.
+
+    Reads each literal by its own kind so the terminator is right: a raw literal
+    ends at a quote followed by exactly its opening hash count, an ordinary one
+    at the first unescaped quote.  An unterminated literal yields nothing --
+    this scanner produces a set of JUSTIFICATIONS, so dropping what it cannot
+    read refuses the declaration rather than passing it.
+    """
+    out: list[str] = []
+    for match in DOC_ATTR_OPEN.finditer(text):
+        is_raw = match.group("raw") is not None
+        start = match.end()
+        if is_raw:
+            terminator = '"' + (match.group("hashes") or "")
+            end = text.find(terminator, start)
+            if end == -1:
+                continue
+            out.append(_decode_rust_string(text[start:end], True))
+            continue
+        i, n = start, len(text)
+        while i < n:
+            if text[i] == "\\":
+                i += 2
+                continue
+            if text[i] == '"':
+                out.append(_decode_rust_string(text[start:i], False))
+                break
+            i += 1
+    return out
+
+
+#: A `# Safety` ATX heading occupying a line of already-decoded markdown.
+#: CommonMark requires whitespace after the `#` run, which is why `#Safety`
+#: renders as a paragraph and must not count (PR #895 review round 8).
+SAFETY_HEADING_LINE = re.compile(r"^[ \t]*#+[ \t]+Safety\b", re.IGNORECASE)
+
+
 def declaration_documents_safety(run: str) -> bool:
     """Does this run publish a rustdoc `# Safety` section?"""
     attached, doc_bodies = _split_block_comments(run)
-    if SAFETY_DECL_LINE.search(attached) or SAFETY_DECL_ATTR.search(attached):
+    if SAFETY_DECL_LINE.search(attached):
+        return True
+    # The attribute form is decided on the DECODED value, never on its spelling:
+    # a raw literal's `\n` is two characters and starts no line.
+    if any(any(SAFETY_HEADING_LINE.match(line) for line in value.splitlines())
+           for value in _doc_attribute_values(attached)):
         return True
     # A `# Safety` inside a doc *block* counts; inside an ordinary block comment
     # -- or nested inside any block comment at all -- it does not.
@@ -518,17 +700,37 @@ def justification_run(raw: str, view: str, at: int, is_declaration: bool,
             pending_code = [stripped_code]
             idx = prev_start
             continue
+        # **The line that ends the run may still carry documentation for us.**
+        # A `///` attaches to the item that FOLLOWS it, so on
+        # `pub mod m { /// # Safety` the comment documents the first item inside
+        # the module -- our site -- while only `pub mod m {` intervenes.  The
+        # walk stopped at the whole line and lost the section, reporting a
+        # correctly documented `unsafe fn` as unjustified: Tier 0 refusing valid
+        # Rust (PR #895 review round 9).
+        #
+        # Taking the trailing portion is not a widening of round 6's rule but the
+        # other side of it.  That finding was documentation sitting BEFORE an
+        # intervening item on the line (`#[doc = "…"] fn documented(); fn us();`),
+        # which is consumed by that item and stays inside the code region here.
+        # What this adds is documentation sitting AFTER the code, which no item
+        # has consumed and which rustdoc gives to the next one.  The distinction
+        # is the byte offset of the last code character, so both hold at once.
+        trailing = raw_line[len(view_line.rstrip()):]
+        if trailing.strip():
+            run.append(trailing)
         break
     return "\n".join(reversed(run))
 
 
 UNSAFE_FN_NAME = re.compile(
-    r"\bunsafe\s+(?:extern\s+" + ABI + r"\s+)?fn\s+(?:r#)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)")
+    KW_UNSAFE + r"\s+(?:" + KW_EXTERN + r"\s+" + ABI + r"\s+)?"
+    + KW_FN + r"\s+(?:r#)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)")
 
 
 #: A foreign function item inside a foreign block, and the `safe` opt-out.
 FOREIGN_FN = re.compile(
-    r"(?P<safe>\bsafe\s+)?\bfn\s+(?:r#)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(")
+    r"(?P<safe>" + rust_code_view.keyword("safe") + r"\s+)?"
+    + KW_FN + r"\s+(?:r#)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(")
 
 
 def foreign_fn_items(view: str):
@@ -1097,6 +1299,72 @@ unsafe extern "C" {
     fn documented();
 }
 """),
+    # --- PR #895 review round 9 ------------------------------------------
+    # **A raw identifier is not the keyword**, at the SITE scan this time.  The
+    # rule had been on `UNSAFE_KEYWORD` since `v0.35.17` and on the view's
+    # `extern` scan since `v0.35.21`; six sibling patterns in this file were
+    # written without it, so Tier 0 demanded a justification of safe Rust.
+    # Token-preserving against the justified block above: the keyword letters
+    # and the brace both survive, only `r#` is added.
+    ("a raw identifier is not an unsafe block", True, """
+struct r#unsafe { x: u32 }
+"""),
+    ("a raw-identifier literal is not an unsafe block", True, """
+fn f() { let _ = r#unsafe { x: 0 }; }
+"""),
+    # **The line that ends the run may still carry OUR documentation.**  A `///`
+    # attaches to the item that follows, so the comment after a scope opener
+    # documents the first item inside it.  The mirror case -- documentation
+    # sitting BEFORE an intervening item -- is round 6's, two cases below, and
+    # both hold at once because the distinction is the last code character's
+    # offset.
+    ("rustdoc after a scope opener documents the item inside", True, """
+pub mod m { /// # Safety
+    /// The caller must hold the entry lock.
+    pub unsafe fn f() {}
+}
+"""),
+    ("rustdoc after a closing brace documents the next item", True, """
+fn a() {} /// # Safety
+/// The caller must hold the entry lock.
+pub unsafe fn f() {}
+"""),
+    # **A spelling is not the text.**  In a RAW literal `\\n` is two characters
+    # and starts no line, so rustdoc publishes no heading.  Token-preserving
+    # against the accepted escaped form below: every character of `# Safety` is
+    # present and only the `r` prefix differs.
+    ("a raw doc literal publishes no heading from a literal backslash-n",
+     False, r'''
+#[doc = r"not a heading\n# Safety"]
+pub unsafe fn f() {}
+'''),
+    ("an escaped newline in an ordinary doc literal does publish one",
+     True, '''
+#[doc = "intro\\n# Safety\\nThe caller must hold the entry lock."]
+pub unsafe fn f() {}
+'''),
+    ("a raw doc literal with a real newline publishes one", True, '''
+#[doc = r"
+# Safety
+The caller must hold the entry lock."]
+pub unsafe fn f() {}
+'''),
+    # **The marker is `SAFETY:`.**  A comment DISCLAIMING the obligation
+    # satisfied a word-boundary test -- the fail-OPEN direction, and a presence
+    # check standing in for the contract.  Token-preserving: the word `SAFETY`
+    # and the comment marker both stay, only the colon goes.
+    ("a comment disclaiming safety is not a justification", False, """
+fn f() {
+    // SAFETY is not established for this call.
+    unsafe { g() }
+}
+"""),
+    ("a block comment disclaiming safety is not a justification", False, """
+fn f() {
+    /* SAFETY unknown */
+    unsafe { g() }
+}
+"""),
 ]
 
 #: Foreign-block items this gate must REFUSE rather than read past, each with the
@@ -1191,6 +1459,29 @@ unsafe auto trait Wild {}
 """, False),
         ("a plain `unsafe` block is a recognised form", """
 fn f() { unsafe { g() } }
+""", True),
+        # **Rust 2024's unsafe ATTRIBUTE is a form, not an unknown**
+        # (PR #895 review round 9).  The keyword scan found the token, no entry
+        # accepted the position, and the gate failed the whole file -- the
+        # explicit default branch firing on the only spelling a 2024 crate may
+        # use for these attributes.
+        #
+        # These belong here rather than among the site cases, and that is this
+        # round's own lesson about witnesses: a file whose only `unsafe` is an
+        # attribute produces NO sites, so a site case asserting "everything is
+        # justified" passes vacuously whether the classification exists or not.
+        # The first version of this witness was exactly that, and the mutation
+        # harness caught it by NOT failing.
+        ("an outer unsafe attribute is a recognised form", """
+#[unsafe(no_mangle)]
+pub extern "C" fn exported() {}
+""", True),
+        ("an inner unsafe attribute is a recognised form", """
+#![unsafe(no_mangle)]
+""", True),
+        ("a whitespace-separated unsafe attribute is a recognised form", """
+#[ unsafe(export_name = "x") ]
+pub extern "C" fn exported() {}
 """, True),
     ]
     for name, src, want_clean in form_cases:

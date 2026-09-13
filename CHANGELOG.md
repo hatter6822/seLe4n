@@ -1,3 +1,100 @@
+## v0.35.22 — PR #895 review round 9: one spelling for a keyword, and a check that enforces it
+
+Five findings, all in the two Tier 0 Rust scanners.  Two fail **open** and three
+fail **closed** — Tier 0 refusing valid Rust — and the first of them is the
+third consecutive round of one defect, which is what this entry is about.
+
+**A keyword had seven spellings and one of them knew the rule.**
+`check_unsafe_block_justifications.py` held **seven** `\bunsafe` regex literals;
+exactly one, `UNSAFE_KEYWORD`, carried the `(?<!r#)` exclusion, under a comment
+ten lines long explaining why a raw identifier is not the keyword.  The other six
+were written beside it.  So `struct r#unsafe { x: u32 }` — an ordinary item Rust
+accepts — was read as an unsafe block, and Tier 0 demanded a justification of
+safe code.
+
+The rule was never in doubt; the *reach* of each fix was.  `v0.35.17` put the
+exclusion on the keyword scan for `r#unsafe`.  `v0.35.21` put the identical
+exclusion on `rust_code_view`'s `extern` scan for `r#extern`, and recorded the
+lesson that *sharing an answer stops two answers from diverging; it does not make
+a new answer inherit what the old one learned*.  Round 9 found six more bare
+spellings in the same file as the one carrying the rule.  Writing the lesson down
+a third time would have been the same move that failed twice.
+
+**So the remedy is a mechanism rather than a sixth patch.**
+`rust_code_view.keyword(word)` is the one fragment; every keyword pattern in both
+gates and the view composes it.  `bare_keyword_literals()` then reads the gate
+sources and reports any bare word-boundary keyword spelling written outside it,
+wired into the view's self-test — so the next such pattern fails on the day it is
+written rather than two review rounds later.  It reaches the pattern nobody has
+written yet, which is the one thing site-by-site fixes cannot do.
+
+- The check reads **code, not prose**: `_python_code_view` blanks `#` comments
+  and docstrings, with the docstring spans taken from `ast` rather than a
+  quote-state walk, because which literals are documentation is a question about
+  Python's grammar.  `keyword`'s own docstring quotes the bad spelling in order
+  to explain it, and a check that counted it would force this file to stop
+  explaining itself.
+- Mutation-tested in all three directions: a bare literal in code position fails
+  the self-test; the same spelling in a docstring and in a `#` comment do not.
+
+**Rust 2024's unsafe attribute is a form, not an unknown.**  `#[unsafe(no_mangle)]`
+is the only spelling a 2024 crate may use for these attributes; the keyword scan
+found the token, no entry accepted the position, and the explicit default branch
+failed the whole file.  It is classified now with **no** per-site obligation, for
+the reason `unsafe impl` two entries above carries none: it attaches to an item
+and asserts something about the linker namespace, and that story is already
+enforced by `check_kernel_entry_exports.py` and `check_identifier_naming.py`.
+Demanding a `// SAFETY:` here would put the justification in a third place and
+check it in none.
+
+**The line that ends a justification run may still carry the item's
+documentation.**  A `///` attaches to the item that *follows*, so on
+`pub mod m { /// # Safety` the comment documents the first item inside the module
+while only `pub mod m {` intervenes — and the walk, stopping at the whole line,
+reported a correctly documented `unsafe fn` as unjustified.  The run now takes
+the trailing portion after the last code character.  That is not a widening of
+round 6's rule but its other side: round 6's defect was documentation sitting
+*before* an intervening item, which that item consumes and which stays inside the
+code region.  Both hold at once because the distinction is a byte offset, and the
+round-6 witness is exercised in both its same-line and prior-line forms.
+
+**A spelling is not the text.**  `#[doc = r"not a heading\n# Safety"]` is a RAW
+literal, so the `\n` is two ordinary characters, rustdoc publishes no heading, and
+an `unsafe fn` with no caller-facing contract satisfied the gate.  Two earlier
+rounds had narrowed that regex — round 5 stopped arbitrary prose preceding the
+`#`, round 8 required the whitespace after it — and the question itself was
+wrong, so no third narrowing could fix it.  `_doc_attribute_values` **decodes**
+each literal by its own kind and `SAFETY_HEADING_LINE` asks a real line-start
+question of the result.  The superseded `SAFETY_DECL_ATTR` is deleted rather than
+left beside its replacement: a retired pattern that once decided a question is
+what a later cut reaches for by name.
+
+**The marker is `SAFETY:`, and the colon is part of it.**  Requiring only a word
+boundary let a comment that explicitly *disclaims* the obligation satisfy it —
+`// SAFETY is not established.` justified an unsafe block and kept the empty
+baseline green.  Measured before changing it: all 138 markers in the tree already
+carry the colon, so the tightening refuses the next disclaimer without touching a
+live site.
+
+Every fix is mutation-verified against the **pre-fix** behaviour, and one of those
+mutations earned its keep: the first witness written for the unsafe attribute was
+a *site* case, and a file whose only `unsafe` is an attribute produces no sites —
+so it passed vacuously with the fix reverted.  The harness caught it by **not**
+failing, and the witness moved to the form scan where the fix actually lives.  An
+inert witness reads as coverage while asserting nothing.
+
+A second self-inflicted defect was caught by an existing witness: the new doc
+attribute scan was first written `#!?\[`, which accepts the **inner** `#![doc]`
+form — reopening round 4's finding that inner rustdoc documents the enclosing
+module.  Round 4's own case failed immediately, which is what witnesses are for.
+
+Gate self-tests: **60** site cases, **6** form-scan cases (3 new), 6
+reconciliation cases; `rust_code_view` gains 5 witnesses including the discipline
+check.  The live gate is unmoved at **136/136** with an empty baseline, and no
+kernel transition, theorem or fixture changed.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md (WS-RM closure)
+
 ## v0.35.21 — PR #895 review round 8: a delegated reply left its server unbudgeted
 
 Four findings.  The first is a **kernel defect**, not a gate defect, and it is

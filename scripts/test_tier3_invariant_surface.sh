@@ -7831,11 +7831,22 @@ run_negative_check "INVARIANT" rg -nF 'in_text = name == "text"' scripts/check_k
 # ...a raw identifier names the same linker symbol as the bare spelling, and an
 # `extern` item that is neither a readable `fn` nor a symbol-free item stops the
 # build rather than declaring nothing.
-run_check "INVARIANT" rg -nF 'EXTERN_FN = re.compile(r"' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -nF 'EXTERN_FN = re.compile(' scripts/check_kernel_entry_exports.py
+# ...and it is built through the SHARED keyword fragment, never a bare
+# word-boundary spelling (PR #895 review round 9).  Seven such literals sat in
+# the unsafe gate and exactly one carried the raw-identifier exclusion, so
+# `struct r#unsafe { … }` read as an unsafe block; the helper is what makes the
+# rule unrepeatable and `bare_keyword_literals` is what refuses the next bare
+# one.  Anchored on the composition rather than on the pattern text, because the
+# relation this pins is *which answer the gate asks*.
+run_check "INVARIANT" rg -nF 'rust_code_view.keyword("fn")' scripts/check_kernel_entry_exports.py
 # Anchored on the raw-identifier escape alone: the character-class spelling
 # contains a letter-digit pair the identifier-naming gate reads as a workstream
-# code, and the escape is the relation this round added anyway.
-run_check "INVARIANT" rg -nF 'fn\s+(?:r#)?' scripts/check_kernel_entry_exports.py
+# code, and the escape is the relation this round added anyway.  The `fn` that
+# used to prefix it here moved into `rust_code_view.keyword("fn")` at round 9,
+# which the anchor above pins; this one keeps asking the question it always
+# asked, which is whether the escape survives.
+run_check "INVARIANT" rg -nF '\s+(?:r#)?' scripts/check_kernel_entry_exports.py
 # PR #895 review round 7 moved the item CLASSIFICATION into the shared Rust
 # view: the tree's OTHER foreign-block parser
 # (`scripts/check_unsafe_block_justifications.py`) asked the same question and
@@ -7856,7 +7867,7 @@ run_check "INVARIANT" rg -nF 'kind = rust_code_view.classify_extern_item(view, i
 run_check "INVARIANT" rg -nF 'let ident = rest.strip_prefix("r#").unwrap_or(rest);' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -nF 'let ident = after.strip_prefix("r#").unwrap_or(after);' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -nF 'fn r#lean_raw(x: u64)' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -nF '_FN_RE = re.compile(r"' scripts/rust_code_view.py
+run_check "INVARIANT" rg -nF '_FN_RE = re.compile(keyword("fn")' scripts/rust_code_view.py
 # Backtick-free on purpose: shellcheck reads a backtick inside single quotes as
 # a command substitution the author meant to expand (SC2016).
 run_check "INVARIANT" rg -nF 'is named without its escape' scripts/rust_code_view.py
