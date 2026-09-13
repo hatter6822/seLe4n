@@ -2067,21 +2067,30 @@ None on a non-delegated reply, where it is the identity because the receiver
 *is* the recorded server and keeps the new request's budget; the server's own
 core on a delegated one, where it is a real deschedule. -/
 def replyRecvServerDescheduleWriteSet (tid recordedServer : SeLe4n.ThreadId)
-    (serverCore : CoreId) : List CoreId :=
-  if recordedServer = tid then [] else [serverCore]
+    (st : SystemState) : List CoreId :=
+  if recordedServer = tid then []
+  else
+    match placedCoreOf? st recordedServer with
+    | some c => [c]
+    | none => []
 
 /-- ...and it stays inside them, by the same two facts the unconditional
 deschedule above uses. -/
 theorem replyRecvServerDeschedule_confinedToCores (tid recordedServer : SeLe4n.ThreadId)
-    (serverCore : CoreId) (st : SystemState) :
+    (st : SystemState) :
     observableSlotsConfinedToCores st
-      (replyRecvServerDeschedule tid recordedServer serverCore st)
-      (replyRecvServerDescheduleWriteSet tid recordedServer serverCore) := by
+      (replyRecvServerDeschedule tid recordedServer st)
+      (replyRecvServerDescheduleWriteSet tid recordedServer st) := by
   unfold replyRecvServerDeschedule replyRecvServerDescheduleWriteSet
   by_cases h : recordedServer = tid
   · rw [if_pos h, if_pos h]; exact observableSlotsConfinedToCores_refl st []
   · rw [if_neg h, if_neg h]
-    exact removeRunnableOnCore_confinedToCores st recordedServer serverCore
+    -- **One resolver, read by both.**  The transition and its footprint match
+    -- because they are the same `placedCoreOf?` call, not two spellings that
+    -- happen to agree — which is exactly how the round-9 cut went wrong.
+    cases hp : placedCoreOf? st recordedServer with
+    | none => exact observableSlotsConfinedToCores_refl st []
+    | some c => exact removeRunnableOnCore_confinedToCores st recordedServer c
 
 /-- SM8.B.2 / WS-RR RR2.20 / **WS-RM (`v0.35.6`)**: **the cores the post-receive
 half may write**, mirroring its own control flow.  Three shapes: the
@@ -2102,7 +2111,7 @@ def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n
   | some _ =>
       if rendezvousDequeuedCall st nextThread then
         match applyRendezvousCallDonation
-            (replyRecvServerDeschedule tid recordedServer serverCore st) tid nextThread with
+            (replyRecvServerDeschedule tid recordedServer st) tid nextThread with
         | .error _ => []
         | .ok st2 =>
             -- The deschedule's cores come FIRST, because it runs first: on a
@@ -2110,7 +2119,7 @@ def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n
             -- before the new client's context is donated to the invoker
             -- (PR #895 review round 8).  A footprint that omitted them would be
             -- false of exactly that arm.
-            replyRecvServerDescheduleWriteSet tid recordedServer serverCore ++
+            replyRecvServerDescheduleWriteSet tid recordedServer st ++
               pipChainWriteSet st2 recordedServer serverCore st2.objectIndex.length
       else replyRecvDescheduleAndWalkWriteSet recordedServer serverCore st
 
@@ -2151,7 +2160,7 @@ theorem replyRecvPostReceiveDonation_confinedToCores
         -- which is `desched ++ pip` definitionally; the left association would
         -- need `List.append_nil`.
         exact observableSlotsConfinedToCores_trans
-          (replyRecvServerDeschedule_confinedToCores tid recordedServer serverCore st)
+          (replyRecvServerDeschedule_confinedToCores tid recordedServer st)
           (observableSlotsConfinedToCores_trans
             (applyRendezvousCallDonation_confinedToCores _ st2 _ _ hDon)
             (propagatePipChainCrossCore_confinedToCores serverCore

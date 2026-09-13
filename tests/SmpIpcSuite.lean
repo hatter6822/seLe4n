@@ -1131,6 +1131,25 @@ private def runDonationMigrationChecks : IO Unit := do
       -- descheduled, so an unbound thread still queued satisfies it vacuously.
       assertBool "pre: the recorded server is queued on its own core 1"
         ((stCallQ.scheduler.runQueueOnCore c1).contains donServer)
+      -- **PR #895 review round 10**: and it is QUEUED rather than current, which
+      -- is the shape round 9's fix could not actually handle.  That cut took the
+      -- core from the caller's `serverCore`, which production computes as
+      -- `determineExecutingCore st recordedServer` — a core the server is
+      -- *current* on, else `bootCoreId` — so a preempted server was descheduled
+      -- on core 0's queue while it sat on core 1's.
+      --
+      -- This witness did not catch it because the harness passes `serverCore`
+      -- BY HAND, supplying the very answer production was getting wrong.  The
+      -- deschedule resolves its own core now (`placedCoreOf?`), so there is no
+      -- parameter left for a test to supply and this assertion exercises the
+      -- resolver rather than the fixture's opinion of it.
+      assertBool "pre: ...and NOT current there — genuinely preempted"
+        (stCallQ.scheduler.currentOnCore c1 != some donServer)
+      assertBool "pre: ...so the retired proxy would have answered the boot core"
+        (decide (determineExecutingCore stCallQ donServer = Concurrency.bootCoreId)
+          && decide (c1 != Concurrency.bootCoreId))
+      assertBool "pre: ...while the resolver answers core 1"
+        (decide (placedCoreOf? stCallQ donServer = some c1))
       assertBool "the delegated rendezvous deschedules the recorded server"
         (!(stQ.scheduler.runQueueOnCore c1).contains donServer)
       assertBool "...and it is not left as core 1's current thread either"

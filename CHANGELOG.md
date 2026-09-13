@@ -1,3 +1,88 @@
+## v0.35.23 — PR #895 review round 10: a proxy is not the fact, at the scheduler
+
+Five findings.  **Two are defects in the previous cut's own fixes** — one of them
+the kernel one — and that is what this entry is about: a round whose findings are
+in the code written to close the last round's findings is evidence about the
+*shape* of the fix, not about the instance.
+
+**The round-9 deschedule was a no-op on exactly the case it was written for.**
+`replyRecvServerDeschedule` took the `serverCore` its caller had already
+computed, and `replyRecvBody` computes that as
+`determineExecutingCore st recordedServer` — a core the server is **current**
+on, falling back to `bootCoreId`.  A server that is *queued rather than running*
+matches nothing there, so the deschedule edited the boot core's run queue while
+the server sat on another, and the temporal-isolation defect round 9 reported as
+closed survived untouched on the preempted path.  Reproduced before acting: a
+server queued on core 2 resolves to core 0 and is still on core 2 afterwards.
+
+`determineTargetCore` — the review's suggestion — is no better, and the
+measurement is the reason: `affinityAdmitsCore` is `true` on **every** core for
+an unpinned thread, so `runQueueAffinityConsistentOnCore` does not pin such a
+thread to that resolver's answer either; an unpinned server may legitimately sit
+on any queue while it says `bootCoreId`.  Both are **proxies**.  The fact a
+removal is about is where the thread is *placed*, and `removeRunnableOnCore`
+writes the run queue **and** the current slot of the core it is handed, so the
+witness has to cover both.  That is this file's own *a proxy is not the fact*
+(PR #889 review round 23), at the scheduler.
+
+- `placedCoreOf?` (`Scheduler/Operations/Selection.lean`) is that witness, beside
+  the two predicates it is built from.  `placedCoreOf?_isSome_iff` ties it to
+  `runnableOnSomeCore || runningOnSomeCore` and `placedCoreOf?_sound` says a
+  resolved core really holds the thread — so the resolver and the predicates
+  cannot drift, which is the failure this whole class keeps producing.
+- **The parameter is gone.**  `replyRecvServerDeschedule` resolves its own core;
+  a caller cannot hand a run-queue removal a core computed for the
+  priority-inheritance walk.  `replyRecvServerDescheduleWriteSet` reads the *same*
+  call, so the footprint and the transition cannot name different cores.
+- **The witness could not have caught it, and now can.**  `tests/SmpIpcSuite.lean`
+  §3.9b passes `serverCore` **by hand** — it supplied the very answer production
+  was getting wrong.  Four new assertions pin the fixture's real shape: the server
+  is queued and *not current*, the retired proxy answers the boot core, the
+  resolver answers core 1.  With no parameter left to supply, the assertion
+  exercises the resolver rather than the fixture's opinion of it.
+
+**The gate findings are one defect and two domains.**
+
+*The view you read depends on the question.*  The justification run is
+deliberately raw — what matters is what a reviewer reads — and that reasoning is
+right for **reading** a comment and wrong for **deciding whether something is
+one**.  So `// #[doc = "# Safety"]`, an ordinary comment, was decoded as a real
+attribute (round 9's own scan, over raw text), and
+`#[allow(unused, reason = "// SAFETY: not a comment")]` supplied a marker from
+inside a string literal.  Both fail **open**, on a gate with an empty baseline.
+`comment_text_of` derives the comment spans *from the code view* rather than
+re-lexing — a maximal run of blanked bytes holding at least one byte the raw text
+did not blank **is** a comment — and the doc scan reads `rust_code_view.code`,
+which keeps string contents and blanks the comment.
+
+*A macro-valued doc attribute is decided, not skipped.*  `#[doc = concat!(…)]`
+publishes a section rustdoc renders and the scanner reported the declaration
+undocumented.  `concat!` of string literals is expanded; anything this scanner
+cannot evaluate — `include_str!`, a user macro — is **refused by name**, because
+"undocumented" and "unreadable" are different claims and only one of them is true.
+
+*And the domain exclusion named a directory instead of a directory.*
+`compiled_rust_sources` dropped any path with a component called `target`, so
+`rust/sele4n-hal/src/target/aarch64.rs` — an ordinary module on a tree organised
+by hardware target — was never scanned.  Cargo's output **root** is excluded now,
+`CARGO_TARGET_DIR` honoured.  That is round 3's domain defect reintroduced by the
+filter written to fix it.
+
+Every fix is mutation-verified against the **pre-fix** behaviour, and the harness
+earned its keep twice more.  The domain fix was first shipped with **no witness
+at all** — the mutation reported `MISSED`, because `compiled_rust_sources` reads
+the real workspace and no case list can reach it; it has a synthetic-tree witness
+now.  And the two Tier 3 anchors on the deschedule were mutation-tested in both
+directions, since bounding a *negative* is not automatically safe: silent on the
+clean tree, firing on a mutation that keeps every token and puts the pre-fix
+spelling back inside the declaration.
+
+Gate self-tests: **65** site cases (5 new), **6** form-scan, **6** reconciliation,
+3 domain and 3 doc-refusal cases; the live gate is unmoved at **136/136** with an
+empty baseline.  `maxLockSetSize` does not move and no fixture changed.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md (WS-RM closure)
+
 ## v0.35.22 — PR #895 review round 9: one spelling for a keyword, and a check that enforces it
 
 Five findings, all in the two Tier 0 Rust scanners.  Two fail **open** and three

@@ -60,6 +60,7 @@ views are byte-aligned, which is what lets one walk use both.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -333,6 +334,34 @@ def _split_block_comments(run: str) -> tuple[str, list[str]]:
 #: attribute attached to* is not a question that scan asks.
 DOC_ATTR_OPEN = re.compile(r"(?<!!)#\[\s*doc\s*=\s*(?P<raw>r(?P<hashes>\#*))?\"")
 
+#: A `#[doc = …]` whose value is NOT a plain string literal.  Matched so the
+#: scanner can DECIDE about it rather than skip it -- see `_doc_attribute_values`.
+DOC_ATTR_NONLITERAL = re.compile(
+    r"(?<!!)#\[\s*doc\s*=\s*(?P<value>[A-Za-z_][A-Za-z0-9_]*\s*!)")
+#: `concat!(…)`, whose arguments this scanner can expand exactly when they are
+#: all string literals -- which is what rustdoc renders.
+CONCAT_OPEN = re.compile(r"\bconcat\s*!\s*\(")
+
+
+class UnreadableDocAttribute(Exception):
+    """A `#[doc = …]` whose rendered text this scanner cannot determine.
+
+    **"Undocumented" and "unreadable" are different claims** (PR #895 review
+    round 10).  `#[doc = include_str!("x.md")]` publishes a section this gate
+    cannot see without reading another file, and reporting the declaration
+    *unjustified* says something false about the code: Tier 0 refusing valid
+    Rust, with a diagnostic that sends a contributor looking for documentation
+    that is already there.  Refusing the input names the gate's own limit
+    instead, which is this project's rule that a scanner's default branch is a
+    decision.
+    """
+
+    def __init__(self, snippet: str) -> None:
+        super().__init__(f"unreadable `#[doc = …]` value: {snippet!r} — this gate "
+                         f"expands string literals and `concat!` of string "
+                         f"literals; teach it this form or spell the section "
+                         f"with `///`")
+
 
 def _decode_rust_string(body: str, is_raw: bool) -> str:
     """A Rust string literal's body as the text it denotes.
@@ -400,6 +429,53 @@ def _decode_rust_string(body: str, is_raw: bool) -> str:
     return "".join(out)
 
 
+def _concat_literals(text: str, at: int) -> str | None:
+    """`concat!(…)`'s value when every argument is a string literal, else `None`.
+
+    Expanded rather than refused because `concat!` of literals is exactly what
+    rustdoc renders and a contributor splitting a long section across lines with
+    it is writing correct, published documentation.  A `None` return means an
+    argument this scanner cannot evaluate -- a nested macro, a constant, a
+    numeric literal -- and the caller refuses the attribute rather than guessing.
+    """
+    i = text.find("(", at - 1)
+    if i == -1:
+        return None
+    i += 1
+    parts: list[str] = []
+    n = len(text)
+    while i < n:
+        while i < n and text[i] in " \t\r\n,":
+            i += 1
+        if i < n and text[i] == ")":
+            return "".join(parts)
+        raw_match = re.compile(r"r(#*)\"").match(text, i)
+        if raw_match:
+            terminator = '"' + raw_match.group(1)
+            end = text.find(terminator, raw_match.end())
+            if end == -1:
+                return None
+            parts.append(_decode_rust_string(text[raw_match.end():end], True))
+            i = end + len(terminator)
+            continue
+        if i < n and text[i] == '"':
+            j = i + 1
+            while j < n:
+                if text[j] == "\\":
+                    j += 2
+                    continue
+                if text[j] == '"':
+                    break
+                j += 1
+            else:
+                return None
+            parts.append(_decode_rust_string(text[i + 1:j], False))
+            i = j + 1
+            continue
+        return None
+    return None
+
+
 def _doc_attribute_values(text: str) -> list[str]:
     """The decoded value of every `#[doc = "…"]` attribute in `text`.
 
@@ -410,6 +486,19 @@ def _doc_attribute_values(text: str) -> list[str]:
     read refuses the declaration rather than passing it.
     """
     out: list[str] = []
+    # **A macro-valued doc attribute is decided, not skipped.**  `concat!` of
+    # string literals is what rustdoc renders, so it is expanded; anything else
+    # (`include_str!`, a user macro) is refused by name rather than reported as
+    # missing documentation, because those are different claims (round 10).
+    for match in DOC_ATTR_NONLITERAL.finditer(text):
+        head = match.group("value")
+        if CONCAT_OPEN.match(head + "(") or head.replace(" ", "") == "concat!":
+            expanded = _concat_literals(text, match.end())
+            if expanded is None:
+                raise UnreadableDocAttribute(text[match.start():match.start() + 60])
+            out.append(expanded)
+            continue
+        raise UnreadableDocAttribute(text[match.start():match.start() + 60])
     for match in DOC_ATTR_OPEN.finditer(text):
         is_raw = match.group("raw") is not None
         start = match.end()
@@ -444,14 +533,56 @@ def declaration_documents_safety(run: str) -> bool:
     if SAFETY_DECL_LINE.search(attached):
         return True
     # The attribute form is decided on the DECODED value, never on its spelling:
-    # a raw literal's `\n` is two characters and starts no line.
+    # a raw literal's `\n` is two characters and starts no line.  And it is read
+    # off the CODE view, because an ordinary `// #[doc = "# Safety"]` is a
+    # comment that publishes nothing -- round 9 introduced this scan over raw
+    # text and round 10 found that hole in it.  `rust_code_view.code` keeps
+    # string contents, which is what the decoder needs, and blanks the comment.
     if any(any(SAFETY_HEADING_LINE.match(line) for line in value.splitlines())
-           for value in _doc_attribute_values(attached)):
+           for value in _doc_attribute_values(rust_code_view.code(attached))):
         return True
     # A `# Safety` inside a doc *block* counts; inside an ordinary block comment
     # -- or nested inside any block comment at all -- it does not.
     return any(DOC_BLOCK_LINE.search(body) for body in doc_bodies)
 ARM_ARM = re.compile(r"\(ARM ARM [A-Z][0-9]+(?:\.[0-9]+)*\)")
+
+
+def comment_text_of(raw: str, view: str) -> str:
+    """`raw` with everything that is NOT comment text blanked, byte-aligned.
+
+    **The view you read depends on the question** (PR #895 review round 10).
+    The justification run is deliberately RAW -- what matters is what a reviewer
+    reads, so the answer comes from the real file -- and that reasoning is right
+    for *reading* a comment and wrong for *deciding whether something is one*.
+    Asking `SAFETY_BLOCK` of the raw run let a string literal inside an ordinary
+    attribute supply the marker: `#[allow(unused, reason = "// SAFETY: not a
+    comment")]` compiles, publishes nothing, and justified the unsafe block
+    below it.  Fail-OPEN, on a gate with an empty baseline.
+
+    Derived from the code view rather than re-lexed, because a second Rust lexer
+    is this project's one-question-two-answers hazard: `rust_code_view.code`
+    blanks comments to spaces and is byte-aligned, so a maximal run of blanked
+    bytes that holds at least one byte the raw text did not blank IS a comment,
+    and nothing else is.  Ordinary whitespace between code tokens blanks to
+    itself and so is never mistaken for one.
+    """
+    out = [" "] * len(raw)
+    i, n = 0, len(raw)
+    while i < n:
+        if view[i] == "\n":
+            out[i] = "\n"
+            i += 1
+            continue
+        if view[i] != " ":
+            i += 1
+            continue
+        start = i
+        while i < n and view[i] == " ":
+            i += 1
+        if any(raw[j] != " " for j in range(start, i)):
+            for j in range(start, i):
+                out[j] = raw[j]
+    return "".join(out)
 
 
 def justified(run: str, is_declaration: bool) -> bool:
@@ -473,7 +604,9 @@ def justified(run: str, is_declaration: bool) -> bool:
     today and refuses the next declaration documented the wrong way."""
     if is_declaration:
         return declaration_documents_safety(run)
-    return bool(SAFETY_BLOCK.search(run))
+    # Comment text only: a `// SAFETY:` inside a string literal is a string, and
+    # the marker has to be something a compiler would discard (round 10).
+    return bool(SAFETY_BLOCK.search(comment_text_of(run, rust_code_view.code(run))))
 
 
 def is_attribute_only(code_line: str) -> bool:
@@ -851,11 +984,27 @@ def compiled_rust_sources(root: Path) -> list[Path]:
     written; everything else a contributor can put an `unsafe` in is in scope.
     Over-approximating is the safe direction here: this scanner produces
     *requirements*, and a requirement it drops is a check nobody runs.
+
+    **And the exclusion names cargo's output ROOT, not the directory name**
+    (PR #895 review round 10).  Testing every path component dropped any source
+    under a nested directory that happens to be called `target` --
+    `rust/sele4n-hal/src/target/aarch64.rs` is an ordinary module a contributor
+    would plausibly write on this project, since the tree is organised by
+    hardware target -- so an unjustified site there was absent from the count,
+    the inventory and the baseline alike.  That is the same domain defect the
+    glob above was fixed for, reintroduced by the filter written to fix it: the
+    remedy for an over-broad exclusion is a narrower one only when the narrower
+    one names the actual thing.  Cargo's output root is `<workspace>/target`,
+    one directory, and `CARGO_TARGET_DIR` is honoured because a caller may have
+    moved it.
     """
+    build_output = Path(os.environ.get("CARGO_TARGET_DIR") or (root / "target"))
+    if not build_output.is_absolute():
+        build_output = (root / build_output).resolve()
     return [
         path
         for path in sorted(root.rglob("*.rs"))
-        if "target" not in path.relative_to(root).parts
+        if not path.resolve().is_relative_to(build_output)
     ]
 
 
@@ -879,19 +1028,28 @@ def census(root: Path):
                 path.read_text(encoding="utf-8")))
         try:
             file_sites = list(sites(path))
-        except (UnreadableExternItem, rust_code_view.UnbalancedExternBlock) as refusal:
+            # The verdicts are computed INSIDE the try: a refusal can come from
+            # reading a site's documentation as well as from finding the site,
+            # and `UnreadableDocAttribute` is raised by `justified`.  Catching
+            # only around `sites` left that one escaping as a traceback -- the
+            # same "one failure channel" this block exists for, missed at the
+            # half of the work it did not wrap.
+            verdicts = [(decl, is_decl, run, justified(run, is_decl))
+                        for _off, decl, run, is_decl in file_sites]
+        except (UnreadableExternItem, UnreadableDocAttribute,
+                rust_code_view.UnbalancedExternBlock) as refusal:
             # One failure channel, so a refusal reads like every other gate
             # defect instead of leaving a traceback.  `UnreadableExternBlock`
             # used to be raised and caught nowhere at all.
             unreadable.append(f"{rel}: {refusal}")
             continue
-        for _off, decl, run, is_decl in file_sites:
+        for decl, is_decl, run, ok in verdicts:
             total += 1
             if is_decl:
                 declarations += 1
             if ARM_ARM.search(run):
                 cited += 1
-            if not justified(run, is_decl):
+            if not ok:
                 inventory[f"{rel}|{decl}"] = inventory.get(f"{rel}|{decl}", 0) + 1
     return inventory, total, cited, declarations, unreadable
 
@@ -1365,12 +1523,61 @@ fn f() {
     unsafe { g() }
 }
 """),
+    # --- PR #895 review round 10 -----------------------------------------
+    # **The view you read depends on the question.**  The run is raw because
+    # what matters is what a reviewer reads -- right for READING a comment,
+    # wrong for DECIDING whether something is one.  Both halves are
+    # token-preserving against the accepted cases: every character of the
+    # marker and of `# Safety` survives, only its enclosure changes.
+    ("a commented-out doc attribute publishes nothing", False, """
+// #[doc = "# Safety"]
+pub unsafe fn f() {}
+"""),
+    ("a safety marker inside an attribute string is a string", False, """
+fn f() {
+    #[allow(unused, reason = "// SAFETY: not a comment")]
+    let _ = unsafe { g() };
+}
+"""),
+    ("...while a real comment beside that attribute still counts", True, """
+fn f() {
+    #[allow(unused, reason = "x")]
+    // SAFETY: the pointer is valid for the lifetime of the call.
+    let _ = unsafe { g() };
+}
+"""),
+    # **A macro-valued doc attribute is decided, not skipped.**  `concat!` of
+    # string literals is what rustdoc renders, so it is expanded; a form this
+    # scanner cannot evaluate is REFUSED by name (the `_REFUSED_DOC_CASES`
+    # below), because "undocumented" and "unreadable" are different claims.
+    ("a concat! doc attribute publishes its heading", True, """
+#[doc = concat!("# Safety\\n", "The caller must hold the entry lock.")]
+pub unsafe fn f() {}
+"""),
+    ("a concat! doc attribute with no heading does not", False, """
+#[doc = concat!("intro ", "text")]
+pub unsafe fn f() {}
+"""),
 ]
+
 
 #: Foreign-block items this gate must REFUSE rather than read past, each with the
 #: word its failure must name.  A separate list because the assertion differs:
 #: these cases have no site to judge — the point is that the gate stops instead
 #: of reporting a clean count over input it never examined.
+#: `#[doc = …]` values this gate must REFUSE rather than report as missing
+#: documentation.  "Undocumented" and "unreadable" are different claims, and
+#: only one of them is true of a declaration whose section this scanner simply
+#: cannot evaluate (PR #895 review round 10).
+_REFUSED_DOC_CASES = [
+    ("an include_str! doc attribute is refused, not called undocumented",
+     "include_str", '#[doc = include_str!("safety.md")]\npub unsafe fn f() {}\n'),
+    ("a user-macro doc attribute is refused", "mydoc",
+     '#[doc = mydoc!(x)]\npub unsafe fn f() {}\n'),
+    ("a concat! with a non-literal argument is refused", "concat",
+     '#[doc = concat!("# Safety", SUFFIX)]\npub unsafe fn f() {}\n'),
+]
+
 _REFUSED_EXTERN_CASES = [
     # THE SHAPE (PR #895 review round 7): a macro expands to declarations no
     # `fn`-shaped search can see, so the site never existed and the empty
@@ -1423,16 +1630,65 @@ def _self_test() -> int:
                 failures += 1
             else:
                 print(f"  OK   self-test '{name}' ({'accept' if expect_ok else 'reject'})")
+    # **The DOMAIN, on a synthetic tree.**  `compiled_rust_sources` reads the
+    # real workspace, so nothing in the case lists above can exercise it -- and
+    # round 10's fix to it was initially shipped with no witness at all, caught
+    # by the mutation harness reporting MISSED.  A fix whose revert breaks
+    # nothing is indistinguishable from no fix.
+    with tempfile.TemporaryDirectory() as tmp:
+        fake = Path(tmp)
+        for rel in ("crate/src/lib.rs", "crate/src/target/aarch64.rs",
+                    "crate/tests/it.rs", "crate/build.rs",
+                    "target/debug/build/generated.rs"):
+            f = fake / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("fn a() {}\n", encoding="utf-8")
+        found = {str(q.relative_to(fake)) for q in compiled_rust_sources(fake)}
+        domain_cases = [
+            # A module under a nested directory named `target` is a SOURCE; only
+            # the workspace build-output root is cargo's.  Testing every path
+            # component dropped it, so an unjustified site there was absent from
+            # the count, the inventory and the baseline alike.
+            ("a nested src/target module is compiled, not build output",
+             "crate/src/target/aarch64.rs" in found),
+            ("cargo's build-output root is still excluded",
+             not any(q.startswith("target/") for q in found)),
+            # The round-3 finding, pinned in the same place so the two domains
+            # cannot drift apart again.
+            ("integration tests, build scripts and libs are all in scope",
+             {"crate/src/lib.rs", "crate/tests/it.rs", "crate/build.rs"} <= found),
+        ]
+    for name, ok in domain_cases:
+        if ok:
+            print(f"  OK   self-test '{name}'")
+        else:
+            print(f"  SELF-TEST FAIL: domain '{name}'")
+            failures += 1
+
     # The foreign-block refusals.  A gate that derives REQUIREMENTS must stop on
     # input it cannot read, and until round 7 this one enumerated `fn` and
     # examined nothing else in the block.
+    for name, word, src in _REFUSED_DOC_CASES:
+        try:
+            declaration_documents_safety(src)
+        except UnreadableDocAttribute as refusal:
+            if word not in str(refusal):
+                print(f"  SELF-TEST FAIL: '{name}' refused without naming {word!r}")
+                failures += 1
+            else:
+                print(f"  OK   self-test '{name}' (refuse)")
+        else:
+            print(f"  SELF-TEST FAIL: '{name}' was read past — the gate would report "
+                  f"a correctly documented declaration as undocumented")
+            failures += 1
     for name, word, src in _REFUSED_EXTERN_CASES:
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "fixture.rs"
             p.write_text(src, encoding="utf-8")
             try:
                 list(sites(p))
-            except (UnreadableExternItem, rust_code_view.UnbalancedExternBlock) as refusal:
+            except (UnreadableExternItem, UnreadableDocAttribute,
+                rust_code_view.UnbalancedExternBlock) as refusal:
                 if word not in str(refusal):
                     print(f"  SELF-TEST FAIL: '{name}' refused without naming {word!r}: "
                           f"{refusal}")

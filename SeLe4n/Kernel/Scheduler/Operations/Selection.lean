@@ -1294,6 +1294,71 @@ def runningOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   (SeLe4n.Kernel.Concurrency.allCores).any
     (fun c => st.scheduler.currentOnCore c == some tid)
 
+/-- **PR #895 review round 10: the core a thread is actually placed on.**
+
+`runnableOnSomeCore` and `runningOnSomeCore` answer *whether* a thread is
+placed; nothing answered **where**, so every caller needing the core reached for
+a *proxy* — `determineExecutingCore`, which finds a core the thread is CURRENT
+on and otherwise falls back to `bootCoreId`, or `determineTargetCore`, which
+reads `cpuAffinity`.  Both are wrong for a removal:
+
+* a thread queued but not current matches `determineExecutingCore` nowhere, so it
+  resolves to the boot core and a deschedule there edits a queue the thread is
+  not on;
+* `affinityAdmitsCore` is `true` on **every** core for an unpinned thread
+  (`cpuAffinity = none`), so `runQueueAffinityConsistentOnCore` does not pin such
+  a thread to `determineTargetCore`'s answer either — it may legitimately sit on
+  any core's queue while that resolver says `bootCoreId`.
+
+This is this project's *a proxy is not the fact* (PR #889 review round 23) at the
+scheduler: the fact a removal is about is **queue membership**, and
+`removeRunnableOnCore` acts on the run queue *and* the current slot of the core
+it is handed, so the witness has to cover both.  `find?` over `allCores` in the
+model's own core order makes the answer deterministic. -/
+def placedCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
+  (SeLe4n.Kernel.Concurrency.allCores).find?
+    (fun c => (st.scheduler.runQueueOnCore c).contains tid
+      || st.scheduler.currentOnCore c == some tid)
+
+/-- `find?` succeeds exactly where `any` does.  Stated locally rather than
+reached for by name so the resolver's tie-back below is elementary. -/
+private theorem isSome_find?_eq_any {α : Type _} (p : α → Bool) :
+    ∀ l : List α, (l.find? p).isSome = l.any p
+  | [] => rfl
+  | a :: t => by
+      simp only [List.find?, List.any_cons]
+      cases hp : p a with
+      | true => simp
+      | false => simpa [hp] using isSome_find?_eq_any p t
+
+/-- The witness answers exactly when the predicate holds: `placedCoreOf?` is
+`some` iff the thread is queued or running somewhere.  Stated so the resolver and
+the two predicates cannot drift — the defect this resolver exists to close came
+from a *second* answer to one question, and a third one would be the same
+mistake. -/
+theorem placedCoreOf?_isSome_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (placedCoreOf? st tid).isSome
+      = (runnableOnSomeCore st tid || runningOnSomeCore st tid) := by
+  unfold placedCoreOf? runnableOnSomeCore runningOnSomeCore
+  rw [isSome_find?_eq_any]
+  apply Bool.eq_iff_iff.mpr
+  simp only [Bool.or_eq_true, List.any_eq_true]
+  constructor
+  · rintro ⟨c, hc, (h1 | h2)⟩
+    · exact Or.inl ⟨c, hc, h1⟩
+    · exact Or.inr ⟨c, hc, h2⟩
+  · rintro (⟨c, hc, h1⟩ | ⟨c, hc, h2⟩)
+    · exact ⟨c, hc, Or.inl h1⟩
+    · exact ⟨c, hc, Or.inr h2⟩
+
+/-- A thread the resolver places on core `c` really is on `c` — queued or
+running.  This is what licenses `removeRunnableOnCore` at that core. -/
+theorem placedCoreOf?_sound (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) (h : placedCoreOf? st tid = some c) :
+    (st.scheduler.runQueueOnCore c).contains tid
+      || st.scheduler.currentOnCore c == some tid := by
+  simpa using List.find?_some h
+
 /-- WS-SM SM5.C.1 (plan §3.3): enqueue `tid` as a runnable thread on core `c`.
 
 The per-core "make `tid` runnable on core `c`" primitive — the per-core

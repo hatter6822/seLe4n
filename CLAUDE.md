@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.22.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.23.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1616,6 +1616,59 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   **decoded** by its literal kind and a real line-start question asked of the
   result — *a spelling is not the text*, which is *a spelling is not a read* one
   artefact over.
+
+
+  **And when two rounds' findings land in each other's fixes, the fix's SHAPE is
+  the defect** (PR #895 review round 10, `v0.35.23`).  Round 9 closed with *a
+  rule stated is not a rule enforced — give it a check, not a third telling*, and
+  built one.  Round 10 then found five more, **two of them inside round 9's own
+  fixes**, and the useful reading is not the instances: it is that both were the
+  same *kind* of mistake, made at the point where a fix chooses what to trust.
+
+  **A proxy is not the fact, at the scheduler.**  `replyRecvServerDeschedule`
+  accepted the core its caller had already computed — `determineExecutingCore`,
+  which finds a core the thread is *current* on and otherwise answers
+  `bootCoreId`.  A **queued** server matches nothing there, so the deschedule
+  edited the boot core's queue while the server sat on another and the
+  temporal-isolation defect the step exists to close survived on the preempted
+  path.  `determineTargetCore` is no better and the measurement says why:
+  `affinityAdmitsCore` is `true` on *every* core for an unpinned thread, so
+  `runQueueAffinityConsistentOnCore` does not pin one to that answer either.
+  Both are proxies; the fact is **placement**, and `removeRunnableOnCore` writes
+  the run queue *and* the current slot of whatever core it is handed.
+  `placedCoreOf?` is the witness, tied to `runnableOnSomeCore ||
+  runningOnSomeCore` by theorem so a third answer cannot appear.
+
+  Two things generalise.  **A parameter is a place for a caller to be wrong**:
+  the fix is not a better argument at the call site but *no argument* — the step
+  resolves its own core, and its footprint reads the same call, so the transition
+  and the declaration cannot name different cores.  And **a witness that supplies
+  the answer tests the fixture, not the code**: §3.9b passed `serverCore` by hand
+  and so asserted nothing about the resolver production actually used, which is
+  why a green suite sat over a live defect for a whole cut.  With the parameter
+  gone there is nothing left to supply.  Ask of any witness: *could this have
+  failed if the production path computed its input differently?*
+
+  **And the view you read depends on the question** — the same rule this file
+  states for Lean structure, arriving at a gate that had deliberately chosen raw
+  text.  The justification run is raw because what matters is what a reviewer
+  reads, and that is right for *reading* a comment and wrong for *deciding
+  whether something is one*: an ordinary `// #[doc = "# Safety"]` was decoded as a
+  real attribute and a `"// SAFETY: …"` inside `#[allow(reason = …)]` counted as
+  a real comment.  Both fail open.  Comment spans are now *derived from the code
+  view* rather than re-lexed — a maximal run of blanked bytes holding a byte the
+  raw text did not blank **is** a comment — because a second Rust lexer is this
+  file's one-question-two-answers hazard.
+
+  Two more corollaries about witnesses, both earned rather than reasoned.  **A
+  fix whose revert breaks nothing is indistinguishable from no fix**: the domain
+  correction here was first shipped with no witness at all, and the mutation
+  harness caught it by reporting `MISSED` — the case lists could not reach it,
+  because the function reads the real workspace, so it needed a synthetic tree.
+  And **bounding a negative is not automatically safe**: the two Tier 3 anchors
+  on the deschedule were mutation-tested in both directions, silent on the clean
+  tree and firing on a mutation that keeps every token and moves the pre-fix
+  spelling back inside the declaration.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

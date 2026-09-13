@@ -835,11 +835,31 @@ on a delegated one, where the server would otherwise stay queued while
 (PR #895 review round 8).
 
 Named rather than inlined so the relation has one spelling and its own frames:
-the two facts its consumers need are stated directly below each of them. -/
+the two facts its consumers need are stated directly below each of them.
+
+**It resolves its own core** (PR #895 review round 10).  The first cut took the
+`serverCore` the caller had already computed, which is
+`determineExecutingCore st recordedServer` — a core the server is *current* on,
+falling back to `bootCoreId`.  A server that is queued rather than running
+matches that nowhere, so the deschedule edited the boot core's queue while the
+server sat on another, and the temporal-isolation defect this step exists to
+close survived untouched on exactly the preempted case.  `determineTargetCore`
+is no better: `affinityAdmitsCore` is `true` on every core for an unpinned
+thread, so an unpinned server may legitimately sit on any queue while that
+resolver answers `bootCoreId`.
+
+Both are *proxies*; the fact a removal is about is where the thread is placed,
+and `placedCoreOf?` is that witness.  Taking it as a parameter is what let a
+core computed for the priority-inheritance walk decide a run-queue removal, so
+the parameter is gone — a caller cannot pass the wrong core to a function that
+does not accept one. -/
 def replyRecvServerDeschedule (tid recordedServer : SeLe4n.ThreadId)
-    (serverCore : Concurrency.CoreId) (st : SystemState) : SystemState :=
+    (st : SystemState) : SystemState :=
   if recordedServer = tid then st
-  else removeRunnableOnCore st recordedServer serverCore
+  else
+    match placedCoreOf? st recordedServer with
+    | some c => removeRunnableOnCore st recordedServer c
+    | none => st
 
 /-- **WS-RM (`v0.35.6`): the post-receive half** — everything the donation
 resolution cannot decide until the receive leg has run.
@@ -892,7 +912,7 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
             -- `removeRunnableOnCore` writes no object — so every object-level
             -- fact the donation needs transports across it unchanged.
             match applyRendezvousCallDonation
-                (replyRecvServerDeschedule tid recordedServer serverCore st) tid nextThread with
+                (replyRecvServerDeschedule tid recordedServer st) tid nextThread with
             | .error e => .error e
             | .ok st2 =>
                 .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer serverCore).1)
@@ -1033,19 +1053,28 @@ theorem replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_
         -- The deschedule runs first on this arm, so the donation's own
         -- hypotheses are discharged at the descheduled state.  Both transport
         -- because `removeRunnableOnCore` writes no object and no replenish queue.
-        have hSObj : (replyRecvServerDeschedule tid recordedServer serverCore st).objects.invExt := by
+        -- Three branches now, not two: the identity on a non-delegated reply,
+        -- the deschedule at the core `placedCoreOf?` resolves, and the identity
+        -- again when the server is placed nowhere.  Both facts transport across
+        -- all three because `removeRunnableOnCore` writes no object and no
+        -- replenish queue whatever core it is given.
+        have hSObj : (replyRecvServerDeschedule tid recordedServer st).objects.invExt := by
           unfold replyRecvServerDeschedule
           split
           · exact hObjInv
-          · exact hDeschedInv _ hObjInv
+          · split
+            · exact hDeschedInv _ hObjInv
+            · exact hObjInv
         have hSCons : replenishQueueAffinityConsistent_smp
-            (replyRecvServerDeschedule tid recordedServer serverCore st) := by
+            (replyRecvServerDeschedule tid recordedServer st) := by
           unfold replyRecvServerDeschedule
           split
           · exact hCons
-          · exact hDesched _ hCons
+          · split
+            · exact hDesched _ hCons
+            · exact hCons
         cases hDon : applyRendezvousCallDonation
-            (replyRecvServerDeschedule tid recordedServer serverCore st) tid nextThread with
+            (replyRecvServerDeschedule tid recordedServer st) tid nextThread with
         | error e => rw [hDon] at h; simp only [] at h; cases h
         | ok st2 =>
             rw [hDon] at h; simp only [] at h; cases h
@@ -1351,29 +1380,34 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
         -- donation's object-level hypotheses transport verbatim; what it does
         -- write is the run queue, which is the `descheduleFrame` the false arm
         -- below already discharges from `hServerIdleAllowed`.
-        have hObjEq : (replyRecvServerDeschedule tid recordedServer serverCore st).objects
+        have hObjEq : (replyRecvServerDeschedule tid recordedServer st).objects
             = st.objects := by
           unfold replyRecvServerDeschedule
           split
           · rfl
-          · exact removeRunnableOnCore_preserves_objects _ _ _
-        have hSObj : (replyRecvServerDeschedule tid recordedServer serverCore st).objects.invExt := by
+          · split
+            · exact removeRunnableOnCore_preserves_objects _ _ _
+            · rfl
+        have hSObj : (replyRecvServerDeschedule tid recordedServer st).objects.invExt := by
           rw [hObjEq]; exact hObjInv
         have hSInv : ipcInvariantFull
-            (replyRecvServerDeschedule tid recordedServer serverCore st) := by
+            (replyRecvServerDeschedule tid recordedServer st) := by
           unfold replyRecvServerDeschedule
           split
           · exact hInv
-          · refine ipcInvariantFull_of_descheduleFrame _ _ hInv
-              (removeRunnableOnCore_preserves_objects _ _ _)
-              (removeRunnableOnCore_passiveServerIdleFrame _ recordedServer serverCore ?_)
-            intro tcb hTcb
-            right
-            exact hServerIdleAllowed tcb
-              ((SystemState.getTcb?_eq_some_iff _ recordedServer tcb).mpr hTcb)
+          · split
+            · rename_i c _
+              refine ipcInvariantFull_of_descheduleFrame _ _ hInv
+                (removeRunnableOnCore_preserves_objects _ _ _)
+                (removeRunnableOnCore_passiveServerIdleFrame _ recordedServer c ?_)
+              intro tcb hTcb
+              right
+              exact hServerIdleAllowed tcb
+                ((SystemState.getTcb?_eq_some_iff _ recordedServer tcb).mpr hTcb)
+            · exact hInv
         have hSNotOwner : ∀ (tid' : SeLe4n.ThreadId) (tcb : TCB)
             (scId : SeLe4n.SchedContextId),
-            (replyRecvServerDeschedule tid recordedServer serverCore st).getTcb? tid'
+            (replyRecvServerDeschedule tid recordedServer st).getTcb? tid'
               = some tcb → tcb.schedContextBinding ≠ .donated scId tid := by
           intro tid' tcb scId hTcb
           refine hReceiverNotOwner tid' tcb scId ?_
@@ -1381,21 +1415,21 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
           rw [hObjEq] at hTcb
           exact hTcb
         cases hDon : applyRendezvousCallDonation
-            (replyRecvServerDeschedule tid recordedServer serverCore st) tid nextThread with
+            (replyRecvServerDeschedule tid recordedServer st) tid nextThread with
         | error e => rw [hDon] at h; simp only [] at h; cases h
         | ok st2 =>
             rw [hDon] at h; simp only [Except.ok.injEq, Prod.mk.injEq] at h
             -- The guard reads a TCB, and the deschedule writes no object, so the
             -- arm the donation takes is the arm the guard selected.
             have hCallD : rendezvousDequeuedCall
-                (replyRecvServerDeschedule tid recordedServer serverCore st) nextThread = true := by
+                (replyRecvServerDeschedule tid recordedServer st) nextThread = true := by
               unfold rendezvousDequeuedCall at hCall ⊢
               rw [lookupTcb_congr_getElem (s1 := st)
-                (s2 := replyRecvServerDeschedule tid recordedServer serverCore st)
+                (s2 := replyRecvServerDeschedule tid recordedServer st)
                 (fun k => by rw [hObjEq]) nextThread]
               exact hCall
             have hStep : applyReceiveRendezvousDonation
-                (replyRecvServerDeschedule tid recordedServer serverCore st)
+                (replyRecvServerDeschedule tid recordedServer st)
                 tid nextThread = .ok st2 := by
               unfold applyReceiveRendezvousDonation
               rw [hCallD]
