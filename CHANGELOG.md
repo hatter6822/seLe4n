@@ -1,3 +1,53 @@
+## v0.35.32 — Round 19: the heading's rendered title, and the two authorities measured against each other
+
+**PR #895 review round 19.**  One finding, and it is the **fail-closed**
+direction: `/// # **Safety**` renders as `<h2 id="safety">Safety</h2>` and
+clippy accepts it, while the gate matched the *raw markdown* and refused — so
+Tier 0 rejected a correctly documented `unsafe fn`.  A spelling is not the text:
+a heading's content is markup that renders to something else, and the property
+is about what a **caller reads**.
+
+**Round 18's question was asked and answered `no`.**  Before hand-writing
+anything: is an exact oracle in reach?  It is not — this gate runs at Tier 0,
+before any build, and no CommonMark implementation is available to it.  Saying
+so is the point; the reader is therefore *bounded* and refuses what it cannot
+render, which keeps the site in the unjustified set (a visible failure) rather
+than silently clearing it.
+
+**Both authorities were measured, and they disagree in both directions.**
+Fifteen inline forms compiled under this workspace's own rustdoc and clippy
+(1.94.1):
+
+* both accept — plain, `*x*`, `**x**`, `***x***`, `__x__`, `<b>x</b>`, and an
+  inline link carrying a destination;
+* rustdoc renders `Safety` and **clippy refuses** — `` `Safety` `` (a code span
+  is a `Code` event, not `Text`), `&#83;afety`, `**Saf**ety`, `Saf<!-- c -->ety`
+  (each splits the title across two `Text` events);
+* **clippy accepts** and rustdoc renders `[Safety]` — the shortcut link, on
+  which rustdoc *also* warns `broken_intra_doc_links`.
+
+Round 17 recorded that naming one tool does not finish the question, and took
+the rendering because clippy was then the lenient side.  **Here clippy is the
+strict side**, and taking the rendering alone would let Tier 0 pass a file the
+crate's own denied lint fails.  So neither tool is "the" authority and the rule
+is the **intersection**: accept only what both accept.  The gate's own output
+now says that, because a number that implies an authority it does not have is
+the defect this project keeps recording.
+
+`rendered_heading_title` computes the rendered text; `heading_publishes_safety`
+and `atx_heading_content` / `setext_publishes_safety` are the two call sites, so
+the ATX and Setext syntaxes cannot disagree about one question.  The raw-spelling
+matchers `MD_SAFETY_HEADING`, `MD_SAFETY_SETEXT_TEXT` and `SAFETY_HEADING_TITLE`
+are retired, and the sweep round 16 prescribes found nothing pinning them.
+
+Fifteen matrix rows enumerate the new **inline-markup axis** at every measured
+value — the seven both accept, the five they split on, and three controls that
+keep the widening from becoming "any emphasis anywhere passes".  Mutation-verified
+against the actual pre-fix behaviour: restoring the raw-spelling comparison fails
+exactly the eight acceptance cases.  Live tree unchanged at **136/136**.
+
+Refs: docs/REGISTERED_DEBT.md table C (the CommonMark residue this row named)
+
 ## v0.35.31 — Round 18: the return type parsed, the receiver resolved, and the identifier oracle
 
 **PR #895 review round 18.**  Three findings, all three in code this PR wrote,

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.31.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.32.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2143,6 +2143,44 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   object and binds no name.  The real count is zero, which is what makes the
   fail-closed fix free; had the false three been believed, the fix would have
   been weakened to accommodate them.
+
+  **And when two authorities disagree, the accepted set is their INTERSECTION —
+  and which one is strict can flip** (PR #895 review round 19).  Round 17 found
+  `clippy::missing_safety_doc` and rustdoc disagreeing on a multi-line Setext
+  heading and took the *rendering*, on the reasoning that the property is what a
+  caller reads.  Round 19 is the same axis one level in — **inline markup inside
+  the heading** — and it shows that reasoning was half the rule.  Measured on
+  fifteen forms under this workspace's own toolchain: they disagree in **both**
+  directions.  `` `Safety` ``, `&#83;afety`, `**Saf**ety` and `Saf<!-- c -->ety`
+  all render `Safety` and clippy **refuses** each (a code span is a `Code` event;
+  the other three split the title across two `Text` events); `[Safety]` clippy
+  accepts while rustdoc renders `[Safety]` and warns `broken_intra_doc_links`.
+  Following the rendering alone would let Tier 0 green a file the crate's own
+  `-D warnings` lint then rejects — so *neither tool is "the" authority*, and
+  naming one is not the end of the question even after you have measured it.
+  The gate accepts what both accept and says so in its own output.
+
+  The finding itself was the **fail-closed** direction — `/// # **Safety**`
+  refused, a correctly documented `unsafe fn` rejected — which round 6 recorded
+  as a defect in its own right and which this section otherwise spends its time
+  on the opposite of.  *A spelling is not the text*: a heading's content is
+  markup that renders to something else, which is *a spelling is not a read* one
+  artefact over, at the one place round 12's "build the artefact" had stopped
+  short — it built the markdown document and then matched the heading's raw
+  bytes.
+
+  **Two things about this round are worth more than the fix.**  First, round 18
+  narrowed the debt row to "Rust item parsing and the CommonMark residue", and
+  round 19 landed *inside the residue that row had just named*, one cut later.
+  That is the narrowing working as a measurement and **not** working as a
+  remedy: **predicting where the next finding will be is not preventing it**, so
+  a narrowed row is evidence the analysis is right and no evidence at all that
+  the gap is closing.  Second, round 18's own rule was applied *before* writing
+  anything — *is an exact oracle in reach?* — and the answer here was **no**: no
+  CommonMark implementation is available at Tier 0, which runs before any build.
+  Recording the `no` is what makes the bounded reader honest rather than lazy;
+  it refuses every inline form it cannot render, which keeps the site in the
+  violation set (a visible failure) rather than clearing it silently.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

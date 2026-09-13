@@ -723,16 +723,110 @@ def _opens_fence(delim: "re.Match[str]") -> bool:
 #:
 #: One alternation, composed by both the ATX and the Setext matcher, because a
 #: second spelling of one question is what this project keeps paying for.
-SAFETY_HEADING_TITLE = r"(?:Safety|SAFETY|Implementation safety|Implementation Safety)"
+SAFETY_HEADING_TITLES = frozenset(
+    {"Safety", "SAFETY", "Implementation safety", "Implementation Safety"})
 
-#: A `# Safety` ATX heading (CommonMark 4.2).  Up to three leading spaces; a
-#: fourth makes the line an indented code block instead.  The whitespace after
-#: the `#` run is required — `#Safety` renders as a paragraph (round 8).  The
-#: title must be the WHOLE heading text, so only CommonMark's optional closing
-#: hash sequence and trailing whitespace may follow it — both measured as
-#: accepted, and both leaving the rendered title exactly the word.
-MD_SAFETY_HEADING = re.compile(
-    r"^ {0,3}#{1,6}[ \t]+" + SAFETY_HEADING_TITLE + r"[ \t]*(?:#+[ \t]*)?$")
+#: An ATX heading (CommonMark 4.2) and its inline content.  Up to three leading
+#: spaces; a fourth makes the line an indented code block.  The whitespace after
+#: the `#` run is required -- `#Safety` renders as a paragraph (round 8).
+_MD_ATX_CONTENT = re.compile(r"^ {0,3}#{1,6}[ \t]+(?P<content>.*?)[ \t]*$")
+
+#: CommonMark's optional closing hash sequence, which must be preceded by
+#: whitespace and renders as nothing.
+_MD_CLOSING_HASHES = re.compile(r"[ \t]+#+$")
+
+#: An inline HTML tag.  Measured accepted by BOTH authorities: `<b>Safety</b>`
+#: renders `<h2 id="safety">Safety</h2>` and clippy sees one `Text` event.
+_MD_INLINE_HTML_TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
+
+#: A whole-content inline link.  `[Safety](url)` renders as its label and both
+#: authorities accept it; the *shortcut* form `[Safety]` does not appear here,
+#: deliberately -- see `rendered_heading_title`.
+_MD_WHOLE_LINK = re.compile(r"\A\[([^\[\]]*)\]\(\s*\S+(?:\s+\"[^\"]*\")?\s*\)\Z")
+
+#: Emphasis runs, longest first so `***x***` peels in one step.
+_MD_EMPHASIS_RUNS = ("***", "___", "**", "__", "*", "_")
+
+
+def rendered_heading_title(inline: str) -> "str | None":
+    """The text a heading's inline content RENDERS to, or `None` if undecidable.
+
+    **PR #895 review round 19.**  The verdict used to be a regex over the raw
+    markdown, so `/// # **Safety**` -- which rustdoc publishes as
+    `<h2 id="safety">Safety</h2>` and clippy accepts -- was refused, and Tier 0
+    rejected a correctly documented `unsafe fn`.  That is the fail-CLOSED
+    direction, which round 6 recorded as a defect in its own right.  A spelling
+    is not the text: the property is about what a caller reads, and a heading's
+    inline content is markup that renders to something else.
+
+    **The accepted set is the INTERSECTION of the two authorities, measured.**
+    Fifteen inline forms were compiled under this workspace's own rustdoc and
+    clippy (1.94.1), and they disagree in *both* directions on five of them:
+
+    * both accept -- plain, `*x*`, `**x**`, `***x***`, `__x__`, `<b>x</b>`,
+      `[x](url)`;
+    * rustdoc renders `Safety` and **clippy refuses** -- `` `Safety` `` (a code
+      span is a `Code` event, not `Text`), `&#83;afety`, `**Saf**ety` and
+      `Saf<!-- c -->ety` (each splits the title across two `Text` events);
+    * **clippy accepts** and rustdoc renders `[Safety]` -- the shortcut link
+      `[Safety]`, on which rustdoc *also* warns `broken_intra_doc_links`.
+
+    Round 17 recorded that naming one tool does not finish the question, and
+    took the rendering because clippy was then the lenient side.  Here clippy is
+    the **strict** side, and taking the rendering alone would let Tier 0 pass a
+    file the crate's own denied lint fails -- so neither tool is "the" authority
+    and the honest rule is the intersection: accept only what both accept.  It
+    is exactly the forms above, and it is what this reader computes.
+
+    **An exact oracle is not in reach here** (round 18's question, asked and
+    answered `no`): this gate runs at Tier 0, before any build, and no
+    CommonMark implementation is available to it.  So the reader is *bounded*
+    and refuses what it cannot render -- a code span, an entity, an escape, an
+    image, an autolink, an HTML comment, a partial emphasis run.  Refusing
+    keeps the site in the unjustified set, which is a visible Tier 0 failure
+    rather than a silent clearance: this scanner produces a set of violations,
+    so dropping an element is the fail-open direction (round 25).
+    """
+    text = inline.strip()
+    if "<!--" in text:
+        return None                      # an HTML comment splits clippy's text
+    without_tags = _MD_INLINE_HTML_TAG.sub("", text)
+    if "<" in without_tags or ">" in without_tags:
+        return None                      # an autolink, or a `<` this cannot place
+    text = without_tags.strip()
+    link = _MD_WHOLE_LINK.match(text)
+    if link is not None:
+        text = link.group(1).strip()
+    peeled = True
+    while peeled:
+        peeled = False
+        for run in _MD_EMPHASIS_RUNS:
+            if len(text) > 2 * len(run) and text.startswith(run) and text.endswith(run):
+                inner = text[len(run):-len(run)]
+                # A run that also occurs INSIDE is a partial emphasis such as
+                # `**Saf**ety`, which clippy refuses; leave it for the check
+                # below rather than peeling a pairing that is not the real one.
+                if run[0] not in inner:
+                    text = inner.strip()
+                    peeled = True
+                    break
+    if any(ch in text for ch in "`&\\*_[]!<>"):
+        return None                      # an inline form this reader cannot render
+    return text
+
+
+def heading_publishes_safety(inline: str) -> bool:
+    """Does a heading with this inline content publish a Safety section?"""
+    return rendered_heading_title(inline) in SAFETY_HEADING_TITLES
+
+
+def atx_heading_content(line: str) -> "str | None":
+    """The inline content of an ATX heading line, or `None` if it is not one."""
+    match = _MD_ATX_CONTENT.match(line)
+    if match is None:
+        return None
+    return _MD_CLOSING_HASHES.sub("", match.group("content")).strip()
+
 
 #: A Setext heading underline (CommonMark 4.3): a run of `=` or `-` alone on a
 #: line, under up to three spaces of indent.  `=` makes an h1 and `-` an h2, and
@@ -751,7 +845,20 @@ MD_SETEXT_UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
 #: `This is not a contract` / `Safety` / `===`, which rustdoc titles
 #: "This is not a contract Safety" and which is no Safety section at all
 #: (PR #895 review round 15).  Fail-OPEN, on a gate with an empty baseline.
-MD_SAFETY_SETEXT_TEXT = re.compile(r"^ {0,3}" + SAFETY_HEADING_TITLE + r"[ \t]*$")
+#: A Setext heading's content is its paragraph, whose leading indent (up to
+#: three spaces) is stripped before the inlines are read.
+_MD_SETEXT_CONTENT = re.compile(r"^ {0,3}(?P<content>.*?)[ \t]*$")
+
+
+def setext_publishes_safety(opening: str) -> bool:
+    """Does this one-line paragraph, under an underline, publish Safety?
+
+    Reads the RENDERED title exactly as the ATX side does (round 19), so
+    `**Safety**` over `======` is the section rustdoc publishes for it and
+    the two heading syntaxes cannot disagree about one question.
+    """
+    match = _MD_SETEXT_CONTENT.match(opening)
+    return match is not None and heading_publishes_safety(match.group("content"))
 
 #: A thematic break (CommonMark 4.1): three or more `-`, `*` or `_`, optionally
 #: separated by spaces or tabs, alone on a line.  It is a leaf block, so it
@@ -906,7 +1013,7 @@ def publishes_safety_heading(markdown: str) -> bool:
             # accepted title, whatever its first line says.  Round 15 carried the
             # first line because the verdict was a prefix match; with the title
             # required WHOLE (round 17) the paragraph must also be one line.
-            if opening_alone and MD_SAFETY_SETEXT_TEXT.match(opening):
+            if opening_alone and setext_publishes_safety(opening):
                 return True
             paragraph = False
             opening = None
@@ -920,7 +1027,8 @@ def publishes_safety_heading(markdown: str) -> bool:
             paragraph = False
             opening = None
             continue
-        if MD_SAFETY_HEADING.match(line):
+        atx = atx_heading_content(line)
+        if atx is not None and heading_publishes_safety(atx):
             return True
         if MD_ATX_HEADING.match(line):
             paragraph = False
@@ -2259,6 +2367,34 @@ _DOC_MARKDOWN_FORMS = {
     "setext-title-implementation": ("/// Implementation Safety\n/// ======", True),
     "setext-title-lower":        ("/// safety\n/// ======", False),
     "setext-title-requirements": ("/// Safety Requirements\n/// ======", False),
+    # --- the INLINE-MARKUP axis (PR #895 review round 19) -----------------
+    # A heading's content is markup that RENDERS to something else, so the
+    # verdict is the rendered title.  Every cell below was compiled under this
+    # workspace's own rustdoc and clippy (1.94.1); the expectation is the
+    # INTERSECTION, because the two disagree in both directions and Tier 0 must
+    # neither refuse what they document nor pass what their denied lint fails.
+    # Accepted by both — rustdoc renders `Safety`, clippy sees one Text event:
+    "inline-strong-star":        ("/// # **Safety**\n///\n/// contract", True),
+    "inline-strong-underscore":  ("/// # __Safety__\n///\n/// contract", True),
+    "inline-emphasis-star":      ("/// # *Safety*\n///\n/// contract", True),
+    "inline-emphasis-underscore": ("/// # _Safety_\n///\n/// contract", True),
+    "inline-emphasis-nested":    ("/// # ***Safety***\n///\n/// contract", True),
+    "inline-html-tag":           ("/// # <b>Safety</b>\n///\n/// contract", True),
+    "inline-link-with-dest":     ("/// # [Safety](https://e.invalid)\n///\n/// contract", True),
+    # rustdoc renders `Safety` and clippy REFUSES — accepting these would green
+    # Tier 0 over a file `-D warnings` then rejects:
+    "inline-code-span":          ("/// # `Safety`\n///\n/// contract", False),
+    "inline-entity":             ("/// # &#83;afety\n///\n/// contract", False),
+    "inline-partial-emphasis":   ("/// # **Saf**ety\n///\n/// contract", False),
+    "inline-html-comment-split": ("/// # Saf<!-- c -->ety\n///\n/// contract", False),
+    # clippy accepts and rustdoc renders `[Safety]` — a shortcut link, on which
+    # rustdoc itself warns `broken_intra_doc_links`:
+    "inline-link-shortcut":      ("/// # [Safety]\n///\n/// contract", False),
+    # ...and the controls that keep the widening from becoming "any emphasis
+    # anywhere passes": the title still has to be the whole rendered text.
+    "inline-strong-other-title": ("/// # **Danger**\n///\n/// contract", False),
+    "inline-strong-requirements": ("/// # **Safety Requirements**\n///\n/// contract", False),
+    "inline-setext-strong":      ("/// **Safety**\n/// ======", True),
 }
 
 #: **The site-name dimension.**  A declaration whose name this scanner cannot
@@ -2587,6 +2723,11 @@ def main(argv: list[str]) -> int:
           "(`clippy::missing_safety_doc`), denied at the `sele4n-hal` / `sele4n-abi` "
           "crate roots and run with `-D warnings` on both the host and "
           "`aarch64-unknown-none` lanes.")
+    print("      heading verdict: the INTERSECTION of the two, measured — they "
+          "disagree in both directions on inline markup (clippy refuses a code "
+          "span, an entity and a split title that rustdoc renders; rustdoc renders "
+          "`[Safety]` for a shortcut link clippy accepts), so neither alone is the "
+          "authority for what a caller reads.")
     print("      residue owned here alone: a non-`pub` `unsafe fn`, an `unsafe fn` "
           "declared inside an `extern` block, and the ARM ARM citation census — "
           "no lint requires a contract of a foreign declaration.")
