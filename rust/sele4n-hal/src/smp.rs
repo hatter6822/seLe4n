@@ -262,6 +262,13 @@ pub use crate::per_cpu::{
 // be exercised without the assembly artefact.
 #[cfg(not(test))]
 extern "C" {
+    /// # Safety
+    ///
+    /// This is not a Rust function: it is the assembly bring-up entry a
+    /// secondary PE begins executing at, with no stack, no TLS and no runtime.
+    /// It must never be *called* — only handed to PSCI `CPU_ON` as an entry
+    /// point — and its address is meaningful only on a PE that is not yet
+    /// running.
     pub fn secondary_entry();
 }
 
@@ -806,6 +813,13 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
         );
         if crate::lean_ready::lean_ready(core_idx) {
             extern "C" {
+                /// # Safety
+                ///
+                /// Sound once on each secondary PE, from its bring-up entry,
+                /// after that PE's MMU, GIC and timer init have completed and
+                /// its Lean runtime is initialised (`lean_ready` checked on
+                /// *this* PE).  `core_id` must equal the executing PE's
+                /// `TPIDR_EL1`, which the caller asserts.
                 fn lean_secondary_kernel_main(core_id: u64);
             }
             // SAFETY: `lean_secondary_kernel_main` is the Lean-emitted

@@ -1,3 +1,80 @@
+## v0.35.18 — a parser for a language you are not parsing
+
+Seven review findings, all verified against the code before acting, all in the
+two Python gates rounds 3 and 4 touched.  Four failed **open** and three failed
+**strict**.  Three of them were in code written hours earlier to fix round 4,
+whose findings were in code written to fix round 3 — and that is the entry, not
+the seven patches.
+
+**The cause.**  `scripts/lean_store_read_census.py` decides two *structural*
+questions — which declaration owns a line, and whether that declaration is
+executable — and decides both by reading text, because it runs in Tier 0 before
+any build.  Across three rounds it was taught seven legal Lean spellings it had
+not seen: a hypothesis binder, a `where` equation body, an ASCII arrow, a
+`structure` field default, a leading indentation, a defaulted binder, a
+per-field reset.  `CLAUDE.md` already names the class — *the set of valid
+spellings that defeat a regex is unbounded while the set a gate has seen is
+finite* — and the exit: **a Lean question goes to the Lean elaborator.**
+
+**The exit, taken at the tier that can take it.**  The elaborator answers both
+questions exactly: `findDeclarationRanges?` gives each declaration's source span
+(17203 kernel constants carry one) and the conclusion of its type says whether
+it is specification.  The classifier cannot ask, where it lives.  So
+`SeLe4n/Testing/StoreReadClassificationCensus.lean` (Tier 1) asks for it: the
+classifier emits its own per-line verdicts (`--attribution`), the module puts
+the same lines to the elaborator, and the build fails wherever they disagree.
+**2145 body lines reconcile.**
+
+Three things that shaped it, each found by running it rather than reading it.
+Its first run reported **271** disagreements, every one a *predicate* the
+classifier had filed correctly: `Meta.isProp` asks whether a declaration is a
+*proof*, and `def p : SystemState → Prop` is not one — the check was wrong, not
+the classifier, and `ReplyStackWriteCensus` had already settled that question as
+`isPredicate`.  Its second reported **5**, every one a hypothesis binder inside
+an executable declaration (`mkRetypeTarget`), which a declaration-level verdict
+structurally cannot adjudicate — so the classifier now reports the *region* and
+signature reads are counted, not judged.  And the enforced direction **cannot
+fire on this tree**: with `STORE_READ_CODE` at zero there is no misfiled
+executable read to find, so a mutation making every `def` body specification
+changes nothing.  It carries five synthetic witnesses for that reason, as
+`BootEntryContract` does.
+
+**The three Lean findings, at their causes.**  `DECL` was anchored at column
+zero, so an indented `def` after a `theorem` had its body attributed to the
+theorem and its read filed `SPEC` — the fail-open one.  `_signature_end` used a
+bare `search` under a comment promising "the first **top-level** `:=`", so a
+defaulted binder `(fallback : Nat := 0)` closed the signature early; it and the
+structure-default split now share **one** depth walk, which is what the previous
+cut should have done when it wrote the second.  And a field default no longer
+runs to the end of its declaration: it ends where the next field begins, which
+retires an over-approximation the last cut called harmless and which was
+fail-strict.  `STORE_READ_CODE=0` and `STORE_READ_SPEC=4637` are byte-identical
+across all three.
+
+**The four Rust findings.**  A raw-string ABI (`extern r"C"`) matched none of the
+**four** copies of the ABI pattern in one file — widening three left the fourth,
+so a valid declaration yielded no site while the keyword scan rejected the file;
+there is one named `ABI` now.  `#[doc = "…no # Safety section."]` satisfied the
+heading test, because `[^"]*` let arbitrary text precede the `#` while Markdown
+renders that as prose.  A line *starting* `#[` was treated as attribute-only, so
+`#[allow(unused)] let x = compute();` carried a `// SAFETY:` comment across a
+real statement — against the run's own stated contract that nothing may execute
+between a justification and the operation it justifies.
+
+**And the domain finding, which was the largest.**  A foreign item carries no
+`unsafe` token of its own, so `extern "C" { fn … }` declarations were examined
+by **nothing** — not the count, not the inventory, not the baseline.  Ten live
+Lean upcalls (`lean_kernel_main`, `lean_handle_fault`, `secondary_entry`, …)
+each declared a caller-facing obligation that appeared in a `//` comment for the
+reviewer and nowhere a caller reads.  Each now publishes a `# Safety` section
+stating its real precondition — the readiness gate, the EL0 origin, the
+once-only boot install.  The gate reports **136 of 136** with its baseline still
+**empty**, which is a property this project states rather than a floor it raises.
+
+Every fix is mutation-verified in both directions on the live tree.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md (WS-RM, the write census)
+
 ## v0.35.17 — the scanner's default branch, and a stated frontier nothing printed
 
 Seven corrections: one found by running a gate and reading its output, six from

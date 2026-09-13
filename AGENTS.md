@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.17.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.18.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1328,9 +1328,12 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   omission.  A missing metric read as `0`, so **deleting a measurement satisfied
   an enforced zero** (`ak7_cascade_check_monotonic.sh`: `SORRY_COUNT`,
   `AXIOM_COUNT` and `STORE_READ_CODE` all rode on it); `structure`/`class` bodies
-  were spec whole, so an executable field **default** filed as specification; a
-  result-type parser that knew only `→` rejected the ASCII `->` that Lean equally
-  accepts; inner rustdoc (`//!`, `/*!`, `#![doc]`) documents the *enclosing*
+  were spec whole, so an executable field **default** filed as specification (the
+  remedy carried an over-approximation — a default ran to the end of its
+  declaration — which that cut called harmless and `v0.35.18` had to retire: it
+  filed a later field's *type* as executable, which is fail-strict, not
+  harmless); a result-type parser that knew only `→` rejected the ASCII `->`
+  that Lean equally accepts; inner rustdoc (`//!`, `/*!`, `#![doc]`) documents the *enclosing*
   module and justified the function below it; and `r#unsafe` — an identifier, not
   the keyword — failed a file outright.
 
@@ -1341,6 +1344,43 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   by a name test — so `isGeneratedComponent` was deleted rather than narrowed a
   third time.  **Where a resemblance keeps needing another exception, the
   question belongs to something that knows the answer.**
+
+  **And a parser for a language you are not parsing is a list of the spellings
+  you have seen** (PR #895 review round 5, `v0.35.18`).  Round 5 found seven more,
+  three of them in code written hours earlier to fix round 4, whose findings were
+  in code written to fix round 3.  The through-line is not any one of them: it is
+  that `scripts/lean_store_read_census.py` decides two **structural** questions —
+  which declaration owns a line, and whether that declaration is executable — by
+  reading text.  Over three rounds it was taught seven legal Lean spellings it had
+  not seen (a hypothesis binder, a `where` equation body, an ASCII arrow, a
+  `structure` field default, a leading indentation, a defaulted binder, a
+  per-field reset), which is this file's own regex rule arriving at a gate written
+  after it.
+
+  The exit is round 17's — *a Lean question goes to the Lean elaborator* — and the
+  obstacle is that the classifier runs in **Tier 0**, before any build, because
+  the `ZERO_METRICS` entry it produces is consumed there.  So the exit is taken at
+  the tier that can take it: `SeLe4n/Testing/StoreReadClassificationCensus.lean`
+  (Tier 1) asks `findDeclarationRanges?` which declaration owns each line and the
+  conclusion of its type whether that declaration is specification, and fails the
+  build wherever the classifier disagrees.  **Where the authoritative answer is
+  out of reach at the tier that needs it, derive it at a tier that can and
+  reconcile** — the *derive the set, keep the list as a pin* rule, one tier apart.
+
+  Three things that cut records, each found by running the reconciliation rather
+  than reading it.  Its first run reported **271** disagreements and every one was
+  the *check* being wrong: `Meta.isProp` asks whether a declaration is a **proof**,
+  and a predicate (`def p : SystemState → Prop`) is not one — a question
+  `ReplyStackWriteCensus` had already answered as `isPredicate`, so asking it a
+  second way was the one-question-two-answers shape inside the remedy for it.  Its
+  second reported **5**, all hypothesis binders inside executable declarations,
+  which a declaration-level verdict structurally *cannot* adjudicate — so the
+  classifier reports the region and signature reads are counted, not judged.  And
+  the enforced direction **cannot fire while `STORE_READ_CODE` is zero**: there is
+  no misfiled executable read to find, so it carries synthetic witnesses, as
+  `BootEntryContract` does for the same reason.  **A check that cannot fire on the
+  current tree and carries no witness is indistinguishable from one that is
+  wrong.**
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor
@@ -3766,10 +3806,21 @@ code may assume:
   evidence.  The live gate asks each site kind its own question — a `// SAFETY:`
   comment in the contiguous run above an `unsafe` **block**, a `# Safety` doc
   section on an `unsafe fn` **declaration**, which are Rust's two idioms and not
-  interchangeable — and the tree is at **126 of 126 justified** (114 blocks and
-  12 declarations, both counts emitted by the gate rather than written down
+  interchangeable — and the tree is at **136 of 136 justified** (114 blocks and
+  22 declarations, both counts emitted by the gate rather than written down
   here), so its baseline is empty and any new unjustified site fails outright
   rather than raising a floor.
+
+  **The declarations became 22 at `v0.35.18`, and the ten are a domain the gate
+  never examined** (PR #895 review round 5).  A foreign item carries no `unsafe`
+  token of its own — the block header does, and only in edition 2024 — so every
+  `extern "C" { fn … }` in this tree declared a caller-facing unsafe obligation
+  that no count, no inventory and no baseline could see.  Ten are live Lean
+  upcalls, and each one's precondition existed only as a `//` comment for the
+  reviewer: a caller of `lean_handle_fault` had no rustdoc statement that the
+  call is sound only on a ready core and only for an EL0-origin exception.  Each
+  publishes a `# Safety` section now, so the empty baseline survives; a new
+  foreign declaration must carry one on the day it is written.
 
   **The count was 125 until `v0.35.15`, and the missing site was a domain
   defect** (PR #895 review round 3).  The census globbed `*/src/**/*.rs`, which

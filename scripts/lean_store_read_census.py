@@ -101,8 +101,14 @@ READ = re.compile(
 # the recogniser is an improvement to a diagnostic, not the closing of a hole
 # that was claimed shut.
 
+# **A command may be indented.**  Lean permits leading whitespace before a
+# declaration, and anchoring the pattern at column zero meant an indented `def`
+# was not recognised at all: its body stayed attributed to the *previous*
+# declaration, so a raw store read in an indented transition following a
+# `theorem` was emitted as `SPEC` and walked around the enforced
+# `STORE_READ_CODE = 0` (PR #895 review round 5).
 DECL = re.compile(
-    r"^(?:@\[[^\]]*\]\s*)?"
+    r"^[ \t]*(?:@\[[^\]]*\]\s*)?"
     r"(?:private\s+|protected\s+|partial\s+|noncomputable\s+|nonrec\s+|scoped\s+|unsafe\s+)*"
     r"(theorem|lemma|def|abbrev|instance|example|structure|inductive|class)\b\s+([^\s:({\[]*)"
 )
@@ -160,19 +166,25 @@ def _result_type(head: str) -> str:
     return ""
 
 
-def _top_level_assign(line: str, depth: int = 0):
-    """`(index of the depth-zero `:=` on this line or None, depth after it)`.
+ASSIGN = re.compile(r":=")
 
-    A field's `optParam` default lives inside its binder (`(n : Nat := 0)`) and
-    a record literal's fields inside its braces, so both sit at depth > 0; only
-    a depth-zero `:=` opens the field's own default value.
 
-    **Depth carries across lines.**  Resetting it per line reads the second line
-    of a multi-line record literal as though its brace had never been opened, so
-    `caps := …` inside a field's TYPE looked like a default opening — which is
-    this file's own "a nested construct is not a sibling" inside the fix for a
-    different defect.  The caller threads the returned depth.
+def _depth_zero_scan(line: str, pattern: "re.Pattern[str]", depth: int = 0):
+    """`(first depth-zero match of `pattern` on this line or None, depth after)`.
+
+    **One walk, every top-level-token question.**  A binder's `optParam`
+    (`(n : Nat := 0)`), a record literal's fields and a defaulted argument all
+    sit at depth > 0, so only a depth-zero match is the declaration's own
+    terminator or the field's own default.
+
+    **Depth carries across lines**, and the caller threads it back in: resetting
+    per line reads a continuation as though its bracket had never been opened —
+    this file's own *a nested construct is not a sibling*, which it paid for
+    once in the structure split and once, three functions away, in the signature
+    terminator that kept using a bare `search` under a comment promising
+    "top-level" (PR #895 review rounds 4 and 5).
     """
+    found = None
     i = 0
     while i < len(line):
         ch = line[i]
@@ -180,10 +192,18 @@ def _top_level_assign(line: str, depth: int = 0):
             depth += 1
         elif ch in _CLOSERS:
             depth -= 1
-        elif depth == 0 and line.startswith(":=", i):
-            return i, depth
+        elif found is None and depth == 0:
+            m = pattern.match(line, i)
+            if m is not None:
+                found = m
         i += 1
-    return None, depth
+    return found, depth
+
+
+def _top_level_assign(line: str, depth: int = 0):
+    """The depth-zero `:=` that opens a structure field's default value."""
+    m, depth = _depth_zero_scan(line, ASSIGN, depth)
+    return (m.start() if m is not None else None), depth
 
 
 def _returns_prop(head: str) -> bool:
@@ -235,19 +255,32 @@ def code_view(root: Path) -> Path:
 SIG_END = re.compile(r":=|\bwhere\b")
 
 
-def _signature_end(line: str):
-    """The match that ends a signature on this line, or `None`."""
-    return SIG_END.search(line)
+def _signature_end(line: str, depth: int = 0):
+    """`(the match ending a signature on this line or None, depth after)`.
+
+    A defaulted binder (`(fallback : Nat := 0)`) is **not** a terminator: its
+    `:=` is inside the binder's own parentheses.  Reading it as one closed the
+    signature early, so a later hypothesis binder carrying a store read was
+    emitted as body — `CODE` — and the zero floor rejected valid specification
+    input (PR #895 review round 5).
+    """
+    return _depth_zero_scan(line, SIG_END, depth)
 
 
 def _signature_head(signature: str) -> str:
     """The signature up to its terminator — what the result type is read from."""
-    m = SIG_END.search(signature)
-    return signature[: m.start()] if m else signature
+    m, _ = _depth_zero_scan(signature, SIG_END)
+    return signature[: m.start()] if m is not None else signature
 
 
 def classify(path: Path):
-    """Yield (declaration, is_prop, occurrences) for each read-bearing line.
+    """Yield (declaration, is_prop, occurrences, line, region) per read-bearing line.
+
+    `region` is `"sig"` for a read in the declaration's signature — a hypothesis
+    binder or the result type, which is a proposition whatever the declaration
+    is — and `"body"` otherwise.  The Tier 1 reconciliation needs the
+    distinction: the elaborator's verdict is per *declaration*, so it cannot
+    adjudicate a proposition sitting inside an executable declaration's binder.
 
     A read in a declaration's SIGNATURE -- anywhere before the top-level `:=`,
     which is where its hypothesis binders and its result type live -- is spec
@@ -260,13 +293,13 @@ def classify(path: Path):
     """
     lines = path.read_text().splitlines()
     decl, kind, signature, sig_open = "<file scope>", "<none>", "", False
-    in_default, body_depth = False, 0
-    for line in lines:
+    in_default, body_depth, sig_depth, field_col = False, 0, 0, None
+    for lineno, line in enumerate(lines, start=1):
         m = DECL.match(line)
         if m:
             kind, decl = m.group(1), m.group(2) or "<anonymous>"
             signature, sig_open = line, True
-            in_default, body_depth = False, 0
+            in_default, body_depth, sig_depth, field_col = False, 0, 0, None
         sig_part, body_part = line, ""
         if sig_open:
             # **Two ways a signature ends, because Lean has two.**  `:=` opens a
@@ -277,7 +310,7 @@ def classify(path: Path):
             # was emitted as *signature* — and the signature bucket is SPEC,
             # which is diagnostic.  A raw executable read therefore passed an
             # enforced zero by being written in a legal declaration form.
-            end = _signature_end(line)
+            end, sig_depth = _signature_end(line, sig_depth)
             if end is not None:
                 sig_part, body_part = line[:end.start()], line[end.end():]
                 sig_open = False
@@ -303,6 +336,21 @@ def classify(path: Path):
         # proof and so is every default, so it is spec whole and the split below
         # does not apply to it.
         if kind in FIELD_KINDS and body_part and not _returns_prop(head):
+            # **A default ends where the next field begins.**  Carrying
+            # `in_default` to the end of the declaration classified every later
+            # field TYPE as executable, so `tag : Nat := 0` followed by a
+            # proposition field made that proposition `CODE` and the zero floor
+            # rejected valid specification text (PR #895 review round 5).  A
+            # structure's fields share an indentation; a default's continuation
+            # lines are indented further, so a body line at or left of the field
+            # column is the next field.
+            stripped = body_part.strip()
+            if stripped:
+                col = len(body_part) - len(body_part.lstrip())
+                if field_col is None:
+                    field_col = col
+                elif col <= field_col:
+                    in_default, body_depth = False, 0
             if in_default:
                 body_spec, body_code = "", body_part
             else:
@@ -316,11 +364,11 @@ def classify(path: Path):
         n_spec = len(READ.findall(body_spec))
         n_code = len(READ.findall(body_code))
         if n_sig:
-            yield decl, True, n_sig          # a binder or result type: a proposition
+            yield decl, True, n_sig, lineno, "sig"   # a binder or result type
         if n_spec:
-            yield decl, True, n_spec
+            yield decl, True, n_spec, lineno, "body"
         if n_code:
-            yield decl, False, n_code
+            yield decl, False, n_code, lineno, "body"
 
 
 # The definitions whose body IS the raw read, which is what makes each of them
@@ -375,21 +423,25 @@ def accessor_registry_violations(code: dict, exempt_hits: dict) -> list[str]:
 
 
 def census(view: Path):
-    """(executable reads, specification reads, registry hits).
+    """(executable reads, specification reads, registry hits, attribution rows).
 
     The third is what the registry is reconciled against, so an entry that stops
     naming a raw read is reported rather than silently kept.
     """
-    code, spec, exempt_hits = {}, {}, {}
+    code, spec, exempt_hits, attribution = {}, {}, {}, []
     for f in sorted(view.rglob("SeLe4n/**/*.lean")):
         rel = str(f.relative_to(view))
-        for decl, is_prop, n in classify(f):
+        for decl, is_prop, n, lineno, region in classify(f):
+            # Emitted for every read-bearing line, exempt or not: the
+            # reconciliation asks whether the CLASSIFIER agreed with the
+            # elaborator, and an exempted accessor is classified like any other.
+            attribution.append((rel, lineno, decl, is_prop, region))
             if not is_prop and (rel, decl) in ACCESSOR_BODIES:
                 exempt_hits[(rel, decl)] = exempt_hits.get((rel, decl), 0) + n
                 continue
             bucket = spec if is_prop else code
             bucket[(rel, decl)] = bucket.get((rel, decl), 0) + n
-    return code, spec, exempt_hits
+    return code, spec, exempt_hits, attribution
 
 
 # ---------------------------------------------------------------------------
@@ -458,6 +510,34 @@ structure Bundle (st : SystemState) (oid : ObjId) : Prop where
 def holds : SystemState -> ObjId -> Prop := fun st oid =>
   st.objects[oid]? = none
 """, {}, {("f.lean", "holds"): 1}),
+    # AN INDENTED DECLARATION.  Lean allows leading whitespace before a command,
+    # and an anchored pattern does not see one — so the read below stayed
+    # attributed to the *theorem* above it and filed SPEC.  Token-preserving
+    # against `code_read`: the same declaration, indented, after a `theorem`.
+    "indented_decl_after_theorem": ("""
+theorem frame (st : SystemState) : True := trivial
+
+  def step (st : SystemState) : SystemState :=
+    match st.objects[oid]? with
+    | _ => st
+""", {("f.lean", "step"): 1}, {}),
+    # A DEFAULTED BINDER is not a signature terminator: its `:=` is inside the
+    # binder's own parentheses.  Reading it as one closed the signature early and
+    # filed the later hypothesis binder's read as executable.
+    "defaulted_binder_is_not_a_terminator": ("""
+def mk (fallback : Nat := 0) (st : SystemState)
+    (hMeta : ∀ obj, st.objects[target]? = some obj → True) : Token :=
+  Token.mk
+""", {}, {("f.lean", "mk"): 1}),
+    # A DEFAULT ENDS WHERE THE NEXT FIELD BEGINS.  Carrying the default state to
+    # the end of the declaration made every later field TYPE executable.
+    # Token-preserving against `structure_field_type_is_spec`: the same two
+    # fields, with the defaulted one written first.
+    "structure_default_then_field_type": ("""
+structure W (st : SystemState) (oid : ObjId) where
+  tag : Nat := 0
+  present : st.objects[oid]? = none
+""", {}, {("f.lean", "W"): 1}),
     # Two reads on ONE line count twice: the census counts occurrences.
     "two_per_line": ("""
 def both (st st' : SystemState) : Bool :=
@@ -579,7 +659,7 @@ def self_test() -> int:
             # part of what this pins, not only the classification.
             (root / "f.lean").write_text(lean_code_view.strip(src))
             got_code, got_spec = {}, {}
-            for decl, is_prop, n in classify(root / "f.lean"):
+            for decl, is_prop, n, _line, _region in classify(root / "f.lean"):
                 key = ("f.lean", decl)
                 (got_spec if is_prop else got_code)[key] = \
                     (got_spec if is_prop else got_code).get(key, 0) + n
@@ -601,12 +681,18 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rows", action="store_true")
     ap.add_argument("--totals", action="store_true")
+    # The per-line attribution the Tier 1 reconciliation consumes.  It is the
+    # classifier's OWN answer to the two structural questions — which
+    # declaration owns this line, and is that declaration executable — stated
+    # per line so `SeLe4n/Testing/StoreReadClassificationCensus.lean` can put
+    # both to the elaborator, which cannot miss a Lean spelling.
+    ap.add_argument("--attribution", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     if args.self_test:
         return self_test()
     view = code_view(REPO)
-    code, spec, exempt_hits = census(view)
+    code, spec, exempt_hits, attribution = census(view)
     # Reconciled in EVERY mode, `--rows` included: that is the mode the Tier 0
     # baseline calls, so skipping it there would leave the registry checkable
     # only by a command nothing runs — a gate with a silent default branch,
@@ -616,6 +702,10 @@ def main() -> int:
         for problem in stale:
             print(f"FAIL: {problem}", file=sys.stderr)
         return 1
+    if args.attribution:
+        for rel, lineno, decl, is_prop, region in attribution:
+            print(f"STORE_READ_ATTRIB={rel}|{lineno}|{decl}|{1 if is_prop else 0}|{region}")
+        return 0
     if args.rows:
         for (f, d), n in sorted(code.items()):
             print(f"STORE_READ_CODE_SITE={f}|{d}|{n}")

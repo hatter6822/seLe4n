@@ -342,6 +342,11 @@ MACHINERY_PINS = {
     # reconciliation and the per-site discipline check; it mints no
     # declaration.
     ("SeLe4n/Testing/ReplyStackWriteCensus.lean", "run_cmd"): 1,
+    # The store-read classifier's Tier 1 reconciliation: it compares the text
+    # classifier's per-line verdicts against `findDeclarationRanges?` and the
+    # conclusion of each declaration's type, and throws on disagreement.  It
+    # mints no declaration -- the `run_cmd` reads the environment and reports.
+    ("SeLe4n/Testing/StoreReadClassificationCensus.lean", "run_cmd"): 1,
 }
 
 # The declaration modifiers and top-level commands this gate's grammars

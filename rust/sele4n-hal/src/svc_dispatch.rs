@@ -760,6 +760,13 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
 // defined or called outside a `hw_target` region.
 #[cfg(feature = "hw_target")]
 extern "C" {
+    /// # Safety
+    ///
+    /// Sound only on a core whose Lean runtime is initialised — the SVC seam
+    /// checks `lean_ready` on the executing PE before every outcome, including
+    /// its prefilters — and only for an `SVC` taken from EL0.  The fifteen
+    /// words must be the live trap frame's window; the outcome tag the call
+    /// returns decides whether the frame may be `eret`ed.
     fn lean_syscall_dispatch_cross_core(
         syscall_id: u32,
         msg_info: u64,

@@ -1521,6 +1521,13 @@ pub extern "C" fn cache_ic_maintenance(op_tag: u32, addr: u64, size: u64) {
 // symbol declared, defined or called outside a `hw_target` region.
 #[cfg(feature = "hw_target")]
 extern "C" {
+    /// # Safety
+    ///
+    /// A C-callable kernel entry: sound from EL1 kernel context on a core whose
+    /// Lean runtime is initialised.  A not-ready core is answered
+    /// `KernelError::IllegalState` rather than trapped, so the caller must read
+    /// the returned discriminant.  `tid` is a raw thread id and is refused if it
+    /// names a reserved idle thread.
     fn suspend_thread_cross_core(tid: u64) -> u32;
 }
 

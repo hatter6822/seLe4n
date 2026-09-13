@@ -98,6 +98,16 @@ run_check "BUILD" lake build SeLe4n.Testing.LockFootprintBoundCensus
 # the module IS the check.
 run_check "BUILD" lake build SeLe4n.Testing.ReplyStackWriteCensus
 
+# PR #895 review round 5: `scripts/lean_store_read_census.py` decides which
+# declaration owns a line and whether that declaration is executable -- two
+# structural questions it answers by reading text, because it runs in Tier 0
+# before any build.  Three review rounds taught it seven legal Lean spellings it
+# had not seen; this module puts both questions to the elaborator, which cannot
+# miss one, and fails the build wherever the two disagree.  It is the
+# `a Lean question goes to the Lean elaborator` rule applied at the tier that
+# can, since the classifier's own tier cannot.
+run_check "BUILD" lake build SeLe4n.Testing.StoreReadClassificationCensus
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each

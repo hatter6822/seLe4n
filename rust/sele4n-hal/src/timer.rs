@@ -445,6 +445,13 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
             // after the per-core hardware init has completed AND this core's
             // Lean runtime is initialized (the `lean_ready` gate just checked).
             extern "C" {
+                /// # Safety
+                ///
+                /// Sound from EL1 kernel context on a core that has completed
+                /// per-core hardware init and whose Lean runtime is initialised
+                /// (`lean_ready` checked on *this* PE).  `core_id` must be the
+                /// executing PE's own id: the tick charges that core's budget
+                /// and re-buckets its run queue.
                 fn lean_per_core_timer_tick(core_id: u64);
             }
             // WS-SM SM5.I: the tick commits kernel state through the same

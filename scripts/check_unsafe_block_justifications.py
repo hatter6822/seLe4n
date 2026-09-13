@@ -76,9 +76,16 @@ BASELINE = REPO / "scripts" / "unsafe_justification_baseline.json"
 # **type**, which `tests::register_signature_pinned` uses to pin an ABI.  A type
 # performs nothing, so demanding a justification of one is a scanner matching a
 # keyword rather than asking about an operation.
+# **The ABI is a string literal, and Rust's string literals include raw ones.**
+# `extern r"C" fn f()` compiles; the four patterns below each carried their own
+# copy of `"[^"]*"`, so widening three of them left the fourth behind and a valid
+# declaration yielded no site while the keyword scan rejected the file
+# (PR #895 review round 5).  One question, one spelling, four readers.
+ABI = r'(?:r#*\"[^\"]*\"|\"[^\"]*\")'
+
 UNSAFE_SITE = re.compile(
     r"\bunsafe\s*\{"                                         # a block
-    r"|\bunsafe\s+(?:extern\s+\"[^\"]*\"\s+)?fn\s+(?:r#)?[A-Za-z_]"  # a declaration
+    r"|\bunsafe\s+(?:extern\s+" + ABI + r"\s+)?fn\s+(?:r#)?[A-Za-z_]"  # a declaration
 )
 
 # **Every form of the keyword this scanner knows, and nothing else passes.**
@@ -97,19 +104,19 @@ UNSAFE_SITE = re.compile(
 # less.
 UNSAFE_KNOWN_FORMS = [
     (re.compile(r"\bunsafe\s*\{"), "block"),
-    (re.compile(r"\bunsafe\s+(?:extern\s+\"[^\"]*\"\s+)?fn\s+(?:r#)?[A-Za-z_]"),
+    (re.compile(r"\bunsafe\s+(?:extern\s+" + ABI + r"\s+)?fn\s+(?:r#)?[A-Za-z_]"),
      "declaration"),
     # `unsafe impl` / `unsafe trait` are not operations: they assert a trait
     # contract, which carries its own review story and no per-site obligation.
     (re.compile(r"\bunsafe\s+(?:impl|trait)\b"), "trait contract"),
     # Rust 2024's `unsafe extern { … }` block header.  The items inside are
     # declarations and are matched as such; the header itself performs nothing.
-    (re.compile(r"\bunsafe\s+extern\s*(?:\"[^\"]*\"\s*)?\{"), "extern block header"),
+    (re.compile(r"\bunsafe\s+extern\s*(?:" + ABI + r"\s*)?\{"), "extern block header"),
     # A function-pointer TYPE — `unsafe fn(u8, T) -> R`, which
     # `tests::register_signature_pinned` uses to pin an ABI.  A type performs
     # nothing, so demanding a justification of one is a scanner matching a
     # keyword rather than asking about an operation.
-    (re.compile(r"\bunsafe\s+(?:extern\s+\"[^\"]*\"\s+)?fn\s*\("), "function-pointer type"),
+    (re.compile(r"\bunsafe\s+(?:extern\s+" + ABI + r"\s+)?fn\s*\("), "function-pointer type"),
 ]
 
 # **A raw identifier is not the keyword.**  `r#unsafe` names an ordinary item
@@ -171,8 +178,15 @@ SAFETY_BLOCK = re.compile(r"//[/!]?\s*SAFETY\b|/\*+\s*SAFETY\b", re.IGNORECASE)
 # accepted -- its interior line matches the doc-block body pattern like any
 # other.  Both are now refused for the reason, not by accident.
 SAFETY_DECL_LINE = re.compile(r"^\s*///(?!/)\s*#+\s*Safety\b", re.IGNORECASE | re.MULTILINE)
-SAFETY_DECL_ATTR = re.compile(r"#\[\s*doc\s*=\s*(?:r#*)?\"[^\"]*#+\s*Safety\b",
-                              re.IGNORECASE)
+# **A heading begins a line.**  `[^"]*` let arbitrary text precede the `#`, so
+# `#[doc = "This function has no # Safety section."]` satisfied the pattern while
+# Markdown renders that fragment as ordinary prose — an `unsafe fn` passed
+# publishing no caller-facing section at all (PR #895 review round 5).  The `#`
+# must open the attribute's value or follow an escaped newline, which is how a
+# heading is spelled in a single-line doc attribute.
+SAFETY_DECL_ATTR = re.compile(
+    r"#\[\s*doc\s*=\s*(?:r#*)?\"(?:[^\"]*\\n)?\s*#+\s*Safety\b",
+    re.IGNORECASE)
 DOC_BLOCK_OPEN = re.compile(r"/\*\*(?![*/])")
 DOC_BLOCK_LINE = re.compile(r"^\s*\*?\s*#+\s*Safety\b", re.IGNORECASE | re.MULTILINE)
 
@@ -215,6 +229,40 @@ def justified(run: str, is_declaration: bool) -> bool:
     return bool(SAFETY_BLOCK.search(run))
 
 
+def is_attribute_only(code_line: str) -> bool:
+    """Is this code-view line *nothing but* attributes?
+
+    **A line that starts as an attribute is not a line that is one.**  Testing
+    `startswith("#[")` let `#[allow(unused)] let x = compute();` extend a
+    justification run, so a `// SAFETY:` comment carried across a real statement
+    and marked the block below it justified (PR #895 review round 5) — while the
+    run's own contract, written directly beneath it, is that *nothing may execute
+    between the justification and the operation it justifies*.
+
+    The attribute's extent is bracket-matched rather than assumed: an attribute
+    left open at end of line continues onto the next, and the rest of the line is
+    inside it, so the line carries no code.
+    """
+    rest = code_line.strip()
+    while rest.startswith("#[") or rest.startswith("#!["):
+        open_at = rest.index("[")
+        depth = 0
+        close_at = None
+        for i in range(open_at, len(rest)):
+            if rest[i] == "[":
+                depth += 1
+            elif rest[i] == "]":
+                depth -= 1
+                if depth == 0:
+                    close_at = i
+                    break
+        if close_at is None:
+            # Unterminated on this line: the remainder is attribute interior.
+            return True
+        rest = rest[close_at + 1:].strip()
+    return rest == ""
+
+
 def justification_run(raw: str, view: str, at: int) -> str:
     """The contiguous comment-and-attribute run immediately above `at`.
 
@@ -236,7 +284,8 @@ def justification_run(raw: str, view: str, at: int) -> str:
         stripped_code = view_line.strip()
         stripped_raw = raw_line.strip()
         is_comment_only = stripped_raw != "" and stripped_code == ""
-        is_attribute = stripped_code.startswith("#[") or stripped_code.startswith("#![")
+        is_attribute = ((stripped_code.startswith("#[") or stripped_code.startswith("#!["))
+                        and is_attribute_only(stripped_code))
         # A blank line is TRANSPARENT: a doc block separated from its attribute
         # list by one is ordinary formatting, and treating it as a break would
         # refuse the tree's own convention.  What breaks the run is a line
@@ -252,7 +301,61 @@ def justification_run(raw: str, view: str, at: int) -> str:
 
 
 UNSAFE_FN_NAME = re.compile(
-    r"\bunsafe\s+(?:extern\s+\"[^\"]*\"\s+)?fn\s+(r#)?([A-Za-z_][A-Za-z0-9_]*)")
+    r"\bunsafe\s+(?:extern\s+" + ABI + r"\s+)?fn\s+(r#)?([A-Za-z_][A-Za-z0-9_]*)")
+
+
+#: An `extern` block header, with or without the Rust-2024 `unsafe` and with or
+#: without an explicit ABI.  Every foreign function it declares is unsafe to
+#: call: in edition 2021 by the nature of a foreign item, and in edition 2024
+#: unless the item is written `safe fn`.
+EXTERN_BLOCK = re.compile(r"\b(?:unsafe\s+)?extern\s*(?:" + ABI + r"\s*)?\{")
+#: A foreign function item inside such a block, and the `safe` opt-out.
+FOREIGN_FN = re.compile(r"(\bsafe\s+)?\bfn\s+(?:r#)?([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+
+
+def foreign_fn_items(view: str):
+    """Yield `(offset, name)` for every non-`safe` foreign function declared.
+
+    **A domain the gate never examined.**  `UNSAFE_SITE` looks for the `unsafe`
+    keyword, and a foreign item carries none — the block header does, and only in
+    edition 2024.  So every `extern "C" { fn … }` in the tree declared a
+    caller-facing unsafe obligation that no count, no inventory and no baseline
+    could see (PR #895 review round 5).  That is this project's *a recognised set
+    is not a derived set* on the one gate written after the rule: the items are
+    never inspected, so the empty baseline stays green over them.
+
+    The block's extent is brace-matched rather than line-scanned, so a nested
+    brace in a signature cannot end it early.
+    """
+    for m in EXTERN_BLOCK.finditer(view):
+        open_at = view.index("{", m.start())
+        depth = 0
+        end = None
+        for i in range(open_at, len(view)):
+            if view[i] == "{":
+                depth += 1
+            elif view[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        if end is None:
+            # An unterminated block is input this scanner cannot read.  It
+            # produces REQUIREMENTS, so it fails closed by refusing rather than
+            # by skipping: a requirement dropped is a check nobody runs.
+            raise UnreadableExternBlock(m.start())
+        for f in FOREIGN_FN.finditer(view, open_at, end):
+            if f.group(1):          # `safe fn` — the edition-2024 opt-out
+                continue
+            yield (f.start(2), f.group(2))
+
+
+class UnreadableExternBlock(Exception):
+    """An `extern` block whose extent this scanner cannot determine."""
+
+    def __init__(self, offset: int) -> None:
+        super().__init__(f"unterminated `extern` block at offset {offset}")
+        self.offset = offset
 
 
 def sites(path: Path):
@@ -285,6 +388,9 @@ def sites(path: Path):
             decl = rust_code_view.enclosing_fn(raw, m.start(), bodies) or "<module scope>"
         yield (m.start(), decl, justification_run(raw, aligned, m.start()),
                named is not None)
+    # Foreign function declarations, which carry no `unsafe` token of their own.
+    for offset, name in foreign_fn_items(view):
+        yield (offset, name, justification_run(raw, aligned, offset), True)
 
 
 def compiled_rust_sources(root: Path) -> list[Path]:
@@ -566,6 +672,64 @@ fn pin_the_abi() {
 """),
     ("`unsafe impl` is not a site", True, """
 unsafe impl Send for T {}
+"""),
+    # THE ABI IS A STRING LITERAL, and a raw string is one.  Token-preserving
+    # against the accepted `extern "C"` cases: same declaration, same section,
+    # the ABI respelled.
+    ("a raw-string ABI declaration, documented", True, """
+/// # Safety
+/// The caller holds the per-core lock.
+pub unsafe extern r"C" fn f() {}
+"""),
+    ("a raw-string ABI declaration, undocumented", False, """
+pub unsafe extern r"C" fn f() {}
+"""),
+    # A HEADING BEGINS A LINE.  Markdown renders a mid-line `# Safety` as
+    # ordinary prose, so it publishes nothing; these two keep the text and move
+    # it.
+    ("`#[doc]` whose `# Safety` is mid-line", False, """
+#[doc = "This function has no # Safety section."]
+pub unsafe fn f() {}
+"""),
+    ("`#[doc]` whose `# Safety` opens a line", True, """
+#[doc = "intro\\n# Safety\\nThe caller holds the per-core lock."]
+pub unsafe fn f() {}
+"""),
+    # AN ATTRIBUTE LINE MUST BE ONLY AN ATTRIBUTE.  A statement between the
+    # justification and the operation breaks the relation the run asserts;
+    # token-preserving against the accepted bare-attribute case below it.
+    ("an attribute line that also carries a statement", False, """
+fn g() {
+    // SAFETY: pinned by the caller.
+    #[allow(unused)] let x = compute();
+    unsafe { h() }
+}
+"""),
+    ("a bare attribute line is still transparent", True, """
+fn g() {
+    // SAFETY: pinned by the caller.
+    #[allow(unused)]
+    unsafe { h() }
+}
+"""),
+    # A FOREIGN ITEM IS A DECLARATION SITE: it carries no `unsafe` token of its
+    # own, and calling it is unsafe all the same.
+    ("a foreign fn with no `# Safety` section", False, """
+extern "C" {
+    fn foreign(x: u64) -> u32;
+}
+"""),
+    ("a foreign fn with a `# Safety` section", True, """
+extern "C" {
+    /// # Safety
+    /// Only on a ready core.
+    fn foreign(x: u64) -> u32;
+}
+"""),
+    ("a Rust-2024 `safe fn` in an extern block is not a site", True, """
+unsafe extern "C" {
+    safe fn harmless(x: u64) -> u32;
+}
 """),
 ]
 

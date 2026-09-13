@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-faraday-gz9b3w",
-      "commit_sha": "e7a63a446d7654726abf29d5bcf4e1f6d5583960",
-      "tree_sha": "1ac45cc536633e80ecaf147f93178be425b0ea28",
-      "committed_at_utc": "2026-09-12T23:17:45+00:00"
+      "commit_sha": "f5a58eb53cb27c265db7386f0d99154949ee8bff",
+      "tree_sha": "d75ae4bac00e135a441ef64c7049f032fedca0c7",
+      "committed_at_utc": "2026-09-13T00:35:23+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d20d8afde1f111da2e16fdb64840b03e09aa5d05d83821d58dca65ccfc598c29"
+    "source_digest": "ed44ab38bd382f7dca5f0e06e2b933c66635bef5009de35ab388f5b971f5d9e2"
   },
   "summary": {
-    "module_count": 399,
-    "declaration_count": 21312
+    "module_count": 400,
+    "declaration_count": 21322
   },
   "readme_sync": {
-    "version": "0.35.17",
+    "version": "0.35.18",
     "lean_toolchain": "v4.28.0",
-    "production_files": 329,
-    "production_loc": 375685,
+    "production_files": 330,
+    "production_loc": 375940,
     "test_files": 70,
     "test_loc": 75996,
     "proved_theorem_lemma_decls": 12606,
@@ -263574,6 +263574,102 @@
             "freezeMap",
             "insert",
             "none"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Testing.StoreReadClassificationCensus",
+      "path": "SeLe4n/Testing/StoreReadClassificationCensus.lean",
+      "declaration_count": 10,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.StoreReadClassificationCensus",
+          "line": 39,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "Attribution",
+          "line": 43,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "Span",
+          "line": 53,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "conclusionOf",
+          "line": 61,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "isSpecDeclaration",
+          "line": 79,
+          "called": [
+            "conclusionOf",
+            "zero"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "moduleRelPath",
+          "line": 84,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "parseRow",
+          "line": 88,
+          "called": [
+            "Attribution",
+            "length",
+            "none",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.StoreReadClassificationCensus",
+          "line": 99,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "readAttribution",
+          "line": 104,
+          "called": [
+            "Attribution",
+            "parseRow",
+            "store",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "disagreements",
+          "line": 126,
+          "called": [
+            "Attribution",
+            "Span",
+            "all",
+            "any",
+            "contains",
+            "filter",
+            "insert",
+            "isEmpty",
+            "isSpecDeclaration",
+            "moduleRelPath",
+            "of",
+            "readAttribution",
+            "store",
+            "toList",
+            "toNat"
           ]
         }
       ]
