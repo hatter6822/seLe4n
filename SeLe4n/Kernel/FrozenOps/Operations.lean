@@ -937,6 +937,29 @@ def frozenEndpointReplyServerDonation? (st : FrozenSystemState)
           | _                           => none
       | none => none
 
+/-- **WS-RM, frozen mirror of `applyReplyDonation`** — the return **and** the
+deschedule, as one step.
+
+The live function is `returnDonatedSchedContextResolved … ` followed by
+`removeRunnable replier` (`IPC/Operations/Donation/Primitives.lean`), and the two
+are a pair: the server has just handed its reservation back, so leaving it on a
+run queue lets the scheduler select a thread that is `.unbound` and charged to
+nobody -- the temporal-isolation defect PR #895 rounds 9-11 closed on the live
+`.replyRecv` arm.
+
+**This exists so the pairing cannot be forgotten again** (PR #895 review round
+14).  Round 13 mirrored the *inner* call and not the live caller that pairs it
+with the deschedule, and reproduced the defect on this surface -- that round's
+own rule, *sharing an implementation transfers its preconditions*, failing inside
+the fix that recorded it.  A frozen mirror of a live step therefore names the
+live function that **completes** it, never the one nested inside. -/
+def frozenApplyReplyDonation (st : FrozenSystemState) (replier : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) :
+    Except KernelError FrozenSystemState :=
+  match frozenReturnDonatedSchedContextResolved st replier scId originalOwner with
+  | .error e => .error e
+  | .ok st' => .ok (frozenRemoveRunnable st' replier)
+
 /-- **WS-RM, frozen mirror of the whole `.reply` operation** (PR #895 review
 round 13).
 
@@ -969,7 +992,7 @@ def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
     | .ok ((), st') =>
       match donation?, server? with
       | some (scId, originalOwner), some server =>
-          match frozenReturnDonatedSchedContextResolved st' server scId originalOwner with
+          match frozenApplyReplyDonation st' server scId originalOwner with
           | .error e => .error e
           | .ok st'' => .ok ((), st'')
       | _, _ => .ok ((), st')

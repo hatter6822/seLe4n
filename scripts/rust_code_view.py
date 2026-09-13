@@ -824,6 +824,20 @@ def extern_block_items(view: str, start: int, end: int) -> list[tuple[int, int]]
     Each span begins after the previous item's `;` — so it carries that item's
     own attributes — and ends at its own `;`.  Semicolons inside brackets (a
     `[u8; 4]` type) do not terminate an item.
+
+    **Angle brackets are not nesting here** (PR #895 review round 14).  Counting
+    `<` and `>` as a bracket pair is wrong in the direction that hides items: a
+    valid foreign signature may contain a *shift* — `pub fn f(x: *const [u8; 1 <<
+    2]);` — which raises the depth twice with nothing to lower it, so that item's
+    own `;` stops terminating and **every following declaration merges into it**.
+    Measured: the block then reports one item, the undocumented declaration after
+    it is absent from the site count, the unjustified inventory and the empty
+    baseline alike, and the gate reports green.  Fail-OPEN, and invisible.
+
+    Dropping them is not a narrowing: a `;` can only appear inside a generic
+    position by way of an array type or a const-generic block, and `[` and `{`
+    already cover both, so no `;` that must be hidden sits at angle-bracket depth
+    alone.  The docstring above always said *brackets*; the code over-reached.
     """
     items: list[tuple[int, int]] = []
     at = start
@@ -831,9 +845,9 @@ def extern_block_items(view: str, start: int, end: int) -> list[tuple[int, int]]
     index = start
     while index < end:
         character = view[index]
-        if character in "([{<":
+        if character in "([{":
             depth += 1
-        elif character in ")]}>":
+        elif character in ")]}":
             depth = max(0, depth - 1)
         elif character == ";" and depth == 0:
             items.append((at, index))
@@ -1178,6 +1192,26 @@ def _self_test() -> int:
     # An item form the view does not know is `unknown`, never silently skipped.
     check("an unknown item form is named", kinds_of('extern "C" { const K: u32; }')
           == ["unknown"])
+    # **A shift operator is not nesting** (PR #895 review round 14).  Counting
+    # `<`/`>` as a bracket pair raised the depth twice on `1 << 2` with nothing
+    # to lower it, so the item's own `;` stopped terminating and every following
+    # declaration merged into it — the undocumented one then existed for no
+    # count, no inventory and no baseline.  Token-preserving against its control:
+    # both fixtures hold the same two declarations and the same `[u8; …]` type;
+    # only the array length differs.
+    check("a shift in a signature does not swallow the next item",
+          kinds_of('extern "C" { fn a(x: *const [u8; 1 << 2]); fn b(); }')
+          == ["fn", "fn"],
+          str(kinds_of('extern "C" { fn a(x: *const [u8; 1 << 2]); fn b(); }')))
+    check("its control, with no shift, splits the same way",
+          kinds_of('extern "C" { fn a(x: *const [u8; 4]); fn b(); }') == ["fn", "fn"])
+    # ...and a `;` that genuinely IS nested still does not terminate, which is
+    # what the bracket depth is for and what dropping the angle brackets must
+    # not cost.
+    check("a `;` inside an array type still does not terminate",
+          kinds_of('extern "C" { fn a(x: *const [u8; 4]); }') == ["fn"])
+    check("a `;` inside a const-generic block still does not terminate",
+          kinds_of('extern "C" { fn a(x: *const Foo<{ 1 }>); fn b(); }') == ["fn", "fn"])
 
     # --- the keyword fragment, and the discipline that keeps it one ------
     # Token-preserving in the way this class demands: the keyword letters and

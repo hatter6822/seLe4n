@@ -687,6 +687,19 @@ MD_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 #: the `#` run is required — `#Safety` renders as a paragraph (round 8).
 MD_SAFETY_HEADING = re.compile(r"^ {0,3}#{1,6}[ \t]+Safety\b", re.IGNORECASE)
 
+#: A Setext heading underline (CommonMark 4.3): a run of `=` or `-` alone on a
+#: line, under up to three spaces of indent.  `=` makes an h1 and `-` an h2, and
+#: the heading's text is the paragraph line above it — so `Safety` followed by
+#: `======` publishes exactly the `<h2 id="safety">` an ATX `# Safety` does, and
+#: refusing it made Tier 0 reject a declaration whose caller-facing contract
+#: rustdoc had already published (PR #895 review round 14).  This is the
+#: fail-CLOSED direction, which round 6 recorded as a defect in its own right.
+MD_SETEXT_UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
+
+#: The paragraph line a Setext underline turns into a Safety heading.  Anchored
+#: like the ATX pattern so `Safety Requirements` counts the same way there.
+MD_SAFETY_SETEXT_TEXT = re.compile(r"^ {0,3}Safety\b", re.IGNORECASE)
+
 #: CommonMark 4.6 block-level tag names — the start condition of an HTML block
 #: of type 6.  Fixed by the specification, so this is the grammar's own list and
 #: not a resemblance: a name absent from it opens no type-6 block.
@@ -751,6 +764,7 @@ def publishes_safety_heading(markdown: str) -> bool:
     html_end = None       # the end-condition pattern while a raw HTML block is open
     html_blank = False    # a type-6/7 HTML block, which ends at a blank line
     paragraph = False     # an indented code block may not interrupt a paragraph
+    previous = None       # the paragraph line a Setext underline would title
     for line in markdown.split("\n"):
         # **An HTML block holds raw text** (CommonMark 4.6): no markdown is
         # parsed inside one, so a heading written there is never published --
@@ -767,6 +781,7 @@ def publishes_safety_heading(markdown: str) -> bool:
             if not line.strip():
                 html_blank = False
                 paragraph = False
+                previous = None
             continue
         if fence is None:
             opened = False
@@ -787,6 +802,7 @@ def publishes_safety_heading(markdown: str) -> bool:
                     opened = True
             if opened:
                 paragraph = False
+                previous = None
                 continue
         delim = MD_FENCE.match(line)
         if fence is not None:
@@ -799,15 +815,29 @@ def publishes_safety_heading(markdown: str) -> bool:
         if delim is not None:
             fence = (delim.group(1)[0], len(delim.group(1)))
             paragraph = False
+            previous = None
             continue
         if not line.strip():
             paragraph = False
+            previous = None
             continue
         if not paragraph and re.match(r"^(?: {4}|\t)", line):
             continue          # an indented code block, and still open
+        # A Setext underline turns the paragraph line ABOVE it into a heading,
+        # so the verdict is about `previous`, not about this line.  It counts
+        # only directly under paragraph content: after a blank line a `---` run
+        # is a thematic break, and inside a fence, an HTML block or indented
+        # code `previous` was never set.
+        if paragraph and previous is not None and MD_SETEXT_UNDERLINE.match(line):
+            if MD_SAFETY_SETEXT_TEXT.match(previous):
+                return True
+            paragraph = False
+            previous = None
+            continue
         if MD_SAFETY_HEADING.match(line):
             return True
         paragraph = True
+        previous = line
     return False
 
 
@@ -2044,6 +2074,25 @@ _DOC_MARKDOWN_FORMS = {
         ("/// text\n/// <custom-tag>\n/// # Safety\n/// more", True),
     # The enclosure crosses doc forms, exactly as a fence does.
     "html-cross-form": ('/// <!--\n#[doc = "# Safety"]\n/// -->', False),
+    # **The heading FORM axis** (PR #895 review round 14).  CommonMark has two
+    # heading syntaxes and this gate knew one, so a declaration documented the
+    # Setext way was refused though rustdoc had published its `<h2 id="safety">`
+    # — the fail-CLOSED direction, which round 6 recorded as a defect too.  The
+    # rows below are that axis at all of its values, each accepting row paired
+    # with a control that changes only what the underline titles or what
+    # encloses it.
+    "setext-equals": ("/// Safety\n/// ======\n/// text", True),
+    "setext-dashes": ("/// Safety\n/// ------\n/// text", True),
+    "setext-trailing-words": ("/// Safety Requirements\n/// ===\n/// text", True),
+    # The underline titles the line above it, so a different line is a
+    # different heading.
+    "setext-titles-other-text": ("/// Notes\n/// =====\n/// text", False),
+    # After a blank line a `-` run is a thematic break, not an underline.
+    "setext-needs-a-paragraph": ("/// text\n///\n/// ---\n/// Safety", False),
+    # ...and every enclosure that hides an ATX heading hides a Setext one.
+    "setext-fenced": ("/// ```\n/// Safety\n/// ======\n/// ```", False),
+    "setext-html-block": ("/// <!--\n/// Safety\n/// ======\n/// -->", False),
+    "setext-indented-code": ("/// text\n///\n///     Safety\n///     ======", False),
 }
 
 #: **The site-name dimension.**  A declaration whose name this scanner cannot

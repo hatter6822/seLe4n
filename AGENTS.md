@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.26.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.27.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1830,6 +1830,52 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   case for the binder fix is decisive only because round 12's own case keeps
   passing under the mutation — a fix that narrows a rule must be shown to narrow
   it rather than to disable it.
+
+  **And six rules did not close this class, which is itself the finding**
+  (PR #895 review round 14, `v0.35.27`).  Rounds 9 through 14 each added a rule
+  to this section — *give it a check not a third telling*, *a witness drawn from
+  a finding tests the finding*, *take the axes from the grammar*, *build the
+  artefact*, *sharing an implementation transfers its preconditions* — and each
+  round after it found more.  Do not read that as six failures of nerve; read
+  the **distribution**.  Every one of those six rounds found at least one defect
+  in `check_unsafe_block_justifications.py` or its shared view, and rounds 10,
+  11, 13 and 14 each found one in the frozen surface.  Two artefacts, six
+  rounds.  The rules were locally right and structurally beside the point.
+
+  **Cause one: a gate that hand-implements a language front-end will be fed a
+  construct it has not seen, forever.**  Those two files are 3,591 lines
+  implementing Rust lexing, Rust item parsing and CommonMark; the store census
+  implements Lean declaration parsing.  This is round 16's own observation —
+  *the set of valid spellings that defeats a regex is unbounded while the set a
+  gate has seen is finite* — arriving at the level of the whole gate rather than
+  of one pattern.  The exit is round 17's, and it was taken **once**: the Lean
+  classifier's verdict is reconciled against `findDeclarationRanges?` at Tier 1,
+  and round 6 then confirmed the mechanism by finding it would have caught a
+  defect it never saw.  It was never generalised, and the generalisation is not
+  subtle: **Rust's front-end is `rustc`, and the `# Safety` question's front-end
+  is `rustdoc`** — the tool whose output the property is defined by.  Round 12
+  wrote *build the artefact* and then hand-rolled a markdown renderer instead of
+  asking the renderer.
+
+  **Cause two: a hand-written second implementation whose fidelity is checked by
+  a hand-written list.**  `FrozenOps` mirrors live transitions and
+  `frozenRunAgrees` would catch a divergence, but which pairs are driven through
+  both sides is a handful of scenarios and the pairing itself is a Markdown
+  table.  Rounds 10, 11, 13 and 14 are one shape — a *part* of a live operation
+  reproduced with a step omitted that the live code pairs with it — and 13 and
+  14 are the same defect twice, the second inside the first's fix.  That is this
+  section's own strongest rule (*one question answered in two places will
+  diverge*) meeting the artefact deliberately built to be two places.
+
+  **What changed, and what did not.**  Both causes are now rows in
+  `docs/REGISTERED_DEBT.md` table C with closure targets before v1.0.0, because
+  the remedies are a reconciliation against the real tools and a derived
+  differential coverage set — work, not wording.  What this cut *does* do is
+  narrow cause two at its own site: a frozen mirror names the live function that
+  **completes** a step (`frozenApplyReplyDonation` pairs the donation return with
+  the deschedule) rather than the one nested inside it, so the pairing is
+  structural.  **When a rule has been restated six times, stop restating it and
+  write down what the restating measured.**
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

@@ -166,6 +166,51 @@ private def fo004c_replyToStackHeadPopsDonation : IO Unit := do
       | .ok _    => expect "a fresh caller can be linked to the freed Reply" true
       | .error _ => throw <| IO.userError "Reply still unusable after the pop"
 
+/-- FO-004e (PR #895 review round 14): **the server is descheduled when its
+donation goes back.**
+
+`applyReplyDonation` is the return *and* `removeRunnable replier`: a server that
+has just handed its reservation back is `.unbound`, so leaving it on a run queue
+lets the scheduler select a thread charged to nobody — the temporal-isolation
+defect rounds 9-11 closed on the live `.replyRecv` arm.  Round 13 mirrored the
+inner return and not the live caller that pairs it with the deschedule, and so
+reproduced that defect here; `frozenApplyReplyDonation` is the mirror of the
+function that pairs them, which is why the pairing can no longer be dropped.
+
+The witness queues the server first, because a server that was never runnable
+would pass a deschedule assertion without the deschedule ever running. -/
+private def fo004e_replyDeschedulesTheServer : IO Unit := do
+  let rid  : SeLe4n.ReplyId := ⟨505⟩
+  let scId : SeLe4n.SchedContextId := ⟨77⟩
+  let callerTcb : TCB := { mkTcb 2 with
+    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let serverTcb : TCB := { mkTcb 3 with schedContextBinding := .donated scId ⟨2⟩ }
+  let sc : SeLe4n.Kernel.SchedContext := { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThread := some ⟨3⟩, scReply := some rid }
+  let replyObj : SeLe4n.Kernel.Reply :=
+    { replyId := rid, caller := some ⟨2⟩, prev := none, next := some (.head scId) }
+  let st0 := mkFrozenState
+    [(⟨2⟩, .tcb callerTcb), (⟨3⟩, .tcb serverTcb),
+     (scId.toObjId, .schedContext sc), (rid.toObjId, .reply replyObj)]
+  let queued (s : FrozenSystemState) (t : SeLe4n.ThreadId) : Bool :=
+    s.scheduler.byPriority.indexMap.toList.any (fun kv =>
+      ((s.scheduler.byPriority.get? kv.1).getD []).contains t)
+  match frozenEnsureRunnable st0 ⟨3⟩ with
+  | .error _ => throw <| IO.userError "could not queue the server"
+  | .ok st =>
+      expect "the server starts runnable" (queued st ⟨3⟩)
+      let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+      match frozenEndpointReplyWithDonationReturn ⟨3⟩ ⟨2⟩ rid msg st with
+      | .error _ => throw <| IO.userError "reply+donation-return should succeed"
+      | .ok ((), st') =>
+          match st'.getTcb? ⟨3⟩ with
+          | some t => expect "the server gave its reservation back"
+                        (t.schedContextBinding == .unbound)
+          | none => throw <| IO.userError "server TCB missing"
+          expect "an unbound server is off the run queue" (!queued st' ⟨3⟩)
+          -- ...and the caller it answered IS runnable, so the assertion above
+          -- is about the deschedule rather than about an empty queue.
+          expect "the answered caller is runnable" (queued st' ⟨2⟩)
+
 /-- FO-004d: ...and the reply leg ALONE still agrees with the bare
 `endpointReply`, which is what `FO-031` compares.  A Reply on no stack is
 consumed outright, so the pop is the identity there and the composite and the
@@ -1363,6 +1408,7 @@ def main : IO Unit := do
   fo004b_endpointReplyConsumesLink
   fo004c_replyToStackHeadPopsDonation
   fo004d_replyOffStackNeedsNoPop
+  fo004e_replyDeschedulesTheServer
   fo005_replyDelegatedReplier
   fo005b_replyWrongPresentedCap
   IO.println "--- TPH-006: Frozen Scheduler Tick ---"

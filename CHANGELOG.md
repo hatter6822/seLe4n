@@ -1,3 +1,53 @@
+## v0.35.27 — Round 14: three fixes, and the two causes behind six rounds of them
+
+**Review round 14 (2 P1, 1 P2), all reproduced before being fixed and
+mutation-verified.**  Two of the three are in code written hours earlier for
+round 13, which makes this the fifth consecutive round where findings land in
+the previous round's fixes — so this entry is mostly about *why*, and the
+remedies are registered rather than asserted.
+
+**The fixes.**  `extern_block_items` counted `<` and `>` as nesting, so a valid
+foreign signature carrying a shift — `pub fn f(x: *const [u8; 1 << 2]);` —
+raised the depth twice with nothing to lower it and **every following
+declaration merged into that item**.  Measured: the block reported one item and
+an undocumented `pub fn undocumented();` after it existed for no site count, no
+inventory and no baseline, with the gate green.  Angle brackets are not nesting
+here and never were — the docstring already said *brackets*, and a `;` can only
+reach a generic position inside an array type or a const-generic block, which
+`[` and `{` already cover.  Separately, `publishes_safety_heading` knew one of
+CommonMark's two heading syntaxes, so a declaration documented `Safety` /
+`======` was refused though rustdoc had published its `<h2 id="safety">` — the
+fail-*closed* direction, which round 6 recorded as a defect in its own right.
+Eight matrix rows (93 → 101 cells) take that axis at all of its values, each
+accepting row paired with a control that changes only what the underline titles
+or what encloses it.
+
+**And the frozen `.reply` left its server on the run queue.**
+`applyReplyDonation` is `returnDonatedSchedContextResolved …` **followed by**
+`removeRunnable replier`; round 13 mirrored the inner call and not the live
+caller that pairs them, so a server that had just handed its reservation back
+stayed selectable, `.unbound` and charged to nobody — the temporal-isolation
+defect rounds 9-11 closed on the live `.replyRecv` arm, reproduced here by the
+fix that recorded the rule against it.  The remedy is not the missing line but
+`frozenApplyReplyDonation`, a mirror of the live function that **completes** the
+step, so the pairing is structural rather than remembered.
+
+**The two causes, measured rather than asserted.**  (1) The Tier 0 convention
+gates hand-implement three language front-ends — Rust lexing, Rust item parsing
+and CommonMark across 3,591 lines, plus Lean declaration parsing in the store
+census — and *every* round from 9 to 14 found a construct in one of them.  Six
+successive rules were written into `CLAUDE.md` to close it and the rounds
+continued, which is the measurement that another rule is not the remedy.
+`CLAUDE.md` already names the exit and it was taken once, for Lean, at round 5;
+what was never generalised is that Rust's front-end is `rustc` and that the
+`# Safety` question's front-end is **rustdoc** — the tool whose behaviour the
+property is about.  (2) The frozen surface is a hand-written second
+implementation whose differential coverage is a hand-written scenario list, so a
+mirror may omit a step its twin performs and nothing reports it; rounds 10, 11,
+13 and 14 are all that shape.  Both are now rows in `docs/REGISTERED_DEBT.md`
+table C with closure targets before v1.0.0, which is what this project's own
+rule prescribes when the optimal implementation is out of scope for the cut.
+
 ## v0.35.26 — Round 13: a mirror of a part is not a mirror of the whole
 
 **Review round 13 (3 P1 findings), all reproduced before being fixed.** Two are
