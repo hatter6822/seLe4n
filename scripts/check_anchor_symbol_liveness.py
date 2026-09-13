@@ -40,6 +40,7 @@ from __future__ import annotations
 import ast
 import re
 import subprocess
+import symtable
 import sys
 from pathlib import Path
 
@@ -67,30 +68,97 @@ def anchors_in(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def bound_and_read(source: str) -> tuple[set[str], set[str]]:
-    """The names a module BINDS and the names it READS.
+def module_scope_facts(source: str) -> "tuple[set[str], set[str]]":
+    """The names a module BINDS at module scope, and those it READS as globals.
 
-    A name is bound by an assignment target, a `def`, a `class`, an `import ...
-    as`, or a function parameter; it is read by a `Load` reference or by an
-    attribute access, since a caller in another module reaches a symbol as
-    `module.name`.
+    **Scope resolution is CPython's own** (`symtable`), not a walk over `Name`
+    nodes.  A bare identifier is a read of the module's global only when no
+    enclosing function binds it, and deciding that by hand is the mistake this
+    gate exists to refuse: `def helper(_DEAD): return _DEAD` reads a parameter,
+    and counting it as a read of a module-level `_DEAD` suppresses exactly the
+    finding this gate is for (PR #895 review round 17).  `symtable` is the
+    compiler's own answer, so shadowing by a parameter, a comprehension target,
+    a `with`/`except` binding or a nested `def` is not a form to enumerate.
+    """
+    top = symtable.symtable(source, "<anchor-target>", "exec")
+    bound = {sym.get_name() for sym in top.get_symbols()
+             if sym.is_assigned() or sym.is_imported()}
+    reads: set[str] = set()
+    pending = [top]
+    while pending:
+        table = pending.pop()
+        for sym in table.get_symbols():
+            if not sym.is_referenced():
+                continue
+            # At module scope every reference IS the global; inside a function
+            # only one `symtable` resolved to the global scope.
+            if table.get_type() == "module" or sym.is_global():
+                reads.add(sym.get_name())
+        pending.extend(table.get_children())
+    return bound, reads
+
+
+def module_import_facts(source: str):
+    """How a module names OTHER modules, and which attributes it reads on them.
+
+    Returns `(module_aliases, from_imports, attribute_reads, unresolved)`:
+    the local name each imported module is bound to, the `(module, symbol)` each
+    `from`-imported name stands for, the attributes read on each receiver name,
+    and the import forms this scanner declines to resolve.
+
+    `unresolved` is the explicit default branch (PR #889 review round 25): a
+    star import publishes names no scanner can attribute, and a dotted import
+    binds only its first component, so either could hide a reader.  They are
+    reported rather than read past — but only when they could reach a target,
+    which is why the caller filters them by stem.
     """
     tree = ast.parse(source)
-    bound: set[str] = set()
-    read: set[str] = set()
+    module_aliases: dict[str, str] = {}
+    from_imports: dict[str, tuple[str, str]] = {}
+    attribute_reads: dict[str, set[str]] = {}
+    unresolved: list[str] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
-            (bound if isinstance(node.ctx, ast.Store) else read).add(node.id)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            bound.add(node.name)
-        elif isinstance(node, ast.Attribute):
-            read.add(node.attr)
-        elif isinstance(node, ast.arg):
-            bound.add(node.arg)
-        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+        if isinstance(node, ast.Import):
             for alias in node.names:
-                bound.add(alias.asname or alias.name.split(".")[0])
-    return bound, read
+                parts = alias.name.split(".")
+                if len(parts) > 1:
+                    unresolved.append(f"dotted import {alias.name}")
+                    continue
+                module_aliases[alias.asname or parts[0]] = parts[0]
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                unresolved.append("relative import")
+                continue
+            stem = (node.module or "").split(".")[-1]
+            for alias in node.names:
+                if alias.name == "*":
+                    unresolved.append(f"star import from {stem}")
+                    continue
+                from_imports[alias.asname or alias.name] = (stem, alias.name)
+        elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+            if isinstance(node.value, ast.Name):
+                attribute_reads.setdefault(node.value.id, set()).add(node.attr)
+    return module_aliases, from_imports, attribute_reads, unresolved
+
+
+def reads_target_symbol(facts, target_stem: str, name: str, is_target: bool) -> bool:
+    """Does this module read `target_stem`'s module-level `name`?
+
+    Three ways, and a bare identifier that matches none of them is **not** a
+    read of that symbol -- which is the whole correction: a global union over
+    every tracked module let an unrelated local of the same spelling keep a dead
+    anchor green.
+    """
+    _, global_reads, module_aliases, from_imports, attribute_reads = facts
+    if is_target:
+        return name in global_reads
+    for alias, stem in module_aliases.items():
+        if stem == target_stem and name in attribute_reads.get(alias, ()):
+            return True
+    for local, (stem, original) in from_imports.items():
+        if stem == target_stem and original == name and local in global_reads:
+            return True
+    return False
 
 
 def tracked_python(repo: Path) -> list[Path]:
@@ -106,12 +174,20 @@ def tracked_python(repo: Path) -> list[Path]:
 
 def dead_anchor_pins(repo: Path, anchor_files=ANCHOR_FILES):
     """`(anchor file, target, symbol, reason)` for every pin this gate refuses."""
-    readers: set[str] = set()
+    facts: dict[str, tuple] = {}
+    unreadable: list[tuple[str, str]] = []
     for path in tracked_python(repo):
         try:
-            readers |= bound_and_read(path.read_text(encoding="utf-8"))[1]
-        except (SyntaxError, UnicodeDecodeError):
-            pass          # a reader this gate cannot parse is reported below.
+            source = path.read_text(encoding="utf-8")
+            bound, global_reads = module_scope_facts(source)
+            aliases, from_imports, attribute_reads, unresolved = module_import_facts(source)
+        except (SyntaxError, ValueError, UnicodeDecodeError) as exc:
+            unreadable.append((path.name, str(exc)))
+            continue
+        facts[path.name] = (bound, global_reads, aliases, from_imports, attribute_reads)
+        for form in unresolved:
+            unreadable.append((path.name, form))
+
     findings = []
     for anchor_file in anchor_files:
         text = (repo / anchor_file).read_text(encoding="utf-8")
@@ -120,15 +196,29 @@ def dead_anchor_pins(repo: Path, anchor_files=ANCHOR_FILES):
             if not path.exists():
                 findings.append((anchor_file, target, "-", "target file missing"))
                 continue
-            try:
-                bound, _ = bound_and_read(path.read_text(encoding="utf-8"))
-            except (SyntaxError, UnicodeDecodeError) as exc:
-                findings.append((anchor_file, target, "-", f"target unparseable: {exc}"))
+            if path.name not in facts:
+                reason = next((why for name, why in unreadable if name == path.name),
+                              "target unparseable")
+                findings.append((anchor_file, target, "-", f"target unreadable: {reason}"))
                 continue
+            target_stem = path.stem
+            # An import form this scanner declines to resolve could hide a
+            # reader of THIS target, so it fails the gate rather than being read
+            # past -- but only when it names the target, since an unrelated
+            # dotted import cannot reach it.
+            for name, form in unreadable:
+                if target_stem in form:
+                    findings.append((anchor_file, target, "-",
+                                     f"{name}: unresolved import form ({form})"))
+            bound = facts[path.name][0]
             for name in sorted(set(_IDENT.findall(pattern))):
-                if name in bound and name not in readers:
-                    findings.append((anchor_file, target, name,
-                                     "anchored and defined, but read nowhere"))
+                if name not in bound:
+                    continue
+                if any(reads_target_symbol(f, target_stem, name, module == path.name)
+                       for module, f in facts.items()):
+                    continue
+                findings.append((anchor_file, target, name,
+                                 "anchored and defined, but read nowhere"))
     return findings
 
 
@@ -140,36 +230,57 @@ def dead_anchor_pins(repo: Path, anchor_files=ANCHOR_FILES):
 # passed by any scanner that merely counts them.
 # ---------------------------------------------------------------------------
 
+#: `(label, subject module, consumer module, anchor pattern, expect a finding)`.
+#:
+#: The axes are the ways a module-level symbol can be READ (PR #895 review round
+#: 17): from the target itself, as an attribute on the imported module (plain or
+#: aliased), or through a `from` import -- crossed with the ways a bare
+#: identifier of the same spelling is NOT a read of it.  Enumerating the routes
+#: rather than the reported spelling is this project's own rule for a case list.
 _CASES = [
-    # (label, module source, anchor pattern, expect a finding)
+    # --- the symbol is genuinely read, by each route ---------------------
     ("a symbol its own module reads is live",
-     "A = 1\ndef f():\n    return A\n", "^A", False),
-    ("a symbol NO module reads is a dead pin",
-     "_ZZ_UNREAD_SENTINEL = 1\ndef f():\n    return 2\n",
-     "^_ZZ_UNREAD_SENTINEL", True),
-    # ...and the decisive pair: the same anchor, the same definition, one
-    # reader added.  Nothing but the relation moves.
-    ("adding a reader makes the same pin live",
-     "_ZZ_UNREAD_SENTINEL = 1\ndef f():\n    return _ZZ_UNREAD_SENTINEL\n",
-     "^_ZZ_UNREAD_SENTINEL", False),
-    # An identifier the module does not bind is not a symbol of it: an anchor
-    # may name a string, a comment token or prose, and draws no verdict.
+     "A = 1\ndef f():\n    return A\n", "", "^A", False),
+    ("a symbol read as an attribute on a plain import is live",
+     "A = 1\n", "import subject\n\n\ndef g():\n    return subject.A\n", "^A", False),
+    ("a symbol read through an ALIASED import is live",
+     "A = 1\n", "import subject as _s\n\n\ndef g():\n    return _s.A\n", "^A", False),
+    ("a symbol read through a `from` import is live",
+     "A = 1\n", "from subject import A\n\n\ndef g():\n    return A\n", "^A", False),
+    # --- ...and the ways a matching bare name is NOT a read of it ---------
+    # The round-17 finding: a global union over every tracked module let an
+    # unrelated local of the same spelling keep a dead anchor green.
+    ("an unrelated module's PARAMETER of the same name is not a read",
+     "A = 1\n", "def helper(A):\n    return A + 1\n", "^A", True),
+    ("an unrelated module's local binding of the same name is not a read",
+     "A = 1\n", "def helper():\n    A = 2\n    return A\n", "^A", True),
+    # ...and the same defect one level in, which `symtable` closes for free:
+    # a parameter in the TARGET's own module shadows the global it matches.
+    ("a parameter in the target's own module is not a read of the global",
+     "A = 1\n\n\ndef helper(A):\n    return A\n", "", "^A", True),
+    ("a comprehension target in the target's own module is not a read",
+     "A = 1\n\n\ndef helper():\n    return [A for A in range(3)]\n", "", "^A", True),
+    # A `from` import of a DIFFERENT module's same-named symbol is not a read
+    # of this target's -- the route exists but does not resolve here.
+    ("a `from` import of another module's same name is not a read",
+     "A = 1\n", "from elsewhere import A\n\n\ndef g():\n    return A\n", "^A", True),
+    # An attribute of that name on something that is not the target module.
+    ("an attribute of the same name on another receiver is not a read",
+     "A = 1\n", "import os\n\n\ndef g():\n    return os.A\n", "^A", True),
+    # --- the domain, not the predicate -----------------------------------
     ("a name the module does not bind draws no verdict",
-     "A = 1\ndef f():\n    return A\n", "some prose the file mentions", False),
-    # A symbol reached only as `module.name` from elsewhere is read -- the
-    # attribute form is what a cross-module consumer writes.
-    ("a symbol read only as an attribute is live",
-     "def classify_extern_item():\n    return 1\n",
-     "^def classify_extern_item", False),
+     "A = 1\ndef f():\n    return A\n", "", "some prose the file mentions", False),
 ]
-
 
 def _self_test() -> int:
     import tempfile
 
     failures = []
+    ran = 0
 
     def check(label: str, ok: bool, detail: str = "") -> None:
+        nonlocal ran
+        ran += 1
         print(f"  {'OK  ' if ok else 'FAIL'} {label}" + (f": {detail}" if not ok and detail else ""))
         if not ok:
             failures.append(label)
@@ -178,12 +289,9 @@ def _self_test() -> int:
         root = Path(tmp)
         (root / "scripts").mkdir()
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-        for label, source, pattern, want in _CASES:
-            (root / "scripts" / "subject.py").write_text(source)
-            # A second module, so the reader domain is the tracked tree rather
-            # than the subject alone -- which is what the attribute case needs.
-            (root / "scripts" / "consumer.py").write_text(
-                "import subject\n\n\ndef g():\n    return subject.classify_extern_item()\n")
+        for label, subject, consumer, pattern, want in _CASES:
+            (root / "scripts" / "subject.py").write_text(subject)
+            (root / "scripts" / "consumer.py").write_text(consumer)
             (root / "scripts" / "anchors.sh").write_text(
                 f"run_check \"INVARIANT\" rg -n '{pattern}' scripts/subject.py\n")
             subprocess.run(["git", "add", "-A"], cwd=root, check=True,
@@ -191,7 +299,9 @@ def _self_test() -> int:
             got = dead_anchor_pins(root, ("scripts/anchors.sh",))
             check(label, bool(got) == want, f"got {got}")
 
-        # The default branch is a decision, in both of its shapes.
+        # The default branch is a decision, in each of its shapes.
+        (root / "scripts" / "subject.py").write_text("A = 1\n")
+        (root / "scripts" / "consumer.py").write_text("")
         (root / "scripts" / "anchors.sh").write_text(
             "run_check \"INVARIANT\" rg -n '^A' scripts/gone.py\n")
         subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
@@ -202,7 +312,20 @@ def _self_test() -> int:
             "run_check \"INVARIANT\" rg -n '^A' scripts/subject.py\n")
         subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
         check("an unparseable target fails rather than being skipped",
-              any("unparseable" in f[3] for f in dead_anchor_pins(root, ("scripts/anchors.sh",))))
+              any("unreadable" in f[3] for f in dead_anchor_pins(root, ("scripts/anchors.sh",))))
+        # An import form this scanner declines to resolve could hide a reader of
+        # the target, so it fails rather than reading past it -- and only when
+        # it names the target, since an unrelated one cannot reach it.
+        (root / "scripts" / "subject.py").write_text("A = 1\ndef f():\n    return A\n")
+        (root / "scripts" / "consumer.py").write_text("from subject import *\n")
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+        check("a star import naming the target fails the gate",
+              any("unresolved import form" in f[3]
+                  for f in dead_anchor_pins(root, ("scripts/anchors.sh",))))
+        (root / "scripts" / "consumer.py").write_text("import importlib.util\n")
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+        check("an unrelated dotted import does not fail the gate",
+              not dead_anchor_pins(root, ("scripts/anchors.sh",)))
 
     # The anchor parser itself: a `.py` target is recognised in both quotings
     # and past `rg`'s flags, and a non-`.py` target is not this gate's business.
@@ -216,7 +339,10 @@ def _self_test() -> int:
     if failures:
         print(f"\n[anchor-symbol-liveness] self-test: {len(failures)} case(s) failed")
         return 1
-    print(f"[anchor-symbol-liveness] self-test passed ({len(_CASES) + 3} cases)")
+    # Counted from the checks that RAN, never `len(_CASES) + <n>`: a
+    # hand-kept figure beside a derivation is what this project keeps paying
+    # for, and this one was already wrong by two the moment cases were added.
+    print(f"[anchor-symbol-liveness] self-test passed ({ran} cases)")
     return 0
 
 

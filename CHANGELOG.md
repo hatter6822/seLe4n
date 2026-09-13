@@ -1,3 +1,72 @@
+## v0.35.30 — PR #895 review round 17: resolved reads instead of a global union, the measured Safety-title set, and the case where clippy is the lenient one
+
+Two findings, **both in code written for round 16**, which makes five consecutive
+rounds landing in the previous round's fixes.  Each was reproduced against the
+tree before being acted on and mutation-verified against the actual pre-fix
+behaviour.
+
+**A matching spelling is not a read of that symbol** (P2, fail-open — and in the
+gate written last cut to close exactly this shape one level up).
+`check_anchor_symbol_liveness.py` built its reader set as a **global union** of
+every name read in any tracked module, so an unrelated `def helper(_DEAD)` put
+`_DEAD` in `readers` and kept a genuinely dead anchor green.  That is this file's
+own *a recognised set is not a derived set* applied to the gate's **domain**, in
+the gate whose subject is a pin that says nothing — and the round-16 CHANGELOG
+claim that "its domain is derived on both sides" was false in exactly the
+direction the review names.
+
+A read is now **resolved** to the anchored module's symbol, by the three routes
+that exist: from the target itself, as an attribute on the imported module
+(plain or aliased — `import rust_code_view as _share` is live in this tree), or
+through a `from` import.  Intra-module scope is decided by **`symtable`**,
+CPython's own scope analysis, so a parameter, comprehension target, `with`
+binding or nested `def` that shadows a module global is not a form anyone has to
+enumerate — and that closes the same defect *inside* the target file, which the
+review did not report.  A star or relative import naming a target fails the gate
+rather than being read past; an unrelated dotted import does not.  The deciding
+mutation is the true pre-fix behaviour — the union with no scope analysis — and
+it fails **seven** cases including the reviewer's own.
+
+**And the Safety title set was measured, not recalled** (P1, fail-open).
+`MD_SAFETY_HEADING` matched `Safety` case-insensitively on a word boundary, so
+`# safety`, `# SaFeTy`, `# Safety:` and `# Safety Requirements` all passed —
+while `clippy::missing_safety_doc` rejects every one of them.  Clippy does not
+examine a **private** `unsafe fn` at all, so for those this scanner is the only
+enforcement and a heading it alone accepts publishes no caller contract.
+
+The accepted set comes from a probe crate compiled under the workspace's own
+clippy, one `pub unsafe fn` per spelling: `Safety`, `SAFETY`,
+`Implementation safety` and `Implementation Safety`, with CommonMark's optional
+closing hashes and trailing whitespace.  Measuring mattered in both directions —
+the review proposed restricting to `Safety` or `SAFETY`, which would have
+refused the two `Implementation …` spellings clippy accepts, the fail-closed
+direction round 6 recorded as a defect in its own right.  One alternation now
+composes both the ATX and the Setext matcher.  The tree is unchanged at 136/136:
+every real declaration already writes `# Safety`.
+
+**And the sharpest thing this round measured is that the two authorities
+disagree.**  Checking the Setext forms against `cargo doc` as well as clippy:
+rustdoc renders `id="safetyand-more-text"` for `Safety` / `and more text` / `---`
+and `id="this-is-not-a-contractsafety"` for `This is not a contract` / `Safety` /
+`---`, so **neither multi-line form publishes a Safety section** — while clippy
+**accepts both**, because it compares each Text event of the heading rather than
+the heading's text.  On this shape the lint is the lenient one.
+
+The gate follows rustdoc, which is what a caller actually reads, and requires the
+underlined paragraph to be a single line.  That vindicates round 15's finding
+rather than reversing it — round 15 was right about the rendering — and corrects
+its *control*, whose `True` had been set by the first-line rule it introduced
+rather than by measurement.  `v0.35.28` recorded that the `# Safety` question's
+front-end is rustdoc; this round is the evidence that `missing_safety_doc` is a
+lint approximating it, not the thing itself.  **A proxy is not the fact, with the
+proxy on the side you did not expect.**
+
+One mechanical note: the liveness gate's self-test printed `len(_CASES) + 3`,
+which was already wrong by two the moment cases were added.  It counts the
+checks that ran.
+
+Refs: docs/REGISTERED_DEBT.md table C (Tier 0 convention gates)
+
 ## v0.35.29 — PR #895 review round 16: the item's leading form, the census's own view, CommonMark's backtick-in-info rule, and a pin this cut's own fix left dead
 
 Three findings, each reproduced against the tree before being acted on and each

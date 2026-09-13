@@ -701,10 +701,34 @@ def _opens_fence(delim: "re.Match[str]") -> bool:
     """
     return not (delim.group(1)[0] == "`" and "`" in delim.group(2))
 
+#: **The heading titles `clippy::missing_safety_doc` accepts**, measured against
+#: the workspace's own clippy rather than recalled (PR #895 review round 17).
+#:
+#: A probe crate with one `pub unsafe fn` per spelling gives the exact set:
+#: `Safety` and `SAFETY` are accepted, `Implementation safety` and
+#: `Implementation Safety` are accepted, and `safety`, `SaFeTy`, `Safety:` and
+#: `Safety Requirements` are **rejected**.  Matching case-insensitively on a
+#: word boundary accepted all four of the rejected forms — and clippy does not
+#: examine a *private* `unsafe fn` at all, so for those this scanner is the only
+#: enforcement and a heading it alone accepts publishes no caller contract.
+#:
+#: Measuring mattered in both directions: the review proposed `Safety` or
+#: `SAFETY`, and restricting to those two would have refused the two
+#: `Implementation …` spellings clippy accepts — the fail-CLOSED direction,
+#: which round 6 recorded as a defect in its own right.
+#:
+#: One alternation, composed by both the ATX and the Setext matcher, because a
+#: second spelling of one question is what this project keeps paying for.
+SAFETY_HEADING_TITLE = r"(?:Safety|SAFETY|Implementation safety|Implementation Safety)"
+
 #: A `# Safety` ATX heading (CommonMark 4.2).  Up to three leading spaces; a
 #: fourth makes the line an indented code block instead.  The whitespace after
-#: the `#` run is required — `#Safety` renders as a paragraph (round 8).
-MD_SAFETY_HEADING = re.compile(r"^ {0,3}#{1,6}[ \t]+Safety\b", re.IGNORECASE)
+#: the `#` run is required — `#Safety` renders as a paragraph (round 8).  The
+#: title must be the WHOLE heading text, so only CommonMark's optional closing
+#: hash sequence and trailing whitespace may follow it — both measured as
+#: accepted, and both leaving the rendered title exactly the word.
+MD_SAFETY_HEADING = re.compile(
+    r"^ {0,3}#{1,6}[ \t]+" + SAFETY_HEADING_TITLE + r"[ \t]*(?:#+[ \t]*)?$")
 
 #: A Setext heading underline (CommonMark 4.3): a run of `=` or `-` alone on a
 #: line, under up to three spaces of indent.  `=` makes an h1 and `-` an h2, and
@@ -723,7 +747,7 @@ MD_SETEXT_UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
 #: `This is not a contract` / `Safety` / `===`, which rustdoc titles
 #: "This is not a contract Safety" and which is no Safety section at all
 #: (PR #895 review round 15).  Fail-OPEN, on a gate with an empty baseline.
-MD_SAFETY_SETEXT_TEXT = re.compile(r"^ {0,3}Safety\b", re.IGNORECASE)
+MD_SAFETY_SETEXT_TEXT = re.compile(r"^ {0,3}" + SAFETY_HEADING_TITLE + r"[ \t]*$")
 
 #: A thematic break (CommonMark 4.1): three or more `-`, `*` or `_`, optionally
 #: separated by spaces or tabs, alone on a line.  It is a leaf block, so it
@@ -806,6 +830,7 @@ def publishes_safety_heading(markdown: str) -> bool:
     html_blank = False    # a type-6/7 HTML block, which ends at a blank line
     paragraph = False     # an indented code block may not interrupt a paragraph
     opening = None        # the FIRST line of the open paragraph (Setext title)
+    opening_alone = False  # ...and whether that paragraph is still ONE line
     for line in markdown.split("\n"):
         # **An HTML block holds raw text** (CommonMark 4.6): no markdown is
         # parsed inside one, so a heading written there is never published --
@@ -872,7 +897,12 @@ def publishes_safety_heading(markdown: str) -> bool:
         # break, and inside a fence, an HTML block or indented code `opening`
         # was never set.
         if paragraph and opening is not None and MD_SETEXT_UNDERLINE.match(line):
-            if MD_SAFETY_SETEXT_TEXT.match(opening):
+            # A Setext heading's text is the whole paragraph, concatenated -- so
+            # a paragraph of two or more lines can never render as exactly an
+            # accepted title, whatever its first line says.  Round 15 carried the
+            # first line because the verdict was a prefix match; with the title
+            # required WHOLE (round 17) the paragraph must also be one line.
+            if opening_alone and MD_SAFETY_SETEXT_TEXT.match(opening):
                 return True
             paragraph = False
             opening = None
@@ -894,6 +924,9 @@ def publishes_safety_heading(markdown: str) -> bool:
             continue
         if not paragraph:
             opening = line
+            opening_alone = True
+        else:
+            opening_alone = False
         paragraph = True
     return False
 
@@ -2140,7 +2173,11 @@ _DOC_MARKDOWN_FORMS = {
     # encloses it.
     "setext-equals": ("/// Safety\n/// ======\n/// text", True),
     "setext-dashes": ("/// Safety\n/// ------\n/// text", True),
-    "setext-trailing-words": ("/// Safety Requirements\n/// ===\n/// text", True),
+    # Both authorities reject this: clippy compares the heading's text to an
+    # accepted title, and rustdoc renders `id="safety-requirements"`.  The `True`
+    # here was written under the superseded `\bSafety\b` prefix match, which is
+    # the round-17 finding in its Setext form.
+    "setext-trailing-words": ("/// Safety Requirements\n/// ===\n/// text", False),
     # The underline titles the line above it, so a different line is a
     # different heading.
     "setext-titles-other-text": ("/// Notes\n/// =====\n/// text", False),
@@ -2158,10 +2195,21 @@ _DOC_MARKDOWN_FORMS = {
     # really does begin with it, as `# Safety Requirements` does for ATX.  The
     # pair decides in both directions, since the superseded code answers each
     # of them the other way round.
+    #
+    # **Round 17 measured both against the real tools, and they disagree.**
+    # `cargo doc` renders `id="this-is-not-a-contractsafety"` and
+    # `id="safetyand-more-text"`: NEITHER multi-line form publishes a Safety
+    # section.  `clippy::missing_safety_doc` accepts both, because it compares
+    # each Text event of the heading rather than the heading's text -- so on
+    # this shape the lint is the LENIENT one.  The gate follows rustdoc, which
+    # is what a caller actually reads, so `safety-first` flips to False: round
+    # 15 was right about the rendering and its control's expectation was set by
+    # the first-line rule it had just introduced rather than by measurement.
+    # This is *a proxy is not the fact* with the proxy on the other side.
     "setext-multiline-paragraph":
         ("/// This is not a contract\n/// Safety\n/// ===", False),
     "setext-multiline-safety-first":
-        ("/// Safety\n/// and more text\n/// ===", True),
+        ("/// Safety\n/// and more text\n/// ===", False),
     # A thematic break is a leaf block, so it ends the paragraph the underline
     # below it could otherwise have titled.
     "setext-after-thematic-break":
@@ -2183,6 +2231,30 @@ _DOC_MARKDOWN_FORMS = {
         ("/// ```rust\n/// # Safety\n/// ```", False),
     "fence-tilde-allows-backtick-info":
         ("/// ~~~rust`x\n/// # Safety\n/// ~~~", False),
+    # **The TITLE axis** (PR #895 review round 17).  Its values are not guessed:
+    # a probe crate with one `pub unsafe fn` per spelling was compiled under the
+    # workspace's own `clippy::missing_safety_doc`, and these rows are its
+    # verdicts.  Matching case-insensitively on a word boundary accepted all
+    # four of the rejected forms -- and clippy does not examine a PRIVATE
+    # `unsafe fn` at all, so for those this scanner is the only enforcement.
+    "title-exact-safety":        ("/// # Safety\n///\n/// contract", True),
+    "title-upper-safety":        ("/// # SAFETY\n///\n/// contract", True),
+    "title-implementation-lower": ("/// # Implementation safety\n///\n/// contract", True),
+    "title-implementation-upper": ("/// # Implementation Safety\n///\n/// contract", True),
+    "title-closing-hashes":      ("/// # Safety #\n///\n/// contract", True),
+    "title-trailing-space":      ("/// # Safety   \n///\n/// contract", True),
+    "title-two-spaces-after-hash": ("/// #  Safety\n///\n/// contract", True),
+    "title-lower-safety":        ("/// # safety\n///\n/// contract", False),
+    "title-mixed-case":          ("/// # SaFeTy\n///\n/// contract", False),
+    "title-safety-requirements": ("/// # Safety Requirements\n///\n/// contract", False),
+    "title-safety-colon":        ("/// # Safety:\n///\n/// contract", False),
+    # ...and the Setext matcher composes the same alternation, so it carries the
+    # same verdicts -- plus the single-line requirement a WHOLE-title match
+    # implies, since a Setext heading's text is the paragraph concatenated.
+    "setext-title-upper":        ("/// SAFETY\n/// ======", True),
+    "setext-title-implementation": ("/// Implementation Safety\n/// ======", True),
+    "setext-title-lower":        ("/// safety\n/// ======", False),
+    "setext-title-requirements": ("/// Safety Requirements\n/// ======", False),
 }
 
 #: **The site-name dimension.**  A declaration whose name this scanner cannot

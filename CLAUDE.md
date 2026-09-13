@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.29.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.30.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2059,6 +2059,50 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   it.  It reads the stored record now, and the collapse is definitionally
   identical.  *A number in a changelog is what one search found; it is not the
   set.*
+
+  **And a proxy can be the LENIENT side — check which tool the property is
+  about** (PR #895 review round 17, `v0.35.30`).  Two findings, both in code
+  written for round 16, which is five consecutive rounds landing in the previous
+  round's fixes.  The first is this file's own *a recognised set is not a derived
+  set* applied to a gate's **domain**, in the gate written last cut to close that
+  shape one level up: `check_anchor_symbol_liveness.py` unioned every name read
+  in any tracked module, so an unrelated `def helper(_DEAD)` kept a dead anchor
+  green.  A read is **resolved** to the anchored module's symbol now — the
+  target's own scope, an attribute on the imported module (plain or aliased), or
+  a `from` import — with intra-module scope decided by **`symtable`**, CPython's
+  own analysis, so shadowing by a parameter, comprehension target or nested `def`
+  is not a form to enumerate.  *Round 17's instruction — ask the language's own
+  front-end — applies to Python too, and `symtable` is it.*
+
+  The second is why this entry exists.  `MD_SAFETY_HEADING` matched `Safety`
+  case-insensitively on a word boundary, accepting four spellings
+  `clippy::missing_safety_doc` rejects — and clippy does not examine a **private**
+  `unsafe fn`, so there this scanner is the only enforcement.  The accepted set
+  was then **measured** rather than recalled, with one `pub unsafe fn` per
+  spelling compiled under the workspace's own clippy: `Safety`, `SAFETY`,
+  `Implementation safety`, `Implementation Safety`.  That mattered in both
+  directions — the review proposed restricting to the first two, which would have
+  refused the two clippy accepts.
+
+  **And the measurement found the two authorities disagreeing.**  For a Setext
+  heading whose underlined paragraph spans lines, `cargo doc` renders
+  `id="safetyand-more-text"` and `id="this-is-not-a-contractsafety"` — neither
+  publishes a Safety section — while clippy **accepts both**, comparing each Text
+  event of the heading rather than the heading's text.  On this shape the lint is
+  the *lenient* one.  `v0.35.28` said the `# Safety` question's front-end is
+  rustdoc and then reached for the lint that approximates it; the gate follows the
+  **rendering**, because that is what a caller reads, and requires the paragraph
+  to be a single line.  *So "hand the question to the real front-end" is not
+  finished by naming a tool: when two tools answer, the one the property is
+  defined by wins, and which that is has to be checked rather than assumed.*
+
+  Two mechanical notes.  A previous round's recorded expectation is evidence, not
+  authority: round 15's control asserted `True` for the multi-line Setext form on
+  the strength of the first-line rule it had just introduced, and measurement
+  corrected it while **vindicating** that round's actual finding.  And a
+  hand-kept figure beside a derivation drifts on contact — the liveness gate's
+  self-test printed `len(_CASES) + 3`, already wrong by two; it counts the checks
+  that ran.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor
