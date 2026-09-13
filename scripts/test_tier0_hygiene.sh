@@ -494,4 +494,17 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_ipc_invariant_dethreading.py"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py"
 
+# A Tier 3 anchor that pins a Python symbol nothing reads is a TAUTOLOGY: it
+# reports PASS whatever the live code does, while reading in the report exactly
+# like a check that decides something.  Round 16 of PR #895's review produced
+# one -- the leading-form rewrite of `classify_extern_item` left three
+# interior-search regexes with no consumer, and the anchor naming one of them
+# went on passing over a definition the classifier no longer consulted.  The
+# anchor was repointed at the symbol's READ; this is what stops the next one
+# going dead unnoticed, since a fix applied at one site and not swept onto its
+# siblings is this project's most-repeated defect.  Self-test first, and its
+# decisive case keeps the anchor and the definition and adds only a reader.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_symbol_liveness.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_symbol_liveness.py"
+
 finalize_report

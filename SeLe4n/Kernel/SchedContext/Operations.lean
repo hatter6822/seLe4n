@@ -319,9 +319,12 @@ def schedContextConfigureBoundPropagate (stStored : SystemState)
       let boundTcb2 : TCB := { boundTcb with priority := newPri }
       let stWithTcb : SystemState := { stStored with
         objects := stStored.objects.insert boundTid.toObjId (KernelObject.tcb boundTcb2) }
-      let effectivePri : SeLe4n.Priority := match boundTcb.pipBoost with
-        | none => newPri
-        | some boostPri => ⟨Nat.max priority boostPri.val⟩
+      -- The bucket the thread now belongs in, read off the record that is
+      -- being stored: `TCB.boostedPriority` (`Model/Object/Types.lean`) is the
+      -- one answer the run queue is keyed by, and taking it from `boundTcb2`
+      -- rather than re-deriving it from `priority` is what stops the stored
+      -- priority and the bucket from being computed by two expressions.
+      let effectivePri : SeLe4n.Priority := boundTcb2.boostedPriority
       let boundHome := determineTargetCore stWithTcb boundTid
       if boundTid ∈ (stWithTcb.scheduler.runQueueOnCore boundHome) then
         let rqRemoved := (stWithTcb.scheduler.runQueueOnCore boundHome).remove boundTid

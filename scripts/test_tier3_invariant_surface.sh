@@ -7885,7 +7885,18 @@ run_check "INVARIANT" rg -nF '\s+(?:r#)?' scripts/check_kernel_entry_exports.py
 # So the symbol-free set and the `unknown` default live in `rust_code_view`, and
 # BOTH gates are anchored on reading it: a gate that goes back to its own answer
 # is what this pins against.
-run_check "INVARIANT" rg -n '^_EXTERN_NON_FN_ITEM' scripts/rust_code_view.py
+#
+# The anchor names `_LEADING_NON_FN_ITEM` and, since round 16, names it AT ITS
+# READ rather than at its definition.  Two defects motivate each half.  It named
+# the superseded `_EXTERN_NON_FN_ITEM` until the leading-form rewrite left that
+# with no consumer, so the check would have gone on passing over a definition
+# nothing called -- a pin on a dead symbol is a tautology, reporting PASS
+# whatever the live classifier does.  And a pin on a DEFINITION is a presence
+# check even when the symbol is live: the set can be defined here and read
+# nowhere, which is the same tautology one step later.  Anchoring the call in
+# `classify_extern_item` is the relation, and it entails the definition, since a
+# name read but never bound fails the module's own self-test at import.
+run_check "INVARIANT" rg -nF '_LEADING_NON_FN_ITEM.match(view, at, end)' scripts/rust_code_view.py
 run_check "INVARIANT" rg -nF 'return "unknown"' scripts/rust_code_view.py
 run_check "INVARIANT" rg -nF 'kind = rust_code_view.classify_extern_item(view, item_at, item_end)' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -nF 'kind = rust_code_view.classify_extern_item(view, item_at, item_end)' scripts/check_unsafe_block_justifications.py

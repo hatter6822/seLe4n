@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.28.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.29.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1999,6 +1999,66 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   **the de-duplication's own grep missed a copy**: `effectiveBucketPriority`
   binds its base with a `let`, so a search for `Nat.max tcb.priority.val` did not
   see it; it surfaced only when a proof stopped closing.
+
+  **And a fix retires more than it changes — sweep what was PINNING the thing
+  you deleted** (PR #895 review round 16, `v0.35.29`).  Three findings, and the
+  honest reading of them is that two were rules already in this file applied at
+  one site and not at its sibling: `classify_extern_item` decided a foreign
+  item's kind by *searching its interior*, which is round 15's wrong-unit rule
+  one artefact over (the question is what the item **starts** with, so
+  `decl!(#[doc = "…"] fn fake());` read as a plain `fn` and the macro was
+  consumed rather than refused); and `lean_store_read_census.py` classified over
+  raw bytes while its own `_SIGNATURE_END` comment asserted the view had blanked
+  strings, which is *gates read code, prose reads prose* — the shared overlay
+  keeps string contents **deliberately**, because a Tier 3 anchor may be about
+  what an `asm!` template puts in the symbol table, and this census's question
+  needs them gone.  The third is round 13's *a new axis is enumerated at all of
+  its values*: the fence axis knew that a fence hides a heading and not
+  CommonMark 4.5's rule that a **backtick** fence's info string may hold no
+  backtick, so ```` ```rust`x ```` opened a fence that does not exist.
+
+  The one worth writing down is the fourth, which no review reported and which
+  the first fix *created*.  Replacing the interior search retired
+  `_EXTERN_FN_ITEM`, `_MACRO_INVOCATION` and `_EXTERN_NON_FN_ITEM` — and a Tier
+  3 anchor named the third, so it went on reporting PASS over a definition the
+  classifier no longer consulted.  **A pin on a dead symbol is a tautology**: it
+  says nothing about the live code while reading in the report exactly like a
+  check that decides something.  And the way one is made is not by writing a bad
+  anchor — the anchor was correct when written — but by **deleting the thing it
+  watched**.  So a fix's blast radius includes the artefacts that watch what it
+  changed, and those fail *silently by construction*, since reporting PASS is
+  their ordinary output.  When a cut retires a definition, sweep every anchor,
+  baseline, registry and census that names it.
+
+  Two mechanical consequences.  The anchor is repointed at the symbol's **read**
+  rather than its definition, because a pin on a definition is a presence check
+  even when the symbol is live — the set can be defined here and consulted
+  nowhere, which is the same tautology one step later.  And, this being the
+  second tautological pin this PR has been shown, the response is the round-9
+  one rather than a third telling: `scripts/check_anchor_symbol_liveness.py`
+  (Tier 0) refuses any Tier 3 anchor naming a Python symbol its target binds and
+  the tracked tree never reads.  Its domain is derived on both sides, a target
+  that is missing or unparseable **fails** rather than being skipped, and its
+  decisive case keeps the anchor and the definition and adds only a reader.
+
+
+  And the same reading applied to the fix itself: `_skip_item_prelude` first
+  re-derived the `[` position from a raw regex match and carried its own
+  bracket-matching loop, while `attribute_opens_at` already answered the first
+  and `attribute_spans` already inlined the second.  Both are one answer now,
+  and the payoff is measured rather than asserted — one token-preserving
+  mutation of `_matching_square` fails the self-tests of `rust_code_view`,
+  `check_unsafe_block_justifications.py` **and** `check_kernel_entry_exports.py`.
+  *Before writing a helper, find the one this tree already has.*
+
+  Finally, the evidence for preferring a sweep to a count.  `v0.35.28` recorded
+  `Priority.raisedBy` as collapsing **eleven** inline spellings; re-running the
+  search over the landed cut found a **twelfth**, in
+  `schedContextConfigureBoundPropagate`, which computed the bucket a reconfigured
+  thread moves to from its `priority` argument while storing the record beside
+  it.  It reads the stored record now, and the collapse is definitionally
+  identical.  *A number in a changelog is what one search found; it is not the
+  set.*
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

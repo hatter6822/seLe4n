@@ -682,6 +682,25 @@ def _undecorate_block(body: str) -> str:
 #: backticks or tildes, indented at most three spaces.
 MD_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
+
+def _opens_fence(delim: "re.Match[str]") -> bool:
+    """Does this delimiter line OPEN a fenced code block?
+
+    **A backtick fence's info string may not contain a backtick** (CommonMark
+    4.5), and the specification gives the reason: otherwise ordinary inline code
+    would read as the start of a fence.  So ```` ```rust`x ```` opens nothing,
+    and a `# Safety` heading below it is published — while this gate treated the
+    line as a fence and reported the declaration undocumented.  Fail-CLOSED,
+    refusing correct documentation, which round 6 recorded as a defect in its
+    own right.
+
+    A **tilde** fence carries no such restriction: `~~~rust`x` is a fence, and
+    the asymmetry is the whole content of this predicate.  Closing is unaffected
+    — a closer may carry no info string at all, which the caller already
+    requires — so this is asked only where a fence is opened.
+    """
+    return not (delim.group(1)[0] == "`" and "`" in delim.group(2))
+
 #: A `# Safety` ATX heading (CommonMark 4.2).  Up to three leading spaces; a
 #: fourth makes the line an indented code block instead.  The whitespace after
 #: the `#` run is required — `#Safety` renders as a paragraph (round 8).
@@ -834,7 +853,7 @@ def publishes_safety_heading(markdown: str) -> bool:
                     and not delim.group(2).strip()):
                 fence = None
             continue
-        if delim is not None:
+        if delim is not None and _opens_fence(delim):
             fence = (delim.group(1)[0], len(delim.group(1)))
             paragraph = False
             opening = None
@@ -2151,6 +2170,19 @@ _DOC_MARKDOWN_FORMS = {
     # underline titles STARTS after it, so this one really is a Safety heading.
     "setext-after-atx-heading":
         ("/// # Overview\n/// Safety\n/// ===", True),
+    # **A backtick fence's info string may not contain a backtick**
+    # (CommonMark 4.5, PR #895 review round 16) -- so the first row opens no
+    # fence and its heading IS published, where this gate read a fence and
+    # refused correct documentation.  The asymmetry is the point, so the two
+    # controls keep the backtick and change only what carries it: a real
+    # backtick fence still hides a heading, and a TILDE fence carries no such
+    # restriction and hides one even with a backtick in its info string.
+    "fence-backtick-in-backtick-info":
+        ("/// ```rust`x\n/// # Safety\n/// contract", True),
+    "fence-backtick-plain-info":
+        ("/// ```rust\n/// # Safety\n/// ```", False),
+    "fence-tilde-allows-backtick-info":
+        ("/// ~~~rust`x\n/// # Safety\n/// ~~~", False),
 }
 
 #: **The site-name dimension.**  A declaration whose name this scanner cannot

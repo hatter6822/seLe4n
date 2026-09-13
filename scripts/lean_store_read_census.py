@@ -456,6 +456,32 @@ def code_view(root: Path) -> Path:
     return out
 
 
+def census_view(path: Path) -> str:
+    """The overlay file with string CONTENTS blanked as well.
+
+    **The view you read depends on the question** (PR #895 review round 16).
+    The shared overlay keeps string contents deliberately — a Tier 3 anchor may
+    be about text an `asm!` template or a `.global` directive puts in the symbol
+    table — and this census asks a different question: `READ` matches a
+    *spelling of a store read*, so a diagnostic string naming that spelling,
+    `def diagnostic : String := "avoid .objects[raw]? syntax"`, was counted as
+    an executable raw read.  The enforced zero then refused valid code, and the
+    Tier 1 reconciliation could not correct it: it sees a genuine executable
+    `def` and agrees with the classifier about the declaration.  Refusing
+    correct code is the fail-CLOSED direction and still a defect — round 6
+    recorded that the safe direction is a direction too.
+
+    Blanked in process rather than as a second overlay: a whole-repo mirror
+    costs 324 MB and the only difference would be the text inside literals.
+    Blanking is byte-aligned and idempotent over an already comment-free file,
+    so every line, column and offset this file computes is unchanged.
+
+    `_SIGNATURE_END`'s own comment already asserted that the view had blanked
+    strings.  It had not; this is what makes that sentence true.
+    """
+    return lean_code_view.strip(path.read_text(), blank_strings=True)
+
+
 # A signature ends at the first top-level `:=`, `where`, or **equation clause**.
 # `where` must be a whole word — `elsewhere` is not a terminator — and none of
 # the three may sit inside a string literal, which the code view has already
@@ -566,7 +592,7 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None):
     as code.  Only a read in the BODY of a declaration whose result is not a
     `Prop` is a transition reading the store raw.
     """
-    lines = path.read_text().splitlines()
+    lines = census_view(path).splitlines()
     decl, kind, signature, sig_open = "<file scope>", "<none>", "", False
     in_default, body_depth, sig_depth, field_col = False, 0, 0, None
     binder_depth, binder_default = 0, None
@@ -1259,6 +1285,21 @@ def holds
     : Prop :=
   (st.objects[oid]?).isSome
 """, {}, {("f.lean", "holds"): 1}),
+    # **A SPELLING QUOTED IN A STRING IS NOT A READ** (PR #895 review round
+    # 16).  `READ` matches a spelling, so a diagnostic naming that spelling was
+    # counted as an executable raw store read and the enforced zero refused
+    # valid code -- while the Tier 1 reconciliation, which sees a genuine
+    # executable `def` and agrees about the declaration, could not correct it.
+    # Fail-CLOSED, and round 6 recorded that the safe direction is a direction.
+    # Token-preserving against the case below, which is the decisive control:
+    # the same spelling, outside quotes, must still count.
+    "a_read_quoted_in_a_string_is_not_a_read": ("""
+def diagnostic : String := "avoid .objects[raw]? syntax"
+""", {}, {}),
+    "the_same_spelling_unquoted_is_still_a_read": ("""
+def peek (st : SystemState) (oid : ObjId) : Bool :=
+  (st.objects[oid]?).isSome
+""", {("f.lean", "peek"): 1}, {}),
 }
 
 #: Cases whose fixture the parser must REFUSE, and how many declarations it must

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-faraday-gz9b3w",
-      "commit_sha": "a5560b297a4641bcca0b9dc775a40db9f212a513",
-      "tree_sha": "afd8b553ee2d9ba45d511049c46a48773c1c5331",
-      "committed_at_utc": "2026-09-13T18:03:05+00:00"
+      "commit_sha": "2d548fc191cd64178ef5f00f570ce9c5af1aa365",
+      "tree_sha": "5096509dff3ce2d21ce02f3d57edc8e16643779c",
+      "committed_at_utc": "2026-09-13T20:31:49+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a09a0465befa3a38b01733e2d8b1622b106543e43bd062799d57da147a8c1eed"
+    "source_digest": "66ac34dce55fdabebc5b1b02dc53c804e343819c9ecf5a97813bf92dfb7dc67f"
   },
   "summary": {
     "module_count": 400,
     "declaration_count": 21375
   },
   "readme_sync": {
-    "version": "0.35.28",
+    "version": "0.35.29",
     "lean_toolchain": "v4.28.0",
     "production_files": 330,
-    "production_loc": 377183,
+    "production_loc": 377186,
     "test_files": 70,
     "test_loc": 76360,
     "proved_theorem_lemma_decls": 12621,
@@ -188807,6 +188807,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "boostedPriority",
             "boundTid",
             "determineTargetCore",
             "getTcb",
@@ -188823,7 +188824,7 @@
         {
           "kind": "def",
           "name": "schedContextConfigure",
-          "line": 359,
+          "line": 362,
           "called": [
             "Kernel",
             "SchedContext",
@@ -188847,7 +188848,7 @@
         {
           "kind": "def",
           "name": "replyFrameOnLiveStack",
-          "line": 454,
+          "line": 457,
           "called": [
             "SystemState",
             "TCB",
@@ -188863,7 +188864,7 @@
         {
           "kind": "def",
           "name": "schedContextBind",
-          "line": 481,
+          "line": 484,
           "called": [
             "Kernel",
             "SchedContextId",
@@ -188889,7 +188890,7 @@
         {
           "kind": "def",
           "name": "schedContextUnbind",
-          "line": 594,
+          "line": 597,
           "called": [
             "Kernel",
             "SchedContextId",
@@ -188918,7 +188919,7 @@
         {
           "kind": "def",
           "name": "schedContextYieldTo",
-          "line": 733,
+          "line": 736,
           "called": [
             "SchedContextId",
             "SystemState",

@@ -639,17 +639,40 @@ def binding_statement_before(
 #: `r#unsafe` one review round earlier and not swept here — which is this
 #: project's sweep rule failing inside the cut that moved this scanner.
 _EXTERN_KEYWORD = re.compile(keyword("extern"))
-#: An item macro at item position — `name!(`, `name![` or `name!{`, the three
-#: bracket forms Rust accepts.  Matched on a string-free view, so a `!` inside a
-#: literal is not one.
-_MACRO_INVOCATION = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\s*!\s*[(\[{]")
-#: A `fn` item.  `r#` is Rust's raw-identifier escape and part of the spelling,
-#: not the name.
-_EXTERN_FN_ITEM = re.compile(keyword("fn") + r"\s+(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*\(")
+#: **The leading forms of a foreign item** (PR #895 review round 16).  Anchored
+#: with `match`, so each asks what the item *begins* with once its attributes
+#: and qualifiers are consumed -- the distinction a `search` structurally
+#: cannot draw between a macro carrying `fn` tokens and a `fn` carrying a macro
+#: in its type.
+#:
+#: These three SUPERSEDE the interior-search spellings rather than joining them:
+#: a dead definition left beside its replacement is a second answer waiting to
+#: be reached for, and the Tier 3 anchor that pinned one of them would have gone
+#: on passing over code nothing calls.  All three are matched on a string-free
+#: view, so a `!`, a `fn` or a `static` inside a literal is not one, and `r#` is
+#: Rust's raw-identifier escape -- part of the spelling, not of the name.
+
+#: An item macro at item position, optionally path-qualified: `name!(`,
+#: `name![`, `name!{` and `a::b!(`, the forms Rust accepts there.
+_LEADING_MACRO_INVOCATION = re.compile(
+    r"(?:(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*"
+    r"(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*!\s*[(\[{]")
+#: A `fn` item: the keyword, a name, and the parameter list it opens.
+_LEADING_FN_ITEM = re.compile(
+    keyword("fn") + r"\s+(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*\(")
 #: An item a foreign block may hold that declares no function: a `static`, a
-#: type alias, or a `use`.
-_EXTERN_NON_FN_ITEM = re.compile(
+#: type alias, or a `use`.  These are the ONLY items a caller may skip.
+_LEADING_NON_FN_ITEM = re.compile(
     r"|".join(keyword(w) for w in ("static", "type", "use")))
+
+#: The qualifiers a foreign item may carry between its attributes and its form.
+#: `safe` and `unsafe` are the edition-2024 item qualifiers; `pub` and its
+#: restricted spellings are the visibility.  A qualifier this list does not name
+#: leaves the head unrecognised, which is the fail-closed direction for a
+#: requirement scanner.
+_ITEM_QUALIFIER = re.compile(
+    r"(?:" + r"|".join(keyword(w) for w in ("pub", "safe", "unsafe")) + r")"
+    r"(?:\s*\(\s*(?:crate|super|self|in\s[^)]*)\))?")
 
 
 #: **One attribute opener, and every scanner composes it** (PR #895 review
@@ -683,6 +706,53 @@ def attribute_opens_at(view: str, at: int = 0):
     return None if match is None else match.end()
 
 
+def _matching_square(view: str, opened: int, end: "int | None" = None) -> "int | None":
+    """The `]` closing the `[` at `opened`, or `None` if it does not close by
+    `end` (the end of the view when omitted).
+
+    The sibling of `_matching_brace`, for attribute lists, and the ONE answer to
+    "where does this bracket close": `attribute_spans` inlined the same loop
+    until round 16, and two implementations of one question is the divergence
+    this module exists to prevent elsewhere.
+    """
+    depth = 0
+    for offset in range(opened, len(view) if end is None else end):
+        if view[offset] == "[":
+            depth += 1
+        elif view[offset] == "]":
+            depth -= 1
+            if depth == 0:
+                return offset
+    return None
+
+
+def _skip_item_prelude(view: str, start: int, end: int) -> "int | None":
+    """The offset of the item's form, past its attributes and qualifiers.
+
+    Returns `None` when an attribute does not close inside the item, since a
+    head that cannot be located is a head this scanner has not read.
+    """
+    at = start
+    while at < end:
+        while at < end and view[at].isspace():
+            at += 1
+        if at >= end:
+            return None
+        opened = attribute_opens_at(view, at)
+        if opened is not None:
+            closed = _matching_square(view, opened - 1, end)
+            if closed is None:
+                return None
+            at = closed + 1
+            continue
+        qualifier = _ITEM_QUALIFIER.match(view, at, end)
+        if qualifier is not None and qualifier.end() > at:
+            at = qualifier.end()
+            continue
+        return at
+    return None
+
+
 def attribute_spans(view: str) -> list[tuple[int, int]]:
     """Byte spans of every `#[…]` / `#![…]` attribute in a STRING-FREE view.
 
@@ -713,22 +783,14 @@ def attribute_spans(view: str) -> list[tuple[int, int]]:
         if j >= n or view[j] != "[":
             i += 1
             continue
-        depth, k = 0, j
-        while k < n:
-            if view[k] == "[":
-                depth += 1
-            elif view[k] == "]":
-                depth -= 1
-                if depth == 0:
-                    spans.append((i, k + 1))
-                    break
-            k += 1
-        else:
+        k = _matching_square(view, j)
+        if k is None:
             # Unterminated: the scanner cannot say where this attribute ends, so
             # it reports nothing rather than guessing an extent.  Callers that
             # build justifications treat a missing attribute as undocumented,
             # which is the fail-closed direction for them.
             break
+        spans.append((i, k + 1))
         i = k + 1
     return spans
 
@@ -870,17 +932,33 @@ def classify_extern_item(view: str, start: int, end: int) -> str:
     and this view does not becomes a build failure on the day it is written
     rather than a silently smaller set of requirements.
 
-    The `fn` test precedes the macro test because a macro *name* may contain the
-    letters `fn` only as an identifier, while `_EXTERN_FN_ITEM` requires the
-    keyword followed by a name and `(`; an item matching both — `fn f(x: m!());`
-    — is a function declaration with a macro in its type, and it is the `fn`
-    that declares the symbol.
+    **The item's LEADING form decides, not a search of its interior**
+    (PR #895 review round 16).  Both earlier orderings are wrong, and the
+    review's two cases are what pin it.  Testing `fn` first classified
+    `decl!(#[doc = "…"] fn fake());` — an item-position macro carrying
+    function-shaped tokens in its arguments — as a plain `fn`, so the macro was
+    read past instead of refused and the declaration its expansion really emits
+    was in no inventory: fail-OPEN, on the gate whose own rule is that a macro
+    inside a foreign block is refused rather than read past.  Testing the macro
+    first is wrong the other way: `fn f(x: m!());` is a function declaration
+    with a macro in its *type*, and it is the `fn` that declares the symbol.
+
+    Neither order can separate them because both ask *whether a form occurs
+    anywhere in the item*, and the distinction is *which form the item starts
+    with*.  So the item is read from its head: attributes and the qualifiers a
+    foreign item may carry are consumed first, and whatever stands after them
+    is the item's form.  A head this scanner cannot name is `unknown`, which
+    its callers refuse — this module builds requirements, and round 25's rule
+    says a requirement it drops is a check nobody runs.
     """
-    if _EXTERN_FN_ITEM.search(view, start, end):
-        return "fn"
-    if _MACRO_INVOCATION.search(view, start, end):
+    at = _skip_item_prelude(view, start, end)
+    if at is None:
+        return "unknown"
+    if _LEADING_MACRO_INVOCATION.match(view, at, end):
         return "macro"
-    if _EXTERN_NON_FN_ITEM.search(view, start, end):
+    if _LEADING_FN_ITEM.match(view, at, end):
+        return "fn"
+    if _LEADING_NON_FN_ITEM.match(view, at, end):
         return "non-fn"
     return "unknown"
 
@@ -1189,6 +1267,27 @@ def _self_test() -> int:
     # the `!` and the brackets are both still there.
     check("a macro inside a fn signature is still a fn",
           kinds_of('extern "C" { fn a(x: m!()); }') == ["fn"])
+    # **The item's LEADING form decides** (PR #895 review round 16).  The pair
+    # above and the pair below are the same two tokens in the two orders, which
+    # is why neither a `fn`-first nor a macro-first SEARCH can separate them: an
+    # item-position macro carrying function-shaped tokens in its ARGUMENTS read
+    # as a plain `fn`, so the macro was consumed instead of refused and whatever
+    # declaration its expansion emits was in no inventory — fail-OPEN, on the
+    # scanner whose own rule is that a macro in a foreign block is refused.
+    check("a macro carrying fn tokens is a macro, not a fn",
+          kinds_of('extern "C" { decl!(#[doc = "x"] fn fake()); }') == ["macro"],
+          str(kinds_of('extern "C" { decl!(#[doc = "x"] fn fake()); }')))
+    check("a path-qualified item macro is a macro too",
+          kinds_of('extern "C" { a::b!(fn fake()); }') == ["macro"])
+    # ...and the head is read past attributes and qualifiers, not from the
+    # item's first byte.
+    check("an attributed, qualified fn is still a fn",
+          kinds_of('extern "C" { #[link_name = "r"] pub unsafe fn g(); }') == ["fn"])
+    # An attribute that never closes leaves the head unlocatable, which is
+    # `unknown` — the fail-closed answer for a requirement scanner.
+    check("an item whose attribute never closes is unknown",
+          kinds_of('extern "C" { #[doc = "x" fn g(); }') == ["unknown"],
+          str(kinds_of('extern "C" { #[doc = "x" fn g(); }')))
     # An item form the view does not know is `unknown`, never silently skipped.
     check("an unknown item form is named", kinds_of('extern "C" { const K: u32; }')
           == ["unknown"])

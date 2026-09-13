@@ -1,3 +1,110 @@
+## v0.35.29 — PR #895 review round 16: the item's leading form, the census's own view, CommonMark's backtick-in-info rule, and a pin this cut's own fix left dead
+
+Three findings, each reproduced against the tree before being acted on and each
+mutation-verified in **both** directions — the pre-fix behaviour, and the
+plausible over-correction beside it.  Then a fourth, self-inflicted, found by
+running this project's sweep rule on the first fix rather than by waiting for a
+review round to supply it.
+
+**A form occurring in an item is not the item's form** (P1, fail-open).
+`rust_code_view.classify_extern_item` decided what a foreign item is by
+*searching its interior*: `fn` first, then a macro invocation, then the
+symbol-free set.  So `decl!(#[doc = "…"] fn fake());` — an item-position macro
+carrying function-shaped tokens in its **arguments** — classified as a plain
+`fn`.  The macro was therefore read past instead of refused, and whatever
+declaration its expansion really emits was in no inventory, on the scanner whose
+own rule (round 21, restated in `CLAUDE.md`) is that a macro inside a foreign
+block is refused rather than read past.  Both gates that share this walk —
+`check_kernel_entry_exports.py` and `check_unsafe_block_justifications.py` — were
+affected, which is round 7's consolidation working: one defect, one fix.
+
+Reversing the order is not the fix, and the reviewer's own control is why:
+`fn f(x: m!());` is a function declaration with a macro in its *type*, and it is
+the `fn` that declares the symbol.  The two cases are the same two tokens in the
+two orders, so **no** interior search can separate them — the distinction is
+which form the item *starts* with.  The item is now read from its head
+(`_skip_item_prelude` consumes attributes and the `pub` / `safe` / `unsafe`
+qualifiers a foreign item may carry), and the three leading forms are matched
+anchored.  A head this scanner cannot locate is `unknown`, which both callers
+refuse: this module builds *requirements*, and round 25's rule is that a
+requirement it drops is a check nobody runs.  Both orders are pinned as
+mutations, and each fails a different witness.
+
+**A spelling quoted in a string is not a read** (P2, fail-closed).
+`lean_store_read_census.py` classified over `path.read_text()` while
+`_SIGNATURE_END`'s own comment asserted the view had blanked strings.  It had
+not, so `def diagnostic : String := "avoid .objects[raw]? syntax"` counted as an
+executable raw store read — and `STORE_READ_CODE` is a `ZERO_METRICS` entry, so
+Tier 0 would have refused correct code with no way to regenerate past it.  The
+Tier 1 elaborator reconciliation could not correct it either: it sees a genuine
+executable `def` and *agrees* with the classifier about the declaration.
+Refusing valid text is the safe direction and still a defect, which round 6
+recorded in as many words.  `census_view` blanks string contents in process —
+byte-aligned and idempotent over an already comment-free file, so every line,
+column and offset is unchanged, and no second whole-repo overlay is built.  The
+decisive control is the same spelling outside quotes, which must still count.
+
+**A backtick fence's info string may not contain a backtick** (P2,
+fail-closed).  CommonMark 4.5 forbids it, and gives the reason: otherwise
+ordinary inline code would open a fence.  So ```` ```rust`x ```` opens nothing
+and a `# Safety` heading below it **is** published — while the unsafe gate read
+a fence, hid the heading, and reported the declaration undocumented.  A **tilde**
+fence carries no such restriction, and that asymmetry is the whole content of
+`_opens_fence`; both controls keep the backtick and change only what carries it.
+
+**And the first fix left a pin with nothing behind it.**  The leading-form
+rewrite retired `_EXTERN_FN_ITEM`, `_MACRO_INVOCATION` and
+`_EXTERN_NON_FN_ITEM`, and a Tier 3 anchor named the third — so the check went on
+reporting PASS over a definition the classifier no longer consulted.  **A pin on
+a dead symbol is a tautology**: it says nothing about the live code while reading
+in the report exactly like a check that decides something.  All three are
+deleted, their docstrings re-homed onto the live regexes, and the anchor is
+repointed at the symbol's **read** rather than its definition — because a pin on
+a definition is a presence check even when the symbol is live, and the set can be
+defined here and consulted nowhere.
+
+The same reading applied to the fix itself.  `_skip_item_prelude` first
+re-derived the `[` position from a raw regex match and carried its own
+bracket-matching loop — while `attribute_opens_at` already answered the first
+and `attribute_spans` already inlined the second.  Both are one answer now, and
+the payoff is measured rather than asserted: a single token-preserving mutation
+of `_matching_square` (the closing bracket it counts) fails the self-tests of
+`rust_code_view`, `check_unsafe_block_justifications.py` **and**
+`check_kernel_entry_exports.py`.  *Before writing a helper, find the one this
+tree already has.*
+
+That is the second time this cut's author has been shown a tautological pin, so
+per this project's own escalation rule the third response is not prose:
+`scripts/check_anchor_symbol_liveness.py` (Tier 0, 8 self-test cases) refuses any
+Tier 3 anchor naming a Python symbol its target binds and the tracked tree never
+reads.  Its domain is derived — every anchor over a `.py` target, every reader in
+the tracked Python tree — a target that is missing or unparseable **fails**
+rather than being skipped, and its decisive case keeps the anchor and the
+definition and adds only a reader.  It fires on the pre-fix state and is clean on
+66 anchors today.
+
+**And the honest reading of the round as a whole**: all three findings are the
+front-end row registered in `docs/REGISTERED_DEBT.md` table C, and none is in a
+question a real front-end answers — the item split decides which linker symbols a
+foreign block requires, which no lint reports; the Lean classifier runs at Tier 0,
+where no elaborator is available, which is why its Tier 1 reconciliation exists;
+and the CommonMark defect is in the residue `clippy::missing_safety_doc`
+structurally cannot reach (a non-`pub` `unsafe fn`, a foreign declaration, and
+the `aarch64` half the host lane elides).  So `v0.35.28`'s adoption of the real
+front-ends narrowed the row and did not close it, and the row is updated with
+this round's evidence rather than left reading as though it had.
+
+**A twelfth inline `max(base, boost)`**, found by running the same sweep on
+v0.35.28 rather than trusting its count of eleven:
+`schedContextConfigureBoundPropagate` computed the bucket a reconfigured thread
+moves to from the `priority` argument while storing the record beside it, so the
+stored priority and the bucket were two expressions.  It reads
+`boundTcb2.boostedPriority` — the record being stored — and the collapse is
+definitionally identical (`cases` on the boost, `rfl` on each arm), so no
+computed bucket moves.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md
+
 ## v0.35.28 — PR #895 review round 15: the Setext heading's whole paragraph, the frozen reply's inheritance revert and its missing-server refusal, and an operation-level differential that found a fourth divergence
 
 Three findings, all reproduced against the tree before being acted on, and one
