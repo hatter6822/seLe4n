@@ -112,15 +112,23 @@ EXPECTED_UNRESOLVED: dict[str, str] = {
     ),
 }
 
-#: The `extern` keyword.  Whether it *opens a block* is decided structurally
-#: by `extern_block_openings`, not by a spelling: PR #889 review round 17 found
-#: this searched for the literal `extern "C" {`, so `extern r"C" { … }` — which
-#: compiles, and declares exactly the same symbols — declared nothing as far as
-#: this gate could see, and `extern { … }` (ABI `"C"` by default) and
-#: `extern "C-unwind" { … }` were invisible the same way.  The ABI names a
-#: calling convention; every `extern` block asks the linker for its items
-#: whatever the convention is, so the requirement does not depend on it.
-EXTERN_KEYWORD = re.compile(r"\bextern\b")
+# Whether an `extern` *opens a block* is decided structurally by
+# `rust_code_view.extern_blocks`, not by a spelling: PR #889 review round 17
+# found this gate searching for the literal `extern "C" {`, so
+# `extern r"C" { … }` — which compiles, and declares exactly the same symbols —
+# declared nothing as far as it could see, and `extern { … }` (ABI `"C"` by
+# default) and `extern "C-unwind" { … }` were invisible the same way.  The ABI
+# names a calling convention; every `extern` block asks the linker for its items
+# whatever the convention is, so the requirement does not depend on it.
+#
+# PR #895 review round 7 moved that walk — the ABI-literal resolution, the brace
+# matching, the item split and the item classification — into `rust_code_view`,
+# because the tree's other foreign-block parser
+# (`scripts/check_unsafe_block_justifications.py`) asked the same question and
+# answered it differently: it scanned for `fn` and examined nothing else, so an
+# item macro declared an unsafe obligation no site, count or baseline could see.
+# This gate keeps only what an item MEANS to it: the linker symbol, with
+# `#[link_name]` applied.
 #: A foreign function declaration.  `r#` is Rust's raw-identifier escape and
 #: names the *same* linker symbol as the bare spelling — `fn r#lean_real();`
 #: asks for `lean_real` (PR #889 review round 25).  Without the prefix this
@@ -129,11 +137,6 @@ EXTERN_KEYWORD = re.compile(r"\bextern\b")
 #: disappear from the derived link requirements and Tier 1 would pass with no
 #: provider.
 EXTERN_FN = re.compile(r"\bfn\s+(?:r#)?([A-Za-z_][A-Za-z0-9_]*)\s*\(")
-#: An item a foreign block may hold that declares no *function* symbol: a
-#: `static` (a data object — the archive parsers reject those as function
-#: providers anyway), a type alias, or a `use`.  Anything in a block that is
-#: none of these and not a `fn` is refused rather than skipped (round 25).
-EXTERN_NON_FN_ITEM = re.compile(r"\b(?:static|type|use)\b")
 #: The symbol SM10.1's boot entry exports.  Only the link-level reconciliation
 #: reads it here — that the archive does not define it yet, and that
 #: `EXPECTED_UNRESOLVED` still says so.  What the entry must *do* is
@@ -253,63 +256,56 @@ def extern_declarations_in(text: str, where: str) -> set[str]:
     if len(view) != len(kept):
         sys.exit(f"[FAIL] {where}: the Rust code views are not byte-aligned")
     found: set[str] = set()
-    for _, brace_at in extern_block_openings(view):
-        depth = 0
-        end = None
-        for index in range(brace_at, len(view)):
-            if view[index] == "{":
-                depth += 1
-            elif view[index] == "}":
-                depth -= 1
-                if depth == 0:
-                    end = index
-                    break
-        if end is None:
-            sys.exit(f"[FAIL] {where}: unbalanced `extern` block")
+    try:
+        blocks = rust_code_view.extern_blocks(view)
+    except rust_code_view.UnbalancedExternBlock as unbalanced:
+        sys.exit(f"[FAIL] {where}: {unbalanced}")
+    for _, brace_at, end in blocks:
         # PR #889 review round 16: split the block into **items** and read each
         # item's own attributes.  Advancing the attribute window only across
         # `fn` declarations let an intervening `static` donate its
         # `#[link_name]` to the next function — the attribute belongs to the
         # item it decorates, and an `extern` block holds statics and type
         # aliases as well as functions.
-        for item_at, item_end in extern_block_items(view, brace_at + 1, end):
+        for item_at, item_end in rust_code_view.extern_block_items(view, brace_at + 1, end):
+            # PR #889 review rounds 21 and 25 established the rule here: a
+            # foreign block may hold an item MACRO, which Rust expands into real
+            # declarations a `fn`-shaped search cannot see, so the requirement
+            # would silently not exist and Tier 1 would pass with no provider;
+            # and every OTHER unrecognised item is the same fail-open branch
+            # rather than a special case, so only items that genuinely declare
+            # no function — `static`, a type alias, a `use` — may be skipped.
+            #
+            # PR #895 review round 7 moved the classification into
+            # `rust_code_view`.  The rule had been written down as implemented
+            # and was implemented *here*, while the tree's other foreign-block
+            # parser (`scripts/check_unsafe_block_justifications.py`) still
+            # scanned for `fn` and examined nothing else.  One question, one
+            # answer: what an item MEANS still differs between the two gates —
+            # a linker symbol here, an unsafe obligation there — so only the
+            # classification is shared, and each gate does its own extraction.
+            kind = rust_code_view.classify_extern_item(view, item_at, item_end)
+            if kind != "fn":
+                if kind == "non-fn":
+                    continue  # a `static`, a type alias: not a function requirement
+                sys.exit(
+                    f"[FAIL] {where}: an item inside an `extern` block "
+                    f"({view[item_at:item_end].strip()[:60]!r}) is a {kind}, not a `fn` "
+                    f"this scanner can read.  If it declares a function symbol the link "
+                    f"requirement is missing; write the declaration out, or teach "
+                    f"`rust_code_view.classify_extern_item` the form."
+                )
             declaration = EXTERN_FN.search(view, item_at, item_end)
             if declaration is None:
-                # PR #889 review round 21: a foreign block may hold an **item
-                # macro**, and Rust expands it into real declarations.
-                # `extern "C" { decl!(); }` where `decl!` expands to
-                # `fn lean_generated();` declares a symbol this scanner cannot
-                # see, so the requirement would silently not exist and Tier 1
-                # would pass with no provider.  Expanding Rust macros is out of
-                # this scanner's scope and always will be, so the input is
-                # refused rather than read past: the rule this file follows is
-                # that where a scanner cannot decide, it fails closed.  The HAL
-                # contains no such macro, so this costs nothing today and turns
-                # the day one is added into a build failure with a reason.
-                if MACRO_INVOCATION.search(view, item_at, item_end):
-                    sys.exit(
-                        f"[FAIL] {where}: a macro invocation inside an `extern` block "
-                        f"({view[item_at:item_end].strip()[:60]!r}) expands to declarations "
-                        f"this scanner cannot see.  Write the `fn` declarations out, or "
-                        f"teach this gate to read the expansion."
-                    )
-                # PR #889 review round 25: round 21 refused *macros* and let
-                # every other unrecognised item fall through to `continue`,
-                # which is the fail-open direction — an item whose form this
-                # scanner does not know declares no requirement and signals
-                # nothing.  Only the items that genuinely declare no function
-                # symbol may be skipped; anything else stops the build.  That
-                # is round 21's own rule, applied to the default branch rather
-                # than to one case of it.
-                if not EXTERN_NON_FN_ITEM.search(view, item_at, item_end):
-                    sys.exit(
-                        f"[FAIL] {where}: an item inside an `extern` block "
-                        f"({view[item_at:item_end].strip()[:60]!r}) is neither a `fn` this "
-                        f"scanner can read nor a `static`/`type`/`use`.  If it declares a "
-                        f"function symbol the link requirement is missing; teach this gate "
-                        f"the form, or write the declaration out."
-                    )
-                continue  # a `static`, a type alias: not a function requirement
+                # The shared view calls it a function and this gate's own
+                # pattern cannot read it: two answers to one question, refused
+                # rather than dropped, since a dropped requirement is a check
+                # nobody runs.
+                sys.exit(
+                    f"[FAIL] {where}: an item inside an `extern` block "
+                    f"({view[item_at:item_end].strip()[:60]!r}) is classified as a `fn` by "
+                    f"`rust_code_view` and unreadable by this gate's own pattern."
+                )
             # PR #889 review round 17: the attribute is **located** on the
             # string-free view and only its value read from the aligned kept
             # one — round 16 fixed exactly this at `halt_definitions` and left
@@ -323,93 +319,6 @@ def extern_declarations_in(text: str, where: str) -> set[str]:
             ]
             found.add(renamed[-1] if renamed else declaration.group(1))
     return found
-
-
-# PR #889 review round 21: an item macro inside a foreign block.  `name ! (`,
-# `name ! [` or `name ! {` at item position — the three bracket forms Rust
-# accepts for an invocation.  Matched on the string-free view, so a `!` inside
-# a literal is not one.
-MACRO_INVOCATION = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\s*!\s*[(\[{]")
-
-
-def extern_block_openings(view: str) -> list[tuple[int, int]]:
-    """Every `extern <abi>? { … }` block in `view`, as `(keyword, brace)`
-    offsets.
-
-    Rust's grammar after `extern` is closed: `crate`, an optional ABI **string
-    literal** then `fn`, or an optional ABI literal then `{`.  Only the last
-    opens a block, and the ABI is a literal in any of its forms — `"C"`,
-    `r"C"`, `r#"C"#` — naming any convention.  Resolving the literal is what
-    makes the answer independent of how it is spelled (PR #889 review round
-    17); the previous check searched for the eleven characters `extern "C" {`.
-    """
-    openings: list[tuple[int, int]] = []
-    for keyword in EXTERN_KEYWORD.finditer(view):
-        at = skip_rust_space(view, keyword.end())
-        past = string_literal_end(view, at)
-        if past is not None:
-            at = skip_rust_space(view, past)
-        if at < len(view) and view[at] == "{":
-            openings.append((keyword.start(), at))
-    return openings
-
-
-def skip_rust_space(view: str, at: int) -> int:
-    """Past the whitespace at `at`.  Comments are already blanked in the view,
-    so whitespace is all there is to skip."""
-    while at < len(view) and view[at].isspace():
-        at += 1
-    return at
-
-
-def string_literal_end(view: str, at: int) -> int | None:
-    """Just past the string literal starting at `at`, or `None` when there is
-    none there.
-
-    Handles the raw forms: `r"…"`, `r#"…"#`, `r##"…"##`.  On the string-free
-    view an interior holds no `"` at all (it is blanked to spaces), and an ABI
-    string is kept verbatim by `rust_code_view` because it is syntax; both read
-    correctly here, since the closer is the first `"` followed by the opener's
-    own run of `#`.
-    """
-    index = at
-    hashes = 0
-    if index < len(view) and view[index] == "r":
-        index += 1
-        while index < len(view) and view[index] == "#":
-            hashes += 1
-            index += 1
-    if index >= len(view) or view[index] != '"':
-        return None
-    closer = '"' + "#" * hashes
-    close = view.find(closer, index + 1)
-    return None if close < 0 else close + len(closer)
-
-
-def extern_block_items(view: str, start: int, end: int) -> list[tuple[int, int]]:
-    """The `;`-terminated items of an `extern "C" { … }` block, as spans.
-
-    Each span begins after the previous item's `;` — so it carries that item's
-    own attributes — and ends at its own `;`.  Semicolons inside brackets
-    (a `[u8; 4]` type) do not terminate an item.
-    """
-    items: list[tuple[int, int]] = []
-    at = start
-    depth = 0
-    index = start
-    while index < end:
-        character = view[index]
-        if character in "([{<":
-            depth += 1
-        elif character in ")]}>":
-            depth = max(0, depth - 1)
-        elif character == ";" and depth == 0:
-            items.append((at, index))
-            at = index + 1
-        index += 1
-    if view[at:end].strip():
-        items.append((at, end))
-    return items
 
 
 def hal_extern_declarations() -> set[str]:

@@ -7821,8 +7821,18 @@ run_check "INVARIANT" rg -nF 'EXTERN_FN = re.compile(r"' scripts/check_kernel_en
 # contains a letter-digit pair the identifier-naming gate reads as a workstream
 # code, and the escape is the relation this round added anyway.
 run_check "INVARIANT" rg -nF 'fn\s+(?:r#)?' scripts/check_kernel_entry_exports.py
-run_check "INVARIANT" rg -n '^EXTERN_NON_FN_ITEM' scripts/check_kernel_entry_exports.py
-run_check "INVARIANT" rg -nF 'if not EXTERN_NON_FN_ITEM.search(view, item_at, item_end):' scripts/check_kernel_entry_exports.py
+# PR #895 review round 7 moved the item CLASSIFICATION into the shared Rust
+# view: the tree's OTHER foreign-block parser
+# (`scripts/check_unsafe_block_justifications.py`) asked the same question and
+# answered it differently — it scanned for `fn` and examined nothing else, so an
+# item macro declared an unsafe obligation no site, count or baseline could see.
+# So the symbol-free set and the `unknown` default live in `rust_code_view`, and
+# BOTH gates are anchored on reading it: a gate that goes back to its own answer
+# is what this pins against.
+run_check "INVARIANT" rg -n '^_EXTERN_NON_FN_ITEM' scripts/rust_code_view.py
+run_check "INVARIANT" rg -nF 'return "unknown"' scripts/rust_code_view.py
+run_check "INVARIANT" rg -nF 'kind = rust_code_view.classify_extern_item(view, item_at, item_end)' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -nF 'kind = rust_code_view.classify_extern_item(view, item_at, item_end)' scripts/check_unsafe_block_justifications.py
 # ...and the same question is asked in three other places, all swept: `build.rs`
 # collects the HAL's extern declarations for the readiness seam set, and both
 # `enclosing_fn` implementations name the function a reference is attributed to.
@@ -7921,7 +7931,7 @@ run_check "INVARIANT" rg -n 'private def bootEntryWitnessSideInstall' SeLe4n/Tes
 run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.BootEntryContract' scripts/test_tier1_build.sh
 # ...and the link-level half that stays in the Python gate: the extern block is
 # resolved rather than spelled, and unassembled regions provide nothing.
-run_check "INVARIANT" rg -n '^def extern_block_openings' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def extern_blocks' scripts/rust_code_view.py
 run_check "INVARIANT" rg -n '^def strip_unassembled_regions' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -n '^fn extern_block_openings' rust/sele4n-hal/build.rs
 # PR #889 review round 11 (P1): a raw thread/object operand refuses a reserved

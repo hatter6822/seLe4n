@@ -371,11 +371,41 @@ def code_view(root: Path) -> Path:
     return out
 
 
-# A signature ends at the first top-level `:=` or `where`.  `where` must be a
-# whole word — `elsewhere` is not a terminator — and neither may sit inside a
-# string literal, which the code view has already blanked by the time the census
-# reads a file.
-SIG_END = re.compile(r":=|\bwhere\b")
+# A signature ends at the first top-level `:=`, `where`, or **equation clause**.
+# `where` must be a whole word — `elsewhere` is not a terminator — and none of
+# the three may sit inside a string literal, which the code view has already
+# blanked by the time the census reads a file.
+#
+# **The third is a body, and Lean writes it with no terminator token at all.**
+# `def f : A → B` followed by `| .a => …` is the direct equation syntax: there is
+# no `:=` and no `where`, so a two-token terminator left `sig_open` true for the
+# whole declaration and every clause was emitted as *signature* (PR #895 review
+# round 7).  Measured on the tree at the time: **4778 lines** of equation-clause
+# body across 263 declarations, filed as signature.
+#
+# What made that worse than a miscount is where the residue landed.  `sig` is
+# the one region `StoreReadClassificationCensus` deliberately does not judge —
+# a declaration-level verdict cannot adjudicate a hypothesis binder — so the
+# regex's failure mode drained into the bucket the elaborator refuses to check.
+# A skip is not neutral: it is a sink, and a sink collects exactly the defects
+# the judge exists to find.  Hence the terminator below *and* the refusal in
+# `classify`: a signature the parser cannot close is now a named failure rather
+# than a silent SPEC filing.
+#
+# The clause bar is recognised structurally rather than by indentation, so both
+# `inductive T | a | b` and the multi-line spelling terminate.  Lean's bar-ish
+# operators are excluded by shape, not by a list: `||`, `|||`, `|>.` and `<|>`
+# each either follow a `|`/`<` or precede a `|`/`>`, and a clause bar does
+# neither.  Measured over the tree: 1633 depth-zero bars in signature regions
+# are clause bars and the only 4 others are `||` / `|||` occurrences, all
+# excluded by that shape.
+SIG_END = re.compile(r":=|\bwhere\b|(?<![|<])(?=\|(?![|>]))")
+
+# Declaration forms with **no body**, whose signature therefore ends with their
+# own bracket-balanced text rather than at a terminator.  Every other form has a
+# body, so a signature the parser never closes is a parser defect — see
+# `classify`'s `unparsed` channel.
+BODYLESS_KINDS = {"opaque", "axiom"}
 
 
 def _signature_end(line: str, depth: int = 0):
@@ -396,8 +426,18 @@ def _signature_head(signature: str) -> str:
     return signature[: m.start()] if m is not None else signature
 
 
-def classify(path: Path, aliases: frozenset = frozenset()):
+def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None):
     """Yield (declaration, is_prop, occurrences, line, region) per read-bearing line.
+
+    `unparsed`, when a list is supplied, collects
+    `(declaration, kind, line, reason)` for every declaration whose signature
+    this parser could not close.  That is a **refusal channel, not a
+    diagnostic**: a signature left open swallows the declaration's whole body
+    into the `sig` region, which is SPEC and which the Tier 1 elaborator
+    reconciliation deliberately skips, so an unclosed signature is a silent
+    route around the enforced `STORE_READ_CODE = 0`.  The caller fails the gate
+    on a non-empty list, which is this project's own *a scanner's default branch
+    is a decision* applied to a region boundary.
 
     `region` is `"sig"` for a read in the declaration's signature — a hypothesis
     binder or the result type, which is a proposition whatever the declaration
@@ -418,11 +458,19 @@ def classify(path: Path, aliases: frozenset = frozenset()):
     decl, kind, signature, sig_open = "<file scope>", "<none>", "", False
     in_default, body_depth, sig_depth, field_col = False, 0, 0, None
     binder_depth, binder_default = 0, None
+    decl_line = 0
+
+    def refuse(reason: str) -> None:
+        if unparsed is not None:
+            unparsed.append((decl, kind, decl_line, reason))
+
     for lineno, line in enumerate(lines, start=1):
         m = DECL.match(line)
         if m:
+            if sig_open:
+                refuse("a new declaration began while its signature was open")
             kind, decl = m.group(1), m.group(2) or "<anonymous>"
-            signature, sig_open = line, True
+            signature, sig_open, decl_line = line, True, lineno
             in_default, body_depth, sig_depth, field_col = False, 0, 0, None
             binder_depth, binder_default = 0, None
         sig_part, body_part = line, ""
@@ -441,10 +489,20 @@ def classify(path: Path, aliases: frozenset = frozenset()):
                 sig_open = False
             if m is None and line.strip():
                 signature += " " + line.strip()
-            if len(signature) > 4000:
+            if sig_open and len(signature) > 4000:
                 # The runaway guard closes the signature, so what follows is
                 # read as a body: an unparsable declaration fails CLOSED (its
-                # reads count as code) rather than silently becoming spec.
+                # reads count as code) rather than silently becoming spec.  It
+                # is reported as well as closed — closing is the safe direction
+                # and still means this declaration was not parsed.
+                refuse("the signature exceeded 4000 characters")
+                sig_open = False
+            if sig_open and kind in BODYLESS_KINDS and sig_depth == 0:
+                # `opaque` and `axiom` have no body: their signature is their
+                # own bracket-balanced text and ends with it.  Without this they
+                # are the one form that legitimately never reaches a terminator,
+                # and the refusal below would fire on correct input — measured
+                # at 73 declarations, every one of them a single line.
                 sig_open = False
         else:
             sig_part, body_part = "", line
@@ -507,6 +565,8 @@ def classify(path: Path, aliases: frozenset = frozenset()):
             yield decl, True, n_spec, lineno, "body"
         if n_code:
             yield decl, False, n_code, lineno, "body"
+    if sig_open:
+        refuse("the file ended while its signature was open")
 
 
 # The definitions whose body IS the raw read, which is what makes each of them
@@ -561,16 +621,21 @@ def accessor_registry_violations(code: dict, exempt_hits: dict) -> list[str]:
 
 
 def census(view: Path):
-    """(executable reads, specification reads, registry hits, attribution rows).
+    """(executable reads, specification reads, registry hits, rows, unparsed).
 
     The third is what the registry is reconciled against, so an entry that stops
-    naming a raw read is reported rather than silently kept.
+    naming a raw read is reported rather than silently kept.  The fifth is the
+    parser's own refusals — declarations whose signature it could not close —
+    which the caller fails on rather than reporting, for the reason `classify`
+    states: an unclosed signature files a body as specification, which is the
+    direction the enforced zero cannot afford.
     """
-    code, spec, exempt_hits, attribution = {}, {}, {}, []
+    code, spec, exempt_hits, attribution, unparsed = {}, {}, {}, [], []
     aliases = prop_aliases(view)
     for f in sorted(view.rglob("SeLe4n/**/*.lean")):
         rel = str(f.relative_to(view))
-        for decl, is_prop, n, lineno, region in classify(f, aliases):
+        here = []
+        for decl, is_prop, n, lineno, region in classify(f, aliases, here):
             # Emitted for every read-bearing line, exempt or not: the
             # reconciliation asks whether the CLASSIFIER agreed with the
             # elaborator, and an exempted accessor is classified like any other.
@@ -580,7 +645,8 @@ def census(view: Path):
                 continue
             bucket = spec if is_prop else code
             bucket[(rel, decl)] = bucket.get((rel, decl), 0) + n
-    return code, spec, exempt_hits, attribution
+        unparsed.extend((rel, d, k, ln, why) for d, k, ln, why in here)
+    return code, spec, exempt_hits, attribution, unparsed
 
 
 # ---------------------------------------------------------------------------
@@ -826,7 +892,69 @@ abbrev Pred := Prop
 def holds (st : SystemState) (oid : ObjId) : Pred :=
   st.objects[oid]? = none
 """, {}, {("f.lean", "holds"): 1}),
+    # **An equation body is a body.**  Lean's direct equation syntax carries no
+    # `:=` and no `where`, so a two-token terminator never closed the signature
+    # and every clause was emitted as *signature* -- SPEC, and in the one region
+    # the Tier 1 reconciliation skips, so the read passed the enforced zero
+    # twice over (PR #895 review round 7).  Token-preserving against
+    # `code_read`: the same declaration, the same read, written in the form
+    # Lean also accepts.
+    "equation_body_code": ("""
+def lookup : SystemState → ObjId → Option KernelObject
+  | st, oid => st.objects[oid]?
+""", {("f.lean", "lookup"): 1}, {}),
+    # ...and the same form returning `Prop` is still specification, so the
+    # terminator did not start over-filing legitimate invariant text.  The two
+    # differ only in the result type.
+    "equation_body_prop": ("""
+def holdsAt : SystemState → ObjId → Prop
+  | st, oid => st.objects[oid]? = none
+""", {}, {("f.lean", "holdsAt"): 1}),
+    # An `inductive` written with direct constructor clauses: its constructor
+    # arguments are propositions, exactly as the `where` spelling's are.
+    "inductive_equation_clauses": ("""
+inductive ReadShape (st : SystemState) (oid : ObjId) : Type
+  | absent (h : st.objects[oid]? = none)
+  | present (obj : KernelObject) (h : st.objects[oid]? = some obj)
+""", {}, {("f.lean", "ReadShape"): 2}),
+    # **A bar-ish operator is not a clause.**  `|||` sits at bracket depth zero
+    # in a result type, so a terminator written as a bare `|` cuts the signature
+    # there and files the hypothesis binder that follows as an executable body.
+    # Token-preserving: the read never moves, only which construct the parser
+    # thinks precedes it.
+    "or_operator_is_not_a_clause": ("""
+def orGuard (a b : Nat) :
+    a ||| b < 16 → st.objects[oid]? = none → Nat := fun _ _ => 0
+""", {}, {("f.lean", "orGuard"): 1}),
+    # A declaration form the parser cannot close is REFUSED, not filed.  A
+    # field-less `structure` reaches no terminator, so without the refusal
+    # everything after it up to the next declaration is read as its signature --
+    # SPEC, unjudged.  The `def` below is classified normally, which is what
+    # shows the refusal is about the boundary rather than the census failing.
+    "unterminated_is_refused": ("""
+structure Marker
+
+def step (st : SystemState) (oid : ObjId) : SystemState :=
+  match st.objects[oid]? with
+  | some _ => st
+  | none => st
+""", {("f.lean", "step"): 1}, {}),
+    # ...and a form that legitimately has no body is NOT refused.  `opaque` and
+    # `axiom` end with their own bracket-balanced text; refusing them would make
+    # the gate fire on 73 correct declarations.
+    "bodyless_opaque_is_not_refused": ("""
+opaque ffiReadObject : UInt64 → BaseIO UInt32
+
+def step (st : SystemState) (oid : ObjId) : Option KernelObject :=
+  st.objects[oid]?
+""", {("f.lean", "step"): 1}, {}),
 }
+
+#: Cases whose fixture the parser must REFUSE, and how many declarations it must
+#: name.  Every other case asserts **zero**, which is the other direction of the
+#: same reconciliation: a terminator that starts rejecting valid Lean fails the
+#: twenty-nine cases that do not appear here.
+EXPECT_REFUSALS = {"unterminated_is_refused": 1}
 
 
 def self_test() -> int:
@@ -843,15 +971,18 @@ def self_test() -> int:
             # declare `abbrev Pred := Prop` and have it apply — what this pins
             # is the RESOLUTION as well as the classification.
             aliases = prop_aliases(Path(td) / name)
-            got_code, got_spec = {}, {}
-            for decl, is_prop, n, _line, _region in classify(root / "f.lean", aliases):
+            got_code, got_spec, refused = {}, {}, []
+            for decl, is_prop, n, _line, _region in classify(root / "f.lean", aliases, refused):
                 key = ("f.lean", decl)
                 (got_spec if is_prop else got_code)[key] = \
                     (got_spec if is_prop else got_code).get(key, 0) + n
-            if got_code != want_code or got_spec != want_spec:
+            want_refusals = EXPECT_REFUSALS.get(name, 0)
+            if (got_code != want_code or got_spec != want_spec
+                    or len(refused) != want_refusals):
                 print(f"  FAIL {name}")
-                print(f"    code: got {got_code} want {want_code}")
-                print(f"    spec: got {got_spec} want {want_spec}")
+                print(f"    code:     got {got_code} want {want_code}")
+                print(f"    spec:     got {got_spec} want {want_spec}")
+                print(f"    refusals: got {len(refused)} want {want_refusals} {refused}")
                 failed += 1
             else:
                 print(f"  ok   {name}")
@@ -877,7 +1008,19 @@ def main() -> int:
     if args.self_test:
         return self_test()
     view = code_view(REPO)
-    code, spec, exempt_hits, attribution = census(view)
+    code, spec, exempt_hits, attribution, unparsed = census(view)
+    # Refused in EVERY mode, for the same reason the registry is reconciled in
+    # every mode: `--rows` is what Tier 0 calls, and a check only the unused
+    # mode runs is a check nobody runs.
+    if unparsed:
+        for rel, d, k, ln, why in unparsed:
+            print(f"FAIL: {rel}:{ln}: the signature of `{k} {d}` was never closed "
+                  f"({why}).  Its body is being filed as SPECIFICATION, which the "
+                  f"elaborator reconciliation does not judge, so an executable "
+                  f"store read there would pass the enforced zero.  Teach "
+                  f"`SIG_END` this declaration form, or add its kind to "
+                  f"`BODYLESS_KINDS` if it has no body.", file=sys.stderr)
+        return 1
     # Reconciled in EVERY mode, `--rows` included: that is the mode the Tier 0
     # baseline calls, so skipping it there would leave the registry checkable
     # only by a command nothing runs — a gate with a silent default branch,

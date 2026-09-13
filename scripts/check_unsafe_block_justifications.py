@@ -469,12 +469,7 @@ UNSAFE_FN_NAME = re.compile(
     r"\bunsafe\s+(?:extern\s+" + ABI + r"\s+)?fn\s+(?:r#)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)")
 
 
-#: An `extern` block header, with or without the Rust-2024 `unsafe` and with or
-#: without an explicit ABI.  Every foreign function it declares is unsafe to
-#: call: in edition 2021 by the nature of a foreign item, and in edition 2024
-#: unless the item is written `safe fn`.
-EXTERN_BLOCK = re.compile(r"\b(?:unsafe\s+)?extern\s*(?:" + ABI + r"\s*)?\{")
-#: A foreign function item inside such a block, and the `safe` opt-out.
+#: A foreign function item inside a foreign block, and the `safe` opt-out.
 FOREIGN_FN = re.compile(
     r"(?P<safe>\bsafe\s+)?\bfn\s+(?:r#)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(")
 
@@ -490,27 +485,38 @@ def foreign_fn_items(view: str):
     is not a derived set* on the one gate written after the rule: the items are
     never inspected, so the empty baseline stays green over them.
 
-    The block's extent is brace-matched rather than line-scanned, so a nested
-    brace in a signature cannot end it early.
+    **...and scanning the block for `fn` was the same defect one level in**
+    (PR #895 review round 7).  A foreign block may hold an item MACRO, which
+    Rust expands into real declarations: `unsafe extern "C" { decl!(); }` where
+    `decl!` expands to `fn undocumented();` declares an unsafe obligation that
+    a `fn`-shaped search cannot see, so the site never existed and the empty
+    baseline stayed green over it.  The sibling gate
+    `scripts/check_kernel_entry_exports.py` had refused exactly this since
+    PR #889 review round 21 and every other unrecognised item since round 25 —
+    and `CLAUDE.md` recorded the rule as implemented, of a tree in which one of
+    the two gates that parse foreign blocks did it.
+
+    So the block is walked as ITEMS through `rust_code_view`, which is now where
+    that question is answered once: an item macro or a form the view does not
+    know is REFUSED, and only a `static`, a type alias or a `use` — items that
+    genuinely declare no function — may be skipped.  This gate derives
+    REQUIREMENTS (sites that must carry a justification), so refusal is its
+    fail-closed direction: a requirement dropped is a check nobody runs.
     """
-    for m in EXTERN_BLOCK.finditer(view):
-        open_at = view.index("{", m.start())
-        depth = 0
-        end = None
-        for i in range(open_at, len(view)):
-            if view[i] == "{":
-                depth += 1
-            elif view[i] == "}":
-                depth -= 1
-                if depth == 0:
-                    end = i
-                    break
-        if end is None:
-            # An unterminated block is input this scanner cannot read.  It
-            # produces REQUIREMENTS, so it fails closed by refusing rather than
-            # by skipping: a requirement dropped is a check nobody runs.
-            raise UnreadableExternBlock(m.start())
-        for f in FOREIGN_FN.finditer(view, open_at, end):
+    for _keyword, open_at, end in rust_code_view.extern_blocks(view):
+        for item_at, item_end in rust_code_view.extern_block_items(view, open_at + 1, end):
+            kind = rust_code_view.classify_extern_item(view, item_at, item_end)
+            if kind == "non-fn":
+                continue
+            if kind != "fn":
+                raise UnreadableExternItem(view[item_at:item_end].strip()[:60], kind)
+            f = FOREIGN_FN.search(view, item_at, item_end)
+            if f is None:
+                # The shared view calls it a function and this gate's own
+                # pattern cannot read it — two answers to one question, which is
+                # the shape this move exists to remove.  Refuse rather than
+                # letting the disagreement silently drop a site.
+                raise UnreadableExternItem(view[item_at:item_end].strip()[:60], "fn")
             if f.group("safe"):     # `safe fn` — the edition-2024 opt-out
                 continue
             # The ITEM's offset, not the name's: the justification run is the
@@ -520,12 +526,17 @@ def foreign_fn_items(view: str):
             yield (f.start(), f.group("name"))
 
 
-class UnreadableExternBlock(Exception):
-    """An `extern` block whose extent this scanner cannot determine."""
+class UnreadableExternItem(Exception):
+    """An item inside a foreign block whose form this scanner cannot read."""
 
-    def __init__(self, offset: int) -> None:
-        super().__init__(f"unterminated `extern` block at offset {offset}")
-        self.offset = offset
+    def __init__(self, snippet: str, kind: str) -> None:
+        super().__init__(
+            f"an item inside an `extern` block ({snippet!r}) is a {kind}, not a `fn` "
+            f"declaration this gate can read.  If it declares a function symbol its "
+            f"unsafe obligation is missing; write the declaration out, or teach "
+            f"`rust_code_view.classify_extern_item` the form.")
+        self.snippet = snippet
+        self.kind = kind
 
 
 def sites(path: Path):
@@ -606,7 +617,15 @@ def census(root: Path):
         unreadable += unrecognised_unsafe_forms(
             path.relative_to(REPO), rust_code_view.code_no_strings(
                 path.read_text(encoding="utf-8")))
-        for _off, decl, run, is_decl in sites(path):
+        try:
+            file_sites = list(sites(path))
+        except (UnreadableExternItem, rust_code_view.UnbalancedExternBlock) as refusal:
+            # One failure channel, so a refusal reads like every other gate
+            # defect instead of leaving a traceback.  `UnreadableExternBlock`
+            # used to be raised and caught nowhere at all.
+            unreadable.append(f"{rel}: {refusal}")
+            continue
+        for _off, decl, run, is_decl in file_sites:
             total += 1
             if is_decl:
                 declarations += 1
@@ -957,6 +976,48 @@ fn f() {
     let x = compute(); unsafe { g(x) }
 }
 """),
+    # A `static` in a foreign block declares no function, so it must NOT be
+    # refused — the direction that keeps the refusal below from firing on
+    # correct input.  Token-preserving against the macro case: same block, same
+    # documented neighbour, one item swapped for another form.
+    ("a `static` in an extern block is skipped, not refused", True, """
+unsafe extern "C" {
+    static COUNTER: u32;
+    /// # Safety
+    /// The caller must hold the entry lock.
+    fn documented();
+}
+"""),
+]
+
+#: Foreign-block items this gate must REFUSE rather than read past, each with the
+#: word its failure must name.  A separate list because the assertion differs:
+#: these cases have no site to judge — the point is that the gate stops instead
+#: of reporting a clean count over input it never examined.
+_REFUSED_EXTERN_CASES = [
+    # THE SHAPE (PR #895 review round 7): a macro expands to declarations no
+    # `fn`-shaped search can see, so the site never existed and the empty
+    # baseline stayed green.  Token-preserving against the `static` case above:
+    # the block, the documented neighbour and the `;` are unchanged.
+    ("an item macro in an extern block is refused", "macro", """
+macro_rules! declare_it { () => { fn undocumented(); } }
+unsafe extern "C" {
+    declare_it!();
+}
+"""),
+    # ...and the default branch beneath it: a form the shared view does not
+    # know is refused too, which is round 25's rule rather than one case of it.
+    ("an unknown item form in an extern block is refused", "unknown", """
+unsafe extern "C" {
+    const THING: u32;
+}
+"""),
+    # An unbalanced block: the extent cannot be determined, so the items cannot
+    # be enumerated at all.  This used to raise an exception nothing caught.
+    ("an unbalanced extern block is refused", "unbalanced", """
+unsafe extern "C" {
+    fn documented();
+"""),
 ]
 
 
@@ -985,6 +1046,26 @@ def _self_test() -> int:
                 failures += 1
             else:
                 print(f"  OK   self-test '{name}' ({'accept' if expect_ok else 'reject'})")
+    # The foreign-block refusals.  A gate that derives REQUIREMENTS must stop on
+    # input it cannot read, and until round 7 this one enumerated `fn` and
+    # examined nothing else in the block.
+    for name, word, src in _REFUSED_EXTERN_CASES:
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "fixture.rs"
+            p.write_text(src, encoding="utf-8")
+            try:
+                list(sites(p))
+            except (UnreadableExternItem, rust_code_view.UnbalancedExternBlock) as refusal:
+                if word not in str(refusal):
+                    print(f"  SELF-TEST FAIL: '{name}' refused without naming {word!r}: "
+                          f"{refusal}")
+                    failures += 1
+                else:
+                    print(f"  OK   self-test '{name}' (refuse)")
+            else:
+                print(f"  SELF-TEST FAIL: '{name}' was read past — the gate reported a "
+                      f"clean count over an item it never examined")
+                failures += 1
     # The unrecognised-form scan, which had no coverage: it is the gate's
     # fail-CLOSED default branch, and a default branch nothing exercises is a
     # decision nobody checked.

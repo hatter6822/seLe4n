@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.19.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.20.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~63040 lines)
+- `CHANGELOG.md` (~63415 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23254 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -355,6 +355,7 @@ To find files that need pagination today, run:
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1139 lines)
+- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1139 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1105 lines)
@@ -385,7 +386,6 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
 - `tests/DeadlockFreedomSuite.lean` (~929 lines)
-- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~922 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~917 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
@@ -1433,6 +1433,83 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the *block* rule for the *declaration* rule, and the fixture passed under it —
   not because the fixture was weak but because both rules reject that input.
   The mutation that decides is the pre-fix behaviour itself.
+
+  **And a skip is a sink** (PR #895 review round 7, `v0.35.20`).  Round 5 sent
+  the classifier's *verdict* to the elaborator and round 6 made that
+  reconciliation judge both directions; neither touched the **region boundary**
+  — where a declaration's signature ends and its body begins — which stayed a
+  two-token regex, and whose failures all landed in `sig`, the one region the
+  reconciliation deliberately does not judge.  So the parser's unknown-input
+  behaviour drained into the bucket nothing checks.  Measured on the tree:
+  Lean's direct equation syntax (`def f : A → B` followed by `| p => rhs`)
+  carries neither `:=` nor `where`, so **4778 lines of body across 263
+  declarations** were filed as signature — SPEC, unjudged, past an enforced
+  zero, in the gate this PR spent four rounds hardening.
+
+  **When a judged direction is split from an unjudged one, every parse failure
+  migrates into the unjudged one.**  A skip is never neutral: it attracts
+  exactly the defects the judge exists to find, and the size of what it
+  attracted is invisible because the rows look ordinary.  Three things follow,
+  and all three are now mechanism rather than advice.  Teach the boundary the
+  form (a depth-zero clause bar, with `||`, `|||`, `|>.` and `<|>` excluded by
+  shape rather than by a list).  **Refuse** what it still cannot close — every
+  declaration form has a body except `opaque` and `axiom`, so an unterminated
+  signature is a named Tier 0 failure instead of a silent SPEC filing, which is
+  this file's *a scanner's default branch is a decision* applied to a region
+  boundary.  And **report the residue the skip legitimately leaves**: the Tier 1
+  census now counts signature rows sitting inside *executable* declarations —
+  five, against the 4778 that were hiding there — so the population no
+  declaration-level verdict can reach is a number rather than an implication.
+
+  The round's other two findings are the same meta-shape one level up, and they
+  are why this entry is about the class rather than the instances: **a fix
+  landed where the review pointed and the question's other askers were left.**
+  `CLAUDE.md` recorded *an item macro inside an `extern` block is refused, not
+  read past* as implemented — true of `check_kernel_entry_exports.py`, and false
+  of `check_unsafe_block_justifications.py`, which parses foreign blocks for the
+  same items and scanned them for `fn` alone, so a macro declared an unsafe
+  obligation no site, count or baseline could see.  And the reply-stack write
+  census named the **frozen** table primitive (`FrozenMap.set`) while omitting
+  the **live** one (`RHTable.insert`), so a definition that builds a `Reply` and
+  writes `{ st with objects := st.objects.insert … }` — which is how
+  `Lifecycle/Suspend.lean` writes a consumed Reply — was in neither derivation.
+  That is round 1 of this same PR (*a spelling is not a read*) on the same two
+  tables in the opposite direction, with the sweep unrun.
+
+  Stating the sweep rule has now failed often enough to be the finding.  **Give
+  it an artefact: derive both answers from one place, or make the second
+  implementation impossible.**  The foreign-block walk — ABI-literal resolution,
+  brace matching, the item split, and the classification `fn` / `macro` /
+  `non-fn` / `unknown` — is `rust_code_view.extern_blocks` /
+  `extern_block_items` / `classify_extern_item`, read by both gates, so one
+  mutation now fails both self-tests; only what an item *means* stays per gate
+  (a linker symbol there, an unsafe obligation here).  The store frontier names
+  the two table **primitives** and keeps the wrapper helpers as a *pin* each of
+  which must itself reach a primitive — and that pin found two more defects on
+  its first run: a fourth entry (`SystemState.storeObject`) that names no
+  declaration at all, and a live helper (`storeObjectChecked`) the list had
+  never mentioned.  A list nothing reconciles is a list nobody reads.
+
+  The sweep was then **run**, not just written down, and its value is the two
+  sites it left alone.  `check_ipc_invariant_dethreading.py` has its own Lean
+  `signature_end`, and its fall-through is already a stated decision — with no
+  `:=` the signature runs to the next declaration, which over-captures and can
+  only make the gate stricter — so it is the sink's opposite and correct as it
+  stands.  `build.rs`'s `blank_extern_blocks` is a Rust twin that *blanks* a
+  block rather than enumerating its items, so the macro question does not arise
+  there, and it already shares the ABI-literal resolution.  A sweep that changes
+  nothing at a site is the sweep working; a sweep not run is how all three of
+  this round's findings got here.
+
+  Two mechanical notes.  A census whose headline is one derivation while its
+  breakdown is another describes no set: the reply-stack summary counted
+  `derived.length` beside disciplines counted over the registry, so the figures
+  stopped adding up the moment a site entered through the second frontier, and
+  the closure `stating + mirrors + halfSteps = registry` is asserted now.  And a
+  registry cannot name a `private def` with a name literal — Lean mangles one to
+  `_private.<Module>.0.<name>` and a numeric component is not an identifier — so
+  the entry is built with Lean's own `mkPrivateNameCore` rather than with a
+  resemblance to it.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor
@@ -2549,13 +2626,18 @@ receive leg no longer runs on.
 
 (6) **Every reply-stack write names a chain result.**
 `SeLe4n/Testing/ReplyStackWriteCensus.lean` (Tier 1) derives the write-site set
-from the elaborated environment — a project definition whose own body references
-one of the chain-write primitives, `SystemState.consumeReply` and
-`SystemState.consumeCallerReply` among them — and reconciles it against a
-registry in both directions.  A site either **states** its chain results (each
-named theorem must mention the site *and* a `donationChain…` form) or is recorded
-as a **half-step** of the composite that completes it, and the half-step chain
-must terminate in a stating entry.  Seventeen sites, eight stating.  A new
+from the elaborated environment — by **two** derivations, and a site found by
+either is a site: a project definition whose own body references one of the
+chain-write primitives (`SystemState.consumeReply` and
+`SystemState.consumeCallerReply` among them), and one that builds a `Reply` or
+`SchedContext` record and stores it, which is what catches a writer that names no
+helper at all.  Both are reconciled against a registry in both directions.  A
+site either **states** its chain results (each named theorem must mention the
+site *and* a `donationChain…` form) or is recorded as a **half-step** of the
+composite that completes it, and the half-step chain must terminate in a stating
+entry.  The counts are **printed by the census** and deliberately not mirrored
+here: a hand-kept figure beside a derivation is the shape this file warns about,
+and this one went stale the first time the frontier widened.  A new
 definition that consumes a caller's Reply bare is a build failure on the day it
 is written — which is the shape this workstream exists to close, and the one
 level above the frontier the census deliberately stops at (composites inherit by

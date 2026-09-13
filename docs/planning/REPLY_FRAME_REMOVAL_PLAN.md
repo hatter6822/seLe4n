@@ -280,7 +280,10 @@ document existing.
    one, or as a frozen site mirroring a live one that does — reconciled in both
    directions (RM5.3, refined in §10.3; the frozen surface brought in at
    `v0.35.12`, which is where "every" stopped meaning "every module either root
-   reaches").  Seventeen sites, eight stating, three mirroring.
+   reaches").  Seventeen sites, eight stating, three mirroring **at WS-RM
+   closure (`v0.35.6`)**; the census prints the live figures, which grew at
+   `v0.35.20` when the store frontier gained the live table primitive and the
+   tree's own depth-2 chain fixture entered the registry.
 5. An executed run answers a middle caller out of order and then completes the
    in-order reply that used to fail with `.invalidArgument` (RM6.1).
 6. No footprint exceeds `maxLockSetSize`, and the sharp resolved bound shows no

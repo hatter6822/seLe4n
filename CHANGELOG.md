@@ -1,3 +1,95 @@
+## v0.35.20 — PR #895 review round 7: a skip is a sink
+
+Three findings, one meta-shape: a fix landed where an earlier review pointed and
+the question's other askers were left.  The remedy is an artefact for the sweep
+rather than a fourth restatement of the rule.
+
+**The signature boundary was a sink.**  `scripts/lean_store_read_census.py`
+ended a signature at `:=` or `where`, and Lean's direct equation syntax
+(`def f : A → B` then `| p => rhs`) carries neither — so **4778 lines of body
+across 263 declarations** were emitted as *signature*, which is SPEC and which
+`StoreReadClassificationCensus` deliberately does not judge.  Round 5 sent the
+classifier's verdict to the elaborator and round 6 made that reconciliation
+judge both directions; neither touched the boundary, so every parse failure
+drained into the one region nothing checks.
+
+- `SIG_END` gains a depth-zero equation-clause terminator, with `||`, `|||`,
+  `|>.` and `<|>` excluded by shape rather than by a list.  Measured over the
+  tree: 1633 depth-zero bars in signature regions are clause bars and the only
+  4 others are `||` / `|||`.
+- An unterminated signature is now a **refusal**, not a filing.  Every
+  declaration form has a body except `opaque` and `axiom` (`BODYLESS_KINDS`,
+  73 of them, every one a single line), so a form the parser cannot close fails
+  Tier 0 with a reason instead of silently checking less.
+- `SeLe4n/Testing/StoreReadClassificationCensus.lean` reports the residue the
+  skip legitimately leaves: signature rows sitting inside *executable*
+  declarations, which is **5** — against the 4778 that had been hiding there.
+  Its result is a record rather than a six-tuple, since the counts are read at
+  nine call sites.
+- Six self-test cases, each mutation-verified against the pre-fix behaviour;
+  35 cases in total.
+
+**An item macro in a foreign block was examined by nothing.**
+`scripts/check_unsafe_block_justifications.py` scanned `extern` blocks for `fn`
+and read past everything else, so `unsafe extern "C" { decl!(); }` — which Rust
+expands into real declarations — produced no site, and the empty baseline stayed
+green over it.  `CLAUDE.md` recorded the refusal as implemented; it was, in
+`scripts/check_kernel_entry_exports.py` alone.
+
+- The foreign-block walk moves to `scripts/rust_code_view.py`:
+  `extern_blocks` (ABI-literal resolution, brace matching),
+  `extern_block_items`, and `classify_extern_item` → `fn` / `macro` /
+  `non-fn` / `unknown`.  **Both gates read it**, so one mutation now fails both
+  self-tests; only what an item *means* stays per gate — a linker symbol in one,
+  an unsafe obligation in the other.
+- `UnreadableExternItem` routes into the unsafe gate's existing fail-closed
+  channel.  `UnreadableExternBlock` was raised and caught nowhere at all.
+- Witnesses in all three files: four refusal cases, a `static` that must **not**
+  be refused, and nine `rust_code_view` witnesses covering raw-hashed ABIs, a
+  brace inside a literal, and a macro in a `fn` signature.
+
+**The write frontier measured a spelling.**
+`SeLe4n/Testing/ReplyStackWriteCensus.lean` named the **frozen** table primitive
+(`FrozenMap.set`) and omitted the **live** one (`RHTable.insert`), so a
+definition that builds a `Reply` and writes
+`{ st with objects := st.objects.insert … }` — how `Lifecycle/Suspend.lean`
+writes a consumed Reply — was in neither derivation.  That is round 1 of this
+same PR (*a spelling is not a read*) on the same two tables, opposite direction.
+
+- `objectStorePrimitives` names both tables' writes; `objectStoreHelpers` is
+  kept as a **pin**, each entry required to reach a primitive.  The pin found
+  two further defects on its first run: `SystemState.storeObject`, which names
+  no declaration at all, and `storeObjectChecked`, a live helper the list had
+  never mentioned.
+- The widened frontier surfaced **21** definitions.  All are classified: 18
+  chain-neutral with their assignment lists as the reason, and 3 — the tree's
+  own depth-2 chain fixture, which stores a `SchedContext` heading the stack and
+  two linked `Reply` objects — registered as write sites.  The census of chain
+  writes could not previously see the fixture that exercises the chain.
+- The registry reconciles against **both** derivations, since a site found only
+  by the record-constructing frontier is a write site too.
+- The summary's arithmetic is closed: `stating + mirrors + halfSteps` must equal
+  the registry, which it did not once a site entered by the second route.
+- A private registry entry is built with Lean's own `mkPrivateNameCore`: a name
+  literal cannot spell `_private.<Module>.0.<name>`.
+
+**Also**: `docs/codebase_map.json` is pretty-printed again.  It had been so for
+its whole history until `v0.35.19` regenerated it without `--pretty`, which is
+the form `scripts/sync_documentation_metrics.sh` and `.github/workflows/
+codebase_map_sync.yml` both write — so every run of either produced a
+three-megabyte reformat.  The freshness check compares parsed payloads, not
+bytes, which is why nothing caught it.
+
+Three Tier 3 anchors move with the foreign-block walk rather than being deleted:
+the symbol-free item set and the `unknown` default are pinned in
+`scripts/rust_code_view.py`, and **both** gates are pinned on reading
+`classify_extern_item` — a gate returning to its own answer is what they now
+refuse.
+
+No kernel transition, theorem or fixture changed; `STORE_READ_CODE` remains 0
+and the golden trace is byte-identical.
+
+Refs: `docs/planning/REPLY_FRAME_REMOVAL_PLAN.md` (WS-RM closure)
 ## v0.35.19 — PR #895 review round 6: a marker nested in another comment, and a keyword the classifier never saw
 
 Round 6 found **seven** more defects in the two Tier 0 scanners — six reported,

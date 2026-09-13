@@ -74,6 +74,18 @@ namespace SeLe4n.Testing.ReplyStackWriteCensus
 
 open Lean Elab Command
 
+/-- The environment name of a `private def`.
+
+Lean mangles one to `_private.<Module>.0.<userName>`, and **no name literal can
+spell that**: a numeric component is not an identifier, so `` `_private.M.0.f ``
+is a parse error.  This calls Lean's own `mkPrivateNameCore`, so the registry
+names a private declaration exactly rather than through a resemblance, and the
+mangling cannot drift away from the compiler's.
+
+A wrong module here is not silent: the name matches no candidate, and the
+reconciliation reports it as a stale entry. -/
+def privateIn (mod user : Name) : Name := Lean.mkPrivateNameCore mod user
+
 /-- The primitives that write reply-stack data.
 
 "Reply-stack data" is exactly what `donationChainFrame` quantifies over: a
@@ -126,18 +138,53 @@ frontier, where a helper's *name* is not. -/
 def chainRecordConstructors : List Name :=
   [ `SeLe4n.Kernel.Reply.mk, `SeLe4n.Kernel.SchedContext.mk ]
 
+/-- The **table-level** writes: the only way a built record becomes state.
+
+`SystemState.objects` is an `RHTable` and `FrozenSystemState.objects` a
+`FrozenMap`, so every store in the tree — named helper or open-coded record
+update — ends at one of these two.  They are the derivable half of the store
+question, where a helper's *name* is not. -/
+def objectStorePrimitives : List Name :=
+  [ `SeLe4n.Kernel.RobinHood.RHTable.insert
+  , `SeLe4n.Model.FrozenMap.set ]
+
+/-- The project helpers that wrap them.
+
+**A pin, not an enumeration** (PR #895 review round 7).  This list used to be
+the whole answer, and it named the FROZEN primitive (`FrozenMap.set`) while
+omitting the LIVE one: a definition writing
+`{ st with objects := st.objects.insert rid.toObjId (.reply r) }` — which is how
+`Lifecycle/Suspend.lean` writes a consumed Reply — stored a chain-bearing record
+through a spelling the derivation did not know, so it was in neither candidate
+set.  That is precisely the defect this PR corrected on the READ side in round 1
+(*a spelling is not a read*, `objects[k]?` versus `objects.get? k`), on the same
+two tables, in the opposite direction, and the sweep the rule calls for was not
+run.
+
+They are kept because they buy the frontier a level: `storesObject` reaches one
+hop, so with the primitives alone a caller of `storeObject` is recognised and a
+caller of *that* is not.  Each is reconciled against the derivation by
+`objectStoreHelpers_reach_primitives` in the `run_cmd` below, so a helper that
+stops reaching a primitive is a stale pin rather than a silent narrowing. -/
+def objectStoreHelpers : List Name :=
+  [ `SeLe4n.Model.storeObject
+    -- The capacity guard and the kind guard, each a wrapper over `storeObject`.
+    -- `storeObjectChecked` was absent from this list and
+    -- `SeLe4n.Model.SystemState.storeObject` — which names no declaration at
+    -- all — was in it: a dead entry contributing nothing beside a live helper
+    -- nobody had noticed, both found the moment the pin below was written,
+    -- which is the argument for the pin.
+  , `SeLe4n.Model.storeObjectChecked
+  , `SeLe4n.Model.storeObjectKindChecked
+    -- The frozen surface's own store.  It lands a built record in
+    -- `FrozenSystemState.objects`, which is where the frozen chain lives, so a
+    -- derivation that knows only the live spellings sees a frozen writer build
+    -- a `Reply` and store it nowhere.
+  , `SeLe4n.Kernel.FrozenOps.frozenStoreObject ]
+
 /-- The stores a built record has to reach to become state. -/
 def objectStoreSpellings : List Name :=
-  [ `SeLe4n.Model.storeObject
-  , `SeLe4n.Model.SystemState.storeObject
-  , `SeLe4n.Model.storeObjectKindChecked
-    -- The frozen surface's own store, and the raw map write its helpers reach
-    -- for directly.  Both land a built record in `FrozenSystemState.objects`,
-    -- which is where the frozen chain lives, so a derivation that knows only
-    -- the live spellings sees a frozen writer build a `Reply` and store it
-    -- nowhere.
-  , `SeLe4n.Kernel.FrozenOps.frozenStoreObject
-  , `SeLe4n.Model.FrozenMap.set ]
+  objectStorePrimitives ++ objectStoreHelpers
 
 /-- Definitions that build a chain-bearing record and store it, and yet write no
 chain field — each with the reason, which is a property of the code rather than
@@ -198,7 +245,57 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.kernelOperationPerCoreNiTheorem,
       "an inventory of non-interference theorem statements; performs no store")
   , (`SeLe4n.Kernel.perCoreInvariantSuiteTheorems,
-      "an inventory of per-core invariant theorem statements; performs no store") ]
+      "an inventory of per-core invariant theorem statements; performs no store")
+    -- ---------------------------------------------------------------------
+    -- Reached through the RAW table write, which the frontier started seeing at
+    -- `v0.35.20`.  `objectStoreSpellings` named four helpers and the FROZEN
+    -- primitive while omitting the LIVE one, so every definition that writes
+    -- `{ st with objects := st.objects.insert … }` — the spelling most of the
+    -- kernel's SchedContext updates use — was in neither derivation.  Each of
+    -- these builds a `SchedContext` (or, for the payoff witnesses, a fresh
+    -- `Reply`) whose chain fields it does not name; the assignment list is the
+    -- reason, and it is checkable by reading the update.
+  , (`SeLe4n.Kernel.SchedContextOps.schedContextBind,
+      "`{ sc with boundThread := some _ }`; reads `sc.scReply` as the bind guard and assigns it nowhere")
+  , (`SeLe4n.Kernel.SchedContextOps.schedContextUnbind,
+      "`{ sc with boundThread := none, isActive := false }`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.SchedContextOps.schedContextYieldTo,
+      "rebuilds both SchedContexts for their budget accounting; `scReply` is in neither assignment list")
+  , (`SeLe4n.Kernel.SchedContext.PriorityManagement.updatePrioritySource,
+      "`{ sc with priority := _ }` or `{ tcb with priority := _ }`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOp,
+      "`{ targetTcb with maxControlledPriority := _ }`; writes no SchedContext field at all")
+  , (`SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOnCore,
+      "the per-core spelling of the same MCP write; same reason")
+  , (`SeLe4n.Kernel.timerTickBudget,
+      "`{ sc with budgetRemaining := _, … }` plus the TCB's time slice; `scReply` is untouched")
+  , (`SeLe4n.Kernel.timerTickBudgetOnCore,
+      "the per-core spelling of the same budget accounting; same reason")
+  , (`SeLe4n.Kernel.refillSchedContext,
+      "rebuilds a SchedContext for its replenishment; `scReply` is untouched")
+  , (`SeLe4n.Kernel.handleYieldWithBudget,
+      "`{ sc with budgetRemaining := Budget.zero, isActive := false }`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation,
+      "`{ sc with boundThread := none, isActive := false }` and the TCB's `schedContextBinding`; the binding graph, not the stack")
+  , (`SeLe4n.Kernel.cancelBoundDonationOnCore,
+      "the per-core spelling of the same binding cancel; same reason")
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThread,
+      "composes `consumeReplyLink`, which is registered; writes no chain field in its own body")
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore,
+      "the per-core spelling of the same suspend; same reason")
+  , (`SeLe4n.Kernel.Liveness.stepPost,
+      "the scheduler trace model's step: a SchedContext budget update and a replenish queue; no chain field")
+    -- The dispatch payoff's pack-inhabitation witnesses.  They build a fresh
+    -- `Reply` (every link `none`) and a `SchedContext` whose only assignment is
+    -- `boundThread`, so they construct chain-bearing records and set no chain
+    -- field.  Named as the environment holds them, because a `private def` is
+    -- mangled and this census matches exact constants rather than resemblances.
+  , (privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt2,
+      "stores `{ witnessScFresh with … }`, whose assignment list is `boundThread`; no chain field")
+  , (privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt3,
+      "stores the bound TCB and SchedContext; `scReply` is in neither assignment list")
+  , (privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt4,
+      "stores `{ replyId := witnessReplyId }` — a fresh Reply, every link `none`") ]
 
 /-- Where the derived frontier and the primitive list disagree.
 
@@ -299,12 +396,16 @@ through one hop (the shape reported here).  A deeper delegation on both sides at
 once is outside the frontier, and `chainWriteFrontier` is printed beside the site
 count by the `run_cmd` below rather than leaving the number to read as a proof of
 absence. -/
-def storesObject (env : Environment) (n : Name) : Bool :=
-  usesDirectly env objectStoreSpellings n ||
+def storesVia (env : Environment) (targets : List Name) (n : Name) : Bool :=
+  usesDirectly env targets n ||
   (match (env.find? n).bind (·.value? (allowOpaque := true)) with
    | none => false
    | some v => v.getUsedConstants.any fun c =>
-       isProjectConstant c && usesDirectly env objectStoreSpellings c)
+       isProjectConstant c && usesDirectly env targets c)
+
+/-- The frontier's store half, over every spelling. -/
+def storesObject (env : Environment) (n : Name) : Bool :=
+  storesVia env objectStoreSpellings n
 
 /-- What the store half of the frontier recognises, printed beside the count. -/
 def chainWriteFrontier : String :=
@@ -565,7 +666,26 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Kernel.storeDonationHeadPop, .halfStep `SeLe4n.Kernel.returnDonatedSchedContext)
   , (`SeLe4n.Kernel.returnDonatedSchedContext,
       .states [`SeLe4n.Kernel.returnDonatedSchedContext_preserves_donationChainWellFormed,
-               `SeLe4n.Kernel.returnDonatedSchedContext_preserves_donationChainWellFormed_of_except]) ]
+               `SeLe4n.Kernel.returnDonatedSchedContext_preserves_donationChainWellFormed_of_except])
+    -- ---------------------------------------------------------------------
+    -- The tree's own depth-2 chain fixture (WS-OD OD2.4).  It stores a
+    -- `SchedContext` whose `scReply` heads the stack and two `Reply` objects
+    -- carrying `prev` / `next`, through a RAW table write — so until
+    -- `v0.35.20` added the live primitive to `objectStoreSpellings` the census
+    -- of chain writes could not see the fixture that exercises the chain.
+    --
+    -- Three stores, built one on the last, so the first two are half-steps by
+    -- construction: after the SchedContext alone the head it names does not
+    -- exist yet, and after the outer frame the inner one does not.  Named as
+    -- the environment holds them: `chainWitnessSt1` and `chainWitnessSt2` are
+    -- `private`, and this census matches exact constants.
+  , (privateIn `SeLe4n.Kernel.IPC.Invariant.Reachability `SeLe4n.Kernel.chainWitnessSt1,
+      .halfStep (privateIn `SeLe4n.Kernel.IPC.Invariant.Reachability
+        `SeLe4n.Kernel.chainWitnessSt2))
+  , (privateIn `SeLe4n.Kernel.IPC.Invariant.Reachability `SeLe4n.Kernel.chainWitnessSt2,
+      .halfStep `SeLe4n.Kernel.donationChainWitness)
+  , (`SeLe4n.Kernel.donationChainWitness,
+      .states [`SeLe4n.Kernel.donationChainWitness_wellFormed]) ]
 
 /-- Follow a chain of `halfStep` records to the entry that states something.
 
@@ -634,9 +754,18 @@ is.
 
 Pure, over two lists, so the reconciliation is self-tested on synthetic inputs
 below. -/
-def reconciliationViolations (derived recorded : List Name) : List String :=
+def reconciliationViolations (derived alsoWriting recorded : List Name) : List String :=
   let unregistered := derived.filter (fun n => !recorded.contains n)
-  let stale := recorded.filter (fun n => !derived.contains n)
+  -- **Two derivations of "writes chain data", and an entry justified by either
+  -- is not stale.**  `derived` is the primitive-reaching frontier — a site that
+  -- calls one of the nine chain-write helpers — and `alsoWriting` is the
+  -- independent record-constructing one, which sees a definition that builds a
+  -- `Reply` or `SchedContext` and stores it without naming any helper.  The
+  -- tree's own depth-2 chain fixture is in the second and not the first, so
+  -- reconciling the registry against `derived` alone called its entries stale
+  -- while they name real chain writes (PR #895 review round 7).
+  let stale := recorded.filter
+    (fun n => !(derived.contains n || alsoWriting.contains n))
   (if unregistered.isEmpty then [] else
     [s!"{unregistered.length} reply-stack write site(s) are not registered ({unregistered}).  \
         Every definition that writes a `Reply`'s stack links, a `SchedContext`'s stack head, \
@@ -674,6 +803,25 @@ private def censusWitnessDirectLinkWrite (rid : SeLe4n.ReplyId) :
     match st.getReply? rid with
     | some r => SeLe4n.Model.storeObject rid.toObjId (.reply { r with next := none }) st
     | none => .ok ((), st)
+
+/-- **The write that names no store helper either**: the same chain write as the
+witness above, spelled `{ st with objects := st.objects.insert … }`.
+
+The store half of the frontier used to be four project helpers plus the FROZEN
+table primitive, with the LIVE one — `RHTable.insert` — missing, so a definition
+written this way built a chain-bearing record and stored it through a spelling
+neither derivation knew (PR #895 review round 7).  That is the defect this PR
+corrected on the READ side in round 1, on the same two tables, in the opposite
+direction: *a spelling is not a read*, and it is not a write either.
+
+Token-preserving against `censusWitnessDirectLinkWrite`: the same record update
+and the same field, differing only in how the record reaches the table. -/
+private def censusWitnessRawTableWrite (rid : SeLe4n.ReplyId) :
+    SeLe4n.Model.SystemState → SeLe4n.Model.SystemState :=
+  fun st =>
+    match st.getReply? rid with
+    | some r => { st with objects := st.objects.insert rid.toObjId (.reply { r with prev := none }) }
+    | none => st
 
 /-- The SPLIT-CONJUNCTION shape: the helper half.  Builds a chain-bearing
 record and names no store, so a frontier that conjoins both halves over one body
@@ -755,6 +903,27 @@ run_cmd Command.liftTermElabM do
     unless (env.find? n).isSome do
       throwError "reply-stack write census: `{n}` is not a declaration of this environment, \
         so the property this census decides does not exist"
+  -- ...and so do the table primitives, for the same reason: a renamed
+  -- `RHTable.insert` would make every store invisible and the census would pass
+  -- by recognising nothing.
+  for n in objectStorePrimitives do
+    unless (env.find? n).isSome do
+      throwError "reply-stack write census: `{n}` is not a declaration of this environment, \
+        so the store half of the frontier recognises nothing"
+  -- The helper list is a PIN, reconciled against the derivation rather than
+  -- standing in for it.  Each named helper must itself reach a table primitive;
+  -- one that stops storing is then a stale entry that says so, instead of
+  -- quietly buying the frontier a level it no longer has.  This is the
+  -- both-directions treatment the registry already gets, applied to the list
+  -- whose omission of the LIVE primitive was PR #895 review round 7's finding.
+  for h in objectStoreHelpers do
+    unless (env.find? h).isSome do
+      throwError "reply-stack write census: the store helper `{h}` is not a declaration of \
+        this environment"
+    unless storesVia env objectStorePrimitives h do
+      throwError "reply-stack write census: the store helper `{h}` no longer reaches a \
+        table primitive, so naming it buys the frontier a level it does not have — a stale \
+        pin reads like coverage"
   -- Witnesses, both directions.
   unless usesDirectly env chainWritePrimitives ``censusWitnessBareConsume do
     throwError "reply-stack write census: the BARE CONSUME witness is not seen to write \
@@ -768,6 +937,16 @@ run_cmd Command.liftTermElabM do
   if usesDirectly env chainWritePrimitives ``censusWitnessDirectLinkWrite then
     throwError "reply-stack write census: the DIRECT LINK WRITE witness calls a chain-write \
       primitive, so it no longer stands for the shape the primitive list cannot see"
+  -- ...and the same write reaching the table with no helper at all, which is the
+  -- spelling the store half could not see until the LIVE primitive joined the
+  -- frozen one.  Both directions, for the same reason.
+  if usesDirectly env chainWritePrimitives ``censusWitnessRawTableWrite then
+    throwError "reply-stack write census: the RAW TABLE WRITE witness calls a chain-write \
+      primitive, so it no longer stands for the shape the primitive list cannot see"
+  unless (recordConstructingStoreCandidates env).contains ``censusWitnessRawTableWrite do
+    throwError "reply-stack write census: a definition that builds a `Reply` and writes it \
+      with `st.objects.insert` is not a candidate — the store half of the frontier is \
+      measuring a SPELLING, and a chain write escapes by being written the other way"
   -- The split-conjunction witness, both directions: the WRITER is a candidate
   -- (it stores and reaches a constructor through the helper) and the HELPER is
   -- not (it constructs and stores nothing -- the site is where the store is).
@@ -876,15 +1055,15 @@ run_cmd Command.liftTermElabM do
   if halfStepResolves [(`b, .states [`t])] `a then
     throwError "reply-stack write census: an unregistered composite resolved"
   -- The reconciliation, on synthetic inputs.
-  unless (reconciliationViolations [`a, `b] [`a, `b]).isEmpty do
+  unless (reconciliationViolations [`a, `b] [] [`a, `b]).isEmpty do
     throwError "reply-stack write census: agreeing derived/registry sets were reported as \
       disagreeing"
-  if (reconciliationViolations [`a, `b] [`a]).isEmpty then
+  if (reconciliationViolations [`a, `b] [] [`a]).isEmpty then
     throwError "reply-stack write census: an UNREGISTERED write site was accepted — the \
       shape this gate exists to catch"
-  if (reconciliationViolations [`a] [`a, `b]).isEmpty then
+  if (reconciliationViolations [`a] [] [`a, `b]).isEmpty then
     throwError "reply-stack write census: a stale registry entry was accepted"
-  unless (reconciliationViolations [] []).isEmpty do
+  unless (reconciliationViolations [] [] []).isEmpty do
     throwError "reply-stack write census: two empty sets were reported as disagreeing"
   -- The census.  The set is derived; the registry is reconciled against it in
   -- both directions; the witnesses above are excluded by name, since they are
@@ -893,17 +1072,13 @@ run_cmd Command.liftTermElabM do
     [``censusWitnessBareConsume, ``censusWitnessDirectLinkWrite,
      ``censusWitnessSplitWriter, ``censusWitnessSplitHelper,
      ``censusWitnessDelegatedStoreWriter, ``censusWitnessDelegatedStoreHelper,
-     ``eq_censusWitnessUserNamed, ``eq_1]
+     ``eq_censusWitnessUserNamed, ``eq_1, ``censusWitnessRawTableWrite]
   let mut derived : List Name := []
   for n in directWriteCandidates env do
     if witnesses.contains n then continue
     let some info := env.find? n | continue
     if (← Meta.isProp info.type) then continue
     derived := n :: derived
-  let recorded : List Name := chainWriteRegistry.map (·.1)
-  let mismatches := reconciliationViolations derived recorded
-  unless mismatches.isEmpty do
-    throwError "reply-stack write census: {mismatches}"
   -- The primitive list itself, held to what the code does.  `derived` above is
   -- read off `chainWritePrimitives`, so it can only ever confirm that list; this
   -- is the independent half, and it is what stops the nine names from becoming
@@ -914,6 +1089,10 @@ run_cmd Command.liftTermElabM do
     let some info := env.find? n | continue
     if (← Meta.isProp info.type) then continue
     candidates := n :: candidates
+  let recorded : List Name := chainWriteRegistry.map (·.1)
+  let mismatches := reconciliationViolations derived candidates recorded
+  unless mismatches.isEmpty do
+    throwError "reply-stack write census: {mismatches}"
   let coverage := primitiveCoverageViolations candidates recorded chainNeutralConstructors
   unless coverage.isEmpty do
     throwError "reply-stack write census: {coverage}"
@@ -932,10 +1111,26 @@ run_cmd Command.liftTermElabM do
   -- summary is therefore built as a value and checked to carry the frontier
   -- before it is logged: a reword that drops it fails elaboration rather than
   -- silently returning the number to reading as a proof of absence.
-  let summary := s!"reply-stack write census: {derived.length} write sites, \
+  let halfSteps := chainWriteRegistry.filter
+    (fun (_, d) => match d with | .halfStep _ => true | _ => false)
+  -- **The total is the registry, and it must equal the sum of its own rows.**
+  -- The count used to be `derived.length` — the primitive-reaching frontier
+  -- alone — while `stating` and `mirroring` were counted over the registry, so
+  -- once a site entered through the record-constructing frontier the three
+  -- numbers stopped adding up and the headline understated the surface
+  -- (PR #895 review round 7).  A gate whose own arithmetic does not close is
+  -- the shape this file exists to refuse, so the closure is asserted rather
+  -- than assumed.
+  unless stating.length + mirroring.length + halfSteps.length == recorded.length do
+    throwError "reply-stack write census: the registry has {recorded.length} entries and \
+      {stating.length} + {mirroring.length} + {halfSteps.length} disciplines — a total that \
+      is not the sum of its rows describes no set"
+  let summary := s!"reply-stack write census: {recorded.length} write sites \
+({derived.length} reached through a chain-write primitive, \
+{recorded.length - derived.length} found only by the record-constructing frontier), \
 {stating.length} of them stating their own chain result, {mirroring.length} on the \
-frozen surface mirroring a live site that does; the rest are half-steps of a \
-composite that does\n      frontier: {chainWriteFrontier}"
+frozen surface mirroring a live site that does; the remaining {halfSteps.length} are \
+half-steps of a composite that does\n      frontier: {chainWriteFrontier}"
   unless (summary.splitOn chainWriteFrontier).length > 1 do
     throwError "reply-stack write census: the summary does not carry \
       `chainWriteFrontier`, so the site count would read as a proof of absence"

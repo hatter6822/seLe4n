@@ -452,6 +452,178 @@ def binding_statement_before(
 
 
 # ---------------------------------------------------------------------------
+# `extern` blocks.
+#
+# **One question, one answer.**  Two gates parse foreign blocks — the kernel
+# entry gate, which derives link requirements from them, and the unsafe-site
+# gate, which derives justification requirements — and they diverged exactly the
+# way this project keeps paying for: PR #889 review round 21 taught the first to
+# refuse an item macro, round 25 taught it to refuse every other unreadable
+# item, and PR #895 review round 7 found the second still scanning for `fn` and
+# silently examining nothing else.  The remedy for a question answered in two
+# places is not to answer it correctly twice; it is to answer it here.
+#
+# Extraction stays with the caller: what a `fn` item *means* differs between the
+# two (a linker symbol with `#[link_name]` applied, versus an unsafe obligation
+# with the edition-2024 `safe` opt-out).  Only the CLASSIFICATION is shared.
+# ---------------------------------------------------------------------------
+
+#: The `extern` keyword.  Whether it opens a block is decided structurally by
+#: `extern_blocks`, never by a spelling: `extern r"C" {`, `extern {` and
+#: `extern "C-unwind" {` are all foreign blocks, and the ABI names a calling
+#: convention rather than changing what the block declares.
+_EXTERN_KEYWORD = re.compile(r"\bextern\b")
+#: An item macro at item position — `name!(`, `name![` or `name!{`, the three
+#: bracket forms Rust accepts.  Matched on a string-free view, so a `!` inside a
+#: literal is not one.
+_MACRO_INVOCATION = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\s*!\s*[(\[{]")
+#: A `fn` item.  `r#` is Rust's raw-identifier escape and part of the spelling,
+#: not the name.
+_EXTERN_FN_ITEM = re.compile(r"\bfn\s+(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*\(")
+#: An item a foreign block may hold that declares no function: a `static`, a
+#: type alias, or a `use`.
+_EXTERN_NON_FN_ITEM = re.compile(r"\b(?:static|type|use)\b")
+
+
+def skip_rust_space(view: str, at: int) -> int:
+    """Past the whitespace at `at`.  Comments are already blanked in the view,
+    so whitespace is all there is to skip."""
+    while at < len(view) and view[at].isspace():
+        at += 1
+    return at
+
+
+def string_literal_end(view: str, at: int) -> int | None:
+    """Just past the string literal starting at `at`, or `None` when there is
+    none there.
+
+    Handles the raw forms: `r"…"`, `r#"…"#`, `r##"…"##`.  On the string-free
+    view an interior holds no `"` at all (it is blanked to spaces), and on the
+    aligned view an ABI string is kept verbatim because it is syntax; both read
+    correctly here, since the closer is the first `"` followed by the opener's
+    own run of `#`.
+    """
+    index = at
+    hashes = 0
+    if index < len(view) and view[index] == "r":
+        index += 1
+        while index < len(view) and view[index] == "#":
+            hashes += 1
+            index += 1
+    if index >= len(view) or view[index] != '"':
+        return None
+    index += 1
+    closer = '"' + "#" * hashes
+    while index < len(view):
+        if view[index] == "\\" and hashes == 0:
+            index += 2
+            continue
+        if view.startswith(closer, index):
+            return index + len(closer)
+        index += 1
+    return None
+
+
+class UnbalancedExternBlock(Exception):
+    """An `extern` block whose extent cannot be determined."""
+
+    def __init__(self, offset: int) -> None:
+        super().__init__(f"unbalanced `extern` block at offset {offset}")
+        self.offset = offset
+
+
+def extern_blocks(view: str) -> list[tuple[int, int, int]]:
+    """Every `extern <abi>? { … }` block, as `(keyword, open brace, close brace)`.
+
+    Brace-matched rather than line-scanned, so a brace in a signature cannot end
+    a block early.  An unbalanced block raises: both callers derive
+    REQUIREMENTS from these blocks, and a requirement dropped is a check nobody
+    runs, so the fail-closed direction here is refusal rather than omission.
+    """
+    blocks: list[tuple[int, int, int]] = []
+    for m in _EXTERN_KEYWORD.finditer(view):
+        # Rust's grammar after `extern` is closed: `crate`, an optional ABI
+        # **string literal** then `fn`, or an optional ABI literal then `{`.
+        # Only the last opens a block, and resolving the literal is what makes
+        # the answer independent of how it is spelled — `"C"`, `r"C"`,
+        # `r#"C"#`, any convention (PR #889 review round 17, whose check this
+        # is; PR #895 review round 7 moved it here so the second gate that asks
+        # the question reads the same answer).
+        index = skip_rust_space(view, m.end())
+        past = string_literal_end(view, index)
+        if past is not None:
+            index = skip_rust_space(view, past)
+        if index >= len(view) or view[index] != "{":
+            continue        # `extern "C" fn f()`, an `extern crate`: not a block
+        depth, end = 0, None
+        for i in range(index, len(view)):
+            if view[i] == "{":
+                depth += 1
+            elif view[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        if end is None:
+            raise UnbalancedExternBlock(m.start())
+        blocks.append((m.start(), index, end))
+    return blocks
+
+
+def extern_block_items(view: str, start: int, end: int) -> list[tuple[int, int]]:
+    """The `;`-terminated items of a foreign block, as spans.
+
+    Each span begins after the previous item's `;` — so it carries that item's
+    own attributes — and ends at its own `;`.  Semicolons inside brackets (a
+    `[u8; 4]` type) do not terminate an item.
+    """
+    items: list[tuple[int, int]] = []
+    at = start
+    depth = 0
+    index = start
+    while index < end:
+        character = view[index]
+        if character in "([{<":
+            depth += 1
+        elif character in ")]}>":
+            depth = max(0, depth - 1)
+        elif character == ";" and depth == 0:
+            items.append((at, index))
+            at = index + 1
+        index += 1
+    if view[at:end].strip():
+        items.append((at, end))
+    return items
+
+
+def classify_extern_item(view: str, start: int, end: int) -> str:
+    """What kind of item a foreign block holds: `fn`, `macro`, `non-fn`, `unknown`.
+
+    A `fn` is a function declaration the caller may then read for whatever it
+    needs.  A `macro` expands into declarations no `fn`-shaped search can see.
+    A `non-fn` is a `static`, a type alias or a `use` — items that genuinely
+    declare no function, and the ONLY ones a caller may skip.  Anything else is
+    `unknown`, which is a decision rather than a default: an item form no
+    scanner here knows is refused by both callers, so a spelling Rust accepts
+    and this view does not becomes a build failure on the day it is written
+    rather than a silently smaller set of requirements.
+
+    The `fn` test precedes the macro test because a macro *name* may contain the
+    letters `fn` only as an identifier, while `_EXTERN_FN_ITEM` requires the
+    keyword followed by a name and `(`; an item matching both — `fn f(x: m!());`
+    — is a function declaration with a macro in its type, and it is the `fn`
+    that declares the symbol.
+    """
+    if _EXTERN_FN_ITEM.search(view, start, end):
+        return "fn"
+    if _MACRO_INVOCATION.search(view, start, end):
+        return "macro"
+    if _EXTERN_NON_FN_ITEM.search(view, start, end):
+        return "non-fn"
+    return "unknown"
+
+
+# ---------------------------------------------------------------------------
 # Self-test.
 #
 # A stripper that stops stripping, or one that strips too much, both fail
@@ -708,6 +880,49 @@ def _self_test() -> int:
             pass
         else:
             failures.append(f"unterminated {label} did not raise")
+
+    # --- foreign blocks ---------------------------------------------------
+    # Shared by two gates since PR #895 review round 7, so a defect here is a
+    # defect in both.  Each witness KEEPS the tokens and changes the relation.
+    def blocks_of(text: str):
+        return extern_blocks(code_no_strings(text))
+
+    check("an extern block is found", len(blocks_of('extern "C" { fn f(); }')) == 1)
+    # Token-preserving: `extern`, the ABI and `fn` all survive; only what
+    # follows the ABI changes, and `extern "C" fn` opens no block.
+    check("`extern \"C\" fn` opens no block", blocks_of('extern "C" fn f() { }') == [])
+    check("a raw-hashed ABI still opens a block",
+          len(blocks_of('extern r#"C"# { fn f(); }')) == 1)
+    check("a default-ABI block opens", len(blocks_of("extern { fn f(); }")) == 1)
+    # The brace is inside a string literal, so it opens nothing — the relation
+    # the string-free view exists to get right.
+    check("a brace inside a literal opens no block",
+          blocks_of('let s = "extern \\"C\\" {";\n') == [])
+    try:
+        blocks_of('extern "C" { fn f();\n')
+    except UnbalancedExternBlock:
+        pass
+    else:
+        failures.append("an unbalanced extern block did not raise")
+
+    def kinds_of(text: str) -> list[str]:
+        view = code_no_strings(text)
+        (_k, open_at, end), = extern_blocks(view)
+        return [classify_extern_item(view, a, b)
+                for a, b in extern_block_items(view, open_at + 1, end)]
+
+    check("a fn, a static and a macro classify apart",
+          kinds_of('unsafe extern "C" { fn a(); static B: u8; decl!(); }')
+          == ["fn", "non-fn", "macro"],
+          str(kinds_of('unsafe extern "C" { fn a(); static B: u8; decl!(); }')))
+    # A macro in a function's TYPE does not make the item a macro: it is the
+    # `fn` that declares the symbol.  Token-preserving against the macro case —
+    # the `!` and the brackets are both still there.
+    check("a macro inside a fn signature is still a fn",
+          kinds_of('extern "C" { fn a(x: m!()); }') == ["fn"])
+    # An item form the view does not know is `unknown`, never silently skipped.
+    check("an unknown item form is named", kinds_of('extern "C" { const K: u32; }')
+          == ["unknown"])
 
     for problem in failures:
         print(f"FAIL  {problem}")
