@@ -45,7 +45,11 @@ structure Attribution where
   line : Nat
   decl : String
   isProp : Bool
-  /-- `"sig"` when the read sits in the declaration's signature. -/
+  /-- `"sig"` for a binder type or the result type, `"default"` for a binder's
+  default value, `"body"` otherwise.  A signature row is not judged — a
+  hypothesis binder is a proposition whatever its declaration is — while a
+  default is, since a default is elaborated and run exactly when its
+  declaration is. -/
   region : String
   deriving Inhabited
 
@@ -131,10 +135,14 @@ def disagreements (spans : Std.HashMap String (Array Span)) (rows : Array Attrib
   let mut signatureRows := 0
   let mut mismatches : Array String := #[]
   for a in rows do
+    -- A `"sig"` row is a binder TYPE or the result type — a proposition inside
+    -- a declaration that may itself be executable, which a declaration-level
+    -- verdict structurally cannot adjudicate.  A `"default"` row is a binder's
+    -- DEFAULT VALUE, which it can: a default runs exactly when its declaration
+    -- does, so it is judged like a body.
     if a.region == "sig" then
       signatureRows := signatureRows + 1
       continue
-    unless a.isProp do continue
     let candidates := (spans.getD a.file #[]).filter fun sp =>
       sp.start ≤ a.line && a.line ≤ sp.stop
     if candidates.isEmpty then
@@ -147,11 +155,33 @@ def disagreements (spans : Std.HashMap String (Array Span)) (rows : Array Attrib
       ambiguous := ambiguous + 1
       continue
     checked := checked + 1
-    unless best.isProp || structureLike best.name do
-      mismatches := mismatches.push
-        s!"{a.file}:{a.line}: the classifier filed this read under `{a.decl}` as \
+    -- A `structure` is executable while its field TYPES are propositions, so
+    -- the elaborator's declaration-level verdict cannot settle either direction
+    -- for one; it is excused from both.
+    if structureLike best.name then continue
+    if a.isProp then
+      -- **Fail-open.**  The classifier called this specification and the
+      -- elaborator says the line is in an executable declaration, so a read
+      -- that should count toward the enforced zero does not.
+      unless best.isProp do
+        mismatches := mismatches.push
+          s!"{a.file}:{a.line}: the classifier filed this read under `{a.decl}` as \
 SPEC, but the elaborator places the line in the body of `{best.name}`, which is \
 executable — a Lean declaration form the classifier does not recognise"
+    else
+      -- **Fail-strict, and judged for exactly that reason.**  The classifier
+      -- called this executable and the elaborator says the declaration is a
+      -- proposition, so Tier 0 refuses legitimate specification text against an
+      -- enforced zero — a wall with no explanation unless something says this.
+      -- The case that motivated it is a result type that is an ALIAS of `Prop`
+      -- (`abbrev Pred := Prop`), which `prop_aliases` resolves lexically and so
+      -- incompletely (PR #895 review round 6).
+      if best.isProp then
+        mismatches := mismatches.push
+          s!"{a.file}:{a.line}: the classifier filed this read under `{a.decl}` as \
+CODE, but the elaborator says `{best.name}` is a proposition — Tier 0 would \
+refuse valid specification text.  If the result type is an alias of `Prop`, \
+teach `prop_aliases` in scripts/lean_store_read_census.py to resolve it"
   return (mismatches, checked, signatureRows, unplaced, ambiguous)
 
 run_cmd Command.liftTermElabM do
@@ -204,11 +234,29 @@ run_cmd Command.liftTermElabM do
   if bad.isEmpty then
     throwError "store-read classification census: a SPEC-filed body read inside an \
       executable declaration was accepted — the one direction this check enforces"
-  -- ...and the three shapes that must NOT be reported, or the gate fires on
-  -- correct input: the same read in a genuinely specification declaration, the
-  -- same read in a SIGNATURE (a hypothesis binder is a proposition inside an
-  -- executable declaration — `mkRetypeTarget` is the live instance), and a read
-  -- filed CODE, where over-counting is the safe direction for a zero floor.
+  -- THE SECOND DIRECTION: a body read filed CODE inside a declaration the
+  -- elaborator calls a proposition.  Over-counting is the *safe* direction for
+  -- a zero floor, so this is not a soundness hole — it is Tier 0 refusing valid
+  -- specification text, which a `Prop` ALIAS in a result type produces and
+  -- which nothing reported until this direction was judged (round 6).
+  let (bad2, _, _, _, _) :=
+    disagreements (Std.HashMap.emptyWithCapacity.insert "F.lean" #[spec]) #[mkRow 5 false "body"] stub
+  if bad2.isEmpty then
+    throwError "store-read classification census: a CODE-filed body read inside a \
+      specification declaration was accepted — Tier 0 would refuse valid text with \
+      nothing to explain it"
+  -- A binder DEFAULT is executable exactly when its declaration is, so unlike a
+  -- signature row it IS adjudicable — and it is judged in the same direction.
+  let (bad3, _, _, _, _) :=
+    disagreements (Std.HashMap.emptyWithCapacity.insert "F.lean" #[exec]) #[mkRow 5 true "default"] stub
+  if bad3.isEmpty then
+    throwError "store-read classification census: a SPEC-filed binder DEFAULT inside an \
+      executable declaration was accepted — a default runs when its declaration does"
+  -- ...and the shapes that must NOT be reported, or the gate fires on correct
+  -- input: the same read in a genuinely specification declaration, the same read
+  -- in a SIGNATURE (a hypothesis binder is a proposition inside an executable
+  -- declaration — `mkRetypeTarget` is the live instance), and a read filed CODE
+  -- in a declaration that really is executable (the 24 accessor bodies).
   let (ok1, _, _, _, _) :=
     disagreements (Std.HashMap.emptyWithCapacity.insert "F.lean" #[spec]) #[mkRow 5 true "body"] stub
   unless ok1.isEmpty do
@@ -223,8 +271,17 @@ run_cmd Command.liftTermElabM do
   let (ok3, _, _, _, _) :=
     disagreements (Std.HashMap.emptyWithCapacity.insert "F.lean" #[exec]) #[mkRow 5 false "body"] stub
   unless ok3.isEmpty do
-    throwError "store-read classification census: a CODE-filed read was judged; \
-      over-counting is the safe direction and must not fire"
+    throwError "store-read classification census: a CODE-filed read in a genuinely \
+      executable declaration was reported — that is the classifier agreeing"
+  -- A structure excuses BOTH directions, not only the first: its field types are
+  -- specification and its defaults are executable, and one declaration-level
+  -- verdict cannot be right about both.
+  let (ok5, _, _, _, _) :=
+    disagreements (Std.HashMap.emptyWithCapacity.insert "F.lean" #[spec]) #[mkRow 5 false "body"]
+      (fun n => n == `aProp)
+  unless ok5.isEmpty do
+    throwError "store-read classification census: a CODE-filed read in a structure was \
+      reported, but a structure cannot arbitrate either direction"
   -- A structure's field TYPES are specification while the structure itself is
   -- executable by this test, so it cannot arbitrate a body read either.
   let (ok4, _, _, _, _) :=
@@ -248,8 +305,8 @@ run_cmd Command.liftTermElabM do
     throwError "store-read classification census: no body line was judged, so this \
       reconciliation passed by measuring nothing"
 
-  logInfo m!"store-read classification census: {checked} specification-filed body line(s) \
-agree with the elaborator ({signatureRows} in signatures, {unplaced} outside any \
+  logInfo m!"store-read classification census: {checked} body line(s) agree with the \
+elaborator in BOTH directions ({signatureRows} in signatures, {unplaced} outside any \
 declaration, {ambiguous} in tied spans; all three diagnostic)"
 
 end SeLe4n.Testing.StoreReadClassificationCensus

@@ -107,10 +107,27 @@ READ = re.compile(
 # declaration, so a raw store read in an indented transition following a
 # `theorem` was emitted as `SPEC` and walked around the enforced
 # `STORE_READ_CODE = 0` (PR #895 review round 5).
+# **An unrecognised declaration keyword is not a missing feature, it is a
+# misattribution.**  `opaque` was absent from this alternation, and the tree has
+# **73** `opaque` declarations at column zero: each one left `sig_open`/`decl`
+# pointing at whatever declaration preceded it, so an executable `opaque` body
+# following a `theorem` had its reads emitted under the theorem's name as
+# `SPEC` -- past the enforced `STORE_READ_CODE = 0` (PR #895 review round 6).
+# No `opaque` body holds a recognised read today, so the floor was not false;
+# the hole was open and unoccupied.
+#
+# What bounds the class rather than this one keyword is the elaborator:
+# `SeLe4n/Testing/StoreReadClassificationCensus.lean` asks
+# `findDeclarationRanges?` which declaration owns each emitted line, so a read
+# attributed to the wrong declaration is a Tier 1 build failure whatever
+# spelling caused it -- which is why its mismatch message names exactly this
+# case.  Keep this list current anyway: Tier 0 is where the metric is read, and
+# a gate that needs its sibling to notice every miss is a worse gate.
 DECL = re.compile(
     r"^[ \t]*(?:@\[[^\]]*\]\s*)?"
     r"(?:private\s+|protected\s+|partial\s+|noncomputable\s+|nonrec\s+|scoped\s+|unsafe\s+)*"
-    r"(theorem|lemma|def|abbrev|instance|example|structure|inductive|class)\b\s+([^\s:({\[]*)"
+    r"(theorem|lemma|def|abbrev|instance|example|structure|inductive|class|opaque|axiom)"
+    r"\b\s+([^\s:({\[]*)"
 )
 
 # Declaration keywords whose contents are propositions or types whatever their
@@ -206,7 +223,99 @@ def _top_level_assign(line: str, depth: int = 0):
     return (m.start() if m is not None else None), depth
 
 
-def _returns_prop(head: str) -> bool:
+def _split_binder_defaults(text: str, depth: int = 0, default_depth=None):
+    """Split signature text into binder TYPES and binder DEFAULT VALUES.
+
+    `(text spec, text code, depth after, default depth after)`.
+
+    **A binder's type is a proposition; its default is a term.**  In
+    `def step (obj : Option KernelObject := st.objects[oid]?) := obj` the
+    default is elaborated and evaluated whenever the argument is omitted, so it
+    is executable exactly as the declaration's body is -- while the binder type
+    beside it is a hypothesis or a type, which is why the signature as a whole
+    is specification.  Emitting the whole signature as one bucket therefore let
+    an executable read live in a signature and walk around the enforced
+    `STORE_READ_CODE = 0` (PR #895 review round 6); it escaped the elaborator
+    reconciliation too, which skips `sig` rows because a declaration-level
+    verdict cannot adjudicate a hypothesis binder.  A *default* it can
+    adjudicate, so these reads are emitted under their own region and judged.
+
+    A default opens at a `:=` **nested inside a binder group** -- a depth-zero
+    `:=` is the signature's own terminator, which `_signature_end` has already
+    cut -- and closes when that group closes.  Both counters are threaded by the
+    caller, since a binder may span lines.
+    """
+    spec, code = [], []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch in _OPENERS:
+            depth += 1
+            (code if default_depth is not None else spec).append(ch)
+        elif ch in _CLOSERS:
+            depth -= 1
+            if default_depth is not None and depth < default_depth:
+                # The group carrying the default closed, so the binder ended.
+                default_depth = None
+                spec.append(ch)
+            else:
+                (code if default_depth is not None else spec).append(ch)
+        elif default_depth is None and depth > 0 and text.startswith(":=", i):
+            default_depth = depth
+            i += 2
+            continue
+        else:
+            (code if default_depth is not None else spec).append(ch)
+        i += 1
+    return "".join(spec), "".join(code), depth, default_depth
+
+
+# A declaration whose VALUE is a single name: `abbrev Pred := Prop`.  Chained
+# through `prop_aliases` below, this is what makes a predicate written
+# `… : Pred` read as specification.
+PROP_ALIAS = re.compile(
+    r"^\s*(?:@\[[^\]]*\]\s*)?"
+    r"(?:private\s+|protected\s+|scoped\s+|noncomputable\s+|partial\s+|unsafe\s+)*"
+    r"(?:abbrev|def)\s+([A-Za-z_][A-Za-z0-9_'!?]*)[^\n]*?:=\s*([A-Za-z_][A-Za-z0-9_'!?.]*)\s*$"
+)
+
+
+def prop_aliases(view: Path) -> frozenset:
+    """The names that denote `Prop`, transitively.
+
+    A predicate may be written `def holds … : Pred := …` over
+    `abbrev Pred := Prop`, and testing the terminal result for the literal token
+    `Prop` files that read as EXECUTABLE -- rejecting legitimate specification
+    text against an enforced zero (PR #895 review round 6).
+
+    **This tree declares none**, measured over the code view, so the set is
+    empty and nothing here moves a live number; it exists so that the first one
+    written does not fail the build.
+
+    Lexical and therefore incomplete: an alias reached through an import this
+    scan does not read, or built by anything but a direct `:=`, is not resolved.
+    That residue keeps failing CLOSED -- its reads count as code, never as spec,
+    so nothing hides -- and `StoreReadClassificationCensus` reports it as a
+    classifier defect rather than leaving the Tier 0 refusal unexplained.
+    """
+    direct = {}
+    for f in sorted(view.rglob("SeLe4n/**/*.lean")):
+        for line in f.read_text().splitlines():
+            m = PROP_ALIAS.match(line)
+            if m:
+                direct[m.group(1)] = m.group(2)
+    names = set()
+    for name in direct:
+        seen, cur = set(), name
+        while cur in direct and cur not in seen:
+            seen.add(cur)
+            cur = direct[cur]
+        if cur == "Prop":
+            names.update(seen)
+    return frozenset(names)
+
+
+def _returns_prop(head: str, aliases: frozenset = frozenset()) -> bool:
     """Does this signature's terminal result type return `Prop`?"""
     result = _result_type(head)
     if not result:
@@ -235,7 +344,21 @@ def _returns_prop(head: str) -> bool:
             last = i + 1
         i += 1
     parts.append(result[last:])
-    return re.match(r"Prop\b", parts[-1].strip()) is not None
+    term = parts[-1].strip()
+    if re.match(r"Prop\b", term) is not None:
+        return True
+    if not aliases:
+        return False
+    head_token = re.match(r"([A-Za-z_][A-Za-z0-9_'!?.]*)", term)
+    if head_token is None:
+        return False
+    tok = head_token.group(1)
+    # Both spellings, since an alias declared inside a `namespace` is written
+    # qualified at a use site outside it.  A bare last component is accepted on
+    # purpose: the alternative is resolving Lean names by text, which this file
+    # does not do -- and the direction of any over-match is SPEC, which the
+    # elaborator reconciliation judges.
+    return tok in aliases or tok.split(".")[-1] in aliases
 
 
 def code_view(root: Path) -> Path:
@@ -273,7 +396,7 @@ def _signature_head(signature: str) -> str:
     return signature[: m.start()] if m is not None else signature
 
 
-def classify(path: Path):
+def classify(path: Path, aliases: frozenset = frozenset()):
     """Yield (declaration, is_prop, occurrences, line, region) per read-bearing line.
 
     `region` is `"sig"` for a read in the declaration's signature — a hypothesis
@@ -294,12 +417,14 @@ def classify(path: Path):
     lines = path.read_text().splitlines()
     decl, kind, signature, sig_open = "<file scope>", "<none>", "", False
     in_default, body_depth, sig_depth, field_col = False, 0, 0, None
+    binder_depth, binder_default = 0, None
     for lineno, line in enumerate(lines, start=1):
         m = DECL.match(line)
         if m:
             kind, decl = m.group(1), m.group(2) or "<anonymous>"
             signature, sig_open = line, True
             in_default, body_depth, sig_depth, field_col = False, 0, 0, None
+            binder_depth, binder_default = 0, None
         sig_part, body_part = line, ""
         if sig_open:
             # **Two ways a signature ends, because Lean has two.**  `:=` opens a
@@ -324,7 +449,7 @@ def classify(path: Path):
         else:
             sig_part, body_part = "", line
         head = _signature_head(signature)
-        is_prop_decl = kind in PROP_KINDS or kind in FIELD_KINDS or _returns_prop(head)
+        is_prop_decl = kind in PROP_KINDS or kind in FIELD_KINDS or _returns_prop(head, aliases)
         # Split a structure/class body line into its field-type half and its
         # default half.  Once a default has opened it stays open for the rest of
         # the declaration: a default may span lines, there is no terminator a
@@ -335,7 +460,7 @@ def classify(path: Path):
         # A `Prop`-sorted structure has no executable content: every field is a
         # proof and so is every default, so it is spec whole and the split below
         # does not apply to it.
-        if kind in FIELD_KINDS and body_part and not _returns_prop(head):
+        if kind in FIELD_KINDS and body_part and not _returns_prop(head, aliases):
             # **A default ends where the next field begins.**  Carrying
             # `in_default` to the end of the declaration classified every later
             # field TYPE as executable, so `tag : Nat := 0` followed by a
@@ -360,11 +485,24 @@ def classify(path: Path):
                 else:
                     body_spec, body_code = body_part[:cut], body_part[cut + 2:]
                     in_default = True
-        n_sig = len(READ.findall(sig_part))
+        # A binder's default value is executable exactly when the declaration is
+        # -- a `theorem`'s defaulted binder carries a proof, a `def`'s carries a
+        # term -- so the split is gated by the same `is_prop_decl` the body uses.
+        sig_spec, sig_default, binder_depth, binder_default = _split_binder_defaults(
+            sig_part, binder_depth, binder_default
+        )
+        if is_prop_decl:
+            sig_spec, sig_default = sig_spec + sig_default, ""
+        n_sig = len(READ.findall(sig_spec))
+        n_default = len(READ.findall(sig_default))
         n_spec = len(READ.findall(body_spec))
         n_code = len(READ.findall(body_code))
         if n_sig:
             yield decl, True, n_sig, lineno, "sig"   # a binder or result type
+        if n_default:
+            # Its own region: unlike a hypothesis binder, a default IS something
+            # a declaration-level verdict can adjudicate, so Tier 1 judges it.
+            yield decl, False, n_default, lineno, "default"
         if n_spec:
             yield decl, True, n_spec, lineno, "body"
         if n_code:
@@ -429,9 +567,10 @@ def census(view: Path):
     naming a raw read is reported rather than silently kept.
     """
     code, spec, exempt_hits, attribution = {}, {}, {}, []
+    aliases = prop_aliases(view)
     for f in sorted(view.rglob("SeLe4n/**/*.lean")):
         rel = str(f.relative_to(view))
-        for decl, is_prop, n, lineno, region in classify(f):
+        for decl, is_prop, n, lineno, region in classify(f, aliases):
             # Emitted for every read-bearing line, exempt or not: the
             # reconciliation asks whether the CLASSIFIER agreed with the
             # elaborator, and an exempted accessor is classified like any other.
@@ -645,6 +784,48 @@ def step (st : SystemState) (oid : ObjId) : SystemState :=
 /-- Opens by matching `st.objects[oid]?`. -/
 def documented (st : SystemState) : SystemState := st
 """, {}, {}),
+    # AN UNRECOGNISED DECLARATION KEYWORD IS A MISATTRIBUTION.  `opaque` was
+    # absent from `DECL`, so this body stayed attributed to the `theorem` above
+    # it and its read was emitted as SPEC -- past the enforced zero.  The
+    # mutation is token-preserving in the sharpest sense available: the same
+    # read, the same file, only the keyword introducing its declaration.
+    "opaque_after_theorem": ("""
+theorem pre (st : SystemState) : True := by trivial
+
+opaque step (st : SystemState) (oid : ObjId) : Option KernelObject :=
+  st.objects[oid]?
+""", {("f.lean", "step"): 1}, {}),
+    # A BINDER'S DEFAULT IS A TERM.  It is elaborated and evaluated whenever the
+    # argument is omitted, so a read there is executable -- while the binder
+    # TYPE beside it is a hypothesis.  Emitting the whole signature as one
+    # bucket let this read bypass the zero (PR #895 review round 6).
+    "binder_default_is_code": ("""
+def step (st : SystemState) (obj : Option KernelObject := st.objects[oid]?) :=
+  obj
+""", {("f.lean", "step"): 1}, {}),
+    # ...and the same defaulted binder on a `theorem` carries a PROOF, so it
+    # stays spec.  Token-preserving against the case above: same binder, same
+    # read, only the declaration's kind.
+    "binder_default_in_theorem_is_spec": ("""
+theorem keep (h : Option KernelObject := st.objects[oid]?) : True := by trivial
+""", {}, {("f.lean", "keep"): 1}),
+    # ...while a hypothesis binder's TYPE is spec in an executable declaration
+    # too, which is the distinction the region split exists to preserve.
+    "binder_type_stays_spec": ("""
+def keep (h : st.objects[oid]? = none) (n : Nat := 0) : Nat :=
+  n
+""", {}, {("f.lean", "keep"): 1}),
+    # A RESULT TYPE MAY BE AN ALIAS OF `Prop`.  Testing for the literal token
+    # filed this predicate as executable, so Tier 0 rejected legitimate
+    # specification text against an enforced zero.  The fixture declares the
+    # alias in its own file, so what this pins is the RESOLUTION as well as the
+    # classification.
+    "prop_alias_result": ("""
+abbrev Pred := Prop
+
+def holds (st : SystemState) (oid : ObjId) : Pred :=
+  st.objects[oid]? = none
+""", {}, {("f.lean", "holds"): 1}),
 }
 
 
@@ -658,8 +839,12 @@ def self_test() -> int:
             # comment quoting the pattern cannot become a read -- the wiring is
             # part of what this pins, not only the classification.
             (root / "f.lean").write_text(lean_code_view.strip(src))
+            # Aliases are resolved from the fixture's own tree, so a case may
+            # declare `abbrev Pred := Prop` and have it apply — what this pins
+            # is the RESOLUTION as well as the classification.
+            aliases = prop_aliases(Path(td) / name)
             got_code, got_spec = {}, {}
-            for decl, is_prop, n, _line, _region in classify(root / "f.lean"):
+            for decl, is_prop, n, _line, _region in classify(root / "f.lean", aliases):
                 key = ("f.lean", decl)
                 (got_spec if is_prop else got_code)[key] = \
                     (got_spec if is_prop else got_code).get(key, 0) + n

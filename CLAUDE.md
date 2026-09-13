@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.18.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.19.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1381,6 +1381,58 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `BootEntryContract` does for the same reason.  **A check that cannot fire on the
   current tree and carries no witness is indistinguishable from one that is
   wrong.**
+
+  **And a reconciliation only closes the direction it judges** (PR #895 review
+  round 6, `v0.35.19`).  Round 5 took the structural exit for the Lean
+  classifier and wrote the caveat above; round 6 found **seven** more — six
+  reported, one self-inflicted — and the useful result is *which* of them the
+  round-5 mechanism already covered, because that is the measure of whether the
+  exit was the right one.
+
+  It covered one.  `opaque` was missing from the classifier's declaration
+  keywords, so an executable `opaque` body following a `theorem` was attributed
+  to the theorem and filed `SPEC`, past the enforced zero — and the elaborator
+  reconciliation's mismatch message *already named that case* ("a Lean
+  declaration form the classifier does not recognise"), because asking
+  `findDeclarationRanges?` who owns a line is spelling-independent.  It could
+  not fire only because no `opaque` body in the tree holds a read.  **A
+  mechanism that would have caught a finding it never saw is the evidence that
+  it is the right mechanism**, and the keyword was still added: Tier 0 is where
+  the metric is read, and a gate that needs its sibling to notice every miss is
+  a worse gate.
+
+  It did **not** cover the other two, and each for a reason worth keeping.  A
+  binder's *default value* was emitted in the signature region, which the
+  reconciliation skips — correctly, since a declaration-level verdict cannot
+  adjudicate a hypothesis binder.  But a default is not a hypothesis: it is
+  elaborated and evaluated exactly when its declaration is, so it *is*
+  adjudicable, and lumping the two into one region hid an executable read from
+  both tiers at once.  **A region is a claim about what a verdict can decide;
+  two constructs that differ in that are two regions.**  And a result type that
+  is an *alias* of `Prop` was filed `CODE`, which the reconciliation also
+  skipped — deliberately, on the reasoning that over-filing `CODE` cannot bypass
+  a zero.  True, and it is not the only thing that matters: over-filing makes
+  Tier 0 refuse valid specification text, and the tier that knows better was
+  staying silent about it.  **Judge both directions: the safe direction is still
+  a direction, and a wall with no explanation is a defect too.**
+
+  Two more from the same round, on the Rust side, are the nesting and
+  same-line rules one level down — a doc marker nested inside another comment
+  publishes nothing, and a preceding *item* on the site's own line does not
+  donate its documentation — and the second carries a distinction worth
+  stating: the two site kinds ask different questions of that line.  A **block**
+  is evaluated inside the statement it sits in, so a binding prefix is not
+  something that executed in between; a **declaration** preceded by another item
+  is a different item.  Applying one rule to both is wrong in whichever
+  direction it is applied, measured: the strict rule over blocks fails 18 live
+  sites.
+
+  Finally, the round's own mechanical lesson, earned by nearly shipping a false
+  green: **a mutation must revert the defect, not exchange one sound rule for
+  another.**  The first mutation written against the same-line fix substituted
+  the *block* rule for the *declaration* rule, and the fixture passed under it —
+  not because the fixture was weak but because both rules reject that input.
+  The mutation that decides is the pre-fix behaviour itself.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

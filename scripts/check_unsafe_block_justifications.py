@@ -81,7 +81,18 @@ BASELINE = REPO / "scripts" / "unsafe_justification_baseline.json"
 # copy of `"[^"]*"`, so widening three of them left the fourth behind and a valid
 # declaration yielded no site while the keyword scan rejected the file
 # (PR #895 review round 5).  One question, one spelling, four readers.
-ABI = r'(?:r#*\"[^\"]*\"|\"[^\"]*\")'
+#
+# **A raw string's hashes are balanced, and half of them is not a literal.**
+# `r#*\"[^\"]*\"` consumed the OPENING hashes of `r#\"C\"#` and stopped at the
+# closing quote, leaving the trailing `#` exactly where every surrounding
+# pattern requires whitespace — so `pub unsafe extern r#\"C\"# fn f() {}`, which
+# rustc accepts, yielded no site AND was reported as an unrecognised `unsafe`
+# form, failing Tier 0 on valid Rust (PR #895 review round 6).  The count of
+# closing hashes must equal the opening count, which is a backreference, not a
+# repetition.  Each pattern below embeds `ABI` exactly once, so one named group
+# is safe; embedding it twice in a single pattern would not compile, which is a
+# loud failure rather than a silent one.
+ABI = r'(?:r(?P<rawhash>\#*)\"[^\"]*\"(?P=rawhash)|\"[^\"]*\")'
 
 UNSAFE_SITE = re.compile(
     r"\bunsafe\s*\{"                                         # a block
@@ -191,19 +202,64 @@ DOC_BLOCK_OPEN = re.compile(r"/\*\*(?![*/])")
 DOC_BLOCK_LINE = re.compile(r"^\s*\*?\s*#+\s*Safety\b", re.IGNORECASE | re.MULTILINE)
 
 
+def _split_block_comments(run: str) -> tuple[str, list[str]]:
+    """`(run with every block comment blanked, the TOP-LEVEL doc-block bodies)`.
+
+    **Rust block comments nest, and a marker nested inside one publishes
+    nothing.**  `/* … /** # Safety … */ … */` is a single ordinary comment as
+    far as rustdoc is concerned, so the declaration below it exposes no
+    caller-facing contract — yet scanning the run for `/**` anywhere treated the
+    inner marker as an independently attached doc block and accepted the
+    `unsafe fn` (PR #895 review round 6).
+
+    One walk settles the same relation for the siblings, which is this
+    project's sweep rule rather than an extra: `SAFETY_DECL_LINE` and
+    `SAFETY_DECL_ATTR` are `re.MULTILINE` searches over the whole run, so a
+    `///` line or a `#[doc = …]` attribute *spelled inside* an ordinary block
+    comment matched them too.  Blanking every block comment's extent — newlines
+    kept, so line-anchored patterns keep their geometry — leaves exactly the
+    markers that are really attached to the item, and the doc blocks are
+    returned separately because their bodies genuinely are published.
+
+    Deliberately not applied to `SAFETY_BLOCK`: a `// SAFETY:` comment is for
+    the reviewer reading this file, who sees a nested one as readily as a
+    top-level one.  The relation here is *rustdoc publication*, which is a
+    property of declarations alone.
+    """
+    out: list[str] = []
+    bodies: list[str] = []
+    i, n = 0, len(run)
+    while i < n:
+        if run.startswith("/*", i):
+            is_doc = DOC_BLOCK_OPEN.match(run, i) is not None
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if run.startswith("/*", j):
+                    depth += 1
+                    j += 2
+                elif run.startswith("*/", j):
+                    depth -= 1
+                    j += 2
+                else:
+                    j += 1
+            if is_doc:
+                bodies.append(run[i + 3:(j - 2) if depth == 0 else n])
+            out.append("".join(c if c == "\n" else " " for c in run[i:j]))
+            i = j
+        else:
+            out.append(run[i])
+            i += 1
+    return "".join(out), bodies
+
+
 def declaration_documents_safety(run: str) -> bool:
     """Does this run publish a rustdoc `# Safety` section?"""
-    if SAFETY_DECL_LINE.search(run) or SAFETY_DECL_ATTR.search(run):
+    attached, doc_bodies = _split_block_comments(run)
+    if SAFETY_DECL_LINE.search(attached) or SAFETY_DECL_ATTR.search(attached):
         return True
     # A `# Safety` inside a doc *block* counts; inside an ordinary block comment
-    # it does not.  Scan each doc block's own extent rather than the whole run,
-    # so an ordinary `/* … */` elsewhere in the run cannot donate a heading.
-    for m in DOC_BLOCK_OPEN.finditer(run):
-        end = run.find("*/", m.end())
-        body = run[m.end():] if end == -1 else run[m.end():end]
-        if DOC_BLOCK_LINE.search(body):
-            return True
-    return False
+    # -- or nested inside any block comment at all -- it does not.
+    return any(DOC_BLOCK_LINE.search(body) for body in doc_bodies)
 ARM_ARM = re.compile(r"\(ARM ARM [A-Z][0-9]+(?:\.[0-9]+)*\)")
 
 
@@ -263,7 +319,112 @@ def is_attribute_only(code_line: str) -> bool:
     return rest == ""
 
 
-def justification_run(raw: str, view: str, at: int) -> str:
+#: Keywords that may sit between an item's real start and the token this gate
+#: matches it at (`unsafe` for a declaration, `fn` for a foreign item).  They
+#: belong to the item, so they are transparent to the justification run.
+ITEM_MODIFIERS = frozenset({"pub", "const", "async", "default", "unsafe", "extern"})
+
+
+#: A completed statement on the site's own line.  For a BLOCK this is what
+#: "something executed in between" looks like — a bare binding prefix
+#: (`let inner = `) is not, since the block is evaluated to produce its value.
+STATEMENT_BREAK = re.compile(r"[;{}]")
+
+
+def _same_line_prefix(raw: str, view: str, line_start: int, at: int,
+                      is_declaration: bool) -> tuple[str, bool]:
+    """`(the site's own-line prefix trimmed to its trailing justification, code?)`.
+
+    **The two site kinds ask different questions of the same line.**
+
+    For a BLOCK, the prefix is the statement the block is evaluated *within*:
+    `let inner = unsafe { … };` runs the block first and binds its value, so
+    nothing has executed between the comment above and the operation — and
+    Rust's own convention, the one `clippy::undocumented_unsafe_blocks` reads,
+    puts the `// SAFETY:` above that statement.  What genuinely intervenes is a
+    *completed* statement, so the run stops at a `;` / `{` / `}` and not at any
+    code at all.
+
+    For a DECLARATION it is the opposite: code before it on its own line is a
+    different ITEM, whose documentation does not carry.  That is the round-6
+    finding.
+
+    **The prefix is not automatically a justification.**  Taking the site's whole
+    same-line prefix let a *preceding item on that line* donate its
+    documentation: in
+    `unsafe extern "C" { #[doc = "# Safety"] fn documented(); fn undocumented(); }`
+    the second foreign function inherited the first's doc attribute and passed,
+    while rustdoc leaves it undocumented (PR #895 review round 6).  It is the
+    same relation the upward walk already enforces line by line — *nothing may
+    execute between the justification and the operation* — asked of the one line
+    the walk never examined.
+
+    So the prefix is trimmed, right to left, over whitespace, block comments and
+    complete attributes, and stops at the first CODE.  Comment interiors are
+    blanked to spaces in the code view, so whitespace and comments need no
+    distinction here: both are transparent, and anything else is not.  The
+    second element reports whether code was found, because a site with code
+    before it on its own line cannot be justified from further up either.
+    """
+    if not is_declaration:
+        last = None
+        for m in STATEMENT_BREAK.finditer(view, line_start, at):
+            last = m
+        if last is not None:
+            return raw[last.end():at], True
+        return raw[line_start:at], False
+    end = at
+    while end > line_start:
+        if view[end - 1].isspace():          # whitespace, or a blanked comment
+            end -= 1
+            continue
+        # An item's own MODIFIERS are not code preceding it.  A declaration site
+        # is matched at its `unsafe` token and a foreign item at its `fn`, so
+        # `pub`, `pub(crate)`, `const`, `async` and friends sit between the item's
+        # real start and the offset — treating them as code cut the run off from
+        # the doc comment directly above `pub unsafe fn f()`.  The set is Rust's
+        # and is closed; a modifier missing from it reads as code, which stops
+        # the run and fails the site CLOSED rather than silently widening it.
+        if view[end - 1] == ")":             # a `pub(crate)` / `pub(in …)` group
+            depth, k = 0, end
+            while k > line_start:
+                k -= 1
+                if view[k] == ")":
+                    depth += 1
+                elif view[k] == "(":
+                    depth -= 1
+                    if depth == 0:
+                        break
+            word = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*$", view[line_start:k])
+            if depth == 0 and word and word.group(1) == "pub":
+                end = line_start + word.start(1)
+                continue
+        word = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*$", view[line_start:end])
+        if word and word.group(1) in ITEM_MODIFIERS:
+            end = line_start + word.start(1)
+            continue
+        if view[end - 1] == "]":             # a complete `#[ … ]` / `#![ … ]`?
+            depth, k = 0, end
+            while k > line_start:
+                k -= 1
+                if view[k] == "]":
+                    depth += 1
+                elif view[k] == "[":
+                    depth -= 1
+                    if depth == 0:
+                        break
+            if depth == 0 and view[k] == "[":
+                open_at = k
+                if open_at - 1 >= line_start and view[open_at - 1] == "!":
+                    open_at -= 1
+                if open_at - 1 >= line_start and view[open_at - 1] == "#":
+                    end = open_at - 1
+                    continue
+        break
+    return raw[end:at], end > line_start
+
+
+def justification_run(raw: str, view: str, at: int, is_declaration: bool) -> str:
     """The contiguous comment-and-attribute run immediately above `at`.
 
     Walks upward line by line while each line is blank in the code view (a
@@ -273,8 +434,12 @@ def justification_run(raw: str, view: str, at: int) -> str:
     """
     line_start = raw.rfind("\n", 0, at) + 1
     # A trailing comment on the site's own line counts: `unsafe { … } // SAFETY: …`
-    # does not, but `// SAFETY: …` before it on the same line does.
-    run = [raw[line_start:at]]
+    # does not, but `// SAFETY: …` before it on the same line does — provided
+    # nothing executes in between, which is what the trim below establishes.
+    prefix, prefix_has_code = _same_line_prefix(raw, view, line_start, at, is_declaration)
+    run = [prefix]
+    if prefix_has_code:
+        return prefix
     idx = line_start
     while idx > 0:
         prev_end = idx - 1
@@ -301,7 +466,7 @@ def justification_run(raw: str, view: str, at: int) -> str:
 
 
 UNSAFE_FN_NAME = re.compile(
-    r"\bunsafe\s+(?:extern\s+" + ABI + r"\s+)?fn\s+(r#)?([A-Za-z_][A-Za-z0-9_]*)")
+    r"\bunsafe\s+(?:extern\s+" + ABI + r"\s+)?fn\s+(?:r#)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)")
 
 
 #: An `extern` block header, with or without the Rust-2024 `unsafe` and with or
@@ -310,7 +475,8 @@ UNSAFE_FN_NAME = re.compile(
 #: unless the item is written `safe fn`.
 EXTERN_BLOCK = re.compile(r"\b(?:unsafe\s+)?extern\s*(?:" + ABI + r"\s*)?\{")
 #: A foreign function item inside such a block, and the `safe` opt-out.
-FOREIGN_FN = re.compile(r"(\bsafe\s+)?\bfn\s+(?:r#)?([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+FOREIGN_FN = re.compile(
+    r"(?P<safe>\bsafe\s+)?\bfn\s+(?:r#)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(")
 
 
 def foreign_fn_items(view: str):
@@ -345,9 +511,13 @@ def foreign_fn_items(view: str):
             # by skipping: a requirement dropped is a check nobody runs.
             raise UnreadableExternBlock(m.start())
         for f in FOREIGN_FN.finditer(view, open_at, end):
-            if f.group(1):          # `safe fn` — the edition-2024 opt-out
+            if f.group("safe"):     # `safe fn` — the edition-2024 opt-out
                 continue
-            yield (f.start(2), f.group(2))
+            # The ITEM's offset, not the name's: the justification run is the
+            # text immediately before the item, and `fn ` sits between the two.
+            # Keying it on the name made that keyword read as code preceding the
+            # site, so a correctly documented foreign function found an empty run.
+            yield (f.start(), f.group("name"))
 
 
 class UnreadableExternBlock(Exception):
@@ -383,14 +553,14 @@ def sites(path: Path):
     for m in UNSAFE_SITE.finditer(view):
         named = UNSAFE_FN_NAME.match(view, m.start())
         if named:
-            decl = named.group(2)
+            decl = named.group("name")
         else:
             decl = rust_code_view.enclosing_fn(raw, m.start(), bodies) or "<module scope>"
-        yield (m.start(), decl, justification_run(raw, aligned, m.start()),
+        yield (m.start(), decl, justification_run(raw, aligned, m.start(), named is not None),
                named is not None)
     # Foreign function declarations, which carry no `unsafe` token of their own.
     for offset, name in foreign_fn_items(view):
-        yield (offset, name, justification_run(raw, aligned, offset), True)
+        yield (offset, name, justification_run(raw, aligned, offset, True), True)
 
 
 def compiled_rust_sources(root: Path) -> list[Path]:
@@ -729,6 +899,62 @@ extern "C" {
     ("a Rust-2024 `safe fn` in an extern block is not a site", True, """
 unsafe extern "C" {
     safe fn harmless(x: u64) -> u32;
+}
+"""),
+    # A MARKER NESTED IN ANOTHER COMMENT PUBLISHES NOTHING.  Rust block comments
+    # nest, and rustdoc takes nothing from the inner one, so the declaration
+    # below exposes no caller-facing contract.  Token-preserving against the
+    # accepted doc-block case above: the same `/** # Safety */`, wrapped.
+    ("an `unsafe fn` whose doc block is NESTED in a plain comment", False, """
+/* outer plain comment
+   /** # Safety
+       The caller must hold the lock. */
+   still the outer comment */
+pub unsafe fn f() {}
+"""),
+    # ...and the same relation for the sibling markers, which are `re.MULTILINE`
+    # searches and so matched a `///` line spelled inside a block comment.
+    ("an `unsafe fn` whose `///` heading is inside a block comment", False, """
+/* outer plain comment
+   /// # Safety
+   The caller must hold the lock. */
+pub unsafe fn f() {}
+"""),
+    # A RAW STRING'S HASHES ARE BALANCED.  `r#"C"#` is a legal ABI spelling that
+    # rustc accepts; consuming only the opening hashes left the closing `#`
+    # where the pattern wanted whitespace, so the site vanished AND the file was
+    # rejected as an unrecognised form.  Token-preserving against the accepted
+    # `extern r"C"` case: one more hash on each side.
+    ("a hashed raw-string ABI declaration, documented", True, """
+/// # Safety
+/// The caller upholds the C ABI contract.
+pub unsafe extern r#"C"# fn f() {}
+"""),
+    ("a hashed raw-string ABI declaration, undocumented", False, """
+pub unsafe extern r#"C"# fn f() {}
+"""),
+    # A PRECEDING ITEM ON THE SAME LINE DOES NOT DONATE ITS DOCS.  Rustdoc
+    # attaches the attribute to `documented` alone, so `undocumented` publishes
+    # nothing.  Token-preserving: the heading is present, on the wrong item.
+    ("a foreign fn inheriting the previous item's doc on one line", False, """
+unsafe extern "C" { #[doc = "# Safety\\nreal contract"] fn documented(); fn undocumented(); }
+"""),
+    # ...and the BLOCK rule is the opposite, deliberately: a block is evaluated
+    # inside the statement it sits in, so a binding prefix is not something that
+    # executed in between — Rust's convention, and clippy's, puts the comment
+    # above that statement.  `uart.rs::with_guard` is the live instance.
+    ("a `let` binding prefix does not break a block's run", True, """
+fn f() {
+    // SAFETY: `acquire` established exclusive access for the guard's lifetime.
+    let inner = unsafe { &mut *PTR.0.get() };
+    drop(inner);
+}
+"""),
+    # ...while a COMPLETED statement on the site's own line does break it.
+    ("a completed statement on the site's own line breaks the run", False, """
+fn f() {
+    // SAFETY: pinned by the caller.
+    let x = compute(); unsafe { g(x) }
 }
 """),
 ]

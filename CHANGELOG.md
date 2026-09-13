@@ -1,3 +1,85 @@
+## v0.35.19 — PR #895 review round 6: a marker nested in another comment, and a keyword the classifier never saw
+
+Round 6 found **seven** more defects in the two Tier 0 scanners — six reported,
+one found while fixing them — and every one is the class rounds 1–5 have been
+circling: a scanner asserting something about a *token it found* where the
+property is a *relation*, or never examining an input at all.  Four fail
+**open**, two fail **strict**, and the seventh was self-inflicted inside a fix.
+
+**`scripts/lean_store_read_census.py`.**
+
+- **`opaque` was not a declaration keyword** (P1, fail-open).  The tree has
+  **73** `opaque` declarations at column zero, and each left the classifier's
+  state pointing at whatever preceded it — so an executable `opaque` body
+  following a `theorem` had its reads emitted under the theorem's name as
+  `SPEC`, past the enforced `STORE_READ_CODE = 0`.  Measured: no `opaque` body
+  holds a recognised read today, so the floor was not false; the hole was open
+  and unoccupied.  `opaque` and `axiom` are recognised now, and what bounds the
+  *class* is the elaborator — `StoreReadClassificationCensus` asks
+  `findDeclarationRanges?` which declaration owns each line, so a misattributed
+  read is a Tier 1 failure whatever spelling caused it.
+- **A binder's default value was filed as specification** (P1, fail-open).
+  `def step (obj : T := st.objects[oid]?)` evaluates that default whenever the
+  argument is omitted, so it is executable exactly as the body is — while the
+  binder *type* beside it is a hypothesis.  Emitting the whole signature as one
+  bucket let an executable read bypass the zero, and it escaped the Tier 1
+  reconciliation too, which skips `sig` rows because a declaration-level verdict
+  cannot adjudicate a hypothesis binder.  Defaults now carry their own region
+  and are judged; the split is gated on the same `is_prop_decl` the body uses,
+  so a `theorem`'s defaulted binder stays a proof.
+- **A result type that is an ALIAS of `Prop` was filed as code** (P2,
+  fail-strict).  `abbrev Pred := Prop` compiles, and testing the terminal result
+  for the literal token rejected legitimate specification text against an
+  enforced zero.  `prop_aliases` resolves them transitively over the tree —
+  **zero declared today**, measured, so nothing live moves — and the residue
+  keeps failing closed.
+
+**`SeLe4n/Testing/StoreReadClassificationCensus.lean`.**  The reconciliation
+judged only rows filed `SPEC`, so it could not report the alias defect above.
+It now judges both directions, and a `CODE` row inside a declaration the
+elaborator calls a proposition is reported as a classifier defect with the
+remedy named.  **2169** body lines agree in both directions (the 24
+accessor-body rows are now judged), 2104 signatures, 0 unplaced, 0 tied.
+
+**`scripts/check_unsafe_block_justifications.py`.**
+
+- **A doc marker nested inside another comment was accepted** (P1, fail-open).
+  Rust block comments nest and rustdoc publishes nothing from the inner one, so
+  `/* … /** # Safety */ … */` documents nothing — yet scanning the run for `/**`
+  anywhere accepted the `unsafe fn` below it.  One nesting walk settles the
+  sibling relation too: a `///` line or `#[doc]` attribute spelled *inside* a
+  block comment no longer matches either.
+- **A preceding item on the same line donated its documentation** (P1,
+  fail-open).  In `unsafe extern "C" { #[doc = "# Safety"] fn a(); fn b(); }`
+  the second foreign function inherited the first's attribute.  The two site
+  kinds now ask different questions of that line, and the difference is the
+  point: a **block** is evaluated inside the statement it sits in, so a binding
+  prefix (`let inner = unsafe { … }`) is not something that executed in between
+  — Rust's convention, and clippy's, puts the comment above that statement —
+  while for a **declaration**, code before it on its own line is a different
+  *item*.  Applying the strict rule to blocks would have failed 18 live sites.
+- **A raw string's hashes are balanced** (P2, fail-strict).  `r#"C"#` is a legal
+  ABI spelling; consuming only the opening hashes left the trailing `#` where
+  every surrounding pattern wanted whitespace, so a valid declaration yielded no
+  site *and* was rejected as an unrecognised form — the gate failing correct
+  Rust.
+- **…and the seventh, inside that fix**: adding a capture group to the shared
+  `ABI` fragment silently renumbered `UNSAFE_FN_NAME`'s groups, so every
+  declaration's name became `None`.  A numbered group beside a shared fragment
+  is fragile by construction; both patterns use named groups now.
+
+The unsafe gate is at **136/136** with an empty baseline and the store-read
+census at `STORE_READ_CODE=0` / `STORE_READ_SPEC=4637`, both byte-identical
+across all six fixes.  Self-tests: **29** census cases (5 new) and **44** site
+cases (8 new), every one mutation-tested in both directions on the live tree.
+
+One mechanical note worth keeping, because it nearly produced a false green: the
+first mutation written for the same-line-prefix fix *substituted a different
+correct rule* rather than reverting the defect, and the fixture passed under it.
+A mutation has to revert the defect, not exchange one sound rule for another.
+
+Refs: docs/REGISTERED_DEBT.md WS-RM
+
 ## v0.35.18 — a parser for a language you are not parsing
 
 Seven review findings, all verified against the code before acting, all in the
