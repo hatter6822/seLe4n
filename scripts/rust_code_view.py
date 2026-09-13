@@ -472,7 +472,17 @@ def binding_statement_before(
 #: `extern_blocks`, never by a spelling: `extern r"C" {`, `extern {` and
 #: `extern "C-unwind" {` are all foreign blocks, and the ABI names a calling
 #: convention rather than changing what the block declares.
-_EXTERN_KEYWORD = re.compile(r"\bextern\b")
+#:
+#: **A raw identifier is not the keyword** (PR #895 review round 8).  Rust
+#: permits an ordinary item named `r#extern` — `mod r#extern { … }`,
+#: `struct r#extern { … }` — and `\bextern\b` matches inside it, so the item's
+#: own body was read as a foreign block: the unsafe gate then invented
+#: obligations for safe module functions and the entry gate rejected valid Rust
+#: as an unknown foreign item.  The identical exclusion sits on
+#: `UNSAFE_KEYWORD` in `check_unsafe_block_justifications.py`, added for
+#: `r#unsafe` one review round earlier and not swept here — which is this
+#: project's sweep rule failing inside the cut that moved this scanner.
+_EXTERN_KEYWORD = re.compile(r"(?<!r#)\bextern\b")
 #: An item macro at item position — `name!(`, `name![` or `name!{`, the three
 #: bracket forms Rust accepts.  Matched on a string-free view, so a `!` inside a
 #: literal is not one.
@@ -894,6 +904,13 @@ def _self_test() -> int:
     check("a raw-hashed ABI still opens a block",
           len(blocks_of('extern r#"C"# { fn f(); }')) == 1)
     check("a default-ABI block opens", len(blocks_of("extern { fn f(); }")) == 1)
+    # A raw identifier NAMES an item `extern`; Rust accepts the item and its
+    # body is ordinary code.  Token-preserving against the accepted blocks above:
+    # the keyword letters and the `{` both stay, and only the `r#` is added.
+    check("`mod r#extern { … }` opens no block",
+          blocks_of("mod r#extern { fn f() {} }") == [])
+    check("`struct r#extern { … }` opens no block",
+          blocks_of("struct r#extern { x: u32 }") == [])
     # The brace is inside a string literal, so it opens nothing — the relation
     # the string-free view exists to get right.
     check("a brace inside a literal opens no block",

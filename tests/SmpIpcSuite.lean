@@ -1121,6 +1121,39 @@ private def runDonationMigrationChecks : IO Unit := do
       assertBool "the distinct-caller hops preserve each replenishment's eligibility time"
         (decide (((replenishEntriesOn stQ c2).filter (fun e => e.1 == scCaller2)).map (·.2)
           = [400, 500]))
+      -- **PR #895 review round 8**: the recorded server is DESCHEDULED here.
+      -- `tid` is the delegate, so the queued caller's context went to *it* and
+      -- the recorded server received nothing — while the pop had already made
+      -- the server `.unbound`.  Left on its run queue it would be selected at
+      -- its legacy TCB priority and charged to no reservation, which is WS-OD
+      -- OD3.6's defect on the delegated path.  `passiveServerIdle` structurally
+      -- cannot see it: that conjunct is conditioned on the thread already being
+      -- descheduled, so an unbound thread still queued satisfies it vacuously.
+      assertBool "pre: the recorded server is queued on its own core 1"
+        ((stCallQ.scheduler.runQueueOnCore c1).contains donServer)
+      assertBool "the delegated rendezvous deschedules the recorded server"
+        (!(stQ.scheduler.runQueueOnCore c1).contains donServer)
+      assertBool "...and it is not left as core 1's current thread either"
+        (stQ.scheduler.currentOnCore c1 != some donServer)
+      assertBool "...which matters because the pop left it `.unbound`"
+        (match stQ.getTcb? donServer with
+         | some t => decide (t.schedContextBinding = SchedContextBinding.unbound)
+         | none => false)
+    -- ...and the CONTRAST, which is what stops the fix from over-descheduling:
+    -- the same rendezvous NOT delegated.  `tid` is the recorded server, so the
+    -- queued caller's context is donated to it and it must keep running — the
+    -- passive-server steady state.  An unconditional deschedule passes the
+    -- delegated case above and fails this one.
+    match runReplyRecvDonationSteps donServer donServer donCaller2 c1 stCallQ with
+    | .error _ => assertBool "the .replyRecv non-delegated rendezvous arm succeeds" false
+    | .ok stN =>
+      assertBool "the .replyRecv non-delegated rendezvous arm succeeds" true
+      assertBool "the non-delegated server KEEPS its place on core 1"
+        ((stN.scheduler.runQueueOnCore c1).contains donServer)
+      assertBool "...because it received the queued caller's context itself"
+        (match stN.getTcb? donServer with
+         | some t => decide (t.schedContextBinding = .donated scCaller2 donCaller2)
+         | none => false)
 
 -- ============================================================================
 -- §3.10 Capability transfer across cores (ipcUnwrapCaps, grant-gated)

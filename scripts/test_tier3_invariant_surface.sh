@@ -1786,8 +1786,23 @@ run_negative_check "INVARIANT" rg -n 'stageWokenSendCompletion st. wokenSender' 
 # drift apart again, and it is a mutation that leaves every name in the file
 # present.  WS-RM renamed the declaration when it split the fused resolution --
 # the question the anchor asks is unchanged.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*applyRendezvousCallDonation st tid nextThread" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*applyRendezvousCallDonation\s*\n?\s*\(replyRecvServerDeschedule tid recordedServer serverCore st\) tid nextThread" SeLe4n/Kernel/API.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*applyCallDonationOnCore" SeLe4n/Kernel/API.lean'
+# PR #895 review round 8: ...and the Call arm deschedules the recorded server
+# when the reply capability was DELEGATED.  `tid` is the receiver, so it is the
+# recorded server only on a non-delegated reply; on a delegated one the server
+# receives no new context while the pop has already unbound it, and leaving it
+# queued runs it charged to no reservation.  `passiveServerIdle` cannot see that
+# -- it is conditioned on the thread already being descheduled -- so the anchor
+# is what pins it.  The negative is the PRE-FIX spelling: it keeps the donation
+# call and passes the undescheduled state, which is exactly the defect.
+run_check "INVARIANT" rg -n '^def replyRecvServerDeschedule' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvServerDeschedule[^\n]*(\n([ \t][^\n]*)?)*removeRunnableOnCore st recordedServer serverCore" SeLe4n/Kernel/API.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*applyRendezvousCallDonation st tid nextThread" SeLe4n/Kernel/API.lean'
+# ...and the write set names the cores that deschedule writes, or it is false of
+# exactly that arm.
+run_check "INVARIANT" rg -n '^def replyRecvServerDescheduleWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonationWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvServerDescheduleWriteSet tid recordedServer serverCore" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
 # The guard IS the donation's caller-blocked obligation, not a second reading
 # of it: a receiving arm discharges the hypothesis from the predicate it
 # branches on, so the two cannot disagree about which states donate.

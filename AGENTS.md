@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.20.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.21.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1500,6 +1500,55 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   there, and it already shares the ABI-literal resolution.  A sweep that changes
   nothing at a site is the sweep working; a sweep not run is how all three of
   this round's findings got here.
+
+  **And a conjunct whose antecedent is the property you want enforces nothing**
+  (PR #895 review round 8, `v0.35.21`).  This round's sharpest finding is not in
+  a scanner at all — it is in the kernel, and it is the invariant-level form of
+  *a presence check is not a relation check*.  `passiveServerIdle` reads "an
+  unbound thread that is **not queued and not current** is in one of these
+  `ipcState`s".  The property the tree wants at a donation pop is *an unbound
+  thread is not queued*, and that is precisely the conjunct's own **hypothesis**
+  — so a thread left `.unbound` **and still runnable** satisfies it vacuously,
+  and every bundle theorem over it stays true while the defect is live.
+
+  The defect it hid: `replyRecvPostReceiveDonation`'s Call arm donates the newly
+  dequeued client's context to the **receiver** `tid` and descheduled nobody,
+  which is right exactly when `tid` *is* the recorded server — the non-delegated
+  steady state — and wrong on a **delegated** reply, where the recorded server
+  gave its context back in the pop and receives none.  It then stays on its run
+  queue and is selected at its legacy TCB priority charged to no reservation,
+  which is WS-OD OD3.6's defect on the path OD3.5 had just made live.  The arm's
+  own comment names the distinction two lines above the bug (*"not the (possibly
+  delegated) recorded server"*) and its justification sentence ignores it, so:
+  **a justification that holds on one side of a distinction the code already
+  makes is not a justification — say which side, or make the code not care.**
+  `replyRecvServerDeschedule` is the named answer, with the write set, the
+  confinement and both bundle proofs carrying it, and the witness pair in
+  `tests/SmpIpcSuite.lean` §3.9b is delegated *and* non-delegated, because a
+  deschedule that fires unconditionally passes the first and breaks the second.
+
+  The round's three gate findings are all rules this file already carries, each
+  unswept by exactly one step.  `#+\s*Safety` accepts `/// #Safety`, which
+  CommonMark renders as a paragraph — the gate whose whole subject is *what a
+  caller is told* accepting text that tells the caller nothing.  The upward
+  justification walk decided a multi-line `#[cfg(all( … ))]` one physical line at
+  a time and stopped at its `))]`, which is *a nested construct is not a sibling*
+  applied to Lean and never to Rust attributes; the remedy consumes the closer's
+  pending run and requires the balancing line to open an attribute, because a
+  multi-line *expression* ending in `]` is code and extending a run across it is
+  the fail-open direction.  And `\bextern\b` matches inside `r#extern`, so
+  `mod r#extern { … }` parsed as a foreign block — the `r#` exclusion sitting on
+  `UNSAFE_KEYWORD` eight lines away in the file this scanner was *moved out of*,
+  one round earlier.
+
+  That last one is the measurement worth keeping.  Round 7's remedy was **give
+  the sweep an artefact** — two gates consolidated onto one shared view so a
+  single mutation fails both.  It worked, and it did not stop the very cut that
+  performed the consolidation from writing a fresh regex missing a rule the same
+  file states.  **Sharing the answer stops two answers from diverging; it does
+  not make a new answer inherit what the old one learned.**  When you move a
+  scanner, carry its neighbours' exclusions with it — or, better, reach for the
+  existing pattern instead of writing one that looks like it.
 
   Two mechanical notes.  A census whose headline is one derivation while its
   breakdown is another describes no set: the reply-stack summary counted

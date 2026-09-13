@@ -2061,6 +2061,28 @@ theorem replyRecvPopDonation_confinedToCores (recordedServer : SeLe4n.ThreadId)
     · have hEq : st = st' := (by simpa using hStep : none = returned? ∧ _).2
       rw [← hEq]; exact observableSlotsConfinedToCores_refl st []
 
+/-- **PR #895 review round 8**: the cores `replyRecvServerDeschedule` may write.
+
+None on a non-delegated reply, where it is the identity because the receiver
+*is* the recorded server and keeps the new request's budget; the server's own
+core on a delegated one, where it is a real deschedule. -/
+def replyRecvServerDescheduleWriteSet (tid recordedServer : SeLe4n.ThreadId)
+    (serverCore : CoreId) : List CoreId :=
+  if recordedServer = tid then [] else [serverCore]
+
+/-- ...and it stays inside them, by the same two facts the unconditional
+deschedule above uses. -/
+theorem replyRecvServerDeschedule_confinedToCores (tid recordedServer : SeLe4n.ThreadId)
+    (serverCore : CoreId) (st : SystemState) :
+    observableSlotsConfinedToCores st
+      (replyRecvServerDeschedule tid recordedServer serverCore st)
+      (replyRecvServerDescheduleWriteSet tid recordedServer serverCore) := by
+  unfold replyRecvServerDeschedule replyRecvServerDescheduleWriteSet
+  by_cases h : recordedServer = tid
+  · rw [if_pos h, if_pos h]; exact observableSlotsConfinedToCores_refl st []
+  · rw [if_neg h, if_neg h]
+    exact removeRunnableOnCore_confinedToCores st recordedServer serverCore
+
 /-- SM8.B.2 / WS-RR RR2.20 / **WS-RM (`v0.35.6`)**: **the cores the post-receive
 half may write**, mirroring its own control flow.  Three shapes: the
 never-donated arm walks the chain from its pre-state; the rendezvous arm donates
@@ -2079,9 +2101,17 @@ def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n
   | none => pipChainWriteSet st recordedServer serverCore st.objectIndex.length
   | some _ =>
       if rendezvousDequeuedCall st nextThread then
-        match applyRendezvousCallDonation st tid nextThread with
+        match applyRendezvousCallDonation
+            (replyRecvServerDeschedule tid recordedServer serverCore st) tid nextThread with
         | .error _ => []
-        | .ok st2 => pipChainWriteSet st2 recordedServer serverCore st2.objectIndex.length
+        | .ok st2 =>
+            -- The deschedule's cores come FIRST, because it runs first: on a
+            -- delegated reply the recorded server is taken off its own core
+            -- before the new client's context is donated to the invoker
+            -- (PR #895 review round 8).  A footprint that omitted them would be
+            -- false of exactly that arm.
+            replyRecvServerDescheduleWriteSet tid recordedServer serverCore ++
+              pipChainWriteSet st2 recordedServer serverCore st2.objectIndex.length
       else replyRecvDescheduleAndWalkWriteSet recordedServer serverCore st
 
 /-- SM8.B.2 / **WS-RM (`v0.35.6`)**: the post-receive half's per-core writes stay
@@ -2117,10 +2147,15 @@ theorem replyRecvPostReceiveDonation_confinedToCores
       · next st2 hDon =>
         simp only [hDon] at hStep
         rw [← hOkInj hStep]
+        -- Associated to the RIGHT so the declared set is `desched ++ ([] ++ pip)`,
+        -- which is `desched ++ pip` definitionally; the left association would
+        -- need `List.append_nil`.
         exact observableSlotsConfinedToCores_trans
-          (applyRendezvousCallDonation_confinedToCores _ st2 _ _ hDon)
-          (propagatePipChainCrossCore_confinedToCores serverCore
-            st2.objectIndex.length st2 recordedServer)
+          (replyRecvServerDeschedule_confinedToCores tid recordedServer serverCore st)
+          (observableSlotsConfinedToCores_trans
+            (applyRendezvousCallDonation_confinedToCores _ st2 _ _ hDon)
+            (propagatePipChainCrossCore_confinedToCores serverCore
+              st2.objectIndex.length st2 recordedServer))
     · next hCall =>
       simp only [hCall, Bool.false_eq_true, if_false] at hStep
       rw [← hOkInj hStep]

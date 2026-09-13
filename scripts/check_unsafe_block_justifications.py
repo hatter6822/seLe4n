@@ -188,7 +188,7 @@ SAFETY_BLOCK = re.compile(r"//[/!]?\s*SAFETY\b|/\*+\s*SAFETY\b", re.IGNORECASE)
 # slash is not the whitespace the pattern expects next, while a `/***` block WAS
 # accepted -- its interior line matches the doc-block body pattern like any
 # other.  Both are now refused for the reason, not by accident.
-SAFETY_DECL_LINE = re.compile(r"^\s*///(?!/)\s*#+\s*Safety\b", re.IGNORECASE | re.MULTILINE)
+SAFETY_DECL_LINE = re.compile(r"^\s*///(?!/)\s*#+[ \t]+Safety\b", re.IGNORECASE | re.MULTILINE)
 # **A heading begins a line.**  `[^"]*` let arbitrary text precede the `#`, so
 # `#[doc = "This function has no # Safety section."]` satisfied the pattern while
 # Markdown renders that fragment as ordinary prose — an `unsafe fn` passed
@@ -196,10 +196,19 @@ SAFETY_DECL_LINE = re.compile(r"^\s*///(?!/)\s*#+\s*Safety\b", re.IGNORECASE | r
 # must open the attribute's value or follow an escaped newline, which is how a
 # heading is spelled in a single-line doc attribute.
 SAFETY_DECL_ATTR = re.compile(
-    r"#\[\s*doc\s*=\s*(?:r#*)?\"(?:[^\"]*\\n)?\s*#+\s*Safety\b",
+    r"#\[\s*doc\s*=\s*(?:r#*)?\"(?:[^\"]*\\n)?\s*#+[ \t]+Safety\b",
     re.IGNORECASE)
+# **A heading marker needs whitespace after it** (PR #895 review round 8).  The
+# three patterns above and below spelled the gap `\s*`, which is satisfied by
+# NOTHING — so `/// #Safety` passed while CommonMark (and therefore rustdoc)
+# requires a space or tab after the `#` run and renders that text as an ordinary
+# paragraph.  An `unsafe fn` could publish no caller-facing section at all and
+# still clear Tier 0, which is the fail-OPEN direction on the one gate whose
+# whole subject is what a caller is told.  `[ \t]+` is the Markdown rule, and it
+# is applied to all three spellings at once rather than to the one a review
+# names, since they answer the same question in three syntaxes.
 DOC_BLOCK_OPEN = re.compile(r"/\*\*(?![*/])")
-DOC_BLOCK_LINE = re.compile(r"^\s*\*?\s*#+\s*Safety\b", re.IGNORECASE | re.MULTILINE)
+DOC_BLOCK_LINE = re.compile(r"^\s*\*?\s*#+[ \t]+Safety\b", re.IGNORECASE | re.MULTILINE)
 
 
 def _split_block_comments(run: str) -> tuple[str, list[str]]:
@@ -424,14 +433,31 @@ def _same_line_prefix(raw: str, view: str, line_start: int, at: int,
     return raw[end:at], end > line_start
 
 
-def justification_run(raw: str, view: str, at: int, is_declaration: bool) -> str:
+def justification_run(raw: str, view: str, at: int, is_declaration: bool,
+                      bare: str | None = None) -> str:
     """The contiguous comment-and-attribute run immediately above `at`.
 
     Walks upward line by line while each line is blank in the code view (a
     whole-line comment), is blank outright, or is an attribute, and stops at the
     first line carrying code.  Returns the RAW text of that run — the question is
     what a reviewer reads, so the answer comes from the real file.
+
+    **An attribute is one item, not one line** (PR #895 review round 8).  Deciding
+    each physical line independently meets a multi-line `#[cfg(all( … ))]` at its
+    closing `))]`, which starts with neither `#[` nor a comment, so the walk
+    stopped *below* the documentation and a correctly written declaration was
+    reported unjustified — Tier 0 refusing valid Rust, the fail-STRICT direction.
+    So an unbalanced closer opens a pending run that is consumed until its
+    brackets balance, and the line that balances it must itself open an attribute:
+    a multi-line *expression* ending in `]` is code, and extending the run across
+    it would carry a justification over something that executes, which is the
+    fail-OPEN direction this run's whole contract forbids.
+
+    `bare` is the string-free view, used for the bracket arithmetic only — a `]`
+    inside a string literal is text, not structure.  It defaults to `view` so the
+    self-test may pass one argument, and every live caller passes both.
     """
+    counted = bare if bare is not None else view
     line_start = raw.rfind("\n", 0, at) + 1
     # A trailing comment on the site's own line counts: `unsafe { … } // SAFETY: …`
     # does not, but `// SAFETY: …` before it on the same line does — provided
@@ -441,13 +467,36 @@ def justification_run(raw: str, view: str, at: int, is_declaration: bool) -> str
     if prefix_has_code:
         return prefix
     idx = line_start
+    # Lines held while a multi-line attribute is being closed from below.  They
+    # join the run only once the brackets balance AND the balancing line opens an
+    # attribute; otherwise they are code and the run ended beneath them.
+    pending_raw: list[str] = []
+    pending_code: list[str] = []
+    depth = 0
     while idx > 0:
         prev_end = idx - 1
         prev_start = raw.rfind("\n", 0, prev_end) + 1
         raw_line = raw[prev_start:prev_end]
         view_line = view[prev_start:prev_end]
+        counted_line = counted[prev_start:prev_end]
         stripped_code = view_line.strip()
         stripped_raw = raw_line.strip()
+        opens = sum(counted_line.count(ch) for ch in "([{")
+        closes = sum(counted_line.count(ch) for ch in ")]}")
+        if depth > 0:
+            depth += closes - opens
+            pending_raw.append(raw_line)
+            pending_code.append(stripped_code)
+            idx = prev_start
+            if depth <= 0:
+                joined = " ".join(reversed(pending_code)).strip()
+                if ((joined.startswith("#[") or joined.startswith("#!["))
+                        and is_attribute_only(joined)):
+                    run.extend(pending_raw)
+                    pending_raw, pending_code, depth = [], [], 0
+                    continue
+                break
+            continue
         is_comment_only = stripped_raw != "" and stripped_code == ""
         is_attribute = ((stripped_code.startswith("#[") or stripped_code.startswith("#!["))
                         and is_attribute_only(stripped_code))
@@ -459,6 +508,14 @@ def justification_run(raw: str, view: str, at: int, is_declaration: bool) -> str
         is_blank = stripped_raw == ""
         if is_comment_only or is_attribute or is_blank:
             run.append(raw_line)
+            idx = prev_start
+            continue
+        if closes > opens and stripped_code.endswith(("]", ")", "}")):
+            # Possibly the tail of a multi-line attribute; the line that balances
+            # it decides.
+            depth = closes - opens
+            pending_raw = [raw_line]
+            pending_code = [stripped_code]
             idx = prev_start
             continue
         break
@@ -567,11 +624,12 @@ def sites(path: Path):
             decl = named.group("name")
         else:
             decl = rust_code_view.enclosing_fn(raw, m.start(), bodies) or "<module scope>"
-        yield (m.start(), decl, justification_run(raw, aligned, m.start(), named is not None),
+        yield (m.start(), decl,
+               justification_run(raw, aligned, m.start(), named is not None, view),
                named is not None)
     # Foreign function declarations, which carry no `unsafe` token of their own.
     for offset, name in foreign_fn_items(view):
-        yield (offset, name, justification_run(raw, aligned, offset, True), True)
+        yield (offset, name, justification_run(raw, aligned, offset, True, view), True)
 
 
 def compiled_rust_sources(root: Path) -> list[Path]:
@@ -975,6 +1033,57 @@ fn f() {
     // SAFETY: pinned by the caller.
     let x = compute(); unsafe { g(x) }
 }
+"""),
+    # **An attribute is one item, not one line** (PR #895 review round 8).  The
+    # upward walk met the closing `))]` first and stopped below the docs, so a
+    # correctly written declaration was reported unjustified — Tier 0 refusing
+    # valid Rust.  Token-preserving against the single-line case below: the same
+    # docs, the same attribute, written across lines.
+    ("a multi-line attribute does not break a declaration's run", True, """
+/// # Safety
+/// The caller must hold the entry lock.
+#[cfg(all(
+    target_arch = "aarch64",
+))]
+pub unsafe fn documented() {}
+"""),
+    ("...and the single-line spelling still justifies", True, """
+/// # Safety
+/// The caller must hold the entry lock.
+#[cfg(target_arch = "aarch64")]
+pub unsafe fn documented() {}
+"""),
+    # ...while a multi-line EXPRESSION ending in `]` is code, and extending the
+    # run across it would carry a justification over something that executes.
+    # Same shape as the attribute above, and the opposite verdict.
+    ("a multi-line expression ending in `]` still breaks the run", False, """
+fn f() {
+    // SAFETY: pinned by the caller.
+    let v = compute(&[
+        1, 2, 3,
+    ]);
+    unsafe { g(v) }
+}
+"""),
+    # **A heading marker needs whitespace** (PR #895 review round 8).  CommonMark
+    # renders `#Safety` as a paragraph, so rustdoc publishes no section and the
+    # caller is told nothing — the fail-OPEN direction.  Token-preserving against
+    # the accepted cases: the `#`, the word and the `///` all stay.
+    ("`#Safety` without whitespace publishes no section", False, """
+/// #Safety
+/// The caller must hold the entry lock.
+pub unsafe fn undocumented() {}
+"""),
+    ("...and the doc-attribute spelling is held to the same rule", False, """
+#[doc = "#Safety"]
+#[doc = "The caller must hold the entry lock."]
+pub unsafe fn undocumented() {}
+"""),
+    ("...and so is a doc BLOCK", False, """
+/** #Safety
+ * The caller must hold the entry lock.
+ */
+pub unsafe fn undocumented() {}
 """),
     # A `static` in a foreign block declares no function, so it must NOT be
     # refused — the direction that keeps the refusal below from firing on

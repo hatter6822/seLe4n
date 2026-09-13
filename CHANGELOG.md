@@ -1,3 +1,75 @@
+## v0.35.21 — PR #895 review round 8: a delegated reply left its server unbudgeted
+
+Four findings.  The first is a **kernel defect**, not a gate defect, and it is
+the invariant-level form of *a presence check is not a relation check*.
+
+**A delegated `seL4_ReplyRecv` left the recorded server runnable with no
+scheduling context.**  `replyRecvPostReceiveDonation`'s Call arm donates the
+newly dequeued client's context to the **receiver** `tid` and descheduled
+nobody — correct exactly when `tid` *is* the recorded server (the non-delegated
+passive-server steady state), wrong on a delegated reply, where the server gave
+its context back in the pop and receives none.  It then stays on its run queue
+and is selected at its legacy TCB priority **charged to no reservation**, which
+is WS-OD OD3.6's defect on the path OD3.5 had just made live.  A server can
+arrange it deliberately by delegating its own reply capability.  **Medium**:
+temporal isolation, not confidentiality or integrity, and not reachable on
+hardware — no core is marked `lean_ready` anywhere in the tree.
+
+- `passiveServerIdle` **cannot** catch it: the conjunct reads "an unbound thread
+  that is *not queued and not current* is in one of these `ipcState`s", and the
+  property wanted here — *an unbound thread is not queued* — is its own
+  hypothesis.  A thread left unbound **and** runnable satisfies it vacuously,
+  which is why every bundle theorem over it stayed true.
+- The arm's own comment names the distinction two lines above the bug (*"not the
+  (possibly delegated) recorded server"*) while its justification sentence
+  ignores it, and its docstring already stated the intent the code missed (*"the
+  now-passive `recordedServer` is descheduled on its own core"*) — the
+  implement-the-improvement rule, with the better artefact already in the file.
+- `replyRecvServerDeschedule` is the named answer: the identity on a
+  non-delegated reply, the deschedule on a delegated one, run on the
+  **pre-donation** state because it is a consequence of the pop rather than of
+  the new donation.  `replyRecvServerDescheduleWriteSet` and
+  `replyRecvServerDeschedule_confinedToCores` carry it into the per-core write
+  set — a footprint omitting those cores would be false of exactly that arm —
+  and both bundle proofs (`_preserves_ipcInvariantFull`,
+  `_preserves_replenishQueueAffinityConsistent_smp`) discharge the new arm from
+  the machinery the sibling arm already used.
+- **Witness pair**, `tests/SmpIpcSuite.lean` §3.9b: delegated → the server is off
+  its run queue, not current, and `.unbound`; non-delegated → it keeps its place
+  *because it received the queued caller's context itself*.  A deschedule that
+  fires unconditionally passes the first and fails the second.  The decisive
+  mutation inverts the condition, keeps every token, **compiles**, and fails the
+  delegated assertion.
+
+**Three gate findings, each a rule this file already carries, unswept by one
+step.**
+
+- `#+\s*Safety` accepts `/// #Safety`, which CommonMark renders as a paragraph —
+  the gate whose whole subject is what a *caller* is told, accepting text that
+  tells the caller nothing.  Fixed in all three spellings at once (`///`,
+  `#[doc = …]`, `/** … */`), since they answer one question in three syntaxes.
+- The upward justification walk decided a multi-line `#[cfg(all( … ))]` one
+  physical line at a time and stopped at its `))]`, reporting a correctly
+  documented declaration **unjustified** — Tier 0 refusing valid Rust.  That is
+  *a nested construct is not a sibling*, applied to Lean and never to Rust
+  attributes.  The closer now opens a pending run consumed until the brackets
+  balance, and the balancing line must itself open an attribute: a multi-line
+  *expression* ending in `]` is code, and extending a run across it is the
+  fail-open direction the run's contract forbids.  Bracket arithmetic reads the
+  string-free view, since a `]` inside a literal is text.
+- `\bextern\b` matches inside `r#extern`, so `mod r#extern { … }` and
+  `struct r#extern { … }` parsed as foreign blocks in **both** consumers.  The
+  `r#` exclusion sits on `UNSAFE_KEYWORD` eight lines from where this scanner was
+  moved *out of*, one round earlier.
+
+That last one measures round 7's own remedy: sharing an answer stops two answers
+from diverging, and does not make a new answer inherit what the old one learned.
+
+Six new site cases (51 total) and two new `rust_code_view` witnesses; each fix
+mutation-verified against the pre-fix behaviour.  Live gate unmoved at **136/136**
+with an empty baseline.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md (WS-RM closure)
 ## v0.35.20 — PR #895 review round 7: a skip is a sink
 
 Three findings, one meta-shape: a fix landed where an earlier review pointed and
