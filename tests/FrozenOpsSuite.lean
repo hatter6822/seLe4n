@@ -115,6 +115,83 @@ private def fo004b_endpointReplyConsumesLink : IO Unit := do
       | _ => throw <| IO.userError "reply object missing/retyped"
   | .error _ => throw <| IO.userError "reply should succeed"
 
+/-- FO-004c (PR #895 review round 13): **a reply to a stack HEAD pops the
+donation, so the Reply can be used again.**
+
+`Reply.consumed` deliberately keeps a head's stack links — the live pop that
+follows clears them — and this surface had no pop, so the answered Reply failed
+`Reply.isFree` for good: never relinkable by the next `Call` rendezvous, never
+retypeable.  `freeze` copies Reply objects verbatim, so a state captured
+mid-donation-chain reaches the frozen phase carrying exactly this shape.
+
+The witness checks the whole hand-off rather than the link alone, because a pop
+that clears the links without moving the reservation would satisfy a link-only
+assertion while losing the client's budget. -/
+private def fo004c_replyToStackHeadPopsDonation : IO Unit := do
+  let rid  : SeLe4n.ReplyId := ⟨505⟩
+  let scId : SeLe4n.SchedContextId := ⟨77⟩
+  let callerTcb : TCB := { mkTcb 2 with
+    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  -- The passive server holds the caller's context by donation, and the context
+  -- heads the reply stack at `rid` — the live depth-1 `Call` shape.
+  let serverTcb : TCB := { mkTcb 3 with schedContextBinding := .donated scId ⟨2⟩ }
+  let sc : SeLe4n.Kernel.SchedContext := { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThread := some ⟨3⟩, scReply := some rid }
+  let replyObj : SeLe4n.Kernel.Reply :=
+    { replyId := rid, caller := some ⟨2⟩, prev := none, next := some (.head scId) }
+  let fst := mkFrozenState
+    [(⟨2⟩, .tcb callerTcb), (⟨3⟩, .tcb serverTcb), (⟨9⟩, .tcb (mkTcb 9)),
+     (scId.toObjId, .schedContext sc), (rid.toObjId, .reply replyObj)]
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  match frozenEndpointReplyWithDonationReturn ⟨3⟩ ⟨2⟩ rid msg fst with
+  | .error _ => throw <| IO.userError "reply+donation-return should succeed"
+  | .ok ((), fst') =>
+      match fst'.getReply? rid with
+      | some r => expect "answered head left free for reuse" r.isFree
+      | none   => throw <| IO.userError "reply object missing"
+      match fst'.getSchedContext? scId with
+      | some c =>
+          expect "context handed back to its owner" (c.boundThread == some ⟨2⟩)
+          expect "context heads no stack now" (c.scReply == none)
+      | none => throw <| IO.userError "SchedContext missing"
+      match fst'.getTcb? ⟨2⟩ with
+      | some t => expect "owner holds its reservation again"
+                    (t.schedContextBinding == .bound scId)
+      | none => throw <| IO.userError "owner TCB missing"
+      match fst'.getTcb? ⟨3⟩ with
+      | some t => expect "passive server is unbound again"
+                    (t.schedContextBinding == .unbound)
+      | none => throw <| IO.userError "server TCB missing"
+      -- The point of the whole thing: the next rendezvous can link this Reply.
+      match frozenLinkCallerReply fst' ⟨9⟩ rid with
+      | .ok _    => expect "a fresh caller can be linked to the freed Reply" true
+      | .error _ => throw <| IO.userError "Reply still unusable after the pop"
+
+/-- FO-004d: ...and the reply leg ALONE still agrees with the bare
+`endpointReply`, which is what `FO-031` compares.  A Reply on no stack is
+consumed outright, so the pop is the identity there and the composite and the
+leg answer the same state — the control that keeps FO-004c honest about WHERE
+the pop belongs. -/
+private def fo004d_replyOffStackNeedsNoPop : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let callerTcb : TCB := { mkTcb 2 with
+    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
+  let fst := mkFrozenState
+    [(⟨2⟩, .tcb callerTcb), (⟨3⟩, .tcb (mkTcb 3)), (rid.toObjId, .reply replyObj)]
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  match frozenEndpointReply ⟨3⟩ ⟨2⟩ rid msg fst,
+        frozenEndpointReplyWithDonationReturn ⟨3⟩ ⟨2⟩ rid msg fst with
+  | .ok ((), a), .ok ((), b) =>
+      match a.getReply? rid, b.getReply? rid with
+      | some x, some y =>
+          -- Off a stack `consumed` clears the links outright, so the pop has
+          -- nothing to do and the two spellings leave the same record.
+          expect "same Reply record either way"
+            (x.caller == y.caller && x.prev == y.prev && x.next == y.next)
+          expect "and it is free" x.isFree
+      | _, _ => throw <| IO.userError "reply object missing"
+  | _, _ => throw <| IO.userError "both spellings should succeed off a stack"
+
 /-- FO-005 (PR #822 review, frozen mirror of E.2 / 6J-lYm): a DELEGATED replier —
 NOT the recorded `replyTarget` server (⟨3⟩), but the reply is authorized by the
 linked Reply object whose `caller` names the target — now SUCCEEDS.  Authority is
@@ -1284,6 +1361,8 @@ def main : IO Unit := do
   IO.println "--- TPH-005: Frozen IPC ---"
   fo004_endpointReply
   fo004b_endpointReplyConsumesLink
+  fo004c_replyToStackHeadPopsDonation
+  fo004d_replyOffStackNeedsNoPop
   fo005_replyDelegatedReplier
   fo005b_replyWrongPresentedCap
   IO.println "--- TPH-006: Frozen Scheduler Tick ---"

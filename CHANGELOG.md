@@ -1,3 +1,66 @@
+## v0.35.26 — Round 13: a mirror of a part is not a mirror of the whole
+
+**Review round 13 (3 P1 findings), all reproduced before being fixed.** Two are
+inside round 12's own code, which makes this the fourth consecutive round where
+findings land in the previous round's fixes; the entry is about what the three
+share rather than about the patches.
+
+**The frozen `.reply` mirrored its reply *leg* while being the whole operation.**
+`Reply.consumed` deliberately keeps a stack head's links — its docstring says
+why, in terms: *the pop that follows clears them*. That is a **precondition on
+the caller**, and `FrozenOps` adopted the record without it: the surface has no
+donation pop, so a frozen state captured mid-donation-chain (`freeze` copies
+Reply objects verbatim, links and all) left the answered Reply failing
+`Reply.isFree` for good — never re-linkable by the next `Call` rendezvous, never
+retypeable, so no passive server could complete a second call/reply cycle on it.
+Reproduced end to end with a discriminating control, the only difference between
+the two runs being whether the Reply heads a context.
+
+The fix is a composite, and **where it goes is the content**:
+`frozenEndpointReply` is refined against the **bare** `endpointReply` (which also
+leaves a head linked) and `FrozenOpsSuite`'s FO-031 compares exactly that, so a
+pop moved inside it would have broken the refinement this surface exists to
+check. `frozenEndpointReplyWithDonationReturn` runs the reply leg then
+`frozenReturnDonatedSchedContextResolved` — the frozen counterparts of
+`returnDonatedSchedContext` and `storeDonationHeadPop`, with both live guards
+(the context must really be bound to the server; the outer caller must be
+acceptable) and the **live** `donationReturnBinding`, so the two surfaces cannot
+disagree about which binding a return mints. `scThreadIndex` is deliberately not
+maintained: no frozen operation writes it and `frozenStateAgrees` does not
+compare it, so becoming its only writer would be a second answer to a question
+this surface has already settled. The reply-stack write census caught both new
+write sites on its first build — which is the census working — and they are
+registered as `mirrors` entries; it now reports 22 sites, 5 of them frozen.
+
+**A keyword in a closed nested group does not own this `:=`.**
+`_binding_open_at` scanned the enclosing group's whole span, so
+`(obj : (let T := Option KernelObject; T) := st.objects[oid]?)` — which Lean
+accepts — read the binder's default separator as that `let`'s assignment and
+filed the executable read `SPEC region=sig`. Signature rows are the one region
+the Tier 1 elaborator reconciliation does not judge, so the read bypassed **both**
+enforcement tiers rather than one. The span is walked at depth now, through the
+`_depth_zero_scan` every other top-level-token question in that file already
+uses, so the nesting rule has one implementation and not a second that can
+disagree.
+
+**A fence is not the only enclosure in the rendered document.** Round 12 made
+`publishes_safety_heading` ask its question of the document rustdoc actually
+reads; CommonMark 4.6 **HTML blocks** hold raw text, so `/// <!--`,
+`/// # Safety`, `/// -->` published no heading and satisfied the gate anyway.
+The axis is taken from the grammar rather than from the finding: all seven block
+types, with the two end conditions (a string on a line; a blank line), an
+unterminated block running to the end of the document, and type 7's inability to
+interrupt a paragraph. Fourteen matrix rows, each hidden row paired with a
+control that ends the block — so a row is known to fail on the **enclosure**
+rather than on the marker. The live tree is unmoved at 136/136.
+
+Every fix is mutation-verified against pre-fix behaviour, with the mutation
+confirmed to fail: reverting the frozen composite fails FO-004c; reverting the
+span walk fails the new census case while leaving round 12's own case passing —
+which is how the fix is known to narrow the rule rather than disable it;
+reverting the HTML-block tracking fails 8 matrix rows while the 6 controls still
+pass.
+
 ## v0.35.25 — PR #895 review round 12: a matrix enumerates the dimensions you thought of
 
 Six findings, and where they landed is the point: round 11 replaced this gate's

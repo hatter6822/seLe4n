@@ -380,6 +380,170 @@ def frozenDetachReplyFrameAboveOrSelf (st : FrozenSystemState) (rid : SeLe4n.Rep
     FrozenSystemState :=
   (frozenDetachReplyFrameAbove st rid).toOption.getD st
 
+/-- **WS-RM, frozen mirror**: the reply-stack head the context `scId` owns.
+
+`donationHeadOf?`'s counterpart, clause for clause: a context heading no stack
+answers `none`; a recorded head that resolves to no Reply is `.objectNotFound`;
+and a head whose own upward link does not name **this** context is
+`.invalidArgument` rather than a value, so a stale `scReply` commits nothing. -/
+def frozenDonationHeadOf? (st : FrozenSystemState) (scId : SeLe4n.SchedContextId)
+    (sc : SeLe4n.Kernel.SchedContext) :
+    Except KernelError (Option (SeLe4n.ReplyId × SeLe4n.Kernel.Reply)) :=
+  match sc.scReply with
+  | none => .ok none
+  | some rid =>
+    match st.getReply? rid with
+    | some r =>
+      if r.next != some (.head scId) then .error .invalidArgument
+      else .ok (some (rid, r))
+    | none => .error .objectNotFound
+
+/-- **WS-RM, frozen mirror**: may this pop hand the context to `newOwner?`?
+
+`outerCallerAcceptable`'s counterpart.  `none` -- the bottom of the stack -- is
+always acceptable; a named outer caller must be neither of the two threads the
+pop rewrites, must hold no binding of its own, and must be waiting on its reply.
+Fail-closed on an unresolvable thread, since the pop mints a binding for it. -/
+def frozenOuterCallerAcceptable (st : FrozenSystemState)
+    (serverTid originalOwner : SeLe4n.ThreadId) :
+    Option SeLe4n.ThreadId → Bool
+  | none => true
+  | some outer =>
+    outer != originalOwner && outer != serverTid &&
+      (match st.getTcb? outer with
+       | none => false
+       | some outerTcb =>
+         outerTcb.schedContextBinding == .unbound &&
+           (match outerTcb.ipcState with
+            | .blockedOnReply _ _ => true
+            | _ => false))
+
+/-- **WS-RM, frozen mirror**: the thread one frame below this context's stack
+head -- the thread the context is owed to next.
+
+`replyStackOuterCaller?`'s counterpart, and it validates the link it follows for
+the same reason: Reply objects are re-linked to new callers, so a stale `prev`
+over a reused Reply would hand a scheduling context to an unrelated thread. -/
+def frozenReplyStackOuterCaller? (st : FrozenSystemState)
+    (scId : SeLe4n.SchedContextId) : Except KernelError (Option SeLe4n.ThreadId) :=
+  match st.getSchedContext? scId with
+  | none => .error .objectNotFound
+  | some sc =>
+    match frozenDonationHeadOf? st scId sc with
+    | .error e => .error e
+    | .ok none => .ok none
+    | .ok (some (headRid, head)) =>
+      match head.prev with
+      | none => .ok none
+      | some below =>
+        match st.getReply? below with
+        | none => .error .objectNotFound
+        | some b =>
+          if b.next != some (.frame headRid) then .error .invalidArgument
+          else
+            match b.caller with
+            | none => .error .illegalState
+            | some outer => .ok (some outer)
+
+/-- **WS-RM, frozen mirror**: clear the popped head's links and re-head the
+frame below it onto `scId`.
+
+`storeDonationHeadPop`'s counterpart, and the identity where the context heads
+no stack.  Written as its own definition rather than inline in the return below
+because the *order* is the content -- the head is cleared before the frame below
+is re-headed, so the two writes cannot be read as one. -/
+def frozenStoreDonationHeadPop (st : FrozenSystemState) (scId : SeLe4n.SchedContextId) :
+    Option (SeLe4n.ReplyId × SeLe4n.Kernel.Reply) → Except KernelError FrozenSystemState
+  | none => .ok st
+  | some (rid, r) =>
+    match st.getReply? rid with
+    | none => .error .objectNotFound
+    | some h =>
+      match st.objects.set rid.toObjId (.reply { h with prev := none, next := none }) with
+      | none => .error .objectNotFound
+      | some cleared =>
+        let st1 : FrozenSystemState := { st with objects := cleared }
+        match r.prev with
+        | none => .ok st1
+        | some below =>
+          match st1.getReply? below with
+          | none => .error .objectNotFound
+          | some b =>
+            match st1.objects.set below.toObjId
+                    (.reply { b with next := some (.head scId) }) with
+            | none => .error .objectNotFound
+            | some reheaded => .ok { st1 with objects := reheaded }
+
+/-- **WS-RM, frozen mirror**: hand a donated scheduling context back.
+
+`returnDonatedSchedContext`'s counterpart -- the four object writes, in the live
+order: the SchedContext rebinds to `originalOwner` and re-points `scReply` at the
+frame below its head, the popped head's links are cleared and that frame
+re-headed, the owner takes `donationReturnBinding` (the **live** function, so the
+two surfaces cannot disagree about which binding a return mints), and the server
+goes `.unbound`.  Both of the live guards come with it: the context must really
+be bound to the server, and the outer caller must be acceptable before it is
+handed one.
+
+**`scThreadIndex` is deliberately not maintained**, and that is this surface's
+existing answer rather than an omission here: no frozen operation writes it --
+`frozenSchedContextBind` and `frozenSchedContextUnbind` rebind without touching
+it -- and `frozenStateAgrees` does not compare it.  Becoming its only writer
+would be a second answer to a question the surface has already settled. -/
+def frozenReturnDonatedSchedContext (st : FrozenSystemState)
+    (serverTid : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId) (newOwner? : Option SeLe4n.ThreadId) :
+    Except KernelError FrozenSystemState :=
+  match st.getSchedContext? scId with
+  | none => .error .objectNotFound
+  | some sc =>
+    if sc.boundThread != some serverTid then .error .invalidArgument
+    else if !frozenOuterCallerAcceptable st serverTid originalOwner newOwner? then
+      .error .invalidArgument
+    else
+      match frozenDonationHeadOf? st scId sc with
+      | .error e => .error e
+      | .ok head? =>
+        let sc' := { sc with boundThread := some originalOwner,
+                             scReply := head?.bind (fun p => p.2.prev) }
+        match st.objects.set scId.toObjId (.schedContext sc') with
+        | none => .error .objectNotFound
+        | some rebound =>
+          match frozenStoreDonationHeadPop { st with objects := rebound } scId head? with
+          | .error e => .error e
+          | .ok st2 =>
+            match st2.getTcb? originalOwner with
+            | none => .error .objectNotFound
+            | some ownerTcb =>
+              match st2.objects.set originalOwner.toObjId
+                      (.tcb { ownerTcb with
+                        schedContextBinding :=
+                          SeLe4n.Kernel.donationReturnBinding scId newOwner? }) with
+              | none => .error .objectNotFound
+              | some owned =>
+                let st3 : FrozenSystemState := { st2 with objects := owned }
+                match st3.getTcb? serverTid with
+                | none => .error .objectNotFound
+                | some serverTcb =>
+                  match st3.objects.set serverTid.toObjId
+                          (.tcb { serverTcb with
+                            schedContextBinding := .unbound }) with
+                  | none => .error .objectNotFound
+                  | some released => .ok { st3 with objects := released }
+
+/-- **WS-RM, frozen mirror**: the return with its outer caller resolved.
+
+`returnDonatedSchedContextResolved`'s counterpart: the thread the context is owed
+to next is read off the stack rather than supplied, so a caller cannot name one
+the structure does not agree with. -/
+def frozenReturnDonatedSchedContextResolved (st : FrozenSystemState)
+    (serverTid : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId) : Except KernelError FrozenSystemState :=
+  match frozenReplyStackOuterCaller? st scId with
+  | .error e => .error e
+  | .ok newOwner? =>
+    frozenReturnDonatedSchedContext st serverTid scId originalOwner newOwner?
+
 /-- Q7-B: Store a TCB's IPC state in frozen state. -/
 def frozenStoreTcbIpcState (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     (ipcState : ThreadIpcState) : Except KernelError FrozenSystemState :=

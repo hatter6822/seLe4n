@@ -249,7 +249,19 @@ def _binding_open_at(text: str, at: int, depth: int) -> bool:
 
     Over-approximating here files the whole group as specification, which is the
     fail-open direction against the zero — so the scan is deliberately narrow:
-    only a whole-word keyword at or below this `:=`'s own depth counts.
+    only a whole-word keyword at the `:=`'s **own** depth counts.
+
+    **A keyword in a nested group does not own this `:=`** (PR #895 review round
+    13).  Scanning the enclosing group's whole span found a `let` that had
+    already closed — `(obj : (let T := Option KernelObject; T) := st.objects[oid]?)`,
+    which Lean accepts — so the binder default was read as that `let`'s
+    assignment and the executable read was filed `SPEC region=sig`.  Signature
+    rows are the one region the Tier 1 reconciliation does not judge (a
+    declaration-level verdict cannot adjudicate a hypothesis binder), so the read
+    bypassed BOTH enforcement tiers rather than one.  The span is therefore
+    walked at depth rather than searched: `_depth_zero_scan` is the same walk
+    every other top-level-token question in this file already uses, so the
+    nesting rule has one implementation and not a second that can disagree.
     """
     start, level = 0, depth
     for j in range(at - 1, -1, -1):
@@ -261,7 +273,8 @@ def _binding_open_at(text: str, at: int, depth: int) -> bool:
             if level < depth:
                 start = j + 1
                 break
-    return _TERM_BINDER_SCAN.search(text, start, at) is not None
+    found, _ = _depth_zero_scan(text[start:at], _TERM_BINDER_SCAN)
+    return found is not None
 
 
 def _split_binder_defaults(text: str, depth: int = 0, default_depth=None):
@@ -1139,6 +1152,19 @@ def step (st : SystemState) (h : (let obj := st.objects[oid]?; obj = none)) : Na
     "binder_default_beside_a_let_is_code": ("""
 def step (st : SystemState) (h : (let a := 1; a = 1))
     (obj : Option KernelObject := st.objects[oid]?) : Nat :=
+  0
+""", {("f.lean", "step"): 1}, {}),
+    # ...and the case the control above structurally cannot reach (PR #895
+    # review round 13): the `let` sits in the type of the **same** binder that
+    # carries the default, so scanning the enclosing group's whole span finds a
+    # keyword belonging to a group that has already closed.  Filed `SPEC
+    # region=sig`, which the Tier 1 reconciliation skips -- so an executable
+    # read bypassed BOTH tiers, not one.  The row above has the `let` in a
+    # PREVIOUS binder, where a span-wide search already stopped at the group
+    # opener; only this shape discriminates.
+    "let_inside_the_same_binders_type_is_code": ("""
+def step (st : SystemState)
+    (obj : (let T := Option KernelObject; T) := st.objects[oid]?) : Nat :=
   0
 """, {("f.lean", "step"): 1}, {}),
     # ...while a hypothesis binder's TYPE is spec in an executable declaration

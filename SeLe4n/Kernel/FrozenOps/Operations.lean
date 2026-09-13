@@ -47,6 +47,7 @@ than misleading its next reader.
 | 8 | `frozenEndpointReceive`      | `endpointReceiveDual`      | IPC          |
 | 9 | `frozenEndpointCall`         | `endpointCall`             | IPC          |
 |10 | `frozenEndpointReply`        | `endpointReply`            | IPC          |
+|10a| `frozenEndpointReplyWithDonationReturn` | the `.reply` operation | IPC |
 |11 | `frozenCspaceLookup`         | `cspaceLookupSlot`         | Capability   |
 |12 | `frozenCspaceLookupSlot`     | `cspaceLookupSlot` (root)  | Capability   |
 |13 | `frozenCspaceMint`           | `cspaceMint`               | Capability   |
@@ -907,6 +908,72 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
         | _ => .error .replyCapInvalid
     | none => .error .objectNotFound
 
+/-- **WS-RM, frozen mirror**: the server a blocked caller's reply is recorded
+against -- `recordedReplyServer?`'s counterpart. -/
+def frozenRecordedReplyServer? (st : FrozenSystemState) (target : SeLe4n.ThreadId) :
+    Option SeLe4n.ThreadId :=
+  match st.getTcb? target with
+  | some tcb =>
+      match tcb.ipcState with
+      | .blockedOnReply _ (some expected) => some expected
+      | _                                 => none
+  | none => none
+
+/-- **WS-RM, frozen mirror**: the donation this reply returns, paired with its
+original owner -- `endpointReplyServerDonation?`'s counterpart.
+
+Read from the **recorded server's** binding, not the (possibly delegated) cap
+holder's, exactly as the live resolver does: a delegated reply capability is
+legitimate authority and does not move the donation. -/
+def frozenEndpointReplyServerDonation? (st : FrozenSystemState)
+    (target : SeLe4n.ThreadId) : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match frozenRecordedReplyServer? st target with
+  | none => none
+  | some server =>
+      match st.getTcb? server with
+      | some tcb =>
+          match tcb.schedContextBinding with
+          | .donated scId originalOwner => some (scId, originalOwner)
+          | _                           => none
+      | none => none
+
+/-- **WS-RM, frozen mirror of the whole `.reply` operation** (PR #895 review
+round 13).
+
+`frozenEndpointReply` above is the mirror of the **bare** `endpointReply`, and
+that is exactly what `FrozenOpsSuite`'s FO-031 differential compares it against.
+But the live `.reply` *operation* is that reply **followed by the donation
+return**, and this surface had only the first half -- so `Reply.consumed`, which
+deliberately keeps a stack head's links because "the pop that follows clears
+them", was storing a record whose contract nothing here met.  A frozen state
+captured mid-donation-chain (`freeze` copies Reply objects verbatim, links and
+all) therefore left the answered Reply failing `Reply.isFree` forever: it could
+never be re-linked to a new caller and never retyped, so a passive server could
+not complete a second call/reply cycle on it.
+
+The pop belongs **here and not inside `frozenEndpointReply`** for a reason worth
+keeping: the bare live reply leaves a head linked too, so moving the pop into the
+mirror would make it diverge from the very function it refines -- the refinement
+that currently holds is what tells this surface apart from a guess.
+
+The donation is resolved on the **pre**-state, because the reply clears the
+`ipcState` the recorded server is read from. -/
+def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
+    (targetId : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (msg : IpcMessage) :
+    FrozenKernel Unit :=
+  fun st =>
+    let donation? := frozenEndpointReplyServerDonation? st targetId
+    let server? := frozenRecordedReplyServer? st targetId
+    match frozenEndpointReply replierId targetId replyId msg st with
+    | .error e => .error e
+    | .ok ((), st') =>
+      match donation?, server? with
+      | some (scId, originalOwner), some server =>
+          match frozenReturnDonatedSchedContextResolved st' server scId originalOwner with
+          | .error e => .error e
+          | .ok st'' => .ok ((), st'')
+      | _, _ => .ok ((), st')
+
 -- ============================================================================
 -- Q7-C3: Capability Frozen Operations
 -- ============================================================================
@@ -1396,7 +1463,10 @@ def frozenOpCoverage : SyscallId → Bool
   | .send => true             -- frozenEndpointSend
   | .receive => true          -- frozenEndpointReceive
   | .call => true             -- frozenEndpointCall
-  | .reply => true            -- frozenEndpointReply
+  | .reply => true            -- frozenEndpointReplyWithDonationReturn:
+                             -- the reply leg then the donation return, as the
+                             -- live `.reply` operation does.  `frozenEndpointReply`
+                             -- alone is the mirror of the BARE `endpointReply`.
   | .cspaceMint => true       -- frozenCspaceMint
   | .cspaceCopy => false      -- builder-only (structural copy)
   | .cspaceMove => false      -- builder-only (structural move)

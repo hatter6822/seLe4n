@@ -643,6 +643,17 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- exercises the agreement.
   , (`SeLe4n.Kernel.FrozenOps.frozenEndpointReply,
       .mirrors `SeLe4n.Kernel.removeCallerReplyFrame)
+    -- **The frozen donation pop** (PR #895 review round 13).  `Reply.consumed`
+    -- keeps a stack head's links *because the pop that follows clears them*,
+    -- and this surface had no pop -- so a frozen state captured mid-chain left
+    -- the answered Reply failing `Reply.isFree` for good: never relinkable,
+    -- never retypeable.  These two are the frozen counterparts of the live
+    -- pop's stores, and `frozenEndpointReplyWithDonationReturn` is the mirror
+    -- of the whole `.reply` operation rather than of its reply leg alone.
+  , (`SeLe4n.Kernel.FrozenOps.frozenStoreDonationHeadPop,
+      .mirrors `SeLe4n.Kernel.storeDonationHeadPop)
+  , (`SeLe4n.Kernel.FrozenOps.frozenReturnDonatedSchedContext,
+      .mirrors `SeLe4n.Kernel.returnDonatedSchedContext)
     -- The detach itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
   , (`SeLe4n.Kernel.detachReplyFrameAbove,

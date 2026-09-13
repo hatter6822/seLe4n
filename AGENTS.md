@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.25.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.26.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,13 +203,13 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~63415 lines)
+- `CHANGELOG.md` (~63916 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23254 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/API.lean` (~7362 lines)
+- `SeLe4n/Kernel/API.lean` (~7508 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6673 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5986 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6039 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~5952 lines)
 - `SeLe4n/Platform/Boot.lean` (~5867 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~5683 lines)
@@ -241,9 +241,9 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3118 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
+- `tests/SmpIpcSuite.lean` (~3074 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3025 lines)
-- `tests/SmpIpcSuite.lean` (~3022 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2714 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
@@ -306,16 +306,16 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1748 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1729 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1664 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1616 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1533 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1463 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1439 lines)
@@ -324,16 +324,16 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
+- `tests/FrozenOpsSuite.lean` (~1403 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1397 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1389 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1375 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1359 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1341 lines)
-- `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1312 lines)
@@ -353,9 +353,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
+- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1150 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1139 lines)
-- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1139 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1105 lines)
@@ -410,6 +410,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~810 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 - `docs/DEVELOPMENT.md` (~803 lines)
@@ -1774,6 +1775,61 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   mutation must revert the whole defect**: the alias fix has two halves, and
   reverting either alone left a witness passing, while reverting both — the
   actual pre-fix state — failed immediately.
+
+  **And a mirror of a part is not a mirror of the whole — sharing an
+  implementation transfers its preconditions** (PR #895 review round 13,
+  `v0.35.26`).  Round 12 said *when the property is about the whole artefact,
+  build the artefact*, and meant a rendered document.  Round 13 is that rule
+  meeting three different units, two of its three findings inside round 12's own
+  fixes — the fourth consecutive round where findings land in the previous
+  round's code.
+
+  The one worth keeping is not a scanner.  `Reply.consumed` keeps a stack head's
+  links, and its docstring says why in terms: *the pop that follows clears
+  them*.  That sentence is a **precondition on the caller**, not a description —
+  and `FrozenOps` adopted the record without it.  Sharing `consumed` between the
+  live and frozen surfaces was *right*, by this file's own one-question-one-answer
+  rule; what the sharing also moved, invisibly, was an obligation the frozen
+  surface could not discharge, because it models no donation pop.  So a frozen
+  state captured mid-chain left the answered Reply failing `Reply.isFree`
+  forever: never re-linkable, never retypeable, and no passive server could
+  complete a second call/reply cycle on it.  **When you reach for a shared
+  answer, read what it requires of you, not only what it returns** — a function
+  whose correctness depends on what runs *after* it is a contract, and adopting
+  it is accepting that contract.
+
+  Where the fix goes carries the second half.  `frozenEndpointReply` is refined
+  against the **bare** `endpointReply`, which also leaves a head linked, and the
+  differential scenario compares exactly that — so putting the pop inside it
+  would have broken the refinement the surface exists to check, while fixing the
+  symptom.  The frozen `.reply` *operation* is the reply leg **then** the
+  donation return, as the live one is, so the composite is where the pop belongs
+  and the refined mirror is left alone.  **Ask which unit the property is about
+  before choosing where to fix it**: the leg refines, the operation composes, and
+  a fix at the wrong level trades a visible defect for an invisible one.
+
+  The two scanner findings are the same rule at smaller units, and both are the
+  *unit* being smaller than the property.  A binder-default scan asked its
+  question of the enclosing group's whole span, so a `let` in a nested group that
+  had already closed suppressed a real default — filing an executable read as
+  `SPEC region=sig`, the one region the Tier 1 reconciliation does not judge, so
+  it bypassed **both** tiers rather than one; the span is walked at depth now,
+  through the depth-zero walk every other top-level-token question in that file
+  already used.  And the markdown enclosure axis round 12 created had one value —
+  fenced code — where CommonMark's grammar has several: **HTML blocks hold raw
+  text**, so a `# Safety` heading inside `<!-- ... -->` published nothing and
+  satisfied the gate.  The axis is taken from the grammar rather than from the
+  reported spelling: all seven block types, both end conditions, an unterminated
+  block running to the end of the document, and type 7's inability to interrupt a
+  paragraph.  **A new axis is enumerated at all of its values on the day it is
+  added**, or the next round supplies the ones that were skipped.
+
+  One mechanical note, and it is the *witness* rule again rather than a new one:
+  each hidden matrix row is paired with a control that ends the enclosure, so the
+  row is known to fail on the enclosure and not on the marker; and the census
+  case for the binder fix is decisive only because round 12's own case keeps
+  passing under the mutation — a fix that narrows a rule must be shown to narrow
+  it rather than to disable it.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

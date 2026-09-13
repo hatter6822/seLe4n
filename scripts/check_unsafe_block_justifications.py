@@ -687,6 +687,43 @@ MD_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 #: the `#` run is required — `#Safety` renders as a paragraph (round 8).
 MD_SAFETY_HEADING = re.compile(r"^ {0,3}#{1,6}[ \t]+Safety\b", re.IGNORECASE)
 
+#: CommonMark 4.6 block-level tag names — the start condition of an HTML block
+#: of type 6.  Fixed by the specification, so this is the grammar's own list and
+#: not a resemblance: a name absent from it opens no type-6 block.
+MD_HTML_BLOCK_TAGS = frozenset("""
+address article aside base basefont blockquote body caption center col colgroup
+dd details dialog dir div dl dt fieldset figcaption figure footer form frame
+frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu
+menuitem nav noframes ol optgroup option p param search section summary table
+tbody td tfoot th thead title tr track ul
+""".split())
+
+#: The five HTML block types whose end condition is a *string on a line* rather
+#: than a blank line (CommonMark 4.6 types 1-5), as `(start, end)` pairs.  Each
+#: holds raw text: no markdown is parsed inside one, so a heading written there
+#: is never published.
+MD_HTML_RAW_BLOCKS = (
+    (re.compile(r"^ {0,3}<(?:pre|script|style|textarea)(?:[ \t>]|$)", re.IGNORECASE),
+     re.compile(r"</(?:pre|script|style|textarea)>", re.IGNORECASE)),
+    (re.compile(r"^ {0,3}<!--"), re.compile(r"-->")),
+    (re.compile(r"^ {0,3}<\?"), re.compile(r"\?>")),
+    (re.compile(r"^ {0,3}<![A-Za-z]"), re.compile(r">")),
+    (re.compile(r"^ {0,3}<!\[CDATA\["), re.compile(r"\]\]>")),
+)
+
+#: Type 6: an open or closing tag whose name is block-level.  Ends at a blank
+#: line.
+MD_HTML_BLOCK_6 = re.compile(r"^ {0,3}</?([A-Za-z][A-Za-z0-9-]*)(?:[ \t/>]|$)")
+
+#: An attribute of a complete tag (CommonMark 4.6 type 7's start condition).
+_MD_ATTR = r"""[ \t]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[ \t]*=[ \t]*(?:[^ \t"'=<>`]+|'[^']*'|"[^"]*"))?"""
+
+#: Type 7: a *complete* open or closing tag alone on its line.  Ends at a blank
+#: line, and — unlike every other type — may not interrupt a paragraph.
+MD_HTML_BLOCK_7 = re.compile(
+    r"^ {0,3}(?:<[A-Za-z][A-Za-z0-9-]*(?:" + _MD_ATTR + r")*[ \t]*/?>"
+    r"|</[A-Za-z][A-Za-z0-9-]*[ \t]*>)[ \t]*$")
+
 
 def publishes_safety_heading(markdown: str) -> bool:
     """Does this rendered markdown publish a `# Safety` **heading**?
@@ -711,8 +748,46 @@ def publishes_safety_heading(markdown: str) -> bool:
     doc source on an item into one markdown input (see `rendered_doc_markdown`).
     """
     fence = None          # (delimiter char, run length) while a fence is open
+    html_end = None       # the end-condition pattern while a raw HTML block is open
+    html_blank = False    # a type-6/7 HTML block, which ends at a blank line
     paragraph = False     # an indented code block may not interrupt a paragraph
     for line in markdown.split("\n"):
+        # **An HTML block holds raw text** (CommonMark 4.6): no markdown is
+        # parsed inside one, so a heading written there is never published --
+        # which `/// <!--`, `/// # Safety`, `/// -->` exploited to satisfy this
+        # gate while telling the caller nothing (PR #895 review round 13).
+        # Types 1-5 end at a string on a line, types 6-7 at a blank line; an
+        # unterminated block runs to the end of the document, which is why the
+        # state is carried rather than reset per line.
+        if html_end is not None:
+            if html_end.search(line):
+                html_end = None
+            continue
+        if html_blank:
+            if not line.strip():
+                html_blank = False
+                paragraph = False
+            continue
+        if fence is None:
+            opened = False
+            for start, end in MD_HTML_RAW_BLOCKS:
+                if start.match(line):
+                    # The end condition may be met on the start line itself.
+                    html_end = None if end.search(line) else end
+                    opened = True
+                    break
+            if not opened:
+                m6 = MD_HTML_BLOCK_6.match(line)
+                if m6 is not None and m6.group(1).lower() in MD_HTML_BLOCK_TAGS:
+                    html_blank = True
+                    opened = True
+                elif not paragraph and MD_HTML_BLOCK_7.match(line):
+                    # Type 7 alone may not interrupt a paragraph.
+                    html_blank = True
+                    opened = True
+            if opened:
+                paragraph = False
+                continue
         delim = MD_FENCE.match(line)
         if fence is not None:
             # Only a matching, longer-or-equal run with no info string closes.
@@ -1938,6 +2013,37 @@ _DOC_MARKDOWN_FORMS = {
     # A backtick run does not close a tilde fence, and vice versa.
     "mismatched-fence": ("/// ~~~\n/// ```\n/// # Safety\n/// ```", False),
     "indented-code": ("/// text\n///\n///     # Safety\n", False),
+    # **The HTML-block enclosure** (PR #895 review round 13).  A fence is not
+    # the only thing in the rendered document that suppresses heading parsing:
+    # CommonMark 4.6 HTML blocks hold RAW TEXT, so rustdoc publishes no heading
+    # for anything written inside one.  `<!-- ... -->` was the reported form;
+    # the rows below are the grammar's own types, because taking the axis from
+    # the finding is what round 11 already paid for.  Each hidden row is paired
+    # with a control that ENDS the block, so the row is known to fail on the
+    # enclosure rather than on the marker.
+    "html-comment": ("/// <!--\n/// # Safety\n/// -->", False),
+    "html-comment-closed": ("/// <!-- note -->\n/// # Safety\n/// text", True),
+    # An unterminated HTML block runs to the end of the document, so the
+    # heading is still never published — the state is carried, not reset.
+    "html-comment-unterminated": ("/// <!--\n/// # Safety", False),
+    "html-raw-text": ("/// <script>\n/// # Safety\n/// </script>", False),
+    "html-raw-text-closed": ("/// <script>x</script>\n/// # Safety\n/// text", True),
+    "html-cdata": ("/// <![CDATA[\n/// # Safety\n/// ]]>", False),
+    "html-processing": ("/// <?x\n/// # Safety\n/// ?>", False),
+    # A type-4 declaration ends on its own line, so the heading after it IS
+    # published — the fail-CLOSED direction has a row too.
+    "html-declaration-ends": ("/// <!DOCTYPE html>\n/// # Safety\n/// text", True),
+    # Types 6 and 7 end at a BLANK line rather than at a string.
+    "html-block-tag": ("/// <div>\n/// # Safety\n/// </div>", False),
+    "html-block-tag-closed": ("/// <div>\n/// </div>\n///\n/// # Safety\n/// text", True),
+    "html-complete-tag": ("/// <custom-tag>\n/// # Safety", False),
+    "html-complete-tag-closed": ("/// <custom-tag>\n///\n/// # Safety\n/// text", True),
+    # ...and type 7 alone may not interrupt a paragraph, so a complete tag
+    # after text opens nothing and the heading below it is published.
+    "html-complete-tag-in-paragraph":
+        ("/// text\n/// <custom-tag>\n/// # Safety\n/// more", True),
+    # The enclosure crosses doc forms, exactly as a fence does.
+    "html-cross-form": ('/// <!--\n#[doc = "# Safety"]\n/// -->', False),
 }
 
 #: **The site-name dimension.**  A declaration whose name this scanner cannot
