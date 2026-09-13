@@ -112,7 +112,18 @@ UNSAFE_KNOWN_FORMS = [
     (re.compile(r"\bunsafe\s+(?:extern\s+\"[^\"]*\"\s+)?fn\s*\("), "function-pointer type"),
 ]
 
-UNSAFE_KEYWORD = re.compile(r"\bunsafe\b")
+# **A raw identifier is not the keyword.**  `r#unsafe` names an ordinary item
+# called `unsafe`; Rust accepts the declaration and the call, and `\bunsafe\b`
+# matches inside it because `#` is a non-word character.  No entry of
+# `UNSAFE_KNOWN_FORMS` then accepts the position, so the gate *failed the file*
+# — the fail-CLOSED direction, which costs a contributor rather than a reviewer,
+# and is still a gate defect.
+#
+# The same relation was already swept onto the declaration pattern in
+# `v0.35.13` (`fn\s+(?:r#)?[A-Za-z_]`, for `r#lean_real`) and not onto the
+# keyword scan beside it, which is this project's sweep rule failing in the way
+# it describes.
+UNSAFE_KEYWORD = re.compile(r"(?<!r#)\bunsafe\b")
 
 
 def unrecognised_unsafe_forms(path: Path, view: str) -> list[str]:
@@ -142,10 +153,27 @@ SAFETY_BLOCK = re.compile(r"//[/!]?\s*SAFETY\b|/\*+\s*SAFETY\b", re.IGNORECASE)
 # and used to pass on the bare `\*` alternative.  Rust's attribute spelling
 # `#[doc = "# Safety"]` publishes the same section and is accepted too, since
 # refusing it would reject correctly documented code.
-SAFETY_DECL_LINE = re.compile(r"^\s*(?://[/!])\s*#+\s*Safety\b", re.IGNORECASE | re.MULTILINE)
-SAFETY_DECL_ATTR = re.compile(r"#\s*!?\[\s*doc\s*=\s*(?:r#*)?\"[^\"]*#+\s*Safety\b",
+#
+# **Outer rustdoc, because inner rustdoc documents something else.**  `///`,
+# `/**` and `#[doc = …]` attach to the item that FOLLOWS them; `//!`, `/*!` and
+# `#![doc = …]` attach to the item that ENCLOSES them — the module or crate.  A
+# module opening with `//! # Safety` immediately above the first `unsafe fn`
+# therefore published a section about the module while the function itself
+# exposed no contract at all, and the gate read it as justification.  That is
+# the same substitution as the two findings above it, one level in: *is a doc
+# comment* is not *is a doc comment ON THIS ITEM*.
+#
+# `////` and `/***` are regular comments in Rust, not doc comments (the
+# reference excludes a fourth `/` and a third `*`), so neither publishes
+# anything either.  The `(?!/)` and `(?![*/])` state that rather than leaning on
+# it: a `////` heading was already refused incidentally, because the fourth
+# slash is not the whitespace the pattern expects next, while a `/***` block WAS
+# accepted -- its interior line matches the doc-block body pattern like any
+# other.  Both are now refused for the reason, not by accident.
+SAFETY_DECL_LINE = re.compile(r"^\s*///(?!/)\s*#+\s*Safety\b", re.IGNORECASE | re.MULTILINE)
+SAFETY_DECL_ATTR = re.compile(r"#\[\s*doc\s*=\s*(?:r#*)?\"[^\"]*#+\s*Safety\b",
                               re.IGNORECASE)
-DOC_BLOCK_OPEN = re.compile(r"/\*[*!]")
+DOC_BLOCK_OPEN = re.compile(r"/\*\*(?![*/])")
 DOC_BLOCK_LINE = re.compile(r"^\s*\*?\s*#+\s*Safety\b", re.IGNORECASE | re.MULTILINE)
 
 
@@ -492,6 +520,39 @@ fn f() {
 #[inline]
 unsafe fn f() {}
 """),
+    # INNER rustdoc documents the enclosing module, not the following item, so
+    # the function it precedes publishes no contract.  Token-preserving against
+    # the accepted cases above: same declaration, same `# Safety` text, only the
+    # comment's DIRECTION changes.
+    ("an `unsafe fn` preceded by INNER line rustdoc (`//!`)", False, """
+//! # Safety
+//! The caller holds the per-core lock.
+unsafe fn f() {}
+"""),
+    ("an `unsafe fn` preceded by an INNER doc block (`/*!`)", False, """
+/*! # Safety
+ * The caller holds the per-core lock.
+ */
+unsafe fn f() {}
+"""),
+    ("an `unsafe fn` with an INNER `#![doc]` attribute", False, """
+#![doc = "# Safety: the caller holds the per-core lock."]
+unsafe fn f() {}
+"""),
+    # `////` and `/***` are regular comments in Rust, not doc comments -- the
+    # reference excludes a fourth `/` and a third `*` -- so neither publishes
+    # anything.  Each is ONE character from an accepted case above.
+    ("an `unsafe fn` whose `# Safety` is in a `////` comment", False, """
+//// # Safety
+//// The caller holds the per-core lock.
+unsafe fn f() {}
+"""),
+    ("an `unsafe fn` whose `# Safety` is in a `/***` comment", False, """
+/*** # Safety
+ * The caller holds the per-core lock.
+ */
+unsafe fn f() {}
+"""),
     ("an `unsafe fn` with a doc comment that never mentions safety", False, """
 /// Reads the register bank.  Fast.
 #[inline]
@@ -534,6 +595,31 @@ def _self_test() -> int:
                 failures += 1
             else:
                 print(f"  OK   self-test '{name}' ({'accept' if expect_ok else 'reject'})")
+    # The unrecognised-form scan, which had no coverage: it is the gate's
+    # fail-CLOSED default branch, and a default branch nothing exercises is a
+    # decision nobody checked.
+    form_cases = [
+        # A raw identifier NAMES an item `unsafe`; Rust accepts the declaration
+        # and the call, and neither is an unsafe operation.
+        ("a raw identifier `r#unsafe` is not an unsafe form", """
+fn r#unsafe() {}
+fn caller() { r#unsafe(); }
+""", True),
+        # ...while a genuine form with no decision must still stop the gate.
+        ("`unsafe auto trait` has no decision and is refused", """
+unsafe auto trait Wild {}
+""", False),
+        ("a plain `unsafe` block is a recognised form", """
+fn f() { unsafe { g() } }
+""", True),
+    ]
+    for name, src, want_clean in form_cases:
+        found = unrecognised_unsafe_forms(Path("fixture.rs"), src)
+        if (not found) != want_clean:
+            print(f"  SELF-TEST FAIL: form scan '{name}'")
+            failures += 1
+        else:
+            print(f"  OK   self-test '{name}'")
     # The reconciliation, on synthetic inventories.
     checks = [
         ("a clean tree passes", reconcile({"a|f": 1}, {"a|f": 1}), True),
@@ -553,7 +639,8 @@ def _self_test() -> int:
         print(f"unsafe-justification gate self-test FAILED ({failures})")
         return 1
     print(f"unsafe-justification gate self-test passed "
-          f"({len(_CASES)} site cases, {len(checks)} reconciliation cases).")
+          f"({len(_CASES)} site cases, {len(form_cases)} form-scan cases, "
+          f"{len(checks)} reconciliation cases).")
     return 0
 
 

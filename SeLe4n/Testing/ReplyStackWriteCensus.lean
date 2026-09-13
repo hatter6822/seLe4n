@@ -234,56 +234,37 @@ manglings included. -/
 def isProjectConstant (n : Name) : Bool :=
   n.components.any (· == `SeLe4n)
 
-/-- `true` when a name component has the *shape* Lean gives a generated one.
-
-**A prefix is a resemblance; a shape is a derivation** (PR #895 review round 3).
-The component tests used to be `"eq_".isPrefixOf`, `"proof_".isPrefixOf` and
-`"match_".isPrefixOf`, which are true of a contributor's own `eq_clearReply`,
-`proof_clearReply` or `match_clearReply` — so an ordinary executable writer
-named that way was filtered out of BOTH derivations before its used constants
-were ever examined, and could consume a caller's Reply without entering the
-registry.  That is this census's own domain defect: the element is never
-inspected, so the reconciliation stays clean while describing a smaller tree.
-
-Lean's generated equation, proof and matcher components are the prefix followed
-by a **numeral** (`eq_1`, `proof_3`, `match_2`); the recursor and structural
-components are whole words.  Requiring that shape refuses a user's name while
-keeping every generated one, and a generated form this misses is *reported*
-rather than skipped — the fail-closed direction for a scanner that produces
-requirements. -/
-def isGeneratedComponent (s : String) : Bool :=
-  let numbered (pre : String) : Bool :=
-    pre.isPrefixOf s && s.length > pre.length && (s.drop pre.length).all Char.isDigit
-  numbered "match_" || numbered "proof_" || numbered "eq_" ||
-  s == "eq_def" || s == "noConfusion" || s == "noConfusionType" ||
-  s == "below" || s == "brecOn" || s == "binductionOn" || s == "ibelow" ||
-  s == "casesOn" || s == "recOn" || s == "rec" || s == "ind" ||
-  s == "_sunfold" || s == "_unsafe_rec" || s == "_cstage1" ||
-  s == "_cstage2" || s == "_proof_1"
-
 /-- `true` when `n` is a compiler auxiliary rather than a declaration a
-contributor wrote: match arms, equation lemmas, proof terms and the like.  They
-inherit their parent's references, so counting them would report one site many
-times under names nobody can register. -/
+contributor wrote: matchers, recursors and macro-scoped constants.  They inherit
+their parent's references, so counting them would report one site many times
+under names nobody can register.
+
+**Asked of the environment, and of nothing else** (PR #895 review round 4).  Two
+earlier cuts decided this by NAME — first `"eq_".isPrefixOf`, then the prefix
+plus a numeral — and both are spellings a contributor can write: `eq_clearReply`
+is an ordinary name, and so is `eq_1`.  A writer named either way was filtered
+out of both derivations *before* its constants were read, so it could consume a
+caller's Reply and never enter the registry while the reconciliation stayed
+clean.  Narrowing a resemblance produces a smaller resemblance, not a relation.
+
+`Meta.isMatcherCore` is the environment's own answer for matchers and is pure,
+which is what the previous cut's comment said it was not; with it consulted, the
+whole name list is **redundant** rather than merely narrower.  Measured on this
+environment rather than argued: of the project constants that are definition-
+shaped, non-`Prop` and reference a chain primitive, the number kept only by a
+name test is **zero**, so `isGeneratedComponent` was deleted instead of being
+narrowed a third time.  Equation and proof auxiliaries need no test at all —
+every one of the 5185 in this environment is `Prop`-typed, and `isDefinitionShaped`
+plus the caller's `Meta.isProp` filter exclude them structurally.
+
+**Not `Name.isInternal` and not `Name.isInternalDetail`**: the first is true of
+the `_private.…` mangling, so it would have excluded every `private def` in the
+kernel — a silent narrowing of exactly the kind this census exists to prevent,
+introduced by the fix for one — and the second is itself a prefix test over
+`match_` / `proof_` / `eq_`, which is the defect this rewrite removes. -/
 def isAuxiliary (env : Environment) (n : Name) : Bool :=
-  -- **Asked of the environment where the environment has an answer.**  Lean
-  -- knows which constants it generated, so `isAuxRecursor` / `isRecCore` /
-  -- `Name.isInternal` decide those exactly; a name-prefix list decided them by
-  -- resemblance and had already missed `casesOn`, `recOn`, `below`, `brecOn`
-  -- and `noConfusion`.  The prefix tests that remain cover what those
-  -- predicates do not name — matchers (`foo.match_1`), equation lemmas and
-  -- compilation artefacts — and `Meta.isMatcher`, which would decide the first
-  -- exactly, is monadic while this is a pure function of the environment.
-  -- **Not `Name.isInternal`**: it is true of the `_private.…` mangling, so
-  -- including it would have excluded every `private def` in the kernel — a
-  -- silent narrowing of exactly the kind this census exists to prevent,
-  -- introduced by the fix for one.  The witness below caught it, which is what
-  -- witnesses are for.
   (n.eraseMacroScopes != n) ||
-  isAuxRecursor env n || isRecCore env n ||
-  n.components.any fun c => match c with
-    | .str _ s => isGeneratedComponent s
-    | _ => false
+  isAuxRecursor env n || isRecCore env n || Meta.isMatcherCore env n
 
 /-- `true` when `n`'s own body directly references any of `targets`. -/
 def usesDirectly (env : Environment) (targets : List Name) (n : Name) : Bool :=
@@ -315,8 +296,9 @@ composite out: it builds no chain record in its own body.  A candidate either
 reaches a constructor through helpers and stores *directly* (the existing rule,
 which catches a delegated `clearPrev`), or constructs *directly* and stores
 through one hop (the shape reported here).  A deeper delegation on both sides at
-once is outside the frontier, and `chainWriteFrontier` says so in the census's
-own output rather than leaving the number to read as a proof of absence. -/
+once is outside the frontier, and `chainWriteFrontier` is printed beside the site
+count by the `run_cmd` below rather than leaving the number to read as a proof of
+absence. -/
 def storesObject (env : Environment) (n : Name) : Bool :=
   usesDirectly env objectStoreSpellings n ||
   (match (env.find? n).bind (·.value? (allowOpaque := true)) with
@@ -731,13 +713,26 @@ private def censusWitnessDelegatedStoreWriter (rid : SeLe4n.ReplyId) :
 /-- A writer whose name *resembles* a compiler auxiliary.  `eq_` is the prefix
 Lean gives equation lemmas, and the component test used to accept it on any
 name — so this definition was filtered out of both derivations before its used
-constants were read, and could write the stack unregistered.  A generated name
-carries the prefix plus a **numeral**; this one does not. -/
+constants were read, and could write the stack unregistered. -/
 private def eq_censusWitnessUserNamed (rid : SeLe4n.ReplyId) :
     SeLe4n.Model.Kernel Unit :=
   fun st =>
     match st.getReply? rid with
     | some r => SeLe4n.Model.storeObject rid.toObjId (.reply { r with prev := none }) st
+    | none => .ok ((), st)
+
+/-- The same writer under the name a *generated* equation lemma actually takes.
+
+The fix for the witness above required the prefix plus a numeral, which is a
+narrower resemblance and not a relation: `eq_1` is a legal identifier a
+contributor may write, and under that rule this definition was filtered out of
+both derivations before its constants were read.  `isAuxiliary` consults the
+environment now and no name shape at all, so this is a candidate — and it is a
+permanent witness that no third name test creeps back in. -/
+private def eq_1 (rid : SeLe4n.ReplyId) : SeLe4n.Model.Kernel Unit :=
+  fun st =>
+    match st.getReply? rid with
+    | some r => SeLe4n.Model.storeObject rid.toObjId (.reply { r with next := none }) st
     | none => .ok ((), st)
 
 /-- Writes no reply-stack data: reads a Reply and returns. -/
@@ -784,17 +779,32 @@ run_cmd Command.liftTermElabM do
   if (recordConstructingStoreCandidates env).contains
       ``censusWitnessDelegatedStoreHelper then
     throwError "the census frontier reports a generic store helper that builds no record"
-  -- A user name shaped like a compiler auxiliary is still inspected.  Fails
-  -- without `isGeneratedComponent`'s numeral requirement.
+  -- A user name shaped like a compiler auxiliary is still inspected.  Two of
+  -- these, because the previous cut's fix was itself a name shape: `eq_1` is as
+  -- legal a definition name as `eq_clearReply`, so a filter that reads either
+  -- as generated is reading a spelling a contributor can choose.
   if isAuxiliary env ``eq_censusWitnessUserNamed then
     throwError "`isAuxiliary` filters a user definition whose name merely resembles \
       a generated one"
   unless (recordConstructingStoreCandidates env).contains ``eq_censusWitnessUserNamed do
     throwError "the census frontier misses a writer named like a compiler auxiliary"
-  -- ...and a genuinely generated component is still recognised.
-  unless isGeneratedComponent "eq_1" && isGeneratedComponent "match_2" &&
-      isGeneratedComponent "proof_11" && isGeneratedComponent "casesOn" do
-    throwError "`isGeneratedComponent` no longer recognises a generated name shape"
+  if isAuxiliary env ``eq_1 then
+    throwError "`isAuxiliary` filters a user definition named exactly like a generated \
+      equation lemma -- `eq_1` is a legal name a contributor may write"
+  unless (recordConstructingStoreCandidates env).contains ``eq_1 do
+    throwError "the census frontier misses a writer named exactly `eq_1`"
+  -- ...and the environment's own answer for a genuine auxiliary is still
+  -- consulted, so the deletion above narrowed nothing.  Derived rather than
+  -- named: a pin on one hand-picked matcher would age out with its parent.
+  let mut matchers := 0
+  for (n, _) in env.constants.toList do
+    if Meta.isMatcherCore env n then
+      matchers := matchers + 1
+      unless isAuxiliary env n do
+        throwError "`isAuxiliary` no longer recognises the matcher {n}, which the \
+          environment reports as one"
+  if matchers == 0 then
+    throwError "no matcher in this environment, so the auxiliary check is vacuous"
   unless (recordConstructingStoreCandidates env).contains ``censusWitnessSplitWriter do
     throwError "reply-stack write census: the SPLIT-CONJUNCTION witness is not derived as a \
       candidate — a writer that delegates its record update escapes the frontier, which is \
@@ -883,7 +893,7 @@ run_cmd Command.liftTermElabM do
     [``censusWitnessBareConsume, ``censusWitnessDirectLinkWrite,
      ``censusWitnessSplitWriter, ``censusWitnessSplitHelper,
      ``censusWitnessDelegatedStoreWriter, ``censusWitnessDelegatedStoreHelper,
-     ``eq_censusWitnessUserNamed]
+     ``eq_censusWitnessUserNamed, ``eq_1]
   let mut derived : List Name := []
   for n in directWriteCandidates env do
     if witnesses.contains n then continue
@@ -915,8 +925,20 @@ run_cmd Command.liftTermElabM do
     (fun (_, d) => match d with | .states _ => true | _ => false)
   let mirroring := chainWriteRegistry.filter
     (fun (_, d) => match d with | .mirrors _ => true | _ => false)
-  logInfo m!"reply-stack write census: {derived.length} write sites, {stating.length} of \
-    them stating their own chain result, {mirroring.length} on the frozen surface \
-    mirroring a live site that does; the rest are half-steps of a composite that does"
+  -- The count and the frontier it is taken over, together.  `chainWriteFrontier`
+  -- existed as a `def` whose docstring promised it was printed here and nothing
+  -- referenced it, so the bound was stated in prose and not in the output -- the
+  -- shape this census exists to refuse, inside the cut that added it.  The
+  -- summary is therefore built as a value and checked to carry the frontier
+  -- before it is logged: a reword that drops it fails elaboration rather than
+  -- silently returning the number to reading as a proof of absence.
+  let summary := s!"reply-stack write census: {derived.length} write sites, \
+{stating.length} of them stating their own chain result, {mirroring.length} on the \
+frozen surface mirroring a live site that does; the rest are half-steps of a \
+composite that does\n      frontier: {chainWriteFrontier}"
+  unless (summary.splitOn chainWriteFrontier).length > 1 do
+    throwError "reply-stack write census: the summary does not carry \
+      `chainWriteFrontier`, so the site count would read as a proof of absence"
+  logInfo summary
 
 end SeLe4n.Testing.ReplyStackWriteCensus

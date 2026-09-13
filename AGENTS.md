@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.16.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.17.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1307,14 +1307,40 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
 
   The remedies are all the same shape — **derive the set, or name the shape
   rather than the resemblance**: every tracked `.rs` file that is not build
-  output; a generated component is the prefix plus a *numeral*; the result type
-  is what follows the first depth-zero `:`; and the frontier pairs a transitive
-  side with a direct one on each disjunct.  That last is the point at which
-  derivation stops being possible: chasing stores transitively makes every IPC
-  composite a candidate, measured at 22, so the census states its frontier
-  (`chainWriteFrontier`) in its own output instead of letting the number read as
-  a proof of absence — the second-kind treatment this section already prescribes.
-  **A predicate over a domain you filtered is a measurement of the filter.**
+  output; the result type is what follows the first depth-zero `:`; and the
+  frontier pairs a transitive side with a direct one on each disjunct.  That
+  last is the point at which derivation stops being possible: chasing stores
+  transitively makes every IPC composite a candidate, measured at 22, so the
+  census states its frontier (`chainWriteFrontier`) in its own output instead of
+  letting the number read as a proof of absence — the second-kind treatment this
+  section already prescribes.  **A predicate over a domain you filtered is a
+  measurement of the filter.**
+
+  **And a narrower resemblance is not a relation** (PR #895 review round 4,
+  `v0.35.17`).  The fourth remedy in that list was *a generated component is the
+  prefix plus a numeral*, and it is the one that did not hold: `eq_1` is as legal
+  a definition name as `eq_clearReply`, so the rule narrowed the set of user
+  names a contributor must avoid without making the test a fact about the
+  declaration.  Round 4 found six more instances of the round-2/round-3 class, and
+  five of the six are the *scanner's own default* rather than its predicate —
+  which is this file's `a scanner's default branch is a decision` rule meeting its
+  domain rule, since a default that silently answers is a domain written as an
+  omission.  A missing metric read as `0`, so **deleting a measurement satisfied
+  an enforced zero** (`ak7_cascade_check_monotonic.sh`: `SORRY_COUNT`,
+  `AXIOM_COUNT` and `STORE_READ_CODE` all rode on it); `structure`/`class` bodies
+  were spec whole, so an executable field **default** filed as specification; a
+  result-type parser that knew only `→` rejected the ASCII `->` that Lean equally
+  accepts; inner rustdoc (`//!`, `/*!`, `#![doc]`) documents the *enclosing*
+  module and justified the function below it; and `r#unsafe` — an identifier, not
+  the keyword — failed a file outright.
+
+  What closes the name half is not a sixth narrowing but the environment:
+  `Meta.isMatcherCore` is pure, every `eq_N`/`proof_N` constant is `Prop`-typed
+  and so excluded structurally, and with those two facts the whole name list is
+  **redundant** — measured at zero definition-shaped, non-`Prop` writers kept only
+  by a name test — so `isGeneratedComponent` was deleted rather than narrowed a
+  third time.  **Where a resemblance keeps needing another exception, the
+  question belongs to something that knows the answer.**
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

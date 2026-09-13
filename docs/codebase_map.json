@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-faraday-gz9b3w",
-      "commit_sha": "02240be2f1bd1a3b39488abd2fd88ab7271a2a89",
-      "tree_sha": "e381ee95583c9814d3d847a091bf4d4b6a7ceeb8",
-      "committed_at_utc": "2026-09-12T21:54:12+00:00"
+      "commit_sha": "e7a63a446d7654726abf29d5bcf4e1f6d5583960",
+      "tree_sha": "1ac45cc536633e80ecaf147f93178be425b0ea28",
+      "committed_at_utc": "2026-09-12T23:17:45+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c06efda9346a55c585cc56cc806431bcf4dce41ba97842f3fce2a5ac14020634"
+    "source_digest": "d20d8afde1f111da2e16fdb64840b03e09aa5d05d83821d58dca65ccfc598c29"
   },
   "summary": {
     "module_count": 399,
     "declaration_count": 21312
   },
   "readme_sync": {
-    "version": "0.35.16",
+    "version": "0.35.17",
     "lean_toolchain": "v4.28.0",
     "production_files": 329,
-    "production_loc": 375663,
+    "production_loc": 375685,
     "test_files": 70,
     "test_loc": 75996,
     "proved_theorem_lemma_decls": 12606,
@@ -262942,26 +262942,14 @@
         },
         {
           "kind": "def",
-          "name": "isGeneratedComponent",
-          "line": 254,
-          "called": [
-            "all",
-            "length"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "isAuxiliary",
-          "line": 268,
-          "called": [
-            "any",
-            "isGeneratedComponent"
-          ]
+          "line": 265,
+          "called": []
         },
         {
           "kind": "def",
           "name": "usesDirectly",
-          "line": 289,
+          "line": 270,
           "called": [
             "any",
             "bind",
@@ -262973,7 +262961,7 @@
         {
           "kind": "def",
           "name": "storesObject",
-          "line": 320,
+          "line": 302,
           "called": [
             "any",
             "bind",
@@ -262987,19 +262975,19 @@
         {
           "kind": "def",
           "name": "chainWriteFrontier",
-          "line": 328,
+          "line": 310,
           "called": []
         },
         {
           "kind": "def",
           "name": "isDefinitionShaped",
-          "line": 347,
+          "line": 329,
           "called": []
         },
         {
           "kind": "def",
           "name": "directWriteCandidates",
-          "line": 359,
+          "line": 341,
           "called": [
             "chainWritePrimitives",
             "contains",
@@ -263012,7 +263000,7 @@
         {
           "kind": "def",
           "name": "constructsChainRecord",
-          "line": 371,
+          "line": 353,
           "called": [
             "chainRecordConstructors",
             "usesDirectly"
@@ -263021,7 +263009,7 @@
         {
           "kind": "def",
           "name": "reachesChainConstructor",
-          "line": 392,
+          "line": 374,
           "called": [
             "any",
             "bind",
@@ -263035,7 +263023,7 @@
         {
           "kind": "def",
           "name": "recordConstructingStoreCandidates",
-          "line": 413,
+          "line": 395,
           "called": [
             "constructsChainRecord",
             "isAuxiliary",
@@ -263050,25 +263038,25 @@
         {
           "kind": "inductive",
           "name": "ChainDiscipline",
-          "line": 431,
+          "line": 413,
           "called": []
         },
         {
           "kind": "def",
           "name": "isChainForm",
-          "line": 457,
+          "line": 439,
           "called": []
         },
         {
           "kind": "def",
           "name": "conclusionOf",
-          "line": 463,
+          "line": 445,
           "called": []
         },
         {
           "kind": "def",
           "name": "isPredicate",
-          "line": 470,
+          "line": 452,
           "called": [
             "conclusionOf",
             "none",
@@ -263078,7 +263066,7 @@
         {
           "kind": "def",
           "name": "isChainPredicate",
-          "line": 481,
+          "line": 463,
           "called": [
             "isChainForm",
             "isPredicate"
@@ -263087,7 +263075,7 @@
         {
           "kind": "def",
           "name": "resultViolations",
-          "line": 490,
+          "line": 472,
           "called": [
             "any",
             "conclusionOf",
@@ -263100,7 +263088,7 @@
         {
           "kind": "def",
           "name": "chainWriteRegistry",
-          "line": 523,
+          "line": 505,
           "called": [
             "ChainDiscipline",
             "clearReplyObjectCaller",
@@ -263136,7 +263124,7 @@
         {
           "kind": "def",
           "name": "halfStepResolves",
-          "line": 599,
+          "line": 581,
           "called": [
             "ChainDiscipline",
             "length",
@@ -263146,7 +263134,7 @@
         {
           "kind": "def",
           "name": "disciplineViolations",
-          "line": 615,
+          "line": 597,
           "called": [
             "ChainDiscipline",
             "covers",
@@ -263160,7 +263148,7 @@
         {
           "kind": "def",
           "name": "reconciliationViolations",
-          "line": 655,
+          "line": 637,
           "called": [
             "Reply",
             "SchedContext",
@@ -263176,7 +263164,7 @@
         {
           "kind": "def",
           "name": "censusWitnessBareConsume",
-          "line": 678,
+          "line": 660,
           "called": [
             "Kernel",
             "ReplyId",
@@ -263187,7 +263175,7 @@
         {
           "kind": "def",
           "name": "censusWitnessDirectLinkWrite",
-          "line": 689,
+          "line": 671,
           "called": [
             "Kernel",
             "ReplyId",
@@ -263201,7 +263189,7 @@
         {
           "kind": "def",
           "name": "censusWitnessSplitHelper",
-          "line": 699,
+          "line": 681,
           "called": [
             "Reply",
             "none"
@@ -263210,7 +263198,7 @@
         {
           "kind": "def",
           "name": "censusWitnessSplitWriter",
-          "line": 706,
+          "line": 688,
           "called": [
             "Kernel",
             "ReplyId",
@@ -263225,7 +263213,7 @@
         {
           "kind": "def",
           "name": "censusWitnessDelegatedStoreHelper",
-          "line": 719,
+          "line": 701,
           "called": [
             "Kernel",
             "KernelObject",
@@ -263236,7 +263224,7 @@
         {
           "kind": "def",
           "name": "censusWitnessDelegatedStoreWriter",
-          "line": 723,
+          "line": 705,
           "called": [
             "Kernel",
             "ReplyId",
@@ -263250,7 +263238,21 @@
         {
           "kind": "def",
           "name": "eq_censusWitnessUserNamed",
-          "line": 736,
+          "line": 717,
+          "called": [
+            "Kernel",
+            "ReplyId",
+            "getReply",
+            "none",
+            "st",
+            "storeObject",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "eq_1",
+          "line": 732,
           "called": [
             "Kernel",
             "ReplyId",
@@ -263264,7 +263266,7 @@
         {
           "kind": "def",
           "name": "censusWitnessNoWrite",
-          "line": 744,
+          "line": 739,
           "called": [
             "Reply",
             "ReplyId",
@@ -263276,20 +263278,22 @@
             "censusWitnessSplitHelper",
             "censusWitnessSplitWriter",
             "chainNeutralConstructors",
+            "chainWriteFrontier",
             "chainWritePrimitives",
             "chainWriteRegistry",
             "contains",
+            "count",
             "directWriteCandidates",
             "disciplineViolations",
             "donateSchedContext",
             "donateSchedContext_preserves_donationChainWellFormed",
+            "eq_1",
             "eq_censusWitnessUserNamed",
             "filter",
             "getReply",
             "halfStepResolves",
             "isAuxiliary",
             "isEmpty",
-            "isGeneratedComponent",
             "length",
             "of",
             "primitiveCoverageViolations",
@@ -263303,6 +263307,7 @@
             "store",
             "storeDonationHeadClear",
             "storeDonationHeadPop",
+            "toList",
             "usesDirectly"
           ]
         }

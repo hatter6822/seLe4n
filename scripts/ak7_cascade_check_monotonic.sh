@@ -360,12 +360,57 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9' unchanged
   }
   st_inconsistent_case
 
+  # ---- presence cases: a metric that was not measured -------------------
+  #
+  # The mutation here is a DELETION, deliberately, and it is the one shape a
+  # value comparison structurally cannot see: `read_metric` answers 0 for an
+  # absent key, so every direction this gate checks -- drop, grow, the
+  # total/inventory reconciliation, and the zero floor -- reads a deleted
+  # measurement as a passing value.  A token-preserving mutation cannot
+  # exhibit that, because the defect IS the token's absence.
+  #
+  # `<name> <sed-program applied to the current capture>`; every case expects
+  # rejection, since there is no legitimate capture missing a metric the gate
+  # is asked to compare.
+  st_presence_case() {
+    local name="$1" program="$2"
+    local cur="$st_tmp/presence_current.txt"
+    cp "$st_base" "$cur"
+    sed -i "$program" "$cur"
+    if diff -q "$st_base" "$cur" >/dev/null; then
+      echo "  SELF-TEST BROKEN: case '$name' is inert (mutation changed nothing)" >&2
+      st_failed=1
+      return
+    fi
+    local status=0
+    STORE_READER_BASELINE_FILE="$st_base" STORE_READER_SELFTEST_CURRENT="$cur" \
+      bash "$0" --internal-compare >/dev/null 2>&1 || status=$?
+    if (( status == 0 )); then
+      echo "  SELF-TEST FAIL: '$name' should have been rejected but passed" >&2
+      st_failed=1
+    else
+      echo "  OK   self-test '$name' (fail)"
+    fi
+  }
+
+  # The reported shape: the census invocation drops out, so the enforced zero
+  # is satisfied by there being nothing to enforce it on.
+  st_presence_case "a zero-floor metric the capture never emits" '/^STORE_READ_CODE=/d'
+  # Its two siblings, which rode on the same default.
+  st_presence_case "SORRY_COUNT absent from the capture" '/^SORRY_COUNT=/d'
+  # A should-drop metric absent reads as `0 <= baseline`, which passes.
+  st_presence_case "a should-drop metric absent from the capture" '/^RAW_MATCH_TCB=/d'
+  # Two emissions: `read_metric`'s `head -1` would silently discard the second,
+  # so the capture says two things and the gate reads one.
+  st_presence_case "a metric emitted twice" 's/^STORE_READ_CODE=0$/STORE_READ_CODE=0\nSTORE_READ_CODE=7/'
+
   if (( st_failed != 0 )); then
     echo "[ak7-monotonicity] Self-test FAILED." >&2
     exit 1
   fi
-  echo "[ak7-monotonicity] Self-test passed (10 cases: 6 inventory mutations with"
-  echo "                   every scalar held fixed, 3 census mutations, 1 inconsistent capture)."
+  echo "[ak7-monotonicity] Self-test passed (14 cases: 6 inventory mutations with"
+  echo "                   every scalar held fixed, 3 census mutations, 1 inconsistent"
+  echo "                   capture, 4 absent-or-duplicated metrics)."
   exit 0
 fi
 
@@ -396,6 +441,58 @@ read_metric() {
   else
     echo "$v"
   fi
+}
+
+# **A missing metric is not a zero, and `read_metric` cannot say so.**
+#
+# `read_metric` answers `0` for a key the capture does not contain, and that
+# default is the fail-OPEN direction for every comparison this gate makes:
+# a should-drop metric passes (`0 <= baseline`), a should-grow metric passes
+# against a missing baseline (`current >= 0`), the total/inventory
+# reconciliation passes (both sides read `0`), and a ZERO_METRICS entry passes
+# outright -- so **deleting the measurement satisfies the prohibition**.  The
+# census invocation dropping out of `ak7_cascade_baseline.sh`, a renamed key,
+# or a truncated capture all produce exactly that, and the gate prints
+# `OK   STORE_READ_CODE  0` while measuring nothing.  `SORRY_COUNT` and
+# `AXIOM_COUNT` -- this project's two headline zero claims -- rode on the same
+# default.
+#
+# That is this file's own rule, unswept onto itself: *a scanner's default
+# branch is a decision -- refuse what you cannot read*, and a scanner that
+# builds a set of REQUIREMENTS fails closed by refusing unreadable input,
+# because a requirement it drops is a check nobody runs.
+#
+# So presence is asserted before value is compared, for every metric in every
+# capture.  Exactly one emitted line: zero is a deleted measurement, and two
+# is a capture whose second value `read_metric`'s `head -1` would silently
+# discard.
+metric_occurrences() {
+  local key="$1" file="$2"
+  grep -c "^${key}=" "$file" 2>/dev/null || true
+}
+
+# Emits a diagnostic and returns 1 unless `<key>` appears exactly once in
+# `<file>`.  Callers treat a non-zero return as a GATE DEFECT and skip the
+# comparison, since comparing a value that was never measured is what this
+# guard exists to stop.
+require_metric() {
+  local key="$1" file="$2" label="$3" n
+  n=$(metric_occurrences "$key" "$file")
+  if (( n == 1 )); then
+    return 0
+  fi
+  if (( n == 0 )); then
+    echo "  GATE DEFECT: ${label} capture emits no \`${key}=\` line" >&2
+    echo "    A metric that is not measured is not zero.  Re-run" >&2
+    echo "    \`bash scripts/ak7_cascade_baseline.sh\` and check that the" >&2
+    echo "    census producing ${key} still runs; do not treat its absence" >&2
+    echo "    as a passing value." >&2
+  else
+    echo "  GATE DEFECT: ${label} capture emits ${n} \`${key}=\` lines; exactly one is required" >&2
+    echo "    \`read_metric\` reads the first and discards the rest, so a" >&2
+    echo "    second value would be invisible." >&2
+  fi
+  return 1
 }
 
 # (metric, direction) pairs: direction is "drop" or "grow".
@@ -469,6 +566,11 @@ echo "[ak7-monotonicity] Checking AK7 cascade metrics against $BASELINE_FILE"
 for entry in "${METRICS[@]}"; do
   metric="${entry%:*}"
   direction="${entry##*:}"
+  if ! require_metric "$metric" "$BASELINE_FILE" "baseline" \
+     || ! require_metric "$metric" "$CURRENT_FILE" "current"; then
+    failed=1
+    continue
+  fi
   baseline=$(read_metric "$metric" "$BASELINE_FILE")
   current=$(read_metric "$metric" "$CURRENT_FILE")
   case "$direction" in
@@ -585,6 +687,10 @@ site_sum() {
 for file_label in "baseline:$BASELINE_FILE" "current:$CURRENT_FILE"; do
   label="${file_label%%:*}"
   file="${file_label#*:}"
+  if ! require_metric "STORE_READ_CODE" "$file" "$label"; then
+    failed=1
+    continue
+  fi
   declared=$(read_metric "STORE_READ_CODE" "$file")
   summed=$(site_sum "STORE_READ_CODE_SITE" "$file")
   if (( declared != summed )); then
@@ -597,6 +703,12 @@ for file_label in "baseline:$BASELINE_FILE" "current:$CURRENT_FILE"; do
 done
 
 for metric in "${ZERO_METRICS[@]}"; do
+  # Presence first: at a zero floor the difference between "measured, none"
+  # and "not measured" is the entire content of the claim.
+  if ! require_metric "$metric" "$CURRENT_FILE" "current"; then
+    failed=1
+    continue
+  fi
   current=$(read_metric "$metric" "$CURRENT_FILE")
   if (( current > 0 )); then
     echo "  REGRESSION (should-stay-zero): $metric  current=$current" >&2

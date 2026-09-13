@@ -1,3 +1,96 @@
+## v0.35.17 — the scanner's default branch, and a stated frontier nothing printed
+
+Seven corrections: one found by running a gate and reading its output, six from
+PR #895's fourth review round.  Five of the six are the **same class one level
+over** from rounds 2 and 3 — those policed a gate's *predicate* and then its
+*domain*; these are its **default branch**, which is a domain written as an
+omission.  A scanner that silently answers when it cannot read its input has
+decided something, and in every instance below it decided the fail-open way.
+
+**A metric that is not measured is not zero.**  `ak7_cascade_check_monotonic.sh`
+reads each metric with a helper that answers `0` for a key the capture does not
+contain, and that default is fail-open for **every** comparison the gate makes:
+a should-drop metric passes (`0 <= baseline`), a should-grow metric passes
+against a missing baseline, the total/inventory reconciliation passes (both
+sides read `0`), and a `ZERO_METRICS` entry passes outright.  So the census
+invocation dropping out of `ak7_cascade_baseline.sh`, a renamed key or a
+truncated capture would each have satisfied the enforced zero by **deleting the
+measurement**, with the gate printing `OK   STORE_READ_CODE  0`.  `SORRY_COUNT`
+and `AXIOM_COUNT` — this project's two headline zero claims — rode on the same
+default.  Presence is now asserted before value is compared, for every metric in
+every capture: exactly one emitted line, since zero is a deleted measurement and
+two is a capture whose second value the reader would silently discard.  Four
+self-test cases, all **deletions**, deliberately: a token-preserving mutation
+structurally cannot exhibit this, because the defect *is* the token's absence.
+
+**A field default is executable.**  `structure` and `class` sat in the store-read
+census's `PROP_KINDS`, so every line of their bodies was specification — but a
+field may carry a default, and a default is a term the elaborator compiles.  A
+raw store read there was filed `SPEC` and walked around the enforced
+`STORE_READ_CODE=0`.  The split is now at the field's own `:=`, so field *types*
+stay spec (the invariant bundles in this tree are structures whose fields are
+propositions about the store) while defaults are code.  Two corrections inside
+that fix, both caught by measuring rather than reading: bracket depth must carry
+**across lines**, or the second line of a multi-line record literal in a field's
+type reads as a default opening — *a nested construct is not a sibling*, inside
+the remedy for a different defect — and a `Prop`-sorted structure has no
+executable content at all, so it stays spec whole.  The tree is still at
+`STORE_READ_CODE=0`, `STORE_READ_SPEC=4637`, both byte-identical.
+
+**Lean has two arrow spellings and the census knew one.**  `_returns_prop` split
+on `→` only, so `def p : SystemState -> Prop` read as returning something
+executable and a raw read in that predicate was classified `CODE` — the
+fail-*strict* direction, rejecting legitimate specification code against an
+enforced zero.
+
+**Inner rustdoc documents the enclosing module.**  `//!`, `/*!` and
+`#![doc = …]` attach to the item that *contains* them; the unsafe-justification
+gate accepted all three on an `unsafe fn`, so a module opening `//! # Safety`
+justified the first function below it while that function published no contract
+to its callers.  Outer rustdoc only now (`///`, `/**`, `#[doc = …]`), with
+`////` and `/***` refused for the reason rather than by accident — the Rust
+reference excludes a fourth `/` and a third `*`, and the `/***` form *was* being
+accepted.
+
+**A raw identifier is not the keyword.**  `r#unsafe` names an ordinary item
+called `unsafe`; the keyword scan matched inside it, no known form accepted the
+position, and the gate **failed the file**.  The same relation had been swept
+onto the declaration pattern beside it in `v0.35.13` and not onto the keyword
+scan — this project's sweep rule failing in the way it describes.
+
+**And a narrower resemblance is still not a relation.**  `v0.35.15` answered "a
+prefix list filters user names" by requiring the prefix plus a **numeral** —
+and `eq_1` is as legal a definition name as `eq_clearReply`, so a writer named
+that way was still filtered out of both derivations before its constants were
+read.  The exit is not a sixth narrowing but the environment: `Meta.isMatcherCore`
+is pure — which the previous cut's own comment said it was not — and every one of
+the 5185 `eq_N`/`proof_N` constants in this environment is `Prop`-typed and so
+excluded structurally.  With those two facts the whole name list is **redundant**,
+measured at **zero** definition-shaped non-`Prop` writers kept only by a name
+test, so `isGeneratedComponent` was deleted rather than narrowed a third time.
+`isAuxiliary` is now environment-derived and nothing else.  A definition named
+exactly `eq_1` is a permanent witness, and the matcher check is derived — every
+constant the environment reports as a matcher must be recognised — rather than
+pinned on one hand-picked name that would age out with its parent.
+
+**And the frontier that was stated and never printed.**  `chainWriteFrontier`
+was written in `v0.35.15`, given a docstring saying it "says so in the census's
+own output", cited in those terms in that cut's prose — and referenced by
+nothing.  Lean does not lint an unused top-level `def`, so the census went on
+printing the bare site count while the scope qualifying it lived only in
+comments.  A count with no scope beside it reads as a measurement, which is the
+defect the frontier exists to prevent; that cut shipped it inside its own remedy
+for it.  It prints now, and the claim is structural rather than restated: the
+summary is built as a value and **checked to carry the frontier before it is
+logged**, so a reword that drops it fails elaboration.
+
+Every fix is mutation-verified in both directions on the live tree.  No
+behavioural change anywhere: 17 write sites (8 stating, 3 mirroring),
+`STORE_READ_CODE=0`, 126 of 126 unsafe sites justified.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md (WS-RM, the write census)
+
+
 ## v0.35.16 — WS-HP registered: the head-driven donation pop
 
 `v0.35.14` registered the donation-accounting divergence and corrected the

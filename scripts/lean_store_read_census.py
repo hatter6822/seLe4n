@@ -107,8 +107,27 @@ DECL = re.compile(
     r"(theorem|lemma|def|abbrev|instance|example|structure|inductive|class)\b\s+([^\s:({\[]*)"
 )
 
-# Declaration keywords whose contents are propositions whatever their signature.
-PROP_KINDS = {"theorem", "lemma", "example", "structure", "inductive", "class"}
+# Declaration keywords whose contents are propositions or types whatever their
+# signature: a `theorem`/`lemma`/`example` body is a proof, and an `inductive`
+# body is its constructors' argument types.
+PROP_KINDS = {"theorem", "lemma", "example", "inductive"}
+
+# **A field default is executable, and a structure is not wholly a proposition.**
+# `structure` and `class` used to sit in `PROP_KINDS`, so every line of their
+# bodies was spec -- but a field may carry a DEFAULT, and a default is a term
+# the elaborator compiles and the runtime evaluates:
+#
+#     structure Cache where
+#       cached : Option KernelObject := st.objects[oid]?   -- executes
+#
+# So a raw store read in a default was filed `SPEC` and walked around the
+# enforced `STORE_READ_CODE = 0` floor.  That is this file's own "a recognised
+# set is not a derived set" once more: the *kind* of a declaration was taken to
+# decide the nature of every line inside it, when the two halves of a field line
+# have different natures.  A field's TYPE stays spec -- the invariant bundles in
+# this tree are structures whose fields are propositions about the store, and
+# reading those as transitions would be reading a hypothesis as code.
+FIELD_KINDS = {"structure", "class"}
 
 # **A binder is not the result.**  `PROP_RESULT` used to be `:\s*Prop\b` over the
 # whole signature, so `def step (proof : Prop) (st : SystemState) : SystemState`
@@ -141,6 +160,32 @@ def _result_type(head: str) -> str:
     return ""
 
 
+def _top_level_assign(line: str, depth: int = 0):
+    """`(index of the depth-zero `:=` on this line or None, depth after it)`.
+
+    A field's `optParam` default lives inside its binder (`(n : Nat := 0)`) and
+    a record literal's fields inside its braces, so both sit at depth > 0; only
+    a depth-zero `:=` opens the field's own default value.
+
+    **Depth carries across lines.**  Resetting it per line reads the second line
+    of a multi-line record literal as though its brace had never been opened, so
+    `caps := …` inside a field's TYPE looked like a default opening — which is
+    this file's own "a nested construct is not a sibling" inside the fix for a
+    different defect.  The caller threads the returned depth.
+    """
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if ch in _OPENERS:
+            depth += 1
+        elif ch in _CLOSERS:
+            depth -= 1
+        elif depth == 0 and line.startswith(":=", i):
+            return i, depth
+        i += 1
+    return None, depth
+
+
 def _returns_prop(head: str) -> bool:
     """Does this signature's terminal result type return `Prop`?"""
     result = _result_type(head)
@@ -158,6 +203,15 @@ def _returns_prop(head: str) -> bool:
             depth -= 1
         elif depth == 0 and result.startswith("→", i):
             parts.append(result[last:i])
+            last = i + 1
+        elif depth == 0 and result.startswith("->", i):
+            # Lean accepts both arrow spellings and this tree uses both, so a
+            # predicate written `SystemState -> Prop` must not read as a
+            # declaration returning something executable -- that direction
+            # fails STRICT, rejecting legitimate specification code against an
+            # enforced zero.
+            parts.append(result[last:i])
+            i += 1
             last = i + 1
         i += 1
     parts.append(result[last:])
@@ -206,11 +260,13 @@ def classify(path: Path):
     """
     lines = path.read_text().splitlines()
     decl, kind, signature, sig_open = "<file scope>", "<none>", "", False
+    in_default, body_depth = False, 0
     for line in lines:
         m = DECL.match(line)
         if m:
             kind, decl = m.group(1), m.group(2) or "<anonymous>"
             signature, sig_open = line, True
+            in_default, body_depth = False, 0
         sig_part, body_part = line, ""
         if sig_open:
             # **Two ways a signature ends, because Lean has two.**  `:=` opens a
@@ -235,13 +291,36 @@ def classify(path: Path):
         else:
             sig_part, body_part = "", line
         head = _signature_head(signature)
-        is_prop_decl = kind in PROP_KINDS or _returns_prop(head)
+        is_prop_decl = kind in PROP_KINDS or kind in FIELD_KINDS or _returns_prop(head)
+        # Split a structure/class body line into its field-type half and its
+        # default half.  Once a default has opened it stays open for the rest of
+        # the declaration: a default may span lines, there is no terminator a
+        # line scanner can see, and over-approximating CODE is the direction a
+        # zero floor must fail in.  Measured rather than assumed -- the tree is
+        # still at `STORE_READ_CODE=0` under this reading.
+        body_spec, body_code = (body_part, "") if is_prop_decl else ("", body_part)
+        # A `Prop`-sorted structure has no executable content: every field is a
+        # proof and so is every default, so it is spec whole and the split below
+        # does not apply to it.
+        if kind in FIELD_KINDS and body_part and not _returns_prop(head):
+            if in_default:
+                body_spec, body_code = "", body_part
+            else:
+                cut, body_depth = _top_level_assign(body_part, body_depth)
+                if cut is None:
+                    body_spec, body_code = body_part, ""
+                else:
+                    body_spec, body_code = body_part[:cut], body_part[cut + 2:]
+                    in_default = True
         n_sig = len(READ.findall(sig_part))
-        n_body = len(READ.findall(body_part))
+        n_spec = len(READ.findall(body_spec))
+        n_code = len(READ.findall(body_code))
         if n_sig:
             yield decl, True, n_sig          # a binder or result type: a proposition
-        if n_body:
-            yield decl, is_prop_decl, n_body
+        if n_spec:
+            yield decl, True, n_spec
+        if n_code:
+            yield decl, False, n_code
 
 
 # The definitions whose body IS the raw read, which is what makes each of them
@@ -343,6 +422,42 @@ theorem frame (st : SystemState) : st.objects[oid]? = st.objects[oid]? := rfl
 structure Framed (st st' : SystemState) : Prop where
   agree : ∀ oid, st'.objects[oid]? = st.objects[oid]?
 """, {}, {("f.lean", "Framed"): 2}),
+    # ...and a DATA-bearing structure's field DEFAULT is executable: the
+    # elaborator compiles it and the runtime evaluates it, so a raw read there
+    # is a transition reading the store.  Token-preserving against
+    # `structure_read` above: same keyword, same read, moved from a field's
+    # TYPE to a field's DEFAULT.
+    "structure_default_is_code": ("""
+structure Cache (st : SystemState) (oid : ObjId) where
+  cached : Option KernelObject := st.objects[oid]?
+""", {("f.lean", "Cache"): 1}, {}),
+    # ...while a field's TYPE in the same data-bearing structure stays spec, so
+    # the split is at the `:=` rather than at the keyword.
+    "structure_field_type_is_spec": ("""
+structure Witness (st : SystemState) (oid : ObjId) where
+  present : st.objects[oid]? = none
+  tag : Nat := 0
+""", {}, {("f.lean", "Witness"): 1}),
+    # A NESTED construct is not a sibling: the `:=` of a record literal inside a
+    # field's TYPE sits at brace depth one, and the brace may have been opened on
+    # an earlier line.  A per-line depth reset reads the continuation as a
+    # default opening and files everything after it as code.
+    "structure_multiline_literal": ("""
+structure Bundle (st : SystemState) (oid : ObjId) : Prop where
+  shape : deliver
+      { registers := #[],
+        caps := #[] } st = st
+  read : st.objects[oid]? = none
+""", {}, {("f.lean", "Bundle"): 1}),
+    # THE ASCII ARROW.  Lean accepts `->` for `→` and this tree uses both, so a
+    # predicate spelled the ASCII way must not read as executable -- that
+    # direction fails STRICT, rejecting legitimate specification code against an
+    # enforced zero.  Token-preserving against `prop_def`: same declaration, same
+    # read, the arrow respelled.
+    "ascii_arrow_prop": ("""
+def holds : SystemState -> ObjId -> Prop := fun st oid =>
+  st.objects[oid]? = none
+""", {}, {("f.lean", "holds"): 1}),
     # Two reads on ONE line count twice: the census counts occurrences.
     "two_per_line": ("""
 def both (st st' : SystemState) : Bool :=
