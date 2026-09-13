@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.30.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.31.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2103,6 +2103,46 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   hand-kept figure beside a derivation drifts on contact — the liveness gate's
   self-test printed `len(_CASES) + 3`, already wrong by two; it counts the checks
   that ran.
+
+  **And an approximation is not the oracle — check whether the exact answer is
+  already in reach** (PR #895 review round 18).  Three findings, all three in
+  code this PR wrote, and all three the same thing: a gate deciding a question
+  about a *language* with a pattern written by hand.  Round 14 named that class
+  and registered it as debt on the reasoning that the remedy is "a reconciliation
+  against the real tools — work, not wording".  Round 18 is the evidence that the
+  deferral was partly wrong: **two of the three had an exact oracle in the
+  standard library the whole time**, and the reason nobody used it is that nobody
+  asked whether one existed.
+
+  The identifier case is the clearest.  `[^\W\d]` is Python's *word* class and
+  the question was `XID_Start`; rustc accepts `pub unsafe fn \u2118()` (Sm),
+  `\u212e()` (So) and `\u1885()` (Mn), and `\w` matches none of them, so a
+  declaration spelled with one raised **no obligation at all** and then failed
+  its file as an unrecognised form.  Round 12 had already widened this class once
+  for the same reason, which is the signal: *a class that needs widening a second
+  time is not a class, it is a table someone is guessing at.*  **Python's
+  identifier grammar is UAX#31 — the same one Rust uses** — so `str.isidentifier()`
+  answers it, and the agreement is measured rather than assumed: over 28
+  codepoints spanning every plausible category, 27 agree and the sole divergence
+  is a lone `_`, which Python accepts as a whole identifier and Rust reserves as
+  the wildcard.  Stating that divergence at `is_rust_identifier` is what stops
+  the oracle from being trusted one step further than it was measured.
+
+  Two corollaries.  **The reach of a fix is the question, not the finding**: the
+  reported site was one gate's declaration scanner, and the same question was
+  being asked by seven hand-written classes across five files — so the remedy is
+  round 9's, not a seventh patch.  One fragment derived from the oracle, and
+  `bare_ident_literals` refusing a new ASCII class in any gate source, with
+  `NON_RUST_IDENT_SOURCES` naming the files that legitimately ask a *different*
+  language's question (a POSIX shell variable, a GAS label and a Lean identifier
+  are all ASCII by their own grammars) and reconciled in both directions, so a
+  stale classification fails as loudly as an unclassified pattern.  And **a
+  measurement can carry the defect it is sizing**: the first scan for rebound
+  import aliases reported three, all false, because it counted
+  `os.environ["X"] = "y"` as rebinding `os` — a `Subscript` target mutates an
+  object and binds no name.  The real count is zero, which is what makes the
+  fail-closed fix free; had the false three been believed, the fix would have
+  been weakened to accommodate them.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

@@ -44,6 +44,10 @@ import symtable
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import rust_code_view  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent
 
 #: The anchor files whose `.py` targets this gate validates.
@@ -56,7 +60,12 @@ _ANCHOR = re.compile(
     r"(?:'(?P<sq>[^']*)'|\"(?P<dq>[^\"]*)\")\s+(?P<path>\S+\.py)\s*$",
     re.M)
 
-_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+#: A candidate identifier inside an anchor pattern.
+#:
+#: Python's identifier grammar is UAX#31, the same one Rust uses, and an
+#: ASCII class UNDER-matches it -- which here is fail-**open**, since a name
+#: the scan never extracts is a pin nobody checks (PR #895 review round 18).
+_IDENT = re.compile(rust_code_view.ident())
 
 
 def anchors_in(text: str) -> list[tuple[str, str]]:
@@ -98,6 +107,96 @@ def module_scope_facts(source: str) -> "tuple[set[str], set[str]]":
     return bound, reads
 
 
+def _binding_statement_names(node) -> "set[str]":
+    """Names `node` binds, EXCLUDING the imports (which bind deliberately).
+
+    A `Subscript` or `Attribute` target mutates an object and binds no name --
+    `os.environ["X"] = "y"` does not rebind `os` -- so those are skipped.  That
+    distinction is not cosmetic: counting them reported three rebindings in this
+    workspace that do not exist, which is the defect class this gate is about,
+    inside the measurement taken to size it.
+    """
+    def stored(target) -> "set[str]":
+        if isinstance(target, ast.Name):
+            return {target.id}
+        if isinstance(target, (ast.Tuple, ast.List)):
+            return {n for e in target.elts for n in stored(e)}
+        if isinstance(target, ast.Starred):
+            return stored(target.value)
+        return set()
+
+    if isinstance(node, ast.Assign):
+        return {n for t in node.targets for n in stored(t)}
+    if isinstance(node, (ast.AugAssign, ast.AnnAssign, ast.For, ast.AsyncFor)):
+        return stored(node.target)
+    if isinstance(node, ast.NamedExpr):
+        return stored(node.target)
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return {node.name}
+    if isinstance(node, ast.ExceptHandler):
+        return {node.name} if node.name else set()
+    if isinstance(node, (ast.With, ast.AsyncWith)):
+        return {n for item in node.items if item.optional_vars
+                for n in stored(item.optional_vars)}
+    if isinstance(node, (ast.Lambda, ast.FunctionDef, ast.AsyncFunctionDef)):
+        return set()
+    return set()
+
+
+def rebound_import_names(tree) -> "set[str]":
+    """Import-bound names this module ALSO binds some other way.
+
+    **PR #895 review round 18.**  `module_import_facts` keyed attribute reads by
+    the receiver's *spelling*, so
+
+        import subject
+        subject = object()
+        print(subject.A)
+
+    counted as a read of the target's `A` and kept a dead anchor green.  That is
+    fail-**open** in the one direction this gate exists to close: the set it
+    builds is a set of *readers*, and a reader it invents keeps a pin alive that
+    names nothing.
+
+    Whether a given occurrence still refers to the module is a dataflow question
+    -- the import may come before or after the rebinding, on one branch or both
+    -- and no scanner decides it.  So the name is refused: the gate stops
+    counting reads through it AND reports the form, rather than reading past it.
+    That is this project's rule for a scanner that cannot decide, and it costs
+    nothing today -- no tracked module rebinds an import alias -- while refusing
+    the first one that does.
+
+    Function parameters and comprehension targets are included, because a read
+    inside such a scope resolves to the local and `attribute_reads` does not
+    record which scope it came from.  Over-refusing is the safe direction here:
+    it fails the gate visibly rather than passing silently.
+    """
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imported.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name != "*":
+                    imported.add(alias.asname or alias.name)
+    if not imported:
+        return set()
+    rebound: set[str] = set()
+    for node in ast.walk(tree):
+        rebound |= _binding_statement_names(node) & imported
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            args = node.args
+            for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs,
+                        args.vararg, args.kwarg):
+                if arg is not None and arg.arg in imported:
+                    rebound.add(arg.arg)
+        elif isinstance(node, (ast.comprehension,)):
+            rebound |= _binding_statement_names(ast.Assign(
+                targets=[node.target], value=ast.Constant(value=None))) & imported
+    return rebound
+
+
 def module_import_facts(source: str):
     """How a module names OTHER modules, and which attributes it reads on them.
 
@@ -117,6 +216,7 @@ def module_import_facts(source: str):
     from_imports: dict[str, tuple[str, str]] = {}
     attribute_reads: dict[str, set[str]] = {}
     unresolved: list[str] = []
+    rebound = rebound_import_names(tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -138,6 +238,20 @@ def module_import_facts(source: str):
         elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
             if isinstance(node.value, ast.Name):
                 attribute_reads.setdefault(node.value.id, set()).add(node.attr)
+    # A name bound both by an import and by something else names the module at
+    # some occurrences and not at others, and which is which is a dataflow
+    # question (PR #895 review round 18).  Drop it from BOTH resolution routes
+    # and report the form: the read stops counting, so the gate cannot be kept
+    # green by a rebound receiver, and the form names the stem so an anchor on
+    # that target fails visibly rather than the refusal being silent.
+    for local in sorted(rebound):
+        stem = module_aliases.pop(local, None)
+        if stem is not None:
+            unresolved.append(f"rebound import alias {local} for {stem}")
+        origin = from_imports.pop(local, None)
+        if origin is not None:
+            unresolved.append(
+                f"rebound `from` import {local} of {origin[1]} from {origin[0]}")
     return module_aliases, from_imports, attribute_reads, unresolved
 
 
@@ -267,6 +381,29 @@ _CASES = [
     # An attribute of that name on something that is not the target module.
     ("an attribute of the same name on another receiver is not a read",
      "A = 1\n", "import os\n\n\ndef g():\n    return os.A\n", "^A", True),
+    # --- a receiver that no longer names the module (round 18) ------------
+    # Each KEEPS the import and the attribute read and changes only whether the
+    # receiver still denotes the module, which is the mutation that finds this
+    # class: a case that deletes the import passes under the superseded scan.
+    ("a read through a REBOUND module alias is not a read",
+     "A = 1\n",
+     "import subject\n\nsubject = object()\n\n\ndef g():\n    return subject.A\n",
+     "^A", True),
+    ("a read through a REBOUND `from` import is not a read",
+     "A = 1\n",
+     "from subject import A\n\nA = 5\n\n\ndef g():\n    return A\n",
+     "^A", True),
+    ("a parameter shadowing the alias refuses the receiver",
+     "A = 1\n",
+     "import subject\n\n\ndef g(subject):\n    return subject.A\n",
+     "^A", True),
+    # ...and the control that keeps the fix from degrading into "an alias with
+    # any store nearby never resolves": a subscript or attribute target mutates
+    # an object and rebinds no name.
+    ("a subscript store on the alias is not a rebinding",
+     "A = 1\n",
+     "import subject\n\nsubject.table['k'] = 1\n\n\ndef g():\n    return subject.A\n",
+     "^A", False),
     # --- the domain, not the predicate -----------------------------------
     ("a name the module does not bind draws no verdict",
      "A = 1\ndef f():\n    return A\n", "", "some prose the file mentions", False),

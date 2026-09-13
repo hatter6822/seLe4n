@@ -1,3 +1,64 @@
+## v0.35.31 — Round 18: the return type parsed, the receiver resolved, and the identifier oracle
+
+**PR #895 review round 18.**  Three findings, all three in code this PR wrote,
+and all three the *same* thing: a gate approximating a language front-end by
+hand.  That is the debt row round 14 registered — and what round 18 shows is
+that the deferral was partly wrong, because **two of the three questions had an
+exact oracle in the standard library the whole time** and nobody looked.
+
+**A semicolon inside a return type is not an item terminator** (`fn_bodies`).
+`fn f() -> [u8; 1] { … }` carries a `;` in an array type, so the scan read the
+function as a bodyless declaration and dropped it from the map: `enclosing_fn`
+then answered `<file scope>` for every offset inside it, which rejects a
+correctly allowlisted TLBI caller and attributes an `unsafe` block to module
+scope.  Measured on the tree: **2346 → 2382 bodies, thirty-six invisible**.  A
+sibling is worse than losing the body — `fn g() -> Foo<{ N }> { … }` carries a
+`{` in a const-generic argument, which was taken for the body's and recorded a
+span that is **not** the body.  The signature is walked with a depth counter
+over `(`, `[` and `<` now, `->` consumed as a unit, and only a depth-zero `;` or
+`{` decides; an unterminated signature yields no body, which is fail-closed
+because an offset the map cannot place inherits no exemption.  `build.rs` held
+**two** copies of the same defect, both routed through one new
+`fn_body_open_brace`.
+
+**A rebound name is not a receiver** (`check_anchor_symbol_liveness.py`).
+`import subject; subject = object(); print(subject.A)` counted as a read of the
+target's `A` and kept a dead anchor green — fail-open in the one direction that
+gate exists to close, since it builds a set of *readers* and an invented reader
+keeps a pin alive that names nothing.  Whether an occurrence still denotes the
+module is a dataflow question no scanner decides, so the name is **refused**:
+the read stops counting and the form is reported, naming the stem, so an anchor
+on that target fails visibly.  Swept onto the `from`-import sibling.  Measured:
+no tracked module rebinds an import alias, so it costs nothing today — and the
+first measurement said three did, because it counted `os.environ["X"] = "y"` as
+rebinding `os`, which is this very class inside the attempt to size it.
+
+**And an approximation is not the oracle.**  `[^\W\d]` — round 12's widening of
+the identifier class — is Python's *word* class, not `XID_Start`: rustc 1.94.1
+accepts `pub unsafe fn ℘()`, `℮()` and `ᢅ()` (Sm, So, Mn), and `\w` matches none
+of them, so such a declaration raised no obligation and then failed the file as
+an unrecognised form.  Widening a third time was the move that had already
+failed twice.  **Python's identifier grammar is UAX#31, the same one Rust uses**,
+so the class is derived from `str.isidentifier()` — measured against rustc over
+28 codepoints spanning every plausible category: **27 agree, and the sole
+divergence is a lone `_`**, which Python accepts as a whole identifier and Rust
+reserves as the wildcard.  That divergence cannot reach a *start*-character
+question (`_foo` is fine) and is stated where it can, in `is_rust_identifier`.
+
+Seven hand-written identifier classes were swept onto the shared fragment, and
+— as in round 9, whose keyword remedy this mirrors — the rule is now
+**enforced**: `bare_ident_literals` refuses a new ASCII class in any gate
+source, with `NON_RUST_IDENT_SOURCES` naming the five files that legitimately
+ask a different language's question and the grammar each is about, reconciled
+in both directions so a stale classification fails too.
+
+Every fix is mutation-verified against the **actual** pre-fix behaviour in both
+directions, including the round-17 state specifically: reverting to `[^\W\d]`
+fails on exactly round 18's three codepoints while round 12's `λ` still passes,
+so the fix is shown to widen rather than to replace.
+
+Refs: docs/REGISTERED_DEBT.md table C (hand-written language front-ends)
+
 ## v0.35.30 — PR #895 review round 17: resolved reads instead of a global union, the measured Safety-title set, and the case where clippy is the lenient one
 
 Two findings, **both in code written for round 16**, which makes five consecutive

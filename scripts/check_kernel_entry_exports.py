@@ -137,7 +137,7 @@ EXPECTED_UNRESOLVED: dict[str, str] = {
 #: disappear from the derived link requirements and Tier 1 would pass with no
 #: provider.
 EXTERN_FN = re.compile(
-    rust_code_view.keyword("fn") + r"\s+(?:r#)?([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+    rust_code_view.keyword("fn") + r"\s+(?:r#)?(" + rust_code_view.ident() + r")\s*\(")
 #: The symbol SM10.1's boot entry exports.  Only the link-level reconciliation
 #: reads it here — that the archive does not define it yet, and that
 #: `EXPECTED_UNRESOLVED` still says so.  What the entry must *do* is

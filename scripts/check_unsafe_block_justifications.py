@@ -108,18 +108,22 @@ KW_UNSAFE = rust_code_view.keyword("unsafe")
 KW_EXTERN = rust_code_view.keyword("extern")
 KW_FN = rust_code_view.keyword("fn")
 
-#: A Rust identifier's first character, Unicode-aware (PR #895 review round 12).
+#: A Rust identifier's first character, and a whole one.
 #:
-#: `pub unsafe fn λ() {}` compiles on stable, and an ASCII-only class made it
-#: **no site at all** — so the declaration's obligation was never raised, and
-#: `unrecognised_unsafe_forms` then failed the whole file even though the
-#: function carried a proper `# Safety` section.  Rust identifiers follow
-#: UAX#31: the start is `XID_Start` or `_`, which `[^\W\d]` is Python's
-#: Unicode-aware spelling of (a word character that is not a digit).  Widening
-#: the *site* scanner can only raise more obligations, which is the direction
-#: that fails closed.
-IDENT_START = r"[^\W\d]"
-IDENT = IDENT_START + r"\w*"
+#: **PR #895 review round 18.**  Round 12 widened this from ASCII to `[^\W\d]`
+#: after `pub unsafe fn \u03bb()` proved to be no site at all -- and `[^\W\d]`
+#: is Python's *word* class, not `XID_Start`.  The gap is live: rustc 1.94.1
+#: accepts `pub unsafe fn \u2118()`, `\u212e()` and `\u1885()` (measured), and
+#: `\w` matches none of the three, so a declaration spelled with one raised no
+#: obligation and then failed the file as an unrecognised form.
+#:
+#: Widening it a third time would be the same move that has now failed twice.
+#: The class is derived from CPython's own UAX#31 tables instead --
+#: `rust_code_view.ident()`, which is measured to agree with rustc -- and
+#: `rust_code_view.bare_ident_literals` refuses the next ASCII spelling written
+#: in a source that asks this question.
+IDENT_START = rust_code_view.ident_start()
+IDENT = rust_code_view.ident()
 
 UNSAFE_SITE = re.compile(
     KW_UNSAFE + r"\s*\{"                                       # a block
@@ -393,7 +397,7 @@ DOC_ATTR_OPEN = re.compile(rust_code_view.OUTER_ATTRIBUTE_OPEN
 #: scanner can DECIDE about it rather than skip it -- see `_doc_attribute_values`.
 DOC_ATTR_NONLITERAL = re.compile(
     rust_code_view.OUTER_ATTRIBUTE_OPEN
-    + r"\s*doc\s*=\s*(?P<value>[A-Za-z_][A-Za-z0-9_]*\s*!)")
+    + r"\s*doc\s*=\s*(?P<value>" + IDENT + r"\s*!)")
 #: `concat!(…)`, whose arguments this scanner can expand exactly when they are
 #: all string literals -- which is what rustdoc renders.
 CONCAT_OPEN = re.compile(r"\bconcat\s*!\s*\(")
@@ -1118,11 +1122,11 @@ def _same_line_prefix(raw: str, view: str, line_start: int, at: int,
                     depth -= 1
                     if depth == 0:
                         break
-            word = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*$", view[line_start:k])
+            word = re.search(r"(" + IDENT + r")\s*$", view[line_start:k])
             if depth == 0 and word and word.group(1) == "pub":
                 end = line_start + word.start(1)
                 continue
-        word = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*$", view[line_start:end])
+        word = re.search(r"(" + IDENT + r")\s*$", view[line_start:end])
         if word and word.group(1) in ITEM_MODIFIERS:
             end = line_start + word.start(1)
             continue

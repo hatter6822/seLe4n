@@ -419,13 +419,181 @@ def bare_keyword_literals() -> list[str]:
     return out
 
 
+#: Rust's identifier grammar is UAX#31, and CPython implements the same one.
+#:
+#: **PR #895 review round 18.**  `[A-Za-z_][A-Za-z0-9_]*` is ASCII and
+#: `[^\W\d]` -- round 12's widening -- is Python's *word* class, which is
+#: `L* | Nd | Mn | Mc | Pc`.  Neither is `XID_Start`, and the gap is not
+#: theoretical: `pub unsafe fn \u2118()` compiles on stable rustc (measured,
+#: 1.94.1), and so do `\u212e` (So) and `\u1885` (Mn), because `XID_Start`
+#: carries `Other_ID_Start` and the whole of `Mn`.  A declaration spelled with
+#: one was **no site at all** -- the obligation was never raised -- and the
+#: file was then refused outright as an unrecognised form.
+#:
+#: Round 12 widened this class once and round 18 found it still short, which is
+#: this project's own rule arriving at a character class: *the set of valid
+#: spellings that defeats a regex is unbounded while the set a gate has seen is
+#: finite*.  So the class is not widened a third time -- it is **derived from
+#: the oracle**.  Python's identifier grammar is `XID_Start | "_"` followed by
+#: `XID_Continue`, which is exactly Rust's, so `str.isidentifier()` answers the
+#: question the gates are asking and `str` is the front-end to hand it to.
+#:
+#: Measured rather than reasoned, against rustc 1.94.1 over a spread of 28
+#: codepoints covering every category that could plausibly start an identifier:
+#: **27 agree, and the sole divergence is a lone `_`**, which Python accepts as
+#: a complete identifier and Rust reserves as the wildcard pattern.  That
+#: divergence cannot reach these fragments, because they ask about a *start*
+#: character and `_` does start a Rust identifier (`_foo`); it would matter only
+#: to a whole-name test, which is why `is_rust_identifier` states it.
+_IDENT_START_RANGES: "list[tuple[int, int]] | None" = None
+_IDENT_CONTINUE_RANGES: "list[tuple[int, int]] | None" = None
+
+
+def _derive_ranges(accepts) -> list[tuple[int, int]]:
+    """Contiguous codepoint runs for which `accepts(chr(cp))` holds."""
+    runs: list[tuple[int, int]] = []
+    low: int | None = None
+    for code in range(0x110000):
+        if accepts(chr(code)):
+            if low is None:
+                low = code
+        elif low is not None:
+            runs.append((low, code - 1))
+            low = None
+    if low is not None:
+        runs.append((low, 0x10FFFF))
+    return runs
+
+
+def _class_of(runs: list[tuple[int, int]]) -> str:
+    parts = []
+    for low, high in runs:
+        if low == high:
+            parts.append(re.escape(chr(low)))
+        else:
+            parts.append(re.escape(chr(low)) + "-" + re.escape(chr(high)))
+    return "[" + "".join(parts) + "]"
+
+
+def ident_start() -> str:
+    """The regex class matching a character that may START a Rust identifier.
+
+    Built once from `str.isidentifier()` and cached.  Lazily, because
+    `rust_code_view` is imported by gates that never ask -- deriving 656 ranges
+    costs about a sixth of a second, which is worth paying only where it buys
+    an exact answer.
+    """
+    global _IDENT_START_RANGES
+    if _IDENT_START_RANGES is None:
+        _IDENT_START_RANGES = _derive_ranges(str.isidentifier)
+    return _class_of(_IDENT_START_RANGES)
+
+
+def ident_continue() -> str:
+    """The regex class matching a character that may CONTINUE a Rust identifier."""
+    global _IDENT_CONTINUE_RANGES
+    if _IDENT_CONTINUE_RANGES is None:
+        _IDENT_CONTINUE_RANGES = _derive_ranges(lambda ch: ("a" + ch).isidentifier())
+    return _class_of(_IDENT_CONTINUE_RANGES)
+
+
+@functools.lru_cache(maxsize=None)
+def ident() -> str:
+    """The regex fragment matching one whole Rust identifier, `r#` aside.
+
+    Compose this rather than spelling a character class: the identifier
+    question has one answer in this tree, and `bare_ident_literals` refuses a
+    new ASCII spelling of it in any source that asks it.
+    """
+    return ident_start() + ident_continue() + "*"
+
+
+def is_rust_identifier(name: str) -> bool:
+    """Is `name` a legal Rust identifier, `r#` escape aside?
+
+    The one place the measured divergence matters: `_` alone is a Python
+    identifier and is **not** a Rust one -- it is the wildcard pattern -- so it
+    is excluded here.  Everything else follows CPython's UAX#31 tables, which
+    the measurement above found to agree with rustc.
+    """
+    return name != "_" and name.isidentifier()
+
+
+#: The gate sources whose identifier question is NOT Rust's, and the grammar
+#: each is actually about.
+#:
+#: **The explicit default branch for the identifier discipline** (PR #895 review
+#: round 18).  An ASCII identifier class is not wrong everywhere -- a POSIX
+#: shell variable, a GAS label and a `cfg` key really are ASCII -- so a check
+#: that refused every occurrence would force those scanners to widen into
+#: grammars their subjects do not have.  What the check refuses is an
+#: *unclassified* one: a file absent from this map must hold none, so a new
+#: Rust-identifier pattern written anywhere fails on the day it is written
+#: rather than two review rounds later.
+#:
+#: Reconciled in both directions -- an entry whose file no longer holds an ASCII
+#: class is stale and fails too, because a classification nobody reads is the
+#: dead-pin shape this tree already has a gate for.
+NON_RUST_IDENT_SOURCES = {
+    "check_aarch64_cross_target.py":
+        "POSIX shell variable and function names, which are ASCII by that grammar",
+    "check_claim_evidence_citations.py":
+        "Lean, Python, shell and assembly declaration heads in citation targets",
+    "check_identifier_naming.py":
+        "shell variables, heredoc delimiters and version tags",
+    "check_ipc_invariant_dethreading.py":
+        "Lean identifiers, which this gate spells with its own `_IDENT_CHARS`",
+    "check_kernel_entry_exports.py":
+        "GAS assembler directives, whose names are ASCII",
+}
+
+#: A bare ASCII identifier class, which `ident()` exists to replace.  Spelled
+#: through `chr` so this pattern is not itself an instance of what it forbids.
+_BARE_IDENT_LITERAL = re.compile(
+    re.escape("[A-Za-z" + chr(95) + "][A-Za-z0-9" + chr(95) + "]")
+    + "|" + re.escape("[^" + chr(92) + "W" + chr(92) + "d]"))
+
+
+def bare_ident_literals() -> list[str]:
+    """Every ASCII identifier class written in a source that asks about Rust.
+
+    **The mechanism, rather than a third widening.**  Round 12 widened this
+    gate's identifier class from ASCII to `[^\W\d]` and round 18 found it still
+    short of `XID_Start` -- the same shape as the keyword rule above, one
+    character class over, and with the same remedy: one fragment to compose,
+    derived from an oracle, and a check that refuses a new hand-written one.
+
+    A file classified in `NON_RUST_IDENT_SOURCES` is asking a different
+    language's question and keeps its ASCII class; every other gate source must
+    hold none.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for path in _gate_sources():
+        scrubbed = _python_code_view(path.read_text(encoding="utf-8"))
+        hits = list(_BARE_IDENT_LITERAL.finditer(scrubbed))
+        if path.name in NON_RUST_IDENT_SOURCES:
+            if hits:
+                seen.add(path.name)
+            continue
+        for match in hits:
+            line = scrubbed.count("\n", 0, match.start()) + 1
+            out.append(f"{path.name}:{line}: {match.group(0)}... "
+                       f"-- compose rust_code_view.ident() instead, or classify "
+                       f"the file in NON_RUST_IDENT_SOURCES")
+    for name in sorted(set(NON_RUST_IDENT_SOURCES) - seen):
+        out.append(f"{name}: classified in NON_RUST_IDENT_SOURCES but holds no "
+                   f"ASCII identifier class -- a stale classification")
+    return out
+
+
 #: A `fn` and its name.  `r#` is Rust's raw-identifier escape and is part of
 #: the *spelling*, not the name — `fn r#lean_real()` is the function
 #: `lean_real` and links under that symbol (PR #889 review round 25, swept
 #: from the sibling finding against `check_kernel_entry_exports.py`).  Without
 #: it the name read as `r`, so every allowlist entry, exemption and dominance
 #: attribution keyed on the enclosing function's name looked at the wrong one.
-_FN_RE = re.compile(keyword("fn") + r"\s+(?:r#)?([A-Za-z_][A-Za-z0-9_]*)")
+_FN_RE = re.compile(keyword("fn") + r"\s+(?:r#)?(" + ident() + r")")
 
 
 @functools.lru_cache(maxsize=None)
@@ -456,10 +624,33 @@ def fn_bodies(text: str) -> list[tuple[str, int, int]]:
 def _body_open_brace(view: str, after_name: int) -> int | None:
     """Offset of the ``{`` opening the body of the `fn` named just before.
 
-    Skips the parameter list by paren-matching, then takes the first ``{``
-    that follows -- which is the body's, since a return type or ``where``
-    clause introduces none in any form this tree uses.  A ``;`` reached
-    first means the `fn` is a declaration without a body.
+    Skips the parameter list by paren-matching, then walks what follows --
+    a return type, a `where` clause, or nothing -- to the first ``{`` or ``;``
+    **at depth zero**.  A ``{`` there is the body; a ``;`` there is a bodyless
+    declaration (a trait method, an `extern` block entry).
+
+    **PR #895 review round 18: a delimiter inside a type is not a terminator.**
+    This scan used to take the first ``;`` or ``{`` anywhere after the
+    parameter list, on the stated reasoning that a return type introduces
+    neither.  Both halves are false, and both were live:
+
+    * ``fn f() -> [u8; 1] { ... }`` -- an array type carries a ``;``, so the
+      function read as bodyless and was **dropped from `fn_bodies` entirely**.
+      `enclosing_fn` then answered `FILE_SCOPE` for every offset inside it, so
+      a correctly allowlisted TLBI caller was reported and an `unsafe` block
+      was attributed to module scope.  Thirty functions in this workspace
+      return an array type.
+    * ``fn g() -> Foo<{ N }> { ... }`` -- a const-generic argument carries a
+      ``{``, which was taken for the body's.  That one is worse than losing
+      the body: it records a **wrong** span, so the real body lies outside it
+      and an offset inside the const-generic expression is attributed to `g`.
+
+    Depth counts ``(``, ``[`` and ``<``.  ``->`` is consumed as a unit so its
+    ``>`` does not close an angle group that was never opened, and ``>>``
+    closes two.  A scan that reaches the end of the view without settling is
+    unparseable and returns `None`, which is the fail-closed answer for a set
+    of *bodies*: an offset the map cannot place resolves to `FILE_SCOPE`, which
+    no allowlist entry matches.
     """
     i = view.find("(", after_name)
     if i < 0:
@@ -476,10 +667,31 @@ def _body_open_brace(view: str, after_name: int) -> int | None:
         i += 1
     else:
         return None
+    depth = 0
     while i < len(view):
-        if view[i] == "{":
-            return i
-        if view[i] == ";":
+        ch = view[i]
+        if ch == "-" and view.startswith("->", i):
+            i += 2
+            continue
+        if ch in "([":
+            depth += 1
+        elif ch == "<":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        elif ch == ">":
+            # `>` only ever closes a generic here; a comparison or a shift
+            # cannot appear in a type or a `where` clause.  Guarded against
+            # going negative so a stray one cannot make a later `{` read as
+            # nested.
+            depth = max(0, depth - 1)
+        elif ch == "{":
+            if depth == 0:
+                return i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        elif ch == ";" and depth == 0:
             return None
         i += 1
     return None
@@ -655,11 +867,11 @@ _EXTERN_KEYWORD = re.compile(keyword("extern"))
 #: An item macro at item position, optionally path-qualified: `name!(`,
 #: `name![`, `name!{` and `a::b!(`, the forms Rust accepts there.
 _LEADING_MACRO_INVOCATION = re.compile(
-    r"(?:(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*"
-    r"(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*!\s*[(\[{]")
+    r"(?:(?:r#)?" + ident() + r"\s*::\s*)*"
+    r"(?:r#)?" + ident() + r"\s*!\s*[(\[{]")
 #: A `fn` item: the keyword, a name, and the parameter list it opens.
 _LEADING_FN_ITEM = re.compile(
-    keyword("fn") + r"\s+(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*\(")
+    keyword("fn") + r"\s+(?:r#)?" + ident() + r"\s*\(")
 #: An item a foreign block may hold that declares no function: a `static`, a
 #: type alias, or a `use`.  These are the ONLY items a caller may skip.
 _LEADING_NON_FN_ITEM = re.compile(
@@ -1092,6 +1304,43 @@ def _self_test() -> int:
         enclosing_fn(raw_fn, raw_fn.index("TOKEN")),
     )
 
+    # PR #895 review round 18: a delimiter inside a RETURN TYPE is not an item
+    # terminator.  Each case keeps the body and the token and moves a `;` or a
+    # `{` into the type, which is the mutation that finds this class -- a case
+    # that deleted the return type passes under the superseded scan.
+    array_ret = "fn a() -> [u8; 1] {\n    TOKEN;\n    [0]\n}\n"
+    check(
+        "an array return type's semicolon does not end the item",
+        enclosing_fn(array_ret, array_ret.index("TOKEN")) == "a",
+        enclosing_fn(array_ret, array_ret.index("TOKEN")),
+    )
+    const_generic = "fn a() -> B<{ N }> {\n    TOKEN;\n}\n"
+    check(
+        "a const-generic argument's brace is not the body's",
+        enclosing_fn(const_generic, const_generic.index("TOKEN")) == "a",
+        enclosing_fn(const_generic, const_generic.index("TOKEN")),
+    )
+    where_array = "fn a<T>() -> [T; 2] where T: Copy {\n    TOKEN;\n}\n"
+    check(
+        "a `where` clause after an array return type still finds the body",
+        enclosing_fn(where_array, where_array.index("TOKEN")) == "a",
+        enclosing_fn(where_array, where_array.index("TOKEN")),
+    )
+    # ...and the controls, so the fix is known to NARROW rather than to disable:
+    # a genuinely bodyless declaration must still have no body.
+    check(
+        "an extern declaration is still bodyless",
+        fn_bodies('extern "C" {\n    fn a() -> u64;\n}\n') == [],
+    )
+    check(
+        "a trait method signature returning an array is still bodyless",
+        fn_bodies("trait T {\n    fn a(&self) -> [u8; 2];\n}\n") == [],
+    )
+    check(
+        "an unterminated signature resolves to no body",
+        fn_bodies("fn a() -> [u8; 1]\n") == [],
+    )
+
     brace_in_string = 'fn a() {\n    let s = "}";\n    TOKEN;\n}\nstatic S: u8 = 0;\n'
     check(
         "a brace inside a literal does not close the body",
@@ -1330,6 +1579,31 @@ def _self_test() -> int:
     # thing three rounds of site-by-site fixes could not do.
     bare = bare_keyword_literals()
     check("no gate spells a Rust keyword bare", not bare, "; ".join(bare))
+
+    # The identifier fragment, and the same discipline one character class
+    # over.  Each witness is MEASURED against rustc 1.94.1 (PR #895 review
+    # round 18): the three codepoints below are accepted by the compiler and
+    # matched by none of `[A-Za-z_]`, `[^\W\d]` or `\w`.
+    start = re.compile(ident_start())
+    for label, char in (("U+2118 SCRIPT CAPITAL P (Sm)", "\u2118"),
+                        ("U+212E ESTIMATED SIGN (So)", "\u212e"),
+                        ("U+1885 MONGOLIAN ALI GALI (Mn)", "\u1885"),
+                        ("U+03BB GREEK SMALL LAMBDA (Ll)", "\u03bb")):
+        check(f"ident_start accepts {label}, which rustc accepts",
+              start.match(char) is not None)
+    for label, char in (("a digit", "1"), ("a hyphen", "-"),
+                        ("U+00D7 MULTIPLICATION SIGN (Sm)", "\u00d7"),
+                        ("U+0387 GREEK ANO TELEIA (Po)", "\u0387")):
+        check(f"ident_start refuses {label}, which rustc refuses",
+              start.match(char) is None)
+    # The one measured divergence between CPython's tables and Rust's grammar,
+    # stated where it is handled rather than left for a reader to rediscover.
+    check("a lone `_` starts an identifier but is not one",
+          start.match("_") is not None and not is_rust_identifier("_"))
+    check("an ordinary name is a Rust identifier", is_rust_identifier("lean_ready"))
+    bare_idents = bare_ident_literals()
+    check("no gate asking about Rust spells an identifier class by hand",
+          not bare_idents, "; ".join(bare_idents))
 
     for problem in failures:
         print(f"FAIL  {problem}")
