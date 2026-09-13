@@ -344,14 +344,17 @@ def migrateRunQueueBucketOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
     -- RunQueue's cached priority for `tid`. Any PIP boost previously recorded
     -- in the RunQueue is therefore preserved rather than silently erased.
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    -- `Priority.raisedBy` (`Prelude.lean`) is the one reading of "a base raised
+    -- by an inherited boost"; the base here is the *new* priority rather than
+    -- the thread's stored one, which is exactly why the helper takes its base as
+    -- a parameter.  The fallback raises by the RunQueue's cached priority, which
+    -- carries any boost recorded there, so it is the same question with a
+    -- different source for the boost.
     let effectivePrio := match st.getTcb? tid with
-      | some tcb => match tcb.pipBoost with
-        | none => newPriority
-        | some boostPrio => ⟨Nat.max newPriority.val boostPrio.val⟩
+      | some tcb => newPriority.raisedBy tcb.pipBoost
       | none =>
-        match (st.scheduler.runQueueOnCore homeCore).threadPriority[tid]? with
-        | some rqPrio => ⟨Nat.max newPriority.val rqPrio.val⟩
-        | none => newPriority
+        newPriority.raisedBy
+          ((st.scheduler.runQueueOnCore homeCore).threadPriority[tid]?)
     let rq := rq.insert tid effectivePrio
     { st with scheduler := st.scheduler.setRunQueueOnCore homeCore rq }
   else

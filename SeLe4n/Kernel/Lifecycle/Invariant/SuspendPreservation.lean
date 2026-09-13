@@ -1145,6 +1145,8 @@ theorem restoreToReady_blockingServer_subgraph
       -- *value* at one key rather than a state-to-state congruence, so it
       -- crosses to accessor form through `getTcb?_eq_some_iff`.
       rw [(SystemState.getTcb?_eq_some_iff _ t _).mpr hRRObj]
+      -- ...and the accessor reads the `.ready` this rewrite installed.
+      simp [TCB.blockingServer?_eq]
   · -- t.toObjId ≠ tid.toObjId: lookup matches pre-state.
     right
     unfold PriorityInheritance.blockingServer

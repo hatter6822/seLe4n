@@ -250,25 +250,20 @@ def currentTimeSlicePositive (st : SystemState) : Prop :=
 -- AI3-A: Effective RunQueue priority computation (must precede EDF)
 -- ============================================================================
 
-/-- AI3-A (M-04): Compute the effective RunQueue insertion priority for a thread,
-applying PIP boost to the base TCB priority. Returns `max(tcb.priority, pipBoost)`
-when a PIP boost is active, or `tcb.priority` otherwise.
-
-This function operates on TCB fields only (no state dependency), ensuring
-frame-lemma compatibility: `effectiveRunQueuePriority` is preserved whenever
-`priority` and `pipBoost` fields are unchanged, regardless of other state
-modifications. -/
-def effectiveRunQueuePriority (tcb : TCB) : SeLe4n.Priority :=
-  match tcb.pipBoost with
-  | none => tcb.priority
-  | some boostPrio => ⟨Nat.max tcb.priority.val boostPrio.val⟩
+-- **The reading itself lives in the model** (`TCB.boostedPriority`,
+-- `Model/Object/Types.lean`).  This module used to define it, the IPC surface
+-- carried a second body because importing this one would close an import cycle,
+-- and a `rfl` theorem pinned the two together.  The shared answer belongs
+-- upstream of both, where the cycle objection never applied -- so both bodies
+-- and the pin are gone, and every site calls the accessor.  What stays here is
+-- the specialisation the scheduler's proofs consume.
 
 /-- AI3-A: For threads without PIP boost, effective priority equals base
 TCB priority. -/
-theorem effectiveRunQueuePriority_no_pip (tcb : TCB)
+theorem boostedPriority_no_pip (tcb : TCB)
     (hNoPip : tcb.pipBoost = none) :
-    effectiveRunQueuePriority tcb = tcb.priority := by
-  simp [effectiveRunQueuePriority, hNoPip]
+    tcb.boostedPriority = tcb.priority := by
+  simp [TCB.boostedPriority, hNoPip]
 
 /-- AK2-B (S-H04) helper: SC-aware effective priority.
 Mirrors `(resolveEffectivePrioDeadline st tcb).1` from Selection.lean
@@ -278,7 +273,7 @@ present, uses the SC's base priority; otherwise falls back to TCB
 
 Under the AK2-B Option B propagation invariant (`schedContextBind` /
 `schedContextConfigure` propagate `sc.priority → tcb.priority`),
-`effectiveBucketPriority st tcb = effectiveRunQueuePriority tcb` for all
+`effectiveBucketPriority st tcb = tcb.boostedPriority` for all
 bound threads, so `schedulerPriorityMatch` (TCB-based) and
 `effectiveParamsMatchRunQueue` (SC-based) agree. The helper is retained as
 a utility for future use (AK2-A full Option A fusion deferred). -/
@@ -302,29 +297,30 @@ def effectiveBucketPriority (st : SystemState) (tcb : TCB) : SeLe4n.Priority :=
     -- `Selection.lean` and cannot call `resolveEffectivePrioDeadline`.  The two
     -- are held together by `effectiveBucketPriority_eq_resolveEffective`.
     | .donated _ _ => tcb.priority
-  match tcb.pipBoost with
-  | none => base
-  | some boostPrio => ⟨Nat.max base.val boostPrio.val⟩
+  -- The ninth copy of "a base raised by an inherited boost", and the one a
+  -- grep for `Nat.max tcb.priority.val` did not find because its base is a
+  -- `let`.  `Priority.raisedBy` (`Prelude.lean`) is the reading.
+  base.raisedBy tcb.pipBoost
 
 /-- AK2-B: Unbound threads' effective priority equals the legacy
-`effectiveRunQueuePriority`. -/
+`TCB.boostedPriority`. -/
 @[simp] theorem effectiveBucketPriority_of_unbound
     (st : SystemState) (tcb : TCB)
     (hUnbound : tcb.schedContextBinding = .unbound) :
-    effectiveBucketPriority st tcb = effectiveRunQueuePriority tcb := by
-  unfold effectiveBucketPriority effectiveRunQueuePriority SystemState.getSchedContext?
+    effectiveBucketPriority st tcb = tcb.boostedPriority := by
+  unfold effectiveBucketPriority TCB.boostedPriority SystemState.getSchedContext?
   simp [hUnbound]
 
 /-- AK2-B: When a bound thread's SchedContext is missing (unreachable under
 `schedContextBindingConsistent`), `effectiveBucketPriority` falls back to
-`effectiveRunQueuePriority`. -/
+`TCB.boostedPriority`. -/
 theorem effectiveBucketPriority_of_bound_sc_missing
     (st : SystemState) (tcb : TCB) (scId : SchedContextId)
     (hBound : tcb.schedContextBinding = .bound scId ∨
       ∃ owner, tcb.schedContextBinding = .donated scId owner)
     (hMiss : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) :
-    effectiveBucketPriority st tcb = effectiveRunQueuePriority tcb := by
-  unfold effectiveBucketPriority effectiveRunQueuePriority SystemState.getSchedContext?
+    effectiveBucketPriority st tcb = tcb.boostedPriority := by
+  unfold effectiveBucketPriority TCB.boostedPriority SystemState.getSchedContext?
   rcases hBound with hB | ⟨owner, hB⟩
   · rw [hB]
     -- Two arms, not eight: `getSchedContext?` has already collapsed the six
@@ -336,19 +332,19 @@ theorem effectiveBucketPriority_of_bound_sc_missing
   · -- WS-OD (v0.35.3): the `.donated` arm reads no SchedContext at all, so it
     -- *is* the fallback and `hMiss` has nothing to discharge.  Stated by
     -- `effectiveBucketPriority_of_donated` without the hypothesis.
-    rw [hB]
+    simp [hB]
 
 /-- WS-OD (v0.35.3): a **donated** thread's bucket priority is the legacy
-`effectiveRunQueuePriority` unconditionally — no SchedContext is read, so
+`TCB.boostedPriority` unconditionally — no SchedContext is read, so
 unlike the `.bound` case this needs no lookup hypothesis.  The `.donated`
 half of `effectiveBucketPriority_of_bound_sc_missing`, sharpened. -/
 @[simp] theorem effectiveBucketPriority_of_donated
     (st : SystemState) (tcb : TCB) (scId : SchedContextId)
     (owner : SeLe4n.ThreadId)
     (hDonated : tcb.schedContextBinding = .donated scId owner) :
-    effectiveBucketPriority st tcb = effectiveRunQueuePriority tcb := by
-  unfold effectiveBucketPriority effectiveRunQueuePriority SystemState.getSchedContext?
-  rw [hDonated]
+    effectiveBucketPriority st tcb = tcb.boostedPriority := by
+  unfold effectiveBucketPriority TCB.boostedPriority SystemState.getSchedContext?
+  simp [hDonated]
 
 /-- AK2-B helper: auxiliary "falls through to base" lemma. If a map lookup
 does not produce `.schedContext _`, then the `.bound scId`/`.donated scId _`
@@ -446,7 +442,7 @@ regardless of domain, which was unprovable for a domain-aware scheduler that
 only selects among same-domain candidates. Adding the domain constraint
 aligns the invariant with `chooseBestRunnableInDomain` semantics.
 
-**AI3-A:** Added `effectiveRunQueuePriority` guard. The RunQueue buckets
+**AI3-A:** Added `TCB.boostedPriority` guard. The RunQueue buckets
 threads by effective priority, so deadline ordering is only meaningful among
 threads in the same effective priority bucket. Threads at a lower effective
 priority are not considered during bucket-based selection and thus fall
@@ -461,7 +457,7 @@ def edfCurrentHasEarliestDeadline (st : SystemState) : Prop :=
             match st.objects[tid.toObjId]? with
             | some (.tcb tcb) =>
                 tcb.domain = curTcb.domain →
-                effectiveRunQueuePriority tcb = effectiveRunQueuePriority curTcb →
+                tcb.boostedPriority = curTcb.boostedPriority →
                 tcb.priority = curTcb.priority →
                 curTcb.deadline.toNat = 0 ∨
                 (tcb.deadline.toNat = 0 ∨ curTcb.deadline.toNat ≤ tcb.deadline.toNat)
@@ -551,7 +547,7 @@ theorem default_runnableThreadsAreTCBs :
 /-- WS-H6/AI3-A: The RunQueue's recorded `threadPriority` mapping matches the
 effective priority for every run-queue member.
 
-AI3-A (M-04) → AK2-B (S-H04): Updated from `effectiveRunQueuePriority` (TCB
+AI3-A (M-04) → AK2-B (S-H04): Updated from `TCB.boostedPriority` (TCB
 base + PIP, SC-unaware) to `effectiveBucketPriority` — a fully SC-aware resolver
 that agrees with `resolveEffectivePrioDeadline` used by selection. This
 FUSES the prior pair `schedulerPriorityMatch` + `effectiveParamsMatchRunQueue`
@@ -569,7 +565,7 @@ def schedulerPriorityMatch (st : SystemState) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId) →
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-        (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some (effectiveRunQueuePriority tcb)
+        (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some (tcb.boostedPriority)
     | _ => True
 
 /-- V5-H (M-HW-7): The scheduler's `domainTimeRemaining` is always positive (> 0).
@@ -656,18 +652,18 @@ theorem schedulerPriorityMatch_of_runQueue_objects_eq
 
 /-- R6-D/AI3-A: schedulerPriorityMatch after inserting the current thread at
 its effective priority. The inserted priority must equal
-`effectiveRunQueuePriority curTcb` for the invariant to hold. -/
+`curTcb.boostedPriority` for the invariant to hold. -/
 theorem schedulerPriorityMatch_insert
     (st : SystemState) (curTid : ThreadId) (curTcb : TCB)
     (hPM : schedulerPriorityMatch st)
     (hQCC : queueCurrentConsistent st.scheduler)
     (hCur : (st.scheduler.currentOnCore bootCoreId) = some curTid)
     (hObj : st.objects[curTid.toObjId]? = some (.tcb curTcb)) :
-    ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb) →
+    ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority) →
       match st.objects[tid.toObjId]? with
       | some (.tcb tcb) =>
-        ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb)).threadPriority[tid]?
-          = some (effectiveRunQueuePriority tcb)
+        ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority)).threadPriority[tid]?
+          = some (tcb.boostedPriority)
       | _ => True := by
   intro tid hMem
   have hNotMem : curTid ∉ (st.scheduler.runQueueOnCore bootCoreId) := by

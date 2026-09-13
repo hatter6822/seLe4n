@@ -206,7 +206,7 @@ theorem preemptCurrentOnCore_runQueueOnCore_self_active (st : SystemState) (c : 
     (hNe : (prevTid == incoming) = false)
     (hTcb : st.getTcb? prevTid = some prevTcb) :
     (preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c
-      = (st.scheduler.runQueueOnCore c).insert prevTid (effectiveRunQueuePriority prevTcb) := by
+      = (st.scheduler.runQueueOnCore c).insert prevTid (prevTcb.boostedPriority) := by
   unfold preemptCurrentOnCore
   simp [hCur, hNe, hTcb]
 
@@ -260,7 +260,7 @@ theorem preemptCurrentOnCore_active_under_valid (st : SystemState) (c : CoreId)
     (hNe : (prevTid == incoming) = false) :
     ∃ prevTcb, st.getTcb? prevTid = some prevTcb ∧
       (preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c
-        = (st.scheduler.runQueueOnCore c).insert prevTid (effectiveRunQueuePriority prevTcb) := by
+        = (st.scheduler.runQueueOnCore c).insert prevTid (prevTcb.boostedPriority) := by
   unfold currentThreadValidOnCore at hValid
   simp only [hCur] at hValid
   obtain ⟨prevTcb, hPrevTcb⟩ := hValid

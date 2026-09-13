@@ -1178,6 +1178,71 @@ instance : BEq TCB where
 @[inline] def TCB.isUnconfigured (tcb : TCB) : Bool :=
   tcb.tid.isReserved || tcb.cspaceRoot.isReserved || tcb.vspaceRoot.isReserved
 
+/-- **The priority a thread is actually scheduled at** -- its own, raised to any
+priority it has inherited.
+
+Priority inheritance records the raise in `TCB.pipBoost`, and every consumer
+needs the merged value: the run-queue bucket a thread belongs in, the scheduler's
+effective-parameter resolution, and -- since `v0.35.28` -- the frozen mirror of
+both.  The expression `⟨Nat.max tcb.priority.val boost.val⟩` was spelled inline
+at **eight** sites across the live tree and the frozen surface, which is this
+project's own one-question-two-answers hazard at the level of an expression; it
+is one function now, and every site that asks the question calls it.
+
+It is `Priority.raisedBy` at the thread's **own** base, which is the base for an
+`.unbound` or `.donated` thread.  A `.bound` thread is scheduled at its
+*reservation's* priority raised by the same boost, so `effectiveSchedParams`
+calls `Priority.raisedBy` directly on `sc.priority` there rather than going
+through this -- the boost is the same, the base is not. -/
+@[inline] def TCB.boostedPriority (tcb : TCB) : SeLe4n.Priority :=
+  tcb.priority.raisedBy tcb.pipBoost
+
+/-- **The server this thread is blocked on**, if any -- one step of the blocking
+graph, read off the thread's own `ipcState`.
+
+The store-level `blockingServer` (`Scheduler/PriorityInheritance/BlockingGraph.lean`)
+is this composed with a TCB lookup, and `waitersOf` is this asked of every thread
+in the store; the frozen mirror asks both of the frozen store.  Putting the
+discriminating match here means the three cannot disagree about what "blocked on
+a server" is -- which they could while each spelled its own `match`, and which
+matters because priority inheritance, its reversion and the frozen mirror of both
+all walk that edge. -/
+@[inline] def TCB.blockingServer? (tcb : TCB) : Option SeLe4n.ThreadId :=
+  match tcb.ipcState with
+  | .blockedOnReply _ (some server) => some server
+  | _ => none
+
+/-- Both helpers are transparent to `simp`, so a proof that knows a thread's
+`ipcState` or `pipBoost` reduces them exactly as it reduced the inline `match`
+they replaced.  Without these, single-sourcing the two questions would have made
+every existing `simp [hIpc]` and `simp [hBoost]` a proof that no longer closes --
+which is a cost the refactor does not need to impose, and an `rfl` lemma is the
+whole of the remedy. -/
+@[simp] theorem TCB.blockingServer?_eq (tcb : TCB) :
+    tcb.blockingServer? =
+      match tcb.ipcState with
+      | .blockedOnReply _ (some server) => some server
+      | _ => none := rfl
+
+@[simp] theorem TCB.boostedPriority_eq (tcb : TCB) :
+    tcb.boostedPriority = tcb.priority.raisedBy tcb.pipBoost := rfl
+
+/-- **Each accessor's frame, stated where the accessor is.**  `blockingServer?`
+reads `ipcState` and nothing else; `boostedPriority` reads `priority` and
+`pipBoost` and nothing else.  Every consumer that rewrites one TCB into another
+needs exactly this, and deriving it at the call site means unfolding the
+accessor -- which, inside a `filterMap` or a fold, also rewrites the *bound*
+occurrences in the tail and desynchronises the induction hypothesis.  Stated
+here, the rewrite touches only the terms named. -/
+theorem TCB.blockingServer?_congr {a b : TCB} (h : a.ipcState = b.ipcState) :
+    a.blockingServer? = b.blockingServer? := by
+  simp only [TCB.blockingServer?_eq, h]
+
+theorem TCB.boostedPriority_congr {a b : TCB}
+    (hp : a.priority = b.priority) (hb : a.pipBoost = b.pipBoost) :
+    a.boostedPriority = b.boostedPriority := by
+  simp only [TCB.boostedPriority_eq, hp, hb]
+
 /-- U2-N/U-M17: Negative `LawfulBEq` witness for `TCB`.
     `BEq TCB` is field-wise comparison including `registerContext : RegisterFile`.
     Since `RegisterFile.BEq` is not lawful (see `RegisterFile.not_lawfulBEq`),

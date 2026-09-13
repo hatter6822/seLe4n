@@ -554,7 +554,7 @@ def enqueueAbortedHolderOnCore (st : SystemState) (c : CoreId)
     else
       { st with
           scheduler := st.scheduler.setRunQueueOnCore c
-            ((st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority t)) }
+            ((st.scheduler.runQueueOnCore c).insert tid (t.boostedPriority)) }
 
 /-- **WS-OD OD1.7**: the reclaim's wake step — the aborted holder, placed on its
 **home** core.
@@ -810,7 +810,7 @@ theorem wakeAbortedDonationHolder_holder_runnable (stPre stPost : SystemState)
       Concurrency.mem_allCores _, ?_⟩
     show ((stPost.scheduler.setRunQueueOnCore (determineTargetCore stPre holder)
       ((stPost.scheduler.runQueueOnCore (determineTargetCore stPre holder)).insert holder
-        (effectiveRunQueuePriority t))).runQueueOnCore
+        (t.boostedPriority))).runQueueOnCore
           (determineTargetCore stPre holder)).contains holder = true
     rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
     exact (RunQueue.mem_insert _ holder _ holder).mpr (Or.inr rfl)

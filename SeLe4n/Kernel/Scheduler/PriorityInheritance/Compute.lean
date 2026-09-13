@@ -261,7 +261,17 @@ theorem waitersOf_frame_per_field
       have hPreA : st.getObject? head = some (.tcb tcb) := hPre
       have hPostA : st'.getObject? head = some (.tcb tcb') := hPost
       rw [hPreA, hPostA]
-      simp only [hIpc, hTid]
+      -- `waitersOf` reads the blocking edge through `TCB.blockingServer?` since
+      -- `v0.35.28`.  Its *frame* is what is needed here, not its equation: the
+      -- equation is universally quantified, so `simp only` with it rewrites the
+      -- tail's bound `tcb` too and desynchronises `ih` -- the hazard the comment
+      -- above already names, one accessor down.
+      -- The *frame*, not the equation: `TCB.blockingServer?_eq` is universally
+      -- quantified, so `simp only` with it rewrites the tail's bound `tcb` too
+      -- and desynchronises `ih` -- the hazard the comment above already names,
+      -- one accessor down.  `_congr hIpc` is an instance at these two terms, so
+      -- it reduces the head's match and touches nothing else.
+      simp only [TCB.blockingServer?_congr hIpc, hTid]
       split
       · exact ih
       · rw [ih]
@@ -306,7 +316,11 @@ private theorem cmwpFoldBody_frame_per_field
             effectiveSchedParams_frame_per_field st st' tcb' hSc
           have h2 : effectiveSchedParams st tcb' = effectiveSchedParams st tcb := by
             unfold effectiveSchedParams
-            simp only [hBind, hPip, hPrio, hDl, hDom]
+            -- The boost is applied through `TCB.boostedPriority` /
+            -- `Priority.raisedBy` since `v0.35.28`; both are transparent to
+            -- `simp`, so the per-field facts still close this.
+            simp only [TCB.boostedPriority_eq, Priority.raisedBy,
+              hBind, hPip, hPrio, hDl, hDom]
           exact h1.trans h2
         rw [hESP]
     rw [hStep]

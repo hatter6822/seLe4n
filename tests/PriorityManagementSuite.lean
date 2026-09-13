@@ -779,7 +779,7 @@ private def pm_od_02_donatedReadsPreferTheTcb : IO Unit := do
     expect "NEGATIVE (the defect): the donee is not reported in the donor's domain 3"
       (!((effectiveSchedParams st donee).2.2 == ⟨odDonorDomain⟩))
     expect "effectiveBucketPriority is the TCB-only reading the run queue records"
-      (effectiveBucketPriority st donee == effectiveRunQueuePriority donee)
+      (effectiveBucketPriority st donee == donee.boostedPriority)
     -- NEGATIVE (the defect): none of the readings is the donor's band.
     expect "NEGATIVE (the defect): no reader returns the donor's 70"
       (!(getCurrentPriority st donee == ⟨odDonorPriority⟩) &&

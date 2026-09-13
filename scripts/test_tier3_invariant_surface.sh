@@ -2285,7 +2285,13 @@ run_check "INVARIANT" rg -n '^theorem updatePrioritySource_donated_preserves_don
 # it resolves one, domain) and the donee's OWN priority.  Bounded gaps: a
 # declaration header sits at column 0, so the match cannot leave its own `def`.
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def resolveEffectivePrioDeadline[^\n]*(\n([ \t][^\n]*)?)*\| \.donated scId _ =>[^\n]*(\n([ \t][^\n]*)?)*\| some sc => \(tcb\.priority, sc\.deadline\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def effectiveSchedParams[^\n]*(\n([ \t][^\n]*)?)*\| \.donated scId _ =>[^\n]*(\n([ \t][^\n]*)?)*\| none => \(tcb\.priority, sc\.deadline, tcb\.domain\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+# `v0.35.28`: the arm's `pipBoost` split is gone -- the boost is applied by
+# `TCB.boostedPriority` (itself `Priority.raisedBy` at the thread's own base), so
+# the SchedContext-present case is one line.  The RELATION is unchanged and is
+# what this pins: the donee's OWN priority, the donor's deadline, the donee's
+# domain.  `tcb.boostedPriority` is the donee's own priority raised by the
+# donee's own boost; a spelling naming `sc.priority` would be the defect.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def effectiveSchedParams[^\n]*(\n([ \t][^\n]*)?)*\| \.donated scId _ =>[^\n]*(\n([ \t][^\n]*)?)*\| some sc => \(tcb\.boostedPriority, sc\.deadline, tcb\.domain\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def effectiveBucketPriority[^\n]*(\n([ \t][^\n]*)?)*\| \.donated _ _ => tcb\.priority$" SeLe4n/Kernel/Scheduler/Invariant.lean'
 # NEGATIVE (each declaration-bounded): the merged arm, which is how all three
 # read the donor's `sc.priority` before the split.  `hasSufficientBudget` in the
@@ -12180,7 +12186,7 @@ open SeLe4n.Kernel
 #check @boundThreadPriorityConsistent
 #check @boundThreadPriorityConsistent_frame
 #check @default_boundThreadPriorityConsistent
-#check @resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree
+#check @resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree
 EOF
 lake env lean /tmp/sm5i_suite.lean'
 

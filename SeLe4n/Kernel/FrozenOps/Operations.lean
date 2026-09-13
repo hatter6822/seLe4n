@@ -819,7 +819,7 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
     match frozenLookupTcb st targetId with
     | some targetTcb =>
         match targetTcb.ipcState with
-        | .blockedOnReply _epId _replyTarget =>
+        | .blockedOnReply _epId replyTarget =>
             -- PR #822 review (Codex), frozen mirror of E.2: authority is the **presented
             -- reply capability** `replyId` — the replier must hold a reply cap naming
             -- `targetId` as its caller, exactly like the live `.reply` arm resolves
@@ -833,6 +833,29 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
             -- (`replyObject ≠ some replyId`); a missing Reply object; or a Reply whose
             -- `caller` is not `some targetId`.  Deliver + consume the single-use Reply link
             -- (clear both reciprocal sides, mirroring `consumeCallerReply`).
+            -- **A caller with no recorded server is not repliable** (PR #895
+            -- review round 15).  Both live spellings fail closed here -- the
+            -- bare `endpointReply` (`IPC/DualQueue/Transport.lean`) and
+            -- `endpointReplyOnCore` (`IPC/CrossCore/EndpointReply.lean`) each
+            -- answer `.replyCapInvalid` for `.blockedOnReply _ none` -- and the
+            -- live comment says why: every production path that creates
+            -- `blockedOnReply` records `some receiver`, so the `none` case is
+            -- invariant drift, and the retired `none => true` branch let any
+            -- reply through, which that finding (AK1-B / I-H02) rated a
+            -- confused-deputy risk.  This mirror kept the retired behaviour: it
+            -- bound the recorded server and never read it, so a malformed
+            -- frozen state -- and `Model.freeze` copies `ipcState` verbatim --
+            -- was delivered and its Reply consumed on a surface whose whole
+            -- purpose is to agree with the live kernel.
+            --
+            -- The binder is `_expected` and nothing gates on it, exactly as in
+            -- `endpointReplyOnCore`: authority is the presented reply
+            -- capability, so a *delegated* replier is still legitimate.  What
+            -- is refused is the absence of a recorded server, not a mismatch
+            -- with it.
+            match replyTarget with
+            | none => .error .replyCapInvalid
+            | some _expected =>
             let targetTcb' := { targetTcb with
               ipcState := ThreadIpcState.ready
               pendingMessage := some msg
@@ -980,7 +1003,26 @@ mirror would make it diverge from the very function it refines -- the refinement
 that currently holds is what tells this surface apart from a guess.
 
 The donation is resolved on the **pre**-state, because the reply clears the
-`ipcState` the recorded server is read from. -/
+`ipcState` the recorded server is read from.
+
+**...and priority inheritance is reverted on every successful reply** (PR #895
+review round 15), donation or none.  The answered caller was blocked *on* the
+recorded server, so it was one of that server's waiters and contributed to its
+`TCB.pipBoost`; the reply makes it `.ready`, so the boost has to be recomputed
+from whoever is left.  Both live compositions do this -- `endpointReplyWithDonation`
+with `revertPriorityInheritance` (`IPC/Operations/Donation.lean`) and
+`endpointReplyCrossCoreDispatch` with `propagatePipChainCrossCore`
+(`IPC/CrossCore/EndpointReplyDispatch.lean`) -- and this surface did not, so a
+stale boost survived.  That is not inert here: `frozenEnsureRunnable` buckets by
+`frozenEffectivePriority`, which reads `pipBoost`, so the next time the server is
+made runnable it enters the run queue at a priority it inherited from a client
+it has already answered.
+
+It runs **after** the donation return, as both live compositions do, and takes
+the **recorded server** as its subject -- not the (possibly delegated) cap
+holder, which is nobody's blocking target.  Like the pop, it belongs in this
+composite and not in `frozenEndpointReply`: neither bare live reply reverts, and
+the mirror is refined against the bare one. -/
 def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
     (targetId : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (msg : IpcMessage) :
     FrozenKernel Unit :=
@@ -994,8 +1036,13 @@ def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
       | some (scId, originalOwner), some server =>
           match frozenApplyReplyDonation st' server scId originalOwner with
           | .error e => .error e
-          | .ok st'' => .ok ((), st'')
-      | _, _ => .ok ((), st')
+          | .ok st'' => .ok ((), frozenRevertPriorityInheritance st'' server)
+      | _, some server => .ok ((), frozenRevertPriorityInheritance st' server)
+      -- Unreachable since the round-15 guard: `frozenEndpointReply` refuses a
+      -- caller with no recorded server, so a reply that returned `.ok` has one.
+      -- Kept as the total match rather than as a `panic`, which is what every
+      -- other resolver in this surface does with an impossible case.
+      | _, none => .ok ((), st')
 
 -- ============================================================================
 -- Q7-C3: Capability Frozen Operations

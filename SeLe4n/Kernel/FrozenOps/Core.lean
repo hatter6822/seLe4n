@@ -266,10 +266,14 @@ def frozenEnsureRunnable (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
   match frozenLookupTcb st tid with
   | none => .error .objectNotFound
   | some tcb =>
-      let prio : SeLe4n.Priority :=
-        match tcb.pipBoost with
-        | none => tcb.priority
-        | some boost => ⟨Nat.max tcb.priority.val boost.val⟩
+      -- **`TCB.boostedPriority`, the live accessor, not a frozen copy of it.**
+      -- The frozen store holds the live `TCB` record, so "which bucket does this
+      -- thread belong in" has no frozen-specific content and must not have a
+      -- frozen-specific answer: the inline `match tcb.pipBoost` that stood here
+      -- was one of nine spellings of one expression, and the reversion below
+      -- would have needed a tenth.  All of them now read
+      -- `Priority.raisedBy` through `Model/Object/Types.lean`.
+      let prio : SeLe4n.Priority := tcb.boostedPriority
       let bucket := (st.scheduler.byPriority.get? prio).getD []
       if bucket.contains tid then .ok st
       else
@@ -300,6 +304,129 @@ def frozenRemoveRunnable (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
         | some bp => { acc with scheduler := { acc.scheduler with byPriority := bp } }
       else acc)
     cleared
+
+-- ============================================================================
+-- **Frozen priority inheritance** (PR #895 review round 15)
+-- ============================================================================
+
+/-- **The threads directly blocked on `tid` via Reply IPC** -- `waitersOf`'s
+frozen counterpart (`Scheduler/PriorityInheritance/BlockingGraph.lean`).
+
+The live version folds `objectIndex`; this one folds the frozen object map,
+which is the same population by construction (`Model.freeze` copies every
+object).  A thread is a waiter of `tid` exactly when its `ipcState` records
+`tid` as the server it is blocked on. -/
+def frozenWaitersOf (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    : List SeLe4n.ThreadId :=
+  st.objects.fold (init := []) fun acc _id obj =>
+    match obj with
+    -- `TCB.blockingServer?` is the live reading of the blocking edge, shared
+    -- with `waitersOf` and `blockingServer`, so the frozen walk and the live one
+    -- provably follow the same edges rather than two matches that agree today.
+    | .tcb tcb => if tcb.blockingServer? == some tid then tcb.tid :: acc else acc
+    | _ => acc
+
+/-- **The highest effective priority among `tid`'s waiters**, or `none` when it
+has none -- `computeMaxWaiterPriority`'s frozen counterpart.
+
+"Effective" is `TCB.boostedPriority`, the same accessor the frozen run queue
+buckets by, so a boost computed here and the bucket it lands a thread in cannot
+disagree.  (The live version reads `effectiveSchedParams`, which additionally
+consults the waiter's SchedContext; this surface has no scheduling-parameter
+resolution and buckets by the TCB alone, so consulting one here would be a
+*second* answer to the question `frozenEnsureRunnable` already decides.) -/
+def frozenComputeMaxWaiterPriority (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    : Option SeLe4n.Priority :=
+  (frozenWaitersOf st tid).foldl (fun acc waiterTid =>
+    match st.getTcb? waiterTid with
+    | some waiterTcb =>
+        let prio := waiterTcb.boostedPriority
+        match acc with
+        | none => some prio
+        | some curMax => some ⟨Nat.max curMax.val prio.val⟩
+    | none => acc) none
+
+/-- **The server `tid` is blocked on**, if any -- `blockingServer`'s frozen
+counterpart.  One step of the blocking graph, read off the thread's own
+`ipcState`. -/
+def frozenBlockingServer (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    : Option SeLe4n.ThreadId :=
+  (st.getTcb? tid).bind TCB.blockingServer?
+
+/-- **Recompute `tid`'s inherited boost from its current waiters, and re-bucket
+it** -- `updatePipBoost`'s frozen counterpart.
+
+Two halves, and the second is why this cannot be a bare field write.  The frozen
+run queue is keyed by `TCB.boostedPriority`, so a thread whose boost changes
+while it sits in a bucket is in the *wrong* bucket -- and a later
+`frozenEnsureRunnable` would not repair it: that function appends when the
+thread is absent from the bucket for its new priority, so the thread would end
+up in **two**.  The live `updatePipBoost` migrates for exactly this reason.
+
+The migration is conditional on the thread actually being in a bucket, mirroring
+the live `if tid ∈ runQueueOnCore` -- and it is deliberately not spelled as
+`frozenRemoveRunnable` followed by `frozenEnsureRunnable`, because the removal
+also clears `current`, which the live migration does not do.  A running thread's
+current slot is not a run-queue bucket and a priority change must not vacate
+it. -/
+def frozenUpdatePipBoost (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    : FrozenSystemState :=
+  match st.getTcb? tid with
+  | none => st
+  | some tcb =>
+      let newBoost := frozenComputeMaxWaiterPriority st tid
+      if tcb.pipBoost == newBoost then st
+      else
+        let tcb' := { tcb with pipBoost := newBoost }
+        let oldPrio := tcb.boostedPriority
+        let newPrio := tcb'.boostedPriority
+        let st' : FrozenSystemState :=
+          { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+        -- **Queued ANYWHERE, not queued at `oldPrio`.**  The live
+        -- `updatePipBoost` asks `tid ∈ runQueueOnCore` -- membership in the
+        -- queue -- and then `RunQueue.remove tid` takes it out of whichever
+        -- bucket holds it.  Looking only in the bucket `oldPrio` names assumes
+        -- a thread's bucket always equals its effective priority, and a state
+        -- where the two have drifted apart is exactly the one a reversion has
+        -- to repair: on such a state the thread was left where it was while the
+        -- live kernel moved it, which the operation-level differential (FO-041)
+        -- caught on its first run.  `frozenRemoveRunnable` searches every
+        -- bucket for the same reason, and says so.
+        let queued := st'.scheduler.byPriority.indexMap.toList.any (fun kv =>
+          ((st'.scheduler.byPriority.get? kv.1).getD []).contains tid)
+        if oldPrio == newPrio || !queued then st'
+        else
+          let dropped := st'.scheduler.byPriority.indexMap.toList.foldl
+            (fun bp kv =>
+              let bucket := (bp.get? kv.1).getD []
+              if bucket.contains tid then bp.insert kv.1 (bucket.filter (· != tid)) else bp)
+            st'.scheduler.byPriority
+          let newBucket := (dropped.get? newPrio).getD []
+          { st' with scheduler := { st'.scheduler with
+              byPriority := dropped.insert newPrio (newBucket ++ [tid]) } }
+
+/-- **Revert priority inheritance for `tid` and the chain above it** --
+`revertPriorityInheritance`'s frozen counterpart, and the step the frozen reply
+was missing.
+
+Structurally identical to propagation, as the live pair is: `frozenUpdatePipBoost`
+always recomputes from the *current* waiters, so unblocking a caller and blocking
+a new one are the same operation on the server's boost.
+
+Fuel defaults to the object count, which bounds any acyclic chain, and running
+out returns the state reached so far -- the live function's own semantics. -/
+def frozenRevertPriorityInheritance (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    (fuel : Nat := st.objects.size) : FrozenSystemState :=
+  match fuel with
+  | 0 => st
+  | fuel' + 1 =>
+      let st' := frozenUpdatePipBoost st tid
+      -- The chain topology is read from the PRE-update state, as the live walk
+      -- does: `frozenUpdatePipBoost` writes `pipBoost` and a bucket, never an
+      -- `ipcState`, so the blocking graph is unchanged either way.
+      match frozenBlockingServer st tid with
+      | some nextServer => frozenRevertPriorityInheritance st' nextServer fuel'
+      | none => st'
 
 /-- **Link a dequeued caller to the server's reply object** (PR #873 round 17),
 mirroring `SystemState.linkCallerReply`.

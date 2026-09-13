@@ -73,7 +73,7 @@ deferral — neither is a soundness gap):
 
 2. **`schedulerPriorityMatchOnCore`** is register-bank-independent but coupled to
    dispatch via the **PIP-boost run-queue bucket migration**: a `pipBoost` change
-   alters a thread's `effectiveRunQueuePriority`, and the matching run-queue index
+   alters a thread's `TCB.boostedPriority`, and the matching run-queue index
    is re-bucketed only on the thread's home core (`updatePipBoostOnCore`), so the
    conjunct is not frame-stable across an arbitrary objects mutation.
    (**`runQueueUniqueOnCore`** — run-queue `Nodup` — *is* both register-bank-
@@ -485,7 +485,7 @@ theorem enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore
           · exact ⟨tcb, by rw [hxtid]; exact hTcb⟩
           · -- `x ≠ tid`, so `x` was already in core `c`'s run queue pre-wake.
             have hx' : x ∈ ((st.scheduler.runQueueOnCore c).insert tid
-                (effectiveRunQueuePriority tcb)).toList := by
+                (tcb.boostedPriority)).toList := by
               have h2 := hx
               simp only [enqueueRunnableOnCore, hTcb, hFresh, Bool.false_eq_true, if_false,
                 SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at h2

@@ -161,7 +161,7 @@ def edfCurrentHasEarliestDeadlineOnCore (st : SystemState) (c : CoreId) : Prop :
             match st.getTcb? tid with
             | some tcb =>
                 tcb.domain = curTcb.domain →
-                effectiveRunQueuePriority tcb = effectiveRunQueuePriority curTcb →
+                tcb.boostedPriority = curTcb.boostedPriority →
                 tcb.priority = curTcb.priority →
                 curTcb.deadline.toNat = 0 ∨
                 (tcb.deadline.toNat = 0 ∨ curTcb.deadline.toNat ≤ tcb.deadline.toNat)
@@ -198,7 +198,7 @@ def schedulerPriorityMatchOnCore (st : SystemState) (c : CoreId) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c) →
     match st.getTcb? tid with
     | some tcb =>
-        (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some (effectiveRunQueuePriority tcb)
+        (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some (tcb.boostedPriority)
     | none => True
 
 /-- SM4.C: per-core domain-time positivity.  Per-core form of
@@ -388,7 +388,10 @@ theorem edfCurrentHasEarliestDeadlineOnCore_bootCore_iff (st : SystemState) :
           have hSpec := h tid hMem
           cases hObj : (st.objects[tid.toObjId]? : Option KernelObject) with
           | none => rw [hObj] at *; trivial
-          | some obj => cases obj <;> (rw [hObj] at hSpec; simp_all)
+          -- With the bucket reading spelled as one accessor on both sides the
+          -- specialised hypothesis IS the goal, so it closes directly; the
+          -- `simp_all` remains for the non-TCB constructors.
+          | some obj => cases obj <;> (rw [hObj] at hSpec; first | exact hSpec | simp_all)
       | _ => simp
 
 theorem contextMatchesCurrentOnCore_bootCore_iff (st : SystemState) :
@@ -1838,7 +1841,7 @@ theorem schedulerInvariant_smp_extended_of_bootCore_preservation
 --
 -- The SchedContext-bound / -donated effective-priority resolver
 -- `resolveEffectivePrioDeadline` (Selection.lean) reads the *SchedContext's*
--- base priority, whereas `effectiveRunQueuePriority` — the bucket that
+-- base priority, whereas `TCB.boostedPriority` — the bucket that
 -- `schedulerPriorityMatchOnCore` records — reads the *TCB's* base priority.
 -- They coincide exactly when a bound thread's base priority equals its
 -- SchedContext's base priority: the "Option B propagation" agreement that
@@ -1850,7 +1853,7 @@ theorem schedulerInvariant_smp_extended_of_bootCore_preservation
 -- run-queue inserts (`updatePipBoostOnCore` and the bound budget re-enqueue,
 -- both at `resolveInsertPriority = (resolveEffectivePrioDeadline st tcb).1`):
 -- under this agreement that inserted bucket equals the TCB-based
--- `effectiveRunQueuePriority tcb` that `schedulerPriorityMatch` records.
+-- `tcb.boostedPriority` that `schedulerPriorityMatch` records.
 --
 -- It is stated system-wide (a property of the object store, core-independent)
 -- and over *both* `.bound` and `.donated` bindings via `SchedContextBinding.scId?`,
@@ -1889,7 +1892,7 @@ carried it across either, since `boundThreadPriorityConsistent_frame` requires
 `schedContextBinding` unchanged, which is exactly what the hand-off rewrites.  Narrowing it is not a weakening of the
 guarantee — `resolveEffectivePrioDeadline` no longer reads `sc.priority` on the
 `.donated` arm, so there is nothing left for the donated case to reconcile
-(`resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree` now
+(`resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree` now
 discharges that arm outright). -/
 def boundThreadPriorityConsistent (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb →

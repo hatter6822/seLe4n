@@ -404,7 +404,7 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
           -- thread and configure changes the SC priority, propagate the new
           -- priority into the bound TCB's `priority` field AND re-bucket the
           -- thread in the RunQueue if present (so `schedulerPriorityMatch`'s
-          -- `threadPriority[tid]? = effectiveRunQueuePriority tcb` continues to
+          -- `threadPriority[tid]? = tcb.boostedPriority` continues to
           -- hold under the new TCB priority). Without the RunQueue migration
           -- the thread would remain in the old priority bucket while
           -- `tcb.priority` was updated — a latent priority-inversion vector.
@@ -667,7 +667,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- thread that was **queued** is removed and re-inserted at the legacy
           -- priority, which is the re-bucket the docstring always described.
           let updatedTcb := { tcb with schedContextBinding := SchedContextBinding.unbound }
-          let legacyPrio := effectiveRunQueuePriority updatedTcb
+          let legacyPrio := updatedTcb.boostedPriority
           let homeQueue := st0.scheduler.runQueueOnCore unbindHome
           let rebucketed := (homeQueue.remove tid).insert tid legacyPrio
           let st1 :=

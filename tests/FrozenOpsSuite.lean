@@ -211,6 +211,97 @@ private def fo004e_replyDeschedulesTheServer : IO Unit := do
           -- is about the deschedule rather than about an empty queue.
           expect "the answered caller is runnable" (queued st' ⟨2⟩)
 
+/-- FO-004f (PR #895 review round 15): **priority inheritance is reverted when
+the reply unblocks a waiter.**
+
+A server blocked-on by a high-priority client carries that client's priority in
+`TCB.pipBoost`, and `frozenEnsureRunnable` buckets by `frozenEffectivePriority`,
+which reads it.  The reply makes the client `.ready`, so it stops being a waiter
+— and this surface left the boost untouched, so the server stayed bucketed at a
+priority inherited from a client it had already answered.  Both live reply
+compositions recompute (`revertPriorityInheritance` /
+`propagatePipChainCrossCore`).
+
+The witness keeps a **second** waiter, so the assertion is about recomputing
+from whoever is left rather than about clearing: a step that cleared the boost
+unconditionally, one that left it at the answered client's priority, and one
+that did nothing at all each fail it differently.  The no-donation arm is
+deliberate — that is the arm the finding names, and it is also the only one on
+which the bucket move is observable, since a donation return deschedules the
+server outright (FO-004e). -/
+private def fo004f_replyRevertsPriorityInheritance : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  -- ⟨2⟩ is the client being answered, ⟨4⟩ a second client still waiting.
+  let answered : TCB := { mkTcb 2 200 with
+    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let stillWaiting : TCB := { mkTcb 4 150 with
+    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
+  -- The server's own priority is 10; it has inherited 200 from ⟨2⟩.
+  let serverTcb : TCB := { mkTcb 3 10 with pipBoost := some ⟨200⟩ }
+  let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
+  let st0 := mkFrozenState
+    [(⟨2⟩, .tcb answered), (⟨3⟩, .tcb serverTcb), (⟨4⟩, .tcb stillWaiting),
+     (rid.toObjId, .reply replyObj)]
+  let inBucket (s : FrozenSystemState) (p : Nat) (t : SeLe4n.ThreadId) : Bool :=
+    ((s.scheduler.byPriority.get? ⟨p⟩).getD []).contains t
+  match frozenEnsureRunnable st0 ⟨3⟩ with
+  | .error _ => throw <| IO.userError "could not queue the server"
+  | .ok st =>
+      expect "the server starts bucketed at the INHERITED priority" (inBucket st 200 ⟨3⟩)
+      let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+      match frozenEndpointReplyWithDonationReturn ⟨3⟩ ⟨2⟩ rid msg st with
+      | .error _ => throw <| IO.userError "reply should succeed"
+      | .ok ((), st') =>
+          match st'.getTcb? ⟨3⟩ with
+          | some t =>
+              expect "boost recomputed from the REMAINING waiter"
+                (t.pipBoost == some ⟨150⟩)
+          | none => throw <| IO.userError "server TCB missing"
+          expect "and it left the bucket it inherited" (!inBucket st' 200 ⟨3⟩)
+          expect "...for the one its new boost names" (inBucket st' 150 ⟨3⟩)
+          -- The server holds no donation here, so the deschedule of FO-004e
+          -- must NOT have fired: this is a re-bucket, not a removal.
+          expect "a server with no donation stays runnable"
+            (inBucket st' 150 ⟨3⟩)
+
+/-- FO-004g (PR #895 review round 15): **a caller with no recorded server is not
+repliable.**
+
+Both live spellings answer `.replyCapInvalid` for `.blockedOnReply _ none` — the
+bare `endpointReply` and `endpointReplyOnCore` — and the live comment records why
+the `none => true` branch was retired: every production path records `some
+receiver`, so the `none` case is invariant drift, and letting a reply through
+there was rated a confused-deputy risk (AK1-B / I-H02).  This mirror bound the
+recorded server and never read it.
+
+The control replies to the SAME state with a server recorded, so the refusal is
+known to be about the missing server rather than about anything else in the
+fixture. -/
+private def fo004g_replyNeedsARecordedServer : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
+  let mkState (server? : Option SeLe4n.ThreadId) : FrozenSystemState :=
+    mkFrozenState
+      [(⟨2⟩, .tcb { mkTcb 2 with
+                    ipcState := .blockedOnReply ⟨10⟩ server?, replyObject := some rid }),
+       (⟨3⟩, .tcb (mkTcb 3)), (rid.toObjId, .reply replyObj)]
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  match frozenEndpointReply ⟨3⟩ ⟨2⟩ rid msg (mkState none) with
+  | .ok _ => throw <| IO.userError "a reply with no recorded server must be refused"
+  | .error e => expect "refused as an invalid reply capability" (e == .replyCapInvalid)
+  -- ...and nothing is committed: the composite refuses for the same reason.
+  match frozenEndpointReplyWithDonationReturn ⟨3⟩ ⟨2⟩ rid msg (mkState none) with
+  | .ok _ => throw <| IO.userError "the composite must refuse it too"
+  | .error e => expect "composite refuses identically" (e == .replyCapInvalid)
+  -- The control: the same fixture with a server recorded goes through, so the
+  -- refusal above is about `replyTarget` and not about the rest of the state.
+  match frozenEndpointReply ⟨3⟩ ⟨2⟩ rid msg (mkState (some ⟨3⟩)) with
+  | .ok ((), st) =>
+      match st.getTcb? ⟨2⟩ with
+      | some t => expect "control: a recorded server still replies" (t.ipcState == .ready)
+      | none => throw <| IO.userError "target TCB missing"
+  | .error _ => throw <| IO.userError "control should succeed"
+
 /-- FO-004d: ...and the reply leg ALONE still agrees with the bare
 `endpointReply`, which is what `FO-031` compares.  A Reply on no stack is
 consumed outright, so the pop is the identity there and the composite and the
@@ -1125,6 +1216,70 @@ private def differentialEndpointReplyAgrees : IO Unit := do
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.endpointReply diffB diffA msg) ist.state))
 
+/-- FO-041 (PR #895 review round 15): **the whole `.reply` OPERATION, against
+`endpointReplyWithDonation`.**
+
+FO-031 above compares the frozen reply against the bare `endpointReply` — a
+**leg**.  The live `.reply` operation is that leg followed by the donation
+return and a priority-inheritance revert, and nothing compared the frozen
+composite against it, so the coverage table read "reply: checked" through three
+consecutive review rounds in which the composite was found to be missing the
+donation pop, then the server's deschedule, then the inheritance revert.  A
+leg-level agreement is not an operation-level one, and
+`frozenBranchOperationChecked` now states the difference; this scenario is what
+makes its one `true` row honest.
+
+Two halves, because the two divergences this round found fail differently.  The
+first gives the recorded server an inherited boost, so a composite that skips
+the revert leaves a `pipBoost` the live one clears — a TCB-field disagreement
+`frozenStateAgrees` sees.  The second drops the recorded server from the
+caller's `ipcState`, where the live operation refuses and a composite missing
+the guard succeeds — a disagreement only the refusal half of `frozenRunAgrees`
+can see, which is why that half exists. -/
+private def differentialEndpointReplyOperationAgrees : IO Unit := do
+  let msg : IpcMessage := { registers := #[⟨13⟩], caps := #[], badge := none }
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let caller : TCB := { diffTcb 62 with
+    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid }
+  -- The server has inherited the caller's priority; answering the caller is
+  -- what makes that boost stale.
+  let server : TCB := { diffTcb 63 with pipBoost := some ⟨200⟩ }
+  let ist := diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    rid { replyId := rid, caller := some diffA }
+  -- Control: the operation really runs on both sides, so the agreement below is
+  -- about a delivered reply rather than a shared refusal.
+  expect "FO-041 control: the live reply operation succeeds"
+    (SeLe4n.Kernel.endpointReplyWithDonation diffB diffA msg ist.state).toOption.isSome
+  expect "FO-041 control: and so does the frozen composite"
+    (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze ist)).toOption.isSome
+  -- ...and the boost really is there to begin with, so the comparison is about
+  -- a reversion that happened rather than a field that was already `none`.
+  expect "FO-041 control: the server starts with an inherited boost"
+    (match (freeze ist).getTcb? diffB with
+     | some t => t.pipBoost == some ⟨200⟩
+     | none   => false)
+  expect "FO-041: the frozen reply OPERATION agrees with the live one"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze ist))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointReplyWithDonation diffB diffA msg) ist.state))
+  -- The refusal half: a caller whose `ipcState` records no server at all.  Both
+  -- sides must decline it with the same error — the live one has since AK1-B
+  -- (I-H02), which rated letting a reply through there a confused-deputy risk.
+  let unrecorded : TCB := { diffTcb 62 with
+    ipcState := .blockedOnReply diffEpId none, replyObject := some rid }
+  let ist' := diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) unrecorded) (diffTcb 63))
+    rid { replyId := rid, caller := some diffA }
+  expect "FO-041: both refuse a caller with no recorded server"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze ist'))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointReplyWithDonation diffB diffA msg) ist'.state))
+  expect "FO-041 control: and the live side really refuses (not a shared success)"
+    (SeLe4n.Kernel.endpointReplyWithDonation diffB diffA msg ist'.state).toOption.isNone
+
 /-- FO-035: **a receive that dequeues a `.blockedOnCall` caller** (PR #873
 round 17).
 
@@ -1354,6 +1509,19 @@ private def differentialScenarios :
     (.endpointCallParks,                differentialEndpointCallAgrees),
     (.endpointReplyToBlockedCaller,     differentialEndpointReplyAgrees) ]
 
+/-- ...and the scenarios that compare a branch's **whole live operation**, not
+only its leg (PR #895 review round 15).
+
+Kept as its own list because it backs its own claim: the leg list above answers
+`frozenBranchDifferentiallyChecked` and this one answers
+`frozenBranchOperationChecked`, and merging them would let a leg scenario
+satisfy an operation claim -- which is exactly the substitution that let
+"reply: checked" stand while the frozen composite was missing three of the live
+operation's steps in three consecutive review rounds. -/
+private def operationDifferentialScenarios :
+    List (SeLe4n.Kernel.FrozenOps.FrozenOpBranch × IO Unit) :=
+  [ (.endpointReplyToBlockedCaller,     differentialEndpointReplyOperationAgrees) ]
+
 /-- The claim and the scenarios name the same syscalls, in both directions: a
 scenario for a syscall the table does not claim, or a claim with no scenario,
 fails here. -/
@@ -1371,6 +1539,17 @@ private def differentialRegistryMatchesClaim : IO Unit := do
       !(SeLe4n.Kernel.FrozenOps.frozenOpDifferentiallyChecked sid)
         || SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all.all (fun b =>
              b.syscall != sid || covered.contains b)))
+  -- ...and the operation-level claim against the operation-level scenarios, in
+  -- both directions, for the same reason: a `true` row nothing runs is a claim
+  -- about an execution that does not exist.
+  let operationCovered := operationDifferentialScenarios.map Prod.fst
+  expect "registry: every operation-checked branch has an operation scenario"
+    (SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all.all (fun b =>
+      !(SeLe4n.Kernel.FrozenOps.frozenBranchOperationChecked b)
+        || operationCovered.contains b))
+  expect "registry: every operation scenario covers a branch the claim names"
+    (operationCovered.all (fun b =>
+      SeLe4n.Kernel.FrozenOps.frozenBranchOperationChecked b))
 
 /-- FO-033: **the comparison has bite, and the table was wrong.**
 
@@ -1409,6 +1588,8 @@ def main : IO Unit := do
   fo004c_replyToStackHeadPopsDonation
   fo004d_replyOffStackNeedsNoPop
   fo004e_replyDeschedulesTheServer
+  fo004f_replyRevertsPriorityInheritance
+  fo004g_replyNeedsARecordedServer
   fo005_replyDelegatedReplier
   fo005b_replyWrongPresentedCap
   IO.println "--- TPH-006: Frozen Scheduler Tick ---"
@@ -1443,7 +1624,13 @@ def main : IO Unit := do
   IO.println "--- Frozen/live differential agreement ---"
   differentialRegistryMatchesClaim
   differentialScenarios.forM (fun s => s.2)
+  operationDifferentialScenarios.forM (fun s => s.2)
   differentialTaintedSignalAgrees
   differentialRefusalsAgree
   differentialComparisonHasBite
-  IO.println "=== All Q7 frozen ops tests passed (33 scenarios) ==="
+  -- **Derived, not hand-kept** (PR #895 review round 15).  The literal that
+  -- stood here read "33 scenarios" against 40 distinct `FO-` ids and 34 runner
+  -- invocations: a number nothing computed, beside lists that compute
+  -- themselves.  What is worth reporting is the differential coverage, and the
+  -- two lists are exactly the two claims the registry reconciles.
+  IO.println s!"=== All Q7 frozen ops tests passed ({differentialScenarios.length} leg + {operationDifferentialScenarios.length} operation differentials) ==="

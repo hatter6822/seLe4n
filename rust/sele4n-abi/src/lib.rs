@@ -38,6 +38,12 @@
 // is edition 2024's default, so the crate is already at the behaviour it will
 // otherwise acquire silently at the next edition bump.
 #![deny(unsafe_op_in_unsafe_fn)]
+// The same two front-ends as `sele4n-hal` (see its crate docs for why the lints
+// live here and not on a command line).  This crate denies `unsafe_code` outside
+// the modules that need it, so the lints are narrow here — and denying them
+// anyway is what makes a future `unsafe` block arrive already governed.
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::missing_safety_doc)]
 
 #[cfg(feature = "std")]
 extern crate std;

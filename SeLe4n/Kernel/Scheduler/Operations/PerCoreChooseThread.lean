@@ -1300,9 +1300,9 @@ bucket** — no active-domain thread in that bucket beats the selection.
 **Why the maximum-priority bucket, not the whole run queue.**  The selector
 `chooseBestInBucket` is bucket-first: it buckets by *effective* priority
 (`threadPriority`, which under the scheduler invariant equals
-`effectiveRunQueuePriority`, i.e. `max(base, pipBoost)`) and, within the
+`TCB.boostedPriority`, i.e. `max(base, pipBoost)`) and, within the
 highest-effective-priority bucket, picks the `isBetterCandidate`-best by the
-thread's *base* priority + deadline.  Because `effectiveRunQueuePriority ≥
+thread's *base* priority + deadline.  Because `TCB.boostedPriority ≥
 base priority`, a thread in a *lower* effective bucket can have a *higher*
 base priority than the selection — so a global "highest base priority over
 the whole queue" claim would be **false**, and is deliberately not made here.

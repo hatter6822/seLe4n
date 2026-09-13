@@ -32,7 +32,7 @@ import SeLe4n.Kernel.IPC.Operations.Timeout
      vector that an earlier draft of this work introduced.
   3. **Consumption sites unchanged:** the four production re-enqueue
      sites (`handleYield`, `timerTick`, `timerTickBudget` unbound,
-     `switchDomain`) continue to use `effectiveRunQueuePriority tcb`.
+     `switchDomain`) continue to use `tcb.boostedPriority`.
      Under the propagation invariant this equals
      `(resolveEffectivePrioDeadline st tcb).1` consulted by selection,
      eliminating the priority-inversion vector. `schedulerPriorityMatch`
@@ -392,13 +392,13 @@ def handleYield : Kernel Unit :=
         match st.getTcb? tid with
         | some tcb =>
             -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
-            -- `effectiveRunQueuePriority tcb` (base + PIP boost). For
+            -- `tcb.boostedPriority` (base + PIP boost). For
             -- SchedContext-bound threads, the AK2-B Option B propagation
             -- invariant (`tcb.priority = sc.priority` enforced by
             -- `schedContextBind` and `schedContextConfigure`) guarantees this
             -- equals `(resolveEffectivePrioDeadline st tcb).1` read by
             -- selection. `schedulerPriorityMatch` therefore holds post-insert.
-            let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
+            let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).rotateToBack tid
             let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
             schedule st'
         | none => .error .schedulerInvariantViolation
@@ -448,14 +448,14 @@ def timerTick : Kernel Unit :=
               let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine }
               -- WS-H12b: re-enqueue current thread before schedule.
               -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
-              -- `effectiveRunQueuePriority tcb` (priority + PIP boost).
+              -- `tcb.boostedPriority` (priority + PIP boost).
               -- The `tcb` value is bound PRE-mutation (before `st'`'s timeSlice
-              -- update), and `effectiveRunQueuePriority` depends only on
+              -- update), and `TCB.boostedPriority` depends only on
               -- `tcb.priority` and `tcb.pipBoost` — both of which are unchanged
               -- across the timeSlice mutation. Under the AK2-B Option B
               -- propagation invariant this value equals the SC-aware priority
               -- used by selection (see Core.lean module docstring).
-              let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore bootCoreId (((st'.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb))) }
+              let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore bootCoreId (((st'.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority))) }
               schedule st''
             else
               -- Time-slice not expired: decrement and continue
@@ -621,11 +621,11 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
       let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
                            machine := tick st.machine }
       -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
-      -- `effectiveRunQueuePriority tcb`. This is the `.unbound` branch so
-      -- `effectiveRunQueuePriority` is unambiguously correct (no SchedContext
+      -- `tcb.boostedPriority`. This is the `.unbound` branch so
+      -- `TCB.boostedPriority` is unambiguously correct (no SchedContext
       -- resolution needed). SC-bound branches at lines :696 and :716 use
       -- `resolveInsertPriority` directly.
-      let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore bootCoreId (((st'.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb))) }
+      let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore bootCoreId (((st'.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority))) }
       .ok (st'', true)
     else
       let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
@@ -793,7 +793,7 @@ def handleYieldWithBudget : Kernel Unit :=
         match tcb.schedContextBinding with
         | .unbound =>
           -- AI3-A (M-04): Legacy yield with effective priority (base + PIP boost)
-          let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
+          let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).rotateToBack tid
           let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
           scheduleEffective st'
         | .bound scId | .donated scId _ =>
@@ -817,7 +817,7 @@ def handleYieldWithBudget : Kernel Unit :=
           | none =>
             -- SchedContext not found — fall back to legacy yield
             -- AI3-A (M-04): Use effective priority (base + PIP boost)
-            let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
+            let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).rotateToBack tid
             let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
             scheduleEffective st'
       | none => .error .schedulerInvariantViolation
@@ -879,7 +879,7 @@ def switchDomain : Kernel Unit :=
             -- U-M39: Save outgoing context before clearing current
             let stSaved := saveOutgoingContext st
             -- WS-H12b / AI3-A / AK2-A (S-H03): re-enqueue current thread
-            -- before the domain switch at `effectiveRunQueuePriority tcb`
+            -- before the domain switch at `tcb.boostedPriority`
             -- (priority + PIP boost). All reads use `st` (pre-save) so that
             -- TCB fields see the same snapshot; `saveOutgoingContext` only
             -- updates the register-context of the outgoing TCB (not priority,
@@ -891,7 +891,7 @@ def switchDomain : Kernel Unit :=
               | some tid =>
                   match st.getTcb? tid with
                   | some tcb =>
-                      (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)
+                      (st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)
                   | none => (st.scheduler.runQueueOnCore bootCoreId)
             let sched' := ((((st.scheduler.setRunQueueOnCore bootCoreId rq').setCurrentOnCore
                   bootCoreId none).setActiveDomainOnCore bootCoreId (DomainScheduleEntry.domain entry)).setDomainTimeRemainingOnCore
@@ -1316,7 +1316,7 @@ budget on core `c`, returning `(updatedState, wasPreempted)`.
 Dispatches on `tcb.schedContextBinding` exactly as `timerTickBudget`:
 - **Unbound, time-slice > 1**: decrement `timeSlice`; no preemption.
 - **Unbound, time-slice ≤ 1**: reset `timeSlice` to `configDefaultTimeSlice`,
-  re-enqueue `tid` into core `c`'s run queue at `effectiveRunQueuePriority`,
+  re-enqueue `tid` into core `c`'s run queue at `TCB.boostedPriority`,
   signal preemption.
 - **Bound, budget > 1**: decrement the SchedContext budget; no preemption.
 - **Bound, budget ≤ 1**: budget exhausted — schedule a replenishment, insert it
@@ -1347,7 +1347,7 @@ def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId
     if tcb.timeSlice ≤ 1 then
       let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
       let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
-      let rq := (st'.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)
+      let rq := (st'.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)
       let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
       .ok (st'', true, [])
     else
@@ -1507,7 +1507,7 @@ def timerTickOnCore (st : SystemState) (c : CoreId) :
 /-- WS-SM SM5.D.6 (per-core domain switch): the per-core analogue of
 `switchDomain`.  Advances core `c` to the next domain-schedule entry, saving the
 outgoing thread's register context, re-enqueueing core `c`'s current thread at
-`effectiveRunQueuePriority`, clearing `currentOnCore c`, and writing core `c`'s
+`TCB.boostedPriority`, clearing `currentOnCore c`, and writing core `c`'s
 active-domain / time-remaining / schedule-index slots.
 
 Reads / writes only core `c`'s slots (plus the object store via the context
@@ -1529,7 +1529,7 @@ def switchDomainOnCore (st : SystemState) (c : CoreId) :
             | none => st.scheduler.runQueueOnCore c
             | some tid =>
                 match st.getTcb? tid with
-                | some tcb => (st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)
+                | some tcb => (st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)
                 | none => st.scheduler.runQueueOnCore c
           let sched' := ((((st.scheduler.setRunQueueOnCore c rq').setCurrentOnCore
               c none).setActiveDomainOnCore c (DomainScheduleEntry.domain entry)).setDomainTimeRemainingOnCore
@@ -1540,7 +1540,7 @@ def switchDomainOnCore (st : SystemState) (c : CoreId) :
 `scheduleDomain`.  With a **non-empty** domain schedule: decrements core `c`'s
 domain time remaining; on expiry, performs the per-core domain switch
 (`switchDomainOnCore` — save the outgoing current, re-enqueue it at
-`effectiveRunQueuePriority`, rotate to the next entry, reload the domain
+`TCB.boostedPriority`, rotate to the next entry, reload the domain
 quantum) and re-dispatches via the budget-aware `scheduleEffectiveOnCore` (so a
 domain boundary never dispatches a budget-exhausted thread — a deliberate
 budget-aware refinement over the single-core `scheduleDomain`, which uses the
@@ -2327,7 +2327,7 @@ def migrateRunQueueOnAffinityChange (st : SystemState) (tid : SeLe4n.ThreadId)
     | some tcb =>
       if (st.scheduler.runQueueOnCore fromCore).contains tid then
         let rqFrom := (st.scheduler.runQueueOnCore fromCore).remove tid
-        let rqTo := (st.scheduler.runQueueOnCore toCore).insert tid (effectiveRunQueuePriority tcb)
+        let rqTo := (st.scheduler.runQueueOnCore toCore).insert tid (tcb.boostedPriority)
         let sched' := (st.scheduler.setRunQueueOnCore fromCore rqFrom).setRunQueueOnCore toCore rqTo
         { st with scheduler := sched' }
       else st

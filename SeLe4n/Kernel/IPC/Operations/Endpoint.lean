@@ -475,25 +475,8 @@ be reused by rewriting through this equality. -/
 @[simp] theorem removeRunnableValid_eq (st : SystemState) (vtid : SeLe4n.ValidThreadId) :
     removeRunnableValid st vtid = removeRunnable st vtid.val := rfl
 
-/-- AK1-E (I-M03): Inlined PIP-effective priority. Duplicated from
-`Scheduler/Invariant.lean:146` (`effectiveRunQueuePriority`) to avoid a
-circular import (Scheduler.Invariant → ... → Endpoint). When a TCB has a
-PIP boost (from priority inheritance), the RunQueue must insert at the
-boosted priority to preserve priority-inversion bounds; otherwise the
-boosted thread lands in the wrong priority bucket until the next
-scheduler tick.
-
-The agreement with the scheduler's copy is **checked**, not assumed:
-`ipcEffectiveRunQueuePriority_eq_effectiveRunQueuePriority`
-(`IPC/CrossCore/EndpointSend.lean`, the first module that sees both names)
-makes a change to either body that the other does not mirror a build failure. -/
-@[inline] def ipcEffectiveRunQueuePriority (tcb : TCB) : SeLe4n.Priority :=
-  match tcb.pipBoost with
-  | none => tcb.priority
-  | some boost => ⟨Nat.max tcb.priority.val boost.val⟩
-
 /-- WS-G4/F-P02: O(1) amortized insert via RunQueue.
-    AK1-E (I-M03): Priority is computed via `ipcEffectiveRunQueuePriority`
+    AK1-E (I-M03): Priority is computed via `TCB.boostedPriority`
     to honor PIP boost on wake paths (notification signal, endpoint
     rendezvous, reply wake). Matches the yield/timer/switch convention
     established in AI3-A. -/
@@ -508,7 +491,7 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
     | some tcb =>
         { st with
             scheduler := st.scheduler.setRunQueueOnCore bootCoreId
-              ((st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb))
+              ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority)
         }
     | none => st
 

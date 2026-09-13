@@ -142,7 +142,7 @@ theorem threadId_toObjId_injective {a b : SeLe4n.ThreadId}
   SeLe4n.ThreadId.toObjId_injective a b h
 
 /-- AK1-E (I-M03): `ensureRunnable` inserts `tid` at its PIP-effective
-    priority — i.e., `ipcEffectiveRunQueuePriority tcb`, which is
+    priority — i.e., `tcb.boostedPriority`, which is
     `max tcb.priority (tcb.pipBoost.getD 0)`. For threads without a PIP
     boost this equals `tcb.priority`; for PIP-boosted threads it uses
     the boosted priority. This is the operational witness that wake
@@ -154,7 +154,7 @@ theorem ensureRunnable_inserts_at_effective_priority
     (hNotMem : tid ∉ (st.scheduler.runQueueOnCore bootCoreId))
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb)) :
     ((ensureRunnable st tid).scheduler.runQueueOnCore bootCoreId) =
-      (st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb) := by
+      (st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority := by
   -- AN10-B: post-migration `ensureRunnable` reads via `getTcb?`.
   have hTcbTyped : st.getTcb? tid = some tcb :=
     (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb
@@ -176,8 +176,10 @@ theorem ensureRunnable_honors_pipBoost
       (st.scheduler.runQueueOnCore bootCoreId).insert tid ⟨Nat.max tcb.priority.val boost.val⟩ := by
   rw [ensureRunnable_inserts_at_effective_priority st tid tcb hNotMem hTcb]
   congr 1
-  unfold ipcEffectiveRunQueuePriority
-  rw [hBoost]
+  -- Since `v0.35.28` the reading goes through `TCB.boostedPriority` and
+  -- `Priority.raisedBy`, both transparent to `simp`, so the boost hypothesis
+  -- reduces it exactly as `rw [hBoost]` reduced the inline `match`.
+  simp [hBoost]
 
 /-- WS-E3/H-09: If `storeTcbIpcState st tid ipc` succeeds and the post-state has a TCB
     at `tid.toObjId`, then that TCB has `ipcState = ipc`. Covers both the case where
@@ -902,7 +904,7 @@ theorem donateSchedContext_ok_server_donated
     queued waiter, that waiter appears in the post-state runQueue.
     Combined with `ensureRunnable_inserts_at_effective_priority`, this
     ensures the waiter is inserted at its PIP-effective priority — i.e.,
-    `ipcEffectiveRunQueuePriority tcb`. This is the correctness witness
+    `tcb.boostedPriority`. This is the correctness witness
     that the notification wake path does not regress a PIP-boosted
     server to its base priority bucket until the next scheduler tick,
     matching the AI3-A fix pattern for yield/timer/switch. -/

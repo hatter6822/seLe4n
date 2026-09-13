@@ -254,7 +254,11 @@ theorem blockingServer_ipcState_congr (st₁ st₂ : SystemState) (t : ThreadId)
     blockingServer st₁ t = blockingServer st₂ t := by
   have g₁ : st₁.getTcb? t = some tcb₁ := by unfold SystemState.getTcb?; rw [h₁]
   have g₂ : st₂.getTcb? t = some tcb₂ := by unfold SystemState.getTcb?; rw [h₂]
-  simp only [blockingServer, g₁, g₂, hIpc]
+  -- `blockingServer` is the lookup composed with `TCB.blockingServer?` since
+  -- `v0.35.28`, so the `ipcState` fact reaches the goal through the accessor's
+  -- own frame rather than by unfolding a match.
+  simp only [blockingServer, g₁, g₂, Option.bind_some,
+    TCB.blockingServer?_congr hIpc]
 
 theorem updatePipBoost_preserves_blockingServer (st : SystemState) (tid : ThreadId)
     (hObjInv : st.objects.invExt) (t : ThreadId) :

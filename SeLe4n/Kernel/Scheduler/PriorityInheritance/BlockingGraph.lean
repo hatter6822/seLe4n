@@ -43,10 +43,11 @@ def waitersOf (st : SystemState) (tid : ThreadId) : List ThreadId :=
   st.objectIndex.filterMap fun objId =>
     match st.getObject? objId with
     | some (KernelObject.tcb tcb) =>
-      match tcb.ipcState with
-      | .blockedOnReply _ (some target) =>
-        if target == tid then some tcb.tid else none
-      | _ => none
+      -- `TCB.blockingServer?` (`Model/Object/Types.lean`) is the one reading of
+      -- "which server is this thread blocked on"; `blockingServer` below asks it
+      -- of one thread and this asks it of every thread, so the two cannot come
+      -- to disagree about what the blocking edge is.
+      if tcb.blockingServer? == some tid then some tcb.tid else none
     | _ => none
 
 -- ============================================================================
@@ -158,12 +159,7 @@ theorem blockingChain_acyclic (st : SystemState)
 
 /-- D4-D: Helper — the blocking chain server lookup for a given thread. -/
 def blockingServer (st : SystemState) (tid : ThreadId) : Option ThreadId :=
-  match st.getTcb? tid with
-  | some tcb =>
-    match tcb.ipcState with
-    | .blockedOnReply _ (some server) => some server
-    | _ => none
-  | none => none
+  (st.getTcb? tid).bind TCB.blockingServer?
 
 -- ============================================================================
 -- AK1-F (I-M04): PIP-boost / reply-blocked relation
@@ -227,7 +223,9 @@ theorem blockingServer_some_implies_blockedOnReply
     (blockingServer_isSome_iff_blockedOnReply_some st tid).mp hSome
   refine ⟨tcb, epId, hObj, ?_⟩
   have : blockingServer st tid = some server' := by
-    simp only [blockingServer, hObj, hIpc]
+    -- `blockingServer` is the lookup composed with `TCB.blockingServer?`, so the
+    -- reduction needs the accessor's own equation as well as the two facts.
+    simp only [blockingServer, hObj, Option.bind_some, TCB.blockingServer?_eq, hIpc]
   rw [h] at this
   exact (Option.some.injEq _ _ ▸ this) ▸ hIpc
 

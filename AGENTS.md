@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.27.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.28.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~63916 lines)
+- `CHANGELOG.md` (~64044 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23254 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -312,9 +312,10 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
+- `tests/FrozenOpsSuite.lean` (~1636 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1616 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1603 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1533 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
@@ -324,7 +325,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
-- `tests/FrozenOpsSuite.lean` (~1403 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1397 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1389 lines)
@@ -378,6 +378,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~958 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~950 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~949 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~947 lines)
 - `tests/SmpCrossCoreNotificationSuite.lean` (~937 lines)
@@ -410,7 +411,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
-- `SeLe4n/Kernel/FrozenOps/Core.lean` (~810 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 - `docs/DEVELOPMENT.md` (~803 lines)
@@ -1876,6 +1876,129 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the deschedule) rather than the one nested inside it, so the pairing is
   structural.  **When a rule has been restated six times, stop restating it and
   write down what the restating measured.**
+
+  **And a claim made at the wrong UNIT is a claim about something else** (PR #895
+  review round 15, `v0.35.28`).  Round 13 said *ask which unit the property is
+  about* and applied it to where a fix goes.  Round 15 is the same question asked
+  of where a *verdict* is taken, in two artefacts that share nothing else, and
+  the two together are why this is a class rather than two bugs.
+
+  A Setext heading's content is the **whole** preceding paragraph (CommonMark
+  4.3), and the round-14 check read the line directly above the underline — so
+  `/// This is not a contract`, `/// Safety`, `/// ===` satisfied a gate whose
+  subject is what a caller is told, while rustdoc titles that heading "This is
+  not a contract Safety".  Fail-open, on the gate with an empty baseline.  And
+  the frozen surface's differential coverage table said `.reply` was checked
+  against `endpointReply` — the **bare** reply, a *leg*.  The live `.reply`
+  *operation* is that leg plus the donation return plus a priority-inheritance
+  revert, and nothing compared the frozen composite against it, so "reply:
+  checked" stood through **four consecutive review rounds** in which that
+  composite was found to be missing the donation pop, then the server's
+  deschedule, then the inheritance revert, then a missing-server refusal.  In
+  both cases the check ran, reported truthfully about the unit it examined, and
+  that unit was not the one the claim was read as being about.
+
+  **So name the unit in the claim, and make the smaller claim unable to stand in
+  for the larger.**  The heading verdict is taken from the paragraph's first
+  line, where its content begins.  The coverage table gained a second, separate
+  claim (`frozenBranchOperationChecked`) with its own scenario list reconciled in
+  both directions, three `decide` interlocks, and — the load-bearing part — a
+  *stated reason* on every branch that has only a leg check, so the next step
+  composed onto a live operation is a row somebody has to write.  Merging the two
+  lists would have re-created the defect inside its own remedy.
+
+  Two corollaries, both earned.  **A new unit changes which leaf blocks matter**:
+  carrying the paragraph's first line means a thematic break and an ATX heading
+  must now end the paragraph, one in each direction — the break so `Safety` /
+  `***` / `===` is refused, the heading so `# Overview` / `Safety` / `===` is
+  *accepted* — and each needs its own mutation, since a case that survives the
+  pre-fix code tests nothing.  And **a mechanism worth building finds something
+  on its first run**: the operation-level differential immediately failed, on a
+  bug in the same cut's own fix — `frozenUpdatePipBoost` looked for the thread in
+  the bucket its *old effective priority* names, where the live `updatePipBoost`
+  asks whether the thread is in the queue at all and removes it from wherever it
+  is.  The divergence is visible only on a state where a thread's bucket and its
+  effective priority have already drifted apart, which is precisely the state a
+  reversion exists to repair.  A mechanism that passes everything on the day it
+  lands has not yet been shown to measure anything.
+
+  **And when a real front-end exists, the scanner is not the authority — hand it
+  the question** (the maintainer's instruction, `v0.35.28`).  The rule above
+  fixes a verdict taken at the wrong unit; this one retires the artefact that
+  kept taking them.  Round 14 registered the generalisation as debt and round
+  15's P1 was the **seventh consecutive round** to find a defect in the same
+  hand-written front-end, which is the measurement that registering it again was
+  not the move.
+
+  *The `unsafe` question's front-end is rustc; the `# Safety` question's is
+  rustdoc.*  `sele4n-hal` and `sele4n-abi` deny
+  `clippy::undocumented_unsafe_blocks` and `clippy::missing_safety_doc` at their
+  crate roots.  The first is rustc's own parse of the block and of the comment
+  run above it — no `//` versus `/*` versus `r#unsafe` versus attribute-nesting
+  question can be got wrong, because there is no second parser to get it wrong
+  in.  The second renders the item's documentation with the parser rustdoc uses,
+  so fences, HTML blocks, Setext underlines and raw doc literals — four of the
+  last seven rounds' findings — are decided by the tool whose output the caller
+  actually reads.
+
+  **Two things about turning a lint on were established by mutation, and either
+  would have shipped a false green.**  `cargo clippy -- -W <lint>` reaches only
+  the final compilation unit and is **silent** for every workspace member: the
+  first run reported zero findings and deleting a real `// SAFETY:` comment
+  still reported zero.  And the host lane cannot see the
+  `#[cfg(target_arch = "aarch64")]` majority of a HAL: the same deletion yields
+  **0** findings on the host and **2** on `aarch64-unknown-none`.  *A lint that
+  is not running is indistinguishable from a lint that passes*, which is this
+  file's inert-witness rule arriving at a tool nobody thinks to test.  Delete a
+  real justification and watch the lane you rely on fail before believing it.
+
+  **The scanner stays, and says what it now owns.**  Tier 0 runs before any
+  build, so the fast approximation is still worth having; and three things
+  structurally escape the lints — a non-`pub` `unsafe fn`, an `unsafe fn`
+  declared inside an `extern` block (no lint requires a contract of a *foreign*
+  declaration, and this tree has ten Lean upcalls that need one), and the ARM ARM
+  citation census.  Its output prints its authority and its residue beside its
+  ratio, because a number that implies an authority it does not have is the
+  defect this section keeps recording.
+
+  **And the same instruction applied inwards: a mirror must not re-answer a
+  question that has a live answer.**  The round-15 frozen fix added five
+  hand-written counterparts of live functions, which is more of the duplication
+  that produced the churn.  Two were pure questions about a `TCB` record — and
+  the frozen store holds the **live** `TCB` — so they are the live accessors
+  now: `TCB.boostedPriority` and `TCB.blockingServer?`
+  (`Model/Object/Types.lean`).  Under them sits `Priority.raisedBy`
+  (`Prelude.lean`), "a base raised by an inherited boost", which was written
+  inline at **eleven** sites across the scheduler, the IPC wake path, the
+  priority-setting path and the frozen run queue.  Its base is a **parameter**
+  because it is not always the thread's own: a `.bound` thread's base is its
+  reservation's.  Fixing it at the TCB would have covered ten of eleven and left
+  the eleventh spelling its own `match` — *an abstraction that does not fit its
+  subject is how a duplicate survives a de-duplication.*
+
+  Three things that cut records.  **An accessor ships with its frame**:
+  `TCB.blockingServer?_congr` and `TCB.boostedPriority_congr` say which fields
+  each reads, because a consumer that instead unfolds the accessor inside a
+  `filterMap` also rewrites the tail's *bound* occurrences and desynchronises the
+  induction hypothesis — a hazard one proof in `Compute.lean` had already
+  documented one level up, and which reappeared the moment the accessor was
+  introduced.  **A pin is not a substitute for an upstream answer, and a pin whose subject is
+  gone is deleted, not kept**: `effectiveRunQueuePriority` and
+  `ipcEffectiveRunQueuePriority` were two bodies because importing the scheduler
+  from the IPC module would close an import cycle, held together by a `rfl`
+  obligation stated in the first module that sees both names.  That pin is
+  exactly what this project prescribes when a second implementation must exist —
+  and it need not have existed, because the shared answer belongs in the
+  **model**, upstream of both, where the cycle objection never applied.  *Look
+  for the upstream home before reaching for the pin.*  Both names are now gone
+  and every site calls `TCB.boostedPriority`; the pin went with them, because
+  once one side is deleted it has no subject, and a theorem that can only be
+  `rfl` asserts nothing while reading like a check — this file's own
+  inert-witness defect, arriving as the *residue of a de-duplication*.  A pin is
+  worth exactly the divergence it can still see.  And
+  **the de-duplication's own grep missed a copy**: `effectiveBucketPriority`
+  binds its base with a `let`, so a search for `Nat.max tcb.priority.val` did not
+  see it; it surfaced only when a proof stopped closing.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

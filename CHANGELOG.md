@@ -1,3 +1,152 @@
+## v0.35.28 — PR #895 review round 15: the Setext heading's whole paragraph, the frozen reply's inheritance revert and its missing-server refusal, and an operation-level differential that found a fourth divergence
+
+Three findings, all reproduced against the tree before being acted on, and one
+mechanism — because two of the three are the fifth and sixth instance of a
+single class this PR has now met in five consecutive rounds.
+
+**A Setext heading's content is the whole paragraph** (P1,
+`scripts/check_unsafe_block_justifications.py`).  Round 14 taught the gate
+CommonMark's second heading syntax and read the verdict off the line directly
+above the underline.  A Setext heading's content is the **entire** preceding
+paragraph, which 4.3 permits to span lines, so `/// This is not a contract`,
+`/// Safety`, `/// ===` satisfied the gate while rustdoc titles that heading
+"This is not a contract Safety" — no Safety section at all, and fail-OPEN on a
+gate whose baseline is empty.  The verdict is now taken from the paragraph's
+**first** line, where the heading's content begins, and two leaf blocks that end
+a paragraph are recognised for the first time because carrying the first line
+makes them matter: a thematic break (`Safety` / `***` / `===` must NOT count)
+and an ATX heading (`# Overview` / `Safety` / `===` must count — round 6's rule
+that the safe direction is still a direction).  Four matrix rows, each
+mutation-tested against its own clause; the live tree is unmoved at 136/136.
+
+**The frozen reply reverts priority inheritance** (P2,
+`SeLe4n/Kernel/FrozenOps/`).  A server blocked-on by a high-priority client
+carries that client's priority in `TCB.pipBoost`, and `frozenEnsureRunnable`
+buckets by it — so answering the client leaves the server queued at a priority
+inherited from a call it has already completed.  Both live compositions
+recompute (`revertPriorityInheritance`, `propagatePipChainCrossCore`); this
+surface did not.  `frozenRevertPriorityInheritance` is the mirror, over
+`frozenWaitersOf` / `frozenComputeMaxWaiterPriority` / `frozenBlockingServer` /
+`frozenUpdatePipBoost`, and it runs on **every** successful reply, donation or
+none.  `frozenEffectivePriority` is extracted in the same cut so the enqueue and
+the reversion cannot answer "which bucket" differently.
+
+**...and it refuses a caller with no recorded server** (P2).  Both live
+spellings answer `.replyCapInvalid` for `.blockedOnReply _ none` — the live
+comment records the retired `none => true` branch as a confused-deputy risk
+(AK1-B / I-H02) — and this mirror bound the recorded server and never read it.
+The binder stays unused for *authority*, exactly as in `endpointReplyOnCore`: a
+delegated replier is still legitimate, and what is refused is the absence of a
+recorded server, not a mismatch with it.
+
+**The mechanism: a leg-level agreement is not an operation-level one.**  Rounds
+13, 14 and both frozen findings above are one defect — the mirror omits a step
+the live operation performs — and the coverage table read "reply: checked"
+through all four, because the differential it names compares the frozen reply
+against the **bare** `endpointReply`, a leg.  The live `.reply` *operation* is
+that leg plus the donation return plus the inheritance revert, and nothing
+compared the frozen composite against it.  `frozenBranchOperationChecked` /
+`frozenBranchOperationUncheckedReason` state the second claim separately, with
+three interlock theorems (`decide`): checked-or-reasoned, no row both, and an
+operation claim implies its leg claim.  `operationDifferentialScenarios` backs
+it with executions and is reconciled against the claim in both directions, so a
+`true` row nothing runs fails — the treatment the leg claim already had.  The
+remaining twelve branches carry stated reasons, two of which are findings in
+their own right: the live `.call` and `.receive` rendezvous donate a scheduling
+context (`applyCallDonation`, WS-OD OD3.6's
+`applyReceiveRendezvousDonation`) and this surface mirrors neither.
+
+**It found a fourth divergence on its first run — in this cut's own fix.**
+`frozenUpdatePipBoost` looked for the thread in the bucket its **old effective
+priority** names; the live `updatePipBoost` asks whether the thread is in the
+queue at all and removes it from wherever it is.  On a state where a thread's
+bucket and its effective priority have already drifted apart — exactly the state
+a reversion exists to repair — the frozen side left it where it was.  Caught by
+`FO-041`, mutation-verified, and fixed here.
+
+**Witnesses.**  `FO-004f` (the boost is recomputed from the *remaining* waiter,
+so clearing it unconditionally fails too), `FO-004g` (the refusal, with a
+control that replies to the same fixture with a server recorded), and `FO-041`
+(the whole operation against `endpointReplyWithDonation`, in both the
+state-agreement and refusal directions).  Every mutation was run against
+pre-fix behaviour and confirmed to fail.  The suite's "33 scenarios" literal —
+against 40 distinct `FO-` ids and 34 runner invocations, a number nothing
+computed — is replaced by the two differential list lengths, which compute
+themselves.
+
+
+**...and the class is closed at its cause, not at its instance** (the
+maintainer's instruction, in the same cut).  Round 14 registered the
+generalisation and round 15's P1 was the seventh consecutive round to find a
+defect in the hand-written front-end, so it is taken rather than registered
+again.
+
+*The `unsafe` question goes to rustc; the `# Safety` question goes to rustdoc.*
+`sele4n-hal` and `sele4n-abi` deny `clippy::undocumented_unsafe_blocks` and
+`clippy::missing_safety_doc` at their crate roots.  The first is rustc's own
+parse of the block and of the comment run above it; the second renders the
+item's documentation with the parser rustdoc uses and looks for the published
+section — so fences, HTML blocks, Setext underlines and raw doc literals are
+decided by the tool whose output the caller actually reads, not by a
+re-implementation of it.  Two facts were established by mutation rather than
+assumed, and both would have shipped a false green: `cargo clippy -- -W <lint>`
+reaches only the final compilation unit and is **silent** for every workspace
+member, and the host lane cannot see the `#[cfg(target_arch = "aarch64")]`
+majority of the HAL — deleting a real `// SAFETY:` comment produces **0**
+findings on the host and **2** on `aarch64-unknown-none`.  Both lanes run
+`-D warnings`.  The scanner stays, because Tier 0 runs before any build and
+because three things structurally escape the lints — a non-`pub` `unsafe fn`, an
+`unsafe fn` inside an `extern` block (ten Lean upcalls, and no lint requires a
+contract of a foreign declaration), and the ARM ARM census — and its output now
+names its authority and its residue rather than implying it owns the surface.
+
+*And the frozen mirror stops re-answering questions that have live answers.*
+The round-15 fix added five hand-written frozen counterparts, which is more of
+the duplication that produced the churn.  Two of the five were pure questions
+about a `TCB` record — the frozen store holds the **live** `TCB` — so they are
+now the live accessors: `TCB.boostedPriority` and `TCB.blockingServer?`
+(`Model/Object/Types.lean`), each with a `simp` equation and a **frame lemma**
+stated at the accessor, so a consumer rewriting one TCB into another gets the
+frame instead of unfolding (which, inside a `filterMap`, also rewrites the
+tail's bound occurrences and desynchronises the induction hypothesis — a hazard
+one proof in `Compute.lean` already documented one level up).
+
+Underneath them is `Priority.raisedBy` (`Prelude.lean`), "a base raised by an
+inherited boost", which was written out inline at **eleven** sites: the four
+arms of `effectiveSchedParams`, `resolveEffectivePrioDeadline`,
+`effectiveBucketPriority`, `effectiveRunQueuePriority`,
+`ipcEffectiveRunQueuePriority`, both boost sources in
+`migrateRunQueueBucketOnCore`, and the frozen run queue.  The base is a
+**parameter** because it is not always the thread's: a `.bound` thread's base is
+its reservation's `SchedContext.priority`.  Fixing it at the TCB would have
+covered ten of eleven and left the eleventh spelling its own `match`, which is
+how a duplicate survives a de-duplication.
+
+One pair is worth naming: `effectiveRunQueuePriority` and
+`ipcEffectiveRunQueuePriority` existed as two bodies because importing
+`Scheduler.Invariant` from `IPC/Operations/Endpoint.lean` would close an import
+cycle, and they were held together by `ipcEffectiveRunQueuePriority_eq_effectiveRunQueuePriority`
+— a `rfl` obligation stated in the first module that sees both names, precisely
+so a change to either body that the other did not mirror would stop the build.
+That is the *pin* this project prescribes when a second implementation must
+exist.  It need not exist: the shared answer lives in the **model**, upstream of
+both, so the cycle objection never applied to it.  **Both names are deleted, and
+the pin with them** — 108 applications rewritten across 14 files, three theorems
+renamed along with their Tier 3 anchor and their `CLAIM_EVIDENCE_INDEX` citation
+— so the concept has exactly one definition, `TCB.boostedPriority`, and every
+site calls it.
+
+Keeping the pin as a tautology was considered and rejected: once one side is
+gone it has no subject, and a theorem that can only be `rfl` asserts nothing
+while reading like a check.  That is this file's own inert-witness defect, and a
+pin is worth exactly as much as the divergence it can still see.
+
+Nine proofs moved with the definitions, each repaired at the accessor's frame
+rather than by re-unfolding; `lake build` is clean and the frozen differential
+(FO-031, FO-041) is unmoved.
+
+Refs: docs/REGISTERED_DEBT.md §C (frozen differential coverage; convention-gate front-ends)
+
 ## v0.35.27 — Round 14: three fixes, and the two causes behind six rounds of them
 
 **Review round 14 (2 P1, 1 P2), all reproduced before being fixed and

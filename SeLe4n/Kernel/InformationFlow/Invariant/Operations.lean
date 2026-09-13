@@ -916,7 +916,7 @@ theorem switchDomain_preserves_lowEquivalent
           (match (s.scheduler.currentOnCore bootCoreId) with
             | none => (s.scheduler.runQueueOnCore bootCoreId)
             | some tid => match s.getTcb? tid with
-              | some tcb => (s.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)
+              | some tcb => (s.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)
               | none => (s.scheduler.runQueueOnCore bootCoreId)).toList.filter (threadObservable ctx observer)
           = (s.scheduler.runQueueOnCore bootCoreId).toList.filter (threadObservable ctx observer) := by
         intro s hCurH
@@ -2823,7 +2823,7 @@ theorem handleYield_preserves_projection
       | tcb tcb =>
         simp only [hObj] at hStep
         -- hStep : schedule { st with scheduler.runQueue := (rq.insert tid prio).rotateToBack tid } = .ok ((), st')
-        let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
+        let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).rotateToBack tid
         let stIR : SystemState :=
           { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
         -- Show insert + rotateToBack preserves projection
@@ -2846,7 +2846,7 @@ theorem handleYield_preserves_projection
           · exact hAllRunnable t ((RunQueue.mem_toList_iff_mem _ t).mpr hOrig)
           · subst hEq; exact hTidHigh
         have hSchedStep : schedule stIR = .ok ((), st') := by
-          -- AI3-A: handleYield now uses effectiveRunQueuePriority
+          -- AI3-A: handleYield now uses TCB.boostedPriority
           simpa [stIR, rq', hCur, hObj] using hStep
         exact (schedule_preserves_projection ctx observer stIR st'
           (fun t hc => hCurrentHigh t (by simpa [stIR] using hc))
@@ -2931,7 +2931,7 @@ theorem timerTick_preserves_projection
           { st with objects := st.objects.insert tid.toObjId tcbReset, machine := tick st.machine }
         -- stIT has the same runQueue as st
         let stInsert : SystemState :=
-          { stIT with scheduler := stIT.scheduler.setRunQueueOnCore bootCoreId ((stIT.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)) }
+          { stIT with scheduler := stIT.scheduler.setRunQueueOnCore bootCoreId ((stIT.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)) }
         -- Show insert preserves projection (non-observable thread)
         have hInsertRqProj : projectState ctx observer stInsert = projectState ctx observer stIT := by
           simp only [stInsert, projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
@@ -2953,7 +2953,7 @@ theorem timerTick_preserves_projection
           · exact hAllRunnable t ((RunQueue.mem_toList_iff_mem _ t).mpr hOrig)
           · subst hEq; exact hTidHigh
         have hSchedStep : schedule stInsert = .ok ((), st') := by
-          -- AI3-A: timerTick now uses effectiveRunQueuePriority
+          -- AI3-A: timerTick now uses TCB.boostedPriority
           simpa [stInsert, stIT, hCur, hTcbEq] using hStep
         have hObjInvInsert : stInsert.objects.invExt := RHTable_insert_preserves_invExt st.objects _ _ hObjInv
         rw [schedule_preserves_projection ctx observer stInsert st' hCurSched hAllRunnableSched hObjInvInsert hSchedStep,

@@ -193,7 +193,9 @@ theorem optPriorityVal_pipBoost_le_effectiveSchedParams (st : SystemState) (tcb 
   | none => simp [optPriorityVal]
   | some b =>
     rw [optPriorityVal_some]
-    simp only [effectiveSchedParams, hPB]
+    -- The boost is applied through `Priority.raisedBy` since `v0.35.28`; its
+    -- `some` equation is what re-exposes the `Nat.max` this bound is about.
+    simp only [effectiveSchedParams, TCB.boostedPriority_eq, hPB, Priority.raisedBy_some]
     split <;> (try split) <;> apply Nat.le_max_right
 
 /-- WS-SM SM5.F.3 (plan §3.6, Theorem 3.6.1 `pipBoost_perCore_consistent`): in a

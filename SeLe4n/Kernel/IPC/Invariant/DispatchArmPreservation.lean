@@ -2246,7 +2246,7 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
             simpa using this
           rw [hRC] at hStep
           simp only [Option.isSome_some] at hStep
-          have hStage : ipcInvariantFull { st with scheduler := (st.scheduler.setCurrentOnCore rc none).setRunQueueOnCore (determineTargetCore st tid) ((((st.scheduler.setCurrentOnCore rc none).runQueueOnCore (determineTargetCore st tid)).remove tid).insert tid (effectiveRunQueuePriority { tcb with schedContextBinding := .unbound })) } := by
+          have hStage : ipcInvariantFull { st with scheduler := (st.scheduler.setCurrentOnCore rc none).setRunQueueOnCore (determineTargetCore st tid) ((((st.scheduler.setCurrentOnCore rc none).runQueueOnCore (determineTargetCore st tid)).remove tid).insert tid (TCB.boostedPriority { tcb with schedContextBinding := .unbound })) } := by
             refine unbindSchedulerStage_preserves_ipcInvariantFull st _ tid tcb hInv rfl
               hTcbRaw hAllowedIpc ?_ ?_
             · intro t htne hm
@@ -2265,7 +2265,7 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
               · rw [← hrb, hCurRC]
                 exact fun h => htne (Option.some.inj h).symm
               · intro hpre
-                have hA : ((st.scheduler.setCurrentOnCore rc none).setRunQueueOnCore (determineTargetCore st tid) ((((st.scheduler.setCurrentOnCore rc none).runQueueOnCore (determineTargetCore st tid)).remove tid).insert tid (effectiveRunQueuePriority { tcb with schedContextBinding := .unbound }))).currentOnCore Concurrency.bootCoreId = some t := by
+                have hA : ((st.scheduler.setCurrentOnCore rc none).setRunQueueOnCore (determineTargetCore st tid) ((((st.scheduler.setCurrentOnCore rc none).runQueueOnCore (determineTargetCore st tid)).remove tid).insert tid (TCB.boostedPriority { tcb with schedContextBinding := .unbound }))).currentOnCore Concurrency.bootCoreId = some t := by
                   rw [SchedulerState.setRunQueueOnCore_currentOnCore,
                     SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrb]
                   exact hpre
@@ -2283,7 +2283,7 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
           split at hStep
           · rename_i hMem
             cases hStep
-            have hStage : ipcInvariantFull { st with scheduler := st.scheduler.setRunQueueOnCore (determineTargetCore st tid) (((st.scheduler.runQueueOnCore (determineTargetCore st tid)).remove tid).insert tid (effectiveRunQueuePriority { tcb with schedContextBinding := .unbound })) } := by
+            have hStage : ipcInvariantFull { st with scheduler := st.scheduler.setRunQueueOnCore (determineTargetCore st tid) (((st.scheduler.runQueueOnCore (determineTargetCore st tid)).remove tid).insert tid (TCB.boostedPriority { tcb with schedContextBinding := .unbound })) } := by
               refine unbindSchedulerStage_preserves_ipcInvariantFull st _ tid tcb hInv rfl
                 hTcbRaw hAllowedIpc ?_ ?_
               · intro t htne hm
@@ -3935,7 +3935,7 @@ private theorem enqueueRunnableOnCore_preserves_ipcInvariantFull
         have hPre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
           (SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk
         have hEq : ∀ oid : SeLe4n.ObjId,
-            ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)) } : SystemState).objects[oid]? = st.objects[oid]? := by
+            ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)) } : SystemState).objects[oid]? = st.objects[oid]? := by
           intro oid
           show (st.objects.insert tid.toObjId (.tcb tcb))[oid]? = st.objects[oid]?
           by_cases hK : oid = tid.toObjId
@@ -3950,17 +3950,17 @@ private theorem enqueueRunnableOnCore_preserves_ipcInvariantFull
         refine ipcInvariantFull_of_getElem_eq hEq ?_ hInv
         intro t tcbT hT hUnb hNQ hNC
         rw [hEq] at hT
-        rw [show ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)) } : SystemState).scheduler.currentOnCore Concurrency.bootCoreId = st.scheduler.currentOnCore Concurrency.bootCoreId from by simp] at hNC
+        rw [show ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)) } : SystemState).scheduler.currentOnCore Concurrency.bootCoreId = st.scheduler.currentOnCore Concurrency.bootCoreId from by simp] at hNC
         have hNQ' : t ∉ st.scheduler.runQueueOnCore Concurrency.bootCoreId := by
           intro hMem
           apply hNQ
-          show t ∈ ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)) } : SystemState).scheduler.runQueueOnCore Concurrency.bootCoreId
+          show t ∈ ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)) } : SystemState).scheduler.runQueueOnCore Concurrency.bootCoreId
           by_cases hc : c = Concurrency.bootCoreId
           · subst hc
-            show t ∈ (st.scheduler.setRunQueueOnCore Concurrency.bootCoreId ((st.scheduler.runQueueOnCore Concurrency.bootCoreId).insert tid (effectiveRunQueuePriority tcb))).runQueueOnCore Concurrency.bootCoreId
+            show t ∈ (st.scheduler.setRunQueueOnCore Concurrency.bootCoreId ((st.scheduler.runQueueOnCore Concurrency.bootCoreId).insert tid (tcb.boostedPriority))).runQueueOnCore Concurrency.bootCoreId
             rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
             exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inl hMem)
-          · show t ∈ (st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb))).runQueueOnCore Concurrency.bootCoreId
+          · show t ∈ (st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority))).runQueueOnCore Concurrency.bootCoreId
             rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
             exact hMem
         exact hInv.passiveServerIdle t tcbT hT hUnb hNQ' hNC

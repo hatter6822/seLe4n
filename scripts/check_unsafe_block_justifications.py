@@ -696,9 +696,31 @@ MD_SAFETY_HEADING = re.compile(r"^ {0,3}#{1,6}[ \t]+Safety\b", re.IGNORECASE)
 #: fail-CLOSED direction, which round 6 recorded as a defect in its own right.
 MD_SETEXT_UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
 
-#: The paragraph line a Setext underline turns into a Safety heading.  Anchored
-#: like the ATX pattern so `Safety Requirements` counts the same way there.
+#: The **first** line of the paragraph a Setext underline turns into a heading.
+#: Anchored like the ATX pattern so `Safety Requirements` counts the same way
+#: there -- and asked of the paragraph's first line, because a Setext heading's
+#: content is the WHOLE preceding paragraph, which CommonMark 4.3 permits to
+#: span lines.  Reading only the line above the underline accepted
+#: `This is not a contract` / `Safety` / `===`, which rustdoc titles
+#: "This is not a contract Safety" and which is no Safety section at all
+#: (PR #895 review round 15).  Fail-OPEN, on a gate with an empty baseline.
 MD_SAFETY_SETEXT_TEXT = re.compile(r"^ {0,3}Safety\b", re.IGNORECASE)
+
+#: A thematic break (CommonMark 4.1): three or more `-`, `*` or `_`, optionally
+#: separated by spaces or tabs, alone on a line.  It is a leaf block, so it
+#: CLOSES an open paragraph -- which is why it has to be recognised here: with
+#: the paragraph's first line carried rather than its last, `Safety` / `***` /
+#: `===` would otherwise read the paragraph across a break that ended it.
+#: A `-` run is tested for a Setext underline FIRST, since a Setext heading
+#: takes precedence over a thematic break under an open paragraph (4.3).
+MD_THEMATIC_BREAK = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
+
+#: An ATX heading (CommonMark 4.2): one to six `#` followed by a space, a tab or
+#: the end of the line.  Also a leaf block that closes a paragraph, and for the
+#: opposite reason: `# Overview` / `Safety` / `===` publishes a real Safety
+#: heading, and carrying the ATX line as the paragraph's first would refuse it.
+#: Round 6's rule -- the safe direction is still a direction.
+MD_ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
 
 #: CommonMark 4.6 block-level tag names — the start condition of an HTML block
 #: of type 6.  Fixed by the specification, so this is the grammar's own list and
@@ -764,7 +786,7 @@ def publishes_safety_heading(markdown: str) -> bool:
     html_end = None       # the end-condition pattern while a raw HTML block is open
     html_blank = False    # a type-6/7 HTML block, which ends at a blank line
     paragraph = False     # an indented code block may not interrupt a paragraph
-    previous = None       # the paragraph line a Setext underline would title
+    opening = None        # the FIRST line of the open paragraph (Setext title)
     for line in markdown.split("\n"):
         # **An HTML block holds raw text** (CommonMark 4.6): no markdown is
         # parsed inside one, so a heading written there is never published --
@@ -781,7 +803,7 @@ def publishes_safety_heading(markdown: str) -> bool:
             if not line.strip():
                 html_blank = False
                 paragraph = False
-                previous = None
+                opening = None
             continue
         if fence is None:
             opened = False
@@ -802,7 +824,7 @@ def publishes_safety_heading(markdown: str) -> bool:
                     opened = True
             if opened:
                 paragraph = False
-                previous = None
+                opening = None
                 continue
         delim = MD_FENCE.match(line)
         if fence is not None:
@@ -815,29 +837,45 @@ def publishes_safety_heading(markdown: str) -> bool:
         if delim is not None:
             fence = (delim.group(1)[0], len(delim.group(1)))
             paragraph = False
-            previous = None
+            opening = None
             continue
         if not line.strip():
             paragraph = False
-            previous = None
+            opening = None
             continue
         if not paragraph and re.match(r"^(?: {4}|\t)", line):
             continue          # an indented code block, and still open
-        # A Setext underline turns the paragraph line ABOVE it into a heading,
-        # so the verdict is about `previous`, not about this line.  It counts
-        # only directly under paragraph content: after a blank line a `---` run
-        # is a thematic break, and inside a fence, an HTML block or indented
-        # code `previous` was never set.
-        if paragraph and previous is not None and MD_SETEXT_UNDERLINE.match(line):
-            if MD_SAFETY_SETEXT_TEXT.match(previous):
+        # A Setext underline turns the paragraph ABOVE it into a heading, and
+        # that paragraph may span lines -- so the verdict is about `opening`,
+        # the paragraph's FIRST line, since the heading's content is the lines
+        # concatenated and therefore BEGINS there.  It counts only directly
+        # under paragraph content: after a blank line a `---` run is a thematic
+        # break, and inside a fence, an HTML block or indented code `opening`
+        # was never set.
+        if paragraph and opening is not None and MD_SETEXT_UNDERLINE.match(line):
+            if MD_SAFETY_SETEXT_TEXT.match(opening):
                 return True
             paragraph = False
-            previous = None
+            opening = None
+            continue
+        # Two leaf blocks that end a paragraph, checked AFTER the underline so
+        # a `---` under paragraph content is still the heading CommonMark makes
+        # it.  Both matter only because the paragraph's first line is carried:
+        # a break would otherwise be read through, and an ATX heading would be
+        # mistaken for the content of the paragraph that follows it.
+        if MD_THEMATIC_BREAK.match(line):
+            paragraph = False
+            opening = None
             continue
         if MD_SAFETY_HEADING.match(line):
             return True
+        if MD_ATX_HEADING.match(line):
+            paragraph = False
+            opening = None
+            continue
+        if not paragraph:
+            opening = line
         paragraph = True
-        previous = line
     return False
 
 
@@ -2093,6 +2131,26 @@ _DOC_MARKDOWN_FORMS = {
     "setext-fenced": ("/// ```\n/// Safety\n/// ======\n/// ```", False),
     "setext-html-block": ("/// <!--\n/// Safety\n/// ======\n/// -->", False),
     "setext-indented-code": ("/// text\n///\n///     Safety\n///     ======", False),
+    # **A Setext heading's content is the WHOLE paragraph** (CommonMark 4.3,
+    # PR #895 review round 15).  Reading only the line above the underline made
+    # the first row below accept a heading rustdoc titles "This is not a
+    # contract Safety" -- fail-OPEN.  The second is its control: it keeps a
+    # multi-line paragraph and moves `Safety` to the front, where the heading
+    # really does begin with it, as `# Safety Requirements` does for ATX.  The
+    # pair decides in both directions, since the superseded code answers each
+    # of them the other way round.
+    "setext-multiline-paragraph":
+        ("/// This is not a contract\n/// Safety\n/// ===", False),
+    "setext-multiline-safety-first":
+        ("/// Safety\n/// and more text\n/// ===", True),
+    # A thematic break is a leaf block, so it ends the paragraph the underline
+    # below it could otherwise have titled.
+    "setext-after-thematic-break":
+        ("/// Safety\n/// ***\n/// ===", False),
+    # ...and so is an ATX heading -- in the other direction: the paragraph the
+    # underline titles STARTS after it, so this one really is a Safety heading.
+    "setext-after-atx-heading":
+        ("/// # Overview\n/// Safety\n/// ===", True),
 }
 
 #: **The site-name dimension.**  A declaration whose name this scanner cannot
@@ -2400,13 +2458,30 @@ def main(argv: list[str]) -> int:
           f"`# Safety` doc section on each of the {declarations} `unsafe fn` declaration(s); "
           f"{sum(inventory.values())} pinned at or below the floor across {len(baseline)} "
           f"key(s).  {cited}/{total} also cite the ARM ARM (diagnostic).")
-    # The claim, beside the number.  `125/125` reads as "every unsafe site in
+    # The claim, beside the number.  `136/136` reads as "every unsafe site in
     # the crates"; what this gate can say is "every site it recognises".  The
     # recognised forms are enumerated in UNSAFE_KNOWN_FORMS and anything else
     # stops the gate, so the gap is bounded and visible -- but it is a gap, and
     # the line says so rather than letting the ratio imply otherwise.
     print(f"      scope: the forms in UNSAFE_KNOWN_FORMS ({len(UNSAFE_KNOWN_FORMS)} of them); "
           f"an `unsafe` matching none of them fails this gate rather than being skipped.")
+    # **And this gate is no longer the authority for most of what it counts.**
+    # `sele4n-hal` and `sele4n-abi` deny `clippy::undocumented_unsafe_blocks` and
+    # `clippy::missing_safety_doc` at their crate roots, so an unjustified block
+    # and an undocumented public `unsafe fn` are refused by rustc's own parser
+    # and by rustdoc's own markdown renderer -- in the host lane and, for the
+    # `#[cfg(target_arch = "aarch64")]` majority of the HAL, in the cross lane.
+    # This scanner runs in Tier 0, before any build, so it stays as the fast
+    # approximation AND as the only check over the residue the lints structurally
+    # cannot reach.  Saying which is which is the point: a number that implies an
+    # authority it does not have is the defect this whole file keeps recording.
+    print("      authority: rustc (`clippy::undocumented_unsafe_blocks`) and rustdoc "
+          "(`clippy::missing_safety_doc`), denied at the `sele4n-hal` / `sele4n-abi` "
+          "crate roots and run with `-D warnings` on both the host and "
+          "`aarch64-unknown-none` lanes.")
+    print("      residue owned here alone: a non-`pub` `unsafe fn`, an `unsafe fn` "
+          "declared inside an `extern` block, and the ARM ARM citation census — "
+          "no lint requires a contract of a foreign declaration.")
     return 0
 
 

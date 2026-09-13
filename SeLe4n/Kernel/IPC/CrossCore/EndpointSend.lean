@@ -134,25 +134,6 @@ theorem endpointSendDualOnCore_absent_endpoint (endpointId : SeLe4n.ObjId)
       = (st, .error .objectNotFound) := by
   simp [endpointSendDualOnCore, hTooLarge, hTooMany, hNoEndpoint, hAbsent]
 
-/-- WS-SM SM6 (**the duplication guard**): the IPC-local
-`ipcEffectiveRunQueuePriority` computes the scheduler's
-`effectiveRunQueuePriority`.
-
-`Endpoint.lean` carries its own copy of the PIP-effective priority because
-importing `Scheduler.Invariant` from there would close an import cycle, and its
-docstring says the two agree. Until now nothing checked that: two independent
-definitions agreeing by convention is exactly the case this project requires be
-enforced structurally. This is the first module that sees both names, so this
-is the first place the claim can be *stated* — and with it stated, a change to
-either body that the other does not mirror stops the build rather than silently
-re-bucketing every wake.
-
-`rfl`, today; the point is that it is a compile-time obligation, not that it is
-hard. -/
-theorem ipcEffectiveRunQueuePriority_eq_effectiveRunQueuePriority (tcb : TCB) :
-    ipcEffectiveRunQueuePriority tcb
-      = SeLe4n.Kernel.effectiveRunQueuePriority tcb := rfl
-
 /-- WS-SM SM6 (**the wake bridge**): on the boot core, the per-core wake commits
 exactly what the single-core `ensureRunnable` commits.
 
@@ -214,7 +195,7 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
   by_cases hMem : (st.scheduler.runQueueOnCore bootCoreId).contains tid = true
   · simp [hSome, hMem, RunQueue.mem_iff_contains]
   · simp [hSome, hMem, RunQueue.mem_iff_contains, hObj,
-      ipcEffectiveRunQueuePriority_eq_effectiveRunQueuePriority]
+      TCB.boostedPriority]
 
 /-- WS-SM SM6 (**the blocking leg's bootCore bridge**): with no receiver waiting,
 the per-core send on the boot core commits **exactly** the single-core

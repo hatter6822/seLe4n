@@ -328,7 +328,7 @@ theorem ensureRunnable_preserves_projection
     | none => rfl
     | some tcb =>
           show projectState ctx observer
-              { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb)) } =
+              { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority) } =
               projectState ctx observer st
           -- setRunQueueOnCore frames every projection except projectRunnable.
           simp only [projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
