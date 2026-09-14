@@ -294,8 +294,20 @@ def keyword(word: str) -> str:
     word-boundary keyword spelling written outside this helper, so the next
     pattern cannot be written without the rule rather than merely being
     reviewed for it.
+
+    **And the boundary is asked of Rust's identifier class, not Python's**
+    (PR #895 review round 21).  `\b` is defined against `\w`, which is a
+    *Unicode-table* question and therefore version-dependent: U+1C89 is
+    unassigned in this CPython's Unicode 14.0, so `\b` saw a boundary inside
+    the perfectly valid identifier `unsafe\u1c89`, `\bunsafe\b` matched its
+    first six characters, and Tier 0 refused a file of safe Rust.  A keyword
+    adjacent to an identifier character is not a keyword -- it is one longer
+    identifier -- so the boundary is exactly "no identifier character here",
+    and `_IDENT_CHAR` answers that from Rust's grammar rather than from a
+    codepoint table.
     """
-    return r"(?<!r#)\b" + word + r"\b"
+    return (r"(?<!r#)(?<!" + _IDENT_CHAR + ")" + word
+            + r"(?!" + _IDENT_CHAR + ")")
 
 
 #: The keywords a scanner in this tree matches, and therefore the ones
@@ -326,8 +338,54 @@ def _gate_sources() -> list[Path]:
 #: through `chr(92)` so this pattern is not itself an instance of what it
 #: forbids -- a scanner that trips on its own definition is the kind of
 #: self-reference that gets "fixed" by weakening the check.
+#:
+#: **It recognised one SHAPE of bare spelling and was blind to the rest**
+#: (PR #895 review round 21, found by running this round's own sweep rather
+#: than reported).  The pattern required `\b` on *both* sides of a *single*
+#: keyword, so `\b(?:fn|struct|enum|...)\s+` -- a keyword inside an
+#: alternation, with the trailing boundary written as `\s+` -- passed
+#: unnoticed, and `check_claim_evidence_citations.py` carried exactly that
+#: spelling for its Rust declaration heads.  Round 9 built this check so "the
+#: next such pattern fails on the day it is written"; a check that enumerates
+#: the shapes it has seen is the same defect it exists to close, one level
+#: down.
+#:
+#: So the question is widened to the one actually being asked: **does this
+#: regex literal use a word boundary anywhere while also naming a scanned
+#: keyword as a whole word?**  That over-approximates -- a literal could do
+#: both innocently -- and the over-approximation is the point, because the
+#: remedy for a false positive is to compose `keyword()`, which is what the
+#: author wanted regardless.  Anything genuinely asking another language's
+#: question is classified in `NON_RUST_KEYWORD_SOURCES` rather than quietly
+#: skipped.
 _BARE_KEYWORD_LITERAL = re.compile(
     chr(92) * 2 + "b(?:" + "|".join(SCANNED_KEYWORDS) + ")" + chr(92) * 2 + "b")
+
+#: The word-boundary escape and a scanned keyword as a whole word, in either
+#: order -- the derived form of the question above.
+_WORD_BOUNDARY = re.compile(chr(92) * 2 + "b")
+_SCANNED_KEYWORD_WORD = re.compile(
+    r"(?<![A-Za-z0-9_])(?:" + "|".join(SCANNED_KEYWORDS) + r")(?![A-Za-z0-9_])")
+
+#: A two-character regex escape, which is ONE token however it reads.
+#:
+#: Blanked before the keyword question is asked, because otherwise the `b` of
+#: `\b` counts as an identifier character adjacent to the keyword and the
+#: derived question misses the very spelling it subsumes -- `\bunsafe\b` has
+#: `b` immediately before `unsafe`, so the whole-word lookbehind fails.  Caught
+#: by this round's own witness asserting the plain form alongside the new one,
+#: which is why a fix keeps the rows it does not change.
+_REGEX_ESCAPE = re.compile(chr(92) * 2 + r"[A-Za-z]")
+
+
+def _escapes_blanked(line: str) -> str:
+    """`line` with two-character regex escapes replaced by spaces, aligned."""
+    return _REGEX_ESCAPE.sub("  ", line)
+
+#: Gate sources whose word-boundary keyword question is NOT Rust's.  Reconciled
+#: in both directions, like every other classification in this module: an entry
+#: whose file no longer holds such a literal is stale and fails too.
+NON_RUST_KEYWORD_SOURCES: "dict[str, str]" = {}
 
 
 def _python_code_view(text: str) -> str:
@@ -409,92 +467,132 @@ def bare_keyword_literals() -> list[str]:
     cuts later.
     """
     out: list[str] = []
+    seen: set[str] = set()
     for path in _gate_sources():
         text = path.read_text(encoding="utf-8")
         scrubbed = _python_code_view(text)
+        hits: list[tuple[int, str]] = []
+        # The plain shape, reported verbatim because its message is the clearest.
         for match in _BARE_KEYWORD_LITERAL.finditer(scrubbed):
-            line = scrubbed.count("\n", 0, match.start()) + 1
-            out.append(f"{path.name}:{line}: {match.group(0)} "
-                       f"-- compose rust_code_view.keyword(...) instead")
+            hits.append((scrubbed.count("\n", 0, match.start()) + 1,
+                         match.group(0)))
+        # ...and the derived question, which also reaches an alternation, a
+        # one-sided boundary, and whatever shape is written next.  Asked per
+        # LINE, because a regex literal in these gates is built line by line
+        # and a line is the unit a diagnostic can point a contributor at.
+        for number, line in enumerate(scrubbed.splitlines(), start=1):
+            if not _WORD_BOUNDARY.search(line):
+                continue
+            word = _SCANNED_KEYWORD_WORD.search(_escapes_blanked(line))
+            if word is None:
+                continue
+            if any(number == seen_line for seen_line, _ in hits):
+                continue
+            hits.append((number, f"a {chr(92)}{chr(92)}b beside {word.group(0)!r}"))
+        if path.name in NON_RUST_KEYWORD_SOURCES:
+            if hits:
+                seen.add(path.name)
+            continue
+        for number, what in sorted(hits):
+            out.append(f"{path.name}:{number}: {what} "
+                       f"-- compose rust_code_view.keyword(...) instead, or "
+                       f"classify the file in NON_RUST_KEYWORD_SOURCES")
+    for name in sorted(set(NON_RUST_KEYWORD_SOURCES) - seen):
+        out.append(f"{name}: classified in NON_RUST_KEYWORD_SOURCES but holds "
+                   f"no word-boundary keyword literal -- the classification is "
+                   f"stale, delete it")
     return out
 
 
 #: Rust's identifier grammar is UAX#31, and CPython implements the same one.
 #:
-#: **PR #895 review round 18.**  `[A-Za-z_][A-Za-z0-9_]*` is ASCII and
-#: `[^\W\d]` -- round 12's widening -- is Python's *word* class, which is
-#: `L* | Nd | Mn | Mc | Pc`.  Neither is `XID_Start`, and the gap is not
-#: theoretical: `pub unsafe fn \u2118()` compiles on stable rustc (measured,
-#: 1.94.1), and so do `\u212e` (So) and `\u1885` (Mn), because `XID_Start`
-#: carries `Other_ID_Start` and the whole of `Mn`.  A declaration spelled with
-#: one was **no site at all** -- the obligation was never raised -- and the
-#: file was then refused outright as an unrecognised form.
+#: **The identifier question, answered without a Unicode table** (PR #895
+#: review round 21).
 #:
-#: Round 12 widened this class once and round 18 found it still short, which is
-#: this project's own rule arriving at a character class: *the set of valid
-#: spellings that defeats a regex is unbounded while the set a gate has seen is
-#: finite*.  So the class is not widened a third time -- it is **derived from
-#: the oracle**.  Python's identifier grammar is `XID_Start | "_"` followed by
-#: `XID_Continue`, which is exactly Rust's, so `str.isidentifier()` answers the
-#: question the gates are asking and `str` is the front-end to hand it to.
+#: Round 18 replaced three hand-written ASCII classes with `str.isidentifier()`
+#: on the reasoning that Python's identifier grammar *is* UAX#31, which is
+#: Rust's -- and measured the two against each other over 28 codepoints, 27
+#: agreeing.  Round 21 found the axis that measurement could not see: **every
+#: one of those 28 codepoints was assigned in both Unicode versions**, so the
+#: probe was structurally blind to version skew.  UAX#31 is a rule over a
+#: *table*, and the two front-ends read different editions of it -- this
+#: environment's CPython 3.11 carries Unicode 14.0, where U+1C89 is
+#: unassigned and `str.isidentifier()` is `False`, while rustc 1.94.1 compiles
+#: `pub unsafe fn Ᲊ() {}` with nothing worse than an `uncommon_codepoints`
+#: warning.  So an `unsafe fn` spelled with it raised no obligation, and the
+#: explicit default branch then refused the whole file: valid, documented Rust
+#: rejected by Tier 0.
 #:
-#: Measured rather than reasoned, against rustc 1.94.1 over a spread of 28
-#: codepoints covering every category that could plausibly start an identifier:
-#: **27 agree, and the sole divergence is a lone `_`**, which Python accepts as
-#: a complete identifier and Rust reserves as the wildcard pattern.  That
-#: divergence cannot reach these fragments, because they ask about a *start*
-#: character and `_` does start a Rust identifier (`_foo`); it would matter only
-#: to a whole-name test, which is why `is_rust_identifier` states it.
-_IDENT_START_RANGES: "list[tuple[int, int]] | None" = None
-_IDENT_CONTINUE_RANGES: "list[tuple[int, int]] | None" = None
+#: **An oracle is exact only up to the version of the data it reads.**  Handing
+#: a question to a real front-end settles the *rule* and opens a *table
+#: edition* question in its place, and that one has an unbounded number of
+#: codepoints in it -- one more with every Unicode release.  Pinning rustc's
+#: XID tables into this file would be a third enumeration of the kind this
+#: project keeps retiring, and it would go stale on the next toolchain bump.
+#:
+#: So the question is changed instead, to one whose answer no Unicode release
+#: can move.  **Every delimiter, operator and piece of punctuation in Rust
+#: source is ASCII** -- rustc rejects non-ASCII punctuation outright ("unknown
+#: start of token") -- so outside comments and literals a non-ASCII character
+#: is part of an identifier.  That gives:
+#:
+#:     a character may continue an identifier unless it is ASCII
+#:     and neither alphanumeric nor `_`
+#:
+#: which is a fact about Rust's *grammar*, not about a codepoint table.  It
+#: over-approximates XID_Continue, and for the two questions this tree asks it
+#: is **exact rather than merely safe**:
+#:
+#: * a keyword boundary -- a real keyword adjacent to an identifier character
+#:   is not a keyword at all, it is one longer identifier, so widening the
+#:   class cannot hide one;
+#: * a name span -- a name is only ever terminated by ASCII punctuation in
+#:   valid code, so widening cannot run a span past its end.
+#:
+#: What it does admit is a name rustc would reject (an unassigned codepoint,
+#: say).  That direction costs a *rejected* file nothing and an *accepted* one
+#: only a site examined that rustc would never compile, which is the
+#: fail-closed side.
+_ASCII_NON_IDENT = "".join(
+    re.escape(chr(code))
+    for code in range(0x80)
+    if not (chr(code).isascii() and (chr(code).isalnum() or chr(code) == "_"))
+)
+
+#: The complement class: anything that is not ASCII punctuation, whitespace or
+#: a control character.  Spelled as a negated class so it needs no enumeration
+#: of the 1.1 million codepoints on the other side.
+_IDENT_CHAR = "[^" + _ASCII_NON_IDENT + "]"
 
 
-def _derive_ranges(accepts) -> list[tuple[int, int]]:
-    """Contiguous codepoint runs for which `accepts(chr(cp))` holds."""
-    runs: list[tuple[int, int]] = []
-    low: int | None = None
-    for code in range(0x110000):
-        if accepts(chr(code)):
-            if low is None:
-                low = code
-        elif low is not None:
-            runs.append((low, code - 1))
-            low = None
-    if low is not None:
-        runs.append((low, 0x10FFFF))
-    return runs
-
-
-def _class_of(runs: list[tuple[int, int]]) -> str:
-    parts = []
-    for low, high in runs:
-        if low == high:
-            parts.append(re.escape(chr(low)))
-        else:
-            parts.append(re.escape(chr(low)) + "-" + re.escape(chr(high)))
-    return "[" + "".join(parts) + "]"
+#: The start class additionally excludes ASCII digits, which Rust's XID_Start
+#: excludes and which cost nothing to name -- `0-9` is a fact about ASCII, not
+#: about a Unicode edition.  Non-ASCII digits (Devanagari, say) stay inside the
+#: over-approximation, because separating them needs the table this module no
+#: longer reads.
+_IDENT_START_CHAR = "[^" + _ASCII_NON_IDENT + "0-9]"
 
 
 def ident_start() -> str:
     """The regex class matching a character that may START a Rust identifier.
 
-    Built once from `str.isidentifier()` and cached.  Lazily, because
-    `rust_code_view` is imported by gates that never ask -- deriving 656 ranges
-    costs about a sixth of a second, which is worth paying only where it buys
-    an exact answer.
+    Exact on ASCII and an over-approximation beyond it: every non-ASCII
+    character is admitted, including the ones whose Unicode category rustc
+    rejects (`\u00d7`, `\u0387`).  That is sound for every consumer in this
+    tree, because such a character cannot appear next to a name in code rustc
+    compiles -- the only way to write one outside a comment or a literal is a
+    syntax error -- so the class can only be generous about input that never
+    reaches a real Rust file.  The self-test states both directions.
     """
-    global _IDENT_START_RANGES
-    if _IDENT_START_RANGES is None:
-        _IDENT_START_RANGES = _derive_ranges(str.isidentifier)
-    return _class_of(_IDENT_START_RANGES)
+    return _IDENT_START_CHAR
 
 
 def ident_continue() -> str:
-    """The regex class matching a character that may CONTINUE a Rust identifier."""
-    global _IDENT_CONTINUE_RANGES
-    if _IDENT_CONTINUE_RANGES is None:
-        _IDENT_CONTINUE_RANGES = _derive_ranges(lambda ch: ("a" + ch).isidentifier())
-    return _class_of(_IDENT_CONTINUE_RANGES)
+    """The regex class matching a character that may CONTINUE a Rust identifier.
+
+    Digits continue an identifier, so this is `_IDENT_CHAR` unnarrowed.
+    """
+    return _IDENT_CHAR
 
 
 @functools.lru_cache(maxsize=None)
@@ -506,17 +604,6 @@ def ident() -> str:
     new ASCII spelling of it in any source that asks it.
     """
     return ident_start() + ident_continue() + "*"
-
-
-def is_rust_identifier(name: str) -> bool:
-    """Is `name` a legal Rust identifier, `r#` escape aside?
-
-    The one place the measured divergence matters: `_` alone is a Python
-    identifier and is **not** a Rust one -- it is the wildcard pattern -- so it
-    is excluded here.  Everything else follows CPython's UAX#31 tables, which
-    the measurement above found to agree with rustc.
-    """
-    return name != "_" and name.isidentifier()
 
 
 #: The gate sources whose identifier question is NOT Rust's, and the grammar
@@ -1579,11 +1666,33 @@ def _self_test() -> int:
     # thing three rounds of site-by-site fixes could not do.
     bare = bare_keyword_literals()
     check("no gate spells a Rust keyword bare", not bare, "; ".join(bare))
+    # **The shape the check could not see** (PR #895 review round 21).  The
+    # plain pattern requires `\b` on both sides of ONE keyword; an alternation
+    # with a `\s+` tail is the same defect and passed unreported for as long as
+    # the check existed.  Both spellings are asserted here, so narrowing the
+    # derived question back to the plain one fails the suite rather than
+    # silently checking less.
+    boundary = chr(92) + "b"
+    for label, literal in (
+            ("the plain spelling", f'r"{boundary}unsafe{boundary}"'),
+            ("an alternation with a whitespace tail",
+             f'r"{boundary}(?:fn|struct|enum){chr(92)}s+"'),
+            ("a one-sided boundary", f'r"{boundary}extern"')):
+        check(f"the discipline question reaches {label}",
+              _WORD_BOUNDARY.search(literal) is not None
+              and _SCANNED_KEYWORD_WORD.search(
+                  _escapes_blanked(literal)) is not None)
+    check("...and does not fire on a boundary with no keyword beside it",
+          _SCANNED_KEYWORD_WORD.search(
+              _escapes_blanked(f'r"{boundary}exit 1{boundary}"')) is None)
+    check("...nor on a keyword-like substring of a longer word",
+          _SCANNED_KEYWORD_WORD.search(
+              _escapes_blanked(f'r"{boundary}transmodify"')) is None)
 
     # The identifier fragment, and the same discipline one character class
-    # over.  Each witness is MEASURED against rustc 1.94.1 (PR #895 review
-    # round 18): the three codepoints below are accepted by the compiler and
-    # matched by none of `[A-Za-z_]`, `[^\W\d]` or `\w`.
+    # over.  Each witness is MEASURED against rustc 1.94.1: the codepoints
+    # below are accepted by the compiler and matched by none of `[A-Za-z_]`,
+    # `[^\W\d]` or `\w`.
     start = re.compile(ident_start())
     for label, char in (("U+2118 SCRIPT CAPITAL P (Sm)", "\u2118"),
                         ("U+212E ESTIMATED SIGN (So)", "\u212e"),
@@ -1591,16 +1700,44 @@ def _self_test() -> int:
                         ("U+03BB GREEK SMALL LAMBDA (Ll)", "\u03bb")):
         check(f"ident_start accepts {label}, which rustc accepts",
               start.match(char) is not None)
-    for label, char in (("a digit", "1"), ("a hyphen", "-"),
-                        ("U+00D7 MULTIPLICATION SIGN (Sm)", "\u00d7"),
-                        ("U+0387 GREEK ANO TELEIA (Po)", "\u0387")):
+    for label, char in (("a digit", "1"), ("a hyphen", "-")):
         check(f"ident_start refuses {label}, which rustc refuses",
               start.match(char) is None)
-    # The one measured divergence between CPython's tables and Rust's grammar,
-    # stated where it is handled rather than left for a reader to rediscover.
-    check("a lone `_` starts an identifier but is not one",
-          start.match("_") is not None and not is_rust_identifier("_"))
-    check("an ordinary name is a Rust identifier", is_rust_identifier("lean_ready"))
+    # **The stated over-approximation, asserted rather than left implicit.**
+    # rustc refuses these two and this class admits them, because separating
+    # them from an identifier character needs the Unicode table round 21
+    # retired.  Sound for every consumer: neither can stand beside a name in
+    # code rustc compiles, so the class is only generous about input no real
+    # Rust file contains.  The row exists so the trade is visible to a reader
+    # rather than rediscovered by the next review.
+    for label, char in (("U+00D7 MULTIPLICATION SIGN (Sm)", "\u00d7"),
+                        ("U+0387 GREEK ANO TELEIA (Po)", "\u0387")):
+        check(f"ident_start admits {label} as a STATED over-approximation "
+              f"(rustc refuses it; no valid Rust puts it beside a name)",
+              start.match(char) is not None)
+    # **The version-skew witness** (PR #895 review round 21).  U+1C89 is
+    # unassigned in this CPython's Unicode table and accepted by rustc, so it
+    # is the codepoint on which `str.isidentifier()` and the compiler part
+    # company.  It is the decisive case for retiring that oracle: the class
+    # must accept it BECAUSE the compiler does, not because a table says so.
+    # The two digit rows beside it are what stop the fix from degrading into
+    # "everything is an identifier character".
+    skew = "\u1c89"
+    check("ident_start accepts U+1C89, which rustc accepts and this "
+          "CPython's Unicode table does not", start.match(skew) is not None)
+    check("...and a whole identifier spelled with it matches",
+          re.fullmatch(ident(), "unsafe" + skew) is not None)
+    for label, char in (("an opening brace", "{"), ("a space", " "),
+                        ("a semicolon", ";"), ("a hash", "#")):
+        check(f"ident_start refuses {label}, which terminates a name",
+              start.match(char) is None)
+    # The keyword boundary is the reason the class exists: a keyword followed
+    # by an identifier character is one longer identifier, never the keyword.
+    check("a keyword is not found inside an identifier that extends it "
+          "with a non-ASCII character",
+          re.search(keyword("unsafe"), f"pub fn unsafe{skew}() {{}}") is None)
+    check("...while the real keyword beside it still is",
+          re.search(keyword("unsafe"), "pub unsafe fn f() {}") is not None)
     bare_idents = bare_ident_literals()
     check("no gate asking about Rust spells an identifier class by hand",
           not bare_idents, "; ".join(bare_idents))

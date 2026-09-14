@@ -105,8 +105,13 @@ LOCAL_WRAPPERS = (
 # round 4), one layer up.
 LEAN_LOCAL_BINDINGS = ("ffiTlbiAll", "ffiTlbiByAsid", "ffiTlbiByVaddr")
 FFI_MODULE = "rust/sele4n-hal/src/ffi.rs"
+# The boundaries come from `rust_code_view.keyword`, not from Python's `\b`:
+# `\b` is defined against `\w`, which is a Unicode-*table* question, so it
+# disagrees with rustc on any codepoint the two editions do not share
+# (PR #895 review round 21).
 _FFI_TLBI_EXPORT_RE = re.compile(
-    r'\bpub\s+extern\s+"C"\s+fn\s+(ffi_tlbi_[a-z0-9_]+)\s*\('
+    r"pub\s+" + rust_code_view.keyword("extern") + r'\s+"C"\s+'
+    + rust_code_view.keyword("fn") + r"\s+(ffi_tlbi_[a-z0-9_]+)\s*\("
 )
 
 # Any REFERENCE to a local wrapper, not only a call.  Requiring `name(`

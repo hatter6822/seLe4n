@@ -1479,10 +1479,26 @@ def compiled_rust_sources(root: Path) -> list[Path]:
     one names the actual thing.  Cargo's output root is `<workspace>/target`,
     one directory, and `CARGO_TARGET_DIR` is honoured because a caller may have
     moved it.
+
+    **A relative `CARGO_TARGET_DIR` is cargo's, so it resolves where cargo
+    resolves it** (PR #895 review round 21): from the *invocation* directory,
+    not from whatever root this scan happens to have narrowed to.  Launched at
+    the repository root with the setting a contributor would actually write,
+    `CARGO_TARGET_DIR=rust/target`, the previous line excluded
+    `<root>/rust/rust/target` -- a path that does not exist -- while cargo wrote
+    to `<root>/rust/target`, which was therefore scanned.  Generated `.rs` under
+    a build script's `OUT_DIR` is code nobody in this tree wrote, so an unsafe
+    site there would have failed Tier 0 against a file the contributor cannot
+    edit.  The unset default stays `root / "target"`, which is the one case
+    where the scan root really is the workspace cargo would use.
     """
-    build_output = Path(os.environ.get("CARGO_TARGET_DIR") or (root / "target"))
-    if not build_output.is_absolute():
-        build_output = (root / build_output).resolve()
+    setting = os.environ.get("CARGO_TARGET_DIR")
+    if setting:
+        # `Path.cwd()` is the invocation directory, which is what cargo joins a
+        # relative setting onto; an absolute setting is already resolved.
+        build_output = (Path.cwd() / Path(setting)).resolve()
+    else:
+        build_output = (root / "target").resolve()
     return [
         path
         for path in sorted(root.rglob("*.rs"))

@@ -1,3 +1,107 @@
+## v0.35.34 — Round 21: an oracle is exact only up to the version of its table
+
+**PR #895 review round 21.**  Three P2 findings, all three fail-**closed** —
+valid Rust this tree would have refused — and two of them land on round 18's
+central claim, that `str.isidentifier()` *is* the Rust identifier oracle.
+
+**F1 — `pub fn unsafeᲉ() {}` was rejected as an unrecognised `unsafe` form.**
+U+1C89 is a legal Rust `XID_Continue` character, but Python's `\b` is defined
+against `\w`, which is a Unicode-table question; this CPython does not have the
+codepoint, so `\b` found a boundary *inside* the identifier and `\bunsafe\b`
+matched its first six characters.  Tier 0 demanded a justification of safe Rust.
+
+**F2 — a correctly documented `pub unsafe fn Ᲊ()` raised no obligation and then
+failed its file.**  Measured on this environment: CPython **3.11.15 carries
+Unicode 14.0**, where U+1C89 is *unassigned* and `str.isidentifier()` is
+`False`; rustc **1.94.1** compiles the declaration with nothing worse than an
+`uncommon_codepoints` warning.
+
+**The rule is shared; the table is not.**  Python and Rust both implement
+UAX#31, which is what made round 18's reasoning sound — but they read different
+editions of the data it ranges over.  And round 18's evidence could not have
+shown that: its 28 codepoints spanned every plausible *category*, and every one
+of them was assigned in **both** editions, so the probe was structurally blind
+to skew and would have reported 27/28 however far the two tables had drifted.
+That is this project's own recognised-set-is-not-a-derived-set defect, arriving
+inside the measurement that licensed an oracle.
+
+**The exit is not a third table.**  Pinning rustc's XID data into a Python gate
+is the enumeration this tree keeps retiring, and it goes stale at the next
+toolchain bump.  The *question* changes instead, to one no Unicode release can
+move: every delimiter, operator and piece of punctuation in Rust source is
+ASCII — rustc rejects non-ASCII punctuation outright — so outside comments and
+literals a non-ASCII character is part of an identifier.  Hence
+
+    a character may continue an identifier unless it is ASCII
+    and neither alphanumeric nor `_`
+
+which is a fact about Rust's **grammar**, not about a codepoint table.  For the
+two questions this tree asks it is exact rather than merely safe: a keyword
+adjacent to an identifier character is not a keyword but one longer identifier,
+and a name is only ever terminated by ASCII punctuation.  `keyword()` now asks
+its boundaries of that class instead of `\b`.
+
+Where the class does over-approximate — `×` (Sm) and `·` (Po) are admitted and
+rustc refuses them — the self-test **asserts the over-approximation** rather
+than leaving it to be rediscovered, since neither can stand beside a name in
+code that compiles.  `ident_start` still excludes ASCII digits, because `0-9` is
+a fact about ASCII and costs no table.
+
+**F3 — a relative `CARGO_TARGET_DIR` was resolved from the wrong directory.**
+It is cargo's setting, so cargo joins it onto the **invocation** directory; the
+gate joined it onto whatever root its scan had narrowed to.  Launched at the
+repository root with `CARGO_TARGET_DIR=rust/target`, it excluded
+`rust/rust/target` — which does not exist — while cargo wrote to `rust/target`,
+which was therefore scanned.  Generated `.rs` under a build script's `OUT_DIR`
+is code no contributor wrote, so an unsafe site there would have failed Tier 0
+against a file nobody can edit.
+
+**F4 — found by running this round's own sweep, in the check built to make
+sweeps unnecessary.**  Grepping every other Rust-keyword boundary turned up two
+more, and `bare_keyword_literals` had not reported them because it recognised
+one *shape*: `\b<keyword>\b`.  A keyword inside an alternation with a `\s+`
+tail (`check_claim_evidence_citations.py`'s Rust declaration head) and a
+one-sided boundary (`check_tlbi_broadcast_discipline.py`'s FFI export pattern)
+were both invisible.  Round 9 built that check so the next such pattern would
+fail on the day it was written; a discipline check that enumerates the shapes it
+has seen is the defect it exists to close, one level down.  The question is
+widened to *does this regex literal use a word boundary while naming a scanned
+keyword as a whole word?*, over-approximating on purpose — the remedy for a
+false positive is to compose `keyword()` — with `NON_RUST_KEYWORD_SOURCES` for a
+literal genuinely asking another language's question, reconciled both ways.
+Both live sites now compose `keyword()`.
+
+The widened question was first written against the raw line, where the `b` of
+`\b` is an identifier character, so its whole-word lookbehind **missed the very
+spelling it subsumes**.  The live tree would not have shown that, since the
+plain pattern still ran beside it; the witness asserting the *unchanged* row
+next to the new ones is what caught it.  Regex escapes are blanked before the
+keyword question is asked.
+
+**Also in this cut.**  `is_rust_identifier` is deleted rather than rewritten:
+it existed only to state round 18's lone-`_` divergence, its sole readers were
+its own self-test rows, and its body was the retired call — a pin on a question
+nothing asks.  Its Unicode-range derivation goes with it, so importing
+`rust_code_view` no longer pays ~0.38s building 656 + 763 codepoint ranges.
+
+Mutation-verified against the actual pre-fix code on all three: the pre-fix
+`keyword('unsafe')` matches inside `unsafeᲉ` and the fixed one does not; the
+pre-fix `ident()` refuses U+1C89 and the fixed one accepts it while still
+refusing a delimiter; the pre-fix file enumeration scans
+`rust/target/debug/build/x/out/gen.rs` under a relative setting and the fixed
+one does not.  Every gate composing these fragments passes its self-test
+(`rust_code_view`, the unsafe gate, anchor liveness, kernel entry exports, TLBI
+discipline), and the live tree is unmoved at **136/136** justified unsafe sites
+and **66** anchors with a live reader.
+
+- Files: `scripts/rust_code_view.py`,
+  `scripts/check_unsafe_block_justifications.py`,
+  `scripts/check_claim_evidence_citations.py`,
+  `scripts/check_tlbi_broadcast_discipline.py`, `CLAUDE.md`, `AGENTS.md`.
+- Version bumped 0.35.33 → 0.35.34.
+
+Refs: `CLAUDE.md` — *an oracle is exact only up to the version of the data it reads*
+
 ## v0.35.33 — Round 20: the rule round 19 stated, now the rule the code runs
 
 **PR #895 review round 20.**  Three findings, all three in code written for

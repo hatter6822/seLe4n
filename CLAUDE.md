@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.33.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.34.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2125,8 +2125,14 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   answers it, and the agreement is measured rather than assumed: over 28
   codepoints spanning every plausible category, 27 agree and the sole divergence
   is a lone `_`, which Python accepts as a whole identifier and Rust reserves as
-  the wildcard.  Stating that divergence at `is_rust_identifier` is what stops
-  the oracle from being trusted one step further than it was measured.
+  the wildcard.
+
+  **That reading was half right, and round 21 supplies the other half.**  The
+  rule really is shared; the *table* is not, and the 28-codepoint probe could
+  not see that because every one of its codepoints was assigned in both
+  editions.  `str.isidentifier()` was retired one round later — see **an oracle
+  is exact only up to the version of the data it reads** below — so do not cite
+  this paragraph as licence to reach for it.
 
   Two corollaries.  **The reach of a fix is the question, not the finding**: the
   reported site was one gate's declaration scanner, and the same question was
@@ -2250,6 +2256,97 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the conservative query and the exact one agree on the entire tree.  The
   alternative (ask the module scope alone) is fail-**open** for a shadowed read,
   which is the thing the gate exists to catch.
+
+  **And an oracle is exact only up to the version of the data it reads**
+  (PR #895 review round 21).  Round 18's instruction — *check whether the exact
+  answer is already in reach* — is right, and this is the question to ask
+  immediately after it: **what edition of what table is that answer computed
+  from, and does the other side read the same one?**
+
+  Three P2s, all three fail-**closed**, all three on valid Rust this tree would
+  refuse.  `str.isidentifier()` and rustc both implement UAX#31 — the *rule* is
+  genuinely shared, which is what made round 18's reasoning sound — but they
+  read different editions of the Unicode table it ranges over.  Measured on this
+  environment: CPython 3.11 carries Unicode **14.0**, where U+1C89 is
+  *unassigned*, while rustc **1.94.1** compiles `pub unsafe fn Ᲊ() {}` with
+  nothing worse than an `uncommon_codepoints` warning.  So a documented
+  `unsafe fn` named with it raised no obligation and the explicit default branch
+  then refused the whole file; and `\b`, defined against `\w`, saw a boundary
+  *inside* the valid identifier `unsafeᲉ`, so `\bunsafe\b` matched its first six
+  characters and Tier 0 demanded a justification of safe Rust.
+
+  **Round 18's measurement was itself a recognised set** — this file's oldest
+  domain rule, arriving inside the evidence that justified an oracle.  Twenty-
+  eight codepoints spanning every plausible *category*, and category was the
+  wrong axis: every one of them was assigned in both editions, so the probe was
+  structurally blind to skew and would have reported 27/28 however far the two
+  tables had drifted.  *When a measurement licenses a dependency, ask what it
+  could not have seen.*
+
+  The exit is **not** a third table.  Pinning rustc's XID data into a Python
+  gate is the enumeration this project keeps retiring, and it goes stale at the
+  next toolchain bump.  Instead the *question* changes to one no Unicode release
+  can move: **every delimiter, operator and piece of punctuation in Rust source
+  is ASCII** — rustc rejects non-ASCII punctuation outright — so outside
+  comments and literals a non-ASCII character is part of an identifier.  That
+  gives *a character may continue an identifier unless it is ASCII and neither
+  alphanumeric nor `_`*, a fact about Rust's **grammar** rather than about a
+  codepoint table, and for the two questions this tree actually asks it is
+  **exact rather than merely safe**: a keyword adjacent to an identifier
+  character is not a keyword but one longer identifier, and a name is only ever
+  terminated by ASCII punctuation.  Where it does over-approximate — `×` and `·`
+  are admitted and rustc refuses them — the self-test *asserts the
+  over-approximation* rather than leaving a reader to rediscover it, because
+  neither can stand beside a name in code that compiles.
+
+  Two things the fix records.  **A retired oracle takes its dead API with it**:
+  `is_rust_identifier` existed only to state round 18's `_` divergence, its sole
+  readers were its own self-test rows, and its body was the retired call — a pin
+  on a question nothing asks, which this file already names a tautology, so it
+  is deleted rather than rewritten.  And **free exactness is still worth
+  taking**: `ident_start` excludes ASCII digits, because `0-9` is a fact about
+  ASCII and costs no table, even though the class beyond ASCII stays generous.
+
+  The round's third finding is the same *whose question is this* shape in a
+  different artefact.  `CARGO_TARGET_DIR` is **cargo's** setting, so a relative
+  value resolves from the **invocation** directory; the gate joined it onto
+  whatever root its scan had narrowed to, so `CARGO_TARGET_DIR=rust/target` run
+  from the repository root excluded `rust/rust/target` — which does not exist —
+  while cargo wrote to `rust/target`, which was therefore scanned.  Generated
+  `.rs` under a build script's `OUT_DIR` is code no contributor wrote, so an
+  unsafe site there would have failed Tier 0 against a file nobody can edit.
+  *When you honour another tool's setting, resolve it the way that tool does.*
+
+  **And the sweep found a fourth, in the check written to make sweeps
+  unnecessary.**  Running this round's own rule — *when a fix names a relation,
+  grep for every other place that asks it* — over Python's `\b` turned up two
+  more Rust-keyword boundaries, and the reason `bare_keyword_literals` had not
+  reported them is that it recognised **one shape**: `\b<keyword>\b`, a single
+  keyword with a boundary on each side.  A keyword inside an alternation with a
+  `\s+` tail (`check_claim_evidence_citations.py`'s Rust declaration head) and
+  a one-sided boundary (`check_tlbi_broadcast_discipline.py`'s FFI export
+  pattern) were both invisible.  Round 9 built that check so "the next such
+  pattern fails on the day it is written"; **a discipline check that enumerates
+  the shapes it has seen is the defect it exists to close, one level down.**
+
+  The question is widened to the one being asked — *does this regex literal use
+  a word boundary while naming a scanned keyword as a whole word?* — which
+  over-approximates deliberately, because the remedy for a false positive is to
+  compose `keyword()`, which is what the author wanted anyway; a literal
+  genuinely asking another language's question goes in
+  `NON_RUST_KEYWORD_SOURCES`, reconciled in both directions like every other
+  classification here.
+
+  One mechanical note, and it is this file's own rule repaying its cost
+  immediately.  The widened question was first written to search the raw line,
+  and the `b` of `\b` is an identifier character — so the whole-word lookbehind
+  failed on `\bunsafe\b` and the derived question **missed the very spelling it
+  subsumes**.  Nothing on the live tree would have caught that, because the
+  plain pattern still ran beside it; what caught it was the witness asserting
+  the *unchanged* row next to the new ones. **Keep the rows a fix does not
+  change** — that is what distinguishes a fix that generalises from one that
+  merely moves. A two-character regex escape is one token, so escapes are
+  blanked before the keyword question is asked.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor
