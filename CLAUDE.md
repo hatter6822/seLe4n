@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.39.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.40.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2828,12 +2828,15 @@ frame off a stack the context still heads and the walk would then stop mid-chain
 (`cancelledMiddleCallerPolicy = .severAtCut`, proved by
 `cancelledMiddleCaller_severs_at_cut`): the innermost live caller keeps the
 context and no thread below the cut is touched.  Its cost is stated rather than
-hidden — the original owner's reservation ends up with that caller — and it is a
-**divergence from seL4-MCS**, whose `reply_remove` splices (checked against
-upstream source at `v0.35.14`; this sentence claimed the opposite until the WS-RM
-section's retraction was swept onto it, which is the sweep rule failing in the way
-it describes — see *the removal does not preserve the donation accounting* below,
-and WS-HP for the correction).  One consequence for the suspend footprint:
+hidden — the original owner's reservation ends up with that caller — and it is
+**what seL4-MCS does**, re-verified at `v0.35.40` against upstream source at
+master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0: `reply_remove`'s non-head branch writes
+`REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)` under the comment *"not
+the head, remove from middle - break the chain"*.  It writes **zero**, not the cut
+frame's own `replyPrev`.  `v0.35.14` asserted the reverse here and quoted a line
+that exists in no release; see *the removal does not preserve the donation
+accounting* below for what that retraction cost and what WS-HP is therefore for.
+One consequence for the suspend footprint:
 the teardown can rebind the victim `.donated`, and the arm selector re-reads the
 *post*-teardown binding, so the pipeline pops twice at depth ≥ 2 and
 `suspendThreadOnCoreSchedLockSet`'s replenish segment is a **triple**.  The payoff
@@ -3675,16 +3678,107 @@ closed.  Recovering the accounting therefore means moving the pop's *trigger* to
 head-ness and its *source* to `SchedContext.boundThread` — registered debt with a
 closure target, not a preference.
 
-**And `severAtCut` is a divergence from seL4-MCS, not an inheritance of it.**
-Until `v0.35.14` this file asserted the opposite.  Checked against upstream
-source, `reply_remove`'s non-head branch **splices** —
+**And `severAtCut` IS seL4-MCS's removal — the `v0.35.14` retraction was itself
+wrong, and how it went wrong is the finding** (re-verified at `v0.35.40`).
+`reply_remove`'s non-head branch, at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 —
+every release that has the function — is
+
+```c
+if (next_ptr) {
+    /* not the head, remove from middle - break the chain */
+    REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false);
+}
+if (prev_ptr) {
+    REPLY_PTR(prev_ptr)->replyNext = call_stack_new(0, false);
+}
+```
+
+It writes **zero** into the frame above, which is `severAtCut`, and upstream's own
+comment says so.  `v0.35.14` claimed the opposite and cited
 `REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
-reply->replyPrev` — so the frame above inherits the cut frame's own outward
-pointer and every frame below stays reachable from the head.  v1.0.0 must not
-claim seL4-MCS reply-stack semantics at chain depth ≥ 3.  **A `reply_remove_tcb`
-reference elsewhere in this tree names an operation's shape; it is not evidence
-about what upstream writes** — that conflation is how the false claim survived
-eight cuts.
+reply->replyPrev` as the evidence; **that line is in no release**.  So the
+paragraph before this one describes the accounting cost correctly and attributes
+it wrongly: the cost is seL4-MCS's too, and WS-HP's splice is an **improvement on
+upstream** rather than an adoption of it.  v1.0.0 may claim seL4-MCS reply-stack
+removal semantics today; what it must not claim, of either kernel, is that
+completing a call chain returns a client's reservation at chain depth ≥ 3.
+
+**Quoting is not reading.**  This file's rules all police a *scanner* substituting
+a slice of text for a question about a program.  This is the same substitution with
+no scanner in it: a claim about an **external artefact** was marked "checked against
+upstream source ... and not assumed", in the very sentence that made it false, and
+the quoted C was reconstructed from what `reply_remove` *ought* to do rather than
+copied from the file.  A verbatim quotation is the strongest-looking evidence a
+prose claim can carry and the easiest to fabricate without noticing, and nothing in
+this tree could catch it — no gate reads seL4.  Two things follow.  **Cite the
+revision, not the repository**: a claim about upstream names the tag or commit it
+was read at, so the next reader can re-run the check rather than re-trust the
+quotation, and this tree's upstream claims now do.  And **a retraction is a change
+of claim and gets the same scrutiny as the claim**: `v0.35.14` swept a *correction*
+across four files and three docstrings, and the sweep worked — it propagated the
+error everywhere, in the sentence asserting it had been verified.  The three
+docstrings it "fixed" had been right.
+
+**And a claim about upstream is about a named OPERATION, not a named kernel** — the
+third rule, and the one this cut paid for itself.  Its own first draft said upstream
+"permanently strands a cancelled caller's reservation", which is true of `cancelIPC`
+and false of the kernel: `reply_remove` returns the context and `finaliseCap` runs it
+on reply-capability revocation, which is the behaviour the Reference Manual
+documents.  `cancelIPC`, `reply_remove` and `reply_remove_tcb` are **three
+operations**, and this tree had been treating them as one name for eight cuts — which
+is how `Suspend.lean` came to carry both readings at once, the docstring naming
+`reply_remove` and the inline comment at its own call site naming `reply_remove_tcb`.
+So a divergence claim names the operation it diverges from, and where two upstream
+operations answer differently, saying which is the whole of the claim.  The
+maintainer caught this one from the manual, which is the evidence for the rule: the
+error is invisible to anyone reading only the function the claim happens to name.
+
+Two genuine divergences survive the correction, both smaller and both in the
+direction of this kernel being the weaker one.  (1) **Upstream clears the frame
+*below*'s upward link** (`prev->replyNext = 0`); this tree leaves it stale and
+works around it by validating reciprocity at every read (`donationChainFrom`,
+`replyFrameOnLiveStack`).  HP6's splice closes that half by construction, since a
+splice *writes* that link rather than clearing it.  (2) **Upstream clears the
+removed frame's own links**; `Reply.consumed` keeps them, deliberately, because the
+pop validates a head by them — which is the WS-RM residual recorded above.
+
+**And the cancellation reclaim is upstream's semantics moved earlier, not an
+invention and not a permanent strand** — the maintainer's correction to this
+section's first draft, which said upstream "permanently strands a cancelled
+caller's reservation".  That described one of four paths and attributed it to
+upstream as a whole.
+
+**Upstream returns a donated context when the caller's Reply object is finalised,
+not when the caller's IPC is cancelled** — four paths, all read at master, 13.0.0,
+12.1.0, 12.0.0 and 11.0.0.  (1) The server replies: `doReplyTransfer` →
+`reply_remove` → head ⇒ `reply_pop` ⇒ donate to the answered caller, guarded
+`if (tcb->tcbSchedContext == NULL)`.  (2) **The reply capability is revoked** while
+its caller is still `BlockedOnReply`: `finaliseCap` runs the *same*
+`reply_remove`, so the context returns to the caller — the Reference Manual's "if
+the reply capability is revoked while the callee currently holds the scheduling
+context, the scheduling context will be automatically returned to the caller".
+(3) The same revocation when the caller's frame is **not** the head, because a
+deeper server holds the context: the non-head branch runs, no donation happens,
+and the caller is removed from the call chain — the manual's deep-call-chain case,
+and the same *break the chain* write the removal-policy correction above rests on.
+(4) `cancelIPC` — a `seL4_TCB_Suspend` on the caller, an endpoint deletion, a
+fault: `reply_remove_tcb` ⇒ **no** donation, and its `reply_unlink` then clears
+`reply->replyTCB`, so a later revocation of that reply capability finds nothing to
+do (`finaliseCap` guards on `reply->replyTCB`) and the context stays with the
+server until an SC-capability holder rebinds it.
+
+So `returnDonationToCancelledCaller` applies **upstream's `reply_remove`
+semantics at the cancellation point**, where upstream defers them to Reply-object
+finalisation.  The difference is *when*, not *whether* — and this kernel's binding
+typing forces the earlier point: `.donated scId owner` names its owner, so
+`donationOwnerValid` is false the instant that owner stops being reply-blocked,
+where upstream's flat `tcbSchedContext` pointer carries no such obligation.
+
+Two consequences for new code.  A claim that this kernel diverges from upstream on
+the *cancellation* reclaim must name the operation: it diverges from `cancelIPC`
+and agrees with `reply_remove`.  And "adopt seL4's cancellation semantics" is not
+a licence to delete the reclaim — deleting it reaches a state
+`donationOwnerValid` forbids, which is the Medium finding WS-RR RR7.22 reported.
 
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
@@ -3694,14 +3788,25 @@ Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_RE
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
 the answered frame heads a context.  `severAtCut` is exactly what keeps those
-two facts equivalent — and it is a **divergence** from seL4-MCS, whose
-`reply_remove` splices, so the frames below a cut stay reachable from the head
-there.  The consequence is measured rather than described: at reply-stack depth
-≥ 3 a middle removal drops the frames below the cut, the reservation settles
-`.bound` on a thread strictly *inside* the chain, and its owner is left
-`.unbound` for good (`tests/SmpIpcSuite.lean` §3.22; §3.20's depth-two witness
-structurally cannot show it, because a two-frame stack's lower frame is its
-bottom and both policies then write the same value).
+two facts equivalent, and the consequence is measured rather than described: at
+reply-stack depth ≥ 3 a middle removal drops the frames below the cut, the
+reservation settles `.bound` on a thread strictly *inside* the chain, and its
+owner is left `.unbound` for good (`tests/SmpIpcSuite.lean` §3.22; §3.20's
+depth-two witness structurally cannot show it, because a two-frame stack's lower
+frame is its bottom and both policies then write the same value).
+
+**The splice is an improvement on seL4-MCS, not an adoption of it** (`v0.35.40`,
+re-verified against upstream source at five revisions).  `reply_remove`'s non-head
+branch *breaks the chain* exactly as `severAtCut` does — see the WS-RM section
+above for the C and for what the `v0.35.14` retraction cost — so upstream strands
+the reservation at depth ≥ 3 too.  What HP6 buys is therefore a property neither
+kernel has today, and the workstream's value does not depend on the mistaken
+attribution: a callee that delegates its caller's reply capability to a confederate
+can capture that caller's CBS reservation, and the chain-preserving removal is what
+closes it.  Two things upstream *does* confirm, both landed: the pop's trigger is
+`call_stack_get_isHead(reply->replyNext)` (HP4, HP5), and `reply_pop` donates only
+`if (tcb->tcbSchedContext == NULL)`, which is HP4.6's `donationRecipientAcceptable`
+with upstream's own reason.
 
 The correction is **two changes in a forced order**, not one: the splice alone
 is unsound under a binding-driven trigger, because it re-heads a frame whose

@@ -667,13 +667,16 @@ recorded server existing.
 Only this direction is needed: the head trigger firing implies the binding one
 does.  The converse would widen the footprint, which is sound.
 
-**Repointing the footprint's own resolvers is HP6's** (plan §3.8.7).  That cut is
-the one that makes the divergence *reachable* — `spliceOutTheCut` can leave an
+**Repointing the footprint's own resolvers is HP6.8's** (plan §3.8.7).  That cut
+is the one that makes the divergence *reachable* — `spliceOutTheCut` can leave an
 orphan head, which `severAtCut` provably cannot
 (`severAtCut_pop_leaves_no_head`) — and it rewrites these same members anyway;
-doing it here would have made the two sharp bounds
-(`lockSet_endpointReplyRecvOnCore_size_le_eighteen` / `_seventeen`) depend on a
-coherence fact HP7 then deletes, which is work that converges backwards. -/
+doing it here would have re-proved the two sharp bounds
+(`lockSet_endpointReplyRecvOnCore_size_le_eighteen` / `_seventeen`) twice.  HP6.8
+also makes the sharper of them **unconditional**, because the 18 → 17 merge is
+`replyDonationOwnerIsAnsweredCaller` and the head-driven pop's recipient *is* the
+answered caller by construction — so that repoint is what enables HP7 rather than
+the reverse (the two rows each read as waiting on the other until `v0.35.40`). -/
 theorem lockSet_endpointReplyOnCore_covers_headDrivenPop (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (tcb : TCB)

@@ -1046,8 +1046,11 @@ admissible critical section nothing; the uniform 60 µs envelope moves
 3780 → 3960 µs.
 
 **WS-HP HP3.2 takes it to twenty-three**, for the second half of the same
-removal: seL4-MCS's `reply_remove` *splices*, patching the frame **below** the cut
-to point past it, and HP6 makes this tree's removal do the same.  The member is
+removal: HP6 makes the removal patch the frame **below** the cut to point past it
+rather than leaving the frames below off the stack.  (Not parity with upstream —
+`reply_remove` *breaks the chain* there too, re-verified at `v0.35.40`; the splice
+is an improvement on it.  See `IPC/Invariant/Defs.lean`'s
+`CancelledMiddleCallerPolicy` for the C and the revisions read.)  The member is
 declared one phase before the code that writes it, which is the plan's own
 numbering rule — a footprint that omits a written object is false, and a
 transition goes live only after the proofs that cover it.  It is resolved

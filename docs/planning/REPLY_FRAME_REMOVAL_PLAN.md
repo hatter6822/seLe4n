@@ -335,12 +335,16 @@ document existing.
   in-order contrast on the same stack delivering it outward still owed.  §3.20
   keeps the depth-two halves.
 
-  It is also a **confirmed divergence from seL4-MCS** (checked against upstream
-  source at `v0.35.14`, where this plan previously claimed the behaviour was
-  inherited): `reply_remove`'s non-head branch splices, so the frames below a cut
-  stay reachable from the head there.  Recovering the accounting means moving the
-  pop's trigger to head-ness; registered in `docs/REGISTERED_DEBT.md` with owner
-  WS-CB and closure target before v1.0.0.
+  It is **what seL4-MCS does too** — this plan's original text was right, and
+  `v0.35.14`'s "correction" of it was the error, withdrawn at `v0.35.40` after
+  re-reading upstream at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0:
+  `reply_remove`'s non-head branch writes
+  `REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)` under the comment
+  *"not the head, remove from middle - break the chain"*.  So the cost above is
+  upstream's cost too, and recovering the accounting is an improvement on it: it
+  means moving the pop's trigger to head-ness and then taking the splice,
+  registered in `docs/REGISTERED_DEBT.md` with owner **WS-HP** and closure target
+  before v1.0.0.
 
 ## 10. What closing this workstream found
 

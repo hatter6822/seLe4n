@@ -349,8 +349,10 @@ open SeLe4n.Testing
 #check @cancelIpcBlocking_notification_arm_eq
 #check @cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull
 -- WS-RR RR7.22 (residual, remediation): the cancelled caller's donation goes
--- back — seL4-MCS's `reply_remove` — and the fact that makes the return well
--- defined, stated rather than assumed.
+-- back — seL4-MCS's `reply_remove` semantics at the cancellation point, where
+-- upstream defers them to Reply-object finalisation (`v0.35.40`: `cancelIPC` itself
+-- runs `reply_remove_tcb` and donates nothing) — and the fact that makes the
+-- return well defined, stated rather than assumed.
 #check @Lifecycle.Suspend.cancelledCallerDonation?
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller
 #check @cancelledCallerDonation?_some

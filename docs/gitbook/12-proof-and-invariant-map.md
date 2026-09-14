@@ -239,10 +239,13 @@ live `Reply` record, and the frozen reply was clearing a caller's Reply bare —
 this workstream's own defect, on the surface nothing was looking at.  The cost is stated with the fix:
 removing a caller from the *middle* of a chain does not preserve the donation
 accounting, so a delegate answering an owner out of order leaves that owner
-`.unbound` and the context settles on the intermediate caller.  That is a
-**divergence from seL4-MCS, not an inheritance of it** — checked against upstream
-source at `v0.35.14`, where `reply_remove`'s non-head branch *splices* so every
-frame below a cut stays reachable from the head — and it is pinned by
+`.unbound` and the context settles on the intermediate caller.  That is
+**seL4-MCS's cost too, not a divergence from it** — re-verified at `v0.35.40`
+against upstream source at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0, where
+`reply_remove`'s non-head branch writes zero into the frame above under the comment
+*"not the head, remove from middle - break the chain"*; `v0.35.14` claimed the
+reverse and cited a line that is in no release, so the chain-preserving removal is
+an **improvement on** upstream rather than parity with it — and it is pinned by
 `tests/SmpIpcSuite.lean` **§3.22**, the depth-three witness: §3.20's depth-two one
 structurally cannot show it, because a two-frame stack's lower frame is its bottom
 and both policies then write the same value there.  Recovering the accounting is

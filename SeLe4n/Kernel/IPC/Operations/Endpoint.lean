@@ -3078,14 +3078,23 @@ next pop that reaches it binds that thread outright — and cuts everything belo
 off the context's stack.
 
 **This writes `none`, not the cut frame's own `prev`**, and that is the
-`cancelledMiddleCallerPolicy` decision rather than an omission: the alternative
-(`spliceOutTheCut`) keeps the frames below on the stack — it is what seL4-MCS's
-`reply_remove` does — and taking it would require moving the reply path's pop
-trigger from the recorded server's binding to the answered frame's head-ness.  The two write the same value whenever the cut
-frame is the bottom of its stack, which is every stack of depth two;
-`tests/SmpIpcSuite.lean` §3.22 is the depth-three witness where they differ.  The cancelled frame's own links are cleared when
-its caller link is consumed (`Reply.consumed`), and the frame below it keeps an
-upward link the structure never trusts (see `Reply.consumed`).
+`cancelledMiddleCallerPolicy` decision rather than an omission.  It is also
+**what seL4-MCS does** (`reply_remove`'s non-head branch:
+`REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)`, under the comment
+*"not the head, remove from middle - break the chain"*; re-verified at `v0.35.40`
+against master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 — `v0.35.14` asserted the
+reverse here and cited a line that is in no release).  The alternative
+(`spliceOutTheCut`) keeps the frames below on the stack, which is a property
+**neither** kernel has today, and taking it requires moving the reply path's pop
+trigger from the recorded server's binding to the answered frame's head-ness
+(WS-HP HP4/HP5, landed) before the splice itself (HP6).  The two write the same
+value whenever the cut frame is the bottom of its stack, which is every stack of
+depth two; `tests/SmpIpcSuite.lean` §3.22 is the depth-three witness where they
+differ.  The cancelled frame's own links are cleared when its caller link is
+consumed (`Reply.consumed`), and the frame below it keeps an upward link the
+structure never trusts (see `Reply.consumed`) — upstream clears that link
+(`prev->replyNext = 0`) and this tree validates reciprocity at every read
+instead; HP6's splice *writes* it, closing that half by construction.
 
 Three answers, and each is a decision.  `.ok st` when the frame is a head (a
 head is popped, never detached — that is the reclaim's job — so this is not the

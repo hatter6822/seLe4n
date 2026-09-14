@@ -1,4 +1,4 @@
-# WS-HP — the head-driven donation pop, and seL4's splice
+# WS-HP — the head-driven donation pop, and the chain-preserving removal
 
 > **Status**: **PLANNED** — registered `v0.35.16`. No sub-task has started.
 > **Predecessor finding**: [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
@@ -26,11 +26,34 @@ holding a suspend right over a middle caller, can permanently capture that
 caller's CBS reservation. Measured on a live stack in `tests/SmpIpcSuite.lean`
 §3.22.
 
-**seL4-MCS splices**, confirmed against upstream source:
+**seL4-MCS severs too — corrected at `v0.35.40`.** `reply_remove`'s non-head
+branch, read at upstream master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 (every release
+that has the function), is
+
+```c
+if (next_ptr) {
+    /* not the head, remove from middle - break the chain */
+    REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false);
+}
+if (prev_ptr) {
+    REPLY_PTR(prev_ptr)->replyNext = call_stack_new(0, false);
+}
+```
+
+It writes **zero** into the frame above, which is `severAtCut`. `v0.35.14` claimed
+the opposite and cited
 `REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
-reply->replyPrev`, with the link orientation this tree assumes confirmed to
-match. So the frames below a cut stay reachable from the head there, and the
-reservation goes on travelling outward.
+reply->replyPrev` as the evidence; that line is in no release.
+
+**This does not weaken the plan — it reclassifies it.** The defect above is real
+and measured, and upstream has it too, so the chain-preserving removal is an
+**improvement on seL4-MCS** rather than parity with it. Everything the phases do
+is unchanged; what changes is the attribution and the claim set (see §8 and §9).
+Two things upstream *does* confirm, and both are already landed: `reply_pop`'s
+trigger is `call_stack_get_isHead(reply->replyNext)` — head-driven, HP4 and HP5 —
+and it donates only `if (tcb->tcbSchedContext == NULL)`, which is HP4.6's
+`donationRecipientAcceptable` with upstream's own reason ("only give the SC back if
+our SC is NULL").
 
 **Why the splice alone does not work here, and what actually has to change.**
 This kernel decides whether a reply pops a donation from the **recorded
@@ -49,8 +72,11 @@ unsound, and HP2.3 makes that a machine-checked fact rather than a note.
 
 **Intended outcome.** A completed call chain returns the client's reservation
 to the client at any depth; the three pre-state coherence hypotheses the reply
-path carries today become derivable rather than assumed; and v1.0.0 can claim
-seL4-MCS reply-stack semantics.
+path carries today become derivable rather than assumed; and v1.0.0 can claim a
+reply-stack removal that preserves the donation accounting — a property seL4-MCS
+does not have. (The claim v1.0.0 must *stop* being blocked from making is the
+accounting one; "seL4-MCS reply-stack removal semantics" is already true, since
+`severAtCut` is what upstream writes.)
 
 ## 1. Phase goal
 
@@ -120,10 +146,13 @@ pop refuses a recipient that is not `.unbound` — the same fail-closed posture
 `outerCallerAcceptable` already takes for the outer caller.
 
 This is required by **this** kernel's typing (`.bound` / `.donated` /
-`.unbound`) whichever way upstream answers, so it is not a branch point. Whether
-seL4's `reply_pop` guards its `schedContext_donate` with
-`if (tcb->tcbSchedContext == NULL)` is an open question recorded in HP9.4; the
-answer changes a docstring, not the design.
+`.unbound`) whichever way upstream answers, so it is not a branch point. **And
+upstream answers the same way** — resolved at `v0.35.40`, so HP9.4's open question
+is closed: `reply_pop` guards its `schedContext_donate` with
+`if (tcb->tcbSchedContext == NULL)`, under the comment *"only give the SC back if
+our SC is NULL. This prevents strange behaviour when a thread is bound to an sc
+while it is in the BlockedOnReply state"* — which is HP4.6's reason in upstream's
+own words. HP9.4 records the answer rather than asking the question.
 
 ### 3.4 The splice, and why it must come second
 
@@ -801,7 +830,7 @@ be landed earlier, and HP6.4 was always going to need HP4 and HP5 anyway (§4).
 | HP6.5 | `removeCallerReplyFrame_preserves_donationChainWellFormed` over the splice — reciprocity is *maintained* rather than vacated, so the argument is shorter than the sever's: `above.prev = some below` and `below.next = .frame above` are written together. Consumes HP6.4 | `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | L |
 | HP6.6 | `cancelledMiddleCallerPolicy := .spliceOutTheCut`, with `cancelledMiddleCaller_splices_at_cut` replacing `…_severs_at_cut`, and `replyStackOuterCaller?_follows_policy` restated. HP2.3's negative twin is retired *here*, in the cut that earns it. Consumes HP6.5 | `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | M |
 | HP6.7 | **The payoff**: `donationAccountingPreserved_atCallDepthThree` — on the depth-3 witness, a middle removal leaves the reservation owed outward and the later pop delivers it to its owner. `tests/SmpIpcSuite.lean` §3.22 inverts from a COST witness to a PAYOFF witness in the same cut, keeping the in-order contrast. Consumes HP6.6 | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `tests/SmpIpcSuite.lean` | L |
-| HP6.8 | **The two reply footprints repointed onto the head-driven trigger**, which HP4 deliberately left (§3.8.7): `lockSet_endpointReplyOnCore` / `lockSet_endpointReplyRecvOnCore` resolve their donation members through `endpointReplyServerDonation?` while the pop reads `replyFrameHeadHolder?`, and this is the cut that makes the two disagree on a reachable state — `spliceOutTheCut` can leave an orphan head, which `severAtCut` provably cannot. The theorem HP4.4 left in its place — `lockSet_endpointReplyOnCore_covers_headDrivenPop` — is what holds the gap closed until here and is **deleted** by this row, since the members then come from the trigger itself; this row therefore consumes HP4.4 as well as HP6.7. The two sharp bounds re-proved: the `owner = target` merge the head-driven footprint no longer has becomes the `holder = recorded server` one, which is why this row could not land before HP7 retires the coherence facts it would otherwise depend on. Consumes HP6.7 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` | L |
+| HP6.8 | **The two reply footprints repointed onto the head-driven trigger**, which HP4 deliberately left (§3.8.7): `lockSet_endpointReplyOnCore` / `lockSet_endpointReplyRecvOnCore` resolve their donation members through `endpointReplyServerDonation?` while the pop reads `replyFrameHeadHolder?`, and this is the cut that makes the two disagree on a reachable state — `spliceOutTheCut` can leave an orphan head, which `severAtCut` provably cannot. The theorem HP4.4 left in its place — `lockSet_endpointReplyOnCore_covers_headDrivenPop` — is what holds the gap closed until here and is **deleted** by this row, since the members then come from the trigger itself; this row therefore consumes HP4.4 as well as HP6.7. **And the sharp bounds become unconditional here** (the ordering was stated backwards until `v0.35.40`, with this row and the hypothesis-retirement phase each reading as waiting on the other): the 18 → 17 merge was licensed by `replyDonationOwnerIsAnsweredCaller` — *the donation a reply returns is owned by the thread the reply answers* — and under the head-driven trigger the pop's recipient **is** the answered caller by construction (HP4.2 passes `targetVtid`), so the merge is definitional and that coherence fact loses its last consumer in this row. Retiring the definition itself is the next phase's, and it consumes this row. Consumes HP6.7 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` | L |
 
 **Acceptance**: §3.22's assertions read the owner receiving its reservation, the
 in-order contrast is unchanged, and §3.20's depth-2 halves pass byte-identically
@@ -812,7 +841,7 @@ in-order contrast is unchanged, and §3.20's depth-2 halves pass byte-identicall
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | HP7.1 | `answeredHeadContextIsServerDonation` removed from `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` and its two composites, discharged by HP2.4 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` | M |
-| HP7.2 | `replyDonationOwnerIsAnsweredCaller` removed from `lockSet_endpointReplyRecvOnCore_size_le_*`; the sharp bound becomes unconditional. Consumes HP7.1 | `SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean` | M |
+| HP7.2 | `replyDonationOwnerIsAnsweredCaller` has **no consumer left** once HP6.8 makes the merge definitional — verify that, rather than remove it again (the row said "removed … the sharp bound becomes unconditional", which HP6.8 now does; corrected at `v0.35.40`, since the two rows as written each waited on the other). What remains here is the sweep: every other citation of the three facts outside the definitions themselves. Consumes HP7.1, HP6.8 | `SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean` | M |
 | HP7.3 | `replyStackHeadIsAnsweredReply` removed from its consumers; the three definitions are deleted rather than left as unused predicates, since a stated fact nothing consumes is the shape this project retires. Consumes HP7.2 | same, plus consumers | M |
 | HP7.4 | `syscallDispatchQuiescence` / `checkedSyscallDispatchQuiescence` shed the corresponding pack fields, with the inhabitation witnesses re-run. Consumes HP7.3 | `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` | L |
 
@@ -845,8 +874,8 @@ including the agreement between the frozen reply and the live one.
 |-----|-------------|-------|-----|
 | HP9.1 | A **depth-4** witness — the shallowest stack on which two frames sit below a cut — so the splice's transitivity is measured rather than inferred from depth 3 | `tests/SmpIpcSuite.lean` | M |
 | HP9.2 | Tier 3 anchors: positives for the splice's two writes and the head-driven trigger; negatives refusing the sever spelling, the binding-driven trigger on the reply path, and an unguarded recipient. Each mutation-tested in **both** directions — silent on a clean tree, firing on a token-preserving mutation that keeps the name and moves the relation | `scripts/test_tier3_invariant_surface.sh` | M |
-| HP9.3 | The canonical documentation: `CLAUDE.md` + `AGENTS.md` (the WS-RM and WS-OD sections, whose current text states the divergence this workstream closes), `docs/spec/SELE4N_SPEC.md` §7, `docs/REGISTERED_DEBT.md` (table C row closed, and its closing paragraph restored now that the exception is gone), `docs/CLAIM_EVIDENCE_INDEX.md`, the GitBook mirrors | as listed | M |
-| HP9.4 | Confirm against upstream source whether `reply_pop` guards its donate with `if (tcb->tcbSchedContext == NULL)` (§3.3) and record the answer beside the recipient guard — a docstring either way, since this kernel's typing requires the guard regardless | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | S |
+| HP9.3 | The canonical documentation: `CLAUDE.md` + `AGENTS.md` (the WS-RM and WS-OD sections, whose text states the accounting cost this workstream closes — the *upstream-divergence* half of it was withdrawn at `v0.35.40`), `docs/spec/SELE4N_SPEC.md` §7, `docs/REGISTERED_DEBT.md` (table C row closed, and its closing paragraph restored now that the exception is gone), `docs/CLAIM_EVIDENCE_INDEX.md`, the GitBook mirrors | as listed | M |
+| HP9.4 | **Answered at `v0.35.40`, so this row records rather than asks**: `reply_pop` *does* guard its donate with `if (tcb->tcbSchedContext == NULL)`, under the comment "only give the SC back if our SC is NULL" — HP4.6's reason in upstream's own words. Record it beside the recipient guard, together with the other two upstream facts that cut established: the pop's trigger is `call_stack_get_isHead(reply->replyNext)`, and `reply_remove`'s non-head branch *breaks the chain* (so this workstream's removal is an improvement on upstream, not parity with it) | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | S |
 | HP9.5 | Closure: `check_workstream_plan.py`, `check_claim_evidence_citations.py`, the version bump and `CHANGELOG.md` entry, `test_docs_sync.sh`. Consumes HP9.1–HP9.4 | `scripts/`, `CHANGELOG.md` | S |
 
 **Acceptance**: see §8.
@@ -910,15 +939,27 @@ a document existing.
    both directions by the Tier 1 census (HP8.3).
 10. `docs/REGISTERED_DEBT.md` table C's donation-accounting row is closed, and
     that table's closing claim — which `v0.35.14` had to qualify for this row —
-    is restored (HP9.3).
+    is restored (HP9.3). The *upstream-parity* half of that qualification was
+    withdrawn at `v0.35.40`, since `severAtCut` is what upstream writes; what
+    HP9.3 closes is the accounting claim.
 
 ## 9. What this plan deliberately does not do
 
-- **It does not adopt seL4's cancellation semantics.** seL4's `cancelIPC` runs
-  `reply_remove` and never donates the context back to the cancelled caller;
-  this kernel does (`returnDonationToCancelledCaller`), deliberately, and
-  `Suspend.lean` records that as a divergence with its reason. HP5 changes only
-  which *fact* selects the reclaim, never whether the reclaim happens.
+- **It does not change when the cancellation reclaim happens, and it must not.**
+  Upstream returns a donated context on **reply-capability revocation**
+  (`finaliseCap` → `reply_remove` → `reply_pop` — the Reference Manual's documented
+  behaviour) and *not* on `cancelIPC`, which runs `reply_remove_tcb` and donates
+  nothing, leaving the context with the server until an SC-capability holder
+  rebinds it. `returnDonationToCancelledCaller` applies the `reply_remove`
+  semantics at the cancellation point instead, because this kernel's binding typing
+  forces it: `.donated scId owner` names its owner, so `donationOwnerValid` is false
+  the instant that owner stops being reply-blocked, where upstream's flat
+  `tcbSchedContext` pointer carries no such obligation. Verified at `v0.35.40`
+  against master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0; before that `Suspend.lean`'s
+  docstring named `reply_remove` where the call site's own comment named
+  `reply_remove_tcb`, and the first correction over-generalised the `cancelIPC` path
+  to the whole kernel. HP5 changes only which *fact* selects the reclaim, never
+  whether or when the reclaim happens.
 - **It does not reverse the reply-then-pop ordering.** The reply leg still runs
   first and the head transient is still discharged by the composite, exactly as
   WS-RM left it. What changes is which fact the composite reads.
@@ -926,9 +967,10 @@ a document existing.
   context on the head frame alone, which is what makes a mid-stack removal an
   `O(1)` repair of two neighbours. Nothing about the splice needs the push to
   change.
-- **It does not remove the recipient guard in favour of matching upstream.**
-  §3.3: this kernel's binding typing requires it whichever way seL4 answers, so
-  HP9.4 records the answer rather than acting on it.
+- **It does not remove the recipient guard in favour of matching upstream** —
+  and upstream has the guard anyway (§3.3, resolved at `v0.35.40`):
+  `reply_pop` donates only `if (tcb->tcbSchedContext == NULL)`. HP9.4 records the
+  answer rather than asking the question.
 - **It does not widen `Reply`.** Every fact the new trigger reads already
   exists in the record; the workstream is a change of *which* fact is read, not
   of what is stored.

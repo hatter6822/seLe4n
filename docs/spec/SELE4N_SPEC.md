@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.39` (`lakefile.toml`) |
+| **Package version** | `0.35.40` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 380,359 across 330 Lean files |
-| **Test LoC** | 77,138 across 70 Lean test suites |
+| **Production LoC** | 380,420 across 330 Lean files |
+| **Test LoC** | 77,140 across 70 Lean test suites |
 | **Proved declarations** | 12,704 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -4391,9 +4391,11 @@ because each is false without the other.
   the pop already does (one program rather than two), because it is `O(1)` where
   the alternative walks a chain a `LockSet` cannot bound, and because it reaches
   the same owner seL4-MCS's `reply_remove` does — and, since `v0.35.4`, by the
-  same route: `detachCancelledCallerFrame` splices the cancelled frame out of the
-  middle in `O(1)` before its caller link is consumed, so no frame is left on a
-  stack with its caller gone.  Its cost is
+  same route: `detachCancelledCallerFrame` takes the cancelled frame off the middle
+  of the stack in `O(1)` before its caller link is consumed, so no frame is left on
+  a stack with its caller gone.  (*Takes off*, not *splices*: it writes `none` into
+  the frame above, which is upstream's own non-head branch — see §8.12.8's
+  correction at `v0.35.40`.)  Its cost is
   stated rather than hidden: the original owner's reservation ends up with the
   innermost live caller, and no later pop carries it below the cut.  From the
   cancellation end the same policy is two theorems — the reclaim fires for the
@@ -4568,16 +4570,21 @@ respect.
    unwound in order delivers it outward still owed.  §3.20 pins the depth-two
    halves.
 
-   **It is also a confirmed divergence from seL4-MCS**, checked against upstream
-   source at `v0.35.14`: `reply_remove`'s non-head branch splices, writing the
-   cut frame's own `replyPrev` into the frame above, so every frame below stays
-   reachable from the head there.  Moving to `spliceOutTheCut` requires moving
-   the reply path's pop trigger from the recorded server's binding to the
-   answered frame's head-ness; that is **WS-HP**, registered in
-   `docs/REGISTERED_DEBT.md` with closure target before v1.0.0, and until it
-   closes v1.0.0 must not claim seL4-MCS reply-stack semantics at chain depth
-   ≥ 3.  The trigger flip itself landed for the reply path at `v0.35.38`
-   (§8.12.9); the splice is HP6.
+   **It is what seL4-MCS does too** — re-verified at `v0.35.40` against upstream
+   source at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0: `reply_remove`'s non-head
+   branch writes `REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)` under
+   the comment *"not the head, remove from middle - break the chain"*.  It writes
+   **zero**, not the cut frame's own `replyPrev`.  `v0.35.14` claimed the reverse
+   and cited a line that is in no release, and nine prose sites carried that claim
+   until `v0.35.40` withdrew it.  So the cost above is upstream's cost too, and
+   moving to `spliceOutTheCut` is an **improvement on** seL4-MCS rather than parity
+   with it.  It requires moving the reply path's pop trigger from the recorded
+   server's binding to the answered frame's head-ness first; that is **WS-HP**,
+   registered in `docs/REGISTERED_DEBT.md` with closure target before v1.0.0, and
+   until it closes v1.0.0 must not claim — of either kernel — that completing a call
+   chain returns a client's reservation at chain depth ≥ 3.  The trigger flip landed
+   for the reply path at `v0.35.38` (§8.12.9) and for the cancellation path at
+   `v0.35.39` (§8.12.10); the splice is HP6.
 
 #### 8.12.9 The donation pop is head-driven — WS-HP HP4 (`v0.35.38`)
 

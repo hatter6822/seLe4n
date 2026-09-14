@@ -1,3 +1,154 @@
+## v0.35.40 — WS-HP: the upstream attribution retracted, and what re-reading the source confirmed
+
+`v0.35.14` asserted that seL4-MCS's `reply_remove` splices a middle reply frame
+out of a call stack, marked the assertion "checked against upstream source ... and
+not assumed", and quoted C as the evidence.  The quoted line is in **no release**.
+Re-read at upstream master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 — every revision
+that has the function — the non-head branch is
+
+```c
+if (next_ptr) {
+    /* not the head, remove from middle - break the chain */
+    REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false);
+}
+if (prev_ptr) {
+    REPLY_PTR(prev_ptr)->replyNext = call_stack_new(0, false);
+}
+```
+
+It writes **zero** into the frame above, which is exactly `severAtCut`.  So the
+claim `v0.35.14` retracted was the true one, and its "correction" propagated a
+fabrication to nine prose sites and three docstrings that had been right.
+
+**What this does and does not change.**  It changes no code and no proof.  The
+accounting defect the row registers is real, measured on a live three-frame stack
+(`tests/SmpIpcSuite.lean` §3.22), and **upstream has it too** — so WS-HP's
+chain-preserving removal is an *improvement on* seL4-MCS rather than parity with
+it, and the workstream's value does not depend on the attribution.  The claim-set
+constraint narrows accordingly: v1.0.0 may claim seL4-MCS reply-stack removal
+semantics today, since `severAtCut` is what upstream writes; what it must not
+claim, of either kernel, is that completing a call chain returns a client's
+reservation at chain depth >= 3.
+
+**Two upstream facts the same reading confirmed**, both already landed, both now
+recorded as inherited rather than invented:
+
+- `reply_pop`'s trigger is `call_stack_get_isHead(reply->replyNext)` — the
+  head-driven pop, WS-HP HP4 (`v0.35.38`) and HP5 (`v0.35.39`).
+- `reply_pop` donates only `if (tcb->tcbSchedContext == NULL)`, under the comment
+  *"only give the SC back if our SC is NULL.  This prevents strange behaviour when
+  a thread is bound to an sc while it is in the BlockedOnReply state"* — which is
+  HP4.6's `donationRecipientAcceptable` with upstream's own reason.  The plan's
+  HP9.4 asked this as an open question; it is answered, and that row now records
+  the answer.
+
+**A second claim needed sourcing rather than inverting, and getting that wrong is
+this cut's own finding.**  `Suspend.lean` said seL4-MCS's `cancelIPC` "runs
+`reply_remove`, which returns the scheduling context the caller donated", while the
+inline comment at its own call site said `reply_remove_tcb` and *never donates* —
+one question, two answers, in the same file.  The function name in the docstring is
+wrong; the *semantics* it claimed is upstream's, reached by a different operation.
+Four paths, all read at the five revisions above:
+
+1. the server replies — `doReplyTransfer` → `reply_remove` → head ⇒ `reply_pop` ⇒
+   donate to the answered caller, guarded `if (tcb->tcbSchedContext == NULL)`;
+2. **the reply capability is revoked** while its caller is still `BlockedOnReply` —
+   `finaliseCap` runs the *same* `reply_remove`, so the context returns to the
+   caller.  This is the Reference Manual's "if the reply capability is revoked while
+   the callee currently holds the scheduling context, the scheduling context will be
+   automatically returned to the caller";
+3. the same revocation when the caller's frame is **not** the head, because a deeper
+   server holds the context — the non-head branch runs, no donation happens, and the
+   caller leaves the call chain: the manual's deep-call-chain case, and the same
+   *break the chain* write the removal correction above rests on;
+4. `cancelIPC` — a suspend, an endpoint deletion, a fault — `reply_remove_tcb`
+   donates nothing, and its `reply_unlink` clears `reply->replyTCB`, so a later
+   revocation of that capability finds nothing to do and the context stays with the
+   server until an SC-capability holder rebinds it.
+
+So `returnDonationToCancelledCaller` (`v0.34.97`) applies **upstream's
+`reply_remove` semantics at the cancellation point**, where upstream defers them to
+Reply-object finalisation.  The difference is *when*, not *whether*, and this
+kernel's binding typing forces the earlier point: `.donated scId owner` names its
+owner, so `donationOwnerValid` is false the instant that owner stops being
+reply-blocked, where upstream's flat `tcbSchedContext` pointer carries no such
+obligation.  **The first draft of this cut said upstream "permanently strands" the
+reservation** — which describes path 4 and attributes it to the whole kernel, and
+ignores paths 2 and 3, the manual's documented recovery.  The maintainer caught it
+from the manual.  That is the same defect this cut is about, one operation over:
+*a claim about an external artefact is about a named operation at a named revision,
+or it is not a claim* — and `cancelIPC`, `reply_remove` and `reply_remove_tcb` are
+three operations that this tree had been treating as one name.
+
+**Two genuine divergences survive**, both smaller and both in the direction of
+this kernel being the weaker one.  Upstream clears the frame *below*'s upward link
+(`prev->replyNext = 0`) where this tree leaves it stale and validates reciprocity
+at every read instead — HP6's splice closes that half by construction, since a
+splice *writes* that link.  And upstream clears the removed frame's own links,
+where `Reply.consumed` keeps them because the pop validates a head by them — the
+WS-RM residual already recorded.
+
+**Quoting is not reading** (`CLAUDE.md`, WS-RM section).  Every rule this project
+carries about presence-versus-relation polices a *scanner* substituting a slice of
+text for a question about a program.  This is the same substitution with no scanner
+in it: a claim about an **external artefact** carried a verbatim quotation that had
+been reconstructed from what the function ought to do.  A quotation is the
+strongest-looking evidence prose can carry and the easiest to fabricate without
+noticing, and nothing here could catch it, because no gate reads seL4.  Two rules
+follow, and both are now mechanism rather than prose.  **Cite the revision, not the
+repository** — every upstream claim in this tree now names the tags it was read at,
+so the next reader can re-run the check instead of re-trusting the quotation.  And
+**a retraction is a change of claim and gets the same scrutiny as the claim**:
+`v0.35.14` swept a correction across four files and three docstrings and the sweep
+worked perfectly, which is how the error reached every site that had been right.
+
+Enforcement: **23** Tier 3 prose checks — 9 negatives and 14 positives.  The
+subject is the text, so they are `run_prose_check` / `run_prose_negative_check`
+rather than code anchors (*gates read code, prose reads prose*).  The negatives
+refuse the assertive spellings the retraction removed — `whose reply_remove
+splices`, `non-head branch splices`, the plan's own `**seL4-MCS splices**` and its
+title form, `by implementing seL4's behaviour`, the `cancelIPC … runs reply_remove`
+sentence, and this cut's own over-generalisation `upstream permanently strands` —
+rather than the fabricated C line itself, because the retraction quotes that line in
+order to call it a fabrication and a check refusing it would force this tree to stop
+explaining its own mistake.  **Every negative was mutation-tested against the
+genuine pre-retraction text** (`git show HEAD:<file>`) rather than an invented
+mutation, and that is what found three spellings a hand-written list had missed: the
+plan's title and its two body forms.  The positives require the corrected write
+(`call_stack_new(0, false)`) at six documents, the revision list at three, the two
+confirmed upstream facts, and **both** operation names (`reply_remove_tcb` and
+`finaliseCap`) at the five sites carrying the cancellation picture — so deleting the
+retraction does not satisfy the negatives, and the `cancelIPC` path cannot be
+re-generalised to the kernel without the check noticing.
+
+**One plan defect fixed in the same cut**, found by reading HP6 against the
+numbering rule rather than by a review.  HP6.8 (repoint the two reply footprints
+onto the head-driven trigger) said it "could not land before HP7 retires the
+coherence facts it would otherwise depend on", while HP7.2 said the sharp bound
+"becomes unconditional" — each row waiting on the other, which the numbering rule
+forbids and which `check_workstream_plan.py` cannot see because neither row
+*declares* the dependency.  The dependency runs one way: the 18 -> 17 merge is
+licensed by `replyDonationOwnerIsAnsweredCaller`, and under the head-driven trigger
+the pop's recipient **is** the answered caller by construction (HP4.2 passes
+`targetVtid`), so HP6.8 makes the bound unconditional and HP7 then has a definition
+with no consumer to delete.  Both rows restated; `lockSet_endpointReplyOnCore_covers_headDrivenPop`'s
+docstring, which recorded the ordering backwards, corrected with them.
+
+Sites corrected: `CLAUDE.md` + `AGENTS.md` (the WS-OD, WS-RM and WS-HP sections),
+`docs/REGISTERED_DEBT.md` (table C's donation-accounting row, the RR7.22 row, the
+table's closing paragraph and the workstream registry), `docs/spec/SELE4N_SPEC.md`
+§8.12.8 and §8.12.6, `docs/gitbook/12-proof-and-invariant-map.md`,
+`docs/planning/DONATION_POP_TRIGGER_PLAN.md` (title, context, §3.3, §8, §9, HP6.8,
+HP7.2, HP9.3, HP9.4), `docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`,
+`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`,
+`SeLe4n/Kernel/IPC/Invariant/Defs.lean` (both policy constructors and the
+three-reason justification), `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`,
+`SeLe4n/Kernel/Concurrency/Locks/LockSet.lean`,
+`SeLe4n/Kernel/Lifecycle/Suspend.lean` (both readings),
+`SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean`,
+`SeLe4n/Model/Object/Reply.lean`, `tests/SmpCancellationSuite.lean`,
+`SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean`.
+
 ## v0.35.39 — WS-HP HP5: the cancellation reclaim is head-driven too
 
 `cancelIpcBlocking`'s reply arm hands a cancelled caller's donated scheduling

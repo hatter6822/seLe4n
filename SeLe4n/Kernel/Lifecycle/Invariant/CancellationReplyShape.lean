@@ -12,8 +12,12 @@ import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 /-!
 # WS-RR RR7.22 (residual, remediation) — the cancelled caller's donation
 
-seL4-MCS's `cancelIPC` on a reply-blocked thread runs `reply_remove`, which hands
-back the scheduling context the caller donated on its `Call`.  Until v0.34.97
+A cancelled caller gets back the scheduling context it donated on its `Call` —
+seL4-MCS's `reply_remove` semantics applied at the *cancellation* point, where
+upstream defers them to Reply-object finalisation (`v0.35.40`; `cancelIPC` itself
+runs `reply_remove_tcb` and donates nothing, and this kernel's binding typing
+forces the earlier point — see `Lifecycle/Suspend.lean`'s
+`returnDonationToCancelledCaller` for the four upstream paths).  Until v0.34.97
 this model's `.blockedOnReply` arm cleared the reply *link* only, so the server
 kept `schedContextBinding = .donated scId caller` while the caller was moved to
 `.ready` and then `.Inactive` — a state `donationOwnerValid` forbids, and

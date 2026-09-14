@@ -740,13 +740,37 @@ def abortHolderPendingIpc (st : SystemState) (holder : SeLe4n.ThreadId) : System
 /-- **WS-RR RR7.22 (residual, remediation)**: the SchedContext a cancelled caller
 donated on its `Call`, handed back to it.
 
-seL4-MCS's `cancelIPC` on a reply-blocked thread runs `reply_remove`, which
-returns the scheduling context the caller donated.  Without this step the server
-keeps `schedContextBinding = .donated scId caller` while the caller leaves
-`.blockedOnReply`, so `donationOwnerValid` — the invariant that a donation's
-owner is a live, `.unbound`, reply-blocked thread — is **false** of the result;
-operationally the caller's CBS reservation is transferred to the server
-permanently, and the caller can never be scheduled again after a resume.
+Without this step the server keeps `schedContextBinding = .donated scId caller`
+while the caller leaves `.blockedOnReply`, so `donationOwnerValid` — the invariant
+that a donation's owner is a live, `.unbound`, reply-blocked thread — is **false**
+of the result; operationally the caller's CBS reservation is transferred to the
+server permanently, and the caller can never be scheduled again after a resume.
+
+**Whose semantics this is** (`v0.35.40`).  This docstring used to say `cancelIPC`
+"runs `reply_remove`, which returns the scheduling context the caller donated",
+which names the wrong function — the inline comment at the call site below has
+always said so — and the first attempt at correcting it said upstream *permanently
+strands* the reservation, which over-generalised one path to the whole kernel.  The
+sourced picture, read at upstream master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0:
+
+* the server replying (`doReplyTransfer` → `reply_remove` → `reply_pop`) donates
+  the context to the answered caller, guarded `if (tcb->tcbSchedContext == NULL)`;
+* **revoking the reply capability** while its caller is still `BlockedOnReply`
+  (`finaliseCap`) runs the *same* `reply_remove`, so the context returns to the
+  caller — the Reference Manual's documented behaviour;
+* the same revocation with the caller's frame not the head runs the non-head
+  branch: no donation, and the caller leaves the call chain;
+* `cancelIPC` (`reply_remove_tcb`) donates nothing, and its `reply_unlink` clears
+  `reply->replyTCB`, so a later revocation of that capability finds nothing to do
+  and the context stays with the server until an SC-capability holder rebinds it.
+
+So this step applies **upstream's `reply_remove` semantics at the cancellation
+point**, where upstream defers them to Reply-object finalisation.  The difference
+is *when*, not *whether*, and this kernel's binding typing forces the earlier
+point: `.donated scId owner` names its owner, so `donationOwnerValid` is false the
+instant that owner stops being reply-blocked, where upstream's flat
+`tcbSchedContext` pointer carries no such obligation.  New code must not remove
+this step in the name of parity.
 
 **How the holder is found** (WS-HP HP5.1).  Through the cancelled caller's own
 reply **frame**: `cancelledCallerDonation?` reads the frame's `.head` link and then
@@ -842,14 +866,20 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     -- forbids.  The return runs before the restore so that every intermediate
     -- state satisfies the invariant: at the return the caller is still
     -- `.blockedOnReply`, and after it no donation names the caller at all.
-    -- (This is a deliberate divergence from seL4-MCS, whose `cancelIPC` runs
-    -- `reply_remove_tcb` and never donates the context back — there the server
-    -- keeps a cancelled client's context until its manager intervenes.)
+    -- (A divergence from seL4-MCS's `cancelIPC`, which runs `reply_remove_tcb`
+    -- and donates nothing -- there the server keeps a cancelled client's context
+    -- until its manager intervenes -- and an agreement with its `reply_remove`,
+    -- which is what returns the context on reply-capability revocation.  See the
+    -- docstring above: the difference is WHEN, and this kernel's binding typing
+    -- forces the earlier point.)
     --
     -- WS-OD (`v0.35.4`): and a frame that is **not** the head — the caller's
     -- callee donated onward — is detached from its stack in `O(1)` before the
-    -- caller link is consumed (`detachFrameAboveThreadReply`, seL4's
-    -- `reply_remove_tcb`), so no frame is ever left dead on a stack.  It runs
+    -- caller link is consumed (`detachFrameAboveThreadReply`, the first write of
+    -- seL4's `reply_remove_tcb` non-head branch; upstream also clears the frame
+    -- below's upward link and the removed frame's own links, which this tree
+    -- validates reciprocity for instead -- see `CLAUDE.md`'s WS-RM section), so no
+    -- frame is ever left dead on a stack.  It runs
     -- after the reclaim, on whose success it is the identity.
     consumeReplyLink
       (restoreToReadyCancelled

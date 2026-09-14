@@ -191,8 +191,11 @@ walks to it refuses (fail-closed, `.invalidArgument`) rather than returning the
 context.  So a removal path must take the frame above off this one *before*
 consuming.  Which value it writes into that frame's `prev` is the
 `cancelledMiddleCallerPolicy` decision: this kernel writes `none`
-(`severAtCut`), so the frames below the cut leave the stack, where seL4-MCS's
-`reply_remove` writes the cut frame's own `replyPrev` and keeps them.
+(`severAtCut`), so the frames below the cut leave the stack — which is also what
+seL4-MCS writes there (`REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)`,
+re-verified at `v0.35.40`; `v0.35.14` claimed upstream splices and cited a line
+that is in no release).  Keeping the frames below is `spliceOutTheCut`, an
+improvement neither kernel has taken yet; WS-HP HP6 takes it here.
 
 **Both paths do.**  The cancellation path runs `detachFrameAboveThreadReply`
 immediately before `consumeReplyLink`, and the reply path runs

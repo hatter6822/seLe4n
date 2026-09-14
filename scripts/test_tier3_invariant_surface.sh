@@ -13284,4 +13284,92 @@ run_check "INVARIANT" rg -n '^private def replyRemovalOuterTcb : TCB := pushOute
 run_check "INVARIANT" bash -lc 'rg -U -n "the reclaim declines below the cut[^\n]*(\n([ \t][^\n]*)?)*donateSchedContext pushStore pushDonor pushServer pushSc" tests/SmpIpcSuite.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "the reclaim declines below the cut[^\n]*(\n([ \t][^\n]*)?)*pushStoreShaped \.unbound" tests/SmpIpcSuite.lean'
 
+# ============================================================================
+# WS-HP (`v0.35.40`) -- the upstream attribution, retracted and pinned
+# ============================================================================
+#
+# `v0.35.14` asserted that seL4-MCS's `reply_remove` splices a middle frame out,
+# and cited a C line as having been read from the source.  That line is in no
+# release: at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 the non-head branch is
+#
+#     if (next_ptr) {
+#         /* not the head, remove from middle - break the chain */
+#         REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false);
+#     }
+#
+# -- which is `severAtCut`.  The "correction" propagated a fabrication to nine
+# prose sites and three docstrings that had been right, and nothing in this tree
+# could catch it, because no gate reads seL4.  These checks are the substitute:
+# the *subject is the text*, so they are prose checks (`gates read code, prose
+# reads prose`), and they are written as NEGATIVES on the assertive spellings the
+# retraction removed rather than on the fabricated line itself -- the retraction
+# quotes that line in order to say it is a fabrication, and a check that refused
+# it would force this tree to stop explaining its own mistake.
+run_prose_negative_check "INVARIANT" rg -n "whose .reply_remove. splices" CLAUDE.md AGENTS.md
+run_prose_negative_check "INVARIANT" rg -n "non-head branch splices" \
+  CLAUDE.md AGENTS.md docs/REGISTERED_DEBT.md docs/spec/SELE4N_SPEC.md \
+  docs/planning/DONATION_POP_TRIGGER_PLAN.md docs/planning/REPLY_FRAME_REMOVAL_PLAN.md
+run_prose_negative_check "INVARIANT" rg -n "non-head branch \*\*splices\*\*" CLAUDE.md AGENTS.md
+run_prose_negative_check "INVARIANT" rg -n "by implementing seL4.s behaviour" docs/REGISTERED_DEBT.md
+# ...the plan's own two spellings, which differed from the others and so needed
+# their own rows -- the negatives were derived by running each pattern against the
+# genuine pre-retraction text (`git show HEAD:<file>` at `v0.35.40`) rather than
+# against an invented mutation, which is what found these two.
+run_prose_negative_check "INVARIANT" rg -n "\*\*seL4-MCS splices\*\*" docs/planning/DONATION_POP_TRIGGER_PLAN.md
+run_prose_negative_check "INVARIANT" rg -n "and seL4.s splice\$" docs/planning/DONATION_POP_TRIGGER_PLAN.md docs/REGISTERED_DEBT.md
+run_prose_negative_check "INVARIANT" rg -n "the head-driven donation pop and seL4.s splice" docs/REGISTERED_DEBT.md
+# ...and the cancellation half, which is a NAMING error rather than an inverted
+# claim: `cancelIPC` runs `reply_remove_tcb` and donates nothing, while revoking the
+# reply capability runs `reply_remove` and DOES return the context to its caller --
+# the Reference Manual's documented behaviour.  So the reclaim's semantics is
+# upstream's, reached by a different operation and applied at a different point, and
+# the sentence this refuses named the wrong one while the inline comment at its own
+# call site named the right one.  `cancelIPC`, `reply_remove` and `reply_remove_tcb`
+# are three operations; a claim naming one of them is not a claim about the others.
+run_prose_negative_check "INVARIANT" rg -n "cancelIPC. on a reply-blocked thread runs .reply_remove.," \
+  SeLe4n/Kernel/Lifecycle/Suspend.lean \
+  SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean \
+  docs/REGISTERED_DEBT.md
+# The POSITIVES: five documents must carry the corrected fact, so deleting the
+# retraction is not a way to satisfy the negatives above.  Each names the function
+# and the value it writes, because "upstream severs" without the write is the same
+# unsourced assertion in the other direction.
+run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' CLAUDE.md
+run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' AGENTS.md
+run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' docs/REGISTERED_DEBT.md
+run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' docs/spec/SELE4N_SPEC.md
+run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' docs/planning/DONATION_POP_TRIGGER_PLAN.md
+run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# ...and each cites the REVISIONS it was read at, which is what makes the claim
+# re-runnable rather than re-trustable -- the rule the fabrication earned.
+run_prose_check "INVARIANT" bash -lc 'rg -n "master, 13\.0\.0, 12\.1\.0, 12\.0\.0 and 11\.0\.0" CLAUDE.md'
+run_prose_check "INVARIANT" bash -lc 'rg -n "master, 13\.0\.0, 12\.1\.0, 12\.0\.0 and 11\.0\.0" AGENTS.md'
+run_prose_check "INVARIANT" bash -lc 'rg -n "master, 13\.0\.0, 12\.1\.0, 12\.0\.0 and 11\.0\.0" docs/REGISTERED_DEBT.md'
+# The two upstream facts the same reading CONFIRMED, so HP4 and HP4.6 are recorded
+# as inherited rather than invented: the head-driven trigger and the recipient guard.
+run_prose_check "INVARIANT" bash -lc 'rg -n "call_stack_get_isHead\(reply->replyNext\)" CLAUDE.md'
+run_prose_check "INVARIANT" bash -lc 'rg -n "tcb->tcbSchedContext == NULL" CLAUDE.md'
+run_prose_check "INVARIANT" bash -lc 'rg -n "tcb->tcbSchedContext == NULL" docs/planning/DONATION_POP_TRIGGER_PLAN.md'
+# ...and the cancellation picture is pinned by the operation that DOES return the
+# context, so a future reader cannot re-derive "upstream strands it" from the
+# `cancelIPC` path alone -- the over-generalisation this cut made and the maintainer
+# caught.  `reply_remove_tcb` names the non-donating operation; `finaliseCap` names
+# the donating one.
+run_prose_check "INVARIANT" rg -n 'reply_remove_tcb' \
+  CLAUDE.md AGENTS.md SeLe4n/Kernel/Lifecycle/Suspend.lean \
+  docs/REGISTERED_DEBT.md docs/planning/DONATION_POP_TRIGGER_PLAN.md
+run_prose_check "INVARIANT" rg -n 'finaliseCap' \
+  CLAUDE.md AGENTS.md SeLe4n/Kernel/Lifecycle/Suspend.lean \
+  docs/REGISTERED_DEBT.md docs/planning/DONATION_POP_TRIGGER_PLAN.md
+# The phrase this cut's own first draft used, refused as an ASSERTION.  The
+# retraction text quotes it -- `upstream "permanently strands a cancelled caller's
+# reservation"` -- and the quote mark is what keeps this silent, which is ordinary
+# prose rather than a contortion: a claim you are withdrawing is quoted.  A
+# re-assertion is unquoted, and that is what this catches.  The load-bearing half is
+# the pair of positives above: re-generalising the `cancelIPC` path to the kernel
+# means deleting one of the two operation names, which they refuse.
+run_prose_negative_check "INVARIANT" rg -n 'upstream permanently strands' \
+  CLAUDE.md AGENTS.md SeLe4n/Kernel/Lifecycle/Suspend.lean \
+  docs/REGISTERED_DEBT.md docs/planning/DONATION_POP_TRIGGER_PLAN.md
+
 finalize_report

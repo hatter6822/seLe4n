@@ -169,8 +169,11 @@ pre-state resolver that computes it.
 
 ### 3.4 A stale `prev` over a reusable Reply is a confused deputy
 
-`Reply` has `prev` but no `next`, so a cancelled middle caller cannot be spliced
-out by a backward scan the way seL4's doubly-linked `reply_remove` does.  Reply
+`Reply` has `prev` but no `next`, so a cancelled middle caller cannot be taken out
+of the middle by a backward scan the way seL4's doubly-linked `reply_remove` can.
+(*Can*, not *does*: upstream's non-head branch writes zero into both neighbours —
+"break the chain" — rather than splicing; corrected at `v0.35.40`.  What the second
+link buys is the `O(1)` repair, whichever value is written.)  Reply
 objects are then **re-linked to new callers** — that is what `replyIdEstablishFresh`
 exists for.  A stale `prev` naming a reused Reply would make the pop read the new
 caller and hand the original thread's SchedContext to an unrelated thread, in

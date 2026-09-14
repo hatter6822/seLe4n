@@ -2035,7 +2035,15 @@ inductive CancelledMiddleCallerPolicy where
   What it costs is **measured** at stack depth three in `tests/SmpIpcSuite.lean`
   §3.22, not described: at depth two the frame below the cut is the bottom of the
   stack, so this and `spliceOutTheCut` write the same value into the frame above
-  and the two cannot be told apart. -/
+  and the two cannot be told apart.
+
+  **This is what seL4-MCS does**, re-verified at `v0.35.40` against upstream
+  source at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 — every release that has
+  the function.  `reply_remove`'s non-head branch is
+  `REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)` under the comment
+  *"not the head, remove from middle - break the chain"*: it writes **zero**, not
+  the cut frame's own `replyPrev`.  `v0.35.14` asserted the reverse and cited a
+  line that is in no release; see `CLAUDE.md`'s WS-RM section for what that cost. -/
   | severAtCut
   /-- **Splice the cut frame out.**  The ordinary doubly-linked-list removal: the
   frame above takes the cut frame's own `prev`, the frame below takes its `next`.
@@ -2043,17 +2051,16 @@ inductive CancelledMiddleCallerPolicy where
   outward to the thread that owns it — strictly better accounting, and also
   `O(1)`.
 
-  **This is what seL4-MCS does**, confirmed against its source at `v0.35.14`
-  rather than assumed: `reply_remove`'s non-head branch writes
-  `REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
-  reply->replyPrev`, so the frame above inherits the cut frame's own outward
-  pointer and every frame below stays reachable from the head.  `severAtCut` is
-  therefore a **divergence** from upstream and not an inheritance of it — which
-  is the opposite of what this file asserted before that check.
+  **This is an improvement on seL4-MCS, not what it does** (`v0.35.40`).  Upstream
+  `severAtCut`s — see that constructor for the C and the revisions it was read at
+  — so upstream strands the reservation at depth ≥ 3 as well, and `v0.35.14`'s
+  claim to the contrary was reconstructed rather than read.  What this policy buys
+  is therefore a property neither kernel has today, which is the whole of WS-HP's
+  value and does not depend on the attribution.
 
-  `cancelledMiddleCallerPolicy`'s third reason is why this kernel diverges, and
-  it is a property of **when this kernel pops** rather than of the splice
-  itself. -/
+  `cancelledMiddleCallerPolicy`'s third reason is why this kernel has not taken it
+  yet, and it is a property of **when this kernel pops** rather than of the splice
+  itself — WS-HP HP4 and HP5 moved the trigger; HP6 takes the splice. -/
   | spliceOutTheCut
   /-- **Reclaim to the cancelled thread.**  The cancellation reaches the
   context's real holder through `SchedContext.scReply` / `boundThread` and hands
@@ -2105,16 +2112,18 @@ Chosen for three reasons, in order of weight.
    field write.  It is registered in `docs/REGISTERED_DEBT.md` with a closure
    target, not left as an unexamined preference.
 
-   **And this is a divergence from seL4-MCS, stated as one.**  Until `v0.35.14`
-   this file asserted the opposite — that severing was upstream's structural
-   answer.  Checked against the source, `reply_remove`'s non-head branch splices
-   (`next->replyPrev = reply->replyPrev`), so every frame below a cut stays on
-   the stack there and the reservation goes on travelling outward.  The
-   divergence costs what `tests/SmpIpcSuite.lean` §3.22 measures, it is registered
-   in `docs/REGISTERED_DEBT.md` with an owner and a closure target, and v1.0.0
-   must not claim seL4-MCS reply-stack semantics at chain depth ≥ 3.  A
-   `reply_remove_tcb` reference elsewhere in this tree names an operation's
-   *shape*; it is not evidence about what upstream writes.
+   **And severing is what seL4-MCS does**, re-verified at `v0.35.40` against
+   upstream source at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0:
+   `reply_remove`'s non-head branch writes
+   `REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)` under the comment
+   *"not the head, remove from middle - break the chain"*.  `v0.35.14` asserted
+   the reverse and cited `next->replyPrev = reply->replyPrev`, which is in no
+   release.  So the cost `tests/SmpIpcSuite.lean` §3.22 measures is upstream's
+   cost too, the splice is an **improvement** on it rather than parity with it,
+   and what v1.0.0 must not claim — of either kernel — is that completing a call
+   chain returns a client's reservation at chain depth ≥ 3.  It stays registered
+   in `docs/REGISTERED_DEBT.md` with an owner and a closure target, because the
+   property is worth having whoever else lacks it.
 
    Before `v0.35.4` the same policy was implemented by *leaving the cut frame on
    the stack* with its `caller` consumed and letting the pop read a consumed
