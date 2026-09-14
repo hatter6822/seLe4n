@@ -667,16 +667,27 @@ recorded server existing.
 Only this direction is needed: the head trigger firing implies the binding one
 does.  The converse would widen the footprint, which is sound.
 
-**Repointing the footprint's own resolvers is HP6.8's** (plan §3.8.7).  That cut
-is the one that makes the divergence *reachable* — `spliceOutTheCut` can leave an
-orphan head, which `severAtCut` provably cannot
-(`severAtCut_pop_leaves_no_head`) — and it rewrites these same members anyway;
-doing it here would have re-proved the two sharp bounds
-(`lockSet_endpointReplyRecvOnCore_size_le_eighteen` / `_seventeen`) twice.  HP6.8
-also makes the sharper of them **unconditional**, because the 18 → 17 merge is
-`replyDonationOwnerIsAnsweredCaller` and the head-driven pop's recipient *is* the
-answered caller by construction — so that repoint is what enables HP7 rather than
-the reverse (the two rows each read as waiting on the other until `v0.35.40`). -/
+**Repointing the footprint's own resolvers is HP6.2's** (plan §3.8.7), which
+moved ahead of the splice at `v0.35.41`: a transition goes live only after the
+declarations that cover it, and the splice is what makes these two resolvers
+disagree — `spliceOutTheCut` can leave an orphan head, which `severAtCut` provably
+cannot (`severAtCut_pop_leaves_no_head`).  Doing it in this cut would have
+re-proved the two sharp bounds
+(`lockSet_endpointReplyRecvOnCore_size_le_eighteen` / `_seventeen`) twice.
+
+**What that repoint does and does not buy** (corrected `v0.35.43`, measured against
+the composite's write sites rather than reasoned from the resolver): the
+composite writes the answered caller (`endpointReplyOnCore`), the **recorded
+server** (`propagatePipChainCrossCore`) and, in the pop, the SC plus the
+**holder** plus the answered caller again.  So the repoint reuses the
+`donatedOriginalOwnerTid` slot for the holder — the recipient needs no slot,
+being `replyTargetTid` by construction — and the declared arity does not move.
+The 18 → 17 merge therefore changes its licence from
+`replyDonationOwnerIsAnsweredCaller` to *holder = recorded server*, which the
+splice can falsify at an orphan head; the sharp bounds stay conditional until HP7
+derives that fact.  What the repoint *does* make free is
+`replyStackHeadIsAnsweredReply`'s consumer, subsumed by HP2.4's
+`answeredFrameHeadContext?_head_is_answered_reply`. -/
 theorem lockSet_endpointReplyOnCore_covers_headDrivenPop (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (tcb : TCB)

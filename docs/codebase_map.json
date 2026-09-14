@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "a03d88fccc6879b08cbbea53da39cb6db241598b",
-      "tree_sha": "283e911bb9f2ded4a604e177fde155aac561fd5b",
-      "committed_at_utc": "2026-09-14T19:30:13+00:00"
+      "commit_sha": "2b54f6a641baf2f6640239efe5044dbc3d0d28b1",
+      "tree_sha": "04229e499b42f1d61add042af3695b09aec6d117",
+      "committed_at_utc": "2026-09-14T19:43:09+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2b2c096bbc0a0dd947a851ecd35e1c01bcb08ed6630a461094921035791966e7"
+    "source_digest": "0a0b05bc8efd73390b2b38719c665ca95fd1fc321cf161fc91222ea860324c88"
   },
   "summary": {
     "module_count": 400,
     "declaration_count": 21491
   },
   "readme_sync": {
-    "version": "0.35.42",
+    "version": "0.35.43",
     "lean_toolchain": "v4.28.0",
     "production_files": 330,
-    "production_loc": 380449,
+    "production_loc": 380460,
     "test_files": 70,
     "test_loc": 77140,
     "proved_theorem_lemma_decls": 12704,
@@ -78503,7 +78503,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_endpointReplyOnCore_covers_headDrivenPop",
-          "line": 680,
+          "line": 691,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -78527,7 +78527,7 @@
         {
           "kind": "theorem",
           "name": "answeredFrameHeadContext",
-          "line": 709,
+          "line": 720,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -78543,7 +78543,7 @@
         {
           "kind": "theorem",
           "name": "answeredFrameHeadContext",
-          "line": 726,
+          "line": 737,
           "called": [
             "Reply",
             "ReplyId",
@@ -78562,7 +78562,7 @@
         {
           "kind": "theorem",
           "name": "answeredFrameHeadContext",
-          "line": 747,
+          "line": 758,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -78577,7 +78577,7 @@
         {
           "kind": "theorem",
           "name": "answeredHeadContextIsServerDonation_false_of_orphan_head",
-          "line": 769,
+          "line": 780,
           "called": [
             "Reply",
             "ReplyId",
@@ -78598,7 +78598,7 @@
         {
           "kind": "theorem",
           "name": "donationPopTriggers_disagree_at_orphan_head",
-          "line": 793,
+          "line": 804,
           "called": [
             "Reply",
             "ReplyId",
@@ -78623,7 +78623,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed",
-          "line": 838,
+          "line": 849,
           "called": [
             "CoreId",
             "IpcMessage",

@@ -1,3 +1,46 @@
+## v0.35.43 — WS-HP: HP6.2's own claim about the sharp bounds, corrected by measurement
+
+HP6.2 (the footprint repoint, not yet implemented) claimed that repointing the two
+reply footprints onto the head-driven trigger makes both sharp bounds
+**unconditional**, "because the 18 → 17 merge is `replyDonationOwnerIsAnsweredCaller`
+and the head-driven pop's recipient *is* the answered caller by construction".  The
+premise is true and the conclusion does not follow.  Measured against
+`endpointReplyCrossCoreDispatch`'s three write sites rather than reasoned from the
+resolver:
+
+- `endpointReplyOnCore` writes the answered caller's TCB, the Reply objects and the
+  frame above;
+- `PriorityInheritance.propagatePipChainCrossCore st1 expected` writes the **recorded
+  server** — `expected`, from `recordedReplyServer? st target`;
+- `applyReplyDonationOnCore st1 rid targetV` writes the SchedContext, the **holder**
+  (`sc.boundThread`, set `.unbound`) and the answered caller again (the rebind).
+
+So the recipient genuinely needs no footprint slot — it is `replyTargetTid`, a
+non-optional argument — and the repoint *reuses* the `donatedOriginalOwnerTid` slot
+for the holder.  The declared arity and count do not move.  What moves is **which
+fact licenses the merge**: it was `replyDonationOwnerIsAnsweredCaller` (owner =
+answered caller) and becomes *holder = recorded server*, which is
+`answeredHeadContextIsServerDonation`'s content and which the splice can falsify at
+an orphan head — precisely the state HP5 was ordered before HP6 to handle.  The
+sharp bounds therefore stay **conditional** at HP6.2, and HP7 — which derives that
+fact — is where they become unconditional.  The two rows read as waiting on each
+other again, in the opposite direction from the `v0.35.40` correction, which is why
+this one is stated with the write sites rather than with a resolver argument.
+
+One coherence fact *does* become free at HP6.2, and the row now says so:
+`replyStackHeadIsAnsweredReply`'s only consumer
+(`replyStackHead?_none_of_answeredFrameAbove`) is subsumed by HP2.4's
+`answeredFrameHeadContext?_head_is_answered_reply` together with
+`answeredReplyFrameAbove?_none_of_headContext`, neither of which carries a
+hypothesis.
+
+Also corrected: `lockSet_endpointReplyOnCore_covers_headDrivenPop`'s docstring still
+cited the repoint as HP6.8's, which the `v0.35.41` renumber had moved to HP6.2 — a
+stale in-tree citation the plan's own gate cannot see, since it checks that a
+citation *resolves* and not that it still means what it did before a renumber.
+
+No code and no proof changed.  Version bumped 0.35.42 → 0.35.43.
+
 ## v0.35.42 — WS-HP HP10 registered: the depth-2 accounting loss the splice provably cannot reach
 
 **The register understated its own defect, and this cut fixes that before adding
