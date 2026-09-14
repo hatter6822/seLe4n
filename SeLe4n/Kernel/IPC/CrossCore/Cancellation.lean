@@ -1417,7 +1417,7 @@ frame has something above it is not the innermost live caller, so no reclaim is
 resolved for it) and are declared independently because the footprint does not
 get to assume that.  The outer caller stays **read**: the pop validates it
 (`outerCallerAcceptable`) and names it as the new owner without writing its TCB.
-`lockSet_cancelIpcBlockingOnCore_size_le_twelve` is the bound over all argument
+`lockSet_cancelIpcBlockingOnCore_size_le_thirteen` is the bound over all argument
 values (`lockSet_cancelIpcBlockingOnCore_size_le` is its corollary at the
 ceiling); the reachable reply-arm figure is still ten, by the two merges above. -/
 def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
@@ -1431,10 +1431,16 @@ def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
     (belowHeadReplyId : Option SeLe4n.ReplyId)
     (outerCallerTid : Option SeLe4n.ThreadId)
     (reclaimHeadReplyId : Option SeLe4n.ReplyId)
-    (detachedFrameAboveReplyId : Option SeLe4n.ReplyId) : LockSet :=
+    (detachedFrameAboveReplyId : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: and the frame **below** the cancelled caller's own, which
+    -- the removal's splice re-links upward in the same step -- the cancellation
+    -- twin of `lockSet_endpointReply`'s member, for the same write, since HP6
+    -- makes `detachFrameAboveThreadReply` a splice.  No default: a call site that
+    -- omits it must fail to elaborate.
+    (splicedFrameBelowReplyId : Option SeLe4n.ReplyId) : LockSet :=
   lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
-    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetOfList [(tcbLock victimTid, .write)])
       (blockedEndpointObjId.map (fun ep => (endpointLock ep, .write))))
       (blockedNotificationObjId.map (fun n => (notificationLock n, .write))))
@@ -1474,6 +1480,10 @@ def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
       -- caller is a middle caller of its stack — the write that stops a dead
       -- frame from heading a stack forever.
       (detachedFrameAboveReplyId.map (fun r => (replyLock r, AccessMode.write))))
+      -- **WS-HP HP3.1**: and the frame below it, which the splice re-links
+      -- upward (`next := .frame above`) in the same step -- the second half of
+      -- the removal's write set.
+      (splicedFrameBelowReplyId.map (fun r => (replyLock r, AccessMode.write))))
     -- **WS-OD OD3.5**: the reply arm's donation hand-back runs
     -- `returnDonatedSchedContext`, whose last step maintains
     -- `SystemState.scThreadIndex` — an `RHTable` whose insert may rehash and
@@ -1610,6 +1620,55 @@ def cancelDetachedFrameAbove? (st : SystemState) (tcb : TCB) : Option SeLe4n.Rep
   | .blockedOnReply _ _ => tcb.replyObject.bind (replyFrameAbove? st)
   | _ => none
 
+/-- **WS-HP HP3.1**: the frame **below** the cancelled caller's own -- the second
+Reply the removal writes once HP6 makes the cancellation's removal a splice.
+
+Derived from `cancelDetachedFrameAbove?`'s own two inputs -- the reply arm and the
+victim's `replyObject` -- composed with `replyFrameBelow?`, which is itself
+`replyFrameAbove?` plus the cut frame's `prev`.  So "is this a splice at all" is
+answered once for the footprint, the detach resolver and the operation.
+
+`none` on every arm but the reply arm, `none` for a head frame (a head is popped,
+never spliced) and `none` for a frame with nothing above it. -/
+def cancelSplicedFrameBelow? (st : SystemState) (tcb : TCB) : Option SeLe4n.ReplyId :=
+  match tcb.ipcState with
+  | .blockedOnReply _ _ => tcb.replyObject.bind (replyFrameBelow? st)
+  | _ => none
+
+/-- WS-HP HP3.1: the endpoint arms splice nothing. -/
+@[simp] theorem cancelSplicedFrameBelow?_of_blockedEndpoint (st : SystemState) (tcb : TCB)
+    (ep : SeLe4n.ObjId) (h : cancelBlockedEndpoint? tcb = some ep) :
+    cancelSplicedFrameBelow? st tcb = none := by
+  unfold cancelBlockedEndpoint? at h
+  unfold cancelSplicedFrameBelow?
+  cases hIp : tcb.ipcState <;> simp_all
+
+/-- WS-HP HP3.1: nor does the notification arm. -/
+@[simp] theorem cancelSplicedFrameBelow?_of_blockedNotification (st : SystemState) (tcb : TCB)
+    (n : SeLe4n.ObjId) (h : cancelBlockedNotification? tcb = some n) :
+    cancelSplicedFrameBelow? st tcb = none := by
+  unfold cancelBlockedNotification? at h
+  unfold cancelSplicedFrameBelow?
+  cases hIp : tcb.ipcState <;> simp_all
+
+/-- **WS-HP HP3.1**: and no frame above means no frame below -- the exclusion that
+keeps the cancellation's reply-arm bound where it was, and which needs no
+invariant: the splice's member is declared only on a *mid-stack* removal. -/
+@[simp] theorem cancelSplicedFrameBelow?_of_no_frameAbove (st : SystemState) (tcb : TCB)
+    (h : cancelDetachedFrameAbove? st tcb = none) :
+    cancelSplicedFrameBelow? st tcb = none := by
+  unfold cancelSplicedFrameBelow?
+  unfold cancelDetachedFrameAbove? at h
+  cases hIp : tcb.ipcState with
+  | blockedOnReply ep rt =>
+    rw [hIp] at h
+    cases hRO : tcb.replyObject with
+    | none => rfl
+    | some rid =>
+      rw [hRO] at h
+      exact replyFrameBelow?_of_no_frame_above st rid h
+  | _ => rfl
+
 /-- WS-OD (`v0.35.4`): the endpoint arms detach nothing. -/
 @[simp] theorem cancelDetachedFrameAbove?_of_blockedEndpoint (st : SystemState) (tcb : TCB)
     (ep : SeLe4n.ObjId) (h : cancelBlockedEndpoint? tcb = some ep) :
@@ -1703,7 +1762,11 @@ def lockSet_cancelIpcBlockingOnCore (st : SystemState)
             -- above the cancelled caller's own, which the detach unlinks --
             -- each through the resolver it is derived from.
             (cancelReclaimHead? st victimTid tcb)
-            (cancelDetachedFrameAbove? st tcb))
+            (cancelDetachedFrameAbove? st tcb)
+            -- **WS-HP HP3.1**: and the frame below the cut, which the splice
+            -- re-links upward.  Derived from `cancelDetachedFrameAbove?`'s own
+            -- resolver, so the two cannot disagree about which arm removes.
+            (cancelSplicedFrameBelow? st tcb))
           -- WS-OD OD3.5: the *arm-selected* neighbours, not the summed pair.
           -- Only the endpoint arm splices, so on the reply, notification and
           -- `.ready` arms these two extensions are `none` and the footprint
@@ -1712,7 +1775,7 @@ def lockSet_cancelIpcBlockingOnCore (st : SystemState)
         ((cancelArmSpliceNeighbors? tcb).2.map (fun n => (tcbLock n, .write)))
   | none =>
       lockSet_cancelIpcBlocking victimTid none none none none none none (none, none) none none
-        none none
+        none none none
 
 /-- **WS-OD OD3.5: the reply arm's resolved footprint has no neighbour members
 at all.**
@@ -1746,7 +1809,8 @@ theorem lockSet_cancelIpcBlockingOnCore_replyArm_eq (st : SystemState)
           (cancelBelowHeadReads? st victimTid tcb).1
           (cancelBelowHeadReads? st victimTid tcb).2
           (cancelReclaimHead? st victimTid tcb)
-          (cancelDetachedFrameAbove? st tcb) := by
+          (cancelDetachedFrameAbove? st tcb)
+          (cancelSplicedFrameBelow? st tcb) := by
   have hE : cancelBlockedEndpoint? tcb = none := by
     unfold cancelBlockedEndpoint?; rw [hIp]
   have hN : cancelBlockedNotification? tcb = none := by
@@ -1853,12 +1917,15 @@ theorem lockSet_consistent_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
     (outerCallerTid : Option SeLe4n.ThreadId)
     -- WS-OD (`v0.35.4`): the head the reclaim clears and the frame the detach
     -- unlinks.
-    (reclaimHeadReplyId detachedFrameAboveReplyId : Option SeLe4n.ReplyId) :
+    (reclaimHeadReplyId detachedFrameAboveReplyId : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: and the frame below the cut, which the splice re-links.
+    (splicedFrameBelowReplyId : Option SeLe4n.ReplyId) :
     ∀ p ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId
         returnedDonationSc donationHolderTid holderEndpointObjId holderSpliceNeighbors
-        belowHeadReplyId outerCallerTid reclaimHeadReplyId detachedFrameAboveReplyId).pairs,
+        belowHeadReplyId outerCallerTid reclaimHeadReplyId detachedFrameAboveReplyId
+        splicedFrameBelowReplyId).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
-  lockSet_consistent_base_plus_thirteen_opts _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  lockSet_consistent_base_plus_fourteen_opts _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1916,6 +1983,11 @@ theorem lockSet_consistent_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
         | some r => simp at hpp; rw [← hpp]; simp; decide)
     (by intro pp hpp
         cases detachedFrameAboveReplyId with
+        | none => simp at hpp
+        | some r => simp at hpp; rw [← hpp]; simp; decide)
+    -- **WS-HP HP3.1**: and one more Reply-kind member — the frame below the cut.
+    (by intro pp hpp
+        cases splicedFrameBelowReplyId with
         | none => simp at hpp
         | some r => simp at hpp; rw [← hpp]; simp; decide)
     -- WS-OD OD3.5: the state-level lock, taken when the reply arm hands a
@@ -1982,17 +2054,19 @@ theorem cancelIpcBlockingOnCore_lockSet_correct (victimTid : SeLe4n.ThreadId)
     -- WS-OD OD3.7: the two below-head objects the reclaim reaches at depth ≥ 2.
     (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     -- WS-OD (`v0.35.4`): the reclaimed head and the detached frame above.
-    (reclaimHead? frameAbove? : Option SeLe4n.ReplyId) :
+    (reclaimHead? frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (∀ p ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp
-              holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).pairs,
+              holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs,
         p.fst.kind ∈ permittedKinds .tcbSuspend) ∧
     ((lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp
-        holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).pairs.map
+        holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs.map
         (·.fst)).Nodup :=
   ⟨lockSet_consistent_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid
-      holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?,
+      holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?,
    (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp
-      holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).hUniqueKeys⟩
+      holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).hUniqueKeys⟩
 
 /-- WS-SM SM6.E.4: the `cancelDonation` lock-set is hierarchically correct. -/
 theorem cancelDonationOnCore_lockSet_correct (victimTid : SeLe4n.ThreadId)
@@ -2026,7 +2100,7 @@ theorem lockSet_cancelIpcBlockingOnCore_correct (st : SystemState)
       -- writes, already permitted for `.tcbSuspend`.
       refine lockSet_consistent_extendOpt _ _ _
         (lockSet_consistent_extendOpt _ _ _
-          (lockSet_consistent_cancelIpcBlocking victimTid _ _ _ _ _ _ _ _ _ _ _) ?_) ?_
+          (lockSet_consistent_cancelIpcBlocking victimTid _ _ _ _ _ _ _ _ _ _ _ _) ?_) ?_
       · intro pp hEq
         cases h1 : (cancelArmSpliceNeighbors? tcb).1 with
         | none => rw [h1] at hEq; cases hEq
@@ -2047,7 +2121,7 @@ theorem lockSet_cancelIpcBlockingOnCore_correct (st : SystemState)
           rw [tcbLock_kind]; decide
   | none =>
       exact lockSet_consistent_cancelIpcBlocking victimTid none none none none none none
-        (none, none) none none none none
+        (none, none) none none none none none
 
 /-- WS-SM SM6.E.3: the state-resolved donation-cancellation lock-set is
 hierarchically correct. -/
@@ -2094,11 +2168,13 @@ theorem lockSet_cancelIpcBlocking_victim_tcb_write_mem
     (belowHeadReply? : Option SeLe4n.ReplyId)
     (outerCaller? : Option SeLe4n.ThreadId)
     (reclaimHead? : Option SeLe4n.ReplyId)
-    (frameAbove? : Option SeLe4n.ReplyId) :
+    (frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (tcbLock victimTid, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  iterate 13 apply mem_write_lockSetExtendOpt
+  iterate 14 apply mem_write_lockSetExtendOpt
   show (tcbLock victimTid, AccessMode.write)
     ∈ ((LockSet.empty.insertOrMerge (tcbLock victimTid) AccessMode.write)).pairs
   exact self_write_mem_insertOrMerge _ (tcbLock victimTid)
@@ -2118,11 +2194,13 @@ theorem lockSet_cancelIpcBlocking_blocked_endpoint_write_mem
     (belowHeadReply? : Option SeLe4n.ReplyId)
     (outerCaller? : Option SeLe4n.ThreadId)
     (reclaimHead? : Option SeLe4n.ReplyId)
-    (frameAbove? : Option SeLe4n.ReplyId) :
+    (frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (endpointLock ep, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid (some ep) blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid (some ep) blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  iterate 12 apply mem_write_lockSetExtendOpt
+  iterate 13 apply mem_write_lockSetExtendOpt
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (endpointLock ep)
 
@@ -2141,11 +2219,13 @@ theorem lockSet_cancelIpcBlocking_blocked_notification_write_mem
     (belowHeadReply? : Option SeLe4n.ReplyId)
     (outerCaller? : Option SeLe4n.ThreadId)
     (reclaimHead? : Option SeLe4n.ReplyId)
-    (frameAbove? : Option SeLe4n.ReplyId) :
+    (frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (notificationLock n, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp (some n) consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp (some n) consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  iterate 11 apply mem_write_lockSetExtendOpt
+  iterate 12 apply mem_write_lockSetExtendOpt
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (notificationLock n)
 
@@ -2164,11 +2244,13 @@ theorem lockSet_cancelIpcBlocking_consumed_reply_write_mem
     (belowHeadReply? : Option SeLe4n.ReplyId)
     (outerCaller? : Option SeLe4n.ThreadId)
     (reclaimHead? : Option SeLe4n.ReplyId)
-    (frameAbove? : Option SeLe4n.ReplyId) :
+    (frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (replyLock r, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN (some r) rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN (some r) rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  iterate 10 apply mem_write_lockSetExtendOpt
+  iterate 11 apply mem_write_lockSetExtendOpt
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (replyLock r)
 
@@ -2187,11 +2269,13 @@ theorem lockSet_cancelIpcBlocking_returned_donation_sc_write_mem
     (belowHeadReply? : Option SeLe4n.ReplyId)
     (outerCaller? : Option SeLe4n.ThreadId)
     (reclaimHead? : Option SeLe4n.ReplyId)
-    (frameAbove? : Option SeLe4n.ReplyId) :
+    (frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (schedContextLock sc, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId (some sc) dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId (some sc) dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  iterate 9 apply mem_write_lockSetExtendOpt
+  iterate 10 apply mem_write_lockSetExtendOpt
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (schedContextLock sc)
 
@@ -2210,11 +2294,13 @@ theorem lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem
     (belowHeadReply? : Option SeLe4n.ReplyId)
     (outerCaller? : Option SeLe4n.ThreadId)
     (reclaimHead? : Option SeLe4n.ReplyId)
-    (frameAbove? : Option SeLe4n.ReplyId) :
+    (frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (tcbLock h, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc (some h) holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc (some h) holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  iterate 8 apply mem_write_lockSetExtendOpt
+  iterate 9 apply mem_write_lockSetExtendOpt
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (tcbLock h)
 
@@ -2238,11 +2324,13 @@ theorem lockSet_cancelIpcBlocking_holder_endpoint_write_mem
     (belowHeadReply? : Option SeLe4n.ReplyId)
     (outerCaller? : Option SeLe4n.ThreadId)
     (reclaimHead? : Option SeLe4n.ReplyId)
-    (frameAbove? : Option SeLe4n.ReplyId) :
+    (frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (endpointLock ep, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid (some ep) holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid (some ep) holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  iterate 7 apply mem_write_lockSetExtendOpt
+  iterate 8 apply mem_write_lockSetExtendOpt
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (endpointLock ep)
 
@@ -2260,11 +2348,13 @@ theorem lockSet_cancelIpcBlocking_holder_splice_prev_write_mem
     (belowHeadReply? : Option SeLe4n.ReplyId)
     (outerCaller? : Option SeLe4n.ThreadId)
     (reclaimHead? : Option SeLe4n.ReplyId)
-    (frameAbove? : Option SeLe4n.ReplyId) :
+    (frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (tcbLock p, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp (some p, nb2) belowHeadReply? outerCaller? reclaimHead? frameAbove?).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp (some p, nb2) belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  iterate 6 apply mem_write_lockSetExtendOpt
+  iterate 7 apply mem_write_lockSetExtendOpt
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (tcbLock p)
 
@@ -2282,11 +2372,13 @@ theorem lockSet_cancelIpcBlocking_holder_splice_next_write_mem
     (belowHeadReply? : Option SeLe4n.ReplyId)
     (outerCaller? : Option SeLe4n.ThreadId)
     (reclaimHead? : Option SeLe4n.ReplyId)
-    (frameAbove? : Option SeLe4n.ReplyId) :
+    (frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (tcbLock n, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp (nb1, some n) belowHeadReply? outerCaller? reclaimHead? frameAbove?).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp (nb1, some n) belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  iterate 5 apply mem_write_lockSetExtendOpt
+  iterate 6 apply mem_write_lockSetExtendOpt
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (tcbLock n)
 
@@ -2305,11 +2397,13 @@ theorem lockSet_cancelIpcBlocking_below_head_write_mem
     (r : SeLe4n.ReplyId)
     (outerCaller? : Option SeLe4n.ThreadId)
     (reclaimHead? : Option SeLe4n.ReplyId)
-    (frameAbove? : Option SeLe4n.ReplyId) :
+    (frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (replyLock r, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb (some r) outerCaller? reclaimHead? frameAbove?).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb (some r) outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  iterate 4 apply mem_write_lockSetExtendOpt
+  iterate 5 apply mem_write_lockSetExtendOpt
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (replyLock r)
 
@@ -2332,10 +2426,12 @@ theorem lockSet_cancelIpcBlocking_outer_caller_containsKey
     (belowHeadReply? : Option SeLe4n.ReplyId)
     (ot : SeLe4n.ThreadId)
     (reclaimHead? : Option SeLe4n.ReplyId)
-    (frameAbove? : Option SeLe4n.ReplyId) :
-    (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? (some ot) reclaimHead? frameAbove?).containsKey (tcbLock ot) = true := by
+    (frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
+    (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? (some ot) reclaimHead? frameAbove? splicedBelow?).containsKey (tcbLock ot) = true := by
   unfold lockSet_cancelIpcBlocking
-  iterate 3 apply containsKey_lockSetExtendOpt_of_containsKey
+  iterate 4 apply containsKey_lockSetExtendOpt_of_containsKey
   simp only [lockSetExtendOpt, Option.map_some]
   exact containsKey_insertOrMerge_self _ (tcbLock ot) _
 
@@ -2353,11 +2449,12 @@ theorem lockSet_cancelIpcBlocking_reclaim_head_write_mem
     (belowHeadReply? : Option SeLe4n.ReplyId)
     (outerCaller? : Option SeLe4n.ThreadId)
     (r : SeLe4n.ReplyId)
-    (frameAbove? : Option SeLe4n.ReplyId) :
+    (frameAbove? : Option SeLe4n.ReplyId)
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (replyLock r, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? (some r) frameAbove?).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? (some r) frameAbove? splicedBelow?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  iterate 2 apply mem_write_lockSetExtendOpt
+  iterate 3 apply mem_write_lockSetExtendOpt
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (replyLock r)
 
@@ -2375,9 +2472,34 @@ theorem lockSet_cancelIpcBlocking_detached_frame_above_write_mem
     (belowHeadReply? : Option SeLe4n.ReplyId)
     (outerCaller? : Option SeLe4n.ThreadId)
     (reclaimHead? : Option SeLe4n.ReplyId)
+    (r : SeLe4n.ReplyId)
+    (splicedBelow? : Option SeLe4n.ReplyId) :
+    (replyLock r, AccessMode.write)
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? (some r) splicedBelow?).pairs := by
+  unfold lockSet_cancelIpcBlocking
+  iterate 2 apply mem_write_lockSetExtendOpt
+  simp only [lockSetExtendOpt, Option.map_some]
+  exact self_write_mem_insertOrMerge _ (replyLock r)
+
+/-- **WS-HP HP3.1** (coverage): the **frame below the cut** — the one the splice
+re-links upward, in the same step as the detach — is a declared write.  The
+second half of the removal's write set; the first is the lemma above. -/
+theorem lockSet_cancelIpcBlocking_spliced_frame_below_write_mem
+    (victimTid : SeLe4n.ThreadId)
+    (blEp : Option SeLe4n.ObjId)
+    (blN : Option SeLe4n.ObjId)
+    (consumedReplyId : Option SeLe4n.ReplyId)
+    (rdSc : Option SeLe4n.SchedContextId)
+    (dhTid : Option SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    (belowHeadReply? : Option SeLe4n.ReplyId)
+    (outerCaller? : Option SeLe4n.ThreadId)
+    (reclaimHead? : Option SeLe4n.ReplyId)
+    (frameAbove? : Option SeLe4n.ReplyId)
     (r : SeLe4n.ReplyId) :
     (replyLock r, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? (some r)).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? (some r)).pairs := by
   unfold lockSet_cancelIpcBlocking
   iterate 1 apply mem_write_lockSetExtendOpt
   simp only [lockSetExtendOpt, Option.map_some]
@@ -2495,10 +2617,12 @@ theorem lockSet_cancelIpcBlocking_stateLevel_write_mem
     (dhTid : Option SeLe4n.ThreadId) (holderEp : Option SeLe4n.ObjId)
     (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
     (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
-    (reclaimHead? frameAbove? : Option SeLe4n.ReplyId) :
+    (reclaimHead? frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId) :
     (stateLevelLock, AccessMode.write)
       ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId (some sc) dhTid holderEp
-          holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).pairs := by
+          holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).pairs := by
   unfold lockSet_cancelIpcBlocking
   simp only [Option.isSome_some, if_true]
   exact LockSet.mem_insertOrMerge_write_self _ _
@@ -2531,8 +2655,8 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_victim (st : SystemState)
   unfold lockSet_cancelIpcBlockingOnCore
   split
   · iterate 2 apply mem_write_lockSetExtendOpt
-    exact lockSet_cancelIpcBlocking_victim_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _
-  · exact lockSet_cancelIpcBlocking_victim_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _
+    exact lockSet_cancelIpcBlocking_victim_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
+  · exact lockSet_cancelIpcBlocking_victim_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD (`v0.35.4`): the blocked endpoint's write lock, on the endpoint arm. -/
 theorem lockSet_cancelIpcBlockingOnCore_covers_blockedEndpoint (st : SystemState)
@@ -2544,7 +2668,7 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_blockedEndpoint (st : SystemState
   rw [hT]
   simp only [hE]
   iterate 2 apply mem_write_lockSetExtendOpt
-  exact lockSet_cancelIpcBlocking_blocked_endpoint_write_mem _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_cancelIpcBlocking_blocked_endpoint_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD (`v0.35.4`): the blocked notification's, on the notification arm. -/
 theorem lockSet_cancelIpcBlockingOnCore_covers_blockedNotification (st : SystemState)
@@ -2556,7 +2680,7 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_blockedNotification (st : SystemS
   rw [hT]
   simp only [hN]
   iterate 2 apply mem_write_lockSetExtendOpt
-  exact lockSet_cancelIpcBlocking_blocked_notification_write_mem _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_cancelIpcBlocking_blocked_notification_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD (`v0.35.4`): the consumed Reply's, on the reply arm. -/
 theorem lockSet_cancelIpcBlockingOnCore_covers_consumedReply (st : SystemState)
@@ -2568,7 +2692,7 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_consumedReply (st : SystemState)
   rw [hT]
   simp only [hR]
   iterate 2 apply mem_write_lockSetExtendOpt
-  exact lockSet_cancelIpcBlocking_consumed_reply_write_mem _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_cancelIpcBlocking_consumed_reply_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD (`v0.35.4`)**: **the reclaim's writes are declared** — the context
 handed back, the holder it is taken from, the state-level lock the index
@@ -2598,19 +2722,19 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_reclaim (st : SystemState)
     cancelReclaimHead?_of_donation st victimTid tcb scId holder hRes]
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · iterate 2 apply mem_write_lockSetExtendOpt
-    exact lockSet_cancelIpcBlocking_returned_donation_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _
+    exact lockSet_cancelIpcBlocking_returned_donation_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
   · iterate 2 apply mem_write_lockSetExtendOpt
-    exact lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _
+    exact lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
   · iterate 2 apply mem_write_lockSetExtendOpt
-    exact lockSet_cancelIpcBlocking_stateLevel_write_mem _ _ _ _ _ _ _ _ _ _ _ _
+    exact lockSet_cancelIpcBlocking_stateLevel_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
   · intro head hHead
     rw [hHead]
     iterate 2 apply mem_write_lockSetExtendOpt
-    exact lockSet_cancelIpcBlocking_reclaim_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _
+    exact lockSet_cancelIpcBlocking_reclaim_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
   · intro below hBelow
     rw [hBelow]
     iterate 2 apply mem_write_lockSetExtendOpt
-    exact lockSet_cancelIpcBlocking_below_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _
+    exact lockSet_cancelIpcBlocking_below_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD (`v0.35.4`): the outer caller the reclaim validates is a declared key. -/
 theorem lockSet_cancelIpcBlockingOnCore_covers_outerCaller_key (st : SystemState)
@@ -2625,7 +2749,7 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_outerCaller_key (st : SystemState
   simp only [hRes, Option.map_some, cancelBelowHeadReads?_of_donation st victimTid tcb scId holder hRes,
     cancelReclaimHead?_of_donation st victimTid tcb scId holder hRes, hOuter]
   iterate 2 apply containsKey_lockSetExtendOpt_of_containsKey
-  exact lockSet_cancelIpcBlocking_outer_caller_containsKey _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_cancelIpcBlocking_outer_caller_containsKey _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD (`v0.35.4`): the frame the detach unlinks is a declared write. -/
 theorem lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove (st : SystemState)
@@ -2638,7 +2762,25 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove (st : SystemSt
   rw [hT]
   simp only [hA]
   iterate 2 apply mem_write_lockSetExtendOpt
-  exact lockSet_cancelIpcBlocking_detached_frame_above_write_mem _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_cancelIpcBlocking_detached_frame_above_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
+
+/-- **WS-HP HP3.4**: and the frame the splice re-links *below* the cut is one too
+— the resolved coverage theorem this family carries for every member, tying the
+declared lock to the **resolver** the footprint reads it from rather than to a
+name.  `_correct` and `_size_le` do not stand in for it: one is about the kinds
+of the members present and the other about how many there are, and neither says
+that the object a resolver names is among them. -/
+theorem lockSet_cancelIpcBlockingOnCore_covers_splicedFrameBelow (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (below : SeLe4n.ReplyId)
+    (hT : st.getTcb? victimTid = some tcb)
+    (hB : cancelSplicedFrameBelow? st tcb = some below) :
+    (replyLock below, AccessMode.write)
+      ∈ (lockSet_cancelIpcBlockingOnCore st victimTid).pairs := by
+  unfold lockSet_cancelIpcBlockingOnCore
+  rw [hT]
+  simp only [hB]
+  iterate 2 apply mem_write_lockSetExtendOpt
+  exact lockSet_cancelIpcBlocking_spliced_frame_below_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 -- ============================================================================
 -- §7c  Coverage of the state-resolved donation-cancellation footprint
@@ -2855,7 +2997,7 @@ The CNode member is the **caller's** CSpace root, not the victim's — the
 cap-resolution root `syscallLookupCap` reads to turn the caller's capability
 pointer into the target capability.
 
-`lockSet_tcbSuspendOnCore_size_le_sixteen` is its bound
+`lockSet_tcbSuspendOnCore_size_le_seventeen` is its bound
 (`Concurrency/Locks/ResolvedFootprintBounds.lean`): sixteen on the widest shape
 — a reply-arm victim owed a donation at depth ≥ 3 — which is why
 `maxLockSetSize` is sixteen. -/
@@ -3209,14 +3351,16 @@ theorem cancelIpcBlocking_atomic_under_lockSet
     (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     -- WS-OD (`v0.35.4`): and the reclaimed head and the detached frame above.
     (reclaimHead? frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId)
     (s : SystemState) :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?)
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
         executingCore (fun st => (cancelIpcBlocking st victim tcb, ())) s
       = (unwindAll executingCore
-          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence.reverse
           (cancelIpcBlocking
             (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).lockAcquireSequence s)
+              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s)
             victim tcb),
          ()) :=
   lockSet_atomic_under_2pl _ executingCore _ s
@@ -3236,17 +3380,19 @@ theorem cancelIpcBlockingOnCore_atomic_under_lockSet
     (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     -- WS-OD (`v0.35.4`): and the reclaimed head and the detached frame above.
     (reclaimHead? frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId)
     (s : SystemState) :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?)
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
         executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s
       = (unwindAll executingCore
-          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence.reverse
           (cancelIpcBlockingOnCore victim tcb executingCore
             (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).lockAcquireSequence s)).1,
+              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s)).1,
          (cancelIpcBlockingOnCore victim tcb executingCore
             (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).lockAcquireSequence s)).2) :=
+              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s)).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 /-- WS-SM SM6.E.4 (plan §5 `cancelDonation_atomic_under_lockSet`, Theorem
@@ -4583,26 +4729,28 @@ theorem cancelIpcBlockingOnCore_observer_atomic
     -- WS-OD (`v0.35.4`): declared explicitly, at the footprint's full arity.
     (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     (reclaimHead? frameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedBelow? : Option SeLe4n.ReplyId)
     (s : SystemState) (hInv : s.objects.invExt) :
     cancellationVictimIpcStateObserver victim
         (acquireAll executingCore
           (lockSet_cancelIpcBlocking victim blEp blN
-            consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).lockAcquireSequence s)
+            consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s)
       = cancellationVictimIpcStateObserver victim s
     ∧ cancellationVictimIpcStateObserver victim
-        (withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?)
+        (withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
           executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s).1
       = cancellationVictimIpcStateObserver victim
           (cancelIpcBlockingOnCore victim tcb executingCore
             (acquireAll executingCore
               (lockSet_cancelIpcBlocking victim blEp blN
-                consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).lockAcquireSequence s)).1 := by
+                consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s)).1 := by
   have hAcqStable : ∀ (s' : SystemState) l m, s'.objects.invExt →
       (acquireLockOnObject s' executingCore l m).objects.invExt :=
     fun s' l m h => acquireLockOnObject_preserves_invExt s' executingCore l m h
   have hInvAcq : (acquireAll executingCore
       (lockSet_cancelIpcBlocking victim blEp blN
-        consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove?).lockAcquireSequence s).objects.invExt :=
+        consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s).objects.invExt :=
     (acquireAll_lockInsensitiveOn _ executingCore _
       (cancellationObserver_acquireInsensitiveOn executingCore victim) hAcqStable
       _ s hInv).2

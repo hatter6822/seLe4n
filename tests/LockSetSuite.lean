@@ -351,7 +351,7 @@ example :
 a single (TCB, write) entry. -/
 
 example :
-    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none none none
+    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none none none none
     S.size = 2 := by decide
 
 -- ============================================================================
@@ -421,13 +421,13 @@ caller's TCB read and the CSpace root read on top of the teardown's. -/
 example :
     (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
       (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) none none none none
-      (none, none) none none none none).size = 3 := by decide
+      (none, none) none none none none none).size = 3 := by decide
 
 /-! ### Teardown with no blocked objects: the victim's TCB alone. -/
 
 example :
     (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none none none none none
-      (none, none) none none none none).size = 1 := by decide
+      (none, none) none none none none none).size = 1 := by decide
 
 /-! ### Donation cancellation of a `.donated` binding: 4 (victim + donated SC +
 original owner + — WS-OD OD3.5 — the state-level lock the `scThreadIndex` write
@@ -449,7 +449,7 @@ the Reply object its reply link is consumed from). -/
 
 example :
     (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none (some ⟨60⟩) none none none
-      (none, none) none none none none).size = 2 := by decide
+      (none, none) none none none none none).size = 2 := by decide
 
 /-! ### WS-OD (`v0.35.4`) — …and the pop's own three stack objects, on the
 donated arm that performs it: 7. -/
@@ -721,12 +721,13 @@ example :
               (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
               (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
               (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
-              (some ⟨62⟩) (some ⟨63⟩)).pairs,
+              (some ⟨62⟩) (some ⟨63⟩) (some ⟨64⟩)).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
   SeLe4n.Kernel.lockSet_consistent_cancelIpcBlocking ⟨3⟩
     (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
     (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
     (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩) (some ⟨62⟩) (some ⟨63⟩)
+    (some ⟨64⟩)
 
 example :
     ∀ p ∈ (SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
@@ -1130,11 +1131,11 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "cancelIpcBlocking size (block-options some, no donation) = 3"
     (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
               (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) none none none none
-              (none, none) none none none none).size = 3))
+              (none, none) none none none none none).size = 3))
   -- Teardown with no options: the victim alone.
   assertBool "cancelIpcBlocking size (no Options) = 1"
     (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none none none none none
-              (none, none) none none none none).size = 1))
+              (none, none) none none none none none).size = 1))
   -- Donation cancellation of a `.bound` binding: victim + SC + index.
   -- **WS-OD OD3.5**: the state-level lock, because `scThreadIndex` is an
   -- `RHTable` no per-object lock decomposes.
@@ -1156,12 +1157,31 @@ private def runPerTransitionShapeChecks : IO Unit := do
               (some ⟨60⟩) (some ⟨61⟩) (some ⟨9⟩)).size = 7))
   -- The widest teardown arm: a reply-arm victim owed a donation whose holder is
   -- itself blocked, at reply-stack depth ≥ 3.
-  assertBool "cancelIpcBlocking size (full: every member some) = 14"
+  -- **WS-HP HP3.4** takes it to fifteen: the splice re-links the frame *below*
+  -- the cut as well as the one above it, so the removal contributes two members
+  -- rather than one.  Both are `none` on every reachable reply arm owed a
+  -- reclaim -- a caller owed one is the innermost live caller, so its frame has
+  -- nothing above it -- which is why the *reachable* reply-arm figure is still
+  -- ten while this union-over-arguments width grew.
+  assertBool "cancelIpcBlocking size (full: every member some) = 15"
     (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
               (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
               (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
               (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
-              (some ⟨62⟩) (some ⟨63⟩)).size = 14))
+              (some ⟨62⟩) (some ⟨63⟩) (some ⟨64⟩)).size = 15))
+  assertBool "…and dropping only the frame below the cut drops it to 14"
+    (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
+              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
+              (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
+              (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
+              (some ⟨62⟩) (some ⟨63⟩) none).size = 14))
+  assertBool "…and the frame below the cut is declared WRITE"
+    (decide ((replyLock ⟨64⟩, AccessMode.write)
+      ∈ (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
+              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
+              (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
+              (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
+              (some ⟨62⟩) (some ⟨63⟩) (some ⟨64⟩)).pairs))
   -- Audit-pass-6 P1: tcbSetPriority with unbound target = 3 locks
   -- (caller TCB read, CNode read, target TCB write — no SC).
   assertBool "tcbSetPriority size (unbound target, no SC) = 3"
@@ -1217,7 +1237,7 @@ private def runLubMergeChecks : IO Unit := do
       [(⟨.cnode, ObjId.ofNat 10⟩, .read),
        (⟨.tcb, ObjId.ofNat 5⟩, .write)]))
   -- endpointReply(caller=replyTarget) collapses.
-  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none none none
+  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none none none none
   assertBool "endpointReply(caller=replyTarget) collapses to 2 locks"
     (decide (selfReply.size = 2))
   -- Audit-pass-3+4: endpointReply with donation-return.
@@ -1226,47 +1246,47 @@ private def runLubMergeChecks : IO Unit := do
   -- WS-OD OD3.5: five, not four — a reply that returns a donation also holds
   -- the state-level lock, for the `scThreadIndex` maintenance the return ends in.
   let donReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                    (some ⟨42⟩) (some ⟨7⟩) none none none none none
+                    (some ⟨42⟩) (some ⟨7⟩) none none none none none none
   assertBool "endpointReply(caller=5, target=7, donatedSc=42, owner=7=target) has 5 locks (lub-collapse)"
     (decide (donReply.size = 5))
   -- Audit-pass-4: under hypothetical invariant violation where
   -- originalOwner ≠ replyTarget, the lockSet correctly covers both.
   let donReplyDrift := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                         (some ⟨42⟩) (some ⟨9⟩) none none none none none
+                         (some ⟨42⟩) (some ⟨9⟩) none none none none none none
   assertBool "endpointReply(caller=5, target=7, owner=9≠target) has 6 locks (drift case)"
     (decide (donReplyDrift.size = 6))
   -- WS-OD OD3.5: a reply that returns *nothing* holds no state-level lock — the
   -- member is conditioned on the donation, not unconditional, and a check that
   -- only ever saw the donating shape could not tell the two apart.
-  let bareReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ none none none none none none none
+  let bareReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ none none none none none none none none
   assertBool "endpointReply with no donation has 3 locks (no state-level member)"
     (decide (bareReply.size = 3))
   -- Audit-pass-3+4: replyRecv with full donation extension.
   -- WS-OD OD3.5: seven, not six — the state-level lock joins for the same reason.
   let donReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                        (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
-                       none none none none none none none none none none none none none
+                       none none none none none none none none none none none none none none
   assertBool "replyRecv (sender + donation + owner=target=7 collapse) has 7 locks"
     (decide (donReplyRecv.size = 7))
   -- WS-OD OD3.5: a **non-delegated** reply names its recorded server, and that
   -- is the invoking thread, so the member merges and the size does not move.
   let selfServedReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                               (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
-                              (some ⟨5⟩) none none none none none none none none none none none none
+                              (some ⟨5⟩) none none none none none none none none none none none none none
   assertBool "replyRecv with a non-delegated recorded server still has 7 locks (lub-collapse)"
     (decide (selfServedReplyRecv.size = 7))
   -- ...and a **delegated** one names a third thread, which is the member PR #892
   -- review round 6 had no room for and OD3.5 declares.
   let delegatedReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                              (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
-                             (some ⟨9⟩) none none none none none none none none none none none none
+                             (some ⟨9⟩) none none none none none none none none none none none none none
   assertBool "replyRecv with a delegated recorded server has 8 locks"
     (decide (delegatedReplyRecv.size = 8))
   -- ...and the second SchedContext hand-off — the member whose absence made this
   -- footprint false — is a ninth, distinct from the returned context.
   let redonatingReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                               (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
-                              (some ⟨9⟩) (some ⟨43⟩) none none none none none none none none none none none
+                              (some ⟨9⟩) (some ⟨43⟩) none none none none none none none none none none none none
   assertBool "replyRecv that also re-donates has 9 locks (the second hand-off's SC)"
     (decide (redonatingReplyRecv.size = 9))
   -- WS-OD OD3.7: and the two objects the donation return reads *below* the
@@ -1275,12 +1295,12 @@ private def runLubMergeChecks : IO Unit := do
   -- the raise look unnecessary while the footprint stayed false.
   let belowHeadReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                              (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
-                             (some ⟨9⟩) (some ⟨43⟩) (some ⟨44⟩) none none none none none none none none none none
+                             (some ⟨9⟩) (some ⟨43⟩) (some ⟨44⟩) none none none none none none none none none none none
   assertBool "replyRecv that reads the Reply below the head has 10 locks"
     (decide (belowHeadReplyRecv.size = 10))
   let outerCallerReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                                (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
-                               (some ⟨9⟩) (some ⟨43⟩) none (some ⟨12⟩) none none none none none none none none none
+                               (some ⟨9⟩) (some ⟨43⟩) none (some ⟨12⟩) none none none none none none none none none none
   assertBool "replyRecv that also validates the outer caller's TCB has 10 locks"
     (decide (outerCallerReplyRecv.size = 10))
   -- The widest shape the arm can declare: a delegated, re-donating, caps-carrying
@@ -1296,17 +1316,32 @@ private def runLubMergeChecks : IO Unit := do
                           (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                           (some ⟨45⟩) (some ⟨46⟩)
                           (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                          (some ⟨15⟩) (some ⟨50⟩)
-  assertBool "the widest declarable .replyRecv has 22 locks (= maxLockSetSize)"
-    (decide (widestReplyRecv.size = 22))
+                          (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩)
+  assertBool "the widest declarable .replyRecv has 23 locks (= maxLockSetSize)"
+    (decide (widestReplyRecv.size = 23))
+  -- **WS-HP HP3.1**: and the frame *below* the answered reply is a member of its
+  -- own -- dropping it alone drops the widest shape by exactly one, so the
+  -- `22 -> 23` raise is a genuine `+1` and not a member that merges with the
+  -- frame above it or with the head the pop clears.
+  assertBool "…and dropping only the frame below the answered reply drops it to 22"
+    (decide ((lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
+                (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
+                (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
+                (some ⟨45⟩) (some ⟨46⟩)
+                (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
+                (some ⟨15⟩) (some ⟨50⟩) none).size = 22))
+  assertBool "the frame below the answered reply is declared WRITE"
+    (decide ((replyLock ⟨51⟩, AccessMode.write) ∈ widestReplyRecv.pairs))
   assertBool "...and that is exactly maxLockSetSize"
     (decide (widestReplyRecv.size = maxLockSetSize))
   -- **PR #894 review**: and no *reachable* state declares all twenty-two --
   -- the re-donation members are live exactly when the endpoint has a queued
   -- sender and the invoker's pre-receive return exactly when it does not.  The
   -- widest reachable no-sender shape is eighteen; the widest rendezvous shape is
-  -- seventeen.  Both are exercised here at the same operands so the difference is
-  -- attributable to the mutual exclusion and nothing else.
+  -- eighteen too since **WS-HP HP3.1** (it was seventeen).  Both are exercised
+  -- here at the same operands so the difference is attributable to the mutual
+  -- exclusion and nothing else.
   --
   -- **WS-RM (`v0.35.6`)**: and the blocking shape stays at eighteen even though
   -- the ceiling moved 21 -> 22, because the detach's member and the pop's three
@@ -1319,31 +1354,54 @@ private def runLubMergeChecks : IO Unit := do
                             (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                             none (some ⟨46⟩)
                             (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                            (some ⟨15⟩) none
+                            (some ⟨15⟩) none none
   assertBool "the widest reachable blocking .replyRecv that pops has 18 locks"
     (decide (blockingReplyRecv.size = 18))
-  -- WS-RM (`v0.35.6`): the *other* half of the exclusion -- the arm detaches, so
-  -- the pop's head, the frame below it and that frame's caller are all absent and
-  -- the detach's member is present.  Two locks fewer, not one more.
+  -- WS-RM (`v0.35.6`): the *other* half of the exclusion -- the arm removes a
+  -- mid-stack frame, so the pop's head, the frame below it and that frame's
+  -- caller are all absent while the removal's members are present.  **WS-HP
+  -- HP3.1** made that two members rather than one (the splice writes the frame
+  -- above the cut *and* the frame below it), so this shape is now one narrower
+  -- than the popping one rather than two -- and the reachable eighteen is
+  -- unmoved, which is the whole point of the exclusion.
   let blockingReplyRecvDetaching := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                             (ObjId.ofNat 20) none (some ⟨42⟩) (some ⟨11⟩)
                             (some ⟨60⟩) true (some ⟨9⟩) none
                             none none (some ⟨13⟩)
                             none none
                             (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                            (some ⟨15⟩) (some ⟨50⟩)
-  assertBool "the widest reachable blocking .replyRecv that detaches has 16 locks"
-    (decide (blockingReplyRecvDetaching.size = 16))
-  assertBool "…so the detach costs the reachable footprint nothing: it is two narrower"
-    (decide (blockingReplyRecvDetaching.size + 2 = blockingReplyRecv.size))
+                            (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩)
+  assertBool "the widest reachable blocking .replyRecv that splices has 17 locks"
+    (decide (blockingReplyRecvDetaching.size = 17))
+  assertBool "…so the splice costs the reachable footprint nothing: it is one narrower"
+    (decide (blockingReplyRecvDetaching.size + 1 = blockingReplyRecv.size))
+  assertBool "…and both of the splice's frames are declared there"
+    (decide ((replyLock ⟨50⟩, AccessMode.write) ∈ blockingReplyRecvDetaching.pairs ∧
+             (replyLock ⟨51⟩, AccessMode.write) ∈ blockingReplyRecvDetaching.pairs))
   let rendezvousReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                               (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
                               (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
                               (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                               (some ⟨45⟩) (some ⟨46⟩)
-                              none none none none none (some ⟨50⟩)
-  assertBool "the widest reachable rendezvous .replyRecv has 17 locks"
-    (decide (rendezvousReplyRecv.size = 17))
+                              none none none none none (some ⟨50⟩) (some ⟨51⟩)
+  assertBool "the widest UNMERGED rendezvous .replyRecv shape has 18 locks"
+    (decide (rendezvousReplyRecv.size = 18))
+  -- …and this witness is deliberately the *unmerged* one: its
+  -- `donatedOriginalOwnerTid` is ⟨11⟩, which is not the answered caller ⟨7⟩ --
+  -- a shape `replyDonationOwnerIsAnsweredCaller` rules out on a reachable state.
+  -- The companion below is the same footprint with that one argument set to ⟨7⟩,
+  -- so the two differ in nothing else and the difference measures exactly what
+  -- `lockSet_endpointReplyRecvOnCore_size_le_seventeen`'s owner merge buys.
+  -- Pinning the unmerged width beside it is what stops "seventeen" from reading
+  -- as a fact about the definition rather than about the merge.
+  assertBool "…and the owner merge is worth exactly one lock"
+    (decide ((lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩)
+                (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
+                (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
+                (some ⟨45⟩) (some ⟨46⟩)
+                none none none none none (some ⟨50⟩) (some ⟨51⟩)).size + 1
+             = rendezvousReplyRecv.size))
   -- NEGATIVE: no reachable shape reaches the ceiling, which is the whole
   -- content of `lockSet_endpointReplyRecvOnCore_size_le_eighteen` -- a witness
   -- asserting only `≤ maxLockSetSize` would pass with the slack claim false.
@@ -1380,7 +1438,7 @@ private def runConsistencyRuntimeChecks : IO Unit := do
                 (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
                 (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
                 (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
-                (some ⟨62⟩) (some ⟨63⟩)
+                (some ⟨62⟩) (some ⟨63⟩) (some ⟨64⟩)
   let allOk_susp := susp.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSuspend))
   assertBool "lockSet_cancelIpcBlocking (every Option some): all kinds in permittedKinds .tcbSuspend"
@@ -1439,7 +1497,7 @@ private def runConsistencyRuntimeChecks : IO Unit := do
   -- covers the shape the live arm declares at call depth ≥ 2 rather than the
   -- chain-free one.
   let replyDon := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                    (some ⟨42⟩) (some ⟨7⟩) none (some ⟨44⟩) (some ⟨12⟩) none none
+                    (some ⟨42⟩) (some ⟨7⟩) none (some ⟨44⟩) (some ⟨12⟩) none none none
   let allOk_replyDon := replyDon.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .reply))
   assertBool "lockSet_endpointReply (with donation + owner): all kinds in permittedKinds .reply"
@@ -1798,7 +1856,7 @@ private def runPipChainStartChecks : IO Unit := do
     (let st := pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                  none none
      let ls := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                 none none none none none none none
+                 none none none none none none none none
      match st with
      | none => true
      | some tid => decide (ls.containsKey ⟨.tcb, ObjId.ofNat tid.toNat⟩ = true))

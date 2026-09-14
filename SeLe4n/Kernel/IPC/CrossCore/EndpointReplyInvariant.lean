@@ -1803,24 +1803,26 @@ theorem endpointReplyOnCore_observer_atomic
     -- frame above the answered reply, which the removal's detach writes -- every
     -- argument of the footprint this theorem names, for the reason above.
     (donatedHead? answeredFrameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity.
+    (answeredFrameBelow? : Option SeLe4n.ReplyId)
     (s : SystemState) (hInv : s.objects.invExt) :
     threadIpcStateObserver observed
         (acquireAll executingCore
           (lockSet_endpointReply replier cnRoot target donatedSc?
             donatedOwner? replyId belowHeadReply? outerCaller? donatedHead?
-            answeredFrameAbove?).lockAcquireSequence s)
+            answeredFrameAbove? answeredFrameBelow?).lockAcquireSequence s)
       = threadIpcStateObserver observed s
     ∧ threadIpcStateObserver observed
         (withLockSet
           (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? replyId
-            belowHeadReply? outerCaller? donatedHead? answeredFrameAbove?)
+            belowHeadReply? outerCaller? donatedHead? answeredFrameAbove? answeredFrameBelow?)
           executingCore (endpointReplyOnCore replier target msg executingCore) s).1
       = threadIpcStateObserver observed
           (endpointReplyOnCore replier target msg executingCore
             (acquireAll executingCore
               (lockSet_endpointReply replier cnRoot target donatedSc?
                 donatedOwner? replyId belowHeadReply? outerCaller? donatedHead?
-                answeredFrameAbove?).lockAcquireSequence s)).1 :=
+                answeredFrameAbove? answeredFrameBelow?).lockAcquireSequence s)).1 :=
   lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
     (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
     (fun s' h => endpointReplyOnCore_preserves_objects_invExt replier target msg
@@ -1852,6 +1854,8 @@ theorem endpointReplyRecvOnCore_observer_atomic
     (preReturnHead? preReturnBelowHead? : Option SeLe4n.ReplyId)
     (preReturnOuterCaller? : Option SeLe4n.ThreadId)
     (answeredFrameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity.
+    (answeredFrameBelow? : Option SeLe4n.ReplyId)
     (s : SystemState) (hInv : s.objects.invExt) :
     threadIpcStateObserver observed
         (acquireAll executingCore
@@ -1859,14 +1863,14 @@ theorem endpointReplyRecvOnCore_observer_atomic
             donatedOwner? replyId installsCaps donationServer? redonatedSc?
             belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
             preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
-            preReturnOuterCaller? answeredFrameAbove?).lockAcquireSequence s)
+            preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow?).lockAcquireSequence s)
       = threadIpcStateObserver observed s
     ∧ threadIpcStateObserver observed
         (withLockSet (lockSet_replyRecv receiver cnRoot target endpointId newSender?
             donatedSc? donatedOwner? replyId installsCaps donationServer? redonatedSc?
             belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
             preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
-            preReturnOuterCaller? answeredFrameAbove?)
+            preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow?)
           executingCore
           (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore) s).1
       = threadIpcStateObserver observed
@@ -1876,7 +1880,7 @@ theorem endpointReplyRecvOnCore_observer_atomic
                 donatedOwner? replyId installsCaps donationServer? redonatedSc?
             belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
             preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
-            preReturnOuterCaller? answeredFrameAbove?).lockAcquireSequence s)).1 :=
+            preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow?).lockAcquireSequence s)).1 :=
   lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
     (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
     (fun s' h => endpointReplyRecvOnCore_preserves_objects_invExt endpointId receiver

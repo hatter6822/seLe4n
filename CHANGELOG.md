@@ -1,3 +1,129 @@
+## v0.35.36 — WS-HP HP1–HP3: the head-driven trigger's primitives, built inert
+
+The first three phases of **WS-HP** (`docs/planning/DONATION_POP_TRIGGER_PLAN.md`),
+which corrects the reply path's donation-pop **trigger** and then replaces
+`severAtCut` with seL4-MCS's splice.  Everything in this cut is **inert**: the
+head-driven trigger has no branch reading it, and the footprint member the splice
+will need is declared several phases before the code that writes it — which is the
+plan's own numbering rule, since a footprint that omits a written object is
+*false* and a transition goes live only after the proofs that cover it.
+
+**The splice itself moved to HP6, and the reason is the interesting part of the
+cut.**  HP1 was written to land `spliceReplyFrameOut` inert beside the detach,
+with the whole detach algebra derived through one shared `replyStackStoreStep` so
+the second store cost the bundle and projection surfaces nothing.  It built, the
+algebra was right, and `SeLe4n/Testing/ReplyStackWriteCensus.lean` **refused it**:
+the census derives the reply-stack write-site set from the elaborated environment
+and demands a chain result of every site, and a bare splice has none to give.
+What the splice does to `donationChainWellFormed` is break `prevLinkReciprocal` at
+the cut frame — repaired by the consume that follows it inside `reply_remove`, so
+the only true statement about it is the one the *composite* makes.  The two escape
+hatches were a `states` entry whose theorem says the chain is broken, which is
+gaming the gate, and a `halfStep` naming a composite that does not exist until
+HP6.  So the splice is HP6's, where `removeCallerReplyFrame` grows the caller that
+makes the statement sayable; the census was enforcing this project's own rule, and
+the honest response to a gate that is right is to move the work rather than to
+widen the gate.  `replyFrameBelow?` and the footprint member it feeds stay here,
+because a *footprint* may be declared ahead of the write and a write may not be
+declared ahead of its proof.
+
+**HP1 — the resolvers.**  `replyFrameBelow?` names the frame a mid-stack removal
+re-links upward, and **it asks `replyFrameAbove?` first**: a frame with nothing
+above it is not being removed from the middle of anything, so it declares no
+below-member.  Reading `Reply.prev` directly would have been `some` for the bottom
+frame of *any* stack, putting a write lock on a Reply no removal touches and
+moving the reachable `.replyRecv` bound HP3 keeps where it is.  A Tier 3 negative
+refuses that spelling.  `replyFrameHeadContext?` is the head-driven trigger's
+frame-level half, with the six-lemma algebra that decides it from a Reply's own
+`next` link.
+
+**HP2 — the trigger equivalence, and where it fails.**
+`answeredFrameHeadContext?` lifts the trigger to the answered thread, and
+`answeredFrameHeadContext?_implies_serverDonation` is the direction that holds
+unconditionally.  The converse needs a fact `donationChainWellFormed` does **not**
+entail — it carries no binding clause at all — so `donatedContextHeadsStack` is
+stated as a fourth *local coherence fact* beside the three the reply path already
+has, and is explicitly scaffolding HP7 deletes.  The content of the phase is the
+**disagreement**: `donationPopTriggers_disagree_at_orphan_head` exhibits the state
+HP4 exists for — a frame that heads a context whose recorded reply server has
+already given that context back — because an "equivalence" with no exhibited
+counterexample would be a claim that HP4 changes nothing.
+
+**HP3 — the footprint member, and the ceiling.**  Both reply footprints and the
+cancellation footprint declare the frame the removal re-links below the cut, in
+**write** mode, each with the resolved coverage theorem this family carries for
+every member (`lockSet_endpointReplyOnCore_covers_detachedFrameBelow`, its
+`.replyRecv` twin, and `lockSet_cancelIpcBlockingOnCore_covers_splicedFrameBelow`)
+— the relation, not the presence check the Tier 3 anchor over a footprint's
+definition makes.  The cancellation resolver `cancelSplicedFrameBelow?` is
+*derived* from `cancelDetachedFrameAbove?`'s own arm test, so the two cannot
+disagree about which arm removes a frame.
+
+`maxLockSetSize` **22 → 23**, `admissibleCriticalSection` on the 1 ms RPi5 tick
+**15 → 14 µs**, the uniform 60 µs envelope **3960 → 4140 µs**.  All three are
+derived from the constant and move with it; `check_lock_ceiling_figures.py` holds
+every prose copy, and the Tier 3 negative list gains the figure this raise
+supersedes rather than being extended at every raise but the latest.
+
+**The plan's §3.6 prediction held: the reachable bounds did not move.**  The
+unconditional `.replyRecv` figure absorbed the member
+(`…_size_le_nineteen` → `…_size_le_twenty`) and both reachable ones are where
+WS-RM left them, at **eighteen** and **seventeen** — by two exclusions, only one
+of which needs a coherence fact, since the resolver's own shape handles a frame
+with nothing above it.  The cancellation family moved the same way
+(`…_size_le_twelve` → `…_size_le_thirteen`, suspend pipeline
+`…_size_le_sixteen` → `…_size_le_seventeen`) with its reachable reply-arm figure
+still ten, because a caller owed a reclaim is the innermost live caller.
+
+**One half of HP3.4's row is retired rather than done, and the plan records why.**
+`lockSet_cancelDonationOnCore` needs no below-member: `cancelDonation`'s donated
+arm is the reply-stack **pop**, and HP6 makes a *removal* a splice, not a pop.
+The frame a pop re-heads has been declared since `v0.35.4`.  Declaring a second
+one would put a write lock on a Reply the operation never touches — sound, and
+not free, since lock contention is an observable channel (SM8.D's CC-5).
+
+Three stale claims fixed in passing, each a figure that had gone out of date
+before this cut: `PerCoreWcrt.lean`'s module header still quoted the ceiling at
+16 and the admissible section at 15 µs; `lockSet_tcbSuspendOnCore_size_le`'s
+docstring still said "the ceiling is sixteen *because* this footprint reaches
+it", which stopped being true at PR #894; and two docstrings named
+`lockSet_cancelIpcBlockingOnCore_size_le_ten`, a theorem `v0.35.4` had renamed.
+
+**The plan gained HP4's full design (§3.8) and took HP4 from four rows to six.**
+Writing it found two things a flip done from the rows alone would have hit at the
+worst moment.  `endpointReplyServerDonation?` and `answeredFrameHeadContext?`
+share the type `Option (SchedContextId × ThreadId)` whose second component means
+*originalOwner* — the thread that **gains** the context — in the first and
+*holder* — the thread that **loses** it — in the second, and under the flip that
+pair also moves from argument 4 to argument 2 of
+`returnDonatedSchedContextResolved`: a mechanical substitution typechecks and is
+silently wrong, so the flip is done by name and position with a Tier 3 negative
+refusing the swap.  And HP1 declared `answeredFrameHeadContext?` in
+`IPC/CrossCore/EndpointReply.lean`, which is not in
+`IPC/Operations/Donation/Primitives.lean`'s import closure — that module imports
+`IPC/Operations/Endpoint.lean` alone — so the single-core spine HP4.2 re-keys
+cannot call the resolver as written.  The remedy is a relocation down beside
+`replyFrameHeadContext?`, scheduled as HP4.1's first act, because a flip that
+discovers it at HP4.2 has already rewritten the characterisation 172 references
+run through.  §3.8 also records what must **not** move: the priority-inheritance
+walk (it keys on waiters), the `.replyCapInvalid` arm ("no recorded server" and
+"no head context" are different facts), the two pre-receive cleanups, and the two
+migration-home arguments — `determineTargetCore` is the *correct* resolver for a
+replenish queue, which is keyed by affinity rather than placement, so unlike the
+deschedule there is no proxy there to remove.
+
+**A deschedule-proxy finding was reported and registered**, not fixed in this cut
+(`docs/REGISTERED_DEBT.md` table A).  `applyReplyDonationOnCore` takes the core to
+deschedule the recorded server from as a *parameter*, and its live caller passes
+`determineExecutingCore`, which answers `bootCoreId` for a thread that is current
+on no core.  On a **delegated** reply the recorded server is neither principal and
+is typically queued, so the deschedule edits the boot core's queue while the
+server sits on another — the temporal-isolation step surviving on exactly the path
+`v0.35.21` added it for.  It is the `a proxy is not the fact` shape at the
+scheduler, and `placedCoreOf?` / `descheduleAtPlacement` are the answer the tree
+already has.  Not exploitable today: nothing boots, and the SVC seam halts pending
+SM10.1.
+
 ## v0.35.35 — PR #895 review round 22: the name a claim cites is its load-bearing half
 
 Four P2 findings, and the pattern across them is one this branch has been

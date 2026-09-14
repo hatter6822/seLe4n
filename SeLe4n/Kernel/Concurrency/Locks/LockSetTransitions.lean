@@ -855,7 +855,27 @@ def lockSet_endpointReply (callerTid : ThreadId)
     -- caller creates, and the one the pre-`v0.35.6` reply path left wedged.
     -- Declared in **write** mode and without a default, so a call site that
     -- forgets it fails to elaborate rather than silently declaring `none`.
-    (answeredFrameAboveReplyId : Option ReplyId) : LockSet :=
+    (answeredFrameAboveReplyId : Option ReplyId)
+    -- **WS-HP HP3.1**: the frame **below** the answered caller's reply object,
+    -- which the removal's splice rewrites (setting its `next := .frame above`)
+    -- in the same step that rewrites the frame above.  HP6 builds that splice;
+    -- the member is declared ahead of it, which is the numbering rule.
+    -- `some` exactly when the answered frame is not a stack head *and* has a
+    -- frame above it -- a mid-stack removal -- so it is resolved from
+    -- `answeredReplyFrameBelow?`, which is `replyFrameAbove?` composed with the
+    -- cut frame's own `prev`: the footprint and the splice therefore answer
+    -- "which frame sits below the cut" once.
+    --
+    -- **Not** mutually exclusive with `answeredFrameAboveReplyId`: a mid-stack
+    -- removal writes both, which is what makes this a genuine `+1` on the
+    -- declared ceiling rather than a member that merges.  It *is* mutually
+    -- exclusive with the three pop members, since a frame with a frame above it
+    -- heads nothing (`replyFrameHeadContext?_of_frameAbove`), which is what
+    -- keeps the reachable bound where it was.
+    --
+    -- Declared in **write** mode and without a default, so a call site that
+    -- forgets it fails to elaborate rather than silently declaring `none`.
+    (answeredFrameBelowReplyId : Option ReplyId) : LockSet :=
   let withSc := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
@@ -894,8 +914,12 @@ def lockSet_endpointReply (callerTid : ThreadId)
     (if donatedScId.isSome then some (stateLevelLock, AccessMode.write) else none)
   -- **WS-RM (`v0.35.6`)**: and the frame above the answered one, which the
   -- removal detaches before consuming.
-  lockSetExtendOpt withState
+  let withAbove := lockSetExtendOpt withState
     (answeredFrameAboveReplyId.map (fun rid => (replyLock rid, AccessMode.write)))
+  -- **WS-HP HP3.1**: and the frame below it, which the removal's splice
+  -- re-links upward in the same step.
+  lockSetExtendOpt withAbove
+    (answeredFrameBelowReplyId.map (fun rid => (replyLock rid, AccessMode.write)))
 
 /-- WS-SM SM3.B.3: `lockSet` for `replyRecv` (syscall `.replyRecv`).
 
@@ -990,7 +1014,12 @@ def lockSet_replyRecv (callerTid : ThreadId)
     -- the same member `lockSet_endpointReply` declares, for the same write, since
     -- this arm's reply leg *is* that transition.  No default: a call site that
     -- omits it must fail to elaborate.
-    (answeredFrameAboveReplyId : Option ReplyId) : LockSet :=
+    (answeredFrameAboveReplyId : Option ReplyId)
+    -- **WS-HP HP3.1**: and the frame **below** it, which the removal's splice
+    -- re-links upward in the same step -- the same member
+    -- `lockSet_endpointReply` declares, for the same write, since this arm's
+    -- reply leg *is* that transition.  No default, for the same reason.
+    (answeredFrameBelowReplyId : Option ReplyId) : LockSet :=
   -- PR #873 round 8: `.replyRecv`'s receive leg installs capabilities too (it
   -- runs the same WithCaps transition `.receive` does), so the caller's own
   -- CSpace root takes the same write upgrade, in the same size- and
@@ -1085,8 +1114,11 @@ def lockSet_replyRecv (callerTid : ThreadId)
   let withNeighbour := lockSetExtendOpt withState
     (queueNeighbour.map (fun q => (tcbLock q, AccessMode.write)))
   -- **WS-RM (`v0.35.6`)**: and the frame above the answered one.
-  lockSetExtendOpt withNeighbour
+  let withAnsweredAbove := lockSetExtendOpt withNeighbour
     (answeredFrameAboveReplyId.map (fun rid => (replyLock rid, AccessMode.write)))
+  -- **WS-HP HP3.1**: and the frame below it, which the splice re-links upward.
+  lockSetExtendOpt withAnsweredAbove
+    (answeredFrameBelowReplyId.map (fun rid => (replyLock rid, AccessMode.write)))
 
 /-- **WS-RR RR7.11**: a `.replyRecv` whose receive leg installs nothing — and,
 since **WS-OD OD3.5**, that also returns no donation, re-donates nothing and
@@ -1104,7 +1136,7 @@ the statement bounds. -/
     (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId) :
     lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId newSenderTid
         none donatedOriginalOwnerTid replyId false none none none none none none none none
-        none none none none none
+        none none none none none none
       = lockSetExtendOpt
           (lockSetExtendOpt
             (lockSetExtendOpt
@@ -2030,11 +2062,15 @@ theorem lockSet_endpointReply_caller_tcb_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (tcbLock callerTid, AccessMode.write)
       ∈ (lockSet_endpointReply callerTid cnodeRootObjId replyTargetTid donatedScId
           donatedOriginalOwnerTid replyId belowHeadReplyId outerCallerTid
-          donatedHeadReplyId answeredFrameAbove).pairs := by
+          donatedHeadReplyId answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_endpointReply lockSetOfList
   simp only [List.foldl]
   -- WS-OD OD3.5: a fourth optional extension on the outside — the state-level
@@ -2057,15 +2093,20 @@ theorem lockSet_endpointReply_donatedHead_write_mem (callerTid : ThreadId)
     (replyId : Option ReplyId) (belowHeadReplyId : Option ReplyId)
     (outerCallerTid : Option ThreadId) (head : ReplyId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (replyLock head, AccessMode.write)
       ∈ (lockSet_endpointReply callerTid cnodeRootObjId replyTargetTid donatedScId
           donatedOriginalOwnerTid replyId belowHeadReplyId outerCallerTid (some head)
-          answeredFrameAbove).pairs := by
+          answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_endpointReply
-  -- Three extensions sit above it: the frame below the head, the outer caller
-  -- and the state-level lock.
-  iterate 4 apply mem_write_lockSetExtendOpt
+  -- Five extensions sit above it: the frame below the head, the outer caller, the
+  -- state-level lock, the frame above the answered reply and the frame below it
+  -- (WS-HP HP3.1).
+  iterate 5 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD (`v0.35.4`)**: and the frame **below** the head, which the pop
@@ -2079,14 +2120,19 @@ theorem lockSet_endpointReply_belowHead_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (replyLock below, AccessMode.write)
       ∈ (lockSet_endpointReply callerTid cnodeRootObjId replyTargetTid donatedScId
           donatedOriginalOwnerTid replyId (some below) outerCallerTid
-          donatedHeadReplyId answeredFrameAbove).pairs := by
+          donatedHeadReplyId answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_endpointReply
-  -- Two extensions sit above it: the outer caller and the state-level lock.
-  iterate 3 apply mem_write_lockSetExtendOpt
+  -- Four extensions sit above it: the outer caller, the state-level lock, the
+  -- frame above the answered reply and the frame below it (WS-HP HP3.1).
+  iterate 4 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RM (`v0.35.6`)**: and the frame **above** the answered caller's reply
@@ -2104,11 +2150,40 @@ theorem lockSet_endpointReply_frameAbove_write_mem (callerTid : ThreadId)
     (donatedScId : Option SchedContextId) (donatedOriginalOwnerTid : Option ThreadId)
     (replyId : Option ReplyId) (belowHeadReplyId : Option ReplyId)
     (outerCallerTid : Option ThreadId) (donatedHeadReplyId : Option ReplyId)
-    (above : ReplyId) :
+    (above : ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (replyLock above, AccessMode.write)
       ∈ (lockSet_endpointReply callerTid cnodeRootObjId replyTargetTid donatedScId
           donatedOriginalOwnerTid replyId belowHeadReplyId outerCallerTid
-          donatedHeadReplyId (some above)).pairs := by
+          donatedHeadReplyId (some above) answeredFrameBelow).pairs := by
+  unfold lockSet_endpointReply
+  -- One extension sits above it: the frame below the answered reply (WS-HP HP3.1).
+  iterate 1 apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-HP HP3.1**: and the frame **below** the answered caller's reply object,
+which the removal's splice re-links upward (setting its `next := .frame above`)
+in the same step that rewrites the frame above.  HP6 builds that splice; the
+member is declared ahead of it, which is the numbering rule.
+
+The second half of the splice's write set.  Declaring a member and proving the
+operation writes it are two different statements, and the Tier 3 anchor over this
+footprint's definition makes only the first -- it asks that
+`answeredReplyFrameBelow? st target` occur there, which is a presence check.
+This is the relation. -/
+theorem lockSet_endpointReply_frameBelow_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
+    (donatedScId : Option SchedContextId) (donatedOriginalOwnerTid : Option ThreadId)
+    (replyId : Option ReplyId) (belowHeadReplyId : Option ReplyId)
+    (outerCallerTid : Option ThreadId) (donatedHeadReplyId : Option ReplyId)
+    (answeredFrameAbove : Option ReplyId) (below : ReplyId) :
+    (replyLock below, AccessMode.write)
+      ∈ (lockSet_endpointReply callerTid cnodeRootObjId replyTargetTid donatedScId
+          donatedOriginalOwnerTid replyId belowHeadReplyId outerCallerTid
+          donatedHeadReplyId answeredFrameAbove (some below)).pairs := by
   unfold lockSet_endpointReply
   -- The outermost extension: nothing sits above it.
   exact LockSet.mem_insertOrMerge_write_self _ _
@@ -2131,14 +2206,18 @@ theorem lockSet_replyRecv_caller_tcb_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (tcbLock callerTid, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv lockSetOfList
   simp only [List.foldl]
   -- WS-OD OD3.5: two further optional extensions on the outside — the recorded
@@ -2169,14 +2248,18 @@ theorem lockSet_replyRecv_target_tcb_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (tcbLock replyTargetTid, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv lockSetOfList
   simp only [List.foldl]
   -- The optional extensions are peeled by count rather than by a hand-nested
@@ -2203,14 +2286,18 @@ theorem lockSet_replyRecv_endpoint_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (endpointLock endpointObjId, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv lockSetOfList
   simp only [List.foldl]
   -- The optional extensions are peeled by count rather than by a hand-nested
@@ -2451,18 +2538,22 @@ theorem lockSet_replyRecv_stateLevel_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (stateLevelLock, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId true
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   -- WS-OD OD3.13: the queue-structure neighbour, and (WS-RM `v0.35.6`) the
   -- frame above the answered reply — two extensions outside.
-  iterate 2 apply mem_write_lockSetExtendOpt
+  iterate 3 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD OD3.5**: and it is declared for the *donations* too, not only for a
@@ -2490,18 +2581,22 @@ theorem lockSet_replyRecv_donation_stateLevel_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (stateLevelLock, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid (some donatedScId) donatedOriginalOwnerTid replyId false
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   -- WS-OD OD3.13: the queue-structure neighbour, and (WS-RM `v0.35.6`) the
   -- frame above the answered reply — two extensions outside.
-  iterate 2 apply mem_write_lockSetExtendOpt
+  iterate 3 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD OD3.5**: the state-level lock is declared for the **second**
@@ -2524,19 +2619,23 @@ theorem lockSet_replyRecv_redonation_stateLevel_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (stateLevelLock, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid (some redonatedScId) belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   simp only [Option.isSome_some, Bool.or_true]
   -- WS-OD OD3.13: the queue-structure neighbour, and (WS-RM `v0.35.6`) the
   -- frame above the answered reply — two extensions outside.
-  iterate 2 apply mem_write_lockSetExtendOpt
+  iterate 3 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD OD3.5**: the **second** SchedContext hand-off's own write lock — the
@@ -2560,14 +2659,18 @@ theorem lockSet_replyRecv_redonated_sc_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (schedContextLock redonatedScId, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid (some redonatedScId) belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   -- Peeled by an EXACT count, not `repeat`: this member is introduced by an
   -- extension rather than by the base list, so peeling one layer too far would
@@ -2575,7 +2678,7 @@ theorem lockSet_replyRecv_redonated_sc_write_mem (callerTid : ThreadId)
   -- re-donation's old head and the returned context's head (WS-OD `v0.35.4`),
   -- WS-OD OD3.7's two below-head members, the state-level lock and, since
   -- WS-OD OD3.13, the queue-structure neighbour outside all of them.
-  iterate 12 apply mem_write_lockSetExtendOpt
+  iterate 13 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD OD3.5**: and the **recorded server's** own TCB, which the return
@@ -2596,21 +2699,25 @@ theorem lockSet_replyRecv_donation_server_tcb_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (tcbLock donationServerTid, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           (some donationServerTid) redonatedScId belowHeadReplyId
           outerCallerTid queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   -- An exact count for the same reason as the redonation member above: seven
   -- layers sit over the recorded server's own extension — the re-donated
   -- SchedContext, its old head and the returned context's head (WS-OD
   -- `v0.35.4`), WS-OD OD3.7's two below-head members, the state-level lock and
   -- WS-OD OD3.13's queue-structure neighbour.
-  iterate 13 apply mem_write_lockSetExtendOpt
+  iterate 14 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD (`v0.35.4`)**: the re-donated context's **old head** -- the frame
@@ -2631,19 +2738,23 @@ theorem lockSet_replyRecv_redonationOldHead_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (replyLock oldHead, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
           queueNeighbour (some oldHead) donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   -- Ten layers sit above it: the returned context's head, the frame below it,
   -- the outer caller, the invoker's own five pre-receive members, the
   -- state-level lock and the queue-structure neighbour.
-  iterate 11 apply mem_write_lockSetExtendOpt
+  iterate 12 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD (`v0.35.4`)**: the returned context's stack **head**, which the
@@ -2663,19 +2774,23 @@ theorem lockSet_replyRecv_donatedHead_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (replyLock head, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId (some head)
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   -- Nine layers sit above it: the frame below the head, the outer caller, the
   -- invoker's own five pre-receive members, the state-level lock and the
   -- queue-structure neighbour.
-  iterate 10 apply mem_write_lockSetExtendOpt
+  iterate 11 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD (`v0.35.4`)**: and the frame **below** the head, which the pop
@@ -2696,19 +2811,23 @@ theorem lockSet_replyRecv_belowHead_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (replyLock below, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId (some below) outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   -- Eight layers sit above it: the outer caller, the invoker's own five
   -- pre-receive members, the state-level lock and the queue-structure
   -- neighbour.
-  iterate 9 apply mem_write_lockSetExtendOpt
+  iterate 10 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **PR #894 review**: the **invoking** receiver's own pre-receive return hands
@@ -2733,18 +2852,22 @@ theorem lockSet_replyRecv_preReturn_sc_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (schedContextLock scId, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           (some scId) preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   -- Six layers sit above it: the four remaining pre-receive members, the
   -- state-level lock and the queue-structure neighbour.
-  iterate 7 apply mem_write_lockSetExtendOpt
+  iterate 8 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **PR #894 review**: …the **previous owner's TCB** that return rebinds… -/
@@ -2763,18 +2886,22 @@ theorem lockSet_replyRecv_preReturn_owner_tcb_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (tcbLock owner, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId (some owner) preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   -- Five layers sit above it: the three remaining pre-receive members, the
   -- state-level lock and the queue-structure neighbour.
-  iterate 6 apply mem_write_lockSetExtendOpt
+  iterate 7 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **PR #894 review**: …the **head** that return clears… -/
@@ -2793,18 +2920,22 @@ theorem lockSet_replyRecv_preReturn_head_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (replyLock head, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid (some head) preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   -- Four layers sit above it: the frame below, the outer caller, the
   -- state-level lock and the queue-structure neighbour.
-  iterate 5 apply mem_write_lockSetExtendOpt
+  iterate 6 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **PR #894 review**: …and the frame **below** the head that return re-heads. -/
@@ -2823,18 +2954,22 @@ theorem lockSet_replyRecv_preReturn_belowHead_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (replyLock below, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId (some below)
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   -- Three layers sit above it: the outer caller, the state-level lock and the
   -- queue-structure neighbour.
-  iterate 4 apply mem_write_lockSetExtendOpt
+  iterate 5 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **PR #894 review**: …and the state-level lock its `scThreadIndex`
@@ -2856,19 +2991,23 @@ theorem lockSet_replyRecv_preReturn_stateLevel_write_mem (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     (stateLevelLock, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid none donatedOriginalOwnerTid replyId false
           donationServerTid none belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           (some scId) preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs := by
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs := by
   unfold lockSet_replyRecv
   simp only [Option.isSome_some, Option.isSome_none, Bool.or_true, Bool.false_or, if_true]
   -- The queue-structure neighbour, and (WS-RM `v0.35.6`) the frame above the
   -- answered reply — two extensions outside.
-  iterate 2 apply mem_write_lockSetExtendOpt
+  iterate 3 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RM (`v0.35.6`)**: and `.replyRecv`'s own detach, which is the `.reply`
@@ -2886,14 +3025,45 @@ theorem lockSet_replyRecv_frameAbove_write_mem (callerTid : ThreadId)
     (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
-    (above : ReplyId) :
+    (above : ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity.
+    (answeredFrameBelow : Option ReplyId) :
     (replyLock above, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
           newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
           donationServerTid redonatedScId belowHeadReplyId outerCallerTid
           queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid (some above)).pairs := by
+          preReturnOuterCallerTid (some above) answeredFrameBelow).pairs := by
+  unfold lockSet_replyRecv
+  -- One extension sits above it: the frame below the answered reply (WS-HP HP3.1).
+  iterate 1 apply mem_write_lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-HP HP3.1**: and the frame **below** the answered caller's reply object,
+which the removal's splice re-links upward -- `.replyRecv`'s twin of
+`lockSet_endpointReply_frameBelow_write_mem`, for the same write, since this
+arm's reply leg *is* that transition. -/
+theorem lockSet_replyRecv_frameBelow_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (installsCaps : Bool) (donationServerTid : Option ThreadId)
+    (redonatedScId : Option SchedContextId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    (queueNeighbour : Option ThreadId) (redonationOldHeadReplyId : Option ReplyId)
+    (donatedHeadReplyId : Option ReplyId)
+    (preReturnScId : Option SchedContextId) (preReturnOwnerTid : Option ThreadId)
+    (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
+    (preReturnOuterCallerTid : Option ThreadId)
+    (answeredFrameAbove : Option ReplyId) (below : ReplyId) :
+    (replyLock below, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps
+          donationServerTid redonatedScId belowHeadReplyId outerCallerTid
+          queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
+          preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
+          preReturnOuterCallerTid answeredFrameAbove (some below)).pairs := by
   unfold lockSet_replyRecv
   -- The outermost extension: nothing sits above it.
   exact LockSet.mem_insertOrMerge_write_self _ _
@@ -2922,7 +3092,7 @@ theorem capsCarryingIpcArms_footprints_share_serialization
       (stateLevelLock, AccessMode.write)
         ∈ (lockSet_replyRecv receiver cnRootB receiver epB senderTid none none
              replyIdA true none none none none none none none
-             none none none none none none).pairs) :=
+             none none none none none none none).pairs) :=
   ⟨⟨by unfold lockSet_endpointSend
        -- WS-OD OD3.11: one further extension outside (the queue neighbour).
        exact mem_write_lockSetExtendOpt _ _ _
@@ -2934,7 +3104,7 @@ theorem capsCarryingIpcArms_footprints_share_serialization
          (LockSet.mem_insertOrMerge_write_self _ _),
     lockSet_replyRecv_stateLevel_write_mem receiver cnRootB receiver epB senderTid
       none none replyIdA none none none none none none none
-      none none none none none none⟩⟩
+      none none none none none none none⟩⟩
 
 /-- WS-SM SM8.C.9 (PR #870 round 7): the declassification's trail append is a
 declared **write** on the state-level lock. -/
@@ -4551,6 +4721,39 @@ theorem lockSet_consistent_base_plus_eighteen_opts
     (lockSet_consistent_base_plus_seventeen_opts base opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ opt₁₇ permitted hBase
       hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅ hOpt₆ hOpt₇ hOpt₈ hOpt₉ hOpt₁₀ hOpt₁₁ hOpt₁₂ hOpt₁₃ hOpt₁₄ hOpt₁₅ hOpt₁₆ hOpt₁₇) hOpt₁₈
 
+/-- **WS-HP HP3.1**: nineteen optional extensions -- `.replyRecv` reaches it once
+the removal's splice declares the frame **below** the answered reply beside the
+frame above it. -/
+theorem lockSet_consistent_base_plus_nineteen_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ opt₁₇ opt₁₈ opt₁₉ : Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₅ : ∀ pp, opt₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₆ : ∀ pp, opt₆ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₇ : ∀ pp, opt₇ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₈ : ∀ pp, opt₈ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₉ : ∀ pp, opt₉ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₀ : ∀ pp, opt₁₀ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₁ : ∀ pp, opt₁₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₂ : ∀ pp, opt₁₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₃ : ∀ pp, opt₁₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₄ : ∀ pp, opt₁₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₅ : ∀ pp, opt₁₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₆ : ∀ pp, opt₁₆ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₇ : ∀ pp, opt₁₇ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₈ : ∀ pp, opt₁₈ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₁₉ : ∀ pp, opt₁₉ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList base) opt₁) opt₂) opt₃) opt₄) opt₅) opt₆) opt₇) opt₈) opt₉) opt₁₀) opt₁₁) opt₁₂) opt₁₃) opt₁₄) opt₁₅) opt₁₆) opt₁₇) opt₁₈) opt₁₉).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_eighteen_opts base opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ opt₁₇ opt₁₈ permitted hBase
+      hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅ hOpt₆ hOpt₇ hOpt₈ hOpt₉ hOpt₁₀ hOpt₁₁ hOpt₁₂ hOpt₁₃ hOpt₁₄ hOpt₁₅ hOpt₁₆ hOpt₁₇ hOpt₁₈) hOpt₁₉
+
 -- ============================================================================
 -- SM3.B.4 — lockSet_consistent per-transition theorems
 -- ============================================================================
@@ -4790,12 +4993,14 @@ theorem lockSet_consistent_reply (callerTid : ThreadId)
     -- **WS-OD (`v0.35.4`)**: and at the head arity.
     (donatedHeadReplyId : Option ReplyId := none)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity.
+    (answeredFrameBelow : Option ReplyId) :
     ∀ p ∈ (lockSet_endpointReply callerTid cnRoot rTid donatedScId
               donatedOriginalOwnerTid replyId belowHeadReplyId outerCallerTid
-              donatedHeadReplyId answeredFrameAbove).pairs,
+              donatedHeadReplyId answeredFrameAbove answeredFrameBelow).pairs,
       p.fst.kind ∈ permittedKinds .reply :=
-  lockSet_consistent_base_plus_eight_opts _ _ _ _ _ _ _ _ _ _
+  lockSet_consistent_base_plus_nine_opts _ _ _ _ _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -4843,6 +5048,12 @@ theorem lockSet_consistent_reply (callerTid : ThreadId)
         cases answeredFrameAbove with
         | none => simp at hpp
         | some rid => simp at hpp; rw [← hpp]; simp; decide)
+    -- WS-HP HP3.1: and the frame below it, which the splice re-links upward —
+    -- a `.reply` kind for the same reason.
+    (by intro pp hpp
+        cases answeredFrameBelow with
+        | none => simp at hpp
+        | some rid => simp at hpp; rw [← hpp]; simp; decide)
 
 set_option maxHeartbeats 1000000 in
 /-- WS-SM SM3.B.4 for `.replyRecv` (audit-pass-3 + audit-pass-4:
@@ -4870,15 +5081,19 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
     -- path's detach writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
-    (answeredFrameAbove : Option ReplyId) :
+    (answeredFrameAbove : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
+    -- removal's splice writes.  A bound or membership left at this argument's
+    -- default is a statement about a different footprint.
+    (answeredFrameBelow : Option ReplyId) :
     ∀ p ∈ (lockSet_replyRecv callerTid cnRoot rTid epId newSenderTid
               donatedScId donatedOriginalOwnerTid replyId installsCaps
               donationServerTid redonatedScId belowHeadReplyId outerCallerTid
               queueNeighbour redonationOldHeadReplyId donatedHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid answeredFrameAbove).pairs,
+          preReturnOuterCallerTid answeredFrameAbove answeredFrameBelow).pairs,
       p.fst.kind ∈ permittedKinds .replyRecv :=
-  lockSet_consistent_base_plus_eighteen_opts _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  lockSet_consistent_base_plus_nineteen_opts _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -4973,6 +5188,12 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
     -- WS-RM (`v0.35.6`): the frame above the answered reply — a `.reply` kind.
     (by intro pp hpp
         cases answeredFrameAbove with
+        | none => simp at hpp
+        | some rid => simp at hpp; rw [← hpp]; simp; decide)
+    -- WS-HP HP3.1: and the frame below it, which the splice re-links upward —
+    -- a `.reply` kind for the same reason.
+    (by intro pp hpp
+        cases answeredFrameBelow with
         | none => simp at hpp
         | some rid => simp at hpp; rw [← hpp]; simp; decide)
 

@@ -423,10 +423,10 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlockingOnCore_replyArm_eq
 #check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev
 #check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next
-#check @lockSet_cancelIpcBlockingOnCore_size_le_twelve
+#check @lockSet_cancelIpcBlockingOnCore_size_le_thirteen
 #check @lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation
 #check @lockSet_cancelIpcBlockingOnCore_size_le_of_donation
-#check @lockSet_tcbSuspendOnCore_size_le_sixteen
+#check @lockSet_tcbSuspendOnCore_size_le_seventeen
 #check @lockSet_tcbSuspendOnCore_size_le
 -- ...and the frames that license it: the arms that declare no neighbour write
 -- none.
@@ -478,6 +478,8 @@ variable (bhR? : Option SeLe4n.ReplyId) (oc? : Option SeLe4n.ThreadId)
 -- WS-OD (`v0.35.4`): and two more again — the head the reclaim's pop clears, and
 -- the frame above a cancelled *middle* caller's own, which the detach unlinks.
 variable (rh? fa? : Option SeLe4n.ReplyId)
+-- **WS-HP HP3.4**: the frame the removal's splice re-links below the cut.
+variable (sb? : Option SeLe4n.ReplyId)
 -- WS-OD (`v0.35.4`): the donation cancellation's pop members.
 variable (dh1? dh2? : Option SeLe4n.ReplyId) (doc? : Option SeLe4n.ThreadId)
 
@@ -572,17 +574,17 @@ example (stPost : SystemState) (holder : SeLe4n.ThreadId) (t : TCB)
 
 /-- SM6.E.2: the single-core atomicity theorem applies (2PL bracket shape). -/
 example :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa?) ec
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa? sb?) ec
         (fun st => (cancelIpcBlocking st victim tcb, ())) s
       = (unwindAll ec
-          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa?).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa? sb?).lockAcquireSequence.reverse
           (cancelIpcBlocking
             (acquireAll ec
-              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa?).lockAcquireSequence s)
+              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa? sb?).lockAcquireSequence s)
             victim tcb),
          ()) :=
   cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? hEp? hNb?
-    bhR? oc? rh? fa? s
+    bhR? oc? rh? fa? sb? s
 
 /-- SM6.E.4: the donation atomicity companion applies (dispatcher form). -/
 example :

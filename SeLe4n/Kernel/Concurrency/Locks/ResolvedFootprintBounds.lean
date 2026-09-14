@@ -93,7 +93,7 @@ theorem lockSet_endpointReplyOnCore_size_le (st : SystemState)
     (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).size
       ≤ maxLockSetSize := by
   unfold lockSet_endpointReplyOnCore
-  exact lockSet_endpointReply_size_le _ _ _ _ _ _ _ _ _ _
+  exact lockSet_endpointReply_size_le _ _ _ _ _ _ _ _ _ _ _
 
 /-- The `replyRecv` resolved footprint — the widest IPC footprint the kernel
 declares.  **Twenty-one** members over all argument values on the widest path: a
@@ -111,7 +111,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le (st : SystemState)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
       ≤ maxLockSetSize :=
-  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD OD1.5: `none` extends nothing. -/
 private theorem extendOpt_none (S : LockSet) : lockSetExtendOpt S none = S := rfl
@@ -313,15 +313,23 @@ supply:
 * the **invoking** receiver's own pre-receive return is live exactly when it
   does not (`receivePreReturn?_of_sender`).
 
-So a rendezvous declares `4 + 13 = 17` and a blocking receive `4 + 15 = 19`, and
-nineteen bounds both.  Three of the ceiling's twenty-two are slack that no state
+So a rendezvous declares `4 + 14 = 18` and a blocking receive `4 + 16 = 20`, and
+twenty bounds both.  Three of the ceiling's twenty-three are slack that no state
 can take up; the remaining one is the exclusion the *next* theorem states, which
-needs a coherence fact and so cannot live here. -/
-theorem lockSet_endpointReplyRecvOnCore_size_le_nineteen (st : SystemState)
+needs a coherence fact and so cannot live here.
+
+**WS-HP HP3.1 moved this figure and not the two below it.**  The frame below the
+answered reply is declared on a mid-stack removal, and nothing *here* rules that
+out at the same time as the pop's three members -- that exclusion is the coherence
+fact's, so it belongs to the next theorem.  The two sharp bounds are therefore
+unchanged at eighteen and seventeen, which is what "the reachable bound does not
+move" means: this one is the union over argument values, not a statement about a
+reachable state. -/
+theorem lockSet_endpointReplyRecvOnCore_size_le_twenty (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
-      ≤ 19 := by
+      ≤ 20 := by
   unfold lockSet_endpointReplyRecvOnCore
   cases hS : receiveRendezvousSender? st endpointObjId with
   | some sender =>
@@ -331,15 +339,15 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_nineteen (st : SystemState)
         receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
       simp only [Option.map_none]
       exact Nat.le_trans
-        (lockSet_replyRecv_size_le_seventeen_of_no_preReturn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-        (by decide : (17 : Nat) ≤ 19)
+        (lockSet_replyRecv_size_le_eighteen_of_no_preReturn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+        (by decide : (18 : Nat) ≤ 20)
   | none =>
       -- A blocking receive: nothing is dequeued, so the new sender, the
       -- re-donated context and the frame its push would rewrite are all absent.
       rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
       simp only [Option.bind_none]
-      exact lockSet_replyRecv_size_le_nineteen_of_no_sender
-        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      exact lockSet_replyRecv_size_le_twenty_of_no_sender
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-RM (`v0.35.6`): and eighteen on a coherent state — exactly where PR
 #894's review left it.**
@@ -369,13 +377,17 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
         receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
       simp only [Option.map_none]
       exact Nat.le_trans
-        (lockSet_replyRecv_size_le_seventeen_of_no_preReturn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-        (by decide : (17 : Nat) ≤ 18)
+        (lockSet_replyRecv_size_le_eighteen_of_no_preReturn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+        (by decide : (18 : Nat) ≤ 18)
   | none =>
       rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
       simp only [Option.bind_none]
       cases hAbove : answeredReplyFrameAbove? st target with
       | none =>
+          -- WS-HP HP3.1: no frame above means no frame below, which needs no
+          -- coherence fact -- the splice's member is declared only on a mid-stack
+          -- removal.  That is what keeps this figure at eighteen.
+          rw [answeredReplyFrameBelow?_of_no_frameAbove st target hAbove]
           exact lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove
             _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       | some above =>
@@ -383,9 +395,9 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
           | none =>
               simp only [Option.map_none, Option.bind_none]
               exact Nat.le_trans
-                (lockSet_replyRecv_size_le_sixteen_of_no_sender_of_no_head
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide : (16 : Nat) ≤ 18)
+                (lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (by decide : (17 : Nat) ≤ 18)
           | some pr =>
               obtain ⟨scId, owner⟩ := pr
               have hHead : replyStackHead? st scId = none :=
@@ -394,9 +406,9 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
               simp only [Option.map_some, Option.bind_some, hHead,
                 replyStackBelowHead?_of_no_head st scId hHead]
               exact Nat.le_trans
-                (lockSet_replyRecv_size_le_sixteen_of_no_sender_of_no_head
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide : (16 : Nat) ≤ 18)
+                (lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (by decide : (17 : Nat) ≤ 18)
 
 /-- **WS-OD OD3.7: and one narrower still under the donation discipline —
 seventeen.**
@@ -419,7 +431,7 @@ undeclared.
 Neither figure moves `maxLockSetSize`: the parametric bound is what
 `boundedWait_under_2pl` and the WCRT surface consume, and it must stay true of
 every argument value.  What these give is a smaller number available where the
-state permits — the relationship `lockSet_cancelIpcBlockingOnCore_size_le_ten`
+state permits — the relationship `lockSet_cancelIpcBlockingOnCore_size_le_thirteen`
 already has to the ceiling. -/
 theorem lockSet_endpointReplyRecvOnCore_size_le_seventeen (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
@@ -432,13 +444,28 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_seventeen (st : SystemState)
   unfold lockSet_endpointReplyRecvOnCore
   cases hS : receiveRendezvousSender? st endpointObjId with
   | some sender =>
-      -- A rendezvous declares seventeen whatever the reply returns; neither the
-      -- owner merge nor the head exclusion is needed to stay inside seventeen.
+      -- A rendezvous: the invoker does not block, so its own pre-receive return
+      -- is absent.  **WS-HP HP3.1**: with the splice's member declared this branch
+      -- needs the owner merge to stay inside seventeen, where before the unmerged
+      -- eighteen sufficed -- so it case-splits on the returned donation, which is
+      -- exactly what `replyDonationOwnerIsAnsweredCaller` is for.
       rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
         receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
-      simp only [Option.map_none]
-      exact lockSet_replyRecv_size_le_seventeen_of_no_preReturn
-        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      cases hDon : endpointReplyServerDonation? st target with
+      | none =>
+          -- No donation: the pop's five members are absent too, and thirteen
+          -- bounds what is left.
+          simp only [Option.map_none, Option.bind_none]
+          exact Nat.le_trans
+            (lockSet_replyRecv_size_le_thirteen_of_no_preReturn_of_no_donation
+              _ _ _ _ _ _ _ _ _ _ _ _ _) (by decide : (13 : Nat) ≤ 17)
+      | some pr =>
+          obtain ⟨scId, owner⟩ := pr
+          have hEq : owner = target := hOwner scId owner hDon
+          subst hEq
+          simp only [Option.map_some, Option.map_none]
+          exact lockSet_replyRecv_size_le_seventeen_of_owner_eq_target_of_no_preReturn
+            _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   | none =>
       rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
       cases hDon : endpointReplyServerDonation? st target with
@@ -447,14 +474,17 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_seventeen (st : SystemState)
           -- but the invoker's own pre-receive return, so this is fourteen.
           simp only [Option.map_none, Option.bind_none]
           exact Nat.le_trans
-            (lockSet_replyRecv_size_le_fourteen_of_no_sender_of_no_donation
-              _ _ _ _ _ _ _ _ _ _ _ _ _ _) (by decide : (14 : Nat) ≤ 17)
+            (lockSet_replyRecv_size_le_fifteen_of_no_sender_of_no_donation
+              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) (by decide : (15 : Nat) ≤ 17)
       | some pr =>
           obtain ⟨scId, owner⟩ := pr
           have hEq : owner = target := hOwner scId owner hDon
           subst hEq
           cases hAbove : answeredReplyFrameAbove? st owner with
           | none =>
+              -- WS-HP HP3.1: no frame above means no frame below, with no
+              -- coherence fact -- which is why this figure does not move.
+              rw [answeredReplyFrameBelow?_of_no_frameAbove st owner hAbove]
               simp only [Option.map_some, Option.bind_none]
               exact lockSet_replyRecv_size_le_seventeen_of_owner_eq_target_of_no_sender_of_no_frameAbove
                 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
@@ -465,9 +495,9 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_seventeen (st : SystemState)
               simp only [Option.map_some, Option.bind_some, Option.bind_none, hHead,
                 replyStackBelowHead?_of_no_head st scId hHead]
               exact Nat.le_trans
-                (lockSet_replyRecv_size_le_fifteen_of_owner_eq_target_of_no_sender_of_no_head
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide : (15 : Nat) ≤ 17)
+                (lockSet_replyRecv_size_le_sixteen_of_owner_eq_target_of_no_sender_of_no_head
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (by decide : (16 : Nat) ≤ 17)
 
 /-- The resolved **receive** footprint.  Stated over the reply optional rather
 than at its default, so the receive-with-reply shape is bounded too. -/
@@ -507,7 +537,7 @@ theorem lockSet_notificationWaitOnCore_size_le (notificationId : SeLe4n.ObjId)
 -- §3  The cancellation teardown footprints
 -- ============================================================================
 
-/-- The parametric cancellation footprint: the victim's TCB plus thirteen
+/-- The parametric cancellation footprint: the victim's TCB plus fourteen
 optionals.  Stated over all of them, not at their defaults: a bound stated at
 fewer arguments would elaborate against the wider footprint with the missing
 ones defaulted, and say nothing about the shape the live arm declares. -/
@@ -520,17 +550,21 @@ theorem lockSet_cancelIpcBlocking_size_le (victimTid : SeLe4n.ThreadId)
     (holderSpliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
     (belowHeadReplyId : Option SeLe4n.ReplyId)
     (outerCallerTid : Option SeLe4n.ThreadId)
-    (reclaimHeadReplyId detachedFrameAboveReplyId : Option SeLe4n.ReplyId) :
+    (reclaimHeadReplyId detachedFrameAboveReplyId : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
+    (splicedFrameBelowReplyId : Option SeLe4n.ReplyId) :
     (lockSet_cancelIpcBlocking victimTid blockedEndpointObjId
         blockedNotificationObjId consumedReplyId returnedDonationSc donationHolderTid
         holderEndpointObjId holderSpliceNeighbors belowHeadReplyId outerCallerTid
-        reclaimHeadReplyId detachedFrameAboveReplyId).size
+        reclaimHeadReplyId detachedFrameAboveReplyId splicedFrameBelowReplyId).size
       ≤ maxLockSetSize := by
   unfold lockSet_cancelIpcBlocking maxLockSetSize
   -- WS-OD OD3.5: nine optionals — the donation hand-back's state-level lock.
   -- WS-OD OD3.7: eleven — the two objects the hand-back reaches below the head.
   -- WS-OD (`v0.35.4`): thirteen — the reclaimed head and the detached frame.
-  refine Nat.le_trans (size_le_13 _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
+  -- **WS-HP HP3.1**: fourteen — the frame below the cut, which the splice
+  -- re-links upward in the same step as the detach.
+  refine Nat.le_trans (size_le_14 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
   simp only [List.length_cons, List.length_nil]
   omega
 
@@ -552,18 +586,21 @@ theorem lockSet_cancelDonation_size_le (victimTid : SeLe4n.ThreadId)
   simp only [List.length_cons, List.length_nil]
   omega
 
-/-- WS-OD OD1.5: **the reply-arm shape of the cancellation footprint** — twelve
-over all argument values since WS-OD `v0.35.4`.
+/-- WS-OD OD1.5: **the reply-arm shape of the cancellation footprint** —
+**thirteen** over all argument values since WS-HP HP3.1 (twelve at `v0.35.4`).
 
 A `.blockedOnReply` victim is on no endpoint or notification queue, so those two
 members are `none` and eleven optionals remain: the consumed reply, the returned
 SchedContext, the donation holder, the holder's endpoint and its two splice
 neighbours (OD1.5), the frame below the head and the outer caller (OD3.7), the
-reclaimed head and the detached frame above (`v0.35.4`), and the state-level
-lock (OD3.5).  Stated parametrically so the resolved bound below composes it
-rather than re-running the arithmetic.  The reachable figure is ten: the
-reclaimed head is the consumed reply on every reachable state, and a caller
-with a frame above its own is owed no reclaim. -/
+reclaimed head and the detached frame above (`v0.35.4`), the frame below the cut
+(WS-HP HP3.1), and the state-level lock (OD3.5).  Stated parametrically so the
+resolved bound below composes it rather than re-running the arithmetic.  The
+reachable figure is still **ten**, unmoved by HP3.1: the reclaimed head is the
+consumed reply on every reachable state, and a caller with a frame above its own
+is owed no reclaim — so on a reachable reply arm the detached frame *and* the
+frame below it are both `none`, which is the exclusion
+`cancelSplicedFrameBelow?_of_no_frameAbove` states at the resolver. -/
 theorem lockSet_cancelIpcBlocking_reply_size_le (victimTid : SeLe4n.ThreadId)
     (consumedReplyId : Option SeLe4n.ReplyId)
     (returnedDonationSc : Option SeLe4n.SchedContextId)
@@ -572,46 +609,49 @@ theorem lockSet_cancelIpcBlocking_reply_size_le (victimTid : SeLe4n.ThreadId)
     (holderSpliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
     (belowHeadReplyId : Option SeLe4n.ReplyId)
     (outerCallerTid : Option SeLe4n.ThreadId)
-    (reclaimHeadReplyId detachedFrameAboveReplyId : Option SeLe4n.ReplyId) :
+    (reclaimHeadReplyId detachedFrameAboveReplyId : Option SeLe4n.ReplyId)
+    (splicedFrameBelowReplyId : Option SeLe4n.ReplyId) :
     (lockSet_cancelIpcBlocking victimTid none none consumedReplyId returnedDonationSc
         donationHolderTid holderEndpointObjId holderSpliceNeighbors
         belowHeadReplyId outerCallerTid reclaimHeadReplyId
-        detachedFrameAboveReplyId).size ≤ 12 := by
+        detachedFrameAboveReplyId splicedFrameBelowReplyId).size ≤ 13 := by
   unfold lockSet_cancelIpcBlocking
   simp only [Option.map_none, extendOpt_none]
-  refine Nat.le_trans (size_le_11 _ _ _ _ _ _ _ _ _ _ _ _) ?_
+  refine Nat.le_trans (size_le_12 _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
   simp only [List.length_cons, List.length_nil]
   omega
 
-/-- WS-OD OD1.5: **the no-donation shape is five.**  Without a donation there is
-no holder, so no abort, so none of the three members OD1.5 added, no below-head
-objects and no reclaimed head — what remains is the victim's own blocked object,
-its consumed reply and (WS-OD `v0.35.4`) the frame the detach unlinks, which is a
-reply-arm write that needs no donation. -/
+/-- WS-OD OD1.5: **the no-donation shape is six** (five before WS-HP HP3.1).
+Without a donation there is no holder, so no abort, so none of the three members
+OD1.5 added, no below-head objects and no reclaimed head — what remains is the
+victim's own blocked object, its consumed reply and (WS-OD `v0.35.4`, WS-HP
+HP3.1) the two frames the removal re-links, which are reply-arm writes that need
+no donation. -/
 theorem lockSet_cancelIpcBlocking_noDonation_size_le (victimTid : SeLe4n.ThreadId)
     (blockedEndpointObjId blockedNotificationObjId : Option SeLe4n.ObjId)
     (consumedReplyId : Option SeLe4n.ReplyId)
-    (detachedFrameAboveReplyId : Option SeLe4n.ReplyId) :
+    (detachedFrameAboveReplyId : Option SeLe4n.ReplyId)
+    (splicedFrameBelowReplyId : Option SeLe4n.ReplyId) :
     (lockSet_cancelIpcBlocking victimTid blockedEndpointObjId blockedNotificationObjId
         consumedReplyId none none none (none, none) none none none
-        detachedFrameAboveReplyId).size ≤ 5 := by
+        detachedFrameAboveReplyId splicedFrameBelowReplyId).size ≤ 6 := by
   unfold lockSet_cancelIpcBlocking
   simp only [Option.map_none, extendOpt_none]
-  refine Nat.le_trans (size_le_4 _ _ _ _ _) ?_
+  refine Nat.le_trans (size_le_5 _ _ _ _ _ _) ?_
   simp only [List.length_cons, List.length_nil]
   omega
 
-/-- WS-OD (`v0.35.4`): **the resolved cancellation footprint on a victim owed no
-donation is at most seven** — the victim, its own blocked object, its consumed
-reply, the frame the detach unlinks and, on the endpoint arm alone, its two
-splice neighbours.  Every donation-derived member is `none` here, each by its
-own `_of_no_donation` reading of the resolver this branch has found to be
-`none`. -/
+/-- WS-OD (`v0.35.4`), WS-HP HP3.1: **the resolved cancellation footprint on a
+victim owed no donation is at most eight** — the victim, its own blocked object,
+its consumed reply, the two frames the removal re-links (the one above the cut
+and the one below it) and, on the endpoint arm alone, its two splice neighbours.
+Every donation-derived member is `none` here, each by its own `_of_no_donation`
+reading of the resolver this branch has found to be `none`. -/
 theorem lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation (st : SystemState)
     (victimTid : SeLe4n.ThreadId) (tcb : TCB)
     (hT : st.getTcb? victimTid = some tcb)
     (hRes : Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb = none) :
-    (lockSet_cancelIpcBlockingOnCore st victimTid).size ≤ 7 := by
+    (lockSet_cancelIpcBlockingOnCore st victimTid).size ≤ 8 := by
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
   simp only [hRes, Option.map_none, cancelHolderBlockedEndpoint?_none,
@@ -622,19 +662,21 @@ theorem lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation (st : SystemState
   refine Nat.le_trans (Nat.add_le_add_right (lockSetExtendOpt_size_le _ _) 1) ?_
   have := lockSet_cancelIpcBlocking_noDonation_size_le victimTid (cancelBlockedEndpoint? tcb)
     (cancelBlockedNotification? tcb) (cancelConsumedReply? tcb)
-    (cancelDetachedFrameAbove? st tcb)
+    (cancelDetachedFrameAbove? st tcb) (cancelSplicedFrameBelow? st tcb)
   omega
 
-/-- WS-OD (`v0.35.4`): **…and on a victim owed a donation, at most twelve** —
-the reply arm, whose own endpoint and notification members are `none` and whose
-arm-selected neighbours are `(none, none)`, so the parametric reply-arm bound
-applies at the resolved arguments. -/
+/-- WS-OD (`v0.35.4`), WS-HP HP3.1: **…and on a victim owed a donation, at most
+thirteen** — the reply arm, whose own endpoint and notification members are
+`none` and whose arm-selected neighbours are `(none, none)`, so the parametric
+reply-arm bound applies at the resolved arguments.  The *reachable* figure stays
+ten: a caller owed a reclaim is the innermost live caller, so its frame has
+nothing above it, and both removal members are `none` there. -/
 theorem lockSet_cancelIpcBlockingOnCore_size_le_of_donation (st : SystemState)
     (victimTid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (holder : SeLe4n.ThreadId)
     (hT : st.getTcb? victimTid = some tcb)
     (hRes : Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb = some (scId, holder)) :
-    (lockSet_cancelIpcBlockingOnCore st victimTid).size ≤ 12 := by
+    (lockSet_cancelIpcBlockingOnCore st victimTid).size ≤ 13 := by
   obtain ⟨ep, rt, hIp⟩ := cancelledCallerDonation?_some_blockedOnReply hRes
   have hE : cancelBlockedEndpoint? tcb = none := by
     unfold cancelBlockedEndpoint?; rw [hIp]
@@ -645,36 +687,40 @@ theorem lockSet_cancelIpcBlockingOnCore_size_le_of_donation (st : SystemState)
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
   simp only [hE, hN, hNb, Option.map_none, extendOpt_none]
-  exact lockSet_cancelIpcBlocking_reply_size_le _ _ _ _ _ _ _ _ _ _
+  exact lockSet_cancelIpcBlocking_reply_size_le _ _ _ _ _ _ _ _ _ _ _
 
 /-- **The bound over all argument values of the footprint the cancellation
-declares: twelve.**
+declares: thirteen** (twelve before WS-HP HP3.1).
 
-The state-resolved footprint carries fifteen optional members at full arity —
+The state-resolved footprint carries sixteen optional members at full arity —
 the victim's blocked endpoint or notification, its consumed reply, the returned
 SchedContext, the donation holder, the victim's two splice neighbours, (WS-OD
 OD1.5) the holder's endpoint and *its* two splice neighbours, (WS-OD OD3.5) the
 state-level lock, (WS-OD OD3.7) the two objects the hand-back reaches below the
-reply-stack head, and (WS-OD `v0.35.4`) the head the reclaim clears and the frame
-the detach unlinks.  The bound is twelve because the members are
+reply-stack head, (WS-OD `v0.35.4`) the head the reclaim clears and the frame
+the detach unlinks, and (WS-HP HP3.1) the frame below the cut, which the splice
+re-links upward.  The bound is thirteen because the members are
 **arm-selected**, and selected for a checkable reason rather than by
 convention: every resolver keys on `tcb.ipcState`.  `cancelledCallerDonation?`
 answers `some` only for a `.blockedOnReply` victim, and so do the eight members
 derived from it; `cancelBlockedEndpoint?` / `cancelBlockedNotification?` answer
 `some` only for the other blocking states; `cancelArmSpliceNeighbors?` answers
 `(none, none)` on every arm but the one that splices; and
-`cancelDetachedFrameAbove?` is a reply-arm member.
+`cancelDetachedFrameAbove?` and `cancelSplicedFrameBelow?` are both reply-arm
+members, the second derived from the first's resolver.
 
-Arm by arm: the reply arm is `1 + 11 = 12`, the endpoint arm `1 + 3 = 4`, the
+Arm by arm: the reply arm is `1 + 12 = 13`, the endpoint arm `1 + 3 = 4`, the
 notification arm `1 + 1 = 2`, and `.ready` is the victim's TCB alone.  The
 **reachable** reply-arm figure is ten, as it was at OD3.7: the reclaimed head is
 the consumed reply on every reachable state (they merge by key), and a caller
 with a frame above its own is a middle caller, which no reclaim is resolved for
-— but a declared bound is the union over all argument values, and it is stated
+— so on a reachable state the detached frame and the frame below the cut are
+*both* `none`, which is why HP3.1 moves the declared bound and not the reachable
+one.  A declared bound is the union over all argument values, and it is stated
 as such. -/
-theorem lockSet_cancelIpcBlockingOnCore_size_le_twelve (st : SystemState)
+theorem lockSet_cancelIpcBlockingOnCore_size_le_thirteen (st : SystemState)
     (victimTid : SeLe4n.ThreadId) :
-    (lockSet_cancelIpcBlockingOnCore st victimTid).size ≤ 12 := by
+    (lockSet_cancelIpcBlockingOnCore st victimTid).size ≤ 13 := by
   cases hT : st.getTcb? victimTid with
   | some tcb =>
     cases hRes : Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb with
@@ -690,7 +736,7 @@ theorem lockSet_cancelIpcBlockingOnCore_size_le_twelve (st : SystemState)
     unfold lockSet_cancelIpcBlockingOnCore
     rw [hT]
     exact Nat.le_trans
-      (lockSet_cancelIpcBlocking_noDonation_size_le victimTid none none none none)
+      (lockSet_cancelIpcBlocking_noDonation_size_le victimTid none none none none none)
       (by omega)
 
 /-- …and therefore inside the declared ceiling, which is the form
@@ -698,7 +744,7 @@ theorem lockSet_cancelIpcBlockingOnCore_size_le_twelve (st : SystemState)
 theorem lockSet_cancelIpcBlockingOnCore_size_le (st : SystemState)
     (victimTid : SeLe4n.ThreadId) :
     (lockSet_cancelIpcBlockingOnCore st victimTid).size ≤ maxLockSetSize :=
-  Nat.le_trans (lockSet_cancelIpcBlockingOnCore_size_le_twelve st victimTid)
+  Nat.le_trans (lockSet_cancelIpcBlockingOnCore_size_le_thirteen st victimTid)
     (by unfold maxLockSetSize; omega)
 
 /-- …and the state-resolved donation cancellation, which adds nothing beyond the
@@ -719,11 +765,11 @@ on a key the root already holds (a mode merge, which costs nothing —
 `LockSet.size_insertOrMerge_of_containsKey`), then two more extensions: at most
 the root's size plus four. -/
 private theorem suspend_reclaim_tail_bound (R : LockSet) (a b : LockId × AccessMode)
-    (l : LockId) (o₁ o₂ : Option (LockId × AccessMode)) (hR : R.size ≤ 12)
+    (l : LockId) (o₁ o₂ : Option (LockId × AccessMode)) (hR : R.size ≤ 13)
     (hKey : (lockSetExtendOpt (lockSetExtendOpt R (some a)) (some b)).containsKey l = true) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt R (some a)) (some b)) (some (l, AccessMode.write))) o₁) o₂).size
-      ≤ 16 := by
+      ≤ 17 := by
   have h1 := lockSetExtendOpt_size_le R (some a)
   have h2 := lockSetExtendOpt_size_le (lockSetExtendOpt R (some a)) (some b)
   have hM : (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt R (some a)) (some b))
@@ -736,42 +782,45 @@ private theorem suspend_reclaim_tail_bound (R : LockSet) (a b : LockId × Access
     (lockSetExtendOpt R (some a)) (some b)) (some (l, AccessMode.write))) o₁) o₂
   omega
 
-/-- **WS-OD (`v0.35.4`): the resolved `.tcbSuspend` footprint is at most sixteen —
-the footprint that defines `maxLockSetSize`.**
+/-- **WS-OD (`v0.35.4`), WS-HP HP3.1: the resolved `.tcbSuspend` footprint is at
+most seventeen** (sixteen before HP3.1).
 
 Case by case on what the victim is and what it is owed:
 
 * no victim TCB: the root is the victim's lock alone, plus the caller's two
   reads — three;
-* a victim owed no donation: the cancellation root is at most seven
+* a victim owed no donation: the cancellation root is at most eight
   (`lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation`), the caller's two
   reads and the donation cancellation's five members plus the state-level lock
-  — fifteen at most;
+  — sixteen at most;
 * a victim owed a donation at the bottom of its stack: the root is at most
-  twelve and the tail is empty — fourteen;
+  thirteen and the tail is empty — fifteen;
 * a victim owed a donation above the bottom — the second pop: the root is at
-  most twelve, the caller's two reads make fourteen, the outer caller's write
+  most thirteen, the caller's two reads make fifteen, the outer caller's write
   **merges** with the read the root already holds
   (`lockSet_cancelIpcBlockingOnCore_covers_outerCaller_key`), and the second
-  frame's Reply and its caller make **sixteen**.
+  frame's Reply and its caller make **seventeen**.
 
 The last shape is a reply-arm victim at call depth ≥ 3 whose frame has
 something above it *and* is owed a reclaim — which no reachable state supplies
-(the detached-frame member and the reclaim are exclusive there), so the
+(the removal's two frame members and the reclaim are exclusive there), so the
 reachable figure is fifteen.  The bound is stated over all argument values, as
-every declared bound is. -/
-theorem lockSet_tcbSuspendOnCore_size_le_sixteen (st : SystemState)
+every declared bound is.
+
+It is **not** the footprint that sets the ceiling: since PR #894 and WS-RM that
+is `lockSet_endpointReplyRecvOnCore`, at twenty-three since HP3.2. -/
+theorem lockSet_tcbSuspendOnCore_size_le_seventeen (st : SystemState)
     (callerTid : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (targetTid : SeLe4n.ThreadId) :
-    (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).size ≤ 16 := by
+    (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).size ≤ 17 := by
   cases hT : st.getTcb? targetTid with
   | none =>
     have hTail : suspendDonationCancelTailOf? st targetTid = {} := by
       unfold suspendDonationCancelTailOf?; rw [hT]
-    have hRoot : (lockSet_cancelIpcBlockingOnCore st targetTid).size ≤ 5 := by
+    have hRoot : (lockSet_cancelIpcBlockingOnCore st targetTid).size ≤ 6 := by
       unfold lockSet_cancelIpcBlockingOnCore
       rw [hT]
-      exact lockSet_cancelIpcBlocking_noDonation_size_le targetTid none none none none
+      exact lockSet_cancelIpcBlocking_noDonation_size_le targetTid none none none none none
     unfold lockSet_tcbSuspendOnCore
     rw [hTail]
     simp only [Option.map_none, extendOpt_none, Option.isSome_none, Bool.false_eq_true,
@@ -826,12 +875,11 @@ theorem lockSet_tcbSuspendOnCore_size_le_sixteen (st : SystemState)
         exact suspend_reclaim_tail_bound _ _ _ _ _ _ hRoot hKey
 
 /-- …and therefore inside the ceiling — the form the census, the deadlock-freedom
-theorem and the WCRT surface consume.  The ceiling is sixteen *because* this
-footprint reaches it. -/
+theorem and the WCRT surface consume. -/
 theorem lockSet_tcbSuspendOnCore_size_le (st : SystemState) (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (targetTid : SeLe4n.ThreadId) :
     (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).size ≤ maxLockSetSize :=
-  Nat.le_trans (lockSet_tcbSuspendOnCore_size_le_sixteen st callerTid cnodeRootObjId targetTid)
+  Nat.le_trans (lockSet_tcbSuspendOnCore_size_le_seventeen st callerTid cnodeRootObjId targetTid)
     (by unfold maxLockSetSize; omega)
 
 /-- WS-SM SM3.D.6 / WS-OD (`v0.35.4`): the `KernelOperation` for a `.tcbSuspend`,

@@ -936,7 +936,7 @@ per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at elev
 (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
-At the value above, the declared lock-set ceiling is **22**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3960 µs** —
+At the value above, the declared lock-set ceiling is **23**, the RPi5 tick admits **14 µs** per lock, and the uniform 60 µs envelope is **4140 µs** —
 the canonical spelling `scripts/check_lock_ceiling_figures.py` holds to the Lean
 sources, so a raise that leaves a copy of any of the three behind is a build
 failure on the cut that makes it stale rather than on the cut that notices.  The figure is *derived* from this constant and must be
@@ -1043,7 +1043,21 @@ move; twenty-two is the union over argument values no state realises together.
 `admissibleCriticalSection` is unchanged at **15 µs** — `1000 / (22 · 3) = 15`,
 the same floor twenty-one gives — so this raise is the first that costs the
 admissible critical section nothing; the uniform 60 µs envelope moves
-3780 → 3960 µs. -/
-def maxLockSetSize : Nat := 22
+3780 → 3960 µs.
+
+**WS-HP HP3.2 takes it to twenty-three**, for the second half of the same
+removal: seL4-MCS's `reply_remove` *splices*, patching the frame **below** the cut
+to point past it, and HP6 makes this tree's removal do the same.  The member is
+declared one phase before the code that writes it, which is the plan's own
+numbering rule — a footprint that omits a written object is false, and a
+transition goes live only after the proofs that cover it.  It is resolved
+*through* the frame-above member (`answeredReplyFrameBelow?` asks
+`answeredReplyFrameAbove?` first), so a frame with nothing above it declares no
+below-member with no invariant at all, and the two reachable `.replyRecv` figures
+are unmoved at eighteen and seventeen; what absorbs it is the unconditional
+`lockSet_endpointReplyRecvOnCore_size_le_twenty`.  This raise *does* cost the
+admissible section: `1000 / (23 · 3) = 14` µs, and the uniform 60 µs envelope
+moves 3960 → 4140 µs. -/
+def maxLockSetSize : Nat := 23
 
 end SeLe4n.Kernel.Concurrency
