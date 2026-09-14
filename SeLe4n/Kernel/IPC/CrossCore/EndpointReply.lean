@@ -553,6 +553,187 @@ theorem answeredReplyFrameAbove?_eq (st : SystemState) (target : SeLe4n.ThreadId
     answeredReplyFrameAbove? st target = replyFrameAbove? st rid := by
   unfold answeredReplyFrameAbove?; rw [h]; rfl
 
+-- ============================================================================
+-- WS-HP HP1.1: the head-driven donation-pop trigger, at the answered caller
+-- ============================================================================
+
+/-- **WS-HP HP1.1: the Reply object a reply answers.**
+
+The expression `answeredReplyFrameAbove?`, `answeredReplyFrameBelow?` and
+`answeredFrameHeadContext?` are all resolved from, named once so the footprint
+members, the removal and the pop's trigger cannot disagree about *which* frame a
+reply answers.  It is the answered caller's own forward link -- the one
+`linkCallerReply` wrote and `consumeCallerReply` clears -- so every one of those
+sites must read it from the **pre**-state. -/
+def answeredReplyObject? (st : SystemState) (target : SeLe4n.ThreadId) :
+    Option SeLe4n.ReplyId :=
+  (st.getTcb? target).bind (·.replyObject)
+
+/-- The existing frame-above member is that resolver composed with the detach's
+own, so the shared expression has a consumer rather than a second spelling. -/
+theorem answeredReplyFrameAbove?_eq_bind (st : SystemState) (target : SeLe4n.ThreadId) :
+    answeredReplyFrameAbove? st target
+      = (answeredReplyObject? st target).bind (replyFrameAbove? st) := rfl
+
+/-- **WS-HP HP3.1: the frame *below* the answered one** -- the second object
+`spliceReplyFrameOut` writes, and the member both reply footprints declare for it
+once HP6 makes the removal a splice.
+
+Composed exactly as the frame-above member is, so the footprint and the splice
+read one answer to "which frame sits below the cut". -/
+def answeredReplyFrameBelow? (st : SystemState) (target : SeLe4n.ThreadId) :
+    Option SeLe4n.ReplyId :=
+  (answeredReplyObject? st target).bind (replyFrameBelow? st)
+
+/-- A thread holding no reply object has no frame below one. -/
+@[simp] theorem answeredReplyFrameBelow?_of_no_reply (st : SystemState)
+    (target : SeLe4n.ThreadId) (h : answeredReplyObject? st target = none) :
+    answeredReplyFrameBelow? st target = none := by
+  unfold answeredReplyFrameBelow?; rw [h]; rfl
+
+/-- The resolver, unfolded on a thread whose reply object resolves. -/
+theorem answeredReplyFrameBelow?_eq (st : SystemState) (target : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (h : answeredReplyObject? st target = some rid) :
+    answeredReplyFrameBelow? st target = replyFrameBelow? st rid := by
+  unfold answeredReplyFrameBelow?; rw [h]; rfl
+
+/-- **WS-HP HP1.1: the scheduling context the answered frame HEADS, with that
+context's current holder** -- the pair the donation pop takes its arguments from
+once HP4 lands.
+
+`replyFrameHeadContext?` answers *which* context, off the frame's own `.head`
+link and validated against that context's `scReply`; this pairs it with
+`SchedContext.boundThread`, which is the thread the pop unbinds.  Both halves are
+reads of the context the frame names, so the pop's `scId` and its `serverTid` can
+no longer disagree -- where the binding-driven trigger took `scId` from the
+recorded server's `.donated` binding and `serverTid` from the recorded server,
+leaving `returnDonatedSchedContext`'s own `boundThread` guard to catch a drift
+between them.  Under this trigger that guard is satisfied by construction, which
+is the honest direction: the operation reads the fact it used to check.
+
+**A context with no bound thread declines**, and that arm is unreachable today:
+`donateSchedContext` and `returnDonatedSchedContext` both leave `boundThread` a
+`some`, and `schedContextUnbind` refuses a `.donated` holder outright, so no
+reachable state has a context heading a stack while bound to nobody.  It is
+written as a refusal rather than assumed away because the refusal is what keeps
+this total -- and because lifting that unbind refusal, which becomes sound
+exactly once this trigger is live, is the one change that makes the arm
+reachable. -/
+def answeredFrameHeadContext? (st : SystemState) (target : SeLe4n.ThreadId) :
+    Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match answeredReplyObject? st target with
+  | none => none
+  | some rid =>
+    match replyFrameHeadContext? st rid with
+    | none => none
+    | some scId =>
+      match (st.getSchedContext? scId).bind (·.boundThread) with
+      | none => none
+      | some holder => some (scId, holder)
+
+/-- A thread holding no reply object answers no head. -/
+@[simp] theorem answeredFrameHeadContext?_of_no_reply (st : SystemState)
+    (target : SeLe4n.ThreadId) (h : answeredReplyObject? st target = none) :
+    answeredFrameHeadContext? st target = none := by
+  unfold answeredFrameHeadContext?; rw [h]
+
+/-- The resolver, unfolded on a thread whose reply object resolves. -/
+theorem answeredFrameHeadContext?_eq (st : SystemState) (target : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (h : answeredReplyObject? st target = some rid) :
+    answeredFrameHeadContext? st target
+      = (match replyFrameHeadContext? st rid with
+         | none => none
+         | some scId =>
+           match (st.getSchedContext? scId).bind (·.boundThread) with
+           | none => none
+           | some holder => some (scId, holder)) := by
+  unfold answeredFrameHeadContext?; rw [h]
+
+/-- **WS-HP HP1.2: what a `some` answer asserts** -- there is an answered frame,
+it heads the named context (with everything `replyFrameHeadContext?_eq_some`
+supplies about that), and the context is bound to the named holder. -/
+theorem answeredFrameHeadContext?_eq_some {st : SystemState} {target : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {holder : SeLe4n.ThreadId}
+    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    ∃ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid ∧
+      replyFrameHeadContext? st rid = some scId ∧
+      (st.getSchedContext? scId).bind (·.boundThread) = some holder := by
+  unfold answeredFrameHeadContext? at h
+  revert h
+  cases hRid : answeredReplyObject? st target with
+  | none => intro h; cases h
+  | some rid =>
+    simp only []
+    cases hHead : replyFrameHeadContext? st rid with
+    | none => intro h; cases h
+    | some scId0 =>
+      simp only []
+      cases hBt : (st.getSchedContext? scId0).bind (·.boundThread) with
+      | none => intro h; cases h
+      | some holder0 =>
+        simp only []
+        intro h
+        have hPair := Option.some.inj h
+        have h1 : scId0 = scId := congrArg Prod.fst hPair
+        have h2 : holder0 = holder := congrArg Prod.snd hPair
+        subst h1; subst h2
+        exact ⟨rid, rfl, hHead, hBt⟩
+
+/-- **WS-HP HP1.2: the pop's trigger and the splice's member are mutually
+exclusive.**  A frame with a frame above it heads nothing, so no reply both pops a
+donation and splices -- the exclusion that keeps the *reachable* footprint bound
+where HP3 raises the declared ceiling. -/
+theorem answeredFrameHeadContext?_none_of_frameAbove (st : SystemState)
+    (target : SeLe4n.ThreadId) (above : SeLe4n.ReplyId)
+    (hAbove : answeredReplyFrameAbove? st target = some above) :
+    answeredFrameHeadContext? st target = none := by
+  rw [answeredReplyFrameAbove?_eq_bind] at hAbove
+  cases hRid : answeredReplyObject? st target with
+  | none => exact answeredFrameHeadContext?_of_no_reply st target hRid
+  | some rid =>
+    rw [hRid] at hAbove
+    rw [answeredFrameHeadContext?_eq st target rid hRid,
+      replyFrameHeadContext?_of_frameAbove st rid above hAbove]
+
+/-- And the converse exclusion, at the member HP3 declares: a reply that pops a
+donation splices nothing. -/
+theorem answeredReplyFrameBelow?_none_of_headContext (st : SystemState)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    answeredReplyFrameBelow? st target = none := by
+  obtain ⟨rid, hRid, hHead, _⟩ := answeredFrameHeadContext?_eq_some h
+  rw [answeredReplyFrameBelow?_eq st target rid hRid,
+    replyFrameBelow?_of_headContext st rid scId hHead]
+
+/-- And the frame above is absent there too, which is the same exclusion read from
+the other side. -/
+theorem answeredReplyFrameAbove?_none_of_headContext (st : SystemState)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    answeredReplyFrameAbove? st target = none := by
+  obtain ⟨rid, hRid, hHead, _⟩ := answeredFrameHeadContext?_eq_some h
+  rw [answeredReplyFrameAbove?_eq_bind, hRid]
+  exact replyFrameAbove?_of_headContext st rid scId hHead
+
+/-- **WS-HP HP1.2: the trigger is a function of the store projections it reads** --
+the answered caller's TCB, every Reply and every SchedContext.  The frame lemma
+every step that writes no chain object crosses. -/
+theorem answeredFrameHeadContext?_congr {s1 s2 : SystemState} (target : SeLe4n.ThreadId)
+    (hTcb : s2.getTcb? target = s1.getTcb? target)
+    (hReply : ∀ rid : SeLe4n.ReplyId, s2.getReply? rid = s1.getReply? rid)
+    (hSc : ∀ scId : SeLe4n.SchedContextId,
+      s2.getSchedContext? scId = s1.getSchedContext? scId) :
+    answeredFrameHeadContext? s2 target = answeredFrameHeadContext? s1 target := by
+  unfold answeredFrameHeadContext? answeredReplyObject?
+  rw [hTcb]
+  cases (s1.getTcb? target).bind (·.replyObject) with
+  | none => rfl
+  | some rid =>
+    simp only [replyFrameHeadContext?_congr rid (hReply rid) hSc]
+    cases replyFrameHeadContext? s1 rid with
+    | none => rfl
+    | some scId => simp only [hSc scId]
+
 /-- WS-SM SM6.C.1: the concrete lock-set a cross-core `endpointReplyOnCore` on
 state `st` acquires — `lockSet_endpointReply` with the returned SchedContext +
 original owner **pre-resolved from `st`** via `endpointReplyServerDonation?` (the

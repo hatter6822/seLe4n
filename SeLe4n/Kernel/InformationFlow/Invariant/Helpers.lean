@@ -841,6 +841,94 @@ theorem detachReplyFrameAboveOrSelf_preserves_objectIndexSetComplete
     · exact storeObject_preserves_objectIndexSetComplete st _ above.toObjId _ hObjInv
         hObjSetInv hIdxComplete hS
 
+-- ----------------------------------------------------------------------------
+-- WS-HP HP1.5: the splice is invisible to every observer
+-- ----------------------------------------------------------------------------
+
+/-- **WS-HP HP1.5: a reply-stack store step preserves the projection**, and
+unconditionally -- no `objectObservable`-HIGH hypothesis on the written frame.
+
+`replyStackRewrite` says the stored Reply differs from the one it replaces in its
+two stack links alone, and `projectKernelObject` erases both
+(`projectKernelObject_reply_stackLinks_invariant`), so the write is not observable
+at any level.  Proved on the shared step rather than per operation, which is what
+makes the splice's extra store cost nothing here. -/
+theorem replyStackStoreStep_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) {s s' : SystemState}
+    (hIdxComplete : ∀ oid, s.objects[oid]? ≠ none → s.objectIndexSet.contains oid = true)
+    (hObjInv : s.objects.invExt) (h : replyStackStoreStep s s') :
+    projectState ctx observer s' = projectState ctx observer s := by
+  rcases h with rfl | ⟨k, x, v, hx, ⟨p, n, rfl⟩, _, hS⟩
+  · rfl
+  · exact storeObject_projectionStable_preserves_projection ctx observer s s' k.toObjId
+      _ (.reply x) hx
+      (projectKernelObject_reply_stackLinks_invariant ctx observer x p n)
+      (hIdxComplete k.toObjId (by rw [hx]; intro hc; cases hc))
+      hObjInv hS
+
+/-- WS-HP HP1.5: and it preserves index completeness, so the second step of a
+splice has the hypothesis the first one consumed. -/
+theorem replyStackStoreStep_preserves_objectIndexSetComplete {s s' : SystemState}
+    (hObjInv : s.objects.invExt) (hObjSetInv : s.objectIndexSet.table.invExt)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete s)
+    (h : replyStackStoreStep s s') : SeLe4n.Model.objectIndexSetComplete s' := by
+  rcases h with rfl | ⟨k, _, _, _, _, _, hS⟩
+  · exact hIdxComplete
+  · exact storeObject_preserves_objectIndexSetComplete s _ k.toObjId _ hObjInv
+      hObjSetInv hIdxComplete hS
+
+/-- WS-HP HP1.5: and the index set's own table invariant, for the same reason. -/
+theorem replyStackStoreStep_preserves_objectIndexSet_invExt {s s' : SystemState}
+    (hObjSetInv : s.objectIndexSet.table.invExt) (h : replyStackStoreStep s s') :
+    s'.objectIndexSet.table.invExt := by
+  rcases h with rfl | ⟨k, _, _, _, _, _, hS⟩
+  · exact hObjSetInv
+  · exact storeObject_preserves_objectIndexSet_invExt s _ k.toObjId _ hObjSetInv hS
+
+/-- **WS-HP HP1.5: `spliceReplyFrameOut` preserves the projection.**
+
+Two reply-link rewrites, each invisible, so the composite is -- which is why
+moving from `severAtCut` to `spliceOutTheCut` costs the information-flow surface
+nothing: the extra write is at a third key and lands in fields the projection
+already erases. -/
+theorem spliceReplyFrameOut_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hObjInv : st.objects.invExt)
+    (h : spliceReplyFrameOut st rid = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  obtain ⟨mid, h1, h2⟩ := spliceReplyFrameOut_store_chain hObjInv h
+  refine (replyStackStoreStep_preserves_projection ctx observer ?_
+    (h1.objects_invExt hObjInv) h2).trans
+    (replyStackStoreStep_preserves_projection ctx observer hIdxComplete hObjInv h1)
+  exact replyStackStoreStep_preserves_objectIndexSetComplete hObjInv hObjSetInv hIdxComplete h1
+
+/-- WS-HP HP1.5: and the fold, for the callers that cannot fail. -/
+theorem spliceReplyFrameOutOrSelf_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (spliceReplyFrameOutOrSelf st rid)
+      = projectState ctx observer st := by
+  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+  · rw [h]
+  · exact spliceReplyFrameOut_preserves_projection ctx observer hIdxComplete hObjSetInv hObjInv h
+
+/-- WS-HP HP1.5: the fold preserves index completeness. -/
+theorem spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete
+    (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st) :
+    SeLe4n.Model.objectIndexSetComplete (spliceReplyFrameOutOrSelf st rid) := by
+  obtain ⟨mid, h1, h2⟩ := spliceReplyFrameOutOrSelf_store_chain st rid hObjInv
+  exact replyStackStoreStep_preserves_objectIndexSetComplete (h1.objects_invExt hObjInv)
+    (replyStackStoreStep_preserves_objectIndexSet_invExt hObjSetInv h1)
+    (replyStackStoreStep_preserves_objectIndexSetComplete hObjInv hObjSetInv hIdxComplete h1) h2
+
 /-- **WS-RM (`v0.35.6`): `removeCallerReplyFrame` preserves the projection** under
 exactly the hypothesis the consume alone needed.  The detach half is
 unconditional (`projectKernelObject` erases `Reply.prev`), so taking the frame off
