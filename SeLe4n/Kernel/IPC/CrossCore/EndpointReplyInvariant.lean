@@ -923,8 +923,8 @@ theorem removeCallerReplyFrame_tcb_fields_backward
   intro s tx hObj
   rw [removeCallerReplyFrame_eq] at hStep
   obtain ⟨ty, hTy, h1, h2, h3, h4⟩ := consumeCallerReply_tcb_fields_backward _ st' caller rid
-    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep s tx hObj
-  exact ⟨ty, detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv s ty hTy, h1, h2, h3, h4⟩
+    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep s tx hObj
+  exact ⟨ty, spliceReplyFrameOutOrSelf_tcb_backward st rid hObjInv s ty hTy, h1, h2, h3, h4⟩
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D transport (T1): every TCB observable after `endpointReplyOnCore`

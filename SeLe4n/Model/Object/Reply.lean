@@ -49,7 +49,7 @@ two of them at once.
 
 Only the head carries the context.  That is the whole point of the encoding: a
 frame taken out of the middle of a stack repairs its two neighbours and nothing
-else (`detachReplyFrameAbove` above the cut, `Reply.consumed` at the frame
+else (`spliceReplyFrameOut` above the cut, `Reply.consumed` at the frame
 itself), where a per-frame context field would have to be
 cleared on every frame below the cut — an `O(depth)` walk, or, left undone, a
 frame that names a context forever and can never be retyped or linked again. -/
@@ -123,7 +123,7 @@ The pop at the head clears the popped frame's two links in its own store
 (`storeDonationHeadClear`), *before* the caller link is consumed; a frame cut out
 of the middle loses both of its own links in the very record that clears its
 caller (`Reply.consumed`, which is not the head arm), while the neighbour above
-it is repaired first by `detachReplyFrameAbove`.  Either way a Reply whose
+it is repaired first by `spliceReplyFrameOut`.  Either way a Reply whose
 `caller` is `none` carries no link, and conversely a Reply that carries a link
 has a caller still blocked on it.  That is what makes
 `Reply.isFree` — no caller, no links — the exact `O(1)` test for "this object may
@@ -197,7 +197,7 @@ re-verified at `v0.35.40`; `v0.35.14` claimed upstream splices and cited a line
 that is in no release).  Keeping the frames below is `spliceOutTheCut`, an
 improvement neither kernel has taken yet; WS-HP HP6 takes it here.
 
-**Both paths do.**  The cancellation path runs `detachFrameAboveThreadReply`
+**Both paths do.**  The cancellation path runs `spliceThreadReplyFrameOut`
 immediately before `consumeReplyLink`, and the reply path runs
 `removeCallerReplyFrame` — the detach and the consume as one step, called by
 `endpointReplyOnCore` and by both single-core spines.  Until WS-RM the reply path

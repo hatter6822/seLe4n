@@ -492,14 +492,14 @@ open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`)** micro-frame: the *detach* frames every core's slice —
 its one write is a `.reply` store, so every TCB is identical and the scheduler
 is untouched. -/
-theorem detachReplyFrameAboveOrSelf_passiveServerIdleFrameOnCore
+theorem spliceReplyFrameOutOrSelf_passiveServerIdleFrameOnCore
     (st : SystemState) (rid : SeLe4n.ReplyId) {c : CoreId}
     (hObjInv : st.objects.invExt) :
-    passiveServerIdleFrameOnCore st (detachReplyFrameAboveOrSelf st rid) c := by
+    passiveServerIdleFrameOnCore st (spliceReplyFrameOutOrSelf st rid) c := by
   refine ⟨fun tid tcb' h hU hQ hC _ => ?_⟩
-  rw [detachReplyFrameAboveOrSelf_scheduler_eq st rid] at hQ hC
+  rw [spliceReplyFrameOutOrSelf_scheduler_eq st rid] at hQ hC
   exact ⟨tcb', (getTcb?_eq_some_iff st tid tcb').mpr
-    (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcb'
+    (spliceReplyFrameOutOrSelf_tcb_backward st rid hObjInv _ tcb'
       ((getTcb?_eq_some_iff _ tid tcb').mp h)), hU, hQ, hC, rfl⟩
 
 open SeLe4n.Model.SystemState in
@@ -511,9 +511,9 @@ theorem removeCallerReplyFrame_passiveServerIdleFrameOnCore
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
     passiveServerIdleFrameOnCore st st' c := by
   rw [removeCallerReplyFrame_eq] at hStep
-  exact (detachReplyFrameAboveOrSelf_passiveServerIdleFrameOnCore st rid hObjInv).trans
+  exact (spliceReplyFrameOutOrSelf_passiveServerIdleFrameOnCore st rid hObjInv).trans
     (consumeCallerReply_passiveServerIdleFrameOnCore _ st' caller rid
-      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep)
+      (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep)
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D.2 micro-frame: `cleanupPreReceiveDonation` frames every core's

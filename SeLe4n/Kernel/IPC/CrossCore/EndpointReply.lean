@@ -1865,7 +1865,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_pop
 /-- **WS-RM (`v0.35.6`)**: the frame the reply leg's detach unlinks is a declared
 write of the resolved `.reply` footprint.
 
-The reply-path twin of `lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove`,
+The reply-path twin of `lockSet_cancelIpcBlockingOnCore_covers_splicedFrameAbove`,
 which the cancellation path has carried since `v0.35.4`.  It is the relation the
 Tier 3 anchor over this footprint's definition does not make: that anchor asks
 that `answeredReplyFrameAbove? st target` *occur* in the definition, and a member
@@ -1874,7 +1874,7 @@ occurring is not a member being a declared write at the mode the detach needs.
 Like every member of this family the resolution is on the pre-state, which is
 what `runUnderDeclaredLockSet` re-resolves and refuses on change (WS-RR RR7.12);
 the bracket, not the member, is where the two states are reconciled. -/
-theorem lockSet_endpointReplyOnCore_covers_detachedFrameAbove
+theorem lockSet_endpointReplyOnCore_covers_splicedFrameAbove
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (above : SeLe4n.ReplyId)
     (hAbove : answeredReplyFrameAbove? st target = some above) :
@@ -1887,7 +1887,7 @@ theorem lockSet_endpointReplyOnCore_covers_detachedFrameAbove
 set_option maxHeartbeats 1000000 in
 /-- **WS-RM (`v0.35.6`)**: and `.replyRecv`'s, which is the same detach because
 its reply leg is the `.reply` arm's transition. -/
-theorem lockSet_endpointReplyRecvOnCore_covers_detachedFrameAbove
+theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameAbove
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) (above : SeLe4n.ReplyId)
     (hAbove : answeredReplyFrameAbove? st target = some above) :
@@ -1903,7 +1903,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_detachedFrameAbove
 declared write of the resolved `.reply` footprint too — the second half of
 `reply_remove`'s write set.
 
-HP6 makes `detachReplyFrameAboveOrSelf` a splice, which patches the frame below
+HP6 makes `spliceReplyFrameOutOrSelf` a splice, which patches the frame below
 the cut to point past it (`next := .frame above`).  A footprint that names only
 the frame above would then be **false** of the operation, which this project
 rates worse than a wide one — so the member is declared here, one phase before
@@ -1916,7 +1916,7 @@ removed from the middle of anything, so it declares no below-member and the
 *reachable* footprint does not widen.  That is why HP3.2 moved the
 unconditional `.replyRecv` bound (19 → 20) and left the two reachable ones at
 eighteen and seventeen. -/
-theorem lockSet_endpointReplyOnCore_covers_detachedFrameBelow
+theorem lockSet_endpointReplyOnCore_covers_splicedFrameBelow
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (below : SeLe4n.ReplyId)
     (hBelow : answeredReplyFrameBelow? st target = some below) :
@@ -1929,7 +1929,7 @@ theorem lockSet_endpointReplyOnCore_covers_detachedFrameBelow
 set_option maxHeartbeats 1000000 in
 /-- **WS-HP HP3.3**: and `.replyRecv`'s, which is the same removal because its
 reply leg is the `.reply` arm's transition. -/
-theorem lockSet_endpointReplyRecvOnCore_covers_detachedFrameBelow
+theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameBelow
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) (below : SeLe4n.ReplyId)
     (hBelow : answeredReplyFrameBelow? st target = some below) :

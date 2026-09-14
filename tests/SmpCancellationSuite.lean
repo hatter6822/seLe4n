@@ -129,17 +129,17 @@ open SeLe4n.Testing
 #check @cancelledCallerAlreadyBound
 -- WS-OD (`v0.35.4`): the teardown footprint's own new members.
 #check @cancelReclaimHead?
-#check @cancelDetachedFrameAbove?
+#check @cancelSplicedFrameAbove?
 #check @cancelDonationPopMembers?
 #check @lockSet_cancelIpcBlocking_reclaim_head_write_mem
-#check @lockSet_cancelIpcBlocking_detached_frame_above_write_mem
+#check @lockSet_cancelIpcBlocking_spliced_frame_above_write_mem
 #check @lockSet_cancelIpcBlocking_below_head_write_mem
 #check @lockSet_cancelIpcBlocking_outer_caller_containsKey
 #check @lockSet_cancelDonation_head_write_mem
 #check @lockSet_cancelDonation_below_head_write_mem
 #check @lockSet_cancelDonation_outer_caller_containsKey
 #check @lockSet_cancelIpcBlockingOnCore_covers_reclaim
-#check @lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove
+#check @lockSet_cancelIpcBlockingOnCore_covers_splicedFrameAbove
 
 -- SM6.E.2/.4 2PL atomicity (single-core + cross-core forms):
 #check @cancelIpcBlocking_atomic_under_lockSet
@@ -1988,7 +1988,7 @@ private def runFrameHeadReclaimChecks : IO Unit := do
     (decide (cancelReclaimHead? stFrameHeadReclaim victimTid tcb = some rId
       ∧ cancelReclaimHead? stFrameHeadReclaim victimTid tcb = tcb.replyObject))
   assertBool "a reclaim excludes both removal members (no detach, no splice)"
-    (decide (cancelDetachedFrameAbove? stFrameHeadReclaim tcb = none
+    (decide (cancelSplicedFrameAbove? stFrameHeadReclaim tcb = none
       ∧ cancelSplicedFrameBelow? stFrameHeadReclaim tcb = none))
   -- (iii) The reclaim runs: the reservation comes back to the victim, the server
   -- is unbound, the stack head is popped and the replenishment migrates home.

@@ -1,3 +1,78 @@
+## v0.35.41 — WS-HP HP6.1: the removal family renamed, and the rename's own sweep
+
+The non-head reply-frame removal is renamed for the operation it becomes, with no
+semantic change: `detachReplyFrameAbove{,OrSelf}` → `spliceReplyFrameOut{,OrSelf}`
+(the prefix carries the fold and every `_*` lemma), `detachFrameAboveThreadReply`
+→ `spliceThreadReplyFrameOut`, `cancelDetachedFrameAbove?` →
+`cancelSplicedFrameAbove?` (pairing it with HP1's `cancelSplicedFrameBelow?`),
+`detachedFrame{Above,Below}` → `splicedFrame…` in the four footprint coverage
+theorems and the one footprint parameter, `replyFrameAbove?_of_detach_store` →
+`_of_splice_store`, and three test-side names.  **545 occurrences over 593 lines
+in 27 modules**, 17 Tier 3 anchors and five live documents.  The full build, the
+staged anchor and the four touched suites (`lock_set_suite`,
+`smp_cancellation_suite`, `smp_cross_core_reply_suite`, `smp_ipc_suite`) are green
+either side — which is the whole point of landing the rename alone: it separates
+rename breakage from the semantic breakage HP6.3 can produce, and it lets the ~37
+proof rewrites the splice's algebra needs happen once, under the final names.
+
+**The name is one cut ahead of the body, and that is pinned rather than
+disclosed.**  What `spliceReplyFrameOut` writes today is `above.prev := none` —
+the sever — and HP6.3 replaces it with `above.prev := below`.  A name promising an
+improvement the code lacks is the shape this project forbids leaving unscheduled,
+so three things carry it.  The primitive's docstring states what it writes at this
+version, names the row that completes it, and separates **two** facts that a first
+draft of this entry conflated: `cancelledMiddleCallerPolicy` is the *declared*
+policy and still reads `.severAtCut`, while `spliceReplyFrameOutOrSelf_store_cases`
+is the *body's* write, stated as `{ a with prev := none }` at the frame above — so
+the splice cannot land without changing that lemma's statement.  What is **not**
+the pin is `cancelledMiddleCaller_severs_at_cut`, which this cut first cited as
+one: its policy conjunct is `rfl` on the constant and its cut shape (`hCut : r.prev
+= none`) is a *hypothesis*, so it is a statement about the **pop** given a severed
+cut and says nothing about the removal that produces one.  That is this project's
+own rule — a theorem whose conclusion is one of its own hypotheses pins nothing —
+caught in the docstring written to disclose an interim.  The **frozen** family
+keeps its `frozenDetach…` names, because it still severs and HP8 renames it in the
+cut that makes it splice — a `frozenDetach…` beside a `splice…` is the schedule,
+not a drift.  And the English word "detach" in prose describing *what the
+operation does* was deliberately left alone: it is accurate at this version, and
+prose follows behaviour at HP6.3–HP6.4 rather than following the name here.
+
+**A rename is a sweep, and this one found a dead citation.**  WS-RM RM1.1 retired
+`detachCancelledCallerFrame` at `v0.35.6`, and four **live** claims still named
+it: `CLAUDE.md` / `AGENTS.md`'s WS-OD "what new code must respect" item 5, and
+`SELE4N_SPEC.md` §8.12.7 twice.  That is the tautological-pin shape one artefact
+over — prose citing a declaration that does not exist reads in a document exactly
+like prose citing one that does, and nothing fails.  All four now name
+`spliceThreadReplyFrameOut`, the live successor.  The closed WS-RM plan keeps its
+own era's spellings, with a name-mapping note at its head so a reader resolves
+them rather than searching for symbols that are gone; `CHANGELOG.md` is untouched
+below this entry, because rewriting a landed entry's names is the error `v0.35.40`
+retracted.
+
+**Three plan defects fixed in the same cut**, each found by reading rather than by
+a gate.  `spliceReplyFrameOut_eq_detach_of_no_frame_below` and
+`…_eq_sever_of_no_frame_below` were two spellings of one lemma in one plan (§3.4
+and the acceptance gate against HP6.3's row); the tree will carry
+`_eq_sever_of_no_frame_below`, since "detach" is the retired word and `severAtCut`
+is the policy the `none` branch degenerates to.  HP6.1's own row claimed "~500
+occurrences across 42 modules" from a count that double-counted the
+`leancodeview` overlay; the landed figure is measured.  And the "beside, then
+repoint" narrative named both sides of the rename it was explaining, so it went
+stale on contact with its own remedy; it is name-stable now.
+
+**Two baselines refreshed, with the measurement that neither loosened anything.**
+`scripts/store_reader_hygiene_baseline.txt` named 24 retired declarations in its
+`STORE_READ_SPEC_SITE` inventory — diagnostic rows, so they would have rotted
+silently — and is re-anchored.  Every **enforced** figure is byte-identical
+(`RAW_MATCH_*` all eight, `SORRY_COUNT`, `AXIOM_COUNT`, `STORE_READ_CODE`, and the
+39-row `RAW_SITE` floor), so the re-anchor is a tightening plus a diagnostic
+refresh rather than a ratchet running backwards: eight should-grow floors rise
+(`GETTCB_ADOPTION` 2403 → 2479 among them).  `CLAUDE.md` / `AGENTS.md`'s
+large-files bullet block is refreshed from `find_large_lean_files.sh`, which the
+plan's growth had put 132 lines out of tolerance.
+
+Version bumped 0.35.40 → 0.35.41.
+
 ## v0.35.40 — WS-HP: the upstream attribution retracted, and what re-reading the source confirmed
 
 `v0.35.14` asserted that seL4-MCS's `reply_remove` splices a middle reply frame

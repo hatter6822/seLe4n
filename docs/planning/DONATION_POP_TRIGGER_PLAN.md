@@ -4,7 +4,7 @@
 > **Predecessor finding**: [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
 > table C, registered `v0.35.14` — the removal does not preserve the donation
 > accounting at reply-stack depth ≥ 3.
-> **Sub-task count**: 43 across 9 phases (HP1..HP9), each phase numbered in the
+> **Sub-task count**: 44 across 9 phases (HP1..HP9), each phase numbered in the
 > order it is to be implemented.
 
 ## Context — why this exists
@@ -16,7 +16,7 @@ out of scope for a cut, the audit "must split the work into the proper sequence
 of PRs … rather than treating documentation surgery as a substitute for the code
 change." The debt row is the bookkeeping; this plan is the sequence.
 
-**The defect.** `detachReplyFrameAbove` writes `above.prev := none`, so every
+**The defect.** `spliceReplyFrameOut` writes `above.prev := none`, so every
 frame *below* a cut leaves the context's reply stack (`severAtCut`). The later
 pop then reads the frame above the cut as the bottom and binds that caller
 `.bound scId`. On a three-frame stack the reservation settles on a thread
@@ -94,7 +94,7 @@ Three facts, each checkable in the tree:
    (`SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean`) resolves
    `recordedReplyServer? st target`, then `endpointReplyDonation?` on that
    server. Nothing reads the answered frame's `next`.
-2. **The removal drops the tail.** `detachReplyFrameAbove`
+2. **The removal drops the tail.** `spliceReplyFrameOut`
    (`SeLe4n/Kernel/IPC/Operations/Endpoint.lean`) stores
    `{ a with prev := none }` and never writes the frame below.
 3. **The equivalence that licenses (1) is unstated.**
@@ -190,7 +190,7 @@ it. Inertness buys nothing against a gate that asks what a declaration owes.
 
 ### 3.5 The depth-≤ 2 case is unchanged, definitionally
 
-`spliceReplyFrameOut_eq_detach_of_no_frame_below` is the load-bearing lemma of
+`spliceReplyFrameOut_eq_sever_of_no_frame_below` is the load-bearing lemma of
 the workstream: where the cut frame is the bottom of its stack — every stack of
 depth two, and every reply in a tree with no donation — the splice **is** the
 sever. Every later repair is then a case split whose `none` branch is the
@@ -634,7 +634,7 @@ difference.
 | HP3 | The footprint member and the ceiling, declared ahead of the code | 5 |
 | HP4 | The reply path's trigger flips (one cut) | 7 |
 | HP5 | The cancellation path's trigger flips (one cut) | 5 |
-| HP6 | The splice replaces the sever (one cut) | 8 |
+| HP6 | The splice replaces the sever (HP6.1 and HP6.2 land separately; HP6.3-HP6.9 are one cut) | 9 |
 | HP7 | The three stated hypotheses retire | 4 |
 | HP8 | The frozen mirror | 3 |
 | HP9 | Witnesses, anchors, documentation, closure | 5 |
@@ -808,7 +808,7 @@ that the trigger resolves, as `sd052b_pre_donation_frame_heads_the_context` does
 without one, a frame heading nothing makes the pop the identity and every downstream
 check measures the fixture instead of the arm.
 
-### HP6 — The splice replaces the sever (8 sub-tasks)
+### HP6 — The splice replaces the sever (9 sub-tasks; HP6.1 landed at `v0.35.41`)
 
 One cut: both removal paths call one step, and `removeCallerReplyFrame`'s
 algebra is stated over it.
@@ -821,16 +821,79 @@ the statement, so the splice and its caller land together.  That is why HP6.1–
 sit below HP4 and HP5 in the numbering rather than above them: the splice cannot
 be landed earlier, and HP6.4 was always going to need HP4 and HP5 anyway (§4).
 
+**Three measurements taken before writing code reshaped these rows** (`v0.35.41`);
+each is a correction to this section rather than a discovery about the kernel.
+
+1. **"Beside, then repoint" is the wrong shape.**  The rows used to add a second
+   primitive *beside* the existing one and repoint the two callers.  Measured over
+   the code view: the removal family has **388** references (254 of them its
+   `OrSelf` fold), `removeCallerReplyFrame` **380**, and
+   `DualQueueMembership.lean` alone holds 89 + 142.  A second primitive would
+   leave ~37 lemmas and ~254 references watching a definition nothing reaches —
+   the tautological-pin shape this project retires.  So the definition changes
+   **in place**, under the final names, and the rename comes first because it
+   carries no semantics and gives a green checkpoint either side of it.
+2. **The below side must not refuse** — §3.4 said "fail-closed on either
+   neighbour failing to reciprocate, exactly as the detach is today", and that
+   breaks `spliceReplyFrameOutOrSelf`'s soundness: the fold's whole
+   justification is that a *refusal* means nothing links down to the cut frame
+   (`_unreferenced`, consumed by the `consumeCallerReply` after it).  A below-side
+   refusal folded to the identity leaves a reciprocating frame above still naming
+   the cut frame while the caller clears its links — the wedge WS-RM exists to
+   prevent.  So the link below is an `Option`: not resolving, not reciprocating,
+   or naming the frame above means *not followed*, and the removal degenerates to
+   `severAtCut` there.  That is fail-closed on its own terms (writing
+   `above.prev := some below` on a stale link stops a later walk mid-chain, since
+   every walk validates reciprocity) and it keeps this operation's refusal set
+   **exactly** the detach's, so every refusal theorem carries verbatim.
+3. **One composed store step, because that keeps the case analysis two-way.**  37
+   of the 47 sites that destructure `_cases` are inside `Endpoint.lean` itself and
+   only 10 are outside; a three-way split changes the pattern at all 47, where a
+   composed `spliceReplyFrameStores` leaves the arity alone and proves the
+   two-store analysis once.  Statement-level changes are then five lemmas with
+   ~15 callers in total — `_cases`, `_objects_ne`, `_decision`,
+   `_objects_rewrite` and `replyFrameAbove?_of_detach_store` — while
+   `_reply_rewrite` needs none, because `replyStackRewrite` is already general
+   over both links and transitive.
+
+4. **The footprint repoint must come BEFORE the splice, and was numbered last.**
+   The two reply footprints resolve their donation members through
+   `endpointReplyServerDonation?` while the pop reads `replyFrameHeadHolder?`.
+   Under `severAtCut` those agree — `severAtCut_pop_leaves_no_head` (HP2.3) is
+   exactly that statement — which is why HP4 could safely leave them and hold the
+   gap with `lockSet_endpointReplyOnCore_covers_headDrivenPop`.  **The splice is
+   the change that makes them disagree.**  So in any window where the splice has
+   landed and the repoint has not, the footprint can omit a SchedContext and a TCB
+   the pop writes, which is a *false* footprint — and this project rates that worse
+   than a wide one.  That is the numbering rule's semantic half (*a transition goes
+   live only after the declarations that cover it*), and the row is now **HP6.2**.
+   It is landable there because under the sever the two resolvers agree, so the
+   repoint is behaviour-preserving, and the 18 → 17 merge becomes definitional
+   under the head-driven trigger HP4 already landed.  Renumbering was free: no
+   HP6 sub-task ID had reached a `CHANGELOG.md` entry.
+
+**And HP6 closes BOTH surviving divergences from upstream, which these rows did
+not claim.**  The WS-RM section records two, each with this kernel the weaker
+side.  The splice **writes** the frame below's upward link where `severAtCut`
+leaves it stale, closing the first by construction; and `consumeCallerReply`
+falsifies `prevLinkReciprocal` on a frame that is not a head — the second — which
+the splice closes because the two reciprocal links are written *together*, so
+the non-head case is preserved outright.  HP6.7 is therefore a strengthening
+rather than a restatement, and the post-HP6 position is **upstream parity on the
+removal plus an accounting property neither kernel has**, which is a better
+v1.0.0 claim than the parity one this workstream was originally framed around.
+
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| HP6.1 | `spliceReplyFrameOut` beside `detachReplyFrameAbove` (§3.4): two Reply stores, fail-closed on either neighbour not reciprocating, plus the `…OrSelf` fold both removal paths need | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | M |
-| HP6.2 | **`spliceReplyFrameOut_eq_detach_of_no_frame_below`** (§3.5) and the full read/write algebra — `_cases`, `_objects_frame` (three keys), `_tcb_eq`, `_reply_rewrite`, `_scheduler_eq`, `_machine_eq`, `_cdt_eq`, `_preserves_objects_invExt`. Each entry composes `detachReplyFrameAbove`'s existing fifteen with one extra store through **one** shared store step, so the case analysis is not doubled; no new argument is invented. Consumes HP6.1 | same | L |
-| HP6.3 | `spliceReplyFrameOut_preserves_projection` and `_preserves_ipcInvariantFull` — one extra `.reply` store at a third key, cheap by construction: no conjunct reads `prev` or `next`, and `projectKernelObject` erases both. **Plus the census decision the shared store step forces**: a `Prop`-valued *relation* that mentions a store and constructs a chain record is reported by `recordConstructingStoreCandidates`, because the loop's `Meta.isProp` asks whether the declaration is a *proof* and a predicate is not one. `isDefinitionShaped`'s docstring states that over-report as deliberate and fail-closed, and asks for "an explicit decision, not a silent pass" — so make one here, where the subject exists: either state the relation without a `Prop`-valued name, or apply the census's own pure `isPredicate` at both frontiers with a token-preserving witness (a relation keeping the store and the constructor, differing only in its result type). Registering a relation as a write site is not an option — it writes nothing, and the entry would be false. Consumes HP6.2 | `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean`, `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean`, `SeLe4n/Testing/ReplyStackWriteCensus.lean` | L |
-| HP6.4 | `removeCallerReplyFrame` and `detachFrameAboveThreadReply` call `spliceReplyFrameOutOrSelf`. Every repair is the case split HP6.2 set up: the `no_frame_below` branch is the pre-HP proof verbatim. Consumes HP6.3, HP4, HP5 | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/Lifecycle/Suspend.lean` | L |
-| HP6.5 | `removeCallerReplyFrame_preserves_donationChainWellFormed` over the splice — reciprocity is *maintained* rather than vacated, so the argument is shorter than the sever's: `above.prev = some below` and `below.next = .frame above` are written together. Consumes HP6.4 | `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | L |
-| HP6.6 | `cancelledMiddleCallerPolicy := .spliceOutTheCut`, with `cancelledMiddleCaller_splices_at_cut` replacing `…_severs_at_cut`, and `replyStackOuterCaller?_follows_policy` restated. HP2.3's negative twin is retired *here*, in the cut that earns it. Consumes HP6.5 | `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | M |
-| HP6.7 | **The payoff**: `donationAccountingPreserved_atCallDepthThree` — on the depth-3 witness, a middle removal leaves the reservation owed outward and the later pop delivers it to its owner. `tests/SmpIpcSuite.lean` §3.22 inverts from a COST witness to a PAYOFF witness in the same cut, keeping the in-order contrast. Consumes HP6.6 | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `tests/SmpIpcSuite.lean` | L |
-| HP6.8 | **The two reply footprints repointed onto the head-driven trigger**, which HP4 deliberately left (§3.8.7): `lockSet_endpointReplyOnCore` / `lockSet_endpointReplyRecvOnCore` resolve their donation members through `endpointReplyServerDonation?` while the pop reads `replyFrameHeadHolder?`, and this is the cut that makes the two disagree on a reachable state — `spliceOutTheCut` can leave an orphan head, which `severAtCut` provably cannot. The theorem HP4.4 left in its place — `lockSet_endpointReplyOnCore_covers_headDrivenPop` — is what holds the gap closed until here and is **deleted** by this row, since the members then come from the trigger itself; this row therefore consumes HP4.4 as well as HP6.7. **And the sharp bounds become unconditional here** (the ordering was stated backwards until `v0.35.40`, with this row and the hypothesis-retirement phase each reading as waiting on the other): the 18 → 17 merge was licensed by `replyDonationOwnerIsAnsweredCaller` — *the donation a reply returns is owned by the thread the reply answers* — and under the head-driven trigger the pop's recipient **is** the answered caller by construction (HP4.2 passes `targetVtid`), so the merge is definitional and that coherence fact loses its last consumer in this row. Retiring the definition itself is the next phase's, and it consumes this row. Consumes HP6.7 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` | L |
+| HP6.1 | **The family renamed, with no semantic change**  **LANDED v0.35.41**: `detachReplyFrameAbove` → `spliceReplyFrameOut` (which covers the `OrSelf` fold and every `_*` lemma by prefix), `detachFrameAboveThreadReply` → `spliceThreadReplyFrameOut`, `cancelDetachedFrameAbove?` → `cancelSplicedFrameAbove?` (pairing it with HP1's `cancelSplicedFrameBelow?`), `detachedFrame{Above,Below}` → `splicedFrame…` in the four footprint coverage theorems and the footprint parameter, `replyFrameAbove?_of_detach_store` → `_of_splice_store`, and the three test-side names (`runFrameDetachChecks`, `runMiddleCallerDetachChecks`, one `let` binder).  **545 occurrences over 593 lines in 27 modules**, plus 17 Tier 3 anchors and five live documents — the row said "~500 across 42 modules" from a code-view count that double-counted the overlay; the landed figure is measured.  A green build and four green suites either side: the checkpoint that separates rename breakage from semantic breakage, and what lets the ~37 proof rewrites the splice's algebra needs happen once, under the final names.  Three things this row decided rather than inherited.  (1) The **name is one cut ahead of the body** until the splice lands, so `spliceReplyFrameOut`'s docstring states what it writes today, names the row that completes it, and separates the two facts that say which semantics is live: `cancelledMiddleCallerPolicy` is the declared policy and `spliceReplyFrameOutOrSelf_store_cases` is the body's write, stated as `{ a with prev := none }`, so this row's successor cannot change the body without changing that lemma.  It also records that `cancelledMiddleCaller_severs_at_cut` is **not** that pin — its policy conjunct is `rfl` and its cut shape is a hypothesis — which is a claim this cut nearly shipped the other way round.  (2) The **English word** "detach" in prose describing what the operation does is left alone: it is accurate at this version, and prose follows behaviour when the body changes rather than the name here.  (3) The **frozen** family (`frozenDetachReplyFrameAbove{,OrSelf}`) is not renamed — it still severs, and HP8 renames it in the cut that makes it splice.  **And the rename found a dead citation**: WS-RM RM1.1 retired `detachCancelledCallerFrame` at `v0.35.6`, and four *live* claims still named it (`CLAUDE.md`/`AGENTS.md`'s WS-OD "what new code must respect" item 5, and `SELE4N_SPEC.md` §8.12.7 twice) — the dead-symbol shape this project calls a tautology, in prose rather than in an anchor | 27 modules; `scripts/test_tier3_invariant_surface.sh`; `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, `docs/gitbook/12-proof-and-invariant-map.md` | M |
+| HP6.2 | **The two reply footprints repointed onto the head-driven trigger** — moved ahead of the splice, see the preamble's finding 4. `lockSet_endpointReplyOnCore` / `lockSet_endpointReplyRecvOnCore` resolve their donation members through `answeredReplyObject?` composed with `replyFrameHeadHolder?`, the same expression the pop reads, so the footprint and the transition cannot disagree about which objects are written. `lockSet_endpointReplyOnCore_covers_headDrivenPop` — HP4.4's stand-in — is **deleted** by this row, since the members then come from the trigger itself; it therefore consumes HP4.4. **And both sharp bounds become unconditional here**: the 18 → 17 merge was licensed by `replyDonationOwnerIsAnsweredCaller`, and under the head-driven trigger the pop's recipient **is** the answered caller by construction (HP4.2 passes `targetVtid`), so the merge is definitional and that coherence fact loses its last footprint consumer. Sound today — under `severAtCut` the two resolvers agree — so this row is behaviour-preserving and verifiable on its own. Consumes HP6.1, HP4.4 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` | L |
+| HP6.3 | **The splice's primitives.** `spliceFrameBelow?` (validated, `Option`-valued — preamble finding 2), `spliceReplyFrameStores` (one composed step — finding 3), `spliceReplyFrameOut`'s body, and `spliceReplyFrameOut_eq_sever_of_no_frame_below`, the definitional equality that makes every repair below a case split whose `none` branch is the pre-WS-HP proof verbatim. Resolution and validation of the frame **above** are unchanged, so this operation's refusal set is exactly the sever's and every refusal theorem — including `spliceReplyFrameOutOrSelf`'s fold soundness — carries verbatim. Consumes HP6.2 | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | M |
+| HP6.4 | **The algebra.** `spliceReplyFrameStores_*` proved once by a two-way split on `spliceFrameBelow?`, `_cases` restated at **today's arity** so the 47 destructuring sites are one-symbol swaps, and the five statement-changing lemmas with their ~15 callers (`_objects_ne`, `_decision`, `_objects_rewrite`, `replyFrameAbove?_of_splice_store`). `_reply_rewrite` needs no statement change, because `replyStackRewrite` is already general over both links and transitive. `spliceReplyFrameOutOrSelf_unreferenced` is re-proved rather than inherited: in the two-store branch `rid`, `above` and `below` are pairwise distinct, so the written `prev` is not `some rid` and reciprocity rules out any other frame naming it. Consumes HP6.3 | same | L |
+| HP6.5 | `spliceReplyFrameOut_preserves_projection` and `_preserves_ipcInvariantFull` — one extra `.reply` store at a third key, cheap by construction: no conjunct reads `prev` or `next`, and `projectKernelObject` erases both. **Plus the census decision the composed store step forces**: a `Prop`-valued *relation* that mentions a store and constructs a chain record is reported by `recordConstructingStoreCandidates`, because the loop's `Meta.isProp` asks whether the declaration is a *proof* and a predicate is not one. `isDefinitionShaped`'s docstring states that over-report as deliberate and fail-closed and asks for "an explicit decision, not a silent pass" — so make one here: either state the relation without a `Prop`-valued name, or apply the census's own pure `isPredicate` at both frontiers with a token-preserving witness. Registering a relation as a write site is not an option — it writes nothing. Consumes HP6.4 | `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean`, `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean`, `SeLe4n/Testing/ReplyStackWriteCensus.lean` | L |
+| HP6.6 | **The callers, and the pin that ties the written key to the declared lock.** `removeCallerReplyFrame` and `spliceThreadReplyFrameOut` call the fold and so need no body change — verify that rather than assume it — and state `spliceFrameBelow?_mem_replyFrameBelow?` with its `cancel…` / `answered…` liftings: the footprint's resolver is *unvalidated* and therefore strictly wider than the operation's, which over-declares and is the sound direction, but nothing says so today. Consumes HP6.5, HP4, HP5 | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/Lifecycle/Suspend.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | M |
+| HP6.7 | `removeCallerReplyFrame_preserves_donationChainWellFormed` over the splice, split at head-ness: on a **non-head** frame the two reciprocal links are written together, so the predicate is preserved outright — **this is where the WS-RM residual closes**, and it is a strengthening rather than a restatement; on a head the splice is the identity and the state is the `…Except rid` transient the composite already discharges. Consumes HP6.6 | `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | L |
+| HP6.8 | `cancelledMiddleCallerPolicy := .spliceOutTheCut`, with `cancelledMiddleCaller_splices_at_cut` replacing `…_severs_at_cut`, and `replyStackOuterCaller?_follows_policy` restated. HP2.3's negative twin is retired *here*, in the cut that earns it. Consumes HP6.7 | `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | M |
+| HP6.9 | **The payoff**: `donationAccountingPreserved_atCallDepthThree` — on the depth-3 witness, a middle removal leaves the reservation owed outward and the later pop delivers it to its owner. `tests/SmpIpcSuite.lean` §3.22 inverts from a COST witness to a PAYOFF witness in the same cut, keeping the in-order contrast; §3.20's depth-two halves must pass **byte-identically**, which is the measurement that the change is confined to depth ≥ 3. Consumes HP6.8 | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `tests/SmpIpcSuite.lean` | L |
 
 **Acceptance**: §3.22's assertions read the owner receiving its reservation, the
 in-order contrast is unchanged, and §3.20's depth-2 halves pass byte-identically
@@ -916,7 +979,7 @@ a document existing.
 1. The reply path's pop fires on **head-ness of the answered frame**, and a
    Tier 3 negative refuses the binding-driven spelling in either spine (HP4.1,
    HP9.2).
-2. `spliceReplyFrameOut_eq_detach_of_no_frame_below` holds by `rfl`, so every
+2. `spliceReplyFrameOut_eq_sever_of_no_frame_below` holds by `rfl`, so every
    depth-≤ 2 result is the pre-HP proof verbatim (HP6.2).
 3. The two triggers are proved equivalent on every state satisfying the chain
    invariant, and the theorem that the splice breaks that equivalence exists —

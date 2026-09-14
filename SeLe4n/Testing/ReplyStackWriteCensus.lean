@@ -115,8 +115,8 @@ def chainWritePrimitives : List Name :=
   , `SeLe4n.Model.SystemState.consumeReply
   , `SeLe4n.Model.SystemState.consumeCallerReply
     -- The detach: the frame above's `prev`, and its total fold.
-  , `SeLe4n.Kernel.detachReplyFrameAbove
-  , `SeLe4n.Kernel.detachReplyFrameAboveOrSelf
+  , `SeLe4n.Kernel.spliceReplyFrameOut
+  , `SeLe4n.Kernel.spliceReplyFrameOutOrSelf
     -- ...and the frozen surface's counterparts, which write the same field of
     -- the same `SeLe4n.Kernel.Reply` record in `FrozenSystemState.objects`.
   , `SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAbove
@@ -635,9 +635,9 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- theoretical — `frozenEndpointReply` cleared a caller's Reply bare, which
     -- is WS-RM's own defect, surviving on the surface nothing was looking at.
   , (`SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAbove,
-      .mirrors `SeLe4n.Kernel.detachReplyFrameAbove)
+      .mirrors `SeLe4n.Kernel.spliceReplyFrameOut)
   , (`SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAboveOrSelf,
-      .mirrors `SeLe4n.Kernel.detachReplyFrameAboveOrSelf)
+      .mirrors `SeLe4n.Kernel.spliceReplyFrameOutOrSelf)
     -- The frozen reply, which now runs the detach before the consume in the
     -- order the live one does.  `FO-031` is the differential scenario that
     -- exercises the agreement.
@@ -656,12 +656,12 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.returnDonatedSchedContext)
     -- The detach itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
-  , (`SeLe4n.Kernel.detachReplyFrameAbove,
-      .states [`SeLe4n.Kernel.detachReplyFrameAbove_preserves_donationChainWellFormed])
-  , (`SeLe4n.Kernel.detachReplyFrameAboveOrSelf,
-      .states [`SeLe4n.Kernel.detachReplyFrameAboveOrSelf_preserves_donationChainWellFormed])
-  , (`SeLe4n.Kernel.detachFrameAboveThreadReply,
-      .states [`SeLe4n.Kernel.detachFrameAboveThreadReply_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.spliceReplyFrameOut,
+      .states [`SeLe4n.Kernel.spliceReplyFrameOut_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.spliceReplyFrameOutOrSelf,
+      .states [`SeLe4n.Kernel.spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.spliceThreadReplyFrameOut,
+      .states [`SeLe4n.Kernel.spliceThreadReplyFrameOut_preserves_donationChainWellFormed])
     -- The teardown's TCB-side clear.
   , (`SeLe4n.Kernel.Lifecycle.Suspend.clearReplyObjectCaller,
       .states [`SeLe4n.Kernel.clearReplyObjectCaller_preserves_donationChainWellFormed])

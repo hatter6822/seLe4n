@@ -894,11 +894,11 @@ open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`)**: the detach preserves `dualQueueSystemInvariant` — one
 `.reply` store at a key that already holds a Reply, which is exactly the shape
 `storeObject_reply_preserves_dualQueueSystemInvariant` frames. -/
-theorem detachReplyFrameAboveOrSelf_preserves_dualQueueSystemInvariant
+theorem spliceReplyFrameOutOrSelf_preserves_dualQueueSystemInvariant
     (st : SystemState) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : dualQueueSystemInvariant st) :
-    dualQueueSystemInvariant (detachReplyFrameAboveOrSelf st rid) := by
-  rcases detachReplyFrameAboveOrSelf_store_cases st rid with h | ⟨above, a, hA, hS⟩
+    dualQueueSystemInvariant (spliceReplyFrameOutOrSelf st rid) := by
+  rcases spliceReplyFrameOutOrSelf_store_cases st rid with h | ⟨above, a, hA, hS⟩
   · rw [h]; exact hInv
   · exact storeObject_reply_preserves_dualQueueSystemInvariant st _ above.toObjId
       { a with prev := none } hObjInv hS (Or.inl ⟨a, hA⟩) hInv
@@ -912,8 +912,8 @@ theorem removeCallerReplyFrame_preserves_dualQueueSystemInvariant
     dualQueueSystemInvariant st' := by
   rw [removeCallerReplyFrame_eq] at hStep
   exact consumeCallerReply_preserves_dualQueueSystemInvariant _ st' caller rid
-    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv)
-    (detachReplyFrameAboveOrSelf_preserves_dualQueueSystemInvariant st rid hObjInv hInv) hStep
+    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv)
+    (spliceReplyFrameOutOrSelf_preserves_dualQueueSystemInvariant st rid hObjInv hInv) hStep
 
 /-- WS-H5: endpointReply preserves dualQueueSystemInvariant.
 endpointReply performs storeTcbIpcStateAndMessage + ensureRunnable —

@@ -476,7 +476,7 @@ the live one does.  Consuming a frame's `caller` while leaving it on that stack
 therefore falsifies the chain's `prevLinkReciprocal` on this surface for the same
 reason it did on the live one, and the frozen reply was doing precisely that.
 
-This is `detachReplyFrameAbove`'s counterpart, clause for clause: no Reply at
+This is `spliceReplyFrameOut`'s counterpart, clause for clause: no Reply at
 `rid` and a frame that heads a context or sits at the top are the identity; an
 upward `.frame` link whose target is missing is `.objectNotFound`; and a target
 that does **not** reciprocate is `.invalidArgument` rather than a write, which
@@ -500,7 +500,7 @@ def frozenDetachReplyFrameAbove (st : FrozenSystemState) (rid : SeLe4n.ReplyId) 
 
 /-- **WS-RM, frozen mirror**: the detach folded to the identity on its refusal.
 
-The live `detachReplyFrameAboveOrSelf` and this one make the same reading: a
+The live `spliceReplyFrameOutOrSelf` and this one make the same reading: a
 non-reciprocating upward link means "nothing above me on my stack", which the
 chain relation permits by design since it is stated downward. -/
 def frozenDetachReplyFrameAboveOrSelf (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :

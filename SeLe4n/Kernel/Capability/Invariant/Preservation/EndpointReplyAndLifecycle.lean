@@ -170,34 +170,34 @@ theorem removeCallerReplyFrame_preserves_capabilityInvariantBundle
     capabilityInvariantBundle st' := by
   have hObjInv : st.objects.invExt := hInv.2.2.2.2.2.1
   refine consumeCallerReply_preserves_capabilityInvariantBundle
-    (detachReplyFrameAboveOrSelf st rid) st' caller rid ?_ hStep
+    (spliceReplyFrameOutOrSelf st rid) st' caller rid ?_ hStep
   rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, _hObjInv, hRCPV⟩
   have hCnodeBwd : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
-      (detachReplyFrameAboveOrSelf st rid).objects[cnodeId]? = some (.cnode cn) →
+      (spliceReplyFrameOutOrSelf st rid).objects[cnodeId]? = some (.cnode cn) →
       st.objects[cnodeId]? = some (.cnode cn) :=
-    fun cnodeId cn hCn => (detachReplyFrameAboveOrSelf_non_reply_agree st rid hObjInv cnodeId
+    fun cnodeId cn hCn => (spliceReplyFrameOutOrSelf_non_reply_agree st rid hObjInv cnodeId
       (.cnode cn) (fun rr => by exact KernelObject.noConfusion)).mp hCn
   refine ⟨cspaceLookupSound_holds _, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro cnodeId cn hCn
     exact hBounded cnodeId cn (hCnodeBwd cnodeId cn hCn)
   · intro nodeId ref hRef
-    rw [detachReplyFrameAboveOrSelf_cdtNodeSlot_eq st rid] at hRef
+    rw [spliceReplyFrameOutOrSelf_cdtNodeSlot_eq st rid] at hRef
     intro hNone
-    rcases detachReplyFrameAboveOrSelf_objects_rewrite st rid hObjInv ref.cnode with h | ⟨_, r', _, hr', _⟩
+    rcases spliceReplyFrameOutOrSelf_objects_rewrite st rid hObjInv ref.cnode with h | ⟨_, r', _, hr', _⟩
     · exact hComp nodeId ref hRef (h ▸ hNone)
     · rw [hr'] at hNone; cases hNone
   · unfold cdtAcyclicity
-    rw [detachReplyFrameAboveOrSelf_cdt_eq st rid]
+    rw [spliceReplyFrameOutOrSelf_cdt_eq st rid]
     exact hAcyclic
   · intro cnodeId cn hCn
     exact hDepthPre cnodeId cn (hCnodeBwd cnodeId cn hCn)
-  · exact detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv
+  · exact spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv
   · intro oid cn slot cap rid' hObj hLook hTgt
     have hPre := hRCPV oid cn slot cap rid' (hCnodeBwd oid cn hObj) hLook hTgt
     cases hGet : st.getReply? rid' with
     | none => exact absurd hGet hPre
     | some r' =>
-      obtain ⟨r'', hGet'', _⟩ := detachReplyFrameAboveOrSelf_reply_rewrite st rid hObjInv
+      obtain ⟨r'', hGet'', _⟩ := spliceReplyFrameOutOrSelf_reply_rewrite st rid hObjInv
         rid'.toObjId r' ((SystemState.getReply?_eq_some_iff st rid' r').mp hGet)
       rw [(SystemState.getReply?_eq_some_iff _ rid' r'').mpr hGet'']
       exact Option.some_ne_none _

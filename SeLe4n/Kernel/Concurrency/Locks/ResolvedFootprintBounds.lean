@@ -552,13 +552,13 @@ theorem lockSet_cancelIpcBlocking_size_le (victimTid : SeLe4n.ThreadId)
     (holderSpliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
     (belowHeadReplyId : Option SeLe4n.ReplyId)
     (outerCallerTid : Option SeLe4n.ThreadId)
-    (reclaimHeadReplyId detachedFrameAboveReplyId : Option SeLe4n.ReplyId)
+    (reclaimHeadReplyId splicedFrameAboveReplyId : Option SeLe4n.ReplyId)
     -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
     (splicedFrameBelowReplyId : Option SeLe4n.ReplyId) :
     (lockSet_cancelIpcBlocking victimTid blockedEndpointObjId
         blockedNotificationObjId consumedReplyId returnedDonationSc donationHolderTid
         holderEndpointObjId holderSpliceNeighbors belowHeadReplyId outerCallerTid
-        reclaimHeadReplyId detachedFrameAboveReplyId splicedFrameBelowReplyId).size
+        reclaimHeadReplyId splicedFrameAboveReplyId splicedFrameBelowReplyId).size
       ≤ maxLockSetSize := by
   unfold lockSet_cancelIpcBlocking maxLockSetSize
   -- WS-OD OD3.5: nine optionals — the donation hand-back's state-level lock.
@@ -611,12 +611,12 @@ theorem lockSet_cancelIpcBlocking_reply_size_le (victimTid : SeLe4n.ThreadId)
     (holderSpliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
     (belowHeadReplyId : Option SeLe4n.ReplyId)
     (outerCallerTid : Option SeLe4n.ThreadId)
-    (reclaimHeadReplyId detachedFrameAboveReplyId : Option SeLe4n.ReplyId)
+    (reclaimHeadReplyId splicedFrameAboveReplyId : Option SeLe4n.ReplyId)
     (splicedFrameBelowReplyId : Option SeLe4n.ReplyId) :
     (lockSet_cancelIpcBlocking victimTid none none consumedReplyId returnedDonationSc
         donationHolderTid holderEndpointObjId holderSpliceNeighbors
         belowHeadReplyId outerCallerTid reclaimHeadReplyId
-        detachedFrameAboveReplyId splicedFrameBelowReplyId).size ≤ 13 := by
+        splicedFrameAboveReplyId splicedFrameBelowReplyId).size ≤ 13 := by
   unfold lockSet_cancelIpcBlocking
   simp only [Option.map_none, extendOpt_none]
   refine Nat.le_trans (size_le_12 _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
@@ -632,11 +632,11 @@ no donation. -/
 theorem lockSet_cancelIpcBlocking_noDonation_size_le (victimTid : SeLe4n.ThreadId)
     (blockedEndpointObjId blockedNotificationObjId : Option SeLe4n.ObjId)
     (consumedReplyId : Option SeLe4n.ReplyId)
-    (detachedFrameAboveReplyId : Option SeLe4n.ReplyId)
+    (splicedFrameAboveReplyId : Option SeLe4n.ReplyId)
     (splicedFrameBelowReplyId : Option SeLe4n.ReplyId) :
     (lockSet_cancelIpcBlocking victimTid blockedEndpointObjId blockedNotificationObjId
         consumedReplyId none none none (none, none) none none none
-        detachedFrameAboveReplyId splicedFrameBelowReplyId).size ≤ 6 := by
+        splicedFrameAboveReplyId splicedFrameBelowReplyId).size ≤ 6 := by
   unfold lockSet_cancelIpcBlocking
   simp only [Option.map_none, extendOpt_none]
   refine Nat.le_trans (size_le_5 _ _ _ _ _ _) ?_
@@ -664,7 +664,7 @@ theorem lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation (st : SystemState
   refine Nat.le_trans (Nat.add_le_add_right (lockSetExtendOpt_size_le _ _) 1) ?_
   have := lockSet_cancelIpcBlocking_noDonation_size_le victimTid (cancelBlockedEndpoint? tcb)
     (cancelBlockedNotification? tcb) (cancelConsumedReply? tcb)
-    (cancelDetachedFrameAbove? st tcb) (cancelSplicedFrameBelow? st tcb)
+    (cancelSplicedFrameAbove? st tcb) (cancelSplicedFrameBelow? st tcb)
   omega
 
 /-- WS-OD (`v0.35.4`), WS-HP HP3.1: **…and on a victim owed a donation, at most
@@ -708,7 +708,7 @@ answers `some` only for a `.blockedOnReply` victim, and so do the eight members
 derived from it; `cancelBlockedEndpoint?` / `cancelBlockedNotification?` answer
 `some` only for the other blocking states; `cancelArmSpliceNeighbors?` answers
 `(none, none)` on every arm but the one that splices; and
-`cancelDetachedFrameAbove?` and `cancelSplicedFrameBelow?` are both reply-arm
+`cancelSplicedFrameAbove?` and `cancelSplicedFrameBelow?` are both reply-arm
 members, the second derived from the first's resolver.
 
 Arm by arm: the reply arm is `1 + 12 = 13`, the endpoint arm `1 + 3 = 4`, the

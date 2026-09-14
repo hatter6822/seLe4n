@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.40` (`lakefile.toml`) |
+| **Package version** | `0.35.41` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 380,420 across 330 Lean files |
+| **Production LoC** | 380,449 across 330 Lean files |
 | **Test LoC** | 77,140 across 70 Lean test suites |
 | **Proved declarations** | 12,704 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -4391,7 +4391,7 @@ because each is false without the other.
   the pop already does (one program rather than two), because it is `O(1)` where
   the alternative walks a chain a `LockSet` cannot bound, and because it reaches
   the same owner seL4-MCS's `reply_remove` does — and, since `v0.35.4`, by the
-  same route: `detachCancelledCallerFrame` takes the cancelled frame off the middle
+  same route: `spliceThreadReplyFrameOut` takes the cancelled frame off the middle
   of the stack in `O(1)` before its caller link is consumed, so no frame is left on
   a stack with its caller gone.  (*Takes off*, not *splices*: it writes `none` into
   the frame above, which is upstream's own non-head branch — see §8.12.8's
@@ -4441,14 +4441,14 @@ The remedy is seL4's own structure rather than a weakening.  `Reply.donatedSc`
 is replaced by `Reply.next : ReplyStackLink`, the policy is unchanged, and it is
 now carried out by a **detach**:
 
-- **`detachReplyFrameAbove`** clears the `prev` of the frame above the one being
+- **`spliceReplyFrameOut`** clears the `prev` of the frame above the one being
   removed, so that frame becomes the bottom of the stack it heads and the removed
   frame leaves the structure when its caller link is consumed (`Reply.consumed`).
   It validates the back-link before it writes — a frame whose `prev` does not name
   the frame being cut out is a stale upward link, which the downward-stated
   relation permits and which is therefore read as "nothing above me", never
   repaired.
-- **The cancellation path runs it** (`detachCancelledCallerFrame`), after the
+- **The cancellation path runs it** (`spliceThreadReplyFrameOut`), after the
   reclaim and before `consumeReplyLink`, with both orders pinned.
 - **A validated frame below the head whose caller was consumed is now an
   `.error`**, not the bottom of the stack: with the detach in place a linked frame
@@ -4489,7 +4489,7 @@ respect.
    footprint's definition asks only that the resolver *occur* there, which is a
    presence check.  `lockSet_endpointReply_frameAbove_write_mem` and
    `lockSet_replyRecv_frameAbove_write_mem` at full arity, with
-   `lockSet_endpointReplyOnCore_covers_detachedFrameAbove` and its `.replyRecv`
+   `lockSet_endpointReplyOnCore_covers_splicedFrameAbove` and its `.replyRecv`
    twin resolved, are the relation: the reply-path siblings of the coverage the
    cancellation path has carried since `v0.35.4`.  Running that sweep over every
    resolved footprint closed one more — `lockSet_cancelDonationOnCore` had
@@ -4636,7 +4636,7 @@ Seven properties of the surface this leaves.
 
 6. **The two reply footprints still resolve their donation members through the
    binding**, and `lockSet_endpointReplyOnCore_covers_headDrivenPop` is what says
-   they cover what the head-driven pop writes.  Repointing them is HP6.8, the
+   they cover what the head-driven pop writes.  Repointing them is HP6.2, the
    cut that makes the divergence reachable.
 
 7. **The frozen mirror is head-driven too** (HP4.7).
@@ -4716,7 +4716,7 @@ Six properties of the surface this leaves.
 5. **Two footprint claims became theorems.**  `cancelReclaimHead?_eq_replyObject`
    (the head the pop clears **is** the victim's own reply object —
    `replyStackHeadIsAnsweredReply`'s content from the cancellation end) and
-   `cancelDetachedFrameAbove?_of_donation` / `cancelSplicedFrameBelow?_of_donation`
+   `cancelSplicedFrameAbove?_of_donation` / `cancelSplicedFrameBelow?_of_donation`
    (a reclaim excludes both removal members).  Both were sentences about every
    reachable state in footprint docstrings, and the binding reading could not have
    stated either.  The wake and both below-head members needed **no**

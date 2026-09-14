@@ -2119,7 +2119,7 @@ private def runDonationReturnPopChecks : IO Unit := do
   -- the stack: the pop bound the target outright and left that dead frame
   -- heading the context forever, pinning both objects against every retype and
   -- against ever linking the Reply again.  `severAtCut` is now implemented by
-  -- the *detach* at the cancellation (`detachReplyFrameAbove`), so a linked
+  -- the *detach* at the cancellation (`spliceReplyFrameOut`), so a linked
   -- frame always has a blocked caller (`Reply.wellFormed`) and this shape is an
   -- invariant violation — refused, never settled.  Pinned in three halves: the
   -- resolver's verdict, the declared below-head read (which is on the link
@@ -2429,7 +2429,7 @@ nests a `do`-block's statements, and a helper past roughly 150 Lean lines
 compiles to an `if`-tree that can exceed clang's bracket limit.  The boundary
 resets the nesting, and the concern is distinct anyway -- the push builds the
 stack these checks then cut. -/
-private def runMiddleCallerDetachChecks : IO Unit := do
+private def runMiddleCallerRemovalChecks : IO Unit := do
   IO.println "--- §3.19 the middle-caller detach, and the wedge it removes (`v0.35.4`) ---"
   -- The state a depth-2 push leaves is exactly the one the pinning defect
   -- needed: two frames, the outer caller's below the donor's.  Cancelling the
@@ -2444,10 +2444,10 @@ private def runMiddleCallerDetachChecks : IO Unit := do
     -- The outer caller, exactly as the store holds it (WS-HP HP5: one definition,
     -- since the reclaim's trigger now reads its `replyObject`).
     let outerTcb : TCB := pushOuterBlockedTcb
-    -- Step one: the detach's WRITING arm.  Every `detachReplyFrameAbove` result
+    -- Step one: the detach's WRITING arm.  Every `spliceReplyFrameOut` result
     -- proved elsewhere is discharged on a state whose frame has nothing above
     -- it, where the step is the identity; this is the arm that stores.
-    let detached := detachFrameAboveThreadReply pushed outerTcb
+    let detached := spliceThreadReplyFrameOut pushed outerTcb
     assertBool "the detach clears the `prev` of the frame ABOVE the cancelled one"
       (pushLinksOf detached pushDonorReply == some (none, some (.head pushSc)))
     assertBool "...and writes nothing on the cancelled frame itself — the consume does that"
@@ -2506,32 +2506,32 @@ private def runMiddleCallerDetachChecks : IO Unit := do
     -- meets, so the refusal and the wrapper's fold together are what keep a
     -- severed stack's lower frames cancellable rather than wedged in turn.
     assertBool "the detach refuses a frame above that does not link back"
-      (match detachReplyFrameAbove detached pushOuterReply with
+      (match spliceReplyFrameOut detached pushOuterReply with
        | .error e => e == KernelError.invalidArgument
        | .ok _ => false)
     assertBool "...and the cancellation wrapper folds that refusal to the identity"
-      (pushStackShape (detachFrameAboveThreadReply detached outerTcb)
+      (pushStackShape (spliceThreadReplyFrameOut detached outerTcb)
          == pushStackShape detached)
     assertBool "...so the caller below a cut can still be cancelled, and leaves cleanly"
       (match (Lifecycle.Suspend.consumeReplyLink
-                (detachFrameAboveThreadReply detached outerTcb)
+                (spliceThreadReplyFrameOut detached outerTcb)
                 pushOuter outerTcb).getReply? pushOuterReply with
        | some r => r.isFree
        | none => false)
     -- ...and a frame above that names no Reply at all is a different refusal,
     -- so the two fail-closed arms are told apart rather than merged.
     assertBool "the detach refuses a frame above that resolves to no Reply"
-      (match detachReplyFrameAbove
+      (match spliceReplyFrameOut
           (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
             { pushFreshHead with next := some (.frame ⟨98⟩) })
           pushDonorReply with
        | .error e => e == KernelError.objectNotFound
        | .ok _ => false)
     assertBool "the detach is the identity for a frame with nothing above it"
-      (pushStackShape (detachFrameAboveThreadReply pushed
+      (pushStackShape (spliceThreadReplyFrameOut pushed
          { outerTcb with replyObject := some pushDonorReply }) == pushStackShape pushed)
     assertBool "...and for a thread holding no reply object at all"
-      (pushStackShape (detachFrameAboveThreadReply pushed
+      (pushStackShape (spliceThreadReplyFrameOut pushed
          { outerTcb with replyObject := none }) == pushStackShape pushed)
 
 -- ============================================================================
@@ -3107,7 +3107,7 @@ def runSmpIpcChecks : IO Unit := do
   runDonationChainStructureChecks
   runDonationReturnPopChecks
   runDonationPushChecks
-  runMiddleCallerDetachChecks
+  runMiddleCallerRemovalChecks
   runReplyFrameRemovalChecks
   runReplyRecvLoopCompletionChecks
   runMiddleRemovalDepthThreeChecks

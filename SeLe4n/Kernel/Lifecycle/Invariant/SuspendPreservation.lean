@@ -720,13 +720,13 @@ holder whose binding is not a donation naming this caller. -/
   rw [h]
 
 /-- The detach writes a Reply, never a notification. -/
-theorem detachFrameAboveThreadReply_preserves_ipcInvariant (st : SystemState) (tcb : TCB)
+theorem spliceThreadReplyFrameOut_preserves_ipcInvariant (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
-    ipcInvariant (detachFrameAboveThreadReply st tcb) := by
-  rcases detachFrameAboveThreadReply_cases st tcb with h | ⟨_, _, h⟩
+    ipcInvariant (spliceThreadReplyFrameOut st tcb) := by
+  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
   · rw [h]; exact hIpc
   · intro oid ntfn hN
-    exact hIpc oid ntfn (detachReplyFrameAbove_notification_backward hInv h oid ntfn hN)
+    exact hIpc oid ntfn (spliceReplyFrameOut_notification_backward hInv h oid ntfn hN)
 
 /-- D1-I: cancelIpcBlocking only modifies `objects`, preserving the scheduler.
     Each IPC state branch either (a) is a no-op, (b) uses
@@ -747,7 +747,7 @@ theorem cancelIpcBlocking_scheduler_eq
     -- three `storeObject`s leave the scheduler alone, which is why the
     -- replenishment migration sits at the `OnCore` layer and not here.
     rw [consumeReplyLink_scheduler_eq, restoreToReadyCancelled_scheduler_eq,
-      detachFrameAboveThreadReply_scheduler_eq, returnDonationToCancelledCaller_scheduler_eq]
+      spliceThreadReplyFrameOut_scheduler_eq, returnDonationToCancelledCaller_scheduler_eq]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
 
@@ -772,7 +772,7 @@ theorem cancelIpcBlocking_machine_eq
     rw [restoreToReadyCancelled_machine_eq, removeFromAllEndpointQueues_machine_eq]
   | blockedOnReply _ _ =>
     rw [consumeReplyLink_machine_eq, restoreToReadyCancelled_machine_eq,
-      detachFrameAboveThreadReply_machine_eq, returnDonationToCancelledCaller_machine_eq]
+      spliceThreadReplyFrameOut_machine_eq, returnDonationToCancelledCaller_machine_eq]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_machine_eq, removeFromAllNotificationWaitLists_machine_eq]
 
@@ -848,7 +848,7 @@ theorem cancelIpcBlocking_serviceRegistry_eq
     rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllEndpointQueues_serviceRegistry_eq]
   | blockedOnReply _ _ =>
     rw [consumeReplyLink_serviceRegistry_eq, restoreToReadyCancelled_serviceRegistry_eq,
-      detachFrameAboveThreadReply_serviceRegistry_eq,
+      spliceThreadReplyFrameOut_serviceRegistry_eq,
       returnDonationToCancelledCaller_serviceRegistry_eq]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllNotificationWaitLists_serviceRegistry_eq]
@@ -959,7 +959,7 @@ theorem cancelIpcBlocking_lifecycle_eq
   | blockedOnReply _ _ =>
     rw [consumeReplyLink_lifecycle_eq, restoreToReadyCancelled_lifecycle_eq,
       returnDonationToCancelledCaller_none st tid tcb hNoDonation,
-      detachFrameAboveThreadReply_eq_self_of_no_frame_above st tcb hNoFrameAbove]
+      spliceThreadReplyFrameOut_eq_self_of_no_frame_above st tcb hNoFrameAbove]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_lifecycle_eq, removeFromAllNotificationWaitLists_lifecycle_eq]
 
@@ -1763,7 +1763,7 @@ theorem cancelIpcBlocking_preserves_objects_invExt
   | blockedOnReply _ _ =>
     exact consumeReplyLink_preserves_objects_invExt _ _ _
       (restoreToReadyCancelled_invExt _ _
-        (detachFrameAboveThreadReply_preserves_objects_invExt _ tcb
+        (spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb
           (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv)))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_invExt _ _
@@ -1906,16 +1906,16 @@ theorem cancelIpcBlocking_tcb_lookup
       returnDonationToCancelledCaller_tcb_lookup st tid tcb hInv k t0 hPre
     have hInvR := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
     -- `v0.35.4`: the frame detach writes at most a Reply, so the TCB is untouched.
-    have hLD := detachFrameAboveThreadReply_tcb_eq _ tcb hInvR k t₀ hL0
-    have hInvD := detachFrameAboveThreadReply_preserves_objects_invExt _ tcb hInvR
+    have hLD := spliceThreadReplyFrameOut_tcb_eq _ tcb hInvR k t₀ hL0
+    have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
     obtain ⟨t₁, hL1, hAff1⟩ :=
       restoreToReadyCancelled_tcb_lookup
-        (detachFrameAboveThreadReply (returnDonationToCancelledCaller st tid tcb) tcb) tid k _
+        (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid k _
         hInvD hLD
     obtain ⟨t₂, hL2, hAff2⟩ :=
       consumeReplyLink_tcb_lookup
         (restoreToReadyCancelled
-          (detachFrameAboveThreadReply (returnDonationToCancelledCaller st tid tcb) tcb) tid)
+          (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
         tid tcb k t₁ (restoreToReadyCancelled_invExt _ tid hInvD) hL1
     exact ⟨t₂, hL2, ((hAff2.trans hAff1).trans hAff0)⟩
   | blockedOnNotification _ =>
@@ -2012,22 +2012,22 @@ theorem cancelIpcBlocking_getTcb?_none
   | blockedOnReply _ _ =>
     show (consumeReplyLink
       (restoreToReadyCancelled
-        (detachFrameAboveThreadReply (returnDonationToCancelledCaller st tid tcb) tcb) tid)
+        (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
       tid tcb).getTcb? tid = none
     rw [returnDonationToCancelledCaller_eq_self_of_getTcb?_none st tid tcb hT]
     -- `v0.35.4`: the frame detach writes at most a Reply, so the victim's key
     -- still holds no TCB after it.
-    have hTD : (detachFrameAboveThreadReply st tcb).getTcb? tid = none := by
-      rw [detachFrameAboveThreadReply_getTcb?_eq st tcb hInv tid]; exact hT
-    have hInvD : (detachFrameAboveThreadReply st tcb).objects.invExt :=
-      detachFrameAboveThreadReply_preserves_objects_invExt st tcb hInv
+    have hTD : (spliceThreadReplyFrameOut st tcb).getTcb? tid = none := by
+      rw [spliceThreadReplyFrameOut_getTcb?_eq st tcb hInv tid]; exact hT
+    have hInvD : (spliceThreadReplyFrameOut st tcb).objects.invExt :=
+      spliceThreadReplyFrameOut_preserves_objects_invExt st tcb hInv
     have hNoD : ∀ t : TCB,
-        (detachFrameAboveThreadReply st tcb).objects[tid.toObjId]? ≠ some (.tcb t) := by
+        (spliceThreadReplyFrameOut st tcb).objects[tid.toObjId]? ≠ some (.tcb t) := by
       intro t h
       have hSome := (SystemState.getTcb?_eq_some_iff _ tid t).mpr h
       rw [hTD] at hSome
       cases hSome
-    generalize hD : detachFrameAboveThreadReply st tcb = sD at hTD hInvD hNoD ⊢
+    generalize hD : spliceThreadReplyFrameOut st tcb = sD at hTD hInvD hNoD ⊢
     rw [restoreToReadyCancelled_eq_self_of_getTcb?_none sD tid hTD]
     unfold consumeReplyLink
     cases tcb.replyObject with
@@ -2212,11 +2212,11 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
       (removeFromAllEndpointQueues_preserves_ipcInvariant st tid hInv hIpc)
   | blockedOnReply _ _ =>
     have hInvR := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
-    have hInvD := detachFrameAboveThreadReply_preserves_objects_invExt _ tcb hInvR
+    have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
     exact consumeReplyLink_preserves_ipcInvariant _ tid tcb
       (restoreToReadyCancelled_invExt _ tid hInvD)
       (restoreToReadyCancelled_preserves_ipcInvariant _ tid hInvD
-        (detachFrameAboveThreadReply_preserves_ipcInvariant _ tcb hInvR
+        (spliceThreadReplyFrameOut_preserves_ipcInvariant _ tcb hInvR
           (returnDonationToCancelledCaller_preserves_ipcInvariant st tid tcb hInv hIpc)))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_preserves_ipcInvariant _ tid

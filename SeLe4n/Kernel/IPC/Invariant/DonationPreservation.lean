@@ -3243,7 +3243,7 @@ theorem applyCallDonationOnCore_donated_caller_migrates_and_preserves_affinity
 /-- **WS-OD OD5.2 / `v0.35.4`: the live pop implements `severAtCut`, proved.**
 
 The policy's *effect*, not merely the resolver's answer.  Cancelling a **middle**
-caller detaches its frame from the stack (`detachFrameAboveThreadReply`, the
+caller detaches its frame from the stack (`spliceThreadReplyFrameOut`, the
 non-head removal arm), so the frame above it is left with no
 `prev` — the shape a bottom-of-stack head has, and the shape this theorem takes as
 its hypothesis (`hCut`).  On it the pop
@@ -3258,7 +3258,7 @@ The second clause is the one that makes this a decision rather than a
 description.  A statement that only exhibited the target's new binding would be
 true of both policies at the target and silent about the difference between
 them.  That the cancellation *produces* `hCut` is the detach's own frame
-(`detachReplyFrameAbove_reply_rewrite`), stated where the cancellation is. -/
+(`spliceReplyFrameOut_reply_rewrite`), stated where the cancellation is. -/
 theorem cancelledMiddleCaller_severs_at_cut
     (st st' : SystemState) (scId : SeLe4n.SchedContextId) (sc : SchedContext)
     (rid : SeLe4n.ReplyId) (r : Reply)

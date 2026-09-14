@@ -2027,7 +2027,7 @@ policy justified by a data structure the tree no longer has is a justification
 that has stopped being read. -/
 inductive CancelledMiddleCallerPolicy where
   /-- **Sever at the cut.**  The frame above the cut stops linking down
-  (`detachReplyFrameAbove` writes `prev := none`), so every frame *below* the cut
+  (`spliceReplyFrameOut` writes `prev := none`), so every frame *below* the cut
   leaves the context's stack; the pop that later reaches the frame above reads
   `none` and binds that caller `.bound scId`.  `O(1)` at every depth, and the
   policy this kernel implements.
@@ -2358,7 +2358,7 @@ context whose stack it heads (`next : Option ReplyStackLink`, `.frame` / `.head`
 — and the context records the top of the stack (`SchedContext.scReply`).  The
 context is therefore recorded **at the head only**, which is what makes taking a
 frame out of the *middle* of a stack an `O(1)` operation on three objects
-(`detachReplyFrameAbove`) rather than a walk clearing a per-frame context field
+(`spliceReplyFrameOut`) rather than a walk clearing a per-frame context field
 on every frame below the cut — the walk this kernel's first design refused to
 pay for, and then paid for by leaving frames dead on the stack forever.
 

@@ -9,6 +9,13 @@
 > `v0.35.4` reply-stack cut.
 > **Sub-task count**: 26 across 6 phases (RM1..RM6), each phase numbered in the
 > order it is to be implemented
+> **Names below are this workstream's own** and were retired by WS-HP HP6.1 at
+> `v0.35.41`, which renamed the removal family for the splice it becomes:
+> `detachReplyFrameAbove{,OrSelf}` → `spliceReplyFrameOut{,OrSelf}`,
+> `detachFrameAboveThreadReply` → `spliceThreadReplyFrameOut`,
+> `detachCancelledCallerFrame` (already retired by RM1.1 here) →
+> `spliceThreadReplyFrameOut`.  The rows are left as they landed; read the
+> mapping rather than searching for the old spellings.
 
 ## 1. Phase goal
 

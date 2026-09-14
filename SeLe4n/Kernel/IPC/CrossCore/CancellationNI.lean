@@ -751,16 +751,16 @@ theorem returnDonationToCancelledCaller_preserves_projection
   · rfl
 
 /-- `v0.35.4`: the cancelled caller's frame detach preserves the projection — the
-identity where there is nothing to detach, one `detachReplyFrameAbove` otherwise. -/
-theorem detachFrameAboveThreadReply_preserves_projection
+identity where there is nothing to detach, one `spliceReplyFrameOut` otherwise. -/
+theorem spliceThreadReplyFrameOut_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) (tcb : TCB)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
     (hObjInv : st.objects.invExt) :
-    projectState ctx observer (detachFrameAboveThreadReply st tcb)
+    projectState ctx observer (spliceThreadReplyFrameOut st tcb)
       = projectState ctx observer st := by
-  rcases detachFrameAboveThreadReply_cases st tcb with h | ⟨_, _, h⟩
+  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
   · rw [h]
-  · exact detachReplyFrameAbove_preserves_projection ctx observer hIdxComplete hObjInv h
+  · exact spliceReplyFrameOut_preserves_projection ctx observer hIdxComplete hObjInv h
 
 /-- **WS-RR RR2.18: the teardown projection, discharged on the reply arm.**
 
@@ -806,25 +806,25 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
   -- carries forward.
   have hCompR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objectIndexSetComplete
     st victim tcb hObjInv hObjSetInv hIdxComplete
-  have hInvD : (detachFrameAboveThreadReply
+  have hInvD : (spliceThreadReplyFrameOut
       (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb).objects.invExt :=
-    detachFrameAboveThreadReply_preserves_objects_invExt _ tcb hInvR
+    spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
   have h1 : projectState ctx observer
       (Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (detachFrameAboveThreadReply
+          (spliceThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb) victim)
         victim tcb)
       = projectState ctx observer
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (detachFrameAboveThreadReply
+          (spliceThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb) victim) :=
     consumeReplyLink_preserves_projection_high ctx observer _ victim tcb hObjHigh
       (restoreToReadyCancelled_preserves_objects_invExt _ victim hInvD)
   exact h1.trans
     ((restoreToReadyCancelled_preserves_projection_high ctx observer _ victim hObjHigh
       hInvD).trans
-      ((detachFrameAboveThreadReply_preserves_projection ctx observer _ tcb hCompR hInvR).trans
+      ((spliceThreadReplyFrameOut_preserves_projection ctx observer _ tcb hCompR hInvR).trans
         (returnDonationToCancelledCaller_preserves_projection ctx observer st victim tcb hObjInv
           hIdxComplete hObjSetInv hAbortProj)))
 

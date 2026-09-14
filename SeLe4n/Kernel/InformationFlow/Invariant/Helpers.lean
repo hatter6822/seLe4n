@@ -687,14 +687,14 @@ theorem storeDonationFramePush_preserves_projection
 
 /-- `v0.35.4`: the cancellation's `O(1)` detach preserves the projection — its one
 write clears a Reply's `prev`, which `projectKernelObject` strips. -/
-theorem detachReplyFrameAbove_preserves_projection
+theorem spliceReplyFrameOut_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
     (hObjInv : st.objects.invExt)
-    (h : detachReplyFrameAbove st rid = .ok st') :
+    (h : spliceReplyFrameOut st rid = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  rcases detachReplyFrameAbove_cases h with rfl | ⟨_, above, a, _, _, hA, _, hS⟩
+  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, above, a, _, _, hA, _, hS⟩
   · rfl
   · have hAObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hA
     exact storeObject_projectionStable_preserves_projection ctx observer st st' above.toObjId
@@ -815,28 +815,28 @@ theorem consumeCallerReply_preserves_projection
 
 /-- WS-RM (`v0.35.6`): the fold preserves the projection unconditionally — its one
 write clears a Reply's `prev`, which `projectKernelObject` strips. -/
-theorem detachReplyFrameAboveOrSelf_preserves_projection
+theorem spliceReplyFrameOutOrSelf_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (rid : SeLe4n.ReplyId)
     (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
     (hObjInv : st.objects.invExt) :
-    projectState ctx observer (detachReplyFrameAboveOrSelf st rid)
+    projectState ctx observer (spliceReplyFrameOutOrSelf st rid)
       = projectState ctx observer st := by
-  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]
-  · exact detachReplyFrameAbove_preserves_projection ctx observer hIdxComplete hObjInv h
+  · exact spliceReplyFrameOut_preserves_projection ctx observer hIdxComplete hObjInv h
 
 /-- WS-RM (`v0.35.6`): the fold preserves index-set completeness — it stores at a
 key that already resolves, so the set it would have to name already names it. -/
-theorem detachReplyFrameAboveOrSelf_preserves_objectIndexSetComplete
+theorem spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete
     (st : SystemState) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st) :
-    SeLe4n.Model.objectIndexSetComplete (detachReplyFrameAboveOrSelf st rid) := by
-  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+    SeLe4n.Model.objectIndexSetComplete (spliceReplyFrameOutOrSelf st rid) := by
+  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact hIdxComplete
-  · rcases detachReplyFrameAbove_cases h with hEq | ⟨_, above, a, _, _, _, _, hS⟩
+  · rcases spliceReplyFrameOut_cases h with hEq | ⟨_, above, a, _, _, _, _, hS⟩
     · rw [hEq]; exact hIdxComplete
     · exact storeObject_preserves_objectIndexSetComplete st _ above.toObjId _ hObjInv
         hObjSetInv hIdxComplete hS
@@ -856,10 +856,10 @@ theorem removeCallerReplyFrame_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   rw [removeCallerReplyFrame_eq] at hStep
   rw [consumeCallerReply_preserves_projection ctx observer _ st' caller rid hCallerObjHigh
-      (detachReplyFrameAboveOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
+      (spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
         hIdxComplete)
-      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep]
-  exact detachReplyFrameAboveOrSelf_preserves_projection ctx observer st rid hIdxComplete hObjInv
+      (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep]
+  exact spliceReplyFrameOutOrSelf_preserves_projection ctx observer st rid hIdxComplete hObjInv
 
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the low-observer
 projection when both the caller and server objects are non-observable (high).  It

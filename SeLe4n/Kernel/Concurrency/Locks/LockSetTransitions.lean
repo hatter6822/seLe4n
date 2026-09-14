@@ -848,7 +848,7 @@ def lockSet_endpointReply (callerTid : ThreadId)
     -- two coincide `insertOrMerge` merges them and the size does not move.
     (donatedHeadReplyId : Option ReplyId := none)
     -- **WS-RM (`v0.35.6`)**: the frame **above** the answered caller's reply
-    -- object, which the removal's detach rewrites (`detachReplyFrameAbove` sets
+    -- object, which the removal's detach rewrites (`spliceReplyFrameOut` sets
     -- its `prev := none`) before the caller link is consumed.  `some` exactly
     -- when the answered frame is not a stack head and something still links down
     -- to it -- the shape a *delegated* reply capability answering a middle
@@ -2170,10 +2170,10 @@ theorem lockSet_endpointReply_belowHead_write_mem (callerTid : ThreadId)
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RM (`v0.35.6`)**: and the frame **above** the answered caller's reply
-object, which the removal's detach rewrites (`detachReplyFrameAbove` clears its
+object, which the removal's detach rewrites (`spliceReplyFrameOut` clears its
 `prev`) before the caller link is consumed.
 
-The reply-path twin of `lockSet_cancelIpcBlocking_detached_frame_above_write_mem`,
+The reply-path twin of `lockSet_cancelIpcBlocking_spliced_frame_above_write_mem`,
 which the cancellation path has carried since `v0.35.4`.  Declaring a member and
 proving the operation writes it are two different statements, and the Tier 3
 anchor over this footprint's definition makes only the first: it asks that

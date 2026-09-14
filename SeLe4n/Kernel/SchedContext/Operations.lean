@@ -448,7 +448,7 @@ the property is that the frame or context above answers this frame.
 
 That is the same question `donationChainWalk` validates on the way down — a link
 is validated by the target's own upward link, never by its `caller`, because a
-re-linked Reply carries no answer back — and the one `detachReplyFrameAbove`
+re-linked Reply carries no answer back — and the one `spliceReplyFrameOut`
 checks before it writes.  Asking it one step is **exact** rather than
 approximate: under `donationChainWellFormed`, `prevLinkReciprocal` and
 `headTerminates` make a reciprocated link a link to a frame that is itself on the

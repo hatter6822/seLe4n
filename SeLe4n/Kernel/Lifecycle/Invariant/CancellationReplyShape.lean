@@ -230,11 +230,11 @@ def cancelDonationStackValid (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TC
 
 /-- `v0.35.4`: the cancelled caller's frame detach writes at most one Reply, so
 every binding reads through unchanged. -/
-theorem detachFrameAboveThreadReply_sameSchedContextBindings (st : SystemState) (tcb : TCB)
+theorem spliceThreadReplyFrameOut_sameSchedContextBindings (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) :
-    sameSchedContextBindings st (detachFrameAboveThreadReply st tcb) :=
+    sameSchedContextBindings st (spliceThreadReplyFrameOut st tcb) :=
   fun t tcb' hPost =>
-    ⟨tcb', detachFrameAboveThreadReply_tcb_backward st tcb hInv t.toObjId tcb'
+    ⟨tcb', spliceThreadReplyFrameOut_tcb_backward st tcb hInv t.toObjId tcb'
       hPost, rfl⟩
 
 /-- WS-OD OD4.4: the reclaim's outer-caller obligation is discharged outright on
@@ -581,14 +581,14 @@ theorem consumeReplyLink_passiveServerIdleFrame (st : SystemState)
 /-- `v0.35.4`: the cancelled caller's frame detach frames `passiveServerIdle` —
 its one write lands on a `.reply` value, whose key can never hold a TCB, and it
 touches no scheduler slot. -/
-theorem detachFrameAboveThreadReply_passiveServerIdleFrame (st : SystemState) (tcb : TCB)
+theorem spliceThreadReplyFrameOut_passiveServerIdleFrame (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) :
-    passiveServerIdleFrame st (detachFrameAboveThreadReply st tcb) :=
+    passiveServerIdleFrame st (spliceThreadReplyFrameOut st tcb) :=
   passiveServerIdleFrame_of_backward
     (fun t tcb' hPost =>
-      ⟨tcb', detachFrameAboveThreadReply_tcb_backward st tcb hInv t.toObjId tcb'
+      ⟨tcb', spliceThreadReplyFrameOut_tcb_backward st tcb hInv t.toObjId tcb'
         hPost, rfl, rfl⟩)
-    (detachFrameAboveThreadReply_scheduler_eq st tcb)
+    (spliceThreadReplyFrameOut_scheduler_eq st tcb)
 
 /-- WS-OD OD1.5: the unblock-and-stage rewrite frames `passiveServerIdle`.
 
@@ -755,27 +755,27 @@ theorem cancelIpcBlocking_passiveServerIdleFrame
     rw [show Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
         Lifecycle.Suspend.consumeReplyLink
           (Lifecycle.Suspend.restoreToReadyCancelled
-            (detachFrameAboveThreadReply
+            (spliceThreadReplyFrameOut
               (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV by
       unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hIp]]
     have hF1 := returnDonationToCancelledCaller_passiveServerIdleFrame st v tcbV hInv hMem
     have hI1 := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
     -- `v0.35.4`: the frame detach writes at most a Reply, which frames the conjunct.
-    have hFD := detachFrameAboveThreadReply_passiveServerIdleFrame
+    have hFD := spliceThreadReplyFrameOut_passiveServerIdleFrame
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hI1
-    have hID := detachFrameAboveThreadReply_preserves_objects_invExt
+    have hID := spliceThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hI1
     have hF2 := restoreToReadyStaging_passiveServerIdleFrame
-      (detachFrameAboveThreadReply
+      (spliceThreadReplyFrameOut
         (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v
       (some Architecture.cancelledIpcFrame) hID
     have hI2 := Lifecycle.Suspend.restoreToReadyCancelled_invExt
-      (detachFrameAboveThreadReply
+      (spliceThreadReplyFrameOut
         (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v hID
     have hF3 := consumeReplyLink_passiveServerIdleFrame
       (Lifecycle.Suspend.restoreToReadyCancelled
-        (detachFrameAboveThreadReply
+        (spliceThreadReplyFrameOut
           (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV hI2
     exact ((hF1.trans hFD).trans hF2).trans hF3
 
@@ -831,21 +831,21 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
   have hArm : Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
       Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (detachFrameAboveThreadReply
+          (spliceThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV := by
     unfold Lifecycle.Suspend.cancelIpcBlocking
     rw [hBlocked]
   rw [hArm] at hTcb
   have hInvR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt st v tcbV hInv
-  have hInvD := detachFrameAboveThreadReply_preserves_objects_invExt _ tcbV hInvR
+  have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcbV hInvR
   have hInvS := Lifecycle.Suspend.restoreToReadyCancelled_invExt _ v hInvD
   have hSame :
       sameSchedContextBindings (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV)
         (Lifecycle.Suspend.consumeReplyLink
           (Lifecycle.Suspend.restoreToReadyCancelled
-            (detachFrameAboveThreadReply
+            (spliceThreadReplyFrameOut
               (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV) :=
-    ((detachFrameAboveThreadReply_sameSchedContextBindings _ tcbV hInvR).trans
+    ((spliceThreadReplyFrameOut_sameSchedContextBindings _ tcbV hInvR).trans
       (restoreToReadyStaging_sameSchedContextBindings _ v _ hInvD)).trans
       (consumeReplyLink_sameSchedContextBindings _ v tcbV hInvS)
   obtain ⟨t0, h0, hEqB⟩ := hSame tid tcb hTcb
@@ -917,18 +917,18 @@ theorem cancelIpcBlocking_replyArm_noDonation_tcb_frame (st : SystemState)
   have hArm : Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
       Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (detachFrameAboveThreadReply st tcbV) v) v tcbV := by
+          (spliceThreadReplyFrameOut st tcbV) v) v tcbV := by
     unfold Lifecycle.Suspend.cancelIpcBlocking
     rw [hBlocked, Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hNoDonation]
   rw [hArm]
   -- `v0.35.4`: the frame detach writes at most a Reply, so every TCB is untouched.
-  have hInvD := detachFrameAboveThreadReply_preserves_objects_invExt st tcbV hInv
+  have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt st tcbV hInv
   refine consumeReplyLink_other_tcb_eq _ v tcbV
     (Lifecycle.Suspend.restoreToReadyCancelled_invExt _ v hInvD) k t0 hNe ?_
   show (Lifecycle.Suspend.restoreToReadyStaging
-    (detachFrameAboveThreadReply st tcbV) v _).objects[k]? = some (.tcb t0)
+    (spliceThreadReplyFrameOut st tcbV) v _).objects[k]? = some (.tcb t0)
   rw [restoreToReadyStaging_objects_ne _ v _ k hInvD hNe]
-  exact detachFrameAboveThreadReply_tcb_eq st tcbV hInv k t0 hPre
+  exact spliceThreadReplyFrameOut_tcb_eq st tcbV hInv k t0 hPre
 
 /-- **WS-OD OD3.5**: a successful `endpointQueueRemove` resolved its endpoint.
 
@@ -1156,7 +1156,7 @@ theorem cancelIpcBlocking_replyArm_tcb_frame (st : SystemState)
   have hArm : Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
       Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (detachFrameAboveThreadReply
+          (spliceThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV := by
     unfold Lifecycle.Suspend.cancelIpcBlocking
     rw [hBlocked]
@@ -1190,15 +1190,15 @@ theorem cancelIpcBlocking_replyArm_tcb_frame (st : SystemState)
     Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt st v tcbV hInv
   -- `v0.35.4`: the frame detach between the reclaim and the restore writes at
   -- most a Reply, so the TCB reads through it.
-  have hDetach : (detachFrameAboveThreadReply
+  have hDetach : (spliceThreadReplyFrameOut
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV).objects[k]?
         = some (.tcb t0) :=
-    detachFrameAboveThreadReply_tcb_eq _ tcbV hInvR k t0 hReclaim
-  have hInvD := detachFrameAboveThreadReply_preserves_objects_invExt _ tcbV hInvR
+    spliceThreadReplyFrameOut_tcb_eq _ tcbV hInvR k t0 hReclaim
+  have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcbV hInvR
   refine consumeReplyLink_other_tcb_eq _ v tcbV
     (Lifecycle.Suspend.restoreToReadyCancelled_invExt _ v hInvD) k t0 hkV ?_
   show (Lifecycle.Suspend.restoreToReadyStaging
-    (detachFrameAboveThreadReply
+    (spliceThreadReplyFrameOut
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v _).objects[k]?
       = some (.tcb t0)
   rw [restoreToReadyStaging_objects_ne _ v _ k hInvD hkV]
@@ -1302,7 +1302,7 @@ theorem cancelIpcBlocking_reply_arm_below_the_cut
     Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
       Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (detachFrameAboveThreadReply st tcbV) v) v tcbV := by
+          (spliceThreadReplyFrameOut st tcbV) v) v tcbV := by
   obtain ⟨_, _, hIdent⟩ :=
     cancelledCallerDonation?_none_below_the_cut st v tcbV ep rt rid above hIpc hRO
       hDonatedOnward
@@ -1438,7 +1438,7 @@ theorem clearTcbReplyObject_getReply?_eq (st : SystemState) (tid : SeLe4n.Thread
 /-! With the doubly-linked stack the cancellation's reply arm is a chain
 **writer** on two counts, and neither reaches `donationChainWellFormed_of_frame`:
 
-* the `O(1)` detach (`detachReplyFrameAbove`, seL4's `reply_remove_tcb` on a
+* the `O(1)` detach (`spliceReplyFrameOut`, seL4's `reply_remove_tcb` on a
   non-head frame) clears the `prev` of the frame above the cancelled caller's;
 * the reply-link consume (`clearReplyObjectCaller`, storing `Reply.consumed`)
   clears the cancelled caller's own two links unless the frame heads a context.
@@ -1449,7 +1449,7 @@ shortens one stack and repairs the only link that named the frame it cut
 the frame it clears, both established by the detach that runs first: the frame
 heads no context (a head is popped by the reclaim, never consumed in place), and
 no frame's `prev` still names it — which is exactly what the detach guarantees
-(`detachFrameAboveThreadReply_unreferenced`).  The stale *upward* link the frame
+(`spliceThreadReplyFrameOut_unreferenced`).  The stale *upward* link the frame
 below the cut keeps (`next = .frame victim`) is one the invariant deliberately
 does not constrain: nothing trusts an upward link that is not answered from
 above, which is what lets the cut be `O(1)`. -/
@@ -1458,10 +1458,10 @@ above, which is what lets the cut be `O(1)`. -/
 clears the `prev` of a frame whose `next` is unchanged, so every reciprocity
 clause is either untouched or made vacuous, and the walk from the frame's head
 stops at it. -/
-theorem detachReplyFrameAbove_preserves_donationChainWellFormed {st st' : SystemState}
+theorem spliceReplyFrameOut_preserves_donationChainWellFormed {st st' : SystemState}
     {rid : SeLe4n.ReplyId} (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (h : detachReplyFrameAbove st rid = .ok st') : donationChainWellFormed st' := by
-  rcases detachReplyFrameAbove_cases h with rfl | ⟨_, above, a, _, _, hA, _, hS⟩
+    (h : spliceReplyFrameOut st rid = .ok st') : donationChainWellFormed st' := by
+  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, above, a, _, _, hA, _, hS⟩
   · exact hChain
   · have hAObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hA
     have hAbove : st'.objects[above.toObjId]? = some (.reply { a with prev := none }) :=
@@ -1543,22 +1543,22 @@ theorem detachReplyFrameAbove_preserves_donationChainWellFormed {st st' : System
       exact ⟨fuel, chain', hWalk'⟩
 
 /-- `v0.35.4`: the cancelled caller's frame detach preserves the chain — the
-identity where there is nothing to detach, one `detachReplyFrameAbove` otherwise. -/
-theorem detachFrameAboveThreadReply_preserves_donationChainWellFormed (st : SystemState)
+identity where there is nothing to detach, one `spliceReplyFrameOut` otherwise. -/
+theorem spliceThreadReplyFrameOut_preserves_donationChainWellFormed (st : SystemState)
     (tcb : TCB) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st) :
-    donationChainWellFormed (detachFrameAboveThreadReply st tcb) := by
-  rcases detachFrameAboveThreadReply_cases st tcb with h | ⟨_, _, h⟩
+    donationChainWellFormed (spliceThreadReplyFrameOut st tcb) := by
+  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
   · rw [h]; exact hChain
-  · exact detachReplyFrameAbove_preserves_donationChainWellFormed hInv hChain h
+  · exact spliceReplyFrameOut_preserves_donationChainWellFormed hInv hChain h
 
 /-- `v0.35.6` (WS-RM): **the fold preserves the chain invariant** — the identity
-on a refusal, `detachReplyFrameAbove_preserves_donationChainWellFormed` otherwise. -/
-theorem detachReplyFrameAboveOrSelf_preserves_donationChainWellFormed (st : SystemState)
+on a refusal, `spliceReplyFrameOut_preserves_donationChainWellFormed` otherwise. -/
+theorem spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed (st : SystemState)
     (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st) :
-    donationChainWellFormed (detachReplyFrameAboveOrSelf st rid) := by
-  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+    donationChainWellFormed (spliceReplyFrameOutOrSelf st rid) := by
+  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact hChain
-  · exact detachReplyFrameAbove_preserves_donationChainWellFormed hInv hChain h
+  · exact spliceReplyFrameOut_preserves_donationChainWellFormed hInv hChain h
 
 /-- **WS-RM (`v0.35.6`): after the fold, no stored Reply's `prev` names `rid`.**
 
@@ -1575,18 +1575,18 @@ on a *refusal* — the frame above does not resolve, or does not point back — 
 stored Reply satisfies the reciprocity clause for `rid` in the first place, so
 there is nothing to repair.  The refusal is therefore not a case the fold papers
 over: it is the case in which the repair was already unnecessary. -/
-theorem detachReplyFrameAboveOrSelf_unreferenced (st : SystemState)
+theorem spliceReplyFrameOutOrSelf_unreferenced (st : SystemState)
     (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
     (a : SeLe4n.ReplyId) (ra : Reply)
-    (hA : (detachReplyFrameAboveOrSelf st rid).objects[a.toObjId]? = some (.reply ra)) :
+    (hA : (spliceReplyFrameOutOrSelf st rid).objects[a.toObjId]? = some (.reply ra)) :
     ra.prev ≠ some rid := by
   intro hPrevA
   -- The post-state frame at `a` is a pre-state frame with the same `prev`: the
   -- fold's one write sets a `prev` to `none`, which `hPrevA` is not.
   have hA0 : st.objects[a.toObjId]? = some (.reply ra) := by
-    rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+    rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
     · rw [h] at hA; exact hA
-    · rcases detachReplyFrameAbove_cases h with h' | ⟨_, above, a', _, _, _, _, hS⟩
+    · rcases spliceReplyFrameOut_cases h with h' | ⟨_, above, a', _, _, _, _, hS⟩
       · rw [h'] at hA; exact hA
       · by_cases hk : a.toObjId = above.toObjId
         · rw [hk, storeObject_objects_eq' st _ _ _ hInv hS] at hA
@@ -1605,15 +1605,15 @@ theorem detachReplyFrameAboveOrSelf_unreferenced (st : SystemState)
     ⟨_, rfl⟩
   obtain ⟨u, s'⟩ := p
   cases u
-  have hDet : detachReplyFrameAbove st rid = .ok s' := by
-    unfold detachReplyFrameAbove
+  have hDet : spliceReplyFrameOut st rid = .ok s' := by
+    unfold spliceReplyFrameOut
     rw [hGetR]
     simp only [hRnext]
     rw [hGetA]
     simp only [hPrevA, bne_self_eq_false, Bool.false_eq_true, if_false]
     rw [hP]
-  have hPost : detachReplyFrameAboveOrSelf st rid = s' := by
-    unfold detachReplyFrameAboveOrSelf; rw [hDet]
+  have hPost : spliceReplyFrameOutOrSelf st rid = s' := by
+    unfold spliceReplyFrameOutOrSelf; rw [hDet]
   rw [hPost, storeObject_objects_eq' st _ _ _ hInv hP] at hA
   have hEq := KernelObject.reply.inj (Option.some.inj hA)
   have hPrevEq : ({ ra with prev := none } : Reply).prev = ra.prev := by rw [hEq]
@@ -1621,17 +1621,17 @@ theorem detachReplyFrameAboveOrSelf_unreferenced (st : SystemState)
   cases hPrevEq
 
 /-- `v0.35.4`: **after the detach, no frame's `prev` names the cancelled caller's
-frame** — the TCB-keyed instance of `detachReplyFrameAboveOrSelf_unreferenced`,
+frame** — the TCB-keyed instance of `spliceReplyFrameOutOrSelf_unreferenced`,
 which answers the same question for whichever `ReplyId` the thread holds. -/
-theorem detachFrameAboveThreadReply_unreferenced (st : SystemState) (tcb : TCB)
+theorem spliceThreadReplyFrameOut_unreferenced (st : SystemState) (tcb : TCB)
     (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
     (hRid : tcb.replyObject = some rid) (a : SeLe4n.ReplyId) (ra : Reply)
-    (hA : (detachFrameAboveThreadReply st tcb).objects[a.toObjId]?
+    (hA : (spliceThreadReplyFrameOut st tcb).objects[a.toObjId]?
       = some (.reply ra)) :
     ra.prev ≠ some rid := by
-  refine detachReplyFrameAboveOrSelf_unreferenced st rid hInv hChain a ra ?_
-  rw [show detachReplyFrameAboveOrSelf st rid = detachFrameAboveThreadReply st tcb by
-    unfold detachFrameAboveThreadReply; rw [hRid]]
+  refine spliceReplyFrameOutOrSelf_unreferenced st rid hInv hChain a ra ?_
+  rw [show spliceReplyFrameOutOrSelf st rid = spliceThreadReplyFrameOut st tcb by
+    unfold spliceThreadReplyFrameOut; rw [hRid]]
   exact hA
 
 /-- **WS-RM (`v0.35.6`): the object-store effect of consuming a reply link
@@ -1973,7 +1973,7 @@ for a frame that heads no context, with **no** side condition beyond `invExt` an
 the chain itself.
 
 `hUnreferenced` — the fact the consume needs and cannot establish — is discharged
-by the detach that runs first (`detachReplyFrameAboveOrSelf_unreferenced`), on all
+by the detach that runs first (`spliceReplyFrameOutOrSelf_unreferenced`), on all
 three of its arms.  That is the whole reason the removal is a *sequence* rather
 than a fold: run the other way round, the consume would clear a non-head frame's
 `next` while the frame above still linked down to it, and every later walk to that
@@ -1981,7 +1981,7 @@ frame would refuse (fail-closed) rather than return the context.
 
 `hNotHead` is read on the **pre**-state, which is sound because the detach writes
 a `prev` and never a `next`
-(`detachReplyFrameAboveOrSelf_reply_next`). -/
+(`spliceReplyFrameOutOrSelf_reply_next`). -/
 theorem removeCallerReplyFrame_preserves_donationChainWellFormed (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
     (hChain : donationChainWellFormed st)
@@ -1991,11 +1991,11 @@ theorem removeCallerReplyFrame_preserves_donationChainWellFormed (st st' : Syste
     donationChainWellFormed st' := by
   rw [removeCallerReplyFrame_eq] at hStep
   refine consumeCallerReply_preserves_donationChainWellFormed _ st' caller rid
-    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hInv)
-    (detachReplyFrameAboveOrSelf_preserves_donationChainWellFormed st rid hInv hChain)
-    ?_ (detachReplyFrameAboveOrSelf_unreferenced st rid hInv hChain) hStep
+    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hInv)
+    (spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed st rid hInv hChain)
+    ?_ (spliceReplyFrameOutOrSelf_unreferenced st rid hInv hChain) hStep
   intro r sc hR
-  obtain ⟨rp, hrp, hNext, _⟩ := detachReplyFrameAboveOrSelf_reply_next st rid hInv rid r hR
+  obtain ⟨rp, hrp, hNext, _⟩ := spliceReplyFrameOutOrSelf_reply_next st rid hInv rid r hR
   rw [hNext]
   exact hNotHead rp sc hrp
 
@@ -2020,8 +2020,8 @@ theorem removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
     donationChainWellFormedExcept st' rid := by
   -- On a head the detach is the identity: a `.head` link names no frame above.
-  have hFold : detachReplyFrameAboveOrSelf st rid = st :=
-    detachReplyFrameAboveOrSelf_eq_self_of_no_frame_above st rid
+  have hFold : spliceReplyFrameOutOrSelf st rid = st :=
+    spliceReplyFrameOutOrSelf_eq_self_of_no_frame_above st rid
       (replyFrameAbove?_of_head st rid r scId hR hHead)
   rw [removeCallerReplyFrame_eq, hFold] at hStep
   exact consumeCallerReply_head_preserves_donationChainWellFormedExcept st st' caller rid r scId

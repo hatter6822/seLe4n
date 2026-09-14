@@ -422,7 +422,7 @@ private def stLinkedWithFrameAbove : SystemState :=
     |>.withRunnable [serverTid]
     |>.build)
 
-private def runFrameDetachChecks : IO Unit := do
+private def runFrameSpliceChecks : IO Unit := do
   IO.println "--- §3.9 WS-RM: seL4's `reply_remove` — the detach, both directions ---"
   -- (1) The in-order path: the answered frame has nothing above it, so the
   -- detach is the identity and the reply is byte-for-byte the pre-WS-RM one.
@@ -661,7 +661,7 @@ def runSmpCrossCoreReplyChecks : IO Unit := do
   runWakeChecks
   runReplayChecks
   runConsumeChecks
-  runFrameDetachChecks
+  runFrameSpliceChecks
   runReplyRecvChecks
   runDonationChecks
   runDispatchChecks

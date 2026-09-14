@@ -1134,7 +1134,7 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_no_donation_to_vic
 # it runs *after* the reclaim (on whose success it is the identity) and *before*
 # the caller link is consumed, so the whole nesting is pinned rather than the
 # pair, and a detach moved outside that window is refused.
-run_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink\n      \(restoreToReadyCancelled\n        \(detachFrameAboveThreadReply \(returnDonationToCancelledCaller st tid tcb\) tcb\) tid\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink\n      \(restoreToReadyCancelled\n        \(spliceThreadReplyFrameOut \(returnDonationToCancelledCaller st tid tcb\) tcb\) tid\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # NEGATIVE: the pre-remediation arm, which cleared the reply link and left the
 # donation with the server, must not come back.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink \(restoreToReadyCancelled st tid\) tid tcb" SeLe4n/Kernel/Lifecycle/Suspend.lean'
@@ -1144,13 +1144,13 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink \(restoreToR
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink\n      \(restoreToReadyCancelled \(returnDonationToCancelledCaller st tid tcb\) tid\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # ...and the detach itself is O(1) on the frame ABOVE the cancelled one, which is
 # what the upward link makes possible: a single-linked stack cannot find it.
-run_check "INVARIANT" rg -n '^def detachFrameAboveThreadReply' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^def detachReplyFrameAbove' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def detachReplyFrameAbove[^\n]*(\n([ \t][^\n]*)?)*storeObject above\.toObjId \(\.reply \{ a with prev := none \}\) st" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" rg -n '^def spliceThreadReplyFrameOut' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def spliceReplyFrameOut' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*storeObject above\.toObjId \(\.reply \{ a with prev := none \}\) st" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # Relation, not presence: the detach validates the back-link before it writes —
 # a frame whose `prev` does not name the frame being cut out is a stale upward
 # link, and repairing it would corrupt an unrelated stack.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def detachReplyFrameAbove[^\n]*(\n([ \t][^\n]*)?)*if a\.prev != some rid then \.error \.invalidArgument" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*if a\.prev != some rid then \.error \.invalidArgument" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The declared footprint covers the return's two writes, and the migration is at
 # the cross-core layer where the home cores are resolved.
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_returned_donation_sc_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
@@ -1447,7 +1447,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # caught in the first place, and how OD4.1's was.  Anchored between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerDetachChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runReceivePriorityHandoffChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runReceivePriorityHandoffChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -1586,7 +1586,7 @@ run_check "INVARIANT" rg -n 'the below-head Reply read is still declared on that
 run_check "INVARIANT" rg -n '^@\[simp\] theorem replyStackOuterCaller\?_of_no_stack' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 
 # `v0.35.4`: **the detach's writing arm, and the wedge it removes, are WITNESSED.**
-# Every `detachReplyFrameAbove` result proved elsewhere is discharged on a state
+# Every `spliceReplyFrameOut` result proved elsewhere is discharged on a state
 # whose frame has nothing above it, where the step is the identity -- so a
 # writing arm that stored the wrong field would satisfy all of them.  The witness
 # runs a depth-2 push, severs the outer caller's frame, and then completes the
@@ -2239,8 +2239,8 @@ run_check "INVARIANT" rg -n '^theorem clearTcbReplyObject_donationChainFrame' Se
 # division the pop and the push are on.  A frame there would be false.
 run_check "INVARIANT" rg -n '^theorem clearReplyObjectCaller_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_check "INVARIANT" rg -n '^theorem consumeReplyLink_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem detachReplyFrameAbove_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem detachFrameAboveThreadReply_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOut_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem spliceThreadReplyFrameOut_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 # NEGATIVE: the retired frames.  A consume that writes stack links cannot frame
 # the chain, and re-introducing either name is the drift this refuses.
 run_negative_check "INVARIANT" rg -n '^theorem consumeReply_donationChainFrame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
@@ -12744,11 +12744,11 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind[^\n]*(\n
 # answered frame off its stack and unlink it" is the divergence this tree has
 # paid for repeatedly; the composite is the single answer.
 run_check "INVARIANT" rg -n '^def removeCallerReplyFrame' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def removeCallerReplyFrame[^\n]*(\n([ \t][^\n]*)?)*SystemState\.consumeCallerReply caller rid \(detachReplyFrameAboveOrSelf st rid\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def removeCallerReplyFrame[^\n]*(\n([ \t][^\n]*)?)*SystemState\.consumeCallerReply caller rid \(spliceReplyFrameOutOrSelf st rid\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The order is the content: the detach reads the link the consume clears, so a
 # consume-then-detach body detaches from a Reply whose `next` is already gone.
 # NEGATIVE, token-preserving -- it keeps both steps and swaps them.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeCallerReplyFrame[^\n]*(\n([ \t][^\n]*)?)*detachReplyFrameAboveOrSelf \(SystemState\.consumeCallerReply" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeCallerReplyFrame[^\n]*(\n([ \t][^\n]*)?)*spliceReplyFrameOutOrSelf \(SystemState\.consumeCallerReply" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 
 # (1b) WS-RM on the FROZEN surface (PR #895 review, v0.35.12).  `FrozenOps` is
 # reached by neither library root and is in no staged allowlist, so the RM5.3
@@ -12801,8 +12801,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^
 # cancellation path has carried since `v0.35.4`.
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_frameAbove_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_frameAbove_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_detachedFrameAbove' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_detachedFrameAbove' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_splicedFrameAbove' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameAbove' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # ...and the same sweep run over the one remaining resolved footprint that had
 # no coverage layer at all.  `lockSet_cancelDonationOnCore`'s parametric members
 # each had a write-membership lemma and the resolved form had none, so nothing
@@ -12925,10 +12925,10 @@ run_check "INVARIANT" rg -n '^theorem answeredHeadContextIsServerDonation_false_
 # shape this family carries for every member since WS-OD (`v0.35.4`).
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_frameBelow_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_frameBelow_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_detachedFrameBelow' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_detachedFrameBelow' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_splicedFrameBelow' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameBelow' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # ...and the cancellation footprint, whose removal is the same operation.  Its
-# resolver is DERIVED from `cancelDetachedFrameAbove?`'s own arm test, so the two
+# resolver is DERIVED from `cancelSplicedFrameAbove?`'s own arm test, so the two
 # cannot disagree about which arm removes a frame.
 run_check "INVARIANT" rg -n '^def cancelSplicedFrameBelow\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_spliced_frame_below_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
@@ -13251,7 +13251,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelledCallerDonat
 # both removal members.  Relation, not presence: each must be stated over the
 # RESOLVED donation rather than over a supplied pair.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelReclaimHead\?_eq_replyObject[^\n]*(\n([ \t][^\n]*)?)*cancelReclaimHead\? st victimTid tcb = tcb\.replyObject" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDetachedFrameAbove\?_of_donation[^\n]*(\n([ \t][^\n]*)?)*cancelDetachedFrameAbove\? st tcb = none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelSplicedFrameAbove\?_of_donation[^\n]*(\n([ \t][^\n]*)?)*cancelSplicedFrameAbove\? st tcb = none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelSplicedFrameBelow\?_of_donation[^\n]*(\n([ \t][^\n]*)?)*cancelSplicedFrameBelow\? st tcb = none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # (7) And the witness FIRES the reclaim, which nothing in the tree did before: the
 # agreeing shape plus the orphan-head shape on which the two readings differ, with

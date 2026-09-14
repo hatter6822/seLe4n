@@ -1364,7 +1364,7 @@ private def runLubMergeChecks : IO Unit := do
   -- above the cut *and* the frame below it), so this shape is now one narrower
   -- than the popping one rather than two -- and the reachable eighteen is
   -- unmoved, which is the whole point of the exclusion.
-  let blockingReplyRecvDetaching := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+  let blockingReplyRecvSplicing := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                             (ObjId.ofNat 20) none (some ⟨42⟩) (some ⟨11⟩)
                             (some ⟨60⟩) true (some ⟨9⟩) none
                             none none (some ⟨13⟩)
@@ -1372,12 +1372,12 @@ private def runLubMergeChecks : IO Unit := do
                             (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
                             (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩)
   assertBool "the widest reachable blocking .replyRecv that splices has 17 locks"
-    (decide (blockingReplyRecvDetaching.size = 17))
+    (decide (blockingReplyRecvSplicing.size = 17))
   assertBool "…so the splice costs the reachable footprint nothing: it is one narrower"
-    (decide (blockingReplyRecvDetaching.size + 1 = blockingReplyRecv.size))
+    (decide (blockingReplyRecvSplicing.size + 1 = blockingReplyRecv.size))
   assertBool "…and both of the splice's frames are declared there"
-    (decide ((replyLock ⟨50⟩, AccessMode.write) ∈ blockingReplyRecvDetaching.pairs ∧
-             (replyLock ⟨51⟩, AccessMode.write) ∈ blockingReplyRecvDetaching.pairs))
+    (decide ((replyLock ⟨50⟩, AccessMode.write) ∈ blockingReplyRecvSplicing.pairs ∧
+             (replyLock ⟨51⟩, AccessMode.write) ∈ blockingReplyRecvSplicing.pairs))
   let rendezvousReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                               (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
                               (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
@@ -1407,7 +1407,7 @@ private def runLubMergeChecks : IO Unit := do
   -- asserting only `≤ maxLockSetSize` would pass with the slack claim false.
   assertBool "NEGATIVE: no reachable .replyRecv shape reaches maxLockSetSize"
     (!decide (blockingReplyRecv.size = maxLockSetSize
-              || blockingReplyRecvDetaching.size = maxLockSetSize
+              || blockingReplyRecvSplicing.size = maxLockSetSize
               || rendezvousReplyRecv.size = maxLockSetSize))
 
 private def runUnionChecks : IO Unit := do

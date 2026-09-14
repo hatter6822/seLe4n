@@ -1410,7 +1410,7 @@ returned context — on every reachable state it is the cancelled caller's own
 reply object and merges with `consumedReplyId` by key, but a footprint is the
 union over all argument values and the operation writes whatever `scReply`
 names), and the **frame above** the cancelled caller's own
-(`detachedFrameAboveReplyId`), which `detachFrameAboveThreadReply` unlinks when
+(`splicedFrameAboveReplyId`), which `spliceThreadReplyFrameOut` unlinks when
 the caller is not the head of its stack — seL4's `reply_remove_tcb`, non-head
 arm.  The two are mutually exclusive on every reachable state (a caller whose
 frame has something above it is not the innermost live caller, so no reclaim is
@@ -1431,11 +1431,11 @@ def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
     (belowHeadReplyId : Option SeLe4n.ReplyId)
     (outerCallerTid : Option SeLe4n.ThreadId)
     (reclaimHeadReplyId : Option SeLe4n.ReplyId)
-    (detachedFrameAboveReplyId : Option SeLe4n.ReplyId)
+    (splicedFrameAboveReplyId : Option SeLe4n.ReplyId)
     -- **WS-HP HP3.1**: and the frame **below** the cancelled caller's own, which
     -- the removal's splice re-links upward in the same step -- the cancellation
     -- twin of `lockSet_endpointReply`'s member, for the same write, since HP6
-    -- makes `detachFrameAboveThreadReply` a splice.  No default: a call site that
+    -- makes `spliceThreadReplyFrameOut` a splice.  No default: a call site that
     -- omits it must fail to elaborate.
     (splicedFrameBelowReplyId : Option SeLe4n.ReplyId) : LockSet :=
   lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
@@ -1476,10 +1476,10 @@ def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
       -- from the returned context rather than assumed to be the consumed reply.
       (reclaimHeadReplyId.map (fun r => (replyLock r, AccessMode.write))))
       -- **WS-OD (`v0.35.4`)**: the frame above the cancelled caller's own,
-      -- which `detachFrameAboveThreadReply` unlinks (`prev := none`) when the
+      -- which `spliceThreadReplyFrameOut` unlinks (`prev := none`) when the
       -- caller is a middle caller of its stack — the write that stops a dead
       -- frame from heading a stack forever.
-      (detachedFrameAboveReplyId.map (fun r => (replyLock r, AccessMode.write))))
+      (splicedFrameAboveReplyId.map (fun r => (replyLock r, AccessMode.write))))
       -- **WS-HP HP3.1**: and the frame below it, which the splice re-links
       -- upward (`next := .frame above`) in the same step -- the second half of
       -- the removal's write set.
@@ -1643,19 +1643,19 @@ theorem cancelReclaimHead?_eq_replyObject (st : SystemState)
   | _ => rw [hIpc] at h; cases h
 
 /-- **WS-OD (`v0.35.4`)**: the **frame above the cancelled caller's own** — the
-Reply `detachFrameAboveThreadReply` rewrites (`prev := none`) when the caller is a
+Reply `spliceThreadReplyFrameOut` rewrites (`prev := none`) when the caller is a
 *middle* caller of its stack, so that the frame above becomes the bottom of the
 stack it heads and the cancelled frame leaves the structure when its caller link
 is consumed.  Keyed on the reply arm, since only that arm detaches, and resolved
 through `replyFrameAbove?` — the same two fields the detach reads
-(`replyFrameAbove?_of_detach_store` ties the member to the store).
+(`replyFrameAbove?_of_splice_store` ties the member to the store).
 
 `none` for a head frame (`next = .head _`): a head is popped by the reclaim, never
 detached, so this member and `cancelReclaimHead?` are never both `some` — since
-WS-HP HP5.4 a theorem (`cancelDetachedFrameAbove?_of_donation`) rather than an
+WS-HP HP5.4 a theorem (`cancelSplicedFrameAbove?_of_donation`) rather than an
 observation about reachable states.  The footprint declares them independently
 because it does not get to assume that. -/
-def cancelDetachedFrameAbove? (st : SystemState) (tcb : TCB) : Option SeLe4n.ReplyId :=
+def cancelSplicedFrameAbove? (st : SystemState) (tcb : TCB) : Option SeLe4n.ReplyId :=
   match tcb.ipcState with
   | .blockedOnReply _ _ => tcb.replyObject.bind (replyFrameAbove? st)
   | _ => none
@@ -1663,7 +1663,7 @@ def cancelDetachedFrameAbove? (st : SystemState) (tcb : TCB) : Option SeLe4n.Rep
 /-- **WS-HP HP3.1**: the frame **below** the cancelled caller's own -- the second
 Reply the removal writes once HP6 makes the cancellation's removal a splice.
 
-Derived from `cancelDetachedFrameAbove?`'s own two inputs -- the reply arm and the
+Derived from `cancelSplicedFrameAbove?`'s own two inputs -- the reply arm and the
 victim's `replyObject` -- composed with `replyFrameBelow?`, which is itself
 `replyFrameAbove?` plus the cut frame's `prev`.  So "is this a splice at all" is
 answered once for the footprint, the detach resolver and the operation.
@@ -1691,12 +1691,12 @@ holder's stored binding, which relates to no reply frame at all, so "never both
 `some`" was an observation about the fixtures.  The footprint still declares the
 members independently, because it is the union over all argument values rather than
 over the states a theorem covers. -/
-theorem cancelDetachedFrameAbove?_of_donation (st : SystemState)
+theorem cancelSplicedFrameAbove?_of_donation (st : SystemState)
     (victimTid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (holder : SeLe4n.ThreadId)
     (h : Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb = some (scId, holder)) :
-    cancelDetachedFrameAbove? st tcb = none := by
-  unfold cancelDetachedFrameAbove?
+    cancelSplicedFrameAbove? st tcb = none := by
+  unfold cancelSplicedFrameAbove?
   unfold Lifecycle.Suspend.cancelledCallerDonation? at h
   cases hIpc : tcb.ipcState with
   | blockedOnReply ep rt =>
@@ -1755,10 +1755,10 @@ theorem cancelSplicedFrameBelow?_of_donation (st : SystemState)
 keeps the cancellation's reply-arm bound where it was, and which needs no
 invariant: the splice's member is declared only on a *mid-stack* removal. -/
 @[simp] theorem cancelSplicedFrameBelow?_of_no_frameAbove (st : SystemState) (tcb : TCB)
-    (h : cancelDetachedFrameAbove? st tcb = none) :
+    (h : cancelSplicedFrameAbove? st tcb = none) :
     cancelSplicedFrameBelow? st tcb = none := by
   unfold cancelSplicedFrameBelow?
-  unfold cancelDetachedFrameAbove? at h
+  unfold cancelSplicedFrameAbove? at h
   cases hIp : tcb.ipcState with
   | blockedOnReply ep rt =>
     rw [hIp] at h
@@ -1770,19 +1770,19 @@ invariant: the splice's member is declared only on a *mid-stack* removal. -/
   | _ => rfl
 
 /-- WS-OD (`v0.35.4`): the endpoint arms detach nothing. -/
-@[simp] theorem cancelDetachedFrameAbove?_of_blockedEndpoint (st : SystemState) (tcb : TCB)
+@[simp] theorem cancelSplicedFrameAbove?_of_blockedEndpoint (st : SystemState) (tcb : TCB)
     (ep : SeLe4n.ObjId) (h : cancelBlockedEndpoint? tcb = some ep) :
-    cancelDetachedFrameAbove? st tcb = none := by
+    cancelSplicedFrameAbove? st tcb = none := by
   unfold cancelBlockedEndpoint? at h
-  unfold cancelDetachedFrameAbove?
+  unfold cancelSplicedFrameAbove?
   cases hIp : tcb.ipcState <;> simp_all
 
 /-- WS-OD (`v0.35.4`): nor does the notification arm. -/
-@[simp] theorem cancelDetachedFrameAbove?_of_blockedNotification (st : SystemState) (tcb : TCB)
+@[simp] theorem cancelSplicedFrameAbove?_of_blockedNotification (st : SystemState) (tcb : TCB)
     (n : SeLe4n.ObjId) (h : cancelBlockedNotification? tcb = some n) :
-    cancelDetachedFrameAbove? st tcb = none := by
+    cancelSplicedFrameAbove? st tcb = none := by
   unfold cancelBlockedNotification? at h
-  unfold cancelDetachedFrameAbove?
+  unfold cancelSplicedFrameAbove?
   cases hIp : tcb.ipcState <;> simp_all
 
 /-- WS-OD (`v0.35.4`): a resolved donation witnesses a `.blockedOnReply` victim —
@@ -1862,9 +1862,9 @@ def lockSet_cancelIpcBlockingOnCore (st : SystemState)
             -- above the cancelled caller's own, which the detach unlinks --
             -- each through the resolver it is derived from.
             (cancelReclaimHead? st victimTid tcb)
-            (cancelDetachedFrameAbove? st tcb)
+            (cancelSplicedFrameAbove? st tcb)
             -- **WS-HP HP3.1**: and the frame below the cut, which the splice
-            -- re-links upward.  Derived from `cancelDetachedFrameAbove?`'s own
+            -- re-links upward.  Derived from `cancelSplicedFrameAbove?`'s own
             -- resolver, so the two cannot disagree about which arm removes.
             (cancelSplicedFrameBelow? st tcb))
           -- WS-OD OD3.5: the *arm-selected* neighbours, not the summed pair.
@@ -1909,7 +1909,7 @@ theorem lockSet_cancelIpcBlockingOnCore_replyArm_eq (st : SystemState)
           (cancelBelowHeadReads? st victimTid tcb).1
           (cancelBelowHeadReads? st victimTid tcb).2
           (cancelReclaimHead? st victimTid tcb)
-          (cancelDetachedFrameAbove? st tcb)
+          (cancelSplicedFrameAbove? st tcb)
           (cancelSplicedFrameBelow? st tcb) := by
   have hE : cancelBlockedEndpoint? tcb = none := by
     unfold cancelBlockedEndpoint?; rw [hIp]
@@ -2017,12 +2017,12 @@ theorem lockSet_consistent_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
     (outerCallerTid : Option SeLe4n.ThreadId)
     -- WS-OD (`v0.35.4`): the head the reclaim clears and the frame the detach
     -- unlinks.
-    (reclaimHeadReplyId detachedFrameAboveReplyId : Option SeLe4n.ReplyId)
+    (reclaimHeadReplyId splicedFrameAboveReplyId : Option SeLe4n.ReplyId)
     -- **WS-HP HP3.1**: and the frame below the cut, which the splice re-links.
     (splicedFrameBelowReplyId : Option SeLe4n.ReplyId) :
     ∀ p ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId
         returnedDonationSc donationHolderTid holderEndpointObjId holderSpliceNeighbors
-        belowHeadReplyId outerCallerTid reclaimHeadReplyId detachedFrameAboveReplyId
+        belowHeadReplyId outerCallerTid reclaimHeadReplyId splicedFrameAboveReplyId
         splicedFrameBelowReplyId).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
   lockSet_consistent_base_plus_fourteen_opts _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
@@ -2082,7 +2082,7 @@ theorem lockSet_consistent_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
         | none => simp at hpp
         | some r => simp at hpp; rw [← hpp]; simp; decide)
     (by intro pp hpp
-        cases detachedFrameAboveReplyId with
+        cases splicedFrameAboveReplyId with
         | none => simp at hpp
         | some r => simp at hpp; rw [← hpp]; simp; decide)
     -- **WS-HP HP3.1**: and one more Reply-kind member — the frame below the cut.
@@ -2559,8 +2559,8 @@ theorem lockSet_cancelIpcBlocking_reclaim_head_write_mem
   exact self_write_mem_insertOrMerge _ (replyLock r)
 
 /-- **WS-OD (`v0.35.4`)** (coverage): the **frame above the cancelled caller's
-own** — the one `detachFrameAboveThreadReply` unlinks — is a declared write. -/
-theorem lockSet_cancelIpcBlocking_detached_frame_above_write_mem
+own** — the one `spliceThreadReplyFrameOut` unlinks — is a declared write. -/
+theorem lockSet_cancelIpcBlocking_spliced_frame_above_write_mem
     (victimTid : SeLe4n.ThreadId)
     (blEp : Option SeLe4n.ObjId)
     (blN : Option SeLe4n.ObjId)
@@ -2852,17 +2852,17 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_outerCaller_key (st : SystemState
   exact lockSet_cancelIpcBlocking_outer_caller_containsKey _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD (`v0.35.4`): the frame the detach unlinks is a declared write. -/
-theorem lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove (st : SystemState)
+theorem lockSet_cancelIpcBlockingOnCore_covers_splicedFrameAbove (st : SystemState)
     (victimTid : SeLe4n.ThreadId) (tcb : TCB) (above : SeLe4n.ReplyId)
     (hT : st.getTcb? victimTid = some tcb)
-    (hA : cancelDetachedFrameAbove? st tcb = some above) :
+    (hA : cancelSplicedFrameAbove? st tcb = some above) :
     (replyLock above, AccessMode.write)
       ∈ (lockSet_cancelIpcBlockingOnCore st victimTid).pairs := by
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
   simp only [hA]
   iterate 2 apply mem_write_lockSetExtendOpt
-  exact lockSet_cancelIpcBlocking_detached_frame_above_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_cancelIpcBlocking_spliced_frame_above_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-HP HP3.4**: and the frame the splice re-links *below* the cut is one too
 — the resolved coverage theorem this family carries for every member, tying the
