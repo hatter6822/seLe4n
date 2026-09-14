@@ -1500,6 +1500,24 @@ theorem removeRunnableOnCore_passiveServerIdleFrame
         rw [removeRunnableOnCore_currentOnCore_self, hCur, if_neg (fun h => hEq (Option.some.inj h))]
       · rw [removeRunnableOnCore_currentOnCore_ne st removed c bootCoreId hcb]; exact hCur
 
+/-- `v0.35.37`: the same micro-frame for the **placement-resolved** deschedule,
+which is what the reply path's donation return runs.  Both branches are covered:
+at a resolved core it is the lemma above, and at a thread the state places
+nowhere the step is the identity, which frames everything.
+
+Proved at the step rather than re-derived at each consumer — the reason the
+`_preserves_objects` and `_replenishQueueOnCore` frames live beside
+`descheduleAtPlacement` itself. -/
+theorem descheduleAtPlacement_passiveServerIdleFrame
+    (st : SystemState) (removed : SeLe4n.ThreadId)
+    (hRemoved : ∀ tcb, st.objects[removed.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
+    passiveServerIdleFrame st (descheduleAtPlacement st removed) := by
+  unfold descheduleAtPlacement
+  split
+  · exact removeRunnableOnCore_passiveServerIdleFrame st removed _ hRemoved
+  · exact ⟨fun tid tcb' h1 h2 h3 h4 h5 => ⟨tcb', h1, h2, h3, h4, rfl⟩⟩
+
 /-- SM6.D.2 micro-frame (cross-core): `removeRunnableOnCore` on core `oc`
 frames every core `c`'s slice given the removed thread is bound or
 already in an allowed state. -/

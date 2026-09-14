@@ -1852,35 +1852,73 @@ theorem endpointCallCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingCo
 -- Legs two and three can each name a core the reply's own write set does not, so
 -- §4's theorem never bounded the live arm (PR #861 review round 4).
 
-/-- SM8.B.2 / WS-RR RR2.8: the cross-core donation **return** writes at most the
-core it is handed. Unlike the call-side `applyCallDonationOnCore` this is *not*
-per-core silent: the now-passive server is descheduled on its own core, which is
-precisely why `endpointReplyCrossCoreDispatch` resolves `determineExecutingCore
-st expected` instead of reusing the (possibly delegated) replier's syscall core.
+/-- The step's own confinement, stated once where both consumers can reach it. -/
+theorem descheduleAtPlacement_confinedToCores (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (descheduleAtPlacement st tid)
+      (descheduleAtPlacementCores st tid) := by
+  unfold descheduleAtPlacement descheduleAtPlacementCores
+  cases hp : placedCoreOf? st tid with
+  | none => exact observableSlotsConfinedToCores_refl st []
+  | some c => exact removeRunnableOnCore_confinedToCores st tid c
+
+/-- SM8.B.2 / WS-RR RR2.8, corrected at `v0.35.37`: the cross-core donation
+**return** writes at most the core the state **places** the returning server on.
+Unlike the call-side `applyCallDonationOnCore` this is *not* per-core silent: the
+now-passive server is descheduled where it actually sits, and the core list is
+read off `descheduleAtPlacementCores` — the *same* resolver the step itself uses,
+so the confinement claim and the transition cannot name different cores.
+
+What this docstring said before is the finding this cut fixes.  It claimed the
+server "is descheduled on its own core, which is precisely why
+`endpointReplyCrossCoreDispatch` resolves `determineExecutingCore st expected`".
+The first half was the intent and the second half did not deliver it:
+`determineExecutingCore` finds a core the thread is *current* on and otherwise
+answers `bootCoreId`, so a server that was **queued** — preempted, which is the
+ordinary fate of a thread that is not running — was descheduled on a core it is
+not on, and the step wrote nothing.  A justification that holds only when the
+thread happens to be running is not a justification for a step whose whole
+purpose is to stop it running.
 
 The other two legs are silent — `returnDonatedSchedContext` moves `boundThread`
 in the object store and leaves the scheduler and every register bank alone, and
 the RR2.8 replenishment migration writes a queue SM8.A's
-`onCore_perCore_independence` puts outside the observer's read set — so the
-whole leg still collapses to the one `removeRunnableOnCore`. -/
+`onCore_perCore_independence` puts outside the observer's read set — so the whole
+leg still collapses to the one deschedule, and at a replier the state places
+nowhere the core list is empty because the step is the identity. -/
 theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
-    (replierVtid : SeLe4n.ValidThreadId) (serverCore replierHome ownerHome : CoreId)
-    (hStep : applyReplyDonationOnCore st replierVtid serverCore replierHome ownerHome = .ok st') :
-    observableSlotsConfinedToCores st st' [serverCore] := by
-  rcases applyReplyDonationOnCore_ok_decompose st st' replierVtid serverCore replierHome
+    (replierVtid : SeLe4n.ValidThreadId) (replierHome ownerHome : CoreId)
+    (hStep : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st') :
+    observableSlotsConfinedToCores st st'
+      (descheduleAtPlacementCores st replierVtid.val) := by
+  rcases applyReplyDonationOnCore_ok_decompose st st' replierVtid replierHome
     ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, owner, n, stRet, _, _, hRet, hEq⟩
   · exact observableSlotsConfinedToCores_of_eq _ hEq
-  · rw [hEq]
-    exact observableSlotsConfinedToCores_widen_cons
+  · -- The core list is stated on the **pre**-state, which is the only state a
+    -- caller holds.  That is sound because neither step before the deschedule
+    -- moves a thread: the return writes objects alone and the migration writes
+    -- replenish queues alone, so the two slices `placedCoreOf?` reads are fixed.
+    let stMig : SystemState := migrateSchedContextReplenishment stRet scId replierHome ownerHome
+    have hMig : ∀ c : CoreId,
+        stMig.scheduler.runQueueOnCore c = stRet.scheduler.runQueueOnCore c
+        ∧ stMig.scheduler.currentOnCore c = stRet.scheduler.currentOnCore c :=
+      fun c => migrateSchedContextReplenishment_runQueue_current_eq stRet scId
+        replierHome ownerHome c
+    have hRetSched : stRet.scheduler = st.scheduler :=
+      returnDonatedSchedContext_scheduler_eq st stRet _ _ _ n hRet
+    have hCores : descheduleAtPlacementCores stMig replierVtid.val
+        = descheduleAtPlacementCores st replierVtid.val := by
+      rw [descheduleAtPlacementCores_congr_of_runQueue_current_eq _ hMig]
+      unfold descheduleAtPlacementCores
+      rw [placedCoreOf?_congr_of_scheduler_eq _ hRetSched]
+    rw [hEq, ← hCores]
+    exact observableSlotsConfinedToCores_trans
       (by
         simpa using observableSlotsConfinedToCores_trans
-          (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-            (returnDonatedSchedContext_scheduler_eq st stRet _ _ _ n hRet)
+          (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq hRetSched
             (returnDonatedSchedContext_machine_eq st stRet _ _ _ n hRet))
           (migrateSchedContextReplenishment_confinedToCores stRet scId replierHome ownerHome))
-      (removeRunnableOnCore_confinedToCores
-        (migrateSchedContextReplenishment stRet scId replierHome ownerHome)
-        replierVtid.val serverCore)
+      (descheduleAtPlacement_confinedToCores stMig replierVtid.val)
 
 /-- SM8.B.2: **the cores the live cross-core `.reply` may write**, recovered from
 the pre-state by mirroring `endpointReplyCrossCoreDispatch`'s own control flow —
@@ -1902,14 +1940,22 @@ def endpointReplyDispatchWriteSet (replier target : SeLe4n.ThreadId) (msg : IpcM
           match SeLe4n.ThreadId.toValid? expected with
           | some expectedV =>
               match applyReplyDonationOnCore st1 expectedV
-                  (determineExecutingCore st expected)
                   (determineTargetCore st expected)
                   (replyDonationOwnerHome st expected) with
               | .error _ => []
               | .ok st2 =>
-                  (determineTargetCore st target
-                    :: determineExecutingCore st expected
-                    :: pipChainWriteSet st2 expected executingCore st2.objectIndex.length)
+                  -- `v0.35.37`: the donation return's leg is the recorded server's
+                  -- **placement**, read off the same resolver the step uses, so the
+                  -- write set and the transition cannot name different cores.  It
+                  -- was `determineExecutingCore st expected`, which answers
+                  -- `bootCoreId` for a queued server — a core the step does not
+                  -- write and, worse, one it would have written had the proxy been
+                  -- the fact.  It is resolved at `st1` because that is the state
+                  -- the donation return runs on.
+                  ([determineTargetCore st target]
+                    ++ descheduleAtPlacementCores st1 expectedV.val
+                    ++ pipChainWriteSet st2 expected executingCore
+                         st2.objectIndex.length)
           | none => []
       | none => []
 
@@ -1947,7 +1993,6 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
         | some expectedV =>
           simp only []
           cases hDon : applyReplyDonationOnCore st1 expectedV
-              (determineExecutingCore st expected)
               (determineTargetCore st expected)
               (replyDonationOwnerHome st expected) with
           | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
@@ -1956,7 +2001,6 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
             exact observableSlotsConfinedToCores_trans
               (observableSlotsConfinedToCores_trans hReply
                 (applyReplyDonationOnCore_confinedToCores st1 st2 expectedV
-                  (determineExecutingCore st expected)
                   (determineTargetCore st expected)
                   (replyDonationOwnerHome st expected) hDon))
               (propagatePipChainCrossCore_confinedToCores executingCore
@@ -1998,16 +2042,6 @@ theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingC
 -- seL4-MCS's `doReplyTransfer` → `reply_remove` → `receiveIPC` order.  It writes
 -- no core (`replyRecvPopDonation_confinedToCores`), so the arm's declared set is
 -- unchanged by the move.
-
-/-- The step's own confinement, stated once where both consumers can reach it. -/
-theorem descheduleAtPlacement_confinedToCores (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    observableSlotsConfinedToCores st (descheduleAtPlacement st tid)
-      (descheduleAtPlacementCores st tid) := by
-  unfold descheduleAtPlacement descheduleAtPlacementCores
-  cases hp : placedCoreOf? st tid with
-  | none => exact observableSlotsConfinedToCores_refl st []
-  | some c => exact removeRunnableOnCore_confinedToCores st tid c
 
 /-- SM8.B.2: the tail the post-receive half's non-rendezvous arm takes —
 deschedule the now-passive recorded server on its own core, then revert its chain

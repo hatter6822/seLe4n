@@ -309,7 +309,7 @@ theorem endpointReplyCrossCoreDispatch_preserves_objects_invExt
               · rename_i st2 hRet
                 exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
                   _ _ _ _
-                  (applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hRep hRet)
+                  (applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hRep hRet)
             · exact hObjInv
           · exact hObjInv
 

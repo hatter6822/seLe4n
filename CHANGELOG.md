@@ -1,3 +1,90 @@
+## v0.35.37 — a delegated reply deschedules the server where it actually is
+
+The `v0.35.36` finding, fixed at the site it was reported against.  `CLAUDE.md`'s
+vulnerability rule says a CVE-worthy finding is **surfaced for triage rather than
+silently corrected**; it was surfaced, and this cut is the instruction that
+followed.
+
+**The defect.**  `endpointReplyCrossCoreDispatch` computed
+`expectedCore := determineExecutingCore st expected` and handed it to
+`applyReplyDonationOnCore`, whose last step was
+`removeRunnableOnCore … replier executingCore`.  `determineExecutingCore` finds a
+core the thread is *current* on and otherwise answers `bootCoreId`;
+`removeRunnableOnCore st tid c` edits **only** core `c`'s run queue and current
+slot.  So when the recorded server was **queued rather than running** — preempted
+by its own core's timer tick, which is the ordinary fate of a thread that is not
+running — the deschedule removed it from core 0's queue, where it is not, and
+cleared core 0's current slot only if it were the server, which it is not.  A
+complete no-op.  The server's donated scheduling context had just been returned,
+so it is `.unbound`, and `resolveEffectivePrioDeadline`'s `.unbound` arm returns
+its legacy TCB priority: it is selected on its own core and **runs charged to no
+reservation** — the temporal-isolation failure the deschedule exists to close.
+
+Reachable without exotic authority: a delegated reply capability is legitimate in
+seL4-MCS and this kernel deliberately admits one (PR #822 review 6J-lYm removed
+the `replier == expected` gate), `endpointReplyOnCore` carries no guard requiring
+the recorded server to be current, and preemption requeues a running thread.  No
+invariant fires — `passiveServerIdle`'s antecedent is "not queued and not
+current", which is false here, the *conjunct whose antecedent is the property you
+want* shape PR #895 review round 8 recorded.  Severity **Medium**: availability
+and temporal isolation only, not memory safety or confidentiality, and not
+exploitable today because nothing boots and the SVC seam halts pending SM10.1.
+
+**The fix is the one the tree already had.**  `descheduleAtPlacement`
+(`IPC/CrossCore/EndpointCall.lean`) resolves `placedCoreOf?` — the *fact* — and
+writes nothing when the thread is on no core.  `determineExecutingCore` was a
+proxy for it, and this project has now met that substitution at four sites: PR
+#895 rounds 10 and 11 closed two, this closes the third, and `descheduleThread` /
+`cancelIpcBlockingOnCore` remain registered (`docs/REGISTERED_DEBT.md` table A).
+
+**The core stopped being a parameter, which is the point.**  A parameter is a
+place for a caller to be wrong, and this step resolves the thread it deschedules
+from the state already — so its placement is something to look up rather than to
+accept.  `applyReplyDonationOnCore` takes four arguments where it took five, and
+`endpointReplyCrossCoreDispatch` no longer computes a core at all.
+
+Three things the cut had to state honestly rather than assume.
+
+**The single-core bridge is conditional now, and it must be.**
+`applyReplyDonationOnCore_bootCoreId` claimed the per-core step *is*
+`applyReplyDonation` at the boot core; with a placement-resolved deschedule that
+equation is false of exactly the states this finding is about.  It is
+`applyReplyDonationOnCore_eq_single_of_placed_at_bootCore`, hypothesising the
+placement — free on the configurations the bridge exists for, since a single-core
+model's `allCores` is `[bootCoreId]` — and a replier placed **nowhere** is
+deliberately not covered, because there the two agree extensionally and not
+definitionally.  `placedCoreOf?_congr_of_scheduler_eq` is what lets the
+hypothesis sit on the pre-state, which is the only state a caller holds.
+
+**The confinement theorem's docstring asserted the defect.**  It said the server
+"is descheduled on its own core, which is precisely why
+`endpointReplyCrossCoreDispatch` resolves `determineExecutingCore st expected`" —
+the first half the intent, the second half not delivering it.  A justification
+that holds only when the thread happens to be running is not a justification for
+a step whose purpose is to stop it running.  The theorem's core list is now read
+off `descheduleAtPlacementCores`, the same resolver the step uses, so the
+confinement claim and the transition cannot name different cores; it is stated on
+the pre-state via `descheduleAtPlacementCores_congr_of_runQueue_current_eq`, since
+neither the return (objects only) nor the migration (replenish queues only) moves
+a thread.
+
+**The witness exhibits both spellings.**  `tests/SmpCrossCoreReplySuite.lean`
+builds a recorded server queued on core 2 and current on no core — the one shape
+`determineExecutingCore` cannot see — asserts the fix deschedules it and that it
+lands on no other queue, and then runs the **superseded** spelling on the same
+state and asserts it leaves the server queued.  Stated rather than left to a
+mutation run, because a mutation of the operation body no longer typechecks: the
+frame lemmas name the placement resolver, so the proof surface itself rejects the
+revert.  Three preconditions guard against a vacuous pass — the server is queued
+before the return, `determineExecutingCore` answers the boot core, and the
+donation really was returned.
+
+Two step-level frames were added where the other `descheduleAtPlacement` frames
+already live, rather than re-derived per consumer:
+`descheduleAtPlacement_machine_eq` and
+`descheduleAtPlacement_passiveServerIdleFrame` (both branches, the identity one
+included).
+
 ## v0.35.36 — WS-HP HP1–HP3: the head-driven trigger's primitives, built inert
 
 The first three phases of **WS-HP** (`docs/planning/DONATION_POP_TRIGGER_PLAN.md`),

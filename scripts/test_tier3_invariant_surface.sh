@@ -12921,4 +12921,47 @@ run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspendOnCore_size_le_seventeen
 run_check "INVARIANT" rg -n '^def donatedContextHeadsStack' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem serverDonation_implies_answeredFrameHeadContext\?' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 
+# ============================================================================
+# v0.35.37 -- the reply path's donation return deschedules at the server's
+# PLACEMENT, and the core is not a parameter
+# ============================================================================
+#
+# The `a proxy is not the fact` shape at the scheduler, third site.  What must
+# hold is a RELATION -- the core the deschedule writes is the one the state
+# places the server on -- so each anchor below is paired with a negative that
+# KEEPS the deschedule and changes only where its core comes from.
+
+# (1) The step resolves the placement; it does not take a core.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacement" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+# NEGATIVE: token-preserving -- it keeps the deschedule and restores the core
+# parameter, which is the spelling the finding was reported against.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*\(executingCore" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+# NEGATIVE: ...and it must not reach the core-taking primitive directly, which
+# is the same defect with the parameter resolved inline instead of passed.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*removeRunnableOnCore" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+
+# (2) The live dispatch computes no core for the donation leg.  Bounded to the
+# declaration, because `determineExecutingCore` is a legitimate resolver
+# elsewhere and a file-wide negative would fire on a clean tree.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*let expectedCore" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+
+# (3) The single-core bridge is CONDITIONAL on the placement.  An unconditional
+# equation with the boot-pinned `removeRunnable` is precisely what was false, so
+# the negative refuses the retired name rather than the retired proof.
+run_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_eq_single_of_placed_at_bootCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+run_negative_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_bootCoreId' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+
+# (4) The confinement theorem's core list comes from the SAME resolver the step
+# uses, which is what stops the claim and the transition naming different cores.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonationOnCore_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st replierVtid\.val" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+# NEGATIVE: a fixed singleton core list is the presence-check version of the
+# claim -- it keeps the theorem and stops it being about the resolver.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonationOnCore_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*observableSlotsConfinedToCores st st. \[serverCore\]" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+
+# (5) The witness exhibits BOTH spellings on one state.  A witness that only
+# showed the fix working could not tell a real fix from a fixture that never
+# queued the server anywhere but the boot core.
+run_prose_check "TRACE" rg -n 'NEGATIVE: the superseded .determineExecutingCore. deschedule leaves it queued' tests/SmpCrossCoreReplySuite.lean
+run_prose_check "TRACE" rg -n 'the donation return DESCHEDULES a queued recorded server' tests/SmpCrossCoreReplySuite.lean
+
 finalize_report

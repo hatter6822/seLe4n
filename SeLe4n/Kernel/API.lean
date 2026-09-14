@@ -1125,11 +1125,11 @@ inductive PerCoreDonationStep (st st' : SystemState) : Prop
       (hStep : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st')
   /-- The reply returns a donated SchedContext to its original owner. -/
   | reply (replierVtid : SeLe4n.ValidThreadId)
-      (executingCore replierHome ownerHome : Concurrency.CoreId)
+      (replierHome ownerHome : Concurrency.CoreId)
       (hReplierHome : determineTargetCore st replierVtid.val = replierHome)
       (hOwnerHome : ∀ scId owner, replyDonationReturn? st replierVtid.val = some (scId, owner) →
           determineTargetCore st owner = ownerHome)
-      (hStep : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome
+      (hStep : applyReplyDonationOnCore st replierVtid replierHome ownerHome
           = .ok st')
   /-- `.replyRecv` returns the answered client's context before its receive leg. -/
   | replyRecvPop (recordedServer : SeLe4n.ThreadId)
@@ -1165,9 +1165,9 @@ theorem donation_perCore_consistent (st st' : SystemState)
   | call callerVtid receiverVtid donorHome doneeHome hDonorHome hDoneeHome h =>
       exact applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
         st st' callerVtid receiverVtid donorHome doneeHome hObjInv hCons hDonorHome hDoneeHome h
-  | reply replierVtid executingCore replierHome ownerHome hReplierHome hOwnerHome h =>
+  | reply replierVtid replierHome ownerHome hReplierHome hOwnerHome h =>
       exact applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
-        st st' replierVtid executingCore replierHome ownerHome hObjInv hCons hReplierHome
+        st st' replierVtid replierHome ownerHome hObjInv hCons hReplierHome
         hOwnerHome h
   | replyRecvPop recordedServer returned? h =>
       exact replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp

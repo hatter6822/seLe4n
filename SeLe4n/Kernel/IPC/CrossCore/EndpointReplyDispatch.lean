@@ -80,15 +80,31 @@ open SeLe4n.Kernel.Concurrency
    server's core, where nothing drains them for a SchedContext that is now the
    owner's.  This is the same primitive, and the same argument, the cancellation
    arm `cancelDonatedDonationOnCore` has used since SM6.E;
-3. the **deschedule** of the now-passive replier on *its own* core via
-   `removeRunnableOnCore … executingCore` (rather than the boot-pinned
-   `removeRunnable`).
+3. the **deschedule** of the now-passive replier at its **placement** —
+   `descheduleAtPlacement`, which resolves the core the thread is actually
+   queued or current on and writes nothing when it is on neither.
+
+   `v0.35.37`: this was `removeRunnableOnCore … executingCore` with the core
+   supplied by the caller as `determineExecutingCore st expected`, which finds a
+   core the thread is *current* on and otherwise answers `bootCoreId`.  A
+   recorded server that is **queued rather than running** — preempted by its own
+   core's timer tick — therefore had its deschedule land on the boot core, where
+   it is not, so the step was a complete no-op on exactly the delegated reply the
+   `expectedCore` resolution was introduced for.  The server is `.unbound` by
+   then and `resolveEffectivePrioDeadline`'s `.unbound` arm returns its legacy
+   TCB priority, so it would be selected on its own core and run charged to no
+   reservation.  `placedCoreOf?` is the *fact*; `determineExecutingCore` was a
+   proxy for it, and this project has now met that substitution at four sites.
+
+   The core is no longer a **parameter**: a parameter is a place for a caller to
+   be wrong, and the operation resolves a thread it was handed, so its placement
+   is something to look up rather than to accept.
 
 A replier that holds no donated SchedContext is a no-op (the common
 non-donating reply), and self-migration — a shared home core, and in particular
-every single-core configuration — is a definitional no-op, so the boot-core
-instance is exactly `applyReplyDonation`
-(`applyReplyDonationOnCore_bootCoreId`).
+every single-core configuration — is a definitional no-op, so a replier placed
+on the boot core reduces to `applyReplyDonation`
+(`applyReplyDonationOnCore_eq_single_of_placed_at_bootCore`).
 
 `replierHome` / `ownerHome` are the migration's endpoints, resolved by the
 caller from the **pre**-state, so the `withLockSet` bracket can declare and
@@ -97,7 +113,7 @@ runs; the return itself never touches a `cpuAffinity`
 (`returnDonatedSchedContext_getTcb?_cpuAffinity_eq`), so a pre-state reading is
 the post-state's. -/
 def applyReplyDonationOnCore (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (executingCore : CoreId) (replierHome ownerHome : CoreId) :
+    (replierHome ownerHome : CoreId) :
     Except KernelError SystemState :=
   let replier : SeLe4n.ThreadId := replierVtid.val
   match lookupTcb st replier with
@@ -114,9 +130,9 @@ def applyReplyDonationOnCore (st : SystemState) (replierVtid : SeLe4n.ValidThrea
           match returnDonatedSchedContextResolved st replierVtid.val scId ownerVtid.val with
           | .error e => .error e
           | .ok st' =>
-              .ok (removeRunnableOnCore
+              .ok (descheduleAtPlacement
                     (migrateSchedContextReplenishment st' scId replierHome ownerHome)
-                    replier executingCore)
+                    replier)
       | none => .error .invalidArgument
     | _ => .ok st
 
@@ -139,8 +155,8 @@ def replyDonationOwnerHome (st : SystemState) (replier : SeLe4n.ThreadId) : Core
 deschedule on the returning arm, the identity otherwise. -/
 theorem applyReplyDonationOnCore_characterisation
     (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (executingCore replierHome ownerHome : CoreId) :
-    applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome
+    (replierHome ownerHome : CoreId) :
+    applyReplyDonationOnCore st replierVtid replierHome ownerHome
       = (match replyDonationReturn? st replierVtid.val with
          | some (scId, owner) =>
              match SeLe4n.ThreadId.toValid? owner with
@@ -151,9 +167,9 @@ theorem applyReplyDonationOnCore_characterisation
                      ownerVtid.val with
                   | .error e => .error e
                   | .ok st' =>
-                      .ok (removeRunnableOnCore
+                      .ok (descheduleAtPlacement
                             (migrateSchedContextReplenishment st' scId replierHome ownerHome)
-                            replierVtid.val executingCore))
+                            replierVtid.val))
              | none => .error .invalidArgument
          | none => .ok st) := by
   simp only [applyReplyDonationOnCore, replyDonationReturn?]
@@ -168,15 +184,38 @@ theorem applyReplyDonationOnCore_characterisation
       -- Both sides are now the same match tree, so the reduction closes it.
       simp only []
 
-/-- WS-SM SM6.C.3 (bootCore bridge) / WS-RR RR2.13: `applyReplyDonationOnCore`
-on the boot core with donor and donee sharing a home core is exactly the
-single-core `applyReplyDonation` — the `removeRunnableOnCore … bootCoreId =
-removeRunnable` backward-compatibility bridge carried through the donation
-return, composed with the migration's self-pair no-op.  Every single-core
-configuration is this instance. -/
-theorem applyReplyDonationOnCore_bootCoreId (st : SystemState)
-    (replierVtid : SeLe4n.ValidThreadId) (c : CoreId) :
-    applyReplyDonationOnCore st replierVtid bootCoreId c c
+/-- `placedCoreOf?` reads the scheduler alone, so a step that writes only objects
+leaves it exactly where it was.  The transport the single-core bridge below needs,
+and the reason that bridge can state its hypothesis on the **pre**-state: a caller
+can discharge a fact about the state it holds, not about one the operation
+computes. -/
+theorem placedCoreOf?_congr_of_scheduler_eq {st st' : SystemState}
+    (tid : SeLe4n.ThreadId) (h : st'.scheduler = st.scheduler) :
+    placedCoreOf? st' tid = placedCoreOf? st tid := by
+  unfold placedCoreOf?; rw [h]
+
+/-- WS-SM SM6.C.3 (bootCore bridge) / WS-RR RR2.13, restated at `v0.35.37`:
+`applyReplyDonationOnCore` with donor and donee sharing a home core is the
+single-core `applyReplyDonation` **at a replier the state places on the boot
+core** — the `removeRunnableOnCore … bootCoreId = removeRunnable`
+backward-compatibility bridge carried through the donation return, composed with
+the migration's self-pair no-op.
+
+The hypothesis is what the placement resolver costs, and it is not a weakening
+this bridge could have avoided: the deschedule is `descheduleAtPlacement` now,
+which writes the core the replier is *on*, so an unconditional equation with the
+boot-pinned `removeRunnable` would be false of exactly the states the `v0.35.37`
+finding is about.  It is free on the configurations the bridge exists for — in a
+single-core model `allCores = [bootCoreId]`, so a placed thread is placed there
+— and a replier the state places **nowhere** is not covered, because there the
+single-core spelling still runs `removeRunnableOnCore … bootCoreId` while this
+one is the identity; the two agree extensionally and not definitionally, and
+claiming otherwise would be the kind of unproved convenience this cut is
+removing. -/
+theorem applyReplyDonationOnCore_eq_single_of_placed_at_bootCore (st : SystemState)
+    (replierVtid : SeLe4n.ValidThreadId) (c : CoreId)
+    (hPlaced : placedCoreOf? st replierVtid.val = some bootCoreId) :
+    applyReplyDonationOnCore st replierVtid c c
       = applyReplyDonation st replierVtid := by
   simp only [applyReplyDonationOnCore, applyReplyDonation]
   cases lookupTcb st replierVtid.val with
@@ -192,18 +231,23 @@ theorem applyReplyDonationOnCore_bootCoreId (st : SystemState)
       | none => rfl
       | some ownerVtid =>
         simp only []
-        cases returnDonatedSchedContextResolved st replierVtid.val scId ownerVtid.val with
+        cases hRet : returnDonatedSchedContextResolved st replierVtid.val scId ownerVtid.val with
         | error e => rfl
         | ok st' =>
-          simp only [migrateSchedContextReplenishment_noop, removeRunnableOnCore_bootCoreId]
+          obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+          have hSched : st'.scheduler = st.scheduler :=
+            returnDonatedSchedContext_scheduler_eq st st' _ _ _ _ hPop
+          simp only [migrateSchedContextReplenishment_noop, descheduleAtPlacement,
+            placedCoreOf?_congr_of_scheduler_eq _ hSched, hPlaced,
+            removeRunnableOnCore_bootCoreId]
 
 /-- WS-RR RR2.8 (decomposition): a successful cross-core donation return either
 left the state alone (no donated SchedContext) or ran the return, the migration
 and the deschedule, in that order. -/
 theorem applyReplyDonationOnCore_ok_decompose
     (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (executingCore replierHome ownerHome : CoreId)
-    (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
+    (replierHome ownerHome : CoreId)
+    (h : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st'') :
     (replyDonationReturn? st replierVtid.val = none ∧ st'' = st)
     ∨ ∃ (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
         (newOwner? : Option SeLe4n.ThreadId) (st' : SystemState),
@@ -212,9 +256,9 @@ theorem applyReplyDonationOnCore_ok_decompose
         -- exactly as in the single-core `applyReplyDonation_ok_decompose`.
         replyStackOuterCaller? st scId = .ok newOwner? ∧
         returnDonatedSchedContext st replierVtid.val scId owner newOwner? = .ok st' ∧
-        st'' = removeRunnableOnCore
+        st'' = descheduleAtPlacement
           (migrateSchedContextReplenishment st' scId replierHome ownerHome)
-          replierVtid.val executingCore := by
+          replierVtid.val := by
   rw [applyReplyDonationOnCore_characterisation] at h
   cases hRet : replyDonationReturn? st replierVtid.val with
   | none => rw [hRet] at h; exact Or.inl ⟨rfl, (Except.ok.inj h).symm⟩
@@ -241,15 +285,14 @@ machine timer — the return writes objects, the migration writes replenish-queu
 slots, and the deschedule writes run-queue slots. -/
 theorem applyReplyDonationOnCore_machine_eq
     (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (executingCore replierHome ownerHome : CoreId)
-    (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
+    (replierHome ownerHome : CoreId)
+    (h : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st'') :
     st''.machine = st.machine := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
-    ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, n, st', _, _, hRet, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid replierHome ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, n, st', _, _, hRet, hEq⟩
   · rw [hEq]
   · rw [hEq]
-    show (removeRunnableOnCore _ _ _).machine = _
-    simp only [removeRunnableOnCore, migrateSchedContextReplenishment_machine]
+    show (descheduleAtPlacement _ _).machine = _
+    simp only [descheduleAtPlacement_machine_eq, migrateSchedContextReplenishment_machine]
     exact returnDonatedSchedContext_machine_eq st st' replierVtid.val scId owner n hRet
 
 /-- WS-RR RR2.9 (frame): the cross-core donation return commits exactly the
@@ -257,18 +300,17 @@ single-core return's object store — neither the migration nor the deschedule
 writes an object. -/
 theorem applyReplyDonationOnCore_objects_eq
     (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (executingCore replierHome ownerHome : CoreId)
-    (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
+    (replierHome ownerHome : CoreId)
+    (h : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st'') :
     (replyDonationReturn? st replierVtid.val = none ∧ st''.objects = st.objects)
     ∨ ∃ (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
         (newOwner? : Option SeLe4n.ThreadId) (st' : SystemState),
         returnDonatedSchedContext st replierVtid.val scId owner newOwner? = .ok st' ∧
         st''.objects = st'.objects := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
-    ownerHome h with ⟨hNone, hEq⟩ | ⟨scId, owner, n, st', _, _, hRet, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid replierHome ownerHome h with ⟨hNone, hEq⟩ | ⟨scId, owner, n, st', _, _, hRet, hEq⟩
   · exact Or.inl ⟨hNone, by rw [hEq]⟩
   · refine Or.inr ⟨scId, owner, n, st', hRet, ?_⟩
-    rw [hEq, removeRunnableOnCore_preserves_objects,
+    rw [hEq, descheduleAtPlacement_preserves_objects,
       migrateSchedContextReplenishment_objects]
 
 -- ============================================================================
@@ -376,27 +418,27 @@ binding (`returnDonatedSchedContext_ok_implies_sc_bound`) — the same role
 `donateSchedContext`'s long-standing AUD-3b guard plays on the call side, and
 the reason the guards had to be symmetric before either theorem could be
 unconditional.  The final deschedule is then invisible to the invariant:
-`removeRunnableOnCore` writes a run queue and a current slot, never a replenish
-queue and never an object. -/
+`descheduleAtPlacement` writes a run queue and a current slot, never a replenish
+queue and never an object — at either of its branches, which is why both frames
+are proved at the step rather than per core here. -/
 theorem applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (executingCore replierHome ownerHome : CoreId)
+    (replierHome ownerHome : CoreId)
     (hObjInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
     (hReplierHome : determineTargetCore st replierVtid.val = replierHome)
     (hOwnerHome : ∀ scId owner, replyDonationReturn? st replierVtid.val = some (scId, owner) →
         determineTargetCore st owner = ownerHome)
-    (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
+    (h : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st'') :
     replenishQueueAffinityConsistent_smp st'' := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
-    ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, n, st', hRes, _, hRet, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid replierHome ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, n, st', hRes, _, hRet, hEq⟩
   · rw [hEq]; exact hCons
   · rw [hEq]
     -- The deschedule is a frame for the invariant; the substance is the migration.
     intro c
     exact (replenishQueueAffinityConsistentOnCore_frame
-        (removeRunnableOnCore_replenishQueueOnCore _ _ _ _)
-        (removeRunnableOnCore_preserves_objects _ _ _)).mpr
+        (descheduleAtPlacement_replenishQueueOnCore _ _ _)
+        (descheduleAtPlacement_preserves_objects _ _)).mpr
       (returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
         st st' replierVtid.val scId owner replierHome ownerHome hObjInv hCons hReplierHome
         (hOwnerHome scId owner hRes) n hRet c)
@@ -453,7 +495,7 @@ theorem lockSet_endpointReply_donation_extension
 primitive — below the API layer.  The cross-core reply (`endpointReplyOnCore` —
 caller woken on its home core), then the SchedContext donation **return**
 (`applyReplyDonationOnCore` — the passive **recorded server** returns the donated
-SC and is descheduled on its own core), then the cross-core priority-inheritance
+SC and is descheduled *at its placement*), then the cross-core priority-inheritance
 **reversion** (`propagatePipChainCrossCore` over the recorded server's blocking
 chain — re-derives each holder's boost from its remaining waiters, migrating
 buckets on home cores).  The donation/PIP target is the server recorded in the
@@ -492,15 +534,23 @@ def endpointReplyCrossCoreDispatch
       | some expected =>
           match SeLe4n.ThreadId.toValid? expected with
           | some expectedV =>
-              -- WS-SM SM6.D (PR #822 review): deschedule the now-passive server on
-              -- **its own** core, derived from the pre-state (`determineExecutingCore
-              -- st expected`), not the (possibly delegated) cap holder's syscall core
-              -- `executingCore`.  Reusing the delegate's core would point
-              -- `removeRunnableOnCore` at the wrong run queue, leaving the recorded
-              -- server current/runnable on its own core after its donated SC was
-              -- returned.  In the non-delegated case the server *is* the syscall
-              -- thread, so `determineExecutingCore st expected = executingCore`.
-              let expectedCore := determineExecutingCore st expected
+              -- `v0.35.37`: the deschedule's core is **not passed** — the step
+              -- resolves the recorded server's own *placement*
+              -- (`descheduleAtPlacement`).  SM6.D passed `determineExecutingCore
+              -- st expected` here, which was already a correction (reusing the
+              -- delegate's syscall core points at the wrong run queue outright)
+              -- and was still a **proxy**: that resolver finds a core the thread
+              -- is *current* on and otherwise answers `bootCoreId`, so a recorded
+              -- server that is queued rather than running — preempted by its own
+              -- core's tick — had its deschedule land on a core it is not on, and
+              -- the step did nothing at all.  The server is `.unbound` by then, so
+              -- it would be re-selected on its own core at its legacy TCB priority
+              -- and run charged to no reservation.  `placedCoreOf?` is the fact;
+              -- `determineExecutingCore` was a stand-in for it.
+              --
+              -- The core is not a parameter any more either, which is the point:
+              -- a parameter is a place for a caller to be wrong, and this step
+              -- resolves the thread it deschedules from the state already.
               -- WS-RR RR2.12: the live `.reply` arm now routes through the
               -- **migrating** donation return.  Both migration endpoints are
               -- resolved from the **pre**-state `st`, which is what the
@@ -513,7 +563,7 @@ def endpointReplyCrossCoreDispatch
               -- server holds no donated SchedContext there is nothing to move and
               -- the endpoints coincide, making the migration a definitional
               -- no-op.
-              match applyReplyDonationOnCore st1 expectedV expectedCore
+              match applyReplyDonationOnCore st1 expectedV
                   (determineTargetCore st expected) (replyDonationOwnerHome st expected) with
               | .error e => (st, .error e)
               | .ok st2 =>

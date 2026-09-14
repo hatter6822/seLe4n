@@ -462,7 +462,7 @@ byte-identical, all reply + SMP suites pass, partition (56 staged) + AK7 green.
 |-----|-------------|---------------|--------|
 | SM6.C.1 | Migrate `endpointReply` to lock-set (cross-core) | `endpointReplyOnCore` (+ `endpointReplyOnCore_{reply,not_blocked,wrong_replier}_eq`, `lockSet_endpointReplyOnCore`, `endpointReplyOnCore_lockSet_correct`, `lockSet_endpointReplyOnCore_correct`) | ✓ |
 | SM6.C.2 | Cross-core reply: wake caller | `endpointReplyOnCore_remote_wake` (+ `_no_sgi_if_local`, `_not_blocked_no_sgi`) | ✓ |
-| SM6.C.3 | Donation chain across cores extension | `lockSet_endpointReply_donation_extension` + `applyReplyDonationOnCore` (cross-core return; `applyReplyDonationOnCore_bootCoreId` bridge) + cross-core PIP reversion via `propagatePipChainCrossCore` | ✓ |
+| SM6.C.3 | Donation chain across cores extension | `lockSet_endpointReply_donation_extension` + `applyReplyDonationOnCore` (cross-core return; `applyReplyDonationOnCore_eq_single_of_placed_at_bootCore` bridge — conditional since `v0.35.37`, when the deschedule moved to the server's placement) + cross-core PIP reversion via `propagatePipChainCrossCore` | ✓ |
 | SM6.C.4 | Reply payload delivery to right TCB | `endpointReplyOnCore_perCore_delivery` (+ `storeTcbIpcStateAndMessage_fromTcb_self`) | ✓ |
 | SM6.C.5 | `endpointReplyRecv` combined op lock-set | `endpointReplyRecv_lockSet_correct` (+ `endpointReplyRecvOnCore`, `endpointReceiveDualOnCore`, `lockSet_endpointReplyRecvOnCore{,_correct}`) | ✓ |
 | SM6.C.6 | Reply object lifecycle | `lockSet_endpointReply_target_tcb_write_mem` (caller-TCB write lock covers the `blockedOnReply → .ready` reply-state write) + delivery | ✓ |

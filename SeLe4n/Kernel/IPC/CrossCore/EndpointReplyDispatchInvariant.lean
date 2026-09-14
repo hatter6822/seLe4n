@@ -54,7 +54,7 @@ the pop's (`returnDonatedSchedContext_preserves_donationChainWellFormed_of_excep
 and the relaxation is carried through unchanged. -/
 theorem applyReplyDonationOnCore_preserves_donationChainWellFormed_of_except
     (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (executingCore replierHome ownerHome : CoreId)
+    (replierHome ownerHome : CoreId)
     (hObjInv : st.objects.invExt)
     (hChainNone : ∀ scId owner sc, replyDonationReturn? st replierVtid.val = some (scId, owner) →
       st.getSchedContext? scId = some sc →
@@ -64,10 +64,9 @@ theorem applyReplyDonationOnCore_preserves_donationChainWellFormed_of_except
       st.getSchedContext? scId = some sc →
       donationHeadOf? st scId sc = .ok (some (rid, r)) → donationChainWellFormedExcept st rid)
     (hChainNoReturn : replyDonationReturn? st replierVtid.val = none → donationChainWellFormed st)
-    (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
+    (h : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st'') :
     donationChainWellFormed st'' := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
-    ownerHome h with ⟨hNone, hEq⟩ | ⟨scId, owner, n, st', hRetRes, _, hRet, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid replierHome ownerHome h with ⟨hNone, hEq⟩ | ⟨scId, owner, n, st', hRetRes, _, hRet, hEq⟩
   · rw [hEq]; exact hChainNoReturn hNone
   · have hChain' : donationChainWellFormed st' :=
       returnDonatedSchedContext_preserves_donationChainWellFormed_of_except st st'
@@ -76,7 +75,7 @@ theorem applyReplyDonationOnCore_preserves_donationChainWellFormed_of_except
     rw [hEq]
     refine donationChainWellFormed_of_frame ?_ hChain'
     exact donationChainFrame.of_objects_eq
-      (by rw [removeRunnableOnCore_preserves_objects, migrateSchedContextReplenishment_objects])
+      (by rw [descheduleAtPlacement_preserves_objects, migrateSchedContextReplenishment_objects])
 
 /-- **WS-RM (`v0.35.6`)**: what the cross-core reply leg leaves of the donation
 chain.
@@ -187,7 +186,7 @@ carries, and for the same reason: the deschedule hands `passiveServerIdle` an
 obligation for a thread it previously had none for. -/
 theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
     (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (executingCore replierHome ownerHome : CoreId)
+    (replierHome ownerHome : CoreId)
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hReplierIdleAllowed : ∀ tcb, st.getTcb? replierVtid.val = some tcb →
@@ -196,10 +195,9 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
     -- stack, so at depth ≥ 2 it mints a `.donated` binding at the outer caller.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
-    (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
+    (h : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st'') :
     ipcInvariantFull st'' := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
-    ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, n, st', hRet, hRes, hR, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid replierHome ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, n, st', hRet, hRes, hR, hEq⟩
   · rw [hEq]; exact hInv
   · have hFull' : ipcInvariantFull st' :=
       returnDonatedSchedContext_preserves_ipcInvariantFull st st' replierVtid scId owner
@@ -221,11 +219,12 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
     have hFullM : ipcInvariantFull stM :=
       ipcInvariantFull_of_descheduleFrame st' stM hFull' hMObjs
         (passiveServerIdleFrame.of_objects_scheduler_eq hMObjs hMRq.1 hMRq.2)
-    -- The deschedule writes only the executing core's queue and `current` slot.
+    -- The deschedule writes only the placed core's queue and `current` slot --
+    -- and nothing at all when the state places the replier on no core.
     rw [hEq]
     refine ipcInvariantFull_of_descheduleFrame stM _ hFullM
-      (removeRunnableOnCore_preserves_objects stM replierVtid.val executingCore)
-      (removeRunnableOnCore_passiveServerIdleFrame stM replierVtid.val executingCore
+      (descheduleAtPlacement_preserves_objects stM replierVtid.val)
+      (descheduleAtPlacement_passiveServerIdleFrame stM replierVtid.val
         (fun tcb hTcb => ?_))
     rw [hMObjs] at hTcb
     have hEqT : { pTcb with schedContextBinding := .unbound } = tcb :=
@@ -246,7 +245,7 @@ full bundle across their frames unchanged. -/
 theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
     (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
     (woken : SeLe4n.ThreadId)
-    (executingCore replierHome ownerHome : CoreId)
+    (replierHome ownerHome : CoreId)
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFullExceptDonationOwner st woken)
     (hDonationReturned : ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
@@ -259,14 +258,13 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
     -- stack, so at depth ≥ 2 it mints a `.donated` binding at the outer caller.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
-    (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
+    (h : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st'') :
     ipcInvariantFull st'' := by
   by_cases hAny : ∃ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
       st.objects[s.toObjId]? = some (.tcb sTcb) ∧ sTcb.schedContextBinding = .donated sc woken
   · obtain ⟨s0, sTcb0, sc0, hS0, hB0⟩ := hAny
     have hRetEq := hDonationReturned s0 sTcb0 sc0 hS0 hB0
-    rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
-      ownerHome h with ⟨hNone, _⟩ | ⟨scId, owner, n, st', hRet, hRes, hR, hEq⟩
+    rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid replierHome ownerHome h with ⟨hNone, _⟩ | ⟨scId, owner, n, st', hRet, hRes, hR, hEq⟩
     · rw [hRetEq] at hNone; cases hNone
     · obtain ⟨rfl, rfl⟩ : sc0 = scId ∧ woken = owner := by
         have := hRetEq.symm.trans hRet
@@ -292,14 +290,14 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
           (passiveServerIdleFrame.of_objects_scheduler_eq hMObjs hMRq.1 hMRq.2)
       rw [hEq]
       refine ipcInvariantFull_of_descheduleFrame stM _ hFullM
-        (removeRunnableOnCore_preserves_objects stM replierVtid.val executingCore)
-        (removeRunnableOnCore_passiveServerIdleFrame stM replierVtid.val executingCore
+        (descheduleAtPlacement_preserves_objects stM replierVtid.val)
+        (descheduleAtPlacement_passiveServerIdleFrame stM replierVtid.val
           (fun tcb hTcb => ?_))
       rw [hMObjs] at hTcb
       have hEqT : { pTcb with schedContextBinding := .unbound } = tcb :=
         Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
       exact Or.inr (by rw [← hEqT]; exact hReplierIdleAllowed pTcb hPPre)
-  · exact applyReplyDonationOnCore_preserves_ipcInvariantFull st st'' replierVtid executingCore
+  · exact applyReplyDonationOnCore_preserves_ipcInvariantFull st st'' replierVtid
       replierHome ownerHome hObjInv
       (ipcInvariantFull_of_exceptDonationOwner hInv
         (donationOwnerValid_of_except_of_no_donation_owned_by hInv.donationOwnerValidExcept
@@ -315,16 +313,15 @@ extended invariant — the return through `returnDonatedSchedContext`, the
 migration and the deschedule through their object frames. -/
 theorem applyReplyDonationOnCore_preserves_objects_invExt
     (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (executingCore replierHome ownerHome : CoreId)
+    (replierHome ownerHome : CoreId)
     (hObjInv : st.objects.invExt)
-    (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
+    (h : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st'') :
     st''.objects.invExt := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
-    ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, n, st', _, _, hR, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid replierHome ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, n, st', _, _, hR, hEq⟩
   · rw [hEq]; exact hObjInv
   · have hInv' := returnDonatedSchedContext_preserves_objects_invExt st st' replierVtid.val scId
       owner hObjInv n hR
-    rw [hEq, removeRunnableOnCore_preserves_objects, migrateSchedContextReplenishment_objects]
+    rw [hEq, descheduleAtPlacement_preserves_objects, migrateSchedContextReplenishment_objects]
     exact hInv'
 
 /-- **WS-RR RR3.12: the live cross-core `.reply` dispatch preserves
@@ -427,16 +424,16 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
             rw [hExpV]
             rw [replyDonationReturn?_eq_of_binding_agree hELk hE' hEB']
             exact hPre
-          cases hDon : applyReplyDonationOnCore st1 expectedV (determineExecutingCore st expected)
+          cases hDon : applyReplyDonationOnCore st1 expectedV
               (determineTargetCore st expected) (replyDonationOwnerHome st expected) with
           | error e => simp only; exact hInv
           | ok st2 =>
             simp only
             have hDonFull : ipcInvariantFull st2 :=
               applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except st1 st2 expectedV
-                target _ _ _ hReplyInv hReplyExc hDonMid hAllowed hStackValid hDon
+                target _ _ hReplyInv hReplyExc hDonMid hAllowed hStackValid hDon
             have hDonInv : st2.objects.invExt :=
-              applyReplyDonationOnCore_preserves_objects_invExt st1 st2 expectedV _ _ _
+              applyReplyDonationOnCore_preserves_objects_invExt st1 st2 expectedV _ _
                 hReplyInv hDon
             exact propagatePipChainCrossCore_preserves_ipcInvariantFull st2 expected executingCore
               _ hDonInv hDonFull
@@ -766,18 +763,18 @@ theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
                 exact hRetPre
               exact Or.inr ⟨rid, scId, owner, r1, hExc, by rw [hExpV]; exact hRet, hR1, hN1⟩
           cases hApply : applyReplyDonationOnCore st1 expectedV
-              (determineExecutingCore st expected) (determineTargetCore st expected)
+              (determineTargetCore st expected)
               (replyDonationOwnerHome st expected) with
           | error e => simp only; exact hChain
           | ok st2 =>
             simp only
             have hInv2 : st2.objects.invExt :=
-              applyReplyDonationOnCore_preserves_objects_invExt st1 st2 expectedV _ _ _
+              applyReplyDonationOnCore_preserves_objects_invExt st1 st2 expectedV _ _
                 hReplyInv hApply
             have hChain2 : donationChainWellFormed st2 := by
               rcases hDon with hFull | ⟨rid, scId, owner, r1, hExc, hRet, hR1, hN1⟩
               · exact applyReplyDonationOnCore_preserves_donationChainWellFormed_of_except
-                  st1 st2 expectedV _ _ _ hReplyInv (fun _ _ _ _ _ _ => hFull)
+                  st1 st2 expectedV _ _ hReplyInv (fun _ _ _ _ _ _ => hFull)
                   (fun _ _ _ ridX _ _ _ _ => donationChainWellFormedExcept_of_wellFormed hFull ridX)
                   (fun _ => hFull) hApply
               -- The popped context is the one the relaxed frame heads, so the head
@@ -789,7 +786,7 @@ theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
                     hScReply⟩
                 obtain ⟨sc, hScGet, hScReply⟩ := hSc
                 refine applyReplyDonationOnCore_preserves_donationChainWellFormed_of_except
-                  st1 st2 expectedV _ _ _ hReplyInv ?_ ?_ ?_ hApply
+                  st1 st2 expectedV _ _ hReplyInv ?_ ?_ ?_ hApply
                 · -- A context whose stack head is `rid` has a head: this arm is vacuous.
                   intro scId' owner' sc' hRet' hSc' hHead'
                   obtain ⟨rfl, _⟩ := Prod.mk.inj (Option.some.inj (hRet'.symm.trans hRet))

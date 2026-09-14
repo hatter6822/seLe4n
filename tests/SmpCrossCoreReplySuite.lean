@@ -98,7 +98,13 @@ open SeLe4n.Testing
 
 -- SM6.C.3 donation chain across cores + cross-core dispatch:
 #check @applyReplyDonationOnCore
-#check @applyReplyDonationOnCore_bootCoreId
+#check @applyReplyDonationOnCore_eq_single_of_placed_at_bootCore
+-- `v0.35.37`: the deschedule resolves the recorded server's PLACEMENT rather than
+-- taking a core from its caller, so the single-core bridge is conditional on that
+-- placement.  Pinned beside the bridge because a reader who sees only the new name
+-- cannot tell whether the hypothesis was earned or assumed.
+#check @placedCoreOf?_congr_of_scheduler_eq
+#check @descheduleAtPlacement_passiveServerIdleFrame
 #check @lockSet_endpointReply_donation_extension
 -- WS-SM SM6.D (PR #822 review): the reply donation return is keyed on the RECORDED
 -- SERVER (the caller's `blockedOnReply` server, who holds the donated SC), not the
@@ -190,6 +196,10 @@ private def assertBool (name : String) (b : Bool) : IO Unit := do
     throw (IO.userError s!"Assertion failed: {name}")
 
 private def core1 : CoreId := ⟨1, by decide⟩
+
+/-- `v0.35.37`: a core that is neither the boot core nor the caller's home, so a
+deschedule landing on it can only have come from the server's own placement. -/
+private def core2 : CoreId := ⟨2, by decide⟩
 
 private def epId : SeLe4n.ObjId := ⟨600⟩
 private def cnRoot : SeLe4n.ObjId := ⟨300⟩
@@ -504,7 +514,7 @@ private def runDonationChecks : IO Unit := do
   match SeLe4n.ThreadId.toValid? serverTid with
   | some serverV =>
       assertBool "applyReplyDonationOnCore on a non-donating replier is a no-op (ok)"
-        (match applyReplyDonationOnCore stBase serverV bootCoreId bootCoreId bootCoreId with
+        (match applyReplyDonationOnCore stBase serverV bootCoreId bootCoreId with
          | .ok _ => true | .error _ => false)
   | none => assertBool "serverTid is a valid thread id" false
   -- WS-SM SM6.D (PR #822 review 6J90-... donation): the donation return is keyed on
@@ -538,6 +548,76 @@ private def runDonationChecks : IO Unit := do
   assertBool "delegated reply lock-set covers the recorded server's TCB write lock"
     (decide ((tcbLock serverTid, AccessMode.write)
       ∈ (lockSet_endpointReplyOnCore stDonated wrongTid cnRoot clientLocalTid).pairs))
+  -- ==========================================================================
+  -- `v0.35.37`: the donation return deschedules at the server's PLACEMENT
+  -- ==========================================================================
+  --
+  -- The decisive witness for the finding, and it has to be built this way: the
+  -- recorded server is **queued on a non-boot core and current on none**, which
+  -- is what a preempted passive server looks like and the one shape
+  -- `determineExecutingCore` cannot see — that resolver finds a core a thread is
+  -- *current* on and otherwise answers `bootCoreId`.
+  --
+  -- Under the superseded spelling the deschedule ran
+  -- `removeRunnableOnCore … bootCoreId`, which edits core 0's queue and current
+  -- slot: the server is on neither, so the step wrote nothing and the server
+  -- stayed queued on core 2 with its donation already returned — `.unbound`, and
+  -- therefore selected at its legacy TCB priority against no reservation.
+  --
+  -- The paired negative is what makes this a witness rather than a fixture: it
+  -- asserts the server IS on core 2 before the return, so a witness that passed
+  -- because the fixture never queued it would fail here.
+  let stQueuedServer : SystemState :=
+    enqueueRunnableOnCore
+      (BootstrapBuilder.empty
+        |>.withObject epId (.endpoint {})
+        |>.withObject serverTid.toObjId
+            (.tcb { mkTcb 601 50 none .ready with
+                      schedContextBinding := .donated scId clientLocalTid })
+        |>.withObject clientLocalTid.toObjId
+            (.tcb (mkTcb 602 30 none (.blockedOnReply epId (some serverTid))))
+        |>.withObject scId.toObjId
+            (.schedContext { SchedContext.empty scId with boundThread := some serverTid })
+        |>.withRunnable []
+        |>.build)
+      core2 serverTid
+  assertBool "PRECONDITION: the recorded server is queued on core 2 before the return"
+    ((stQueuedServer.scheduler.runQueueOnCore core2).contains serverTid)
+  assertBool "…and current on NO core, which is what makes `determineExecutingCore` answer the boot core"
+    (decide (determineExecutingCore stQueuedServer serverTid = bootCoreId))
+  assertBool "…so the placement resolver and the superseded proxy disagree here"
+    (decide (placedCoreOf? stQueuedServer serverTid = some core2))
+  match SeLe4n.ThreadId.toValid? serverTid with
+  | some serverV =>
+      match applyReplyDonationOnCore stQueuedServer serverV core2 core2 with
+      | .ok stAfter =>
+          assertBool "the donation return DESCHEDULES a queued recorded server (v0.35.37)"
+            (!(stAfter.scheduler.runQueueOnCore core2).contains serverTid)
+          assertBool "…and on no other core either — the server is off every run queue"
+            (decide (placedCoreOf? stAfter serverTid = none))
+          assertBool "…and the donation really was returned, so this is not a vacuous pass"
+            (decide (replyDonationReturn? stAfter serverTid = none))
+          -- DECISIVE: the superseded spelling, run on this very shape, is inert.
+          -- Stated rather than left to a mutation run, because a mutation of the
+          -- operation no longer typechecks — the frame lemmas name the placement
+          -- resolver — so the only way to show the witness discriminates is to
+          -- exhibit what the pre-fix step computed.  `removeRunnableOnCore` at
+          -- `determineExecutingCore`'s answer edits core 0 and the server is on
+          -- core 2, so it stays queued and stays selectable at its legacy TCB
+          -- priority against no reservation.
+          assertBool "NEGATIVE: the superseded `determineExecutingCore` deschedule leaves it queued"
+            ((removeRunnableOnCore stQueuedServer serverTid
+                (determineExecutingCore stQueuedServer serverTid)
+              ).scheduler.runQueueOnCore core2 |>.contains serverTid)
+          assertBool "…so the two spellings genuinely differ on core 2's queue"
+            (!((descheduleAtPlacement stQueuedServer serverTid
+                 ).scheduler.runQueueOnCore core2 |>.contains serverTid)
+             && ((removeRunnableOnCore stQueuedServer serverTid
+                    (determineExecutingCore stQueuedServer serverTid)
+                  ).scheduler.runQueueOnCore core2 |>.contains serverTid))
+      | .error _ =>
+          assertBool "the donation return succeeds on the queued-server shape" false
+  | none => assertBool "serverTid is a valid thread id" false
 
 private def runDispatchChecks : IO Unit := do
   IO.println "--- §3.6 SM6.C cross-core dispatch + SM6.C.9 chain bound ---"

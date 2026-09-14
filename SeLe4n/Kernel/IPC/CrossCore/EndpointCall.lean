@@ -940,7 +940,42 @@ theorem removeRunnableOnCore_preserves_objects (st : SystemState)
   · exact removeRunnableOnCore_preserves_objects _ _ _
   · rfl
 
-/-- ...and no replenish queue, at either branch.  Both facts are proved HERE
+/-- `placedCoreOf?` reads exactly two per-core scheduler slices, so a step that
+frames both at every core frames it.  The pointwise form, because the migration
+frames them per core rather than by handing back the whole scheduler. -/
+theorem placedCoreOf?_congr_of_runQueue_current_eq {st st' : SystemState}
+    (tid : SeLe4n.ThreadId)
+    (h : ∀ c : CoreId, st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
+      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
+    placedCoreOf? st' tid = placedCoreOf? st tid := by
+  unfold placedCoreOf?
+  have hp : (fun c : CoreId => (st'.scheduler.runQueueOnCore c).contains tid
+      || st'.scheduler.currentOnCore c == some tid)
+      = (fun c : CoreId => (st.scheduler.runQueueOnCore c).contains tid
+      || st.scheduler.currentOnCore c == some tid) := by
+    funext c; rw [(h c).1, (h c).2]
+  rw [hp]
+
+/-- ...and the core list it produces moves with it. -/
+theorem descheduleAtPlacementCores_congr_of_runQueue_current_eq {st st' : SystemState}
+    (tid : SeLe4n.ThreadId)
+    (h : ∀ c : CoreId, st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
+      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
+    descheduleAtPlacementCores st' tid = descheduleAtPlacementCores st tid := by
+  unfold descheduleAtPlacementCores
+  rw [placedCoreOf?_congr_of_runQueue_current_eq tid h]
+
+/-- ...and never advances the machine timer, at either branch (`v0.35.37`).  The
+reply path's donation return composes this step, and its `machine` frame reaches
+back to the return through it. -/
+@[simp] theorem descheduleAtPlacement_machine_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) : (descheduleAtPlacement st tid).machine = st.machine := by
+  unfold descheduleAtPlacement
+  split
+  · simp only [removeRunnableOnCore]
+  · rfl
+
+/-- ...and no replenish queue, at either branch.  All three facts are proved HERE
 rather than at each consumer: a caller that re-derives them per core is how the
 `serverCore` parameter got threaded into three proofs and one of them kept it
 after the transition stopped using it. -/
