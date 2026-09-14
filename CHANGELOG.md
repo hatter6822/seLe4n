@@ -1,3 +1,65 @@
+## v0.35.42 — WS-HP HP10 registered: the depth-2 accounting loss the splice provably cannot reach
+
+**The register understated its own defect, and this cut fixes that before adding
+the phase that closes it.**  `REGISTERED_DEBT.md`'s donation-accounting row was
+headed "at reply-stack depth ≥ 3", and `tests/SmpIpcSuite.lean` §3.22 measures
+that case.  At depth **2** the same authority produces the same loss by a
+different mechanism: a delegate answers the client out of order, the removal takes
+the client's frame — the stack's *bottom* — off the stack, and the later in-order
+pop finds the remaining frame at the bottom and binds the reservation to the
+**intermediate** caller, leaving the owner `.unbound` for good.
+
+**And HP6's splice provably cannot reach it.**  `severAtCut` writes
+`above.prev := none`; `spliceOutTheCut` writes `above.prev := below.prev`; and a
+bottom frame has no frame below, so those are the same value.  The sentence the
+tree already carries to explain why §3.20 cannot *measure* the depth-≥ 3 defect is
+the reason the depth-2 defect *survives the fix for it* — and §3.20 exercises
+exactly that shape while asserting only the structural outcome (the frame above
+loses its `prev`, the answered frame goes free), never where the reservation ends
+up.  So this half was in the tree's reach and in neither its witnesses nor its
+register: a reader of the row would have concluded HP6 closes the defect.
+
+**The cause is not seL4-MCS and not the removal policy.**  The recipient is
+derived from **stack reachability**, so removing a frame changes who the kernel
+believes owns the context.  Upstream derives it the same way — `reply_pop` donates
+to the answered frame's own `replyTCB` — so it has the depth-2 loss too and no
+remedy for it, which makes the remedy an improvement on seL4-MCS at *every* depth
+rather than parity at any.  The claim-set constraint is therefore rewritten
+**unscoped**: until WS-HP closes, v1.0.0 must not claim, of either kernel, that
+completing a call chain returns a client's reservation.
+
+**HP10 — the reservation's origin** (9 sub-tasks, registered, no code): one
+`SchedContext.donationOrigin : Option ThreadId` recording the thread that owned
+the reservation when it first left, and one arm — the pop's bottom-of-stack
+recipient — reading it when `donationRecipientAcceptable` holds of that thread and
+falling back to the answered caller otherwise.  In every in-order unwind the two
+are the same thread, so it is a strengthening with no state on which it is worse
+than today, and `_eq_legacy_of_no_origin` makes each existing result a case split
+whose `none` branch is the pre-HP10 proof verbatim.
+
+Five things the phase decides rather than inherits, each recorded in its row.  The
+origin is **history the kernel validates, not an invariant** — no
+`donationChainWellFormed` clause can state it, because "the bottom frame's thread,
+*or* a thread whose frame was removed" has an unstateable second disjunct and a
+clause carrying only the first would be false on precisely the states the phase
+exists for, so the pop's guard is what makes reading it safe and a Tier 3 negative
+refuses a chain conjunct over it.  **Thread-id reuse is the one real hazard**, and
+it is closed structurally rather than argued away: the kernel writes the origin
+from the donor's own identity, so it can only go wrong if that thread is destroyed
+and its id reused, and `lifecyclePreRetypeCleanup` clears a stale origin — ordered
+**before** the arm that reads the field, which is this project's rule that a
+transition goes live only after the guards that cover it.  **The footprint grows
+and the ceiling moves**: redirecting the recipient changes which TCB the pop
+writes and the resolver can answer either thread, so both reply footprints declare
+both, `maxLockSetSize` 23 → 24.  And it lands in **WS-HP, not WS-CB** — folding a
+depth-2 correctness fix into a workstream with no sub-task started defers it
+indefinitely, and WS-CB's own requirement that every generalising cut carry "the
+model is unchanged on states without servers" is strictly easier to satisfy over a
+flat-model fix that landed first; WS-CB inherits the field.
+
+Plan: 44 → 53 sub-tasks across 10 phases (HP1..HP10).  Version bumped
+0.35.41 → 0.35.42.
+
 ## v0.35.41 — WS-HP HP6.1: the removal family renamed, and the rename's own sweep
 
 The non-head reply-frame removal is renamed for the operation it becomes, with no

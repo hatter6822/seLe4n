@@ -4,7 +4,7 @@
 > **Predecessor finding**: [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
 > table C, registered `v0.35.14` — the removal does not preserve the donation
 > accounting at reply-stack depth ≥ 3.
-> **Sub-task count**: 44 across 9 phases (HP1..HP9), each phase numbered in the
+> **Sub-task count**: 53 across 10 phases (HP1..HP10), each phase numbered in the
 > order it is to be implemented.
 
 ## Context — why this exists
@@ -638,6 +638,7 @@ difference.
 | HP7 | The three stated hypotheses retire | 4 |
 | HP8 | The frozen mirror | 3 |
 | HP9 | Witnesses, anchors, documentation, closure | 5 |
+| HP10 | The reservation's origin, so the return does not depend on chain connectivity | 9 |
 
 ## 6. Sub-tasks
 
@@ -942,6 +943,94 @@ including the agreement between the frozen reply and the live one.
 | HP9.5 | Closure: `check_workstream_plan.py`, `check_claim_evidence_citations.py`, the version bump and `CHANGELOG.md` entry, `test_docs_sync.sh`. Consumes HP9.1–HP9.4 | `scripts/`, `CHANGELOG.md` | S |
 
 **Acceptance**: see §8.
+
+### HP10 — The reservation's origin, so the return does not depend on chain connectivity (9 sub-tasks)
+
+**Why this phase exists, and why the splice does not subsume it.**  HP6 fixes the
+accounting at reply-stack depth >= 3 and **provably cannot** fix depth 2:
+`severAtCut` writes `above.prev := none`, `spliceOutTheCut` writes
+`above.prev := below.prev`, and when the removed frame is the *bottom* of its
+stack those are the same value — which is exactly what HP6.9's "§3.20's
+depth-two halves pass byte-identically" measures.  So after HP6 a client that
+delegates its reply capability to a confederate still loses its reservation at
+depth 2: the delegate answers the client out of order, the client's frame leaves
+the stack, and the later in-order pop finds the remaining frame at the bottom and
+binds the reservation to the **intermediate** caller.
+
+**The debt register understates the defect, and HP10.2 fixes that first.**  The
+`REGISTERED_DEBT.md` table C row is headed "at reply-stack depth >= 3", and
+`tests/SmpIpcSuite.lean` §3.22 measures that case.  §3.20 exercises the depth-2
+*structural* outcome — the frame above loses its `prev`, the answered frame goes
+free — and asserts nothing about where the reservation ends up, so the depth-2
+accounting loss is in the tree's reach and in neither its witnesses nor its
+register.  A reader of the row today would conclude HP6 closes the defect.  It
+does not.
+
+**The cause is not MCS and not the removal policy.**  It is that the recipient is
+derived from **stack reachability**, so removing a frame changes who the kernel
+believes owns the context.  seL4-MCS derives it the same way — `reply_pop` donates
+to the answered frame's own `replyTCB` — so it has the same loss at depth 2 and no
+remedy for it; this phase is therefore an improvement on upstream at every depth
+rather than parity at any.
+
+**The fix is one field and one arm.**  `SchedContext.donationOrigin : Option
+ThreadId` records the thread that owned the reservation when it first left, and
+the pop's bottom-of-stack arm binds *that* thread when it is an acceptable
+recipient, the answered caller otherwise.  In every in-order unwind the two are
+the same thread, so nothing that holds today changes; they differ exactly when
+frames left the stack, which is the loss, at any depth.
+
+**Five things this phase decides rather than inherits.**
+
+1. **The origin is history, not an invariant.**  No `donationChainWellFormed`
+   clause relates it to the stack: "the origin is the bottom frame's thread, or a
+   thread whose frame was removed" has an unstateable second disjunct, and a
+   clause carrying only the first would be *false* on precisely the states this
+   phase exists for.  What makes acting on it safe is the pop's own guard
+   (`donationRecipientAcceptable`), so the field is a hint the kernel validates
+   rather than a fact it trusts — stated in the docstring, with a Tier 3 negative
+   refusing a chain conjunct over it.
+2. **Thread-id reuse is the one real hazard, and it is closed structurally.**  The
+   kernel writes the origin from the donor's own identity, so it can never name a
+   thread that did not own the reservation — *unless* that thread is destroyed and
+   its id reused, after which a stale origin would hand a reservation to an
+   unrelated thread.  `lifecyclePreRetypeCleanup` therefore clears the origin of
+   any context naming the retyped thread, exactly as it already refuses a context
+   that still heads a stack.  HP10.5 owns it and is ordered **before** the arm
+   that reads the field, which is this project's rule that a transition goes live
+   only after the proofs and guards that cover it.
+3. **The footprint grows and the ceiling moves.**  Redirecting the recipient
+   changes *which* TCB the pop writes, and the resolver can answer either thread,
+   so both reply footprints must declare the origin's TCB as well as the answered
+   caller's: `maxLockSetSize` 23 -> 24, with the RPi5 per-lock
+   `admissibleCriticalSection` and the uniform envelope moving with it.  A
+   footprint that omits a written object is false, and this project rates that
+   worse than a wide one — but the cost is stated in the row rather than
+   discovered in it.
+4. **It is a strengthening with no state on which it is worse than today.**  The
+   fallback is the current recipient, so `_eq_legacy_of_no_origin` makes every
+   existing result a case split whose `none` branch is the pre-HP10 proof
+   verbatim, and a stale or unacceptable origin degrades rather than clobbers.
+5. **It lands in WS-HP, not WS-CB.**  WS-CB restructures what a `SchedContext`
+   *is* (a server containing members) and will add fields of its own, so folding
+   this in looks economical.  Two things decide against it: WS-CB is PLANNED with
+   no sub-task started, so folding a depth-2 correctness fix into it defers the
+   fix indefinitely; and WS-CB's own plan requires every generalising cut after
+   CB1 to carry "the model is unchanged on states without servers", which a
+   flat-model fix landing first is strictly easier to satisfy than one entangled
+   with servers.  WS-CB inherits the field.
+
+| Sub | Description | Files | Est |
+|-----|-------------|-------|-----|
+| HP10.1 | **The measurement, before any code.**  The `SchedContext`-field blast radius (OD2's `SchedContext.scReply` is the precedent, at 264 references across 34 files — most of it the chain machinery it enabled rather than the field itself), the `objectAgree` / projection / freeze surfaces the field touches, and the two reply footprints' arity change.  The row's output is a number in this plan, not a prediction: if the field's mechanical cost exceeds the precedent's, the split below is re-cut here rather than discovered mid-phase | this plan | S |
+| HP10.2 | **The depth-2 cost witness, and the register corrected.**  `tests/SmpIpcSuite.lean` §3.20 gains the accounting halves it lacks — after the out-of-order removal and the later in-order pop, the reservation is `.bound` on the **intermediate** caller and the original owner is `.unbound` — so the loss is measured before anything is built to fix it — which is what lets this phase's payoff be an inversion of a measured cost rather than an assertion.  The register's own scoping error was corrected when this phase was registered (`v0.35.42`), not deferred to this row: a documentation fix that can land immediately is not plan work | `tests/SmpIpcSuite.lean` | M |
+| HP10.3 | **The field, inert**: `SchedContext.donationOrigin`, `projectKernelObject` erasing it in the same cut that adds it (or the write is observable in the interval — OD2's own lesson for `scReply`), `bootSafeObjectCheck` refusing a config context that carries one, and the `Model.freeze` mirror.  Nothing reads it yet.  Consumes HP10.1 | `SeLe4n/Model/Object/Structures.lean`, `SeLe4n/Kernel/InformationFlow/Projection.lean`, `SeLe4n/Platform/Boot.lean`, `SeLe4n/Model/FrozenState.lean` | L |
+| HP10.4 | **The write records the origin, and the loan-enders clear it.**  `donateSchedContext` writes `donationOrigin := some donor` on a **first** push only — decidable from the donor's binding, since `ownScId?` is `some` exactly on `.bound` — and an onward push leaves it, which is what makes the field the *origin* rather than the immediate donor.  Every writer that ends the loan or re-owns the reservation clears it: the pop's bottom arm, `schedContextBind`, `schedContextUnbind`.  Consumes HP10.3 | `SeLe4n/Kernel/IPC/Operations/Donation.lean`, `SeLe4n/Kernel/SchedContext/Operations.lean` | L |
+| HP10.5 | **The id-reuse closure**, ordered before anything reads the field: `lifecyclePreRetypeCleanup` clears the origin of any context naming the retyped thread, with the negative that a stale origin can no longer outlive its thread.  Consumes HP10.4 | `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean`, `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | M |
+| HP10.6 | **The footprint member and the ceiling, declared ahead of the arm**: both reply footprints declare the origin's TCB, resolved from the same expression the arm will read, `maxLockSetSize` 23 -> 24, and every figure derived from it moves in the canonical sentence `check_lock_ceiling_figures.py` enforces.  Inert, since nothing resolves to `some` until the next row.  Consumes HP10.5 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` | L |
+| HP10.7 | **The arm flips**: the pop's bottom-of-stack recipient is the recorded origin when `donationRecipientAcceptable` holds of it, the answered caller otherwise, with `_eq_legacy_of_no_origin` the definitional equality that carries every existing result.  Consumes HP10.6 | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | L |
+| HP10.8 | **The payoff**: `donationAccountingPreserved_atCallDepthTwo`, and §3.20's accounting halves invert from COST to PAYOFF — the same inversion HP6.9 performs at depth three, on the shape HP6 provably could not reach.  The depth-three payoff must pass byte-identically, which is the measurement that this phase is confined to the reachability gap rather than changing the chain.  Consumes HP10.7, HP10.2 | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `tests/SmpIpcSuite.lean` | L |
+| HP10.9 | **Closure**: the debt row retires and the claim-set constraint lifts in full — a completed call chain returns the client's reservation at *every* depth, which is a claim neither this kernel nor seL4-MCS can make today — with the spec, the claim index and the GitBook mirror saying so.  Consumes HP10.8 | `docs/REGISTERED_DEBT.md`, `docs/spec/SELE4N_SPEC.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, `docs/gitbook/12-proof-and-invariant-map.md`, `CLAUDE.md`, `AGENTS.md` | M |
 
 ## 7. What every cut in this workstream must run, in order
 

@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.41` (`lakefile.toml`) |
+| **Package version** | `0.35.42` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 380,449 across 330 Lean files |
 | **Test LoC** | 77,140 across 70 Lean test suites |
@@ -4582,9 +4582,21 @@ respect.
    server's binding to the answered frame's head-ness first; that is **WS-HP**,
    registered in `docs/REGISTERED_DEBT.md` with closure target before v1.0.0, and
    until it closes v1.0.0 must not claim — of either kernel — that completing a call
-   chain returns a client's reservation at chain depth ≥ 3.  The trigger flip landed
+   chain returns a client's reservation.  The trigger flip landed
    for the reply path at `v0.35.38` (§8.12.9) and for the cancellation path at
    `v0.35.39` (§8.12.10); the splice is HP6.
+
+   **And the splice does not close depth two** (re-scoped at `v0.35.42`).  The
+   paragraph above says why: a bottom frame's removal writes the same `none` under
+   either policy, so a client answered out of order at depth 2 still loses its
+   reservation to the intermediate caller after HP6, and §3.20 — which exercises
+   that shape — asserts only the structural outcome.  The defect is therefore
+   *reachability-based ownership* rather than the removal policy, which is why
+   upstream has it too (`reply_pop` donates to the answered frame's own
+   `replyTCB`).  **WS-HP HP10** closes it with one `SchedContext` field recording
+   the reservation's origin and one arm reading it, with the answered caller as the
+   fallback; that is an improvement on seL4-MCS at every depth, and the claim above
+   is written unscoped for that reason.
 
 #### 8.12.9 The donation pop is head-driven — WS-HP HP4 (`v0.35.38`)
 

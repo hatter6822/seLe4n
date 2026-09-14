@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.41.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.42.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3826,6 +3826,7 @@ HP2.3 makes that ordering a machine-checked fact rather than a note.
 | HP7 | PENDING | — | The three stated coherence hypotheses retire |
 | HP8 | PENDING | — | The frozen mirror's **splice** follows (its trigger landed as HP4.7) |
 | HP9 | PENDING | — | Witnesses, anchors, documentation, closure |
+| HP10 | PENDING | — | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach |
 
 **What new code must respect since HP4 (`v0.35.38`).**  Seven things.
 
@@ -4021,6 +4022,36 @@ retired `detachCancelledCallerFrame` at `v0.35.6` and four *live* claims still
 named it — this file's own WS-OD item 5 and `SELE4N_SPEC.md` §8.12.7 twice.  That
 is the tautological-pin shape one artefact over: prose citing a declaration that
 does not exist reads exactly like prose citing one that does.
+
+**And the splice is not the whole remedy — depth 2 needs HP10** (registered
+`v0.35.42`).  The register scoped this defect to reply-stack depth ≥ 3 and that
+was its own error: at depth **2** the delegate answers the client out of order,
+the removal takes the client's frame — the stack's *bottom* — off the stack, and
+the later in-order pop finds the remaining frame at the bottom and binds the
+reservation to the **intermediate** caller.  Both policies write `none` into the
+frame above a bottom frame, so the splice **provably cannot** reach it: the
+sentence that explains why §3.20 cannot measure the depth-≥ 3 defect is the
+reason the depth-2 defect survives HP6.  §3.20 exercises the depth-2 *structural*
+outcome and asserts nothing about where the reservation ends up, so this half was
+in the tree's reach and in neither its witnesses nor its register.
+
+The cause is not seL4-MCS and not the removal policy: the recipient is derived
+from **stack reachability**, so removing a frame changes who the kernel believes
+owns the context — and upstream's `reply_pop` donates to the answered frame's own
+`replyTCB`, so it has the depth-2 loss too.  HP10's remedy is one `SchedContext`
+field recording the reservation's **origin** and one arm reading it, with the
+answered caller as the fallback, so it is a strengthening with no state on which
+it is worse than today.  Three things new code must respect once it lands: the
+origin is **history the kernel validates, not an invariant** (no
+`donationChainWellFormed` clause can state it, because "or a thread whose frame
+was removed" is unstateable from the store — the pop's
+`donationRecipientAcceptable` guard is what makes reading it safe); **thread-id
+reuse is the hazard**, closed by `lifecyclePreRetypeCleanup` clearing a stale
+origin before anything reads the field; and **the footprint grows**, because
+redirecting the recipient changes which TCB the pop writes —
+`maxLockSetSize` 23 → 24.  It lands in WS-HP rather than WS-CB, whose plan has no
+sub-task started and would defer a correctness fix indefinitely; WS-CB inherits
+the field.
 
 Three things a reader should take from the plan rather than infer.  (1) **The
 payoff is larger than the accounting**: under the head-driven trigger the three
