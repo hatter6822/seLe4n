@@ -400,6 +400,13 @@ fn classify_synchronous_exception(esr: u64) -> u32 {
     let core_id = crate::per_cpu::current_core_id_from_tpidr();
     if crate::lean_ready::lean_ready(core_id as usize) {
         extern "C" {
+            /// # Safety
+            ///
+            /// Calling this is sound only on a core whose Lean runtime is
+            /// initialised — `lean_ready(current_core_id_from_tpidr())` must
+            /// have returned `true` on *this* PE, which the enclosing branch
+            /// has just checked.  A not-ready core must classify through the
+            /// Rust mirror instead; the two are pinned to one table.
             fn lean_classify_synchronous_exception(esr: u64) -> u32;
         }
         // SAFETY: `lean_classify_synchronous_exception` is the C-callable
@@ -515,6 +522,16 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
                 // the context from the mirror alone would report a stale
                 // argument window and, on resume, reinstall it over the
                 // thread's live registers.
+                /// # Safety
+                ///
+                /// Sound only on a core whose Lean runtime is initialised
+                /// (`lean_ready` checked on *this* PE) and only for an
+                /// exception taken from EL0: a kernel-origin frame must halt
+                /// before reaching here, or a user-level handler would receive
+                /// the kernel's own register window.  The fifteen words must be
+                /// the live trap frame's fault window, not the partial Lean
+                /// register mirror, which between syscalls holds the previous
+                /// syscall's arguments.
                 #[allow(clippy::too_many_arguments)]
                 fn lean_handle_fault(
                     core_id: u64,
@@ -654,6 +671,13 @@ fn deliver_unknown_syscall(frame: &mut TrapFrame) {
         let core_id = crate::per_cpu::current_core_id_from_tpidr();
         if crate::lean_ready::lean_ready(core_id as usize) {
             extern "C" {
+                /// # Safety
+                ///
+                /// Sound only on a core whose Lean runtime is initialised
+                /// (`lean_ready` checked on *this* PE) and only for an `SVC`
+                /// taken from EL0.  The caller must pass the live trap frame's
+                /// window; the model restarts the faulting thread at the `SVC`,
+                /// so a stale window would be reinstalled over its registers.
                 #[allow(clippy::too_many_arguments)]
                 fn lean_handle_unknown_syscall(
                     core_id: u64,
@@ -1070,8 +1094,20 @@ fn reschedule_sgi_handler(_intid: u8, _source_cpu: u8) {
             // bring-up entry established this core's scheduler state) AND this
             // core's Lean runtime is initialized (the gate just checked).
             extern "C" {
+                /// # Safety
+                ///
+                /// Sound from EL1 IRQ context on a core that has completed
+                /// `enable_irq` (so the `.reschedule` SGI can be taken at all)
+                /// and whose Lean runtime is initialised — `lean_ready` checked
+                /// on *this* PE.  `core_id` must be the executing PE's own id.
                 fn lean_per_core_reschedule(core_id: u64);
             }
+            // SAFETY: `lean_per_core_reschedule` is the Lean-emitted
+            // `extern "C"` entry declared just above; calling it is sound from
+            // EL1 IRQ context under the two conditions stated there -- this
+            // core's per-core hardware init has completed and its Lean runtime
+            // is initialized -- and inside the kernel-entry bracket, which
+            // serialises its `IO.Ref` commit against every other entry.
             crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
                 lean_per_core_reschedule(core_id);
             });
@@ -1089,6 +1125,9 @@ fn reschedule_sgi_handler(_intid: u8, _source_cpu: u8) {
 /// `bring_up_secondaries` — the [`crate::gic::register_sgi_handler`]
 /// write-once contract, same as the shootdown and haltAll handlers.
 pub unsafe fn register_reschedule_sgi_handler() {
+    // SAFETY: this function's own `# Safety` contract -- boot, single-core,
+    // IRQs disabled, before `bring_up_secondaries` -- is exactly
+    // `register_sgi_handler`'s write-once precondition.
     unsafe {
         crate::gic::register_sgi_handler(RESCHEDULE_INTID, reschedule_sgi_handler);
     }

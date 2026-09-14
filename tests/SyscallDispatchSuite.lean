@@ -1543,7 +1543,7 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
 /-- SD-052c (PR #822 review): a *delegated* `ReplyRecv` — a copied/minted reply-cap
     holder `delegate` (≠ the recorded server) — must return the previous caller's OLD
     donation from the RECORDED server (the thread `clientA` actually donated its SC to),
-    not from the delegate.  Pre-fix, `replyRecvReturnDonation` read the delegate's
+    not from the delegate.  Pre-fix, the arm's donation resolution read the delegate's
     binding (`.unbound`), found no donation, and left the recorded server's
     `.donated scA clientA` dangling forever. -/
 private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Unit := do

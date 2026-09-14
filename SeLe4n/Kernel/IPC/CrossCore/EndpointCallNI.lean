@@ -51,7 +51,7 @@ theorem projectObjects_insert_high (ctx : LabelingContext) (observer : IfObserve
   by_cases hObs : objectObservable ctx observer oid
   · by_cases hEq : oid = tid.toObjId
     · subst hEq; rw [hHighObj] at hObs; exact absurd hObs (by simp)
-    · simp only [projectObjects, hObs, if_true, hObjEq]
+    · simp only [projectObjects, hObs, if_true, hObjEq, SystemState.getObject?]
       congr 1
       exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid v
         (by simp only [beq_iff_eq]; exact fun h => hEq h.symm) hObjInv

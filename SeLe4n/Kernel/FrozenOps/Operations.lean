@@ -46,7 +46,8 @@ than misleading its next reader.
 | 7 | `frozenEndpointSend`         | `endpointSendDual`         | IPC          |
 | 8 | `frozenEndpointReceive`      | `endpointReceiveDual`      | IPC          |
 | 9 | `frozenEndpointCall`         | `endpointCall`             | IPC          |
-|10 | `frozenEndpointReply`        | `endpointReply`            | IPC          |
+|10 | `frozenEndpointReply`        | `endpointReplyOnCore`      | IPC          |
+|10a| `frozenEndpointReplyWithDonationReturn` | `endpointReplyCrossCoreDispatch` | IPC |
 |11 | `frozenCspaceLookup`         | `cspaceLookupSlot`         | Capability   |
 |12 | `frozenCspaceLookupSlot`     | `cspaceLookupSlot` (root)  | Capability   |
 |13 | `frozenCspaceMint`           | `cspaceMint`               | Capability   |
@@ -127,8 +128,8 @@ def frozenChooseThread (st : FrozenSystemState)
             -- Skip current thread (dequeue-on-dispatch semantics)
             if currentTid == some tid then false
             else
-              match st.objects.get? tid.toObjId with
-              | some (.tcb tcb) =>
+              match st.getTcb? tid with
+              | some tcb =>
                   tcb.domain == (st.scheduler.activeDomain) &&
                   tcb.ipcState == .ready
               | _ => false)
@@ -149,8 +150,8 @@ def frozenSchedule : FrozenKernel Unit :=
         | .error e => .error e
         | .ok stSaved => frozenSetCurrentThread none stSaved
     | .ok (some tid, st') =>
-        match st'.objects.get? tid.toObjId with
-        | some (.tcb tcb) =>
+        match st'.getTcb? tid with
+        | some tcb =>
             if tcb.domain == (st'.scheduler.activeDomain) &&
                tcb.ipcState == .ready then
               match frozenSaveOutgoingContext st' with
@@ -199,8 +200,8 @@ def frozenTimerTick : FrozenKernel Unit :=
     | none =>
         .ok ((), { st with machine := tick st.machine })
     | some tid =>
-        match st.objects.get? tid.toObjId with
-        | some (.tcb tcb) =>
+        match st.getTcb? tid with
+        | some tcb =>
             if tcb.timeSlice ≤ 1 then
               -- Time-slice expired: reset to platform-configured value, update TCB
               let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
@@ -263,8 +264,8 @@ the notification has **no** ordinary waiters and its bound TCB is currently
 `none` on a dangling binding or a bound thread doing something else. -/
 private def frozenBoundDeliveryTarget? (st : FrozenSystemState)
     (notificationId : SeLe4n.ObjId) : Option (SeLe4n.ThreadId × SeLe4n.ObjId) :=
-  match st.objects.get? notificationId with
-  | some (.notification ntfn) =>
+  match st.getNotification? notificationId with
+  | some ntfn =>
       if ntfn.waitingThreads.val.isEmpty then
         match ntfn.boundTCB with
         | some t =>
@@ -300,7 +301,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
     (signaller : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
     : FrozenKernel Unit :=
   fun st =>
-    match st.objects.get? notificationId with
+    match st.getObject? notificationId with
     | some (.notification ntfn) =>
         -- **The signaller must resolve to a live TCB**, for the reason the
         -- replier must in `frozenEndpointReply`, and with one failure mode more.
@@ -433,7 +434,7 @@ via `frozenStoreTcbIpcState` makes the thread ineligible for selection by
 def frozenNotificationWait (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) : FrozenKernel (Option SeLe4n.Badge) :=
   fun st =>
-    match st.objects.get? notificationId with
+    match st.getObject? notificationId with
     | some (.notification ntfn) =>
         match ntfn.pendingBadge with
         | some badge =>
@@ -519,8 +520,8 @@ receive queue is unaffected — a thread parked to *receive* correctly holds
 nothing. -/
 private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (st : FrozenSystemState) : Except KernelError (SeLe4n.ThreadId × TCB × FrozenSystemState) :=
-  match st.objects.get? endpointId with
-  | some (.endpoint ep) =>
+  match st.getEndpoint? endpointId with
+  | some ep =>
       let queue := if isReceiveQ then ep.receiveQ else ep.sendQ
       match queue.head with
       | none => .error .endpointQueueEmpty
@@ -571,7 +572,7 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
     else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
     else
-    match st.objects.get? endpointId with
+    match st.getObject? endpointId with
     | some (.endpoint ep) =>
         -- **The sender is resolved once, for both orderings.**  The blocking
         -- path already did this and the rendezvous path did not, so whether a
@@ -657,7 +658,7 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     : FrozenKernel SeLe4n.ThreadId :=
   fun st =>
-    match st.objects.get? endpointId with
+    match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.sendQ.head with
         | some _sender =>
@@ -754,7 +755,7 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
     else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
     else
-    match st.objects.get? endpointId with
+    match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
         | some _receiver =>
@@ -810,7 +811,18 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     | none => .error .objectNotFound
 
 /-- Q7-C2: Frozen endpoint reply — reply to a blocked caller.
-Mirrors `endpointReply`. -/
+
+Mirrors **`endpointReplyOnCore`** (`IPC/CrossCore/EndpointReply.lean`), the leg
+the live `.reply` arm dispatches, and *not* the bare single-core `endpointReply`
+this docstring used to name (PR #895 review round 22).  The two differ on exactly
+the authority question the body below decides: the cross-core leg's `_replier` is
+unused, because the 6J-lYm gate removal made authority the presented reply
+capability, while the bare leg keeps `replier == expected` and so refuses a
+delegated cap holder.  This mirror accepts one, as the comments in the body say
+and as `endpointReplyOnCore` does — so naming the bare leg made the claim false
+on every delegated input, and `FrozenOpsSuite`'s FO-031 differential compared
+against it.  `frozenBranchLiveLeg` (`FrozenOps/Agreement.lean`) now carries the
+counterpart as data rather than as this sentence. -/
 def frozenEndpointReply (replierId : SeLe4n.ThreadId)
     (targetId : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (msg : IpcMessage) :
     FrozenKernel Unit :=
@@ -818,7 +830,7 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
     match frozenLookupTcb st targetId with
     | some targetTcb =>
         match targetTcb.ipcState with
-        | .blockedOnReply _epId _replyTarget =>
+        | .blockedOnReply _epId replyTarget =>
             -- PR #822 review (Codex), frozen mirror of E.2: authority is the **presented
             -- reply capability** `replyId` — the replier must hold a reply cap naming
             -- `targetId` as its caller, exactly like the live `.reply` arm resolves
@@ -832,6 +844,29 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
             -- (`replyObject ≠ some replyId`); a missing Reply object; or a Reply whose
             -- `caller` is not `some targetId`.  Deliver + consume the single-use Reply link
             -- (clear both reciprocal sides, mirroring `consumeCallerReply`).
+            -- **A caller with no recorded server is not repliable** (PR #895
+            -- review round 15).  Both live spellings fail closed here -- the
+            -- bare `endpointReply` (`IPC/DualQueue/Transport.lean`) and
+            -- `endpointReplyOnCore` (`IPC/CrossCore/EndpointReply.lean`) each
+            -- answer `.replyCapInvalid` for `.blockedOnReply _ none` -- and the
+            -- live comment says why: every production path that creates
+            -- `blockedOnReply` records `some receiver`, so the `none` case is
+            -- invariant drift, and the retired `none => true` branch let any
+            -- reply through, which that finding (AK1-B / I-H02) rated a
+            -- confused-deputy risk.  This mirror kept the retired behaviour: it
+            -- bound the recorded server and never read it, so a malformed
+            -- frozen state -- and `Model.freeze` copies `ipcState` verbatim --
+            -- was delivered and its Reply consumed on a surface whose whole
+            -- purpose is to agree with the live kernel.
+            --
+            -- The binder is `_expected` and nothing gates on it, exactly as in
+            -- `endpointReplyOnCore`: authority is the presented reply
+            -- capability, so a *delegated* replier is still legitimate.  What
+            -- is refused is the absence of a recorded server, not a mismatch
+            -- with it.
+            match replyTarget with
+            | none => .error .replyCapInvalid
+            | some _expected =>
             let targetTcb' := { targetTcb with
               ipcState := ThreadIpcState.ready
               pendingMessage := some msg
@@ -840,8 +875,8 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
             | none => .error .replyCapInvalid
             | some fwdRid =>
                 if fwdRid == replyId then
-                  match st.objects.get? replyId.toObjId with
-                  | some (.reply r) =>
+                  match st.getReply? replyId with
+                  | some r =>
                       if r.caller = some targetId then
                         -- **The composing thread must be resolvable**, because
                         -- the reply's provenance is read from it.  A `replierId`
@@ -864,9 +899,28 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
                         | some _ =>
                         match frozenStoreTcb targetId targetTcb' st with
                         | .error e => .error e
-                        | .ok ((), st') =>
+                        | .ok ((), st'') =>
+                            -- **WS-RM, frozen mirror**: the frame above comes off
+                            -- the stack BEFORE its caller link is consumed — the
+                            -- detach reads the link the consume clears, so the
+                            -- order is the content, exactly as it is live.
+                            let st' := frozenDetachReplyFrameAboveOrSelf st'' replyId
+                            -- ...and the record stored is **`Reply.consumed`**, the
+                            -- live function, not an inline caller clear.  It is a
+                            -- pure function on a `Reply`, and this surface stores
+                            -- the live `Reply`, so there is no reason to spell the
+                            -- question twice — and spelling it twice got it wrong:
+                            -- `consumed` keeps the links only on a frame that
+                            -- **heads** a context (the pop that follows clears
+                            -- them) and clears `prev` and `next` on every other,
+                            -- where a bare `caller := none` leaves the frame with
+                            -- no caller and links intact.  That falsifies
+                            -- `Reply.wellFormed` at the frame, makes it fail
+                            -- `Reply.isFree` forever — so it can never be relinked
+                            -- or retyped — and diverges from the live transition
+                            -- under `frozenStateAgrees`.
                             match frozenStoreObject replyId.toObjId
-                                    (.reply { r with caller := none }) st' with
+                                    (.reply r.consumed) st' with
                             | .error e => .error e
                             | .ok ((), st'') =>
                               -- PR #873 round 15: the woken caller re-enters the
@@ -888,6 +942,124 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
         | _ => .error .replyCapInvalid
     | none => .error .objectNotFound
 
+/-- **WS-RM, frozen mirror**: the server a blocked caller's reply is recorded
+against -- `recordedReplyServer?`'s counterpart. -/
+def frozenRecordedReplyServer? (st : FrozenSystemState) (target : SeLe4n.ThreadId) :
+    Option SeLe4n.ThreadId :=
+  match st.getTcb? target with
+  | some tcb =>
+      match tcb.ipcState with
+      | .blockedOnReply _ (some expected) => some expected
+      | _                                 => none
+  | none => none
+
+/-- **WS-RM, frozen mirror**: the donation this reply returns, paired with its
+original owner -- `endpointReplyServerDonation?`'s counterpart.
+
+Read from the **recorded server's** binding, not the (possibly delegated) cap
+holder's, exactly as the live resolver does: a delegated reply capability is
+legitimate authority and does not move the donation. -/
+def frozenEndpointReplyServerDonation? (st : FrozenSystemState)
+    (target : SeLe4n.ThreadId) : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match frozenRecordedReplyServer? st target with
+  | none => none
+  | some server =>
+      match st.getTcb? server with
+      | some tcb =>
+          match tcb.schedContextBinding with
+          | .donated scId originalOwner => some (scId, originalOwner)
+          | _                           => none
+      | none => none
+
+/-- **WS-RM, frozen mirror of `applyReplyDonation`** — the return **and** the
+deschedule, as one step.
+
+The live function is `returnDonatedSchedContextResolved … ` followed by
+`removeRunnable replier` (`IPC/Operations/Donation/Primitives.lean`), and the two
+are a pair: the server has just handed its reservation back, so leaving it on a
+run queue lets the scheduler select a thread that is `.unbound` and charged to
+nobody -- the temporal-isolation defect PR #895 rounds 9-11 closed on the live
+`.replyRecv` arm.
+
+**This exists so the pairing cannot be forgotten again** (PR #895 review round
+14).  Round 13 mirrored the *inner* call and not the live caller that pairs it
+with the deschedule, and reproduced the defect on this surface -- that round's
+own rule, *sharing an implementation transfers its preconditions*, failing inside
+the fix that recorded it.  A frozen mirror of a live step therefore names the
+live function that **completes** it, never the one nested inside. -/
+def frozenApplyReplyDonation (st : FrozenSystemState) (replier : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) :
+    Except KernelError FrozenSystemState :=
+  match frozenReturnDonatedSchedContextResolved st replier scId originalOwner with
+  | .error e => .error e
+  | .ok st' => .ok (frozenRemoveRunnable st' replier)
+
+/-- **WS-RM, frozen mirror of the whole `.reply` operation** (PR #895 review
+round 13).
+
+`frozenEndpointReply` above is the mirror of the reply **leg**
+(`endpointReplyOnCore`; not the bare `endpointReply`, whose authority gate this
+surface does not carry — PR #895 review round 22), and that is exactly what
+`FrozenOpsSuite`'s FO-031 differential compares it against.
+But the live `.reply` *operation* is that reply **followed by the donation
+return**, and this surface had only the first half -- so `Reply.consumed`, which
+deliberately keeps a stack head's links because "the pop that follows clears
+them", was storing a record whose contract nothing here met.  A frozen state
+captured mid-donation-chain (`freeze` copies Reply objects verbatim, links and
+all) therefore left the answered Reply failing `Reply.isFree` forever: it could
+never be re-linked to a new caller and never retyped, so a passive server could
+not complete a second call/reply cycle on it.
+
+The pop belongs **here and not inside `frozenEndpointReply`** for a reason worth
+keeping: the bare live reply leaves a head linked too, so moving the pop into the
+mirror would make it diverge from the very function it refines -- the refinement
+that currently holds is what tells this surface apart from a guess.
+
+The donation is resolved on the **pre**-state, because the reply clears the
+`ipcState` the recorded server is read from.
+
+**...and priority inheritance is reverted on every successful reply** (PR #895
+review round 15), donation or none.  The answered caller was blocked *on* the
+recorded server, so it was one of that server's waiters and contributed to its
+`TCB.pipBoost`; the reply makes it `.ready`, so the boost has to be recomputed
+from whoever is left.  Both live compositions do this -- the **live** spine
+`endpointReplyCrossCoreDispatch` with `propagatePipChainCrossCore`
+(`IPC/CrossCore/EndpointReplyDispatch.lean`), which is what the `.reply` arm
+dispatches and what this composite is compared against, and the superseded
+single-core `endpointReplyWithDonation` with `revertPriorityInheritance`
+(`IPC/Operations/Donation.lean`, no production caller and a reply leg that
+refuses a delegated cap holder -- PR #895 review round 22) -- and this surface
+did not, so a stale boost survived.  That is not inert here: `frozenEnsureRunnable` buckets by
+`frozenEffectivePriority`, which reads `pipBoost`, so the next time the server is
+made runnable it enters the run queue at a priority it inherited from a client
+it has already answered.
+
+It runs **after** the donation return, as both live compositions do, and takes
+the **recorded server** as its subject -- not the (possibly delegated) cap
+holder, which is nobody's blocking target.  Like the pop, it belongs in this
+composite and not in `frozenEndpointReply`: neither bare live reply reverts, and
+the mirror is refined against the bare one. -/
+def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
+    (targetId : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (msg : IpcMessage) :
+    FrozenKernel Unit :=
+  fun st =>
+    let donation? := frozenEndpointReplyServerDonation? st targetId
+    let server? := frozenRecordedReplyServer? st targetId
+    match frozenEndpointReply replierId targetId replyId msg st with
+    | .error e => .error e
+    | .ok ((), st') =>
+      match donation?, server? with
+      | some (scId, originalOwner), some server =>
+          match frozenApplyReplyDonation st' server scId originalOwner with
+          | .error e => .error e
+          | .ok st'' => .ok ((), frozenRevertPriorityInheritance st'' server)
+      | _, some server => .ok ((), frozenRevertPriorityInheritance st' server)
+      -- Unreachable since the round-15 guard: `frozenEndpointReply` refuses a
+      -- caller with no recorded server, so a reply that returned `.ok` has one.
+      -- Kept as the total match rather than as a `panic`, which is what every
+      -- other resolver in this surface does with an impossible case.
+      | _, none => .ok ((), st')
+
 -- ============================================================================
 -- Q7-C3: Capability Frozen Operations
 -- ============================================================================
@@ -896,7 +1068,7 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
 Uses zero-hash bit extraction for direct array indexing. -/
 def frozenCspaceLookup (st : FrozenSystemState) (cptr : SeLe4n.CPtr)
     (rootId : SeLe4n.ObjId) : Except KernelError Capability :=
-  match st.objects.get? rootId with
+  match st.getObject? rootId with
   | some (.cnode cn) =>
       let slot := SeLe4n.Slot.ofNat (extractBits cptr.toNat 0 cn.radixWidth)
       match cn.slots.lookup slot with
@@ -923,7 +1095,7 @@ where a mint operation clobbers an existing capability without revoking it. -/
 def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     (cap : Capability) : FrozenKernel Unit :=
   fun st =>
-    match st.objects.get? rootId with
+    match st.getObject? rootId with
     | some (.cnode cn) =>
         -- V5-P: Reject if slot is already occupied
         match cn.slots.lookup slot with
@@ -941,7 +1113,7 @@ def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
 def frozenCspaceDelete (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     : FrozenKernel Unit :=
   fun st =>
-    match st.objects.get? rootId with
+    match st.getObject? rootId with
     | some (.cnode cn) =>
         let slots' := cn.slots.erase slot
         let cn' : FrozenCNode := { cn with slots := slots' }
@@ -962,8 +1134,8 @@ def frozenVspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
   fun st =>
     match st.asidTable.get? asid with
     | some rootId =>
-        match st.objects.get? rootId with
-        | some (.vspaceRoot vsr) =>
+        match st.getVSpaceRoot? rootId with
+        | some vsr =>
             if vsr.asid == asid then
               match vsr.mappings.get? vaddr with
               | some entry => .ok (entry, st)
@@ -1011,7 +1183,7 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
     else if priority > 255 then .error .invalidArgument
     else if domain ≥ 16 then .error .invalidArgument
     else
-      match st.objects.get? scId with
+      match st.getObject? scId with
       | some (.schedContext sc) =>
         let updated : SeLe4n.Kernel.SchedContext :=
           { sc with
@@ -1049,12 +1221,12 @@ dispatch), so the bind only updates bidirectional references. -/
 def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
     : FrozenKernel Unit :=
   fun st =>
-    match st.objects.get? scId with
+    match st.getObject? scId with
     | some (.schedContext sc) =>
       if sc.boundThread.isSome then .error .illegalState
       else
-        match st.objects.get? threadId.toObjId with
-        | some (.tcb tcb) =>
+        match st.getTcb? threadId with
+        | some tcb =>
           match tcb.schedContextBinding with
           | .unbound =>
             let scIdTyped : SeLe4n.SchedContextId := ⟨scId.toNat⟩
@@ -1091,14 +1263,14 @@ to a non-TCB" case explicitly with `.error .objectNotFound`, rather than
 leaving a half-mutated state behind. -/
 def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
   fun st =>
-    match st.objects.get? scId with
+    match st.getObject? scId with
     | some (.schedContext sc) =>
       match sc.boundThread with
       | none => .error .illegalState
       | some tid =>
         -- AK8-H Phase 1: Validate TCB lookup BEFORE any state mutation.
-        match st.objects.get? tid.toObjId with
-        | some (.tcb tcb) =>
+        match st.getTcb? tid with
+        | some tcb =>
           -- WS-OD (PR #894 review): **the donated-holder rejection this path
           -- claims to mirror.**  `schedContextUnbind` refuses to unbind a holder
           -- that received the context by donation, because erasing that binding
@@ -1143,13 +1315,13 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
     | none =>
         .ok ((), { st with machine := tick st.machine })
     | some tid =>
-        match st.objects.get? tid.toObjId with
-        | some (.tcb tcb) =>
+        match st.getTcb? tid with
+        | some tcb =>
           match tcb.schedContextBinding with
           | .bound scId | .donated scId _ =>
             -- CBS path: decrement SchedContext budget
-            match st.objects.get? scId.toObjId with
-            | some (.schedContext sc) =>
+            match st.getSchedContext? scId with
+            | some sc =>
               let result := SeLe4n.Kernel.cbsBudgetCheck sc st.machine.timer 1
               let updatedSc := result.1
               let wasPreempted := result.2
@@ -1234,8 +1406,8 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
           -- If resumed thread has higher priority than current, force reschedule
           let st' := match (st'.scheduler.current) with
             | some curTid =>
-              match st'.objects.get? curTid.toObjId with
-              | some (.tcb curTcb) =>
+              match st'.getTcb? curTid with
+              | some curTcb =>
                 if tcb'.priority.val > curTcb.priority.val then
                   { st' with scheduler := { st'.scheduler with current := none } }
                 else st'
@@ -1275,8 +1447,8 @@ def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
         -- and `.donated`: the TCB).
         match targetTcb.schedContextBinding.ownScId? with
         | some scId =>
-          match st.objects.get? scId.toObjId with
-          | some (.schedContext sc) =>
+          match st.getSchedContext? scId with
+          | some sc =>
             let sc' := { sc with priority := newPriority }
             match st.objects.set scId.toObjId (.schedContext sc') with
             | some objs => .ok ((), { st with objects := objs })
@@ -1334,8 +1506,8 @@ def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
       | none => .error .objectNotFound
       | some tcb =>
         -- Step 4: VSpace root validity (frozen VSpaceRoot)
-        match st.objects.get? tcb.vspaceRoot with
-        | some (.vspaceRoot vsr) =>
+        match st.getVSpaceRoot? tcb.vspaceRoot with
+        | some vsr =>
           -- Step 5: Mapping check via FrozenMap
           match vsr.mappings.get? addr with
           | some (paddr, perms) =>
@@ -1377,7 +1549,13 @@ def frozenOpCoverage : SyscallId → Bool
   | .send => true             -- frozenEndpointSend
   | .receive => true          -- frozenEndpointReceive
   | .call => true             -- frozenEndpointCall
-  | .reply => true            -- frozenEndpointReply
+  | .reply => true            -- frozenEndpointReplyWithDonationReturn:
+                             -- the reply leg then the donation return, as the
+                             -- live `.reply` operation does.  `frozenEndpointReply`
+                             -- alone is the mirror of the LEG `endpointReplyOnCore`
+                             -- -- not the bare `endpointReply`, which keeps the
+                             -- `replier == expected` gate this surface does not
+                             -- (PR #895 review round 22).
   | .cspaceMint => true       -- frozenCspaceMint
   | .cspaceCopy => false      -- builder-only (structural copy)
   | .cspaceMove => false      -- builder-only (structural move)

@@ -1004,4 +1004,89 @@ theorem frozenMap_set_preserves_size [BEq κ] [Hashable κ] [LawfulBEq κ]
 theorem freeze_preserves_objectIndexSet (ist : IntermediateState) :
     (freeze ist).objectIndexSet = freezeMap ist.state.objectIndexSet.table := rfl
 
+/-! ## The frozen object-store accessors
+
+`SystemState` has a typed accessor per object kind (`Model/State.lean`), and the
+reason is not style: a raw store read answers `Option FrozenKernelObject`, so the
+**caller** discriminates the variant, and a caller that discriminates it wrongly
+— asks for `.endpoint` at a key holding a `.tcb` and falls through to a
+catch-all — is indistinguishable at the call site from one that asks correctly.
+An accessor does that discrimination once.
+
+The frozen store had no such family, so twenty-nine transitions on this surface
+matched the variant themselves.  These are the exact counterparts of the live
+ones, definitionally, so a frozen transition now reads the way its live twin
+does and `FrozenOps.frozenLookup*` are thin guards *over* them rather than a
+second reading of the same table.
+
+Their bodies are the raw read, which is what makes them the accessors;
+`scripts/lean_store_read_census.py` registers each one by name for that reason,
+and reconciles the registry in both directions, so an entry that stops reading
+raw is reported as a stale exemption. -/
+
+/-- The frozen store read, kind-agnostic — the counterpart of
+`SystemState.getObject?`. -/
+def FrozenSystemState.getObject? (st : FrozenSystemState) (id : SeLe4n.ObjId) :
+    Option FrozenKernelObject :=
+  st.objects.get? id
+
+/-- Read a TCB from the frozen object store.
+
+Plain, like the live `SystemState.getTcb?`: it answers `none` for an absent key
+and for a wrong-kinded one alike, and applies **no** sentinel check.  The
+reserved-identifier refusal is `FrozenOps.frozenLookupTcb`'s, which is stated
+over this one — the same split the live surface draws between `getTcb?` and
+`lookupTcb`. -/
+def FrozenSystemState.getTcb? (st : FrozenSystemState) (tid : SeLe4n.ThreadId) :
+    Option TCB :=
+  match st.objects.get? tid.toObjId with
+  | some (.tcb t) => some t
+  | _             => none
+
+/-- Read an Endpoint from the frozen object store. -/
+def FrozenSystemState.getEndpoint? (st : FrozenSystemState) (id : SeLe4n.ObjId) :
+    Option Endpoint :=
+  match st.objects.get? id with
+  | some (.endpoint e) => some e
+  | _                  => none
+
+/-- Read a Notification from the frozen object store. -/
+def FrozenSystemState.getNotification? (st : FrozenSystemState) (id : SeLe4n.ObjId) :
+    Option Notification :=
+  match st.objects.get? id with
+  | some (.notification n) => some n
+  | _                      => none
+
+/-- Read a frozen CNode from the frozen object store. -/
+def FrozenSystemState.getCNode? (st : FrozenSystemState) (id : SeLe4n.ObjId) :
+    Option FrozenCNode :=
+  match st.objects.get? id with
+  | some (.cnode c) => some c
+  | _               => none
+
+/-- Read a frozen VSpace root from the frozen object store. -/
+def FrozenSystemState.getVSpaceRoot? (st : FrozenSystemState) (id : SeLe4n.ObjId) :
+    Option FrozenVSpaceRoot :=
+  match st.objects.get? id with
+  | some (.vspaceRoot v) => some v
+  | _                    => none
+
+/-- Read a SchedContext from the frozen object store. -/
+def FrozenSystemState.getSchedContext? (st : FrozenSystemState)
+    (scId : SeLe4n.SchedContextId) : Option SeLe4n.Kernel.SchedContext :=
+  match st.objects.get? scId.toObjId with
+  | some (.schedContext sc) => some sc
+  | _                       => none
+
+/-- Read a Reply from the frozen object store.
+
+The frozen surface stores the **live** `Reply` (`FrozenKernelObject.reply`
+carries `SeLe4n.Kernel.Reply`), stack links and all, so a frozen state produced
+by `freeze` from a live state mid-call-chain carries that chain verbatim. -/
+def FrozenSystemState.getReply? (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
+    Option SeLe4n.Kernel.Reply :=
+  match st.objects.get? rid.toObjId with
+  | some (.reply r) => some r
+  | _               => none
+
 end SeLe4n.Model

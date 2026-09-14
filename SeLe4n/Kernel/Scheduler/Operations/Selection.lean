@@ -315,29 +315,31 @@ duration of the call *and*, through `updatePrioritySource`, let a
       match st.getSchedContext? scId with
       | some sc => (tcb.priority, sc.deadline)
       | none    => (tcb.priority, tcb.deadline)
-  -- D4-B: Apply PIP boost
-  match tcb.pipBoost with
-  | none => (basePrio, dl)
-  | some boostPrio => (⟨Nat.max basePrio.val boostPrio.val⟩, dl)
+  -- D4-B: Apply PIP boost -- `Priority.raisedBy` (`Prelude.lean`), the one
+  -- reading of "a base raised by an inherited boost", shared with
+  -- `effectiveSchedParams` below and with the frozen run queue's mirror.
+  (basePrio.raisedBy tcb.pipBoost, dl)
 
 /-- AI3-A: For unbound threads without PIP boost, the full effective priority
 resolution `(resolveEffectivePrioDeadline st tcb).1` equals the simpler
-`effectiveRunQueuePriority tcb` from Invariant.lean. -/
-theorem effectiveRunQueuePriority_eq_resolve_unbound (st : SystemState) (tcb : TCB)
+`tcb.boostedPriority` from Invariant.lean. -/
+theorem boostedPriority_eq_resolve_unbound (st : SystemState) (tcb : TCB)
     (hUnbound : tcb.schedContextBinding = .unbound) :
-    effectiveRunQueuePriority tcb = (resolveEffectivePrioDeadline st tcb).1 := by
-  simp [effectiveRunQueuePriority, resolveEffectivePrioDeadline, hUnbound]
-  cases tcb.pipBoost <;> simp_all
+    tcb.boostedPriority = (resolveEffectivePrioDeadline st tcb).1 := by
+  -- Since `v0.35.28` both sides apply the boost through `Priority.raisedBy`,
+  -- so there is no `pipBoost` case split left to do: the two readings are the
+  -- same expression once the binding is known.
+  simp [TCB.boostedPriority, resolveEffectivePrioDeadline, hUnbound]
 
 /-- SM5.I (AK2-B alignment).  When a thread's SchedContext base priority agrees
 with its TCB base priority — the `boundThreadPriorityConsistent` agreement
 specialised to this thread — the SchedContext-aware effective priority
 `(resolveEffectivePrioDeadline st tcb).1` equals the TCB-based
-`effectiveRunQueuePriority tcb` (the bucket `schedulerPriorityMatch` records).
+`tcb.boostedPriority` (the bucket `schedulerPriorityMatch` records).
 This is the bridge that lets the SchedContext-priced run-queue inserts
 (`resolveInsertPriority`, used by `updatePipBoostOnCore` and the bound budget
 re-enqueue) preserve `schedulerPriorityMatchOnCore`.  Generalises
-`effectiveRunQueuePriority_eq_resolve_unbound` to the `.bound` case under the
+`boostedPriority_eq_resolve_unbound` to the `.bound` case under the
 agreement hypothesis.
 
 **WS-OD (v0.35.3).**  The hypothesis is stated over
@@ -347,29 +349,29 @@ agreement at all, because since the donee-priority split it reads
 `tcb.priority` directly.  This is a *strictly weaker* hypothesis for the same
 conclusion: a caller holding the old `scId?`-shaped fact still discharges it
 through `SchedContextBinding.ownScId?_eq_scId?_of_isSome`. -/
-theorem resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree
+theorem resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree
     (st : SystemState) (tcb : TCB)
     (h : ∀ scId, tcb.schedContextBinding.ownScId? = some scId →
           ∀ sc, st.getSchedContext? scId = some sc → sc.priority = tcb.priority) :
-    (resolveEffectivePrioDeadline st tcb).1 = effectiveRunQueuePriority tcb := by
+    (resolveEffectivePrioDeadline st tcb).1 = tcb.boostedPriority := by
   cases hb : tcb.schedContextBinding with
   | unbound =>
     cases hboost : tcb.pipBoost <;>
-      simp [resolveEffectivePrioDeadline, effectiveRunQueuePriority, hb, hboost]
+      simp [resolveEffectivePrioDeadline, TCB.boostedPriority, hb, hboost]
   | bound scId =>
     cases hsc : st.getSchedContext? scId with
     | none =>
       cases hboost : tcb.pipBoost <;>
-        simp [resolveEffectivePrioDeadline, effectiveRunQueuePriority, hb, hsc, hboost]
+        simp [resolveEffectivePrioDeadline, TCB.boostedPriority, hb, hsc, hboost]
     | some sc =>
       have hp : sc.priority = tcb.priority := h scId (by rw [hb]; rfl) sc hsc
       cases hboost : tcb.pipBoost <;>
-        simp [resolveEffectivePrioDeadline, effectiveRunQueuePriority, hb, hsc, hboost, hp]
+        simp [resolveEffectivePrioDeadline, TCB.boostedPriority, hb, hsc, hboost, hp]
   | donated scId owner =>
     -- WS-OD (v0.35.3): unconditional — the arm reads `tcb.priority`.
     cases hsc : st.getSchedContext? scId <;>
       cases hboost : tcb.pipBoost <;>
-        simp [resolveEffectivePrioDeadline, effectiveRunQueuePriority, hb, hsc, hboost]
+        simp [resolveEffectivePrioDeadline, TCB.boostedPriority, hb, hsc, hboost]
 
 /-- WS-OD (v0.35.3): the base-priority half of `resolveEffectivePrioDeadline`
 **is** `SystemState.threadBasePriority`, unconditionally.  This is the pin that
@@ -396,15 +398,15 @@ theorem resolveEffectivePrioDeadline_fst_eq_threadBasePriority
         simp [resolveEffectivePrioDeadline, SystemState.threadBasePriority, hb, hsc, hboost]
 
 /-- WS-OD (v0.35.3): the donee's effective priority is its own effective
-priority — `effectiveRunQueuePriority`, the TCB-only reading the run queue
+priority — `TCB.boostedPriority`, the TCB-only reading the run queue
 records — with no hypothesis about the donor's reservation.  The payoff of the
 split, stated where the scheduler reads it. -/
 theorem resolveEffectivePrioDeadline_fst_of_donated
     (st : SystemState) (tcb : TCB)
     {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
     (hDonated : tcb.schedContextBinding = .donated scId owner) :
-    (resolveEffectivePrioDeadline st tcb).1 = effectiveRunQueuePriority tcb := by
-  refine resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree
+    (resolveEffectivePrioDeadline st tcb).1 = tcb.boostedPriority := by
+  refine resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree
     st tcb ?_
   intro scId' hSrc
   rw [hDonated] at hSrc
@@ -459,20 +461,14 @@ R5.C.1 retired that variant in favour of this total form. -/
 @[inline] def effectiveSchedParams (st : SystemState) (tcb : TCB)
     : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId :=
   match tcb.schedContextBinding with
-  | .unbound =>
-    match tcb.pipBoost with
-    | none => (tcb.priority, tcb.deadline, tcb.domain)
-    | some boost => (⟨Nat.max tcb.priority.val boost.val⟩, tcb.deadline, tcb.domain)
+  | .unbound => (tcb.boostedPriority, tcb.deadline, tcb.domain)
   | .bound scId =>
     match st.getSchedContext? scId with
-    | some sc =>
-      match tcb.pipBoost with
-      | none => (sc.priority, sc.deadline, sc.domain)
-      | some boost => (⟨Nat.max sc.priority.val boost.val⟩, sc.deadline, sc.domain)
-    | none =>
-      match tcb.pipBoost with
-      | none => (tcb.priority, tcb.deadline, tcb.domain)
-      | some boost => (⟨Nat.max tcb.priority.val boost.val⟩, tcb.deadline, tcb.domain)
+    -- A `.bound` thread's base is its RESERVATION's priority, so the boost is
+    -- applied to `sc.priority` here and to the TCB's own everywhere else -- one
+    -- `Priority.raisedBy`, two bases (`Prelude.lean`).
+    | some sc => (sc.priority.raisedBy tcb.pipBoost, sc.deadline, sc.domain)
+    | none => (tcb.boostedPriority, tcb.deadline, tcb.domain)
   | .donated scId _ =>
     -- WS-OD (v0.35.3): the donor's **deadline** — the reservation-owned
     -- parameter a donee is charged against — and the donee's own priority and
@@ -483,14 +479,8 @@ R5.C.1 retired that variant in favour of this total form. -/
     -- `effectiveSchedParams_priority_deadline_eq_resolve` pins the priority and
     -- deadline against `resolveEffectivePrioDeadline`.
     match st.getSchedContext? scId with
-    | some sc =>
-      match tcb.pipBoost with
-      | none => (tcb.priority, sc.deadline, tcb.domain)
-      | some boost => (⟨Nat.max tcb.priority.val boost.val⟩, sc.deadline, tcb.domain)
-    | none =>
-      match tcb.pipBoost with
-      | none => (tcb.priority, tcb.deadline, tcb.domain)
-      | some boost => (⟨Nat.max tcb.priority.val boost.val⟩, tcb.deadline, tcb.domain)
+    | some sc => (tcb.boostedPriority, sc.deadline, tcb.domain)
+    | none => (tcb.boostedPriority, tcb.deadline, tcb.domain)
 
 /-- R5.C: `effectiveSchedParams` agrees with `resolveEffectivePrioDeadline`
 on the `(priority, deadline)` pair. The third component (`domain`) is
@@ -503,11 +493,12 @@ theorem effectiveSchedParams_priority_deadline_eq_resolve
   -- The two helpers compose the same priority/deadline shape over identical
   -- branches; the difference is only on the third (domain) component, which
   -- is projected away on the LHS.
+  -- Since `v0.35.28` both sides apply the boost through `Priority.raisedBy`
+  -- rather than through an inline `match tcb.pipBoost`, so the branch structure
+  -- to split is the binding and (where there is one) the SchedContext lookup:
+  -- one level shallower than it was, and the same on both sides.
   simp only [effectiveSchedParams, resolveEffectivePrioDeadline]
-  split <;>
-    (first
-      | (split <;> rfl)
-      | (split <;> (split <;> rfl)))
+  split <;> (first | rfl | (split <;> rfl))
 
 /-- R5.C: `effectiveSchedParams` is total. -/
 theorem effectiveSchedParams_total (st : SystemState) (tcb : TCB) :
@@ -537,7 +528,7 @@ set_option linter.unusedSimpArgs false
 `(resolveEffectivePrioDeadline st tcb).1`, the priority selection actually
 reads. Under the AK2-B Option B propagation invariant
 (`tcb.priority = sc.priority` for bound threads), both also equal
-`effectiveRunQueuePriority tcb`. This bridge is retained for the deferred
+`tcb.boostedPriority`. This bridge is retained for the deferred
 AK2.5 Option A fusion. -/
 theorem effectiveBucketPriority_eq_resolveEffective
     (st : SystemState) (tcb : TCB) :
@@ -545,22 +536,22 @@ theorem effectiveBucketPriority_eq_resolveEffective
   -- AN10-B: `resolveEffectivePrioDeadline` now reads via `getSchedContext?`
   -- but `effectiveBucketPriority` still reads via the raw object-store
   -- lookup; unfold both helpers locally to expose the shared raw form.
-  unfold effectiveBucketPriority resolveEffectivePrioDeadline
-    SystemState.getSchedContext?
+  unfold effectiveBucketPriority resolveEffectivePrioDeadline SystemState.getSchedContext?
+
+  -- Since `v0.35.28` the boost is `Priority.raisedBy` on both sides, so only
+  -- the binding and the SchedContext lookup remain to split on.
   cases hBind : tcb.schedContextBinding with
-  | unbound =>
-    simp only [hBind]
-    cases tcb.pipBoost <;> rfl
+  | unbound => simp only [hBind]
   | bound scId =>
     simp only [hBind]
     cases hSc : (st.objects[scId.toObjId]? : Option KernelObject) with
-    | none => cases tcb.pipBoost <;> rfl
-    | some obj => cases obj <;> (cases tcb.pipBoost <;> rfl)
+    | none => rfl
+    | some obj => cases obj <;> rfl
   | donated scId owner =>
     simp only [hBind]
     cases hSc : (st.objects[scId.toObjId]? : Option KernelObject) with
-    | none => cases tcb.pipBoost <;> rfl
-    | some obj => cases obj <;> (cases tcb.pipBoost <;> rfl)
+    | none => rfl
+    | some obj => cases obj <;> rfl
 
 end
 
@@ -583,8 +574,8 @@ def chooseBestRunnableEffective
   match runnable with
   | [] => .ok best
   | tid :: rest =>
-      match st.objects.get? tid.toObjId with
-      | some (.tcb tcb) =>
+      match st.getTcb? tid with
+      | some tcb =>
           let best' :=
             if eligible tcb && hasSufficientBudget st tcb then
               let (prio, dl) := resolveEffectivePrioDeadline st tcb
@@ -675,7 +666,7 @@ priority/EDF/FIFO via `chooseBestInBucket` (no budget filter — the
 budget-aware variant is `chooseThreadEffective`). -/
 def chooseThreadOnCore (st : SystemState) (c : CoreId) :
     Except KernelError (Option SeLe4n.ThreadId) :=
-  match chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore c)
+  match chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) with
   | .error e => .error e
   | .ok none => .ok none
@@ -797,11 +788,11 @@ def saveOutgoingContext (st : SystemState) : SystemState :=
   match (st.scheduler.currentOnCore bootCoreId) with
   | none => st
   | some outTid =>
-      match st.objects[outTid.toObjId]? with
-      | some (.tcb outTcb) =>
+      match st.getTcb? outTid with
+      | some outTcb =>
           let obj := KernelObject.tcb { outTcb with registerContext := st.machine.regs }
           { st with objects := st.objects.insert outTid.toObjId obj }
-      | _ => st
+      | none => st
 
 /-- V5-D (M-DEF-4): Checked variant of `saveOutgoingContext` that returns a
     success indicator. Returns `(state, true)` on successful save (or no current
@@ -814,11 +805,11 @@ def saveOutgoingContextChecked (st : SystemState) : SystemState × Bool :=
   match (st.scheduler.currentOnCore bootCoreId) with
   | none => (st, true)
   | some outTid =>
-      match st.objects[outTid.toObjId]? with
-      | some (.tcb outTcb) =>
+      match st.getTcb? outTid with
+      | some outTcb =>
           let obj := KernelObject.tcb { outTcb with registerContext := st.machine.regs }
           ({ st with objects := st.objects.insert outTid.toObjId obj }, true)
-      | _ => (st, false)
+      | none => (st, false)
 
 /-- AI3-C (L-09): Under `currentThreadValid`, `saveOutgoingContext` always succeeds.
 The silent-return-on-TCB-miss path (line 495) is unreachable because
@@ -845,7 +836,9 @@ theorem saveOutgoingContext_always_succeeds_under_currentThreadValid
   | some outTid =>
     simp only [hCur] at hCTV
     obtain ⟨tcb, hTcb⟩ := hCTV
-    simp only [hTcb]
+    -- `currentThreadValid` is stated over the store; the transition reads
+    -- through `getTcb?`, so the witness crosses by the accessor's own iff.
+    simp only [(SystemState.getTcb?_eq_some_iff st outTid tcb).mpr hTcb]
 
 /-- V5-D: The checked variant agrees with the unchecked variant on the state component. -/
 theorem saveOutgoingContextChecked_fst_eq (st : SystemState) :
@@ -854,10 +847,11 @@ theorem saveOutgoingContextChecked_fst_eq (st : SystemState) :
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
-      cases h : st.objects[outTid.toObjId]? with
+      -- Two-way on the accessor both sides read: the seven non-TCB store arms
+      -- are all its `none`.
+      cases h : st.getTcb? outTid with
       | none => simp_all
-      | some obj =>
-          cases obj <;> simp_all
+      | some _ => simp_all
 
 /-- WS-H12c/H-03/V5-E: Restore the incoming thread's register context into the
 machine register file. If the incoming TCB is not found, returns the state
@@ -867,10 +861,10 @@ V5-E (M-DEF-5): When the TCB lookup fails, the restore is silently skipped.
 Under `currentThreadValid`, this branch is unreachable. The checked variant
 `restoreIncomingContextChecked` provides an explicit success indicator. -/
 def restoreIncomingContext (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb inTcb) =>
+  match st.getTcb? tid with
+  | some inTcb =>
       { st with machine := st.machine.setRegsOnCore bootCoreId inTcb.registerContext }
-  | _ => st
+  | none => st
 
 /-- V5-E (M-DEF-5): Checked variant of `restoreIncomingContext` that returns a
     success indicator. Returns `(state, true)` on successful restore,
@@ -879,20 +873,19 @@ def restoreIncomingContext (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSt
     Under `currentThreadValid`, the `false` branch is unreachable. -/
 def restoreIncomingContextChecked (st : SystemState)
     (tid : SeLe4n.ThreadId) : SystemState × Bool :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb inTcb) =>
+  match st.getTcb? tid with
+  | some inTcb =>
       ({ st with machine := st.machine.setRegsOnCore bootCoreId inTcb.registerContext }, true)
-  | _ => (st, false)
+  | none => (st, false)
 
 /-- V5-E: The checked variant agrees with the unchecked variant on the state component. -/
 theorem restoreIncomingContextChecked_fst_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) :
     (restoreIncomingContextChecked st tid).1 = restoreIncomingContext st tid := by
   unfold restoreIncomingContextChecked restoreIncomingContext
-  cases h : st.objects[tid.toObjId]? with
+  cases h : st.getTcb? tid with
   | none => simp_all
-  | some obj =>
-      cases obj <;> simp_all
+  | some _ => simp_all
 
 -- ============================================================================
 -- WS-SM SM5.I — per-core context restore (writes the *operated* core's bank)
@@ -908,10 +901,10 @@ invariant (a dispatch on core `c` touches only `c`'s bank, leaving every sibling
 core's bank framed). -/
 def restoreIncomingContextOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb inTcb) =>
+  match st.getTcb? tid with
+  | some inTcb =>
       { st with machine := st.machine.setRegsOnCore c inTcb.registerContext }
-  | _ => st
+  | none => st
 
 /-- WS-SM SM5.I: the per-core restore leaves the scheduler unchanged. -/
 @[simp] theorem restoreIncomingContextOnCore_scheduler (st : SystemState) (c : CoreId)
@@ -946,9 +939,9 @@ core `c`, core `c`'s register bank equals `tid`'s saved register context. -/
 theorem restoreIncomingContextOnCore_regsOnCore_self (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
     (restoreIncomingContextOnCore st c tid).machine.regsOnCore c = tcb.registerContext := by
-  -- Route the discriminant rewrite through the typed `getTcb?` accessor
-  -- (`getTcb?_eq_some_iff`) so callers pass the typed form (AK7-clean).
-  simp only [restoreIncomingContextOnCore, (st.getTcb?_eq_some_iff tid tcb).mp hTcb,
+  -- The transition discriminates on `getTcb?` itself, so the caller's typed
+  -- hypothesis drives the match directly; no crossing to the store form.
+  simp only [restoreIncomingContextOnCore, hTcb,
     MachineState.regsOnCore_setRegsOnCore_self]
 
 /-- WS-SM SM5.I (sibling-core frame): the per-core restore on core `c` leaves
@@ -1040,31 +1033,49 @@ theorem chooseBestRunnableEffective_unbound_equiv
     (runnable : List SeLe4n.ThreadId)
     (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
     (hAllUnbound : ∀ tid ∈ runnable, ∀ tcb : TCB,
-      st.objects.get? tid.toObjId = some (.tcb tcb) →
+      st.getTcb? tid = some tcb →
       tcb.schedContextBinding = .unbound ∧ tcb.pipBoost = none) :
     chooseBestRunnableEffective st eligible runnable best =
-    chooseBestRunnableBy st.objects.get? eligible runnable best := by
+    chooseBestRunnableBy st.getObject? eligible runnable best := by
   induction runnable generalizing best with
   | nil => simp [chooseBestRunnableEffective, chooseBestRunnableBy]
   | cons tid rest ih =>
     simp only [chooseBestRunnableEffective, chooseBestRunnableBy]
     have hRest : ∀ t ∈ rest, ∀ tcb : TCB,
-        st.objects.get? t.toObjId = some (.tcb tcb) →
+        st.getTcb? t = some tcb →
         tcb.schedContextBinding = .unbound ∧ tcb.pipBoost = none :=
       fun t hMemRest => hAllUnbound t (List.mem_cons_of_mem _ hMemRest)
-    cases hObj : st.objects.get? tid.toObjId with
-    | none => exact ih best hRest
+    -- The two sides scrutinise different accessors — `getTcb?` on the left,
+    -- `getObject?` on the right — so the split is taken on the kind-agnostic
+    -- one and the typed reading is derived from it.  `getTcb?_eq_some_iff` is
+    -- what relates them, and the `_ => ` arms are where they agree by both
+    -- answering "not a TCB here".
+    cases hObj : st.getObject? tid.toObjId with
+    | none =>
+      have hT : st.getTcb? tid = none := by
+        unfold SeLe4n.Model.SystemState.getTcb?
+        rw [show st.objects[tid.toObjId]? = none from hObj]
+      rw [hT]; exact ih best hRest
     | some obj =>
       cases obj with
       | tcb tcb =>
+        have hT : st.getTcb? tid = some tcb :=
+          (SeLe4n.Model.SystemState.getTcb?_eq_some_iff st tid tcb).mpr hObj
         have hMem : tid ∈ tid :: rest := List.mem_cons_self ..
-        have ⟨hUnb, hNoPip⟩ := hAllUnbound tid hMem tcb hObj
+        have ⟨hUnb, hNoPip⟩ := hAllUnbound tid hMem tcb hT
+        rw [hT]
         simp [hasSufficientBudget_unbound st tcb hUnb, Bool.and_true,
               resolveEffectivePrioDeadline, hUnb, hNoPip]
         apply ih
         intro t hMemRest
         exact hAllUnbound t (List.mem_cons_of_mem _ hMemRest)
-      | _ => exact ih best hRest
+      | _ =>
+        all_goals (
+          first
+          | (have hT : st.getTcb? tid = none := by
+               unfold SeLe4n.Model.SystemState.getTcb?
+               rw [show st.objects[tid.toObjId]? = _ from hObj]
+             rw [hT]; exact ih best hRest))
 
 -- ============================================================================
 -- WS-SM SM5.B — Per-core context switch (`switchToThreadOnCore`)
@@ -1114,7 +1125,7 @@ thread in favour of an `incoming` thread.
 
 Saves the outgoing thread's machine registers into its TCB `registerContext`
 (so the preempted thread resumes exactly where it left off) and re-enqueues it
-into core `c`'s run queue at its effective priority (`effectiveRunQueuePriority`,
+into core `c`'s run queue at its effective priority (`TCB.boostedPriority`,
 i.e. `max(base, pipBoost)` — the priority every other re-enqueue site uses).
 This is the "preempted thread goes back to the run queue" discipline.
 
@@ -1138,7 +1149,7 @@ def preemptCurrentOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreI
       match st.getTcb? prevTid with
       | some prevTcb =>
         let savedTcb : KernelObject := .tcb { prevTcb with registerContext := st.machine.regsOnCore c }
-        let reenqueuedRq := (st.scheduler.runQueueOnCore c).insert prevTid (effectiveRunQueuePriority prevTcb)
+        let reenqueuedRq := (st.scheduler.runQueueOnCore c).insert prevTid (prevTcb.boostedPriority)
         { st with
             objects := st.objects.insert prevTid.toObjId savedTcb,
             scheduler := st.scheduler.setRunQueueOnCore c reenqueuedRq }
@@ -1274,6 +1285,71 @@ def runningOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   (SeLe4n.Kernel.Concurrency.allCores).any
     (fun c => st.scheduler.currentOnCore c == some tid)
 
+/-- **PR #895 review round 10: the core a thread is actually placed on.**
+
+`runnableOnSomeCore` and `runningOnSomeCore` answer *whether* a thread is
+placed; nothing answered **where**, so every caller needing the core reached for
+a *proxy* — `determineExecutingCore`, which finds a core the thread is CURRENT
+on and otherwise falls back to `bootCoreId`, or `determineTargetCore`, which
+reads `cpuAffinity`.  Both are wrong for a removal:
+
+* a thread queued but not current matches `determineExecutingCore` nowhere, so it
+  resolves to the boot core and a deschedule there edits a queue the thread is
+  not on;
+* `affinityAdmitsCore` is `true` on **every** core for an unpinned thread
+  (`cpuAffinity = none`), so `runQueueAffinityConsistentOnCore` does not pin such
+  a thread to `determineTargetCore`'s answer either — it may legitimately sit on
+  any core's queue while that resolver says `bootCoreId`.
+
+This is this project's *a proxy is not the fact* (PR #889 review round 23) at the
+scheduler: the fact a removal is about is **queue membership**, and
+`removeRunnableOnCore` acts on the run queue *and* the current slot of the core
+it is handed, so the witness has to cover both.  `find?` over `allCores` in the
+model's own core order makes the answer deterministic. -/
+def placedCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
+  (SeLe4n.Kernel.Concurrency.allCores).find?
+    (fun c => (st.scheduler.runQueueOnCore c).contains tid
+      || st.scheduler.currentOnCore c == some tid)
+
+/-- `find?` succeeds exactly where `any` does.  Stated locally rather than
+reached for by name so the resolver's tie-back below is elementary. -/
+private theorem isSome_find?_eq_any {α : Type _} (p : α → Bool) :
+    ∀ l : List α, (l.find? p).isSome = l.any p
+  | [] => rfl
+  | a :: t => by
+      simp only [List.find?, List.any_cons]
+      cases hp : p a with
+      | true => simp
+      | false => simpa [hp] using isSome_find?_eq_any p t
+
+/-- The witness answers exactly when the predicate holds: `placedCoreOf?` is
+`some` iff the thread is queued or running somewhere.  Stated so the resolver and
+the two predicates cannot drift — the defect this resolver exists to close came
+from a *second* answer to one question, and a third one would be the same
+mistake. -/
+theorem placedCoreOf?_isSome_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (placedCoreOf? st tid).isSome
+      = (runnableOnSomeCore st tid || runningOnSomeCore st tid) := by
+  unfold placedCoreOf? runnableOnSomeCore runningOnSomeCore
+  rw [isSome_find?_eq_any]
+  apply Bool.eq_iff_iff.mpr
+  simp only [Bool.or_eq_true, List.any_eq_true]
+  constructor
+  · rintro ⟨c, hc, (h1 | h2)⟩
+    · exact Or.inl ⟨c, hc, h1⟩
+    · exact Or.inr ⟨c, hc, h2⟩
+  · rintro (⟨c, hc, h1⟩ | ⟨c, hc, h2⟩)
+    · exact ⟨c, hc, Or.inl h1⟩
+    · exact ⟨c, hc, Or.inr h2⟩
+
+/-- A thread the resolver places on core `c` really is on `c` — queued or
+running.  This is what licenses `removeRunnableOnCore` at that core. -/
+theorem placedCoreOf?_sound (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) (h : placedCoreOf? st tid = some c) :
+    (st.scheduler.runQueueOnCore c).contains tid
+      || st.scheduler.currentOnCore c == some tid := by
+  simpa using List.find?_some h
+
 /-- WS-SM SM5.C.1 (plan §3.3): enqueue `tid` as a runnable thread on core `c`.
 
 The per-core "make `tid` runnable on core `c`" primitive — the per-core
@@ -1287,7 +1363,7 @@ exact field the per-core IPC↔scheduler invariants
 (`runnableThreadIpcReady_perCore`, `blockedOn*NotRunnable_perCore`) gate
 run-queue membership on (`threadState` is *not* gated by any run-queue
 invariant, so it is left unchanged); and (b) inserts `tid` into core `c`'s run
-queue at its effective priority (`effectiveRunQueuePriority`, i.e.
+queue at its effective priority (`TCB.boostedPriority`, i.e.
 `max(base, pipBoost)` — the priority every other re-enqueue site uses).
 
 **Single-placement guard (SM5.C.1 audit-pass-3 / Codex-P2).**  Before inserting,
@@ -1318,7 +1394,7 @@ def enqueueRunnableOnCore (st : SystemState) (c : CoreId)
         { st with
             objects := st.objects.insert tid.toObjId readyTcb,
             scheduler := st.scheduler.setRunQueueOnCore c
-              ((st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)) }
+              ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)) }
   | none => st
 
 /-- WS-SM SM5.C.2/.9 (plan §3.3): the core a thread is woken onto.
@@ -1455,7 +1531,7 @@ thread the SchedContext's `priority` / `deadline`, with the PIP boost composed
 on top.  For *priorities* a TCB-field comparison was sound: `schedContextBind`
 and `schedContextConfigure` propagate `sc.priority` into the bound TCB
 (`boundThreadPriorityConsistent`), and
-`resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree`
+`resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree`
 (above) is exactly that bridge.  **Deadlines have no such propagation or
 consistency invariant**: bind copies only the priority, and
 `schedContextConfigure` / `cbsUpdateDeadline` move the SC deadline with the

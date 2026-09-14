@@ -161,7 +161,7 @@ def edfCurrentHasEarliestDeadlineOnCore (st : SystemState) (c : CoreId) : Prop :
             match st.getTcb? tid with
             | some tcb =>
                 tcb.domain = curTcb.domain →
-                effectiveRunQueuePriority tcb = effectiveRunQueuePriority curTcb →
+                tcb.boostedPriority = curTcb.boostedPriority →
                 tcb.priority = curTcb.priority →
                 curTcb.deadline.toNat = 0 ∨
                 (tcb.deadline.toNat = 0 ∨ curTcb.deadline.toNat ≤ tcb.deadline.toNat)
@@ -198,7 +198,7 @@ def schedulerPriorityMatchOnCore (st : SystemState) (c : CoreId) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c) →
     match st.getTcb? tid with
     | some tcb =>
-        (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some (effectiveRunQueuePriority tcb)
+        (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some (tcb.boostedPriority)
     | none => True
 
 /-- SM4.C: per-core domain-time positivity.  Per-core form of
@@ -388,7 +388,10 @@ theorem edfCurrentHasEarliestDeadlineOnCore_bootCore_iff (st : SystemState) :
           have hSpec := h tid hMem
           cases hObj : (st.objects[tid.toObjId]? : Option KernelObject) with
           | none => rw [hObj] at *; trivial
-          | some obj => cases obj <;> (rw [hObj] at hSpec; simp_all)
+          -- With the bucket reading spelled as one accessor on both sides the
+          -- specialised hypothesis IS the goal, so it closes directly; the
+          -- `simp_all` remains for the non-TCB constructors.
+          | some obj => cases obj <;> (rw [hObj] at hSpec; first | exact hSpec | simp_all)
       | _ => simp
 
 theorem contextMatchesCurrentOnCore_bootCore_iff (st : SystemState) :
@@ -1544,30 +1547,26 @@ private theorem blockingChain_objects_congr
   | zero => rfl
   | succ fuel' ih =>
     unfold PriorityInheritance.blockingChain
-    have hLookup : st'.objects[tid.toObjId]? = st.objects[tid.toObjId]? := by rw [hObj]
-    cases h : (st.objects[tid.toObjId]? : Option KernelObject) with
+    -- `blockingChain` walks through `getTcb?`, so the congruence it needs is the
+    -- accessor's frame and the case analysis is the accessor's two arms: the
+    -- six non-TCB constructors this proof used to enumerate are all the one
+    -- `none`.
+    have hLookup : st'.getTcb? tid = st.getTcb? tid := SystemState.getTcb?_frame hObj tid
+    cases h : st.getTcb? tid with
     | none => simp [hLookup, h]
-    | some obj =>
-      cases obj with
-      | tcb tcb =>
-        cases hIpc : tcb.ipcState with
-        | ready => simp [hLookup, h, hIpc]
-        | blockedOnSend _ => simp [hLookup, h, hIpc]
-        | blockedOnReceive _ => simp [hLookup, h, hIpc]
-        | blockedOnNotification _ => simp [hLookup, h, hIpc]
-        | blockedOnReply _ srv =>
-          cases srv with
-          | none => simp [hLookup, h, hIpc]
-          | some server =>
-            simp only [hLookup, h, hIpc]
-            exact congrArg (server :: ·) (ih server)
-        | blockedOnCall _ => simp [hLookup, h, hIpc]
-      | endpoint _ => simp [hLookup, h]
-      | notification _ => simp [hLookup, h]
-      | cnode _ => simp [hLookup, h]
-      | vspaceRoot _ => simp [hLookup, h]
-      | untyped _ => simp [hLookup, h]
-      | schedContext _ | reply _ => simp [hLookup, h]
+    | some tcb =>
+      cases hIpc : tcb.ipcState with
+      | ready => simp [hLookup, h, hIpc]
+      | blockedOnSend _ => simp [hLookup, h, hIpc]
+      | blockedOnReceive _ => simp [hLookup, h, hIpc]
+      | blockedOnNotification _ => simp [hLookup, h, hIpc]
+      | blockedOnReply _ srv =>
+        cases srv with
+        | none => simp [hLookup, h, hIpc]
+        | some server =>
+          simp only [hLookup, h, hIpc]
+          exact congrArg (server :: ·) (ih server)
+      | blockedOnCall _ => simp [hLookup, h, hIpc]
 
 /-- Frame lemma for `priorityInheritance_perCore`: depends on the entire
 object store *and* `objectIndex` (the latter feeds `blockingChain`'s
@@ -1842,7 +1841,7 @@ theorem schedulerInvariant_smp_extended_of_bootCore_preservation
 --
 -- The SchedContext-bound / -donated effective-priority resolver
 -- `resolveEffectivePrioDeadline` (Selection.lean) reads the *SchedContext's*
--- base priority, whereas `effectiveRunQueuePriority` — the bucket that
+-- base priority, whereas `TCB.boostedPriority` — the bucket that
 -- `schedulerPriorityMatchOnCore` records — reads the *TCB's* base priority.
 -- They coincide exactly when a bound thread's base priority equals its
 -- SchedContext's base priority: the "Option B propagation" agreement that
@@ -1854,7 +1853,7 @@ theorem schedulerInvariant_smp_extended_of_bootCore_preservation
 -- run-queue inserts (`updatePipBoostOnCore` and the bound budget re-enqueue,
 -- both at `resolveInsertPriority = (resolveEffectivePrioDeadline st tcb).1`):
 -- under this agreement that inserted bucket equals the TCB-based
--- `effectiveRunQueuePriority tcb` that `schedulerPriorityMatch` records.
+-- `tcb.boostedPriority` that `schedulerPriorityMatch` records.
 --
 -- It is stated system-wide (a property of the object store, core-independent)
 -- and over *both* `.bound` and `.donated` bindings via `SchedContextBinding.scId?`,
@@ -1893,7 +1892,7 @@ carried it across either, since `boundThreadPriorityConsistent_frame` requires
 `schedContextBinding` unchanged, which is exactly what the hand-off rewrites.  Narrowing it is not a weakening of the
 guarantee — `resolveEffectivePrioDeadline` no longer reads `sc.priority` on the
 `.donated` arm, so there is nothing left for the donated case to reconcile
-(`resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree` now
+(`resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree` now
 discharges that arm outright). -/
 def boundThreadPriorityConsistent (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb →

@@ -212,9 +212,11 @@ the pop already does, so the depth-1 head case and the depth-`n` middle case are
 one program rather than two; it is `O(1)`, where the alternative walks the frames
 between the cancelled thread and the holder and so could not be given a footprint
 at all (a `LockSet` is capped at `maxLockSetSize` and a chain is not — OD3.7's
-argument for the pop's single frame of lookahead); and it is seL4-MCS's
-`reply_remove` branch, so a component written against seL4's timeout semantics
-behaves the same here.
+argument for the pop's single frame of lookahead); and it keeps the reply path's
+pop *trigger* sound, since this kernel pops on the recorded server's binding
+rather than on the answered frame's head-ness, and `severAtCut` is what keeps
+those two facts equivalent.  The named alternative `spliceOutTheCut` breaks that
+equivalence and is registered debt.
 
 **What that costs, stated rather than hidden.**  Neither the cancelled *middle*
 caller nor the chain's **original** owner gets the scheduling context back: it

@@ -481,12 +481,12 @@ theorem donationChainWitness_chain :
       = some [donationChainWitnessInner, donationChainWitnessOuter] := by
   have hInner : replyStackLinksAt? donationChainWitness donationChainWitnessInner
       = some (some donationChainWitnessOuter, some (.head donationChainWitnessContext)) := by
-    unfold replyStackLinksAt?
+    unfold replyStackLinksAt? SystemState.getObject?
     rw [donationChainWitness_lookup_cases]
     simp [replyStackLinks?, witnessChainInnerReply]
   have hOuter : replyStackLinksAt? donationChainWitness donationChainWitnessOuter
       = some (none, some (.frame donationChainWitnessInner)) := by
-    unfold replyStackLinksAt?
+    unfold replyStackLinksAt? SystemState.getObject?
     rw [donationChainWitness_lookup_cases]
     simp [replyStackLinks?, witnessChainOuterReply,
       show (donationChainWitnessInner.toObjId == donationChainWitnessOuter.toObjId) = false from

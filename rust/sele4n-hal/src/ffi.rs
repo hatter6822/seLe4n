@@ -1342,6 +1342,9 @@ pub extern "C" fn sele4n_suspend_thread(tid: u64) -> u32 {
             // established before this bracket was entered.
             #[cfg(feature = "hw_target")]
             {
+                // SAFETY: as stated directly above -- the Lean-emitted
+                // `extern "C"` symbol, called from EL1 kernel context with this
+                // core's runtime initialized, inside the kernel-entry bracket.
                 unsafe { suspend_thread_cross_core(tid) }
             }
             // The host lane calls the Rust stand-in under a name of its own, so
@@ -1518,6 +1521,13 @@ pub extern "C" fn cache_ic_maintenance(op_tag: u32, addr: u64, size: u64) {
 // symbol declared, defined or called outside a `hw_target` region.
 #[cfg(feature = "hw_target")]
 extern "C" {
+    /// # Safety
+    ///
+    /// A C-callable kernel entry: sound from EL1 kernel context on a core whose
+    /// Lean runtime is initialised.  A not-ready core is answered
+    /// `KernelError::IllegalState` rather than trapped, so the caller must read
+    /// the returned discriminant.  `tid` is a raw thread id and is refused if it
+    /// names a reserved idle thread.
     fn suspend_thread_cross_core(tid: u64) -> u32;
 }
 

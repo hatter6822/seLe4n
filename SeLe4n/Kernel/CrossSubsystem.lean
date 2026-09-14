@@ -1545,7 +1545,7 @@ theorem lifecycleRetypeObject_preservesFieldsOutside
     (st st' : SystemState)
     (hStep : SeLe4n.Kernel.Internal.lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     preservesFieldsOutside lifecycleRetypeObject_modifiedFields st st' := by
-  unfold SeLe4n.Kernel.Internal.lifecycleRetypeObject at hStep
+  unfold SeLe4n.Kernel.Internal.lifecycleRetypeObject SystemState.getObject? at hStep
   split at hStep
   · cases hStep
   · split at hStep
@@ -1622,7 +1622,7 @@ theorem cspaceInsertSlot_preservesFieldsOutside
     (addr : CSpaceAddr) (cap : Capability) (st st' : SystemState)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     preservesFieldsOutside capabilityOp_modifiedFields st st' := by
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   dsimp only at hStep
   split at hStep
   · split at hStep
@@ -1640,7 +1640,7 @@ theorem cspaceDeleteSlotCore_preservesFieldsOutside
     (addr : CSpaceAddr) (st st' : SystemState)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     preservesFieldsOutside capabilityOp_modifiedFields st st' := by
-  unfold cspaceDeleteSlotCore at hStep
+  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
   dsimp only at hStep
   split at hStep
   · split at hStep
@@ -1879,7 +1879,7 @@ theorem endpointQueuePopHead_preservesFieldsOutside
     (tid : SeLe4n.ThreadId) (headTcb : TCB)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   dsimp only at hStep
   split at hStep
   · split at hStep
@@ -1918,7 +1918,7 @@ theorem endpointQueueEnqueue_preservesFieldsOutside
     (st st' : SystemState)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   dsimp only at hStep
   split at hStep
   · split at hStep
@@ -2019,7 +2019,7 @@ theorem endpointSendDual_preservesFieldsOutside
     (st st' : SystemState)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   split at hStep
   · cases hStep
   · split at hStep
@@ -2064,7 +2064,7 @@ theorem endpointReceiveDual_preservesFieldsOutside
     (st st' : SystemState) (sender : SeLe4n.ThreadId)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (sender, st')) :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   dsimp only at hStep
   split at hStep
   · split at hStep
@@ -2634,7 +2634,8 @@ theorem crossSubsystemInvariant_objects_frame
          schedContextNotDualBound_frame st st' hObjects h7,
          schedContextRunQueueConsistent_frame st st' hRunnable hObjects h8,
          PriorityInheritance.blockingAcyclic_frame st st' h9
-           (fun tid => by simp [PriorityInheritance.blockingServer, hObjects]) hObjIdx, ?_, ?_⟩
+           (fun tid => by simp [PriorityInheritance.blockingServer,
+             SystemState.getTcb?_frame hObjects]) hObjIdx, ?_, ?_⟩
   · -- AM4-A: lifecycleObjectTypeLockstep frame-preserved.
     intro oid obj hObj'
     rw [hObjects] at hObj'
@@ -2671,7 +2672,8 @@ theorem crossSubsystemInvariant_services_change
          schedContextNotDualBound_frame st st' hObjects h7,
          schedContextRunQueueConsistent_frame st st' hRunnable hObjects h8,
          PriorityInheritance.blockingAcyclic_frame st st' h9
-           (fun tid => by simp [PriorityInheritance.blockingServer, hObjects]) hObjIdx, ?_, ?_⟩
+           (fun tid => by simp [PriorityInheritance.blockingServer,
+             SystemState.getTcb?_frame hObjects]) hObjIdx, ?_, ?_⟩
   · -- AM4-A: lifecycleObjectTypeLockstep frame-preserved by hObjects + hObjTypes.
     intro oid obj hObj'
     rw [hObjects] at hObj'
@@ -4091,12 +4093,12 @@ def untypedAncestorChain (st : SystemState) (oid : SeLe4n.ObjId) :
     Nat → List SeLe4n.ObjId
   | 0 => []
   | n + 1 =>
-    match st.objects[oid]? with
-    | some (.untyped ut) =>
+    match st.getUntyped? oid with
+    | some ut =>
         match ut.parent with
         | none => [oid]
         | some pid => oid :: untypedAncestorChain st pid n
-    | _ => []
+    | none => []
 
 /-- AN6-C.3 (H-09): Maximum retype chain depth bound.
 
@@ -4117,7 +4119,7 @@ theorem untypedAncestorChain_bounded (st : SystemState) (oid : SeLe4n.ObjId)
   induction fuel generalizing oid with
   | zero => unfold untypedAncestorChain; simp
   | succ n ih =>
-    unfold untypedAncestorChain
+    unfold untypedAncestorChain SystemState.getUntyped?
     split
     · split
       · simp
@@ -4191,7 +4193,7 @@ theorem untypedAncestorChain_collapses_when_all_parents_none
   cases fuel with
   | zero => exact absurd hFuel (by decide)
   | succ n =>
-    unfold untypedAncestorChain
+    unfold untypedAncestorChain SystemState.getUntyped?
     rw [hLookup]
     simp only
     rw [hNoParent]

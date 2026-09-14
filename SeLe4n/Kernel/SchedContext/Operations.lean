@@ -319,9 +319,12 @@ def schedContextConfigureBoundPropagate (stStored : SystemState)
       let boundTcb2 : TCB := { boundTcb with priority := newPri }
       let stWithTcb : SystemState := { stStored with
         objects := stStored.objects.insert boundTid.toObjId (KernelObject.tcb boundTcb2) }
-      let effectivePri : SeLe4n.Priority := match boundTcb.pipBoost with
-        | none => newPri
-        | some boostPri => ⟨Nat.max priority boostPri.val⟩
+      -- The bucket the thread now belongs in, read off the record that is
+      -- being stored: `TCB.boostedPriority` (`Model/Object/Types.lean`) is the
+      -- one answer the run queue is keyed by, and taking it from `boundTcb2`
+      -- rather than re-deriving it from `priority` is what stops the stored
+      -- priority and the bucket from being computed by two expressions.
+      let effectivePri : SeLe4n.Priority := boundTcb2.boostedPriority
       let boundHome := determineTargetCore stWithTcb boundTid
       if boundTid ∈ (stWithTcb.scheduler.runQueueOnCore boundHome) then
         let rqRemoved := (stWithTcb.scheduler.runQueueOnCore boundHome).remove boundTid
@@ -404,7 +407,7 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
           -- thread and configure changes the SC priority, propagate the new
           -- priority into the bound TCB's `priority` field AND re-bucket the
           -- thread in the RunQueue if present (so `schedulerPriorityMatch`'s
-          -- `threadPriority[tid]? = effectiveRunQueuePriority tcb` continues to
+          -- `threadPriority[tid]? = tcb.boostedPriority` continues to
           -- hold under the new TCB priority). Without the RunQueue migration
           -- the thread would remain in the old priority bucket while
           -- `tcb.priority` was updated — a latent priority-inversion vector.
@@ -667,7 +670,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- thread that was **queued** is removed and re-inserted at the legacy
           -- priority, which is the re-bucket the docstring always described.
           let updatedTcb := { tcb with schedContextBinding := SchedContextBinding.unbound }
-          let legacyPrio := effectiveRunQueuePriority updatedTcb
+          let legacyPrio := updatedTcb.boostedPriority
           let homeQueue := st0.scheduler.runQueueOnCore unbindHome
           let rebucketed := (homeQueue.remove tid).insert tid legacyPrio
           let st1 :=

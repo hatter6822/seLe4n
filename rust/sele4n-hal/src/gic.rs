@@ -788,6 +788,10 @@ fn halt_all_handler(_intid: u8, _source_cpu: u8) {
 /// `bring_up_secondaries` — the [`register_sgi_handler`] write-once
 /// contract, same as the shootdown handler.
 pub unsafe fn register_halt_all_handler() {
+    // SAFETY: this function's own `# Safety` contract -- boot, single-core,
+    // IRQs disabled, before `bring_up_secondaries` -- is exactly
+    // `register_sgi_handler`'s write-once precondition, so the caller's
+    // obligation discharges the callee's.
     unsafe {
         register_sgi_handler(HALT_ALL_INTID, halt_all_handler);
     }
@@ -1017,6 +1021,9 @@ pub unsafe fn register_sgi_handler(intid: u8, handler: SgiHandler) {
     // The subsequent `&mut *ptr` dereference is sound under the
     // boot-time-only contract documented on the SGI_HANDLERS static.
     let handlers_ptr: *mut [Option<SgiHandler>; MAX_SGI_INTID as usize] = &raw mut SGI_HANDLERS;
+    // SAFETY: the `&mut *ptr` dereference is sound under this function's own
+    // `# Safety` contract -- boot, single-core, IRQs disabled -- which is what
+    // makes `SGI_HANDLERS` write-once-at-boot and so unaliased here.
     unsafe {
         register_sgi_handler_in(&mut *handlers_ptr, intid, handler);
     }
@@ -1047,6 +1054,9 @@ pub fn lookup_sgi_handler(intid: u8) -> Option<SgiHandler> {
     // registration phase — see the static's docstring.  The `&*ptr`
     // dereference is sound under the boot-time-only-writes contract.
     let handlers_ptr: *const [Option<SgiHandler>; MAX_SGI_INTID as usize] = &raw const SGI_HANDLERS;
+    // SAFETY: `SGI_HANDLERS` is read-only after the boot-time registration
+    // phase (see the static's docstring), so the shared `&*ptr` dereference
+    // races with no writer.
     unsafe { lookup_sgi_handler_in(&*handlers_ptr, intid) }
 }
 
@@ -1077,6 +1087,9 @@ pub fn dispatch_sgi(intid: u8, source_cpu: u8) {
     // SAFETY: `SGI_HANDLERS` is read-only after the boot-time
     // registration phase.
     let handlers_ptr: *const [Option<SgiHandler>; MAX_SGI_INTID as usize] = &raw const SGI_HANDLERS;
+    // SAFETY: `SGI_HANDLERS` is read-only after the boot-time registration
+    // phase, so this shared dereference on an interrupt path races with no
+    // writer -- which is the whole reason the table is write-once-at-boot.
     unsafe { dispatch_sgi_in(&*handlers_ptr, intid, source_cpu) }
 }
 
@@ -2270,6 +2283,9 @@ mod tests {
         // SM1.F.5: registering a handler for INTID 16 panics — the
         // table only has 16 slots and an out-of-range write would
         // trash unrelated data.
+        // SAFETY: single-threaded test, so the boot-time write-once contract
+        // holds vacuously; the call is expected to panic on the bound check
+        // before it reaches the table at all, which is what this asserts.
         unsafe {
             register_sgi_handler(16, _sgi_test_handler_unused);
         }

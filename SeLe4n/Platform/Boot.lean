@@ -5295,14 +5295,17 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         rw [PriorityInheritance.blockingChain_step] at hMem
         -- Show blockingServer returns none for tid at boot
         have hServer : PriorityInheritance.blockingServer (bootFromPlatform config).state tid = none := by
+          -- The split stays over the store because `hBS` is a whole-store
+          -- boot-shape fact keyed by `ObjId`; `blockingServer` now reads
+          -- `getTcb?`, so the accessor is unfolded to meet it.
           cases hObj : (bootFromPlatform config).state.objects[tid.toObjId]? with
-          | none => simp [PriorityInheritance.blockingServer, hObj]
+          | none => simp [PriorityInheritance.blockingServer, SystemState.getTcb?, hObj]
           | some obj =>
             cases obj with
             | tcb tcb =>
               have hReady := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl |>.2.1
-              simp [PriorityInheritance.blockingServer, hObj, hReady]
-            | _ => simp [PriorityInheritance.blockingServer, hObj]
+              simp [PriorityInheritance.blockingServer, SystemState.getTcb?, hObj, hReady]
+            | _ => simp [PriorityInheritance.blockingServer, SystemState.getTcb?, hObj]
         simp [hServer] at hMem
     · -- AM4-F (AL6-C.hygiene): lifecycleObjectTypeLockstep at boot.
       -- `bootFromPlatform_lifecycleConsistent` already witnesses

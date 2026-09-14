@@ -752,39 +752,6 @@ def returnDonationToCancelledCaller (st : SystemState) (tid : SeLe4n.ThreadId)
     | .error _ => st
   | _, _ => st
 
-/-- **WS-OD (`v0.35.4`): sever a cancelled caller's frame that is not the head of
-its stack** — seL4's `reply_remove_tcb`, non-head arm, applied where seL4 applies
-it: in `cancelIPC`.
-
-A caller whose callee has donated the context **onward** is blocked on a frame
-that is not the head, so the reclaim above (`returnDonationToCancelledCaller`)
-has nothing to return and declines.  Before `v0.35.4` that was the end of it, and
-the frame stayed on the stack with its `caller` consumed: the later pop met it
-below the head, bound the target outright (`severAtCut`) and left the dead frame
-*heading* the stack, where nothing could ever clear it — the Reply object and the
-context could never be retyped, and the Reply could never be linked again.  The
-detach implements the same policy structurally: the frame above the cancelled one
-stops linking down to it (`detachReplyFrameAbove`), so it becomes the bottom of
-the stack it heads and the next pop binds its caller outright, and the cancelled
-frame leaves the structure when its caller link is consumed (`Reply.consumed`,
-run by `consumeReplyLink` right after).
-
-**Order.**  After a successful reclaim the frame is already unlinked, so this is
-the identity there (`detachReplyFrameAbove_of_no_frame_above`); on a head it is
-the identity too, deliberately — a head is popped by the reclaim, never detached,
-and a reclaim that *declined* on a head is an invariant violation this step must
-not paper over by dropping a stack.  All-or-nothing like the reclaim: a detach
-that cannot repair the frame above (a link that does not point back) commits
-nothing, since rewriting a frame on the strength of a stale upward link is the
-trust the structure withholds. -/
-def detachCancelledCallerFrame (st : SystemState) (tcb : TCB) : SystemState :=
-  match tcb.replyObject with
-  | none => st
-  | some rid =>
-    match detachReplyFrameAbove st rid with
-    | .ok st' => st'
-    | .error _ => st
-
 def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) : SystemState :=
   match tcb.ipcState with
@@ -812,12 +779,12 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     --
     -- WS-OD (`v0.35.4`): and a frame that is **not** the head — the caller's
     -- callee donated onward — is detached from its stack in `O(1)` before the
-    -- caller link is consumed (`detachCancelledCallerFrame`, seL4's
+    -- caller link is consumed (`detachFrameAboveThreadReply`, seL4's
     -- `reply_remove_tcb`), so no frame is ever left dead on a stack.  It runs
     -- after the reclaim, on whose success it is the identity.
     consumeReplyLink
       (restoreToReadyCancelled
-        (detachCancelledCallerFrame (returnDonationToCancelledCaller st tid tcb) tcb) tid)
+        (detachFrameAboveThreadReply (returnDonationToCancelledCaller st tid tcb) tcb) tid)
       tid tcb
   | .blockedOnNotification _ =>
     restoreToReadyCancelled (removeFromAllNotificationWaitLists st tid) tid
@@ -1050,8 +1017,8 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     : Except KernelError SystemState :=
   let tid : SeLe4n.ThreadId := vtid.val
   -- G1: TCB lookup + state validation
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
     if tcb.threadState == .Inactive then .error .illegalState
     else
       -- G7-precapture (WS-SM SM6.E fix): whether the victim is the boot
@@ -1116,8 +1083,7 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- Defensive re-lookup ensures `cancelDonation` sees the post-IPC-cleanup
       -- TCB state, guarding against future changes to `cancelIpcBlocking` that
       -- might modify additional TCB fields.
-      let tcb' := match st.objects[tid.toObjId]? with
-        | some (.tcb t) => t | _ => tcb
+      let tcb' := (st.getTcb? tid).getD tcb
       -- G3: Cancel donation (AJ1-A/M-14: propagate cleanup errors).
       -- R5.A (DEEP-SUSP-02): Explicit dispatch on the binding variant —
       -- `cancelBoundDonation` for the in-place unbind, `cancelDonatedDonation`
@@ -1138,11 +1104,11 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- G5: Clear pending state — AN10-residual-1 (commit 3): typed entry-point.
       let st := clearPendingStateValid st vtid
       -- G6: Set threadState := .Inactive
-      let st := match st.objects[tid.toObjId]? with
-        | some (.tcb tcb'') =>
+      let st := match st.getTcb? tid with
+        | some tcb'' =>
           { st with objects := st.objects.insert tid.toObjId (.tcb { tcb'' with
               threadState := .Inactive }) }
-        | _ => st
+        | none => st
       -- G7: If suspended thread was current, trigger reschedule.
       -- WS-SM SM6.E fix: dispatch on the G7-precapture (entry-time) value —
       -- the post-G4 current slot never holds the victim (see the precapture
@@ -1169,7 +1135,7 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
           | .error e => .error e
         else
           .ok st
-  | _ => .error .invalidArgument
+  | none => .error .invalidArgument
 
 -- ============================================================================
 -- D1-H: resumeThread
@@ -1196,8 +1162,8 @@ def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     : Except KernelError SystemState :=
   let tid : SeLe4n.ThreadId := vtid.val
   -- H1: TCB lookup
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
     -- H2: State validation — must be Inactive
     if tcb.threadState != .Inactive then .error .illegalState
     else
@@ -1238,12 +1204,12 @@ def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- If the resumed thread has higher effective priority than current, reschedule
       let needsReschedule : Bool := match (st.scheduler.currentOnCore bootCoreId) with
         | some curTid =>
-          match st.objects[curTid.toObjId]? with
-          | some (.tcb curTcb) =>
+          match st.getTcb? curTid with
+          | some curTcb =>
             let resumedEffective := (resolveEffectivePrioDeadline st tcb').1
             let curEffective := (resolveEffectivePrioDeadline st curTcb).1
             resumedEffective.val > curEffective.val
-          | _ => true  -- No valid current → always reschedule
+          | none => true  -- No valid current → always reschedule
         | none => false  -- No current thread → no preemption needed
       if needsReschedule then
         -- Re-enqueue the current (outgoing) thread BEFORE rescheduling, so the
@@ -1266,7 +1232,7 @@ def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
         | .error e => .error e
       else
         .ok st
-  | _ => .error .invalidArgument
+  | none => .error .invalidArgument
 
 -- ============================================================================
 -- AN9-D (DEF-C-M04 — RESOLVED): suspendThread atomicity under FFI bracket
@@ -1365,7 +1331,7 @@ theorem suspendThread_atomicity_under_ffi_bracket_default
     (_hPre : suspendThread_atomicity_precondition (default : SystemState)) :
     suspendThread (default : SystemState) vtid = .error .invalidArgument := by
   -- Unfold suspendThread on the default state.
-  unfold suspendThread
+  unfold suspendThread SystemState.getTcb?
   -- The default state's objects table is empty, so the outer
   -- `match st.objects[tid.toObjId]?` falls into the `_` arm.
   have hLookup : (default : SystemState).objects[vtid.val.toObjId]? = none :=

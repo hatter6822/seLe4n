@@ -504,8 +504,9 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @endpointReplyCrossCoreDispatch_crossCoreNonInterference
 #check @replyRecvDescheduleAndWalkWriteSet
 #check @replyRecvDescheduleAndWalk_confinedToCores
-#check @replyRecvReturnDonationWriteSet
-#check @replyRecvReturnDonation_confinedToCores
+#check @replyRecvPopDonation_confinedToCores
+#check @replyRecvPostReceiveDonationWriteSet
+#check @replyRecvPostReceiveDonation_confinedToCores
 #check @replyRecvBodyWriteSet
 #check @replyRecvBody_confinedToCores
 #check @replyRecvBody_crossCoreNonInterference

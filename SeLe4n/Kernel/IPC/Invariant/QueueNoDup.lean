@@ -309,7 +309,7 @@ theorem notificationSignal_preserves_endpointQueueNoDup
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     endpointQueueNoDup st' := by
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -354,7 +354,7 @@ theorem notificationWait_preserves_endpointQueueNoDup
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     endpointQueueNoDup st' := by
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -415,15 +415,55 @@ theorem notificationWait_preserves_endpointQueueNoDup
                     intro h
                     have hTcbObj := lookupTcb_some_objects st waiter tcb hLookup
                     rw [h] at hTcbObj; rw [hObj] at hTcbObj; cases hTcbObj
-                  unfold lookupTcb
+                  unfold lookupTcb SystemState.getTcb?
                   rw [show waiter.isReserved = false from by
-                    unfold lookupTcb at hLookup; split at hLookup <;> simp_all]
+                    unfold lookupTcb SystemState.getTcb? at hLookup; split at hLookup <;> simp_all]
                   rw [storeObject_objects_ne st pair1.2 notificationId waiter.toObjId _ hNe hObjInv hStore1]
-                  unfold lookupTcb at hLookup
+                  unfold lookupTcb SystemState.getTcb? at hLookup
                   split at hLookup <;> simp_all
                 rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup1] at hIpc
                 exact removeRunnable_preserves_endpointQueueNoDup _ _ <|
                   storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup _ _ _ _ _ hInv1 hObjInv1 hIpc
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: the argument above, stated over the two facts it
+actually uses — endpoints agree across the step, and every stored TCB's
+`queueNext` survives it.  Both the consume and the removal that now precedes it
+supply exactly those, so the reasoning is written once rather than mirrored. -/
+theorem endpointQueueNoDup_of_endpointAgree_of_tcbQueueNext (st st' : SystemState)
+    (hNT : ∀ (s : SeLe4n.ObjId) (k : KernelObject),
+      (∀ tt, k ≠ .tcb tt) → (∀ rr, k ≠ .reply rr) →
+      (st'.objects[s]? = some k ↔ st.objects[s]? = some k))
+    (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
+      ∃ ty, st.objects[s]? = some (.tcb ty) ∧ tx.queueNext = ty.queueNext)
+    (hInv : endpointQueueNoDup st) :
+    endpointQueueNoDup st' := by
+  intro oid ep hObj
+  have hEp := (hNT oid (.endpoint ep)
+    (fun tt => by exact KernelObject.noConfusion)
+    (fun rr => by exact KernelObject.noConfusion)).mp hObj
+  obtain ⟨hSelf, hDisj⟩ := hInv oid ep hEp
+  refine ⟨?_, hDisj⟩
+  intro tid tcb hTcb
+  obtain ⟨ty, hSt, hQN⟩ := hFwd tid.toObjId tcb hTcb
+  rw [hQN]
+  exact hSelf tid ty hSt
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves it too — the detach writes a
+Reply, which is neither an endpoint nor a TCB. -/
+theorem removeCallerReplyFrame_preserves_endpointQueueNoDup
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : endpointQueueNoDup st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    endpointQueueNoDup st' :=
+  endpointQueueNoDup_of_endpointAgree_of_tcbQueueNext st st'
+    (removeCallerReplyFrame_nonTcbNonReply_agree st st' caller rid hObjInv hStep)
+    (fun s tx hx =>
+      let ⟨ty, hSt, _, _, hQN, _⟩ :=
+        removeCallerReplyFrame_tcb_forward st st' caller rid hObjInv hStep s tx hx
+      ⟨ty, hSt, hQN⟩)
+    hInv
 
 open SeLe4n.Model.SystemState in
 /-- PR #827 #3 fold: `consumeCallerReply` preserves `endpointQueueNoDup` —
@@ -432,19 +472,14 @@ theorem consumeCallerReply_preserves_endpointQueueNoDup
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : endpointQueueNoDup st)
     (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
-    endpointQueueNoDup st' := by
-  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
-  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
-  intro oid ep hObj
-  have hEp := (hNT oid (.endpoint ep)
-    (fun tt => by exact KernelObject.noConfusion)
-    (fun rr => by exact KernelObject.noConfusion)).mp hObj
-  obtain ⟨hSelf, hDisj⟩ := hInv oid ep hEp
-  refine ⟨?_, hDisj⟩
-  intro tid tcb hTcb
-  obtain ⟨ty, hSt, _, _, hQN, _⟩ := hFwd tid.toObjId tcb hTcb
-  rw [hQN]
-  exact hSelf tid ty hSt
+    endpointQueueNoDup st' :=
+  endpointQueueNoDup_of_endpointAgree_of_tcbQueueNext st st'
+    (consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep)
+    (fun s tx hx =>
+      let ⟨ty, hSt, _, _, hQN, _⟩ :=
+        consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep s tx hx
+      ⟨ty, hSt, hQN⟩)
+    hInv
 
 
 /-- V3-K-op-7: endpointReply preserves endpointQueueNoDup.
@@ -496,7 +531,7 @@ theorem endpointReply_preserves_endpointQueueNoDup
                   rw [← hStep]; exact hMid
                 | some rid =>
                   simp only [hRO] at hStep
-                  exact consumeCallerReply_preserves_endpointQueueNoDup _ _ target rid
+                  exact removeCallerReplyFrame_preserves_endpointQueueNoDup _ _ target rid
                     hObjInvMid hMid hStep
             · simp at hStep
         | _ => simp [hIpc] at hStep
@@ -526,7 +561,7 @@ theorem endpointQueueEnqueue_preserves_endpointQueueNoDup
     by_cases hEq : oid = endpointId
     · -- Target endpoint: opposite queue head is none
       -- Unfold to extract the stored endpoint structure
-      unfold endpointQueueEnqueue at hEnqueue
+      unfold endpointQueueEnqueue SystemState.getObject? at hEnqueue
       cases hObj : st.objects[endpointId]? with
       | none => simp [hObj] at hEnqueue
       | some obj => cases obj with
@@ -616,7 +651,7 @@ theorem endpointQueuePopHead_preserves_endpointQueueNoDup
   · -- K-2: head disjointness
     by_cases hEq : oid = endpointId
     · -- Target endpoint: unfold PopHead with revert pattern to track stored endpoint
-      unfold endpointQueuePopHead at hPop; revert hPop
+      unfold endpointQueuePopHead SystemState.getObject? at hPop; revert hPop
       cases hObj : st.objects[endpointId]? with
       | none => simp
       | some obj => cases obj with

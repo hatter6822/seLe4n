@@ -60,7 +60,7 @@ theorem notificationSignal_preserves_ipcInvariant
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcInvariant st' := by
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -111,7 +111,7 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -221,7 +221,7 @@ theorem notificationWait_preserves_ipcInvariant
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcInvariant st' := by
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -304,7 +304,7 @@ theorem notificationWait_preserves_schedulerInvariantBundle
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -440,7 +440,7 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -615,7 +615,7 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with

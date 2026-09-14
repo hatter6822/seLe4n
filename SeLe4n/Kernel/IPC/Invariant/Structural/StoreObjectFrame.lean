@@ -333,7 +333,7 @@ theorem endpointSendDual_preserves_dualQueueSystemInvariant
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -416,7 +416,7 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
         (epId' = endpointId →
           ep'.sendQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -690,14 +690,14 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
                   intro ⟨_, hEq⟩; subst hEq
                   exact this _ hObjInvEns1 hInv2 hFreshReceiver' hRecvTailFresh' result hRecv
               | some rid =>
-                cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
                 | error e => simp [hCons]
                 | ok p3 =>
                   obtain ⟨⟨⟩, st3⟩ := p3
                   simp only [hCons]
-                  have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvEns1 hCons
-                  have hInv3 := consumeCallerReply_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvEns1 hInv2 hCons
-                  have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree _ _ replyTarget rid hObjInvEns1 hCons
+                  have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns1 hCons
+                  have hInv3 := removeCallerReplyFrame_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvEns1 hInv2 hCons
+                  have hNT := removeCallerReplyFrame_nonTcbNonReply_agree _ _ replyTarget rid hObjInvEns1 hCons
                   have hFresh3 : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
                       st3.objects[epId]? = some (.endpoint ep) →
                       ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
@@ -757,7 +757,7 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -1260,7 +1260,7 @@ theorem endpointQueuePopHead_preserves_pendingMessagesSatisfy
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st'))
     (hInv : pendingMessagesSatisfy P st) :
     pendingMessagesSatisfy P st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1338,7 +1338,7 @@ theorem endpointQueuePopHead_preserves_badgeWellFormed
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st'))
     (hInv : badgeWellFormed st) :
     badgeWellFormed st' := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1405,7 +1405,7 @@ theorem endpointQueueEnqueue_preserves_pendingMessagesSatisfy
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st')
     (hInv : pendingMessagesSatisfy P st) :
     pendingMessagesSatisfy P st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1477,7 +1477,7 @@ theorem endpointQueueEnqueue_preserves_badgeWellFormed
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st')
     (hInv : badgeWellFormed st) :
     badgeWellFormed st' := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1542,7 +1542,7 @@ theorem notificationSignal_preserves_allPendingMessagesBounded
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     allPendingMessagesBounded st' := by
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1593,7 +1593,7 @@ theorem notificationWait_preserves_allPendingMessagesBounded
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     allPendingMessagesBounded st' := by
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1689,6 +1689,39 @@ theorem consumeCallerReply_preserves_badgeWellFormed
       (fun tt => by exact KernelObject.noConfusion)
       (fun rr => by exact KernelObject.noConfusion)).mp hObj) hLook hBadge
 
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves the three above.  Each reads
+TCB fields the removal keeps, or object kinds it never writes — the detach's one
+store is a `.reply`. -/
+theorem removeCallerReplyFrame_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : allPendingMessagesBounded st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    allPendingMessagesBounded st' := by
+  have hFwd := removeCallerReplyFrame_tcb_forward st st' caller rid hObjInv hStep
+  intro tid tcb msg hObj hMsg
+  obtain ⟨ty, hSt, _, hPM, _⟩ := hFwd tid.toObjId tcb hObj
+  exact hInv tid ty msg hSt (hPM ▸ hMsg)
+
+open SeLe4n.Model.SystemState in
+theorem removeCallerReplyFrame_preserves_badgeWellFormed
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : badgeWellFormed st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    badgeWellFormed st' := by
+  have hNT := removeCallerReplyFrame_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  obtain ⟨hNB, hCB⟩ := hInv
+  refine ⟨?_, ?_⟩
+  · intro oid ntfn badge hObj hBadge
+    exact hNB oid ntfn badge ((hNT oid (.notification ntfn)
+      (fun tt => by exact KernelObject.noConfusion)
+      (fun rr => by exact KernelObject.noConfusion)).mp hObj) hBadge
+  · intro oid cn slot cap badge hObj hLook hBadge
+    exact hCB oid cn slot cap badge ((hNT oid (.cnode cn)
+      (fun tt => by exact KernelObject.noConfusion)
+      (fun rr => by exact KernelObject.noConfusion)).mp hObj) hLook hBadge
+
+
 
 /-- WS-H12e: endpointReply preserves allPendingMessagesBounded.
 endpointReply bounds-checks the message at entry, then stores it in the target
@@ -1749,7 +1782,7 @@ theorem endpointReply_preserves_allPendingMessagesBounded
                     rw [← hStep]; exact hMid
                   | some rid =>
                     simp only [hRO] at hStep
-                    exact consumeCallerReply_preserves_allPendingMessagesBounded _ _ target rid
+                    exact removeCallerReplyFrame_preserves_allPendingMessagesBounded _ _ target rid
                       hObjInvMid hMid hStep
             · -- authorized = false
               simp_all
@@ -1767,7 +1800,7 @@ theorem notificationSignal_preserves_dualQueueSystemInvariant
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     dualQueueSystemInvariant st' := by
-  unfold notificationSignal at hStep
+  unfold notificationSignal SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1811,7 +1844,7 @@ theorem notificationWait_preserves_dualQueueSystemInvariant
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     dualQueueSystemInvariant st' := by
-  unfold notificationWait at hStep
+  unfold notificationWait SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1924,7 +1957,7 @@ theorem endpointReply_preserves_badgeWellFormed
                   rw [← hStep]; exact hMid
                 | some rid =>
                   simp only [hRO] at hStep
-                  exact consumeCallerReply_preserves_badgeWellFormed _ _ target rid
+                  exact removeCallerReplyFrame_preserves_badgeWellFormed _ _ target rid
                     hObjInvMid hMid hStep
             · simp at hStep
 
@@ -1943,6 +1976,22 @@ theorem consumeCallerReply_preserves_notificationWaiterConsistent
     notificationWaiterConsistent st' := by
   have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
   have hBwd := SystemState.consumeCallerReply_tcb_backward st st' caller rid hObjInv hStep
+  intro oid ntfn tid hObj hMem
+  obtain ⟨tcb, hT, hIS⟩ := hConsist oid ntfn tid ((hNT oid (.notification ntfn)
+    (fun tt => by exact KernelObject.noConfusion)
+    (fun rr => by exact KernelObject.noConfusion)).mp hObj) hMem
+  obtain ⟨tx, hTx, hIS2, _⟩ := hBwd tid.toObjId tcb hT
+  exact ⟨tx, hTx, hIS2.trans hIS⟩
+
+open SeLe4n.Model.SystemState in
+theorem removeCallerReplyFrame_preserves_notificationWaiterConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hConsist : notificationWaiterConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    notificationWaiterConsistent st' := by
+  have hNT := removeCallerReplyFrame_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  have hBwd := removeCallerReplyFrame_tcb_backward st st' caller rid hObjInv hStep
   intro oid ntfn tid hObj hMem
   obtain ⟨tcb, hT, hIS⟩ := hConsist oid ntfn tid ((hNT oid (.notification ntfn)
     (fun tt => by exact KernelObject.noConfusion)
@@ -2015,7 +2064,7 @@ theorem endpointReply_preserves_notificationWaiterConsistent
               rw [← hStep]; exact hMid
             | some rid =>
               simp only [hRO] at hStep
-              exact consumeCallerReply_preserves_notificationWaiterConsistent _ _ target rid
+              exact removeCallerReplyFrame_preserves_notificationWaiterConsistent _ _ target rid
                 hMid hObjInvMid hStep
         · simp at hStep
 
@@ -2033,7 +2082,7 @@ theorem endpointSendDual_preserves_allPendingMessagesBounded
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     allPendingMessagesBounded st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
   simp only [hReg, ↓reduceIte] at hStep
   have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
@@ -2102,7 +2151,7 @@ theorem endpointSendDual_preserves_badgeWellFormed
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     badgeWellFormed st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
   simp only [hReg, ↓reduceIte] at hStep
   have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
@@ -2173,7 +2222,7 @@ theorem endpointReceiveDual_preserves_pendingMessagesSatisfy
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     pendingMessagesSatisfy P st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -2353,7 +2402,7 @@ theorem endpointReceiveDual_preserves_badgeWellFormed
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     badgeWellFormed st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -2488,7 +2537,7 @@ theorem endpointCall_preserves_allPendingMessagesBounded
     (hObjInv : st.objects.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     allPendingMessagesBounded st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
   simp only [hReg, ↓reduceIte] at hStep
   have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
@@ -2570,7 +2619,7 @@ theorem endpointCall_preserves_badgeWellFormed
     (hObjInv : st.objects.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     badgeWellFormed st' := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
   simp only [hReg, ↓reduceIte] at hStep
   have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
@@ -2696,13 +2745,13 @@ theorem endpointReplyRecv_preserves_allPendingMessagesBounded
                   endpointId receiver pair.1 replyId _ _ hInv2 hObjInv2 hRecv
             | some rid =>
               simp only [hRO] at hStep
-              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
               | error e => simp [hCons] at hStep
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons] at hStep
-                have hInv3 := consumeCallerReply_preserves_allPendingMessagesBounded _ _ replyTarget rid hObjInv2 hInv2 hCons
-                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInv2 hCons
+                have hInv3 := removeCallerReplyFrame_preserves_allPendingMessagesBounded _ _ replyTarget rid hObjInv2 hInv2 hCons
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInv2 hCons
                 cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                 | error e => simp [hRecv] at hStep
                 | ok pair =>
@@ -2765,13 +2814,13 @@ theorem endpointReplyRecv_preserves_badgeWellFormed
                   endpointId receiver pair.1 replyId _ _ hInv2 hObjInv2 hRecv
             | some rid =>
               simp only [hRO] at hStep
-              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+              cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
               | error e => simp [hCons] at hStep
               | ok p3 =>
                 obtain ⟨⟨⟩, st3⟩ := p3
                 simp only [hCons] at hStep
-                have hInv3 := consumeCallerReply_preserves_badgeWellFormed _ _ replyTarget rid hObjInv2 hInv2 hCons
-                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInv2 hCons
+                have hInv3 := removeCallerReplyFrame_preserves_badgeWellFormed _ _ replyTarget rid hObjInv2 hInv2 hCons
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInv2 hCons
                 cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                 | error e => simp [hRecv] at hStep
                 | ok pair =>

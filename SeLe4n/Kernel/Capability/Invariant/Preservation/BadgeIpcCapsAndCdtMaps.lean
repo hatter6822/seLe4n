@@ -78,7 +78,7 @@ theorem cspaceMint_preserves_badgeWellFormed
     | ok child =>
       simp only [hMint] at hStep
       -- cspaceInsertSlot stores a CNode
-      unfold cspaceInsertSlot at hStep
+      unfold cspaceInsertSlot SystemState.getCNode? at hStep
       cases hObj : pair.2.objects[dst.cnode]? with
       | none => simp [hObj] at hStep
       | some obj =>
@@ -128,7 +128,7 @@ theorem cspaceMutate_preserves_badgeWellFormed
     (hStep : cspaceMutate addr rights badge st = .ok ((), st')) :
     badgeWellFormed st' := by
   obtain ⟨hNtfn, hCap⟩ := hInv
-  unfold cspaceMutate at hStep
+  unfold cspaceMutate SystemState.getCNode? at hStep
   cases hLookup : cspaceLookupSlot addr st with
   | error e => simp [hLookup] at hStep
   | ok pair =>
@@ -465,7 +465,7 @@ theorem cspaceDeleteSlotCore_preserves_cdtMapsConsistent
     (hCon : cdtMapsConsistent st)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     cdtMapsConsistent st' := by
-  unfold cspaceDeleteSlotCore at hStep
+  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
   cases hPre : st.objects[addr.cnode]? with
   | none => simp [hPre] at hStep
   | some obj =>
@@ -524,7 +524,7 @@ theorem cspaceRevoke_preserves_cdtMapsConsistent
     (hCon : cdtMapsConsistent st)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     cdtMapsConsistent st' := by
-  unfold cspaceRevoke at hStep
+  unfold cspaceRevoke SystemState.getCNode? at hStep
   cases hLook : cspaceLookupSlot addr st with
   | error e => simp [hLook] at hStep
   | ok pair =>

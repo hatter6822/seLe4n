@@ -241,13 +241,13 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
             lockSet_endpointReplyOnCore st ops.caller caller.cspaceRoot answered
   -- **PR #892 review round 6** made this arm refuse a *delegated* reply — one
   -- answered by a thread other than the one the Reply records as its server —
-  -- because `replyRecvReturnDonation` writes that server's TCB and there was no
+  -- because `replyRecvPopDonation` writes that server's TCB and there was no
   -- room for its lock under a ceiling of nine.
   --
   -- **WS-OD OD3.5 removes the refusal**, having found that the arm's footprint
   -- was short by a *second* member on every arm, delegated or not: the same
-  -- `replyRecvReturnDonation` runs `applyCallDonationOnCore nextThread tid` when
-  -- the receive leg dequeues a queued `Call`, and that writes the **new**
+  -- arm runs `applyCallDonationOnCore nextThread tid` after the receive leg
+  -- dequeues a queued `Call`, and that writes the **new**
   -- caller's SchedContext under a lock the footprint never named.  So the choice
   -- was never "declare the delegated case or not"; it was "declare a footprint
   -- that covers this arm's writes, or keep one that does not".  Both members are
@@ -912,8 +912,8 @@ theorem lockSetForSyscall_replyRecv_covers_queueNeighbour
 SchedContext hand-off's object lock, and the state-level lock that hand-off's
 `scThreadIndex` maintenance takes.
 
-`replyRecvReturnDonation` runs `applyCallDonationOnCore nextThread tid` whenever
-the receive leg dequeues a queued `Call`, and `donateSchedContext` writes the
+`replyRecvPostReceiveDonation` runs `applyCallDonationOnCore nextThread tid`
+whenever the receive leg dequeues a queued `Call`, and `donateSchedContext` writes the
 new caller's SchedContext plus the index.  Before OD3.5 the declared footprint
 named neither, so a `.replyRecv` on one core and a `.tcbSuspend` of that queued
 caller on another had provably disjoint footprints while both writing that

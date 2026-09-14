@@ -280,8 +280,10 @@ migration restores replenish-queue affinity consistency on every core.**
 
 The substance of both reply-side donation arms, factored out because two live
 paths perform exactly this pair: `applyReplyDonationOnCore` (which follows it
-with a deschedule) and `replyRecvReturnDonation` (which does not, because the
-recorded server may immediately rendezvous with a queued `Call`).
+with a deschedule) and `replyRecvPopDonation` (which does not, because the
+recorded server may immediately rendezvous with a queued `Call` -- the
+deschedule is `replyRecvPostReceiveDonation`'s, once the receive leg has said
+whether anything did).
 
 The return rebinds exactly one SchedContext — from the replier back to the
 original owner — so exactly that SchedContext's replenish entries become
@@ -419,7 +421,9 @@ serialised against every other core.
 state-level one was written by the operation and named by no lock.
 
 **WS-OD OD3.7**: the reply object and the two below-head reads are pinned at
-`none` on *both* sides, and explicitly rather than by a default.  This equation
+`none` on *both* sides, and explicitly rather than by a default.  **WS-OD
+(`v0.35.4`) / WS-RM (`v0.35.6`)**: so are the head the pop clears and the frame
+above the answered reply, for the same reason.  This equation
 characterises what the *donation* adds, and `lockSetExtendOpt` is an insertion —
 it does not commute — so the donation's two members cannot be lifted over
 members added after them.  Stating it on the chain-free, reply-object-free shape
@@ -429,11 +433,11 @@ theorem lockSet_endpointReply_donation_extension
     (replier : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) :
     lockSet_endpointReply replier cnRoot target (some scId) (some originalOwner)
-        none none none
+        none none none none none
       = lockSetExtendOpt
           (lockSetExtendOpt
             (lockSetExtendOpt
-              (lockSet_endpointReply replier cnRoot target none none none none none)
+              (lockSet_endpointReply replier cnRoot target none none none none none none none)
               (some (schedContextLock scId, .write)))
             (some (tcbLock originalOwner, .write)))
           (some (stateLevelLock, .write)) := by
@@ -515,6 +519,31 @@ def endpointReplyCrossCoreDispatch
                   ((PriorityInheritance.propagatePipChainCrossCore st2 expected executingCore).1, .ok replySgi?)
           | none => (st, .error .invalidArgument)
       | none => (st, .error .replyCapInvalid)
+
+/-- **PR #895 review round 22: the live `.reply` spine does not depend on the
+reply-cap HOLDER.**
+
+Every use of `replier` above is the one passed to `endpointReplyOnCore`, whose
+own parameter is `_replier`: the 6J-lYm gate removal made authority the presented
+reply capability, so the leg reads the caller's recorded server from the state
+and the cap holder's identity nowhere.  The donation return and the
+priority-inheritance reversion are then keyed on that recorded server
+(`recordedReplyServer? st target`), which is resolved from the pre-state and is
+therefore the same thread whichever delegate invoked.
+
+So a *delegated* reply gets exactly the non-delegated behaviour, and that is the
+property that makes this dispatch — rather than the superseded single-core
+`endpointReplyWithDonation` — the right live counterpart for a frozen mirror that
+accepts a delegated replier.  Its pair is
+`endpointReplyWithDonation_refuses_delegated_replier`
+(`IPC/Operations/Donation.lean`), which has the content: the two live composites
+answer one question two ways, so a coverage claim naming one is not a claim about
+the other.  Neither theorem alone says that; stated together they do. -/
+theorem endpointReplyCrossCoreDispatch_independent_of_replier
+    (replier replier' target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) :
+    endpointReplyCrossCoreDispatch replier target msg executingCore st =
+      endpointReplyCrossCoreDispatch replier' target msg executingCore st := rfl
 
 /-- WS-SM SM6.C (live `.reply` enforcement): the **information-flow-checked**
 cross-core reply dispatch — the cross-core analogue of `endpointReplyChecked`

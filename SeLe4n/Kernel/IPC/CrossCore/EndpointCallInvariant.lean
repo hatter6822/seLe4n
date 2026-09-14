@@ -1677,7 +1677,7 @@ theorem endpointCallOnCore_preserves_ipcStateQueueMembershipConsistent
         | ok st2 =>
           simp only
           have hNeCallerEp : endpointId ≠ caller.toObjId := by
-            intro h; unfold endpointQueueEnqueue at hEnq
+            intro h; unfold endpointQueueEnqueue SystemState.getObject? at hEnq
             rw [hObj] at hEnq; simp only at hEnq
             cases hL : lookupTcb st caller with
             | none => simp [hL] at hEnq

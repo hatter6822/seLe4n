@@ -67,7 +67,7 @@ theorem chooseThread_preserves_state
     (hStep : chooseThread st = .ok (next, st')) :
     st' = st := by
   unfold chooseThread chooseThreadOnCore at hStep
-  cases hPick : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
+  cases hPick : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hPick] at hStep
   | ok best =>
       cases best with
@@ -86,7 +86,7 @@ private theorem schedule_preserves_queueCurrentConsistent
     (st st' : SystemState)
     (hStep : schedule st = .ok ((), st')) :
     queueCurrentConsistent st'.scheduler := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pick =>
@@ -129,7 +129,7 @@ theorem schedule_preserves_runQueueWellFormed
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hStep : schedule st = .ok ((), st')) :
     RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pick =>
@@ -144,7 +144,7 @@ theorem schedule_preserves_runQueueWellFormed
               simp only [hChoose] at hStep
               -- saveOutgoingContext doesn't change runQueue
               have hSaveRQ : ((saveOutgoingContext stChoose).scheduler.runQueueOnCore bootCoreId) = (stChoose.scheduler.runQueueOnCore bootCoreId) := by
-                simp only [saveOutgoingContext]
+                simp only [saveOutgoingContext, SystemState.getTcb?]
                 split
                 · rfl
                 · split <;> rfl
@@ -185,7 +185,7 @@ theorem handleYield_preserves_runQueueWellFormed
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hStep : handleYield st = .ok ((), st')) :
     RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : st.scheduler.currentOnCore bootCoreId with
   | none => simp [hCur] at hStep
   | some tid =>
@@ -201,7 +201,7 @@ theorem handleYield_preserves_runQueueWellFormed
         -- The composition: insert + rotateToBack + schedule each preserve wellFormed.
         have hwfMid : RunQueue.wellFormed
             (((st.scheduler.runQueueOnCore bootCoreId).insert tid
-                  (effectiveRunQueuePriority tcb)).rotateToBack tid) :=
+                  (tcb.boostedPriority)).rotateToBack tid) :=
           RunQueue.rotateToBack_preserves_wellFormed _
             (RunQueue.insert_preserves_wellFormed _ hwf _ _) _
         apply schedule_preserves_runQueueWellFormed _ st' ?_ hStep
@@ -223,7 +223,7 @@ theorem timerTick_preserves_runQueueWellFormed
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hStep : timerTick st = .ok ((), st')) :
     RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
-  unfold timerTick at hStep
+  unfold timerTick SystemState.getTcb? at hStep
   cases hCur : st.scheduler.currentOnCore bootCoreId with
   | none =>
     simp only [hCur, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -242,7 +242,7 @@ theorem timerTick_preserves_runQueueWellFormed
         · -- Time-slice expired: insert + schedule
           have hwfIns : RunQueue.wellFormed
               ((st.scheduler.runQueueOnCore bootCoreId).insert tid
-                (effectiveRunQueuePriority tcb)) :=
+                (tcb.boostedPriority)) :=
             RunQueue.insert_preserves_wellFormed _ hwf _ _
           apply schedule_preserves_runQueueWellFormed _ st' ?_ hStep
           show RunQueue.wellFormed
@@ -353,7 +353,7 @@ private theorem schedule_preserves_runQueueUnique
     (hUnique : runQueueUnique st.scheduler)
     (hStep : schedule st = .ok ((), st')) :
     runQueueUnique st'.scheduler := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pick =>
@@ -401,7 +401,7 @@ private theorem schedule_preserves_currentThreadValid
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     currentThreadValid st' := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pick =>
@@ -444,7 +444,7 @@ private theorem schedule_preserves_currentThreadInActiveDomain
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     currentThreadInActiveDomain st' := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pick =>
@@ -493,7 +493,7 @@ private theorem handleYield_preserves_queueCurrentConsistent
     (st st' : SystemState)
     (hStep : handleYield st = .ok ((), st')) :
     queueCurrentConsistent st'.scheduler := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- V5-F: handleYield now returns .error .invalidArgument when current = none
@@ -534,7 +534,7 @@ private theorem handleYield_preserves_runQueueUnique
     (hQCC : queueCurrentConsistent st.scheduler)
     (hStep : handleYield st = .ok ((), st')) :
     runQueueUnique st'.scheduler := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- V5-F: handleYield now returns .error .invalidArgument when current = none
@@ -550,11 +550,11 @@ private theorem handleYield_preserves_runQueueUnique
         have hNotMem : tid ∉ (st.scheduler.runQueueOnCore bootCoreId) := by
           have := hQCC; simp [queueCurrentConsistent, hCur] at this
           intro h; exact this ((RunQueue.mem_toList_iff_mem (st.scheduler.runQueueOnCore bootCoreId) tid).2 h)
-        have hInsertNodup : ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).toList.Nodup :=
-          insert_preserves_nodup (st.scheduler.runQueueOnCore bootCoreId) tid (effectiveRunQueuePriority tcb) hUnique hNotMem
-        have hInsertMem : tid ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb) := by
+        have hInsertNodup : ((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).toList.Nodup :=
+          insert_preserves_nodup (st.scheduler.runQueueOnCore bootCoreId) tid (tcb.boostedPriority) hUnique hNotMem
+        have hInsertMem : tid ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority) := by
           rw [RunQueue.mem_insert]; exact Or.inr rfl
-        have hRotatedNodup : (((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid).toList.Nodup :=
+        have hRotatedNodup : (((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).rotateToBack tid).toList.Nodup :=
           RunQueue.toList_rotateToBack_nodup _ tid hInsertNodup hInsertMem
         exact schedule_preserves_runQueueUnique _ st' (by
           simp [runQueueUnique, SchedulerState.runnable]; exact hRotatedNodup) hStep
@@ -565,7 +565,7 @@ private theorem handleYield_preserves_currentThreadValid
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     currentThreadValid st' := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- V5-F: handleYield now returns .error .invalidArgument when current = none
@@ -588,7 +588,7 @@ private theorem handleYield_preserves_currentThreadInActiveDomain
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     currentThreadInActiveDomain st' := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- V5-F: handleYield now returns .error .invalidArgument when current = none
@@ -654,7 +654,7 @@ private theorem switchDomain_preserves_schedulerInvariantBundle
     (hStep : switchDomain st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
-  unfold switchDomain at hStep
+  unfold switchDomain SystemState.getTcb? at hStep
   cases hSched : st.scheduler.domainSchedule with
   | nil =>
       simp [hSched] at hStep
@@ -686,7 +686,7 @@ private theorem switchDomain_preserves_schedulerInvariantBundle
                   have hqcc := hQCC
                   simp [queueCurrentConsistent, hCur] at hqcc
                   intro h; exact hqcc ((RunQueue.mem_toList_iff_mem (st.scheduler.runQueueOnCore bootCoreId) curTid).2 h)
-                exact insert_preserves_nodup (st.scheduler.runQueueOnCore bootCoreId) curTid (effectiveRunQueuePriority curTcb) hRQU hNotMem
+                exact insert_preserves_nodup (st.scheduler.runQueueOnCore bootCoreId) curTid (curTcb.boostedPriority) hRQU hNotMem
               | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => exact hRQU
         · simp [currentThreadValid]
 
@@ -764,7 +764,7 @@ theorem timerTick_preserves_schedulerInvariantBundle
     (hStep : timerTick st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
-  unfold timerTick at hStep
+  unfold timerTick SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; cases hStep; exact ⟨hQCC, hRQU, hCTV⟩
@@ -783,8 +783,8 @@ theorem timerTick_preserves_schedulerInvariantBundle
           have hNotMem : tid ∉ (st.scheduler.runQueueOnCore bootCoreId) := by
             have := hQCC; simp [queueCurrentConsistent, hCur] at this
             intro h; exact this ((RunQueue.mem_toList_iff_mem (st.scheduler.runQueueOnCore bootCoreId) tid).2 h)
-          have hInsertNodup : ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).toList.Nodup :=
-            insert_preserves_nodup (st.scheduler.runQueueOnCore bootCoreId) tid (effectiveRunQueuePriority tcb) hRQU hNotMem
+          have hInsertNodup : ((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).toList.Nodup :=
+            insert_preserves_nodup (st.scheduler.runQueueOnCore bootCoreId) tid (tcb.boostedPriority) hRQU hNotMem
           -- The intermediate state has (st.objects.insert ...).invExt
           have hObjInv' : (st.objects.insert tid.toObjId (KernelObject.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice })).invExt :=
             RHTable_insert_preserves_invExt st.objects tid.toObjId _ hObjInv
@@ -1004,7 +1004,7 @@ private theorem schedule_preserves_timeSlicePositive
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     timeSlicePositive st' := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pick =>
@@ -1056,7 +1056,7 @@ private theorem handleYield_preserves_timeSlicePositive
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     timeSlicePositive st' := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- V5-F: handleYield now returns .error .invalidArgument when current = none
@@ -1071,11 +1071,11 @@ private theorem handleYield_preserves_timeSlicePositive
         simp only [hObj] at hStep
         -- Build timeSlicePositive for the intermediate state with insert+rotateToBack
         have hInvMid : timeSlicePositive
-            { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid) } := by
+            { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).rotateToBack tid) } := by
           intro t hMemRot
           simp [SchedulerState.runnable] at hMemRot
           -- t is in the rotated queue → t is in the inserted queue
-          have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb) := by
+          have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority) := by
             exact (RunQueue.mem_rotateToBack _ tid t).mp
               ((RunQueue.mem_toList_iff_mem _ t).mp hMemRot)
           -- Either t was already in rq, or t = tid
@@ -1088,7 +1088,7 @@ private theorem handleYield_preserves_timeSlicePositive
             -- t = tid: use currentTimeSlicePositive
             simp [currentTimeSlicePositive, hCur, hObj] at hCurTS
             simp [hObj]; exact hCurTS
-        let stMid : SystemState := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid) }
+        let stMid : SystemState := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).rotateToBack tid) }
         have hObjInvMid : stMid.objects.invExt := hObjInv
         exact schedule_preserves_timeSlicePositive stMid st' hInvMid hObjInvMid hStep
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
@@ -1102,7 +1102,7 @@ private theorem switchDomain_preserves_timeSlicePositive
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st')) :
     timeSlicePositive st' := by
-  unfold switchDomain at hStep
+  unfold switchDomain SystemState.getTcb? at hStep
   cases hSched : st.scheduler.domainSchedule with
   | nil => simp [hSched] at hStep; cases hStep; exact hInv
   | cons entry rest =>
@@ -1130,7 +1130,7 @@ private theorem switchDomain_preserves_timeSlicePositive
             simp only [hObj] at hMem
             cases obj with
             | tcb curTcb =>
-              have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb) :=
+              have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority) :=
                 (RunQueue.mem_toList_iff_mem _ t).mp hMem
               rw [RunQueue.mem_insert] at hMemInsert
               cases hMemInsert with
@@ -1172,7 +1172,7 @@ private theorem timerTick_preserves_timeSlicePositive
     (hConfigTS : st.scheduler.configDefaultTimeSlice > 0)
     (hStep : timerTick st = .ok ((), st')) :
     timeSlicePositive st' := by
-  unfold timerTick at hStep
+  unfold timerTick SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; cases hStep; exact hInv
@@ -1193,10 +1193,10 @@ private theorem timerTick_preserves_timeSlicePositive
               { st with
                 objects := st.objects.insert tid.toObjId (.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice })
                 machine := tick st.machine
-                scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)) } := by
+                scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)) } := by
             intro t hMem
             simp [SchedulerState.runnable] at hMem
-            have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb) :=
+            have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority) :=
               (RunQueue.mem_toList_iff_mem _ t).mp hMem
             rw [RunQueue.mem_insert] at hMemInsert
             cases hMemInsert with
@@ -1256,7 +1256,7 @@ private theorem schedule_preserves_currentTimeSlicePositive
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     currentTimeSlicePositive st' := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pick =>
@@ -1308,7 +1308,7 @@ private theorem handleYield_preserves_currentTimeSlicePositive
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     currentTimeSlicePositive st' := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- V5-F: handleYield now returns .error .invalidArgument when current = none
@@ -1324,10 +1324,10 @@ private theorem handleYield_preserves_currentTimeSlicePositive
         -- After insert+rotateToBack, the intermediate state's timeSlicePositive
         -- covers the inserted tid (via hCurTS). schedule then preserves it.
         have hInvMid : timeSlicePositive
-            { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid) } := by
+            { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).rotateToBack tid) } := by
           intro t hMemRot
           simp [SchedulerState.runnable] at hMemRot
-          have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb) :=
+          have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority) :=
             (RunQueue.mem_rotateToBack _ tid t).mp
               ((RunQueue.mem_toList_iff_mem _ t).mp hMemRot)
           rw [RunQueue.mem_insert] at hMemInsert
@@ -1338,7 +1338,7 @@ private theorem handleYield_preserves_currentTimeSlicePositive
             subst hEq
             simp [currentTimeSlicePositive, hCur, hObj] at hCurTS
             simp [hObj]; exact hCurTS
-        let stMid : SystemState := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid) }
+        let stMid : SystemState := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).rotateToBack tid) }
         have hObjInvMid : stMid.objects.invExt := hObjInv
         exact schedule_preserves_currentTimeSlicePositive stMid st' hInvMid hObjInvMid hStep
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
@@ -1350,7 +1350,7 @@ private theorem switchDomain_preserves_currentTimeSlicePositive
     (hCurTS : currentTimeSlicePositive st)
     (hStep : switchDomain st = .ok ((), st')) :
     currentTimeSlicePositive st' := by
-  unfold switchDomain at hStep
+  unfold switchDomain SystemState.getTcb? at hStep
   cases hSched : st.scheduler.domainSchedule with
   | nil => simp [hSched] at hStep; cases hStep; exact hCurTS
   | cons entry rest =>
@@ -1369,7 +1369,7 @@ private theorem timerTick_preserves_currentTimeSlicePositive
     (hConfigTS : st.scheduler.configDefaultTimeSlice > 0)
     (hStep : timerTick st = .ok ((), st')) :
     currentTimeSlicePositive st' := by
-  unfold timerTick at hStep
+  unfold timerTick SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; cases hStep
@@ -1390,10 +1390,10 @@ private theorem timerTick_preserves_currentTimeSlicePositive
               { st with
                 objects := st.objects.insert tid.toObjId (.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice })
                 machine := tick st.machine
-                scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)) } := by
+                scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)) } := by
             intro t hMem
             simp [SchedulerState.runnable] at hMem
-            have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb) :=
+            have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority) :=
               (RunQueue.mem_toList_iff_mem _ t).mp hMem
             rw [RunQueue.mem_insert] at hMemInsert
             cases hMemInsert with
@@ -1435,7 +1435,7 @@ private theorem switchDomain_preserves_edfCurrentHasEarliestDeadline
     (hInv : edfCurrentHasEarliestDeadline st)
     (hStep : switchDomain st = .ok ((), st')) :
     edfCurrentHasEarliestDeadline st' := by
-  unfold switchDomain at hStep
+  unfold switchDomain SystemState.getTcb? at hStep
   cases hSched : st.scheduler.domainSchedule with
   | nil => simp [hSched] at hStep; cases hStep; exact hInv
   | cons entry rest =>
@@ -1459,7 +1459,7 @@ theorem switchDomain_preserves_contextMatchesCurrent
     (hInv : contextMatchesCurrent st)
     (hStep : switchDomain st = .ok ((), st')) :
     contextMatchesCurrent st' := by
-  unfold switchDomain at hStep
+  unfold switchDomain SystemState.getTcb? at hStep
   cases hSched : st.scheduler.domainSchedule with
   | nil =>
     rw [hSched] at hStep
@@ -1492,7 +1492,7 @@ theorem switchDomain_preserves_runnableThreadsAreTCBs
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st')) :
     runnableThreadsAreTCBs st' := by
-  unfold switchDomain at hStep
+  unfold switchDomain SystemState.getTcb? at hStep
   cases hSched : st.scheduler.domainSchedule with
   | nil =>
       simp [hSched] at hStep; cases hStep; exact hInv
@@ -1546,7 +1546,7 @@ theorem schedule_preserves_runnableThreadsAreTCBs
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     runnableThreadsAreTCBs st' := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pick =>
@@ -1625,7 +1625,7 @@ theorem handleYield_preserves_runnableThreadsAreTCBs
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     runnableThreadsAreTCBs st' := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
       -- V5-F: handleYield now returns .error .invalidArgument when current = none
@@ -1663,7 +1663,7 @@ theorem timerTick_preserves_runnableThreadsAreTCBs
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     runnableThreadsAreTCBs st' := by
-  unfold timerTick at hStep
+  unfold timerTick SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
       -- No current thread: only machine timer advances
@@ -1722,7 +1722,7 @@ private theorem saveOutgoingContext_preserves_lookup_of_ne
     (hNe : ∀ outTid, (st.scheduler.currentOnCore bootCoreId) = some outTid → outTid.toObjId ≠ oid)
     (hObjInv : st.objects.invExt) :
     (saveOutgoingContext st).objects[oid]? = st.objects[oid]? := by
-  unfold saveOutgoingContext
+  unfold saveOutgoingContext SystemState.getTcb?
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
@@ -1750,7 +1750,7 @@ private theorem saveOutgoingContext_preserves_schedContext_lookup
     (hSc : st.objects[scId.toObjId]? = some (.schedContext sc))
     (hObjInv : st.objects.invExt) :
     (saveOutgoingContext st).objects[scId.toObjId]? = some (.schedContext sc) := by
-  unfold saveOutgoingContext
+  unfold saveOutgoingContext SystemState.getTcb?
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => exact hSc
   | some outTid =>
@@ -1817,7 +1817,7 @@ private theorem saveOutgoingContext_effectiveBucketPriority_eq
       | none =>
         -- saveOut is no-op when outgoing TCB is missing
         have : (saveOutgoingContext st).objects[outTid.toObjId]? = none := by
-          unfold saveOutgoingContext; rw [hCur]; simp [hOut]
+          unfold saveOutgoingContext SystemState.getTcb?; rw [hCur]; simp [hOut]
         rw [this] at hE; exact absurd hE (by simp)
       | some outObj =>
         cases outObj with
@@ -1825,7 +1825,7 @@ private theorem saveOutgoingContext_effectiveBucketPriority_eq
           -- saveOut inserts .tcb at outTid.toObjId, hE says .schedContext
           have : (saveOutgoingContext st).objects[outTid.toObjId]?
               = some (.tcb { outTcb with registerContext := st.machine.regs }) := by
-            unfold saveOutgoingContext
+            unfold saveOutgoingContext SystemState.getTcb?
             rw [hCur]; dsimp only
             rw [hOut]; dsimp only
             simp only [RHTable_getElem?_eq_get?]
@@ -1838,7 +1838,7 @@ private theorem saveOutgoingContext_effectiveBucketPriority_eq
           -- is .schedContext sc. We must contradict hLookN.
           have hPres : (saveOutgoingContext st).objects[outTid.toObjId]?
               = st.objects[outTid.toObjId]? := by
-            unfold saveOutgoingContext; rw [hCur]; simp [hOut]
+            unfold saveOutgoingContext SystemState.getTcb?; rw [hCur]; simp [hOut]
           rw [hPres] at hE
           rw [hEq] at hE
           exact hLookN sc hE
@@ -1866,7 +1866,7 @@ private theorem schedulerPriorityMatch_of_saveOutgoingContext
       obtain ⟨tcb', hTcb', _, hPri, _, _, hPip, _⟩ :=
         saveOutgoingContext_tcb_fields st tid.toObjId tcb hTid hObjInv
       simp [hTid] at hOrig; rw [hSchedEq]; simp [hTcb']
-      simp [effectiveRunQueuePriority, hPri, hPip]; exact hOrig
+      simp [hPri, hPip]; exact hOrig
     | _ =>
       have hNonTcb := saveOutgoingContext_preserves_non_tcb_lookup st tid.toObjId
         (by intro tcb h; rw [hTid] at h; exact absurd h (by simp)) hObjInv
@@ -1883,7 +1883,7 @@ private theorem switchDomain_preserves_schedulerPriorityMatch
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st')) :
     schedulerPriorityMatch st' := by
-  unfold switchDomain at hStep
+  unfold switchDomain SystemState.getTcb? at hStep
   cases hSched : st.scheduler.domainSchedule with
   | nil =>
     simp [hSched] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPM
@@ -1920,8 +1920,8 @@ private theorem switchDomain_preserves_schedulerPriorityMatch
             exact schedulerPriorityMatch_of_runQueue_objects_eq (saveOutgoingContext st) st'
               hPMSave (by rw [hRQEq, saveOutgoingContext_scheduler]) hObjEq
           | tcb curTcb =>
-            -- runQueue = insert curTid (effectiveRunQueuePriority curTcb)
-            have hRQEq : (st'.scheduler.runQueueOnCore bootCoreId) = (st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb) := by
+            -- runQueue = insert curTid (curTcb.boostedPriority)
+            have hRQEq : (st'.scheduler.runQueueOnCore bootCoreId) = (st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority) := by
               subst hSt; simp [hCur, hCurObj]
             -- Need to show schedulerPriorityMatch for the insert case
             -- Build from schedulerPriorityMatch_insert on st, then bridge objects
@@ -1941,7 +1941,7 @@ private theorem switchDomain_preserves_schedulerPriorityMatch
                 obtain ⟨tcb', hTcb', _, hPri, _, _, hPip, _⟩ :=
                   saveOutgoingContext_tcb_fields st tid.toObjId tidTcb hTid hObjInv
                 simp [hTid] at hInsert; simp [hTcb']
-                simp [effectiveRunQueuePriority, hPri, hPip]; exact hInsert
+                simp [hPri, hPip]; exact hInsert
               | _ =>
                 have hNonTcb := saveOutgoingContext_preserves_non_tcb_lookup st tid.toObjId
                   (by intro tcb h; rw [hTid] at h; exact absurd h (by simp)) hObjInv
@@ -1956,7 +1956,7 @@ private theorem switchDomain_preserves_schedulerPriorityMatch
 private theorem saveOutgoingContext_domainTimeRemaining_eq (st : SystemState) :
     ((saveOutgoingContext st).scheduler.domainTimeRemainingOnCore bootCoreId) =
     (st.scheduler.domainTimeRemainingOnCore bootCoreId) := by
-  unfold saveOutgoingContext
+  unfold saveOutgoingContext SystemState.getTcb?
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
@@ -1970,7 +1970,7 @@ private theorem restoreIncomingContext_domainTimeRemaining_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     ((restoreIncomingContext st tid).scheduler.domainTimeRemainingOnCore bootCoreId) =
     (st.scheduler.domainTimeRemainingOnCore bootCoreId) := by
-  unfold restoreIncomingContext
+  unfold restoreIncomingContext SystemState.getTcb?
   cases hObj : st.objects[tid.toObjId]? with
   | none => rfl
   | some obj => cases obj <;> simp
@@ -1983,7 +1983,7 @@ theorem schedule_preserves_domainTimeRemainingPositive
     (_hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     domainTimeRemainingPositive st' := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pick =>
@@ -2043,7 +2043,7 @@ theorem handleYield_preserves_domainTimeRemainingPositive
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     domainTimeRemainingPositive st' := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- V5-F: handleYield returns error when current = none
@@ -2071,7 +2071,7 @@ theorem timerTick_preserves_domainTimeRemainingPositive
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     domainTimeRemainingPositive st' := by
-  unfold timerTick at hStep
+  unfold timerTick SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp only [hCur, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -2106,7 +2106,7 @@ theorem switchDomain_preserves_domainTimeRemainingPositive
     (hEntriesPos : ∀ e, e ∈ st.scheduler.domainSchedule → e.length > 0)
     (hStep : switchDomain st = .ok ((), st')) :
     domainTimeRemainingPositive st' := by
-  unfold switchDomain at hStep
+  unfold switchDomain SystemState.getTcb? at hStep
   cases hSched : st.scheduler.domainSchedule with
   | nil => simp [hSched] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
   | cons entry rest =>
@@ -2135,7 +2135,7 @@ theorem switchDomain_preserves_domainSchedule
     (st st' : SystemState)
     (hStep : switchDomain st = .ok ((), st')) :
     st'.scheduler.domainSchedule = st.scheduler.domainSchedule := by
-  unfold switchDomain at hStep
+  unfold switchDomain SystemState.getTcb? at hStep
   cases hSched : st.scheduler.domainSchedule with
   | nil =>
     simp [hSched] at hStep; cases hStep; exact hSched
@@ -2153,7 +2153,7 @@ theorem switchDomain_preserves_domainSchedule
 private theorem saveOutgoingContext_preserves_domainSchedule
     (st : SystemState) :
     (saveOutgoingContext st).scheduler.domainSchedule = st.scheduler.domainSchedule := by
-  unfold saveOutgoingContext
+  unfold saveOutgoingContext SystemState.getTcb?
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
@@ -2164,7 +2164,7 @@ private theorem saveOutgoingContext_preserves_domainSchedule
 private theorem restoreIncomingContext_preserves_domainSchedule
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).scheduler.domainSchedule = st.scheduler.domainSchedule := by
-  unfold restoreIncomingContext
+  unfold restoreIncomingContext SystemState.getTcb?
   split <;> simp
 
 /-- X2-C: `chooseThread` preserves `domainSchedule`. -/
@@ -2173,7 +2173,7 @@ private theorem chooseThread_preserves_domainSchedule
     (hStep : chooseThread st = .ok (opt, stCT)) :
     stCT.scheduler.domainSchedule = st.scheduler.domainSchedule := by
   unfold chooseThread chooseThreadOnCore at hStep
-  cases hCB : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
+  cases hCB : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hCB] at hStep
   | ok val =>
     simp [hCB] at hStep
@@ -2189,7 +2189,7 @@ theorem schedule_preserves_domainSchedule
     (st st' : SystemState)
     (hStep : schedule st = .ok ((), st')) :
     st'.scheduler.domainSchedule = st.scheduler.domainSchedule := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hCT : chooseThread st with
   | error e => simp [hCT] at hStep
   | ok pair =>
@@ -2207,7 +2207,7 @@ theorem schedule_preserves_domainSchedule
         split at hStep
         · rename_i tcb _
           split at hStep
-          · unfold setCurrentThread restoreIncomingContext saveOutgoingContext at hStep
+          · unfold setCurrentThread restoreIncomingContext saveOutgoingContext SystemState.getTcb? at hStep
             split at hStep <;> simp only [Except.ok.injEq, Prod.mk.injEq] at hStep <;>
               obtain ⟨_, rfl⟩ := hStep <;> exact hSchedCT
           · simp at hStep
@@ -2218,7 +2218,7 @@ theorem handleYield_preserves_domainSchedule
     (st st' : SystemState)
     (hStep : handleYield st = .ok ((), st')) :
     st'.scheduler.domainSchedule = st.scheduler.domainSchedule := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => simp [hCur] at hStep
   | some tid =>
@@ -2234,7 +2234,7 @@ theorem timerTick_preserves_domainSchedule
     (st st' : SystemState)
     (hStep : timerTick st = .ok ((), st')) :
     st'.scheduler.domainSchedule = st.scheduler.domainSchedule := by
-  unfold timerTick at hStep
+  unfold timerTick SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
@@ -2284,7 +2284,7 @@ theorem setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline
       match st.objects[t.toObjId]? with
       | some (.tcb tcb) =>
           tcb.domain = tcbSel.domain →
-          effectiveRunQueuePriority tcb = effectiveRunQueuePriority tcbSel →
+          tcb.boostedPriority = tcbSel.boostedPriority →
           tcb.priority = tcbSel.priority →
           tcbSel.deadline.toNat = 0 ∨
             (tcb.deadline.toNat = 0 ∨ tcbSel.deadline.toNat ≤ tcb.deadline.toNat)
@@ -2453,7 +2453,7 @@ private theorem chooseBestInBucket_edf_bridge
     (hDomEq : tcbSel.domain = (st.scheduler.activeDomainOnCore bootCoreId))
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
-    (hResult : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId)
+    (hResult : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore bootCoreId)
       (st.scheduler.activeDomainOnCore bootCoreId) = .ok (some (tid, resPrio, resDl)))
     (hObj : st.objects[tid.toObjId]? = some (.tcb tcbSel)) :
     -- EDF property over the DEQUEUED runnable set (post-remove)
@@ -2461,7 +2461,7 @@ private theorem chooseBestInBucket_edf_bridge
       match st.objects[t.toObjId]? with
       | some (.tcb tcb) =>
           tcb.domain = tcbSel.domain →
-          effectiveRunQueuePriority tcb = effectiveRunQueuePriority tcbSel →
+          tcb.boostedPriority = tcbSel.boostedPriority →
           tcb.priority = tcbSel.priority →
           tcbSel.deadline.toNat = 0 ∨
             (tcb.deadline.toNat = 0 ∨ tcbSel.deadline.toNat ≤ tcb.deadline.toNat)
@@ -2475,18 +2475,18 @@ private theorem chooseBestInBucket_edf_bridge
         ((RunQueue.mem_toList_iff_mem _ t).mp hMemDq)).1
   -- Convert to objects.get?
   have hAllTcbGet : ∀ u, u ∈ (st.scheduler.runQueueOnCore bootCoreId).toList →
-      ∃ utcb, st.objects.get? u.toObjId = some (.tcb utcb) := by
+      ∃ utcb, st.getObject? u.toObjId = some (.tcb utcb) := by
     intro u hMu
     obtain ⟨utcb, hutcb⟩ := hAllTcb u (by simpa [SchedulerState.runnable] using hMu)
     exact ⟨utcb, hutcb⟩
-  have hObjGet : st.objects.get? tid.toObjId = some (.tcb tcbSel) := hObj
+  have hObjGet : st.getObject? tid.toObjId = some (.tcb tcbSel) := hObj
   -- Domain-eligibility helper
   have eligOfDom : ∀ (tcb : TCB), tcb.domain = tcbSel.domain →
       (fun tc : TCB => tc.domain == (st.scheduler.activeDomainOnCore bootCoreId)) tcb = true := by
     intro tcb htDom; simp; rw [htDom, hDomEq]
   -- Unfold chooseBestInBucket
   unfold chooseBestInBucket at hResult
-  cases hBucket : chooseBestRunnableInDomain st.objects.get?
+  cases hBucket : chooseBestRunnableInDomain st.getObject?
       (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket (st.scheduler.activeDomainOnCore bootCoreId) none with
   | error e => simp [hBucket] at hResult
   | ok bestB =>
@@ -2494,7 +2494,7 @@ private theorem chooseBestInBucket_edf_bridge
     | none =>
       -- ── Full-scan fallback ──
       simp only [hBucket] at hResult
-      cases hFull : chooseBestRunnableInDomain st.objects.get?
+      cases hFull : chooseBestRunnableInDomain st.getObject?
           (st.scheduler.runQueueOnCore bootCoreId).toList (st.scheduler.activeDomainOnCore bootCoreId) none with
       | error e => simp [hFull] at hResult
       | ok bestF =>
@@ -2505,7 +2505,7 @@ private theorem chooseBestInBucket_edf_bridge
           have hTripleEq : triple = (tid, resPrio, resDl) := by
             simp at hResult; exact hResult
           subst hTripleEq
-          have hFields := chooseBestRunnableBy_result_fields st.objects.get?
+          have hFields := chooseBestRunnableBy_result_fields st.getObject?
             (fun tc => tc.domain == (st.scheduler.activeDomainOnCore bootCoreId))
             (st.scheduler.runQueueOnCore bootCoreId).toList none tid resPrio resDl hFull
             (by intro _ _ _ h; simp at h)
@@ -2517,10 +2517,10 @@ private theorem chooseBestInBucket_edf_bridge
             cases tObj with
             | tcb tcb =>
               intro htDom _htEffPrio htPrio
-              have hTObjGet : st.objects.get? t.toObjId = some (.tcb tcb) := hTObj
+              have hTObjGet : st.getObject? t.toObjId = some (.tcb tcb) := hTObj
               have hMemList : t ∈ (st.scheduler.runQueueOnCore bootCoreId).toList := by
                 simpa [SchedulerState.runnable] using hMemOrig
-              have hOpt := chooseBestRunnableBy_optimal st.objects.get?
+              have hOpt := chooseBestRunnableBy_optimal st.getObject?
                 (fun tc => tc.domain == (st.scheduler.activeDomainOnCore bootCoreId))
                 (st.scheduler.runQueueOnCore bootCoreId).toList tid tcbSel.priority tcbSel.deadline
                 hFull hAllTcbGet
@@ -2535,21 +2535,21 @@ private theorem chooseBestInBucket_edf_bridge
         simp at hResult; exact hResult
       subst hTripleEq
       have hBucketAllTcb : ∀ u, u ∈ (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket →
-          ∃ utcb, st.objects.get? u.toObjId = some (.tcb utcb) := by
+          ∃ utcb, st.getObject? u.toObjId = some (.tcb utcb) := by
         intro u hU
         have hURq := RunQueue.maxPriorityBucket_subset (st.scheduler.runQueueOnCore bootCoreId) hwf u hU
         obtain ⟨utcb, hutcb⟩ := hAllTcb u (by
           simpa [SchedulerState.runnable] using
             RunQueue.membership_implies_flat (st.scheduler.runQueueOnCore bootCoreId) u hURq)
         exact ⟨utcb, hutcb⟩
-      have hFields := chooseBestRunnableBy_result_fields st.objects.get?
+      have hFields := chooseBestRunnableBy_result_fields st.getObject?
         (fun tc => tc.domain == (st.scheduler.activeDomainOnCore bootCoreId))
         (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket none tid resPrio resDl hBucket
         (by intro _ _ _ h; simp at h)
       obtain ⟨resTcb, hResTcb, hResPrio, hResDl⟩ := hFields
       rw [hObjGet] at hResTcb; cases hResTcb; subst hResPrio; subst hResDl
       have hTidInBucket : tid ∈ (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket :=
-        chooseBestRunnableBy_result_mem st.objects.get?
+        chooseBestRunnableBy_result_mem st.getObject?
           (fun tc => tc.domain == (st.scheduler.activeDomainOnCore bootCoreId))
           (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket tid tcbSel.priority tcbSel.deadline
           hBucket hBucketAllTcb
@@ -2558,7 +2558,7 @@ private theorem chooseBestInBucket_edf_bridge
       have hTidMem := RunQueue.maxPriorityBucket_subset (st.scheduler.runQueueOnCore bootCoreId) hwf tid hTidInBucket
       have hPMTid := hpm tid hTidMem
       simp only [hObj] at hPMTid
-      have hMaxEqPrio : maxPrio = effectiveRunQueuePriority tcbSel := Option.some.inj (hTidTP.symm.trans hPMTid)
+      have hMaxEqPrio : maxPrio = tcbSel.boostedPriority := Option.some.inj (hTidTP.symm.trans hPMTid)
       cases hTObj : st.objects[t.toObjId]? with
       | none => simp
       | some tObj =>
@@ -2570,7 +2570,7 @@ private theorem chooseBestInBucket_edf_bridge
             exact (st.scheduler.runQueueOnCore bootCoreId).flat_wf t
               (by simpa [SchedulerState.runnable] using hMemOrig)
           have hPMt := hpm t hTInRq; simp only [hTObj] at hPMt
-          -- AI3-A: htEffPrio gives effectiveRunQueuePriority tcb = effectiveRunQueuePriority tcbSel.
+          -- AI3-A: htEffPrio gives tcb.boostedPriority = tcbSel.boostedPriority.
           -- Combined with hPMt and hMaxEqPrio, this yields threadPriority[t]? = some maxPrio,
           -- placing t in the maxPriorityBucket alongside tid.
           have hTTP : (st.scheduler.runQueueOnCore bootCoreId).threadPriority[t]? = some maxPrio :=
@@ -2578,8 +2578,8 @@ private theorem chooseBestInBucket_edf_bridge
           have hTInBucket :=
             RunQueue.mem_maxPriorityBucket_of_threadPriority (st.scheduler.runQueueOnCore bootCoreId) hwf
               t maxPrio hTInRq hTTP hMP
-          have hTObjGet : st.objects.get? t.toObjId = some (.tcb tcb) := hTObj
-          have hOpt := chooseBestRunnableBy_optimal st.objects.get?
+          have hTObjGet : st.getObject? t.toObjId = some (.tcb tcb) := hTObj
+          have hOpt := chooseBestRunnableBy_optimal st.getObject?
             (fun tc => tc.domain == (st.scheduler.activeDomainOnCore bootCoreId))
             (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket tid tcbSel.priority tcbSel.deadline
             hBucket hBucketAllTcb
@@ -2604,9 +2604,9 @@ private theorem schedule_preserves_edfCurrentHasEarliestDeadline
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     edfCurrentHasEarliestDeadline st' := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   simp only [chooseThread, chooseThreadOnCore] at hStep
-  cases hCIB : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId)
+  cases hCIB : chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore bootCoreId)
       (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hCIB] at hStep
   | ok cibRes =>
@@ -2667,10 +2667,16 @@ private theorem schedule_preserves_edfCurrentHasEarliestDeadline
                     intro hDomEq hEffPriEq hPriEq
                     have hDomOrig : tcbT.domain = tcbSel.domain := by
                       rw [← hDomSel, ← hDomT]; exact hDomEq
-                    have hEffPriOrig : effectiveRunQueuePriority tcbT = effectiveRunQueuePriority tcbSel := by
+                    have hEffPriOrig : tcbT.boostedPriority = tcbSel.boostedPriority := by
                       -- AI3-A: Bridge effective priorities through saveOutgoingContext.
                       -- tcbT' and tcbSel' have same priority/pipBoost as tcbT and tcbSel.
-                      simp only [effectiveRunQueuePriority, hPriT, hPipT, hPriSel, hPipSel] at hEffPriEq ⊢
+                      -- `TCB.boostedPriority` is `TCB.boostedPriority`
+                      -- since `v0.35.28`; its equation re-exposes the two fields
+                      -- the per-field facts below are about.  Safe to use the
+                      -- universal equation here: no induction hypothesis to
+                      -- desynchronise, unlike the `filterMap` folds.
+                      simp only [TCB.boostedPriority_eq,
+                        Priority.raisedBy, hPriT, hPipT, hPriSel, hPipSel] at hEffPriEq ⊢
                       exact hEffPriEq
                     have hPriOrig : tcbT.priority = tcbSel.priority := by
                       rw [← hPriSel, ← hPriT]; exact hPriEq
@@ -2716,7 +2722,7 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     edfCurrentHasEarliestDeadline st' := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- V5-F: handleYield now returns .error .invalidArgument when current = none
@@ -2734,13 +2740,13 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
           have := hQCC; simp [queueCurrentConsistent, hCur] at this
           intro h; exact this ((RunQueue.mem_toList_iff_mem (st.scheduler.runQueueOnCore bootCoreId) curTid).2 h)
         -- Break the proof into steps to avoid timeout
-        have hwf' : RunQueue.wellFormed (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb)).rotateToBack curTid) :=
-          RunQueue.rotateToBack_preserves_wellFormed _ (RunQueue.insert_preserves_wellFormed (st.scheduler.runQueueOnCore bootCoreId) hwf curTid (effectiveRunQueuePriority tcb)) curTid
+        have hwf' : RunQueue.wellFormed (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority)).rotateToBack curTid) :=
+          RunQueue.rotateToBack_preserves_wellFormed _ (RunQueue.insert_preserves_wellFormed (st.scheduler.runQueueOnCore bootCoreId) hwf curTid (tcb.boostedPriority)) curTid
         have hpm' : schedulerPriorityMatch
-            { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb)).rotateToBack curTid) } := by
+            { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority)).rotateToBack curTid) } := by
           intro t hMem
           simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem ⊢
-          have hMemIns : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb) :=
+          have hMemIns : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority) :=
             (RunQueue.mem_rotateToBack _ curTid t).mp hMem
           rw [RunQueue.mem_insert] at hMemIns
           simp only [RunQueue.rotateToBack_threadPriority, RunQueue.insert_threadPriority,
@@ -2764,19 +2770,19 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
             rw [RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _ (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
             simp only [beq_self_eq_true, ↓reduceIte]
             simp only [RHTable_getElem?_eq_get?] at hObj; rw [hObj]
-        have hAllTcb' : ∀ t, t ∈ { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb)).rotateToBack curTid) }.scheduler.runnable →
+        have hAllTcb' : ∀ t, t ∈ { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority)).rotateToBack curTid) }.scheduler.runnable →
             ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) := by
           intro t hMem
           simp [SchedulerState.runnable, RunQueue.toList] at hMem
-          have hMemIns : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb) :=
+          have hMemIns : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority) :=
             (RunQueue.mem_rotateToBack _ curTid t).mp ((RunQueue.mem_toList_iff_mem _ t).mp hMem)
           rw [RunQueue.mem_insert] at hMemIns
           cases hMemIns with
           | inl hOld => exact hAllTcb t (by simp [SchedulerState.runnable]; exact (RunQueue.mem_toList_iff_mem _ t).mpr hOld)
           | inr hEq => subst hEq; exact ⟨tcb, hObj⟩
-        let st_mid : SystemState := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb)).rotateToBack curTid) }
+        let st_mid : SystemState := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority)).rotateToBack curTid) }
         have hwfMid : RunQueue.wellFormed (st_mid.scheduler.runQueueOnCore bootCoreId) := by
-          show RunQueue.wellFormed ((st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb)).rotateToBack curTid)).runQueueOnCore bootCoreId)
+          show RunQueue.wellFormed ((st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority)).rotateToBack curTid)).runQueueOnCore bootCoreId)
           rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]; exact hwf'
         exact schedule_preserves_edfCurrentHasEarliestDeadline st_mid st' hwfMid hpm' hAllTcb' (show st_mid.objects.invExt from hObjInv) hStep
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
@@ -2804,7 +2810,7 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     edfCurrentHasEarliestDeadline st' := by
-  unfold timerTick at hStep
+  unfold timerTick SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; cases hStep
@@ -2825,8 +2831,8 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
             have := hQCC; simp [queueCurrentConsistent, hCur] at this
             intro h; exact this ((RunQueue.mem_toList_iff_mem (st.scheduler.runQueueOnCore bootCoreId) curTid).2 h)
           -- Break proof into steps to avoid timeout
-          have hwf' : RunQueue.wellFormed ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb)) :=
-            RunQueue.insert_preserves_wellFormed (st.scheduler.runQueueOnCore bootCoreId) hwf curTid (effectiveRunQueuePriority curTcb)
+          have hwf' : RunQueue.wellFormed ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority)) :=
+            RunQueue.insert_preserves_wellFormed (st.scheduler.runQueueOnCore bootCoreId) hwf curTid (curTcb.boostedPriority)
           have hContainsFalse : (st.scheduler.runQueueOnCore bootCoreId).contains curTid = false := by
             cases h : (st.scheduler.runQueueOnCore bootCoreId).contains curTid
             · rfl
@@ -2835,7 +2841,7 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
               { st with
                 objects := st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice })
                 machine := tick st.machine
-                scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb)) } := by
+                scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority)) } := by
             intro t hMem
             simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem
             simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.insert_threadPriority, hContainsFalse, Bool.false_eq_true, ↓reduceIte]
@@ -2864,13 +2870,13 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
               -- objects side: (st.objects.insert t.toObjId (.tcb {...})).get? t.toObjId = some (.tcb {...})
               rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
               simp only [beq_self_eq_true, ite_true]
-              -- AI3-A: effectiveRunQueuePriority only depends on priority + pipBoost,
+              -- AI3-A: only.boostedPriority depends on priority + pipBoost,
               -- both preserved by the timeSlice-only update
-              simp [effectiveRunQueuePriority]
+              simp [TCB.boostedPriority]
           have hAllTcb' : ∀ t, t ∈ { st with
               objects := st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice })
               machine := tick st.machine
-              scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb)) }.scheduler.runnable →
+              scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority)) }.scheduler.runnable →
               ∃ tcb, (st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice }))[t.toObjId]? = some (.tcb tcb) := by
             intro t hMem
             simp [SchedulerState.runnable, RunQueue.toList] at hMem
@@ -2891,9 +2897,9 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
           let st_mid : SystemState := { st with
               objects := st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice })
               machine := tick st.machine
-              scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb)) }
+              scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority)) }
           have hwfMid : RunQueue.wellFormed (st_mid.scheduler.runQueueOnCore bootCoreId) := by
-            show RunQueue.wellFormed ((st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb))).runQueueOnCore bootCoreId)
+            show RunQueue.wellFormed ((st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority))).runQueueOnCore bootCoreId)
             rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]; exact hwf'
           exact schedule_preserves_edfCurrentHasEarliestDeadline st_mid st' hwfMid hpm' hAllTcb' hObjInv' hStep
         · -- Time-slice not expired: only timeSlice changes
@@ -2928,7 +2934,7 @@ private theorem schedule_preserves_contextMatchesCurrent
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     contextMatchesCurrent st' := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pick =>
@@ -2963,7 +2969,7 @@ private theorem schedule_preserves_contextMatchesCurrent
               have ⟨tcb', hTcb'⟩ := saveOutgoingContext_preserves_tcb stChoose tid.toObjId tcb hObj hObjInvC
               simp only [contextMatchesCurrent, SchedulerState.setCurrentOnCore_currentOnCore_self, hTcb']
               -- restoreIncomingContext sets machine.regs = tcb'.registerContext
-              simp only [restoreIncomingContext, hTcb', MachineState.regs_setRegsOnCore_bootCore]
+              simp only [restoreIncomingContext, hTcb', MachineState.regs_setRegsOnCore_bootCore, SystemState.getTcb?]
               exact RegisterFile.beq_self _
             · have hOk' : ¬((stChoose.scheduler.runQueueOnCore bootCoreId).contains tid = true ∧
                   tcb.domain = (stChoose.scheduler.activeDomainOnCore bootCoreId)) := by
@@ -2979,7 +2985,7 @@ private theorem handleYield_preserves_contextMatchesCurrent
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     contextMatchesCurrent st' := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- V5-F: handleYield now returns .error .invalidArgument when current = none
@@ -3008,7 +3014,7 @@ private theorem timerTick_preserves_contextMatchesCurrent
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     contextMatchesCurrent st' := by
-  unfold timerTick at hStep
+  unfold timerTick SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- No current thread → just advance timer → current = none → vacuous
@@ -3097,7 +3103,7 @@ private theorem schedule_preserves_schedulerPriorityMatch
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     schedulerPriorityMatch st' := by
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   cases hChoose : chooseThread st with
   | error e => simp [hChoose] at hStep
   | ok pick =>
@@ -3138,9 +3144,9 @@ private theorem schedule_preserves_schedulerPriorityMatch
         -- Strategy: show the match on objects.get? gives .tcb tcb', then rewrite prio
         simp only [RHTable_getElem?_eq_get?] at hTcb' ⊢
         rw [hTcb']; simp only []
-        -- Goal: (stChoose.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid = some (effectiveRunQueuePriority tcb')
-        simp [effectiveRunQueuePriority, hPrioEq, hPipEq]
-        -- Goal: (stChoose.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid = some (effectiveRunQueuePriority tcb)
+        -- Goal: (stChoose.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid = some (tcb.boostedPriority')
+        simp [TCB.boostedPriority, hPrioEq, hPipEq]
+        -- Goal: (stChoose.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid = some (tcb.boostedPriority)
         -- Convert stChoose → st via hRQEq
         have : (stChoose.scheduler.runQueueOnCore bootCoreId).threadPriority = (st.scheduler.runQueueOnCore bootCoreId).threadPriority := by
           rw [hStEqBase]
@@ -3191,8 +3197,8 @@ private theorem schedule_preserves_schedulerPriorityMatch
                 saveOutgoingContext_tcb_fields stChoose t.toObjId tcb' hTcbC hObjInvC
               simp only [RHTable_getElem?_eq_get?] at hTcb'' ⊢
               rw [hTcb'']; simp only []
-              -- Goal: (runQueue.remove selTid).threadPriority.get? t = some (effectiveRunQueuePriority tcb'')
-              simp [effectiveRunQueuePriority, hPrioEq, hPipEq]
+              -- Goal: (runQueue.remove selTid).threadPriority.get? t = some (tcb.boostedPriority'')
+              simp [TCB.boostedPriority, hPrioEq, hPipEq]
               -- Goal: (runQueue.remove selTid).threadPriority.get? t = some tcb'.priority
               -- threadPriority after remove = erase selTid; for t ≠ selTid, unchanged
               rw [hSchedSt']
@@ -3227,7 +3233,7 @@ private theorem handleYield_preserves_schedulerPriorityMatch
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     schedulerPriorityMatch st' := by
-  unfold handleYield at hStep
+  unfold handleYield SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- V5-F: handleYield now returns .error .invalidArgument when current = none
@@ -3251,7 +3257,7 @@ private theorem handleYield_preserves_schedulerPriorityMatch
         · -- schedulerPriorityMatch on intermediate state
           intro t hMem
           simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem ⊢
-          have hMemIns : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb) :=
+          have hMemIns : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority) :=
             (RunQueue.mem_rotateToBack _ curTid t).mp hMem
           rw [RunQueue.mem_insert] at hMemIns
           simp only [RunQueue.rotateToBack_threadPriority, RunQueue.insert_threadPriority,
@@ -3294,7 +3300,7 @@ private theorem timerTick_preserves_schedulerPriorityMatch
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     schedulerPriorityMatch st' := by
-  unfold timerTick at hStep
+  unfold timerTick SystemState.getTcb? at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hpm
@@ -3346,9 +3352,9 @@ private theorem timerTick_preserves_schedulerPriorityMatch
               simp only [beq_self_eq_true, ite_true]
               rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
               simp only [beq_self_eq_true, ite_true]
-              -- AI3-A: effectiveRunQueuePriority only depends on priority + pipBoost,
+              -- AI3-A: only.boostedPriority depends on priority + pipBoost,
               -- both preserved by the timeSlice-only update
-              simp [effectiveRunQueuePriority]
+              simp [TCB.boostedPriority]
           · -- hAllTcb on intermediate state
             intro t hMem
             simp [SchedulerState.runnable] at hMem
@@ -3470,7 +3476,7 @@ theorem switchDomain_preserves_runQueueWellFormed
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hStep : switchDomain st = .ok ((), st')) :
     RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
-  unfold switchDomain at hStep
+  unfold switchDomain SystemState.getTcb? at hStep
   cases hSched : st.scheduler.domainSchedule with
   | nil => simp [hSched] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hwf
   | cons entry rest =>
@@ -3643,7 +3649,7 @@ theorem refillSchedContext_noop
     (st : SystemState) (scId : SeLe4n.SchedContextId) (now : Nat)
     (hNone : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) :
     refillSchedContext st scId now = st := by
-  unfold refillSchedContext
+  unfold refillSchedContext SystemState.getSchedContext?
   simp only [GetElem?.getElem?]
   match h : st.objects.get? scId.toObjId with
   | none => rfl
@@ -3684,7 +3690,7 @@ theorem timerTickBudget_unbound_nopreempt_objects_key
     (hNotExpired : ¬(tcb.timeSlice ≤ 1))
     (hStep : timerTickBudget st tid tcb = .ok (st', false)) :
     ∃ tcb', st'.objects = st.objects.insert tid.toObjId (.tcb tcb') := by
-  unfold timerTickBudget at hStep
+  unfold timerTickBudget SystemState.getSchedContext? at hStep
   rw [hUnbound, if_neg hNotExpired] at hStep
   have hinj := Except.ok.inj hStep
   have hfst := congrArg Prod.fst hinj
@@ -3700,7 +3706,7 @@ theorem timerTickBudget_unbound_preempt_objects_key
     (hExpired : tcb.timeSlice ≤ 1)
     (hStep : timerTickBudget st tid tcb = .ok (st', true)) :
     ∃ tcb', st'.objects = st.objects.insert tid.toObjId (.tcb tcb') := by
-  unfold timerTickBudget at hStep
+  unfold timerTickBudget SystemState.getSchedContext? at hStep
   rw [hUnbound, if_pos hExpired] at hStep
   have hinj := Except.ok.inj hStep
   have hfst := congrArg Prod.fst hinj
@@ -3768,15 +3774,15 @@ theorem budgetPositive_subset
     (hBp : budgetPositive st)
     (tid : SeLe4n.ThreadId) :
     ∀ tid', tid' ∈ st.scheduler.runnable → tid' ≠ tid →
-      match st.objects[tid'.toObjId]? with
-      | some (.tcb tcb) =>
+      match st.getTcb? tid' with
+      | some tcb =>
         match tcb.schedContextBinding with
         | .unbound => True
         | .bound scId | .donated scId _ =>
-          match st.objects[scId.toObjId]? with
-          | some (.schedContext sc) => sc.budgetRemaining.val > 0
-          | _ => True
-      | _ => True :=
+          match st.getSchedContext? scId with
+          | some sc => sc.budgetRemaining.val > 0
+          | none => True
+      | none => True :=
   fun tid' hMem' _ => hBp tid' hMem'
 
 -- Z4-U: Backward compatibility and yield preservation.

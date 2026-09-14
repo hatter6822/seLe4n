@@ -380,7 +380,7 @@ theorem step_preserves_projection
         simpa [hToNN, hMint] using hOp
       simp only [projectState]; congr 1
       · funext oid; by_cases hObs : objectObservable ctx observer oid
-        · simp [projectObjects, hObs]
+        · simp [projectObjects, hObs, SystemState.getObject?]
           by_cases hEq : oid = dst.cnode
           · subst hEq; simp [hDstH] at hObs
           · exact congrArg (Option.map (projectKernelObject ctx observer))
@@ -424,7 +424,7 @@ theorem step_preserves_projection
   | cspaceInsertSlot dst cap hDH hOp =>
     simp only [projectState]; congr 1
     · funext oid; by_cases hObs : objectObservable ctx observer oid
-      · simp [projectObjects, hObs]
+      · simp [projectObjects, hObs, SystemState.getObject?]
         have hNe : oid ≠ dst.cnode := by intro hEq; subst hEq; simp [hDH] at hObs
         exact congrArg (Option.map (projectKernelObject ctx observer))
           (cspaceInsertSlot_preserves_objects_ne st st' dst cap oid hNe hObjInv hOp)
@@ -489,7 +489,7 @@ theorem step_preserves_projection
   | storeTcbQueueLinksHigh tid prev pprev next hTOH hOp =>
     exact storeTcbQueueLinks_preserves_projection ctx observer st st' tid prev pprev next hTOH hObjInv hOp
   | cspaceMutateHigh addr rights badge hAH hOp =>
-    unfold cspaceMutate at hOp
+    unfold cspaceMutate SystemState.getCNode? at hOp
     cases hL : cspaceLookupSlot addr st with
     | error e => simp [hL] at hOp
     | ok p =>

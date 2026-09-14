@@ -353,7 +353,7 @@ theorem endpointQueueRemoveDual_preserves_projection_and_invExt
     fun s s' t qp qpp qn ht hi h =>
       ⟨storeTcbQueueLinks_preserves_projection ctx observer s s' t qp qpp qn ht hi h,
        storeTcbQueueLinks_preserves_objects_invExt s s' t qp qpp qn hi h⟩
-  unfold endpointQueueRemoveDual at hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep
   revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp

@@ -428,7 +428,7 @@ theorem notificationSignalOnCore_post_agrees
           right
           simp only
           refine ⟨pair.2, ?_, OffSchedulerAgrees.refl pair.2⟩
-          unfold notificationSignal
+          unfold notificationSignal SystemState.getObject?
           simp only [hObjRaw, hWaiters, hPB, hStore]
       | none =>
         simp only
@@ -438,7 +438,7 @@ theorem notificationSignalOnCore_post_agrees
           right
           simp only
           refine ⟨pair.2, ?_, OffSchedulerAgrees.refl pair.2⟩
-          unfold notificationSignal
+          unfold notificationSignal SystemState.getObject?
           simp only [hObjRaw, hWaiters, hPB, hStore]
     | some headTail =>
       obtain ⟨waiter, rest⟩ := headTail
@@ -459,7 +459,7 @@ theorem notificationSignalOnCore_post_agrees
           obtain ⟨tr, hTrGet, hTrReady⟩ :=
             storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2 st2 waiter .ready _ hObjInv1 hTcb
           refine ⟨ensureRunnable st2 waiter, ?_, ?_⟩
-          · unfold notificationSignal
+          · unfold notificationSignal SystemState.getObject?
             simp only [hObjRaw, hWaiters, hStore, hTcb]
           · exact (ensureRunnable_offSchedulerAgrees st2 waiter).symm.trans
               (wakeThread_offSchedulerAgrees_of_ready st2 waiter executingCore tr hTrGet
@@ -499,7 +499,7 @@ theorem notificationWaitOnCore_post_agrees
           right
           simp only
           refine ⟨st2, some badge, ?_, OffSchedulerAgrees.refl st2⟩
-          unfold notificationWait
+          unfold notificationWait SystemState.getObject?
           simp only [hObjRaw, hBadge, hStore, hTcb]
     | none =>
       simp only
@@ -525,7 +525,7 @@ theorem notificationWaitOnCore_post_agrees
                 right
                 simp only
                 refine ⟨removeRunnable st2 waiter, none, ?_, ?_⟩
-                · unfold notificationWait
+                · unfold notificationWait SystemState.getObject?
                   simp only [hObjRaw, hBadge, hLk, if_neg hIpcNe, hCons, hStore, hTcb]
                 · exact (removeRunnable_offSchedulerAgrees st2 waiter).symm.trans
                     (removeRunnableOnCore_offSchedulerAgrees st2 waiter executingCore)

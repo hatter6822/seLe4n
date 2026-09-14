@@ -74,6 +74,33 @@ def removeRunnableOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
           (if (st.scheduler.currentOnCore c) = some tid then none
             else (st.scheduler.currentOnCore c)) }
 
+/-- **Deschedule `tid` wherever it actually is.**
+
+The one step for "take this thread off the scheduler", for the reason round 10
+gave and then did not finish applying: `removeRunnableOnCore` accepts a core
+from *anyone*, so protecting one named wrapper leaves every direct caller free
+to hand it a proxy.  Round 10 removed the core parameter from
+`replyRecvServerDeschedule` and left its sibling arm calling the primitive
+directly with `determineExecutingCore`'s answer, so the same defect survived
+twenty-five lines away (PR #895 review round 11).
+
+A caller that knows the core — the executing core of a syscall, a wake target
+it just computed — still calls `removeRunnableOnCore` directly and should.  This
+is for the other case: a thread *resolved from the state*, whose placement is a
+fact to look up rather than a parameter to pass. -/
+def descheduleAtPlacement (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match placedCoreOf? st tid with
+  | some c => removeRunnableOnCore st tid c
+  | none => st
+
+/-- The cores `descheduleAtPlacement` may write, read off the SAME resolver the
+step itself uses — so a footprint and its transition cannot name different
+cores, which is the divergence round 10's cut introduced. -/
+def descheduleAtPlacementCores (st : SystemState) (tid : SeLe4n.ThreadId) : List CoreId :=
+  match placedCoreOf? st tid with
+  | some c => [c]
+  | none => []
+
 /-- WS-SM SM6.A.1: `removeRunnableOnCore` at the boot core is exactly the
 single-core `removeRunnable` — the backward-compatibility bridge. -/
 @[simp] theorem removeRunnableOnCore_bootCoreId (st : SystemState)
@@ -354,11 +381,12 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
               | .ok st'' => (removeRunnableOnCore st'' caller executingCore, .ok none)
   | none =>
       -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
-      -- `none` for both an absent object and a wrong-kinded one. Recover the
-      -- single-core `endpointCall` error distinction without a raw object-store
-      -- variant match: a present-but-wrong-kind object fails with
-      -- `.invalidCapability`, a genuinely absent one with `.objectNotFound`.
-      if (st.objects[endpointId]?).isSome then (st, .error .invalidCapability)
+      -- `none` for both an absent object and a wrong-kinded one, so the
+      -- presence question is asked of the kind-agnostic accessor `getObject?`
+      -- -- a present-but-wrong-kind object fails with `.invalidCapability`, a
+      -- genuinely absent one with `.objectNotFound`.  Reading the store raw
+      -- here would have been the very pattern the comment claimed to avoid.
+      if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
 -- ============================================================================
@@ -903,6 +931,27 @@ theorem endpointCallOnCore_atomic_under_lockSet
 theorem removeRunnableOnCore_preserves_objects (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) :
     (removeRunnableOnCore st tid c).objects = st.objects := rfl
+
+/-- The step writes no object, at either branch. -/
+@[simp] theorem descheduleAtPlacement_preserves_objects (st : SystemState)
+    (tid : SeLe4n.ThreadId) : (descheduleAtPlacement st tid).objects = st.objects := by
+  unfold descheduleAtPlacement
+  split
+  · exact removeRunnableOnCore_preserves_objects _ _ _
+  · rfl
+
+/-- ...and no replenish queue, at either branch.  Both facts are proved HERE
+rather than at each consumer: a caller that re-derives them per core is how the
+`serverCore` parameter got threaded into three proofs and one of them kept it
+after the transition stopped using it. -/
+@[simp] theorem descheduleAtPlacement_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (descheduleAtPlacement st tid).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold descheduleAtPlacement
+  split
+  · exact removeRunnableOnCore_replenishQueueOnCore _ _ _ _
+  · rfl
 
 /-- `removeRunnableOnCore` preserves every `getTcb?` lookup (objects unchanged). -/
 theorem removeRunnableOnCore_getTcb? (st : SystemState)

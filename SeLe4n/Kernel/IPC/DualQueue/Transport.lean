@@ -23,7 +23,7 @@ theorem endpointQueuePopHead_scheduler_eq
     (tid : SeLe4n.ThreadId)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st')) :
     st'.scheduler = st.scheduler := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -82,7 +82,7 @@ theorem endpointQueuePopHead_endpoint_backward_ne
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st'))
     (hEp : st'.objects[oid]? = some (.endpoint ep)) :
     st.objects[oid]? = some (.endpoint ep) := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -144,7 +144,7 @@ theorem endpointQueuePopHead_endpoint_forward
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st'))
     (hEp : st.objects[oid]? = some (.endpoint ep)) :
     ∃ ep', st'.objects[oid]? = some (.endpoint ep') := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -219,7 +219,7 @@ theorem endpointQueuePopHead_notification_backward
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st'))
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
     st.objects[oid]? = some (.notification ntfn) := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -285,7 +285,7 @@ theorem endpointQueuePopHead_tcb_forward
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st'))
     (hTcb : st.objects[oid]? = some (.tcb tcb)) :
     ∃ tcb', st'.objects[oid]? = some (.tcb tcb') := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -349,7 +349,7 @@ theorem endpointQueuePopHead_tcb_ipcState_backward
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st'))
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -422,7 +422,7 @@ theorem endpointQueuePopHead_preserves_reply
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st')) :
     st'.objects[oid]? = some (.reply r) := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -488,7 +488,7 @@ theorem endpointQueuePopHead_tcb_pendingReceiveReply_backward
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧
       tcb.pendingReceiveReply = tcb'.pendingReceiveReply := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -559,7 +559,7 @@ theorem endpointQueueEnqueue_scheduler_eq
     (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     st'.scheduler = st.scheduler := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -611,7 +611,7 @@ theorem endpointQueueEnqueue_endpoint_backward_ne
     (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st')
     (hEp : st'.objects[oid]? = some (.endpoint ep)) :
     st.objects[oid]? = some (.endpoint ep) := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -666,7 +666,7 @@ theorem endpointQueueEnqueue_endpoint_forward
     (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st')
     (hEp : st.objects[oid]? = some (.endpoint ep)) :
     ∃ ep', st'.objects[oid]? = some (.endpoint ep') := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -730,7 +730,7 @@ theorem endpointQueueEnqueue_notification_backward
     (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st')
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
     st.objects[oid]? = some (.notification ntfn) := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -789,7 +789,7 @@ theorem endpointQueueEnqueue_tcb_forward
     (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st')
     (hTcb : st.objects[oid]? = some (.tcb tcb)) :
     ∃ tcb', st'.objects[oid]? = some (.tcb tcb') := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -845,7 +845,7 @@ theorem endpointQueueEnqueue_tcb_ipcState_backward
     (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st')
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -905,7 +905,7 @@ theorem endpointQueueEnqueue_tcb_pendingMessage_backward
     (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st')
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.pendingMessage = tcb'.pendingMessage := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -970,7 +970,7 @@ theorem endpointQueueEnqueue_tcb_pendingReceiveReply_backward
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧
       tcb.pendingReceiveReply = tcb'.pendingReceiveReply := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1031,7 +1031,7 @@ theorem endpointQueueEnqueue_preserves_reply
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st') :
     st'.objects[oid]? = some (.reply r) := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1089,7 +1089,7 @@ def endpointQueueRemoveDual
     (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
-    match st.objects[endpointId]? with
+    match st.getObject? endpointId with
     | some (.endpoint ep) =>
         let q := if isReceiveQ then ep.receiveQ else ep.sendQ
         match lookupTcb st tid with
@@ -1169,7 +1169,7 @@ theorem endpointQueueRemoveDual_scheduler_eq
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
-  unfold endpointQueueRemoveDual at hStep; revert hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1300,7 +1300,7 @@ theorem endpointQueueRemoveDual_frame {α : Type} (f : SystemState → α)
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     f st' = f st := by
-  unfold endpointQueueRemoveDual at hStep; revert hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1440,7 +1440,7 @@ theorem endpointQueueRemoveDual_tcb_forward
     (hStep : endpointQueueRemoveDual endpointId isSendQ tid st = .ok ((), st'))
     (hTcb : st.objects[oid]? = some (.tcb tcb)) :
     ∃ tcb', st'.objects[oid]? = some (.tcb tcb') := by
-  unfold endpointQueueRemoveDual at hStep; revert hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1580,7 +1580,7 @@ theorem endpointQueueRemoveDual_endpoint_backward_ne
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hEp : st'.objects[oid]? = some (.endpoint ep)) :
     st.objects[oid]? = some (.endpoint ep) := by
-  unfold endpointQueueRemoveDual at hStep; revert hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1715,7 +1715,7 @@ theorem endpointQueueRemoveDual_notification_backward
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
     st.objects[oid]? = some (.notification ntfn) := by
-  unfold endpointQueueRemoveDual at hStep; revert hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1861,7 +1861,7 @@ theorem endpointQueueRemoveDual_tcb_ipcState_backward
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
-  unfold endpointQueueRemoveDual at hStep; revert hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -2013,7 +2013,7 @@ theorem endpointQueueRemoveDual_tcb_cpuAffinity_backward
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.cpuAffinity = tcb'.cpuAffinity := by
-  unfold endpointQueueRemoveDual at hStep; revert hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -2177,7 +2177,7 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
     else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
     else
-    match st.objects[endpointId]? with
+    match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
         | some _ =>
@@ -2348,7 +2348,7 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
     : Kernel SeLe4n.ThreadId :=
   fun st =>
-    match st.objects[endpointId]? with
+    match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.sendQ.head with
         | some _ =>
@@ -2511,7 +2511,7 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
     else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
     else
-    match st.objects[endpointId]? with
+    match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
         | some _ =>
@@ -2569,13 +2569,15 @@ confused-deputy attacks where unauthorized threads reply to blocked callers.
 
 WS-SM SM6.D (PR #827 review #3 fold): a delivered reply now **consumes** the
 answered caller↔Reply link atomically — after the `.ready` store the transition
-clears `reply.caller` and the target's `replyObject` (`consumeCallerReply`),
+takes the answered frame off its reply stack and then clears `reply.caller` and
+the target's `replyObject` (`removeCallerReplyFrame`, WS-RM `v0.35.6`),
 keyed on the caller's own forward link (`tcb.replyObject`; a no-op when
 unlinked).  A *direct* below-API reply therefore establishes
 `replyCallerLinkageReciprocal` internally and the Reply object is single-use
 end-to-end; the former separate dispatch-layer consume is gone.
-`consumeCallerReply` is total (`consumeCallerReply_isOk`), so the folded
-transition's error surface is exactly the delivery leg's. -/
+`removeCallerReplyFrame` is total (`removeCallerReplyFrame_isOk`) — both its
+legs are — so the folded transition's error surface is exactly the delivery
+leg's. -/
 def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
@@ -2611,9 +2613,13 @@ def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
                     -- (single-use, seL4-MCS).  The caller was woken `.ready`
                     -- above, so clearing its `replyObject` preserves the
                     -- `blockedOnReply ⇒ replyObject` clause.
+                    -- **WS-RM (`v0.35.6`)**: and the answered frame comes off its
+                    -- reply stack first (`removeCallerReplyFrame`, seL4's
+                    -- `reply_remove`) — the same step the cross-core spine runs,
+                    -- and the identity wherever the answered frame is a head.
                     match tcb.replyObject with
                     | some rid =>
-                        SystemState.consumeCallerReply target rid (ensureRunnable st' target)
+                        removeCallerReplyFrame target rid (ensureRunnable st' target)
                     | none => .ok ((), ensureRunnable st' target)
               else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
@@ -2667,8 +2673,12 @@ def endpointReplyRecv
                     -- freeing the prior Reply *before* the receive leg so a
                     -- server-supplied `replyId` naming the same object passes the
                     -- stash/link admission (faithful seL4-MCS one-object reuse).
+                    -- **WS-RM (`v0.35.6`)**: and the frame comes off its stack
+                    -- first, which is also what makes the freed Reply linkable
+                    -- again — `Reply.isFree` reads both links, so a frame still
+                    -- named from above could not be reused even once consumed.
                     match (match tcb.replyObject with
-                        | some rid => SystemState.consumeCallerReply replyTarget rid st''
+                        | some rid => removeCallerReplyFrame replyTarget rid st''
                         | none => .ok ((), st'')) with
                     | .error e => .error e
                     | .ok ((), st3) =>
@@ -2721,7 +2731,7 @@ theorem endpointQueueRemoveDual_preserves_tail_of_nonTail
     ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧
       (if isReceiveQ then ep'.receiveQ.tail else ep'.sendQ.tail) =
       (if isReceiveQ then ep.receiveQ.tail else ep.sendQ.tail) := by
-  unfold endpointQueueRemoveDual at hStep; revert hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
   rw [hObj]; simp only []
   rw [hTcb]; simp only []
   cases hPPrev : tcbR.queuePPrev with
@@ -2822,7 +2832,7 @@ theorem endpointQueueRemoveDual_tail_update
       | some .endpointHead => none
       | some (.tcbNext prevTid) => some prevTid
       | none => none := by
-  unfold endpointQueueRemoveDual at hStep; revert hStep
+  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
   rw [hObj]; simp only []
   rw [hTcb]; simp only []
   cases hPPrev : tcbR.queuePPrev with
@@ -2908,7 +2918,7 @@ theorem endpointQueueEnqueue_empty_sets_head
     ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧
       (if isReceiveQ then ep'.receiveQ else ep'.sendQ).head = some tid ∧
       (if isReceiveQ then ep'.receiveQ else ep'.sendQ).tail = some tid := by
-  unfold endpointQueueEnqueue at hStep; revert hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep; revert hStep
   rw [hObj]; simp only []
   cases hLookup : lookupTcb st tid with
   | none => simp
@@ -2955,7 +2965,7 @@ theorem endpointQueueEnqueue_post_head_cases
          = (if isReceiveQ then ep.receiveQ else ep.sendQ).head) ∧
       (if isReceiveQ then ep'.sendQ else ep'.receiveQ).head
         = (if isReceiveQ then ep.sendQ else ep.receiveQ).head := by
-  unfold endpointQueueEnqueue at hStep; revert hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep; revert hStep
   rw [hObj]; simp only []
   cases hLookup : lookupTcb st tid with
   | none => simp
@@ -3020,7 +3030,7 @@ theorem endpointQueueEnqueue_empty_queueNext_none
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧ tcb'.queueNext = none := by
-  unfold endpointQueueEnqueue at hStep; revert hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep; revert hStep
   rw [hObj]; simp only []
   cases hLookup : lookupTcb st tid with
   | none => simp
@@ -3078,7 +3088,7 @@ private theorem tid_not_reserved_of_enqueue
     (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     ¬tid.isReserved := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -3088,7 +3098,7 @@ private theorem tid_not_reserved_of_enqueue
       cases hLookup : lookupTcb st tid with
       | none => simp [hLookup] at hStep
       | some tcb =>
-        unfold lookupTcb at hLookup
+        unfold lookupTcb SystemState.getTcb? at hLookup
         cases hRes : tid.isReserved with
         | false => simp
         | true => simp [hRes] at hLookup
@@ -3122,7 +3132,7 @@ theorem endpointQueueEnqueue_then_popHead_succeeds
   have hNe : tid.toObjId ≠ endpointId := fun h => by
     rw [h] at hTcb'; rw [hEp'] at hTcb'; cases hTcb'
   -- Unfold endpointQueuePopHead and step through computationally
-  unfold endpointQueuePopHead
+  unfold endpointQueuePopHead SystemState.getObject?
   -- Step 1: endpoint lookup → ep'
   rw [hEp']
   -- Step 2: queue head → some tid
@@ -3187,7 +3197,7 @@ theorem endpointQueueRemove_cdt_eq
     (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
     st'.cdt = st.cdt := by
-  unfold endpointQueueRemove at hStep
+  unfold endpointQueueRemove SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -3208,7 +3218,7 @@ theorem endpointQueueRemove_lifecycle_eq
     (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
     st'.lifecycle = st.lifecycle := by
-  unfold endpointQueueRemove at hStep
+  unfold endpointQueueRemove SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -3229,7 +3239,7 @@ theorem endpointQueueRemove_services_eq
     (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
     st'.services = st.services := by
-  unfold endpointQueueRemove at hStep
+  unfold endpointQueueRemove SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with

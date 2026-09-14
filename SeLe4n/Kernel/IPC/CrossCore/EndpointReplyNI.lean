@@ -99,8 +99,12 @@ theorem endpointReplyOnCore_reply_path_NI
     have hCompleteWake : objectIndexSetComplete (wakeThread st' target executingCore).1 :=
       wakeThread_preserves_objectIndexSetComplete_of_ready st' target executingCore tr hGet hReady
         hInv' hComplete'
-    rw [consumeCallerReply_preserves_projection ctx observer _ stC target rid
-          hTargetObjHigh hCompleteWake hInvWake hCons]
+    have hObjSetWake : (wakeThread st' target executingCore).1.objectIndexSet.table.invExt :=
+      wakeThread_preserves_objectIndexSet_invExt st' target executingCore
+        (storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt st st' target _ _
+          hObjSetInv hStore')
+    rw [removeCallerReplyFrame_preserves_projection ctx observer _ stC target rid
+          hTargetObjHigh hCompleteWake hInvWake hObjSetWake hCons]
     exact hChain
 
 -- ============================================================================
@@ -170,8 +174,12 @@ theorem endpointReplyOnCore_reply_path_NI_smp
     have hCompleteWake : objectIndexSetComplete (wakeThread st' target executingCore).1 :=
       wakeThread_preserves_objectIndexSetComplete_of_ready st' target executingCore tr hGet hReady
         hInv' hComplete'
-    rw [consumeCallerReply_preserves_projectionOnCore ctx observer _ stC target rid c
-          hTargetObjHigh hCompleteWake hInvWake hCons]
+    have hObjSetWake : (wakeThread st' target executingCore).1.objectIndexSet.table.invExt :=
+      wakeThread_preserves_objectIndexSet_invExt st' target executingCore
+        (storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt st st' target _ _
+          hObjSetInv hStore')
+    rw [removeCallerReplyFrame_preserves_projectionOnCore ctx observer _ stC target rid c
+          hTargetObjHigh hCompleteWake hInvWake hObjSetWake hCons]
     exact hChain
 
 end SeLe4n.Kernel

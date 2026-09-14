@@ -821,7 +821,7 @@ theorem returnDonatedSchedContext_ok_implies_sc_bound
     ∃ sc : SchedContext,
       st.getSchedContext? scId = some sc ∧
       sc.boundThread = some serverTid := by
-  unfold returnDonatedSchedContext at h
+  unfold returnDonatedSchedContext SystemState.getSchedContext? at h
   revert h
   cases hObj : st.objects[scId.toObjId]? with
   | none => intro h; cases h

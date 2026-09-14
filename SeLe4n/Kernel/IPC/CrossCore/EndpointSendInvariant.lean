@@ -73,7 +73,7 @@ theorem endpointSendDualOnCore_post_agrees
     (endpointSendDualOnCore endpointId sender msg executingCore st).1 = st ∨
     ∃ r1, endpointSendDual endpointId sender msg st = .ok ((), r1) ∧
       OffSchedulerAgrees r1 (endpointSendDualOnCore endpointId sender msg executingCore st).1 := by
-  unfold endpointSendDualOnCore endpointSendDual
+  unfold endpointSendDualOnCore endpointSendDual SystemState.getObject?
   by_cases hRegs : msg.registers.size > maxMessageRegisters
   · left; simp [hRegs]
   · by_cases hCaps : msg.caps.size > maxExtraCaps

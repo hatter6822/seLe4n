@@ -909,10 +909,12 @@ unsafe fn dtb_blob_from_ptr<'a>(dtb_ptr: u64) -> Option<&'a [u8]> {
     if dtb_ptr == 0 {
         return None;
     }
-    // SAFETY: caller obligations documented above; the header read is bounded
-    // to the 40 bytes the boot protocol guarantees are present whenever the
-    // pointer is non-NULL.
     let header_slice =
+        // SAFETY: caller obligations documented in this function's `# Safety`
+        // section; the header read is bounded to the 40 bytes the boot protocol
+        // guarantees are present whenever the pointer is non-NULL.  On the
+        // block rather than on the `let`, which is where Rust's convention --
+        // and `clippy::undocumented_unsafe_blocks` -- looks for it.
         unsafe { core::slice::from_raw_parts(dtb_ptr as *const u8, FDT_HEADER_SIZE) };
     let hdr = parse_fdt_header(header_slice)?;
     if !validate_fdt_header(&hdr) {

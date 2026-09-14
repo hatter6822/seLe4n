@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.5.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.35.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,26 +203,26 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~62040 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22688 lines)
-- `tests/SmpInformationFlowSuite.lean` (~12165 lines)
+- `CHANGELOG.md` (~64044 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23254 lines)
+- `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/API.lean` (~7294 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6415 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5968 lines)
-- `SeLe4n/Platform/Boot.lean` (~5864 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~5480 lines)
-- `docs/spec/SELE4N_SPEC.md` (~5365 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~5275 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5044 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5008 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4976 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4840 lines)
-- `SeLe4n/Model/State.lean` (~4838 lines)
+- `SeLe4n/Kernel/API.lean` (~7508 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6673 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6039 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~5952 lines)
+- `SeLe4n/Platform/Boot.lean` (~5867 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~5683 lines)
+- `docs/spec/SELE4N_SPEC.md` (~5511 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5105 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5067 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5033 lines)
+- `SeLe4n/Model/State.lean` (~4959 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4842 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `SeLe4n/Kernel/CrossSubsystem.lean` (~4438 lines)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (~4440 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4220 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4225 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
@@ -234,52 +234,52 @@ To find files that need pagination today, run:
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3285 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3260 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3247 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3172 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3257 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3118 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3107 lines)
+- `tests/SmpIpcSuite.lean` (~3074 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2976 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3025 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2714 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
-- `tests/SmpIpcSuite.lean` (~2582 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2565 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2535 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2515 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `tests/ModelIntegritySuite.lean` (~2484 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2354 lines)
+- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2356 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
-- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2320 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2316 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2281 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2254 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2278 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2262 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2244 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2162 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2136 lines)
-- `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
+- `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2099 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2051 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2047 lines)
+- `SeLe4n/Kernel/Architecture/Invariant.lean` (~2044 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2043 lines)
-- `SeLe4n/Kernel/Architecture/Invariant.lean` (~2033 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1972 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~1963 lines)
@@ -288,64 +288,64 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `tests/InformationFlowSuite.lean` (~1895 lines)
+- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1891 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1886 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
 - `tests/SmpCancellationSuite.lean` (~1877 lines)
-- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1863 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1849 lines)
+- `tests/LockSetSuite.lean` (~1834 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
-- `tests/LockSetSuite.lean` (~1813 lines)
 - `tests/SyscallDispatchSuite.lean` (~1812 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~1800 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1795 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
-- `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1746 lines)
+- `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1748 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1729 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1644 lines)
+- `tests/FrozenOpsSuite.lean` (~1636 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1616 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1603 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~1554 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1444 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1439 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1418 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1397 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1393 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1393 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1389 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1370 lines)
+- `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1375 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1359 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1340 lines)
-- `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
-- `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1312 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1295 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1264 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1229 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1240 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
@@ -353,6 +353,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
+- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1150 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1139 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
@@ -360,35 +361,36 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1105 lines)
 - `tests/SmpIdleSuite.lean` (~1105 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
+- `SeLe4n/Model/FrozenState.lean` (~1092 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1049 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `tests/PriorityManagementSuite.lean` (~1035 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1025 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
-- `SeLe4n/Model/FrozenState.lean` (~1007 lines)
 - `tests/SmpCbsSuite.lean` (~1001 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~995 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
+- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~958 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
-- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~956 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~950 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~949 lines)
-- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~942 lines)
+- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~947 lines)
 - `tests/SmpCrossCoreNotificationSuite.lean` (~937 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `SeLe4n/Kernel/InformationFlow/Declassification.lean` (~935 lines)
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
+- `tests/DeadlockFreedomSuite.lean` (~929 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~917 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
-- `tests/DeadlockFreedomSuite.lean` (~905 lines)
 - `tests/SmpTimerSuite.lean` (~904 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~897 lines)
@@ -407,6 +409,7 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
+- `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
@@ -746,6 +749,109 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `mod`-less, gate-less toy passes checks the real file would fail, which
   is how a missing `re.MULTILINE` and an unanchored `.file()` search both
   survived.
+
+  **And a count over two populations measures neither** (`v0.35.7`, prompted).
+  The same substitution again, and the one this file had not written because the
+  gate wearing it was *already* an inventory: `RAW_LOOKUP_TID` held raw
+  `st.objects[…]` reads at a whole-tree ceiling, and 96.9% of what it counted was
+  **specification vocabulary** — 1490 of 1711 lines in `theorem`s, 168 more in
+  `Prop`-valued `def`s, `structure` fields and `inductive` arguments — against 53
+  lines of executable code.  A proposition about the store has no helper form
+  (`getTcb? k = none` holds for an absent key and a wrong-kinded object alike, so
+  a frame statement quantified over every key cannot be phrased through a variant
+  accessor without weakening it), so the enforced number rose whenever anyone
+  wrote an invariant, and it was re-anchored **upward four times in three days**
+  (1609 → 1600 → 1678 → 1711).  A ceiling that every cut raises is a ratchet
+  running backwards; it reads as measurement because it prints a number.
+  Three further defects rode along, each a rule already in this file applied
+  everywhere but here: the metric was named `_TID` while **four** types carry
+  `.toObjId` (*a name is not the thing*); it was `grep -c`, so two reads on one
+  line counted once and a reflow lowered it (*a cardinality is not a set*, one
+  level down); and `RAW_LOOKUP_SITE` was keyed by `(file)` while its sibling
+  `RAW_SITE` had been refined to `(file, declaration, variant)` for the stated
+  reason that a per-file key cannot see a read moving between declarations —
+  *when a fix names a relation, grep for every other place that asks it*, unrun.
+
+  **Split the populations, enforce the one that can reach zero, and report the
+  other.**  `scripts/lean_store_read_census.py` classifies each read by whether it
+  sits in the *body* of a declaration whose result is not a `Prop` — a binder or a
+  result type is a proposition whatever the declaration's kind — and emits
+  `STORE_READ_CODE` beside `STORE_READ_SPEC` (diagnostic, the treatment
+  `RAW_MATCH_UNCLASSIFIED` already had).  The mutation for this class **moves a
+  read between the populations while holding their sum fixed**, which is all the
+  superseded figure could see: the gate's self-test has that case in both
+  directions, the spec→code one rejecting and the code→spec one passing, because
+  the second is the migration working.
+
+  **And a floor that reaches zero stops being a floor** (`v0.35.8`).  The split
+  was shipped with `STORE_READ_CODE` held to a **ceiling** and a per-key
+  inventory — which is the superseded metric's own shape, one population
+  narrower, and it carried the superseded metric's own escape: a cut that
+  exceeds a ceiling may re-anchor it, which is what happened four times in three
+  days.  So the residue was finished rather than registered.  The whole
+  executable population is **zero**: `SeLe4n/Kernel` and `SeLe4n/Platform` were
+  already there at `v0.35.7`, and the 76 that remained — 65 trace-harness
+  bodies, 10 runtime invariant helpers, and one proof case split whose enclosing
+  `def` returns a record of proofs — went in this cut, with the golden fixture
+  **byte-identical**, which is the measurement that retired the deferral's own
+  stated reason (*migrating it risks a fixture churn*).  The last of them came
+  out by restating two theorems' hypotheses in the accessor vocabulary rather
+  than bridging at the call site, so no `def` body mentions the store at all.
+  `STORE_READ_CODE` is now a `ZERO_METRICS` entry beside `SORRY_COUNT` and
+  `AXIOM_COUNT`: **regenerating the baseline does not clear it**, only fixing
+  the tree does, and the gate says so in its failure epilogue.  The only raw
+  reads left anywhere are the accessor bodies — which the census registers by
+  name — and propositions, which have no helper form.
+
+  **And a spelling is not a read** (PR #895 review, `v0.35.12`).  The zero above
+  was true of `s.objects[k]?` and blind to `s.objects.get? k`, which is *the same
+  read*: the `GetElem?` instance **is** `RHTable.get?`, and this tree proves it
+  outright (`objects_getElem?_eq_get?`, by `rfl`).  So the census measured a
+  spelling, and an enforced zero a rename walks around is worse than no zero,
+  because the number reads like a measurement.  Not theoretical either: forty
+  executable reads were hiding in the method form, and one of them —
+  `Concurrency.updateObjectAt` — **said so in its own docstring**, *"so the
+  AK7-cascade raw-match floor stays at its v0.31.2 baseline"*, which is choosing
+  a spelling to evade a metric and is the mirror image of this file's own rule
+  against contorting prose to satisfy a scanner.  Its second claim, that no typed
+  accessor applied, was false besides: `getObject?` is the kind-agnostic one.
+  `READ` reads both spellings now, and the self-test's decisive case keeps the
+  read and changes only how it is written.
+
+  Three things new code must respect.  (1) **The frozen surface is in scope, and
+  always was.**  `FrozenKernelObject.reply` carries the live
+  `SeLe4n.Kernel.Reply` and `Model.freeze` copies a live state's records
+  verbatim, so a frozen transition discriminating a variant at the call site is
+  the defect this census is named for — it had twenty-nine such reads, now zero,
+  routed through a frozen accessor family (`Model/FrozenState.lean`) that mirrors
+  the live one and which `FrozenOps.frozenLookup*` is stated over rather than
+  beside.  (2) **Where a site distinguishes "wrong kind" from "absent" the typed
+  accessor is the wrong tool**: it answers `none` to both, so collapsing the two
+  would change an error code.  Those sites read `getObject?` and keep their arms
+  — no raw table read, and the distinction that *is* the semantics survives.  (3)
+  **The exemption is per declaration, not per file.**  `Model/State.lean` was
+  skipped whole, which is a 4800-line module that is not only accessors, so a raw
+  read added anywhere in it was invisible; `ACCESSOR_BODIES` names the twenty-one
+  bodies that *are* the accessors and the store primitives, and is reconciled in
+  both directions in **every** mode — `--rows` included, since that is the mode
+  Tier 0 calls — so a stale exemption fails rather than reading like coverage.
+
+  Two mechanical notes, both the *one question, two answers* rule at the point
+  where the fix could have introduced it.  The per-key inventory for this metric
+  was **deleted**, not kept beside the zero: at zero a cardinality and a set say
+  the same thing, and carrying both would be this file's own duplication hazard
+  inside the gate written to close it.  What replaced it is the *relation* — the
+  gate asserts `STORE_READ_CODE` equals the sum of its own `STORE_READ_CODE_SITE`
+  rows, in the baseline and in the current capture, so a hand-edited or truncated
+  file claiming "none" beside a live site row is refused as a gate defect rather
+  than passed on the strength of the total; the rows are still emitted, because
+  when the zero breaks they are what names the offending declaration.  And the
+  self-test grew a second case shape, because the two claims are token-preserving
+  with respect to different things: the inventory cases hold every scalar fixed
+  and the harness asserts it, while the census cases move the scalars and the
+  harness asserts the fixture is internally consistent.  Its decisive case keeps
+  the baseline and the current value **equal at one** — everything a ceiling
+  asks, and exactly what a zero floor must still reject.
 
   **A region-scoped presence check is still a presence check** (PR #887
   review round 4).  Resolving the guard's block, the tail after a branch, or
@@ -1129,6 +1235,1238 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   registering the parameter as a provider.  That is round 16's `.macro` hazard
   arriving through the fix for a different one; a preprocessor line is not split
   and contributes nothing.
+
+  **And a recognised set is not a derived set — so a count over one is a floor,
+  not a measurement** (PR #895 review, rounds 1 and 2, `v0.35.13`).  Every rule
+  above polices the **predicate**: what a scanner asserts of an element it
+  found.  None of them polices the **domain**: whether it found them all.  That
+  asymmetry is why this family keeps reappearing, because the two fail
+  differently — a predicate miss can fire on a real element, while a domain miss
+  is *silent by construction*: the element is never examined, the count stays
+  clean, and the gate reports a number that reads as a measurement of absence.
+
+  Six of the eight findings across two review rounds of one PR were that one
+  defect.  `.objects.get?`, then `RHTable.get? st.objects k`, then a `where`
+  equation body whose signature never closed — three spellings of one read.
+  `pub unsafe extern "C" fn`, skipped entirely rather than judged.  `FrozenOps`,
+  outside both library roots, so *every reply-stack write* meant every one in
+  the modules the census imported.  A frontier that asked "constructs **and**
+  stores" of one body, which a writer defeats by delegating the construction to
+  a helper.  Each fix was right and the next round found another, because the
+  boundary was being probed rather than the property.
+
+  **Two kinds of gate, and only one of them can be closed.**  Where the domain
+  is *derivable* — which constants a term uses, which modules an environment
+  imports, what a definition transitively calls — derive it and reconcile both
+  directions, and the class really does end there: the reply-stack write census
+  now follows construction through helpers (`reachesChainConstructor`, walked
+  backwards from the storing definitions and memoised, since nearly everything
+  reaches a constructor forwards), and asks the *environment* which constants it
+  generated rather than matching name prefixes.  Where the domain is a **coding
+  convention over unbounded syntax** — "obtain objects through an accessor",
+  "justify every unsafe site" — there is no closed formulation, in text *or* in
+  the environment: round 17's instruction sends questions about **elaboration**
+  to the elaborator, and "is this occurrence a read rather than a write" is a
+  question about an API's meaning, which the environment has no opinion on.
+  Measured rather than assumed: 245 hand-written executable definitions mention
+  the object-table projection, because writing the store is what a transition
+  does — so "never mention it" is not a stateable contract either, and the
+  attempt to derive a read-set from result types promptly classified
+  `FrozenMap.set`, a *write*, as a read.
+
+  So for the second kind, **fix the claim**: report the number as a floor over
+  recognised forms, in the gate's own output and in the prose that cites it
+  (`STORE_READ_SCOPE`, and the unsafe gate's `scope:` line).  The enforcement is
+  unchanged — a recognised violation still fails Tier 0 outright — but a
+  widening of the recogniser becomes an improvement to a diagnostic rather than
+  the closing of a hole that was claimed shut, which is the only way the reports
+  stop being findings.  And keep the other half of round 25's rule, which is
+  what bounds the gap: an input the scanner does not recognise **fails the
+  gate**, so the unrecognised set is visible rather than assumed empty.
+
+  One mechanical note, earned twice in this round: a fix for a domain defect can
+  introduce one.  `Name.isInternal` looked like the environment's own answer to
+  "did Lean generate this" and is true of the `_private.…` mangling, so adding
+  it to the auxiliary filter would have excluded **every `private def` in the
+  kernel** — the same class, inside its own remedy.  The census's planted
+  witness caught it, which is what witnesses are for.
+
+  **And a domain written as an exclusion is the same defect wearing a filter**
+  (PR #895 review round 3, `v0.35.15`).  Round 2 named the class and fixed it at
+  the four sites the review pointed at; round 3 found four more, and every one
+  was the gate's *domain* spelled as a hand-written exclusion rather than
+  derived: a glob naming `src` (so integration tests, `build.rs`, examples and
+  benches were never scanned), a prefix list naming `eq_` (so a contributor's
+  `eq_clearReply` was filtered out as a compiler auxiliary before its constants
+  were read), a regex naming `: Prop` that matched a *binder* (so
+  `def step (proof : Prop) … : SystemState` filed its raw store reads as
+  specification and walked around an enforced zero), and a `usesDirectly` naming
+  "direct" (so a writer that hands a built record to a store helper was in
+  neither derivation).  None was a new class; each was the round-2 rule applied
+  at one site and not swept onto its siblings, which is the failure mode this
+  file already documents.
+
+  The remedies are all the same shape — **derive the set, or name the shape
+  rather than the resemblance**: every tracked `.rs` file that is not build
+  output; the result type is what follows the first depth-zero `:`; and the
+  frontier pairs a transitive side with a direct one on each disjunct.  That
+  last is the point at which derivation stops being possible: chasing stores
+  transitively makes every IPC composite a candidate, measured at 22, so the
+  census states its frontier (`chainWriteFrontier`) in its own output instead of
+  letting the number read as a proof of absence — the second-kind treatment this
+  section already prescribes.  **A predicate over a domain you filtered is a
+  measurement of the filter.**
+
+  **And a narrower resemblance is not a relation** (PR #895 review round 4,
+  `v0.35.17`).  The fourth remedy in that list was *a generated component is the
+  prefix plus a numeral*, and it is the one that did not hold: `eq_1` is as legal
+  a definition name as `eq_clearReply`, so the rule narrowed the set of user
+  names a contributor must avoid without making the test a fact about the
+  declaration.  Round 4 found six more instances of the round-2/round-3 class, and
+  five of the six are the *scanner's own default* rather than its predicate —
+  which is this file's `a scanner's default branch is a decision` rule meeting its
+  domain rule, since a default that silently answers is a domain written as an
+  omission.  A missing metric read as `0`, so **deleting a measurement satisfied
+  an enforced zero** (`ak7_cascade_check_monotonic.sh`: `SORRY_COUNT`,
+  `AXIOM_COUNT` and `STORE_READ_CODE` all rode on it); `structure`/`class` bodies
+  were spec whole, so an executable field **default** filed as specification (the
+  remedy carried an over-approximation — a default ran to the end of its
+  declaration — which that cut called harmless and `v0.35.18` had to retire: it
+  filed a later field's *type* as executable, which is fail-strict, not
+  harmless); a result-type parser that knew only `→` rejected the ASCII `->`
+  that Lean equally accepts; inner rustdoc (`//!`, `/*!`, `#![doc]`) documents the *enclosing*
+  module and justified the function below it; and `r#unsafe` — an identifier, not
+  the keyword — failed a file outright.
+
+  What closes the name half is not a sixth narrowing but the environment:
+  `Meta.isMatcherCore` is pure, every `eq_N`/`proof_N` constant is `Prop`-typed
+  and so excluded structurally, and with those two facts the whole name list is
+  **redundant** — measured at zero definition-shaped, non-`Prop` writers kept only
+  by a name test — so `isGeneratedComponent` was deleted rather than narrowed a
+  third time.  **Where a resemblance keeps needing another exception, the
+  question belongs to something that knows the answer.**
+
+  **And a parser for a language you are not parsing is a list of the spellings
+  you have seen** (PR #895 review round 5, `v0.35.18`).  Round 5 found seven more,
+  three of them in code written hours earlier to fix round 4, whose findings were
+  in code written to fix round 3.  The through-line is not any one of them: it is
+  that `scripts/lean_store_read_census.py` decides two **structural** questions —
+  which declaration owns a line, and whether that declaration is executable — by
+  reading text.  Over three rounds it was taught seven legal Lean spellings it had
+  not seen (a hypothesis binder, a `where` equation body, an ASCII arrow, a
+  `structure` field default, a leading indentation, a defaulted binder, a
+  per-field reset), which is this file's own regex rule arriving at a gate written
+  after it.
+
+  The exit is round 17's — *a Lean question goes to the Lean elaborator* — and the
+  obstacle is that the classifier runs in **Tier 0**, before any build, because
+  the `ZERO_METRICS` entry it produces is consumed there.  So the exit is taken at
+  the tier that can take it: `SeLe4n/Testing/StoreReadClassificationCensus.lean`
+  (Tier 1) asks `findDeclarationRanges?` which declaration owns each line and the
+  conclusion of its type whether that declaration is specification, and fails the
+  build wherever the classifier disagrees.  **Where the authoritative answer is
+  out of reach at the tier that needs it, derive it at a tier that can and
+  reconcile** — the *derive the set, keep the list as a pin* rule, one tier apart.
+
+  Three things that cut records, each found by running the reconciliation rather
+  than reading it.  Its first run reported **271** disagreements and every one was
+  the *check* being wrong: `Meta.isProp` asks whether a declaration is a **proof**,
+  and a predicate (`def p : SystemState → Prop`) is not one — a question
+  `ReplyStackWriteCensus` had already answered as `isPredicate`, so asking it a
+  second way was the one-question-two-answers shape inside the remedy for it.  Its
+  second reported **5**, all hypothesis binders inside executable declarations,
+  which a declaration-level verdict structurally *cannot* adjudicate — so the
+  classifier reports the region and signature reads are counted, not judged.  And
+  the enforced direction **cannot fire while `STORE_READ_CODE` is zero**: there is
+  no misfiled executable read to find, so it carries synthetic witnesses, as
+  `BootEntryContract` does for the same reason.  **A check that cannot fire on the
+  current tree and carries no witness is indistinguishable from one that is
+  wrong.**
+
+  **And a reconciliation only closes the direction it judges** (PR #895 review
+  round 6, `v0.35.19`).  Round 5 took the structural exit for the Lean
+  classifier and wrote the caveat above; round 6 found **seven** more — six
+  reported, one self-inflicted — and the useful result is *which* of them the
+  round-5 mechanism already covered, because that is the measure of whether the
+  exit was the right one.
+
+  It covered one.  `opaque` was missing from the classifier's declaration
+  keywords, so an executable `opaque` body following a `theorem` was attributed
+  to the theorem and filed `SPEC`, past the enforced zero — and the elaborator
+  reconciliation's mismatch message *already named that case* ("a Lean
+  declaration form the classifier does not recognise"), because asking
+  `findDeclarationRanges?` who owns a line is spelling-independent.  It could
+  not fire only because no `opaque` body in the tree holds a read.  **A
+  mechanism that would have caught a finding it never saw is the evidence that
+  it is the right mechanism**, and the keyword was still added: Tier 0 is where
+  the metric is read, and a gate that needs its sibling to notice every miss is
+  a worse gate.
+
+  It did **not** cover the other two, and each for a reason worth keeping.  A
+  binder's *default value* was emitted in the signature region, which the
+  reconciliation skips — correctly, since a declaration-level verdict cannot
+  adjudicate a hypothesis binder.  But a default is not a hypothesis: it is
+  elaborated and evaluated exactly when its declaration is, so it *is*
+  adjudicable, and lumping the two into one region hid an executable read from
+  both tiers at once.  **A region is a claim about what a verdict can decide;
+  two constructs that differ in that are two regions.**  And a result type that
+  is an *alias* of `Prop` was filed `CODE`, which the reconciliation also
+  skipped — deliberately, on the reasoning that over-filing `CODE` cannot bypass
+  a zero.  True, and it is not the only thing that matters: over-filing makes
+  Tier 0 refuse valid specification text, and the tier that knows better was
+  staying silent about it.  **Judge both directions: the safe direction is still
+  a direction, and a wall with no explanation is a defect too.**
+
+  Two more from the same round, on the Rust side, are the nesting and
+  same-line rules one level down — a doc marker nested inside another comment
+  publishes nothing, and a preceding *item* on the site's own line does not
+  donate its documentation — and the second carries a distinction worth
+  stating: the two site kinds ask different questions of that line.  A **block**
+  is evaluated inside the statement it sits in, so a binding prefix is not
+  something that executed in between; a **declaration** preceded by another item
+  is a different item.  Applying one rule to both is wrong in whichever
+  direction it is applied, measured: the strict rule over blocks fails 18 live
+  sites.
+
+  Finally, the round's own mechanical lesson, earned by nearly shipping a false
+  green: **a mutation must revert the defect, not exchange one sound rule for
+  another.**  The first mutation written against the same-line fix substituted
+  the *block* rule for the *declaration* rule, and the fixture passed under it —
+  not because the fixture was weak but because both rules reject that input.
+  The mutation that decides is the pre-fix behaviour itself.
+
+  **And a skip is a sink** (PR #895 review round 7, `v0.35.20`).  Round 5 sent
+  the classifier's *verdict* to the elaborator and round 6 made that
+  reconciliation judge both directions; neither touched the **region boundary**
+  — where a declaration's signature ends and its body begins — which stayed a
+  two-token regex, and whose failures all landed in `sig`, the one region the
+  reconciliation deliberately does not judge.  So the parser's unknown-input
+  behaviour drained into the bucket nothing checks.  Measured on the tree:
+  Lean's direct equation syntax (`def f : A → B` followed by `| p => rhs`)
+  carries neither `:=` nor `where`, so **4778 lines of body across 263
+  declarations** were filed as signature — SPEC, unjudged, past an enforced
+  zero, in the gate this PR spent four rounds hardening.
+
+  **When a judged direction is split from an unjudged one, every parse failure
+  migrates into the unjudged one.**  A skip is never neutral: it attracts
+  exactly the defects the judge exists to find, and the size of what it
+  attracted is invisible because the rows look ordinary.  Three things follow,
+  and all three are now mechanism rather than advice.  Teach the boundary the
+  form (a depth-zero clause bar, with `||`, `|||`, `|>.` and `<|>` excluded by
+  shape rather than by a list).  **Refuse** what it still cannot close — every
+  declaration form has a body except `opaque` and `axiom`, so an unterminated
+  signature is a named Tier 0 failure instead of a silent SPEC filing, which is
+  this file's *a scanner's default branch is a decision* applied to a region
+  boundary.  And **report the residue the skip legitimately leaves**: the Tier 1
+  census now counts signature rows sitting inside *executable* declarations —
+  five, against the 4778 that were hiding there — so the population no
+  declaration-level verdict can reach is a number rather than an implication.
+
+  The round's other two findings are the same meta-shape one level up, and they
+  are why this entry is about the class rather than the instances: **a fix
+  landed where the review pointed and the question's other askers were left.**
+  `CLAUDE.md` recorded *an item macro inside an `extern` block is refused, not
+  read past* as implemented — true of `check_kernel_entry_exports.py`, and false
+  of `check_unsafe_block_justifications.py`, which parses foreign blocks for the
+  same items and scanned them for `fn` alone, so a macro declared an unsafe
+  obligation no site, count or baseline could see.  And the reply-stack write
+  census named the **frozen** table primitive (`FrozenMap.set`) while omitting
+  the **live** one (`RHTable.insert`), so a definition that builds a `Reply` and
+  writes `{ st with objects := st.objects.insert … }` — which is how
+  `Lifecycle/Suspend.lean` writes a consumed Reply — was in neither derivation.
+  That is round 1 of this same PR (*a spelling is not a read*) on the same two
+  tables in the opposite direction, with the sweep unrun.
+
+  Stating the sweep rule has now failed often enough to be the finding.  **Give
+  it an artefact: derive both answers from one place, or make the second
+  implementation impossible.**  The foreign-block walk — ABI-literal resolution,
+  brace matching, the item split, and the classification `fn` / `macro` /
+  `non-fn` / `unknown` — is `rust_code_view.extern_blocks` /
+  `extern_block_items` / `classify_extern_item`, read by both gates, so one
+  mutation now fails both self-tests; only what an item *means* stays per gate
+  (a linker symbol there, an unsafe obligation here).  The store frontier names
+  the two table **primitives** and keeps the wrapper helpers as a *pin* each of
+  which must itself reach a primitive — and that pin found two more defects on
+  its first run: a fourth entry (`SystemState.storeObject`) that names no
+  declaration at all, and a live helper (`storeObjectChecked`) the list had
+  never mentioned.  A list nothing reconciles is a list nobody reads.
+
+  The sweep was then **run**, not just written down, and its value is the two
+  sites it left alone.  `check_ipc_invariant_dethreading.py` has its own Lean
+  `signature_end`, and its fall-through is already a stated decision — with no
+  `:=` the signature runs to the next declaration, which over-captures and can
+  only make the gate stricter — so it is the sink's opposite and correct as it
+  stands.  `build.rs`'s `blank_extern_blocks` is a Rust twin that *blanks* a
+  block rather than enumerating its items, so the macro question does not arise
+  there, and it already shares the ABI-literal resolution.  A sweep that changes
+  nothing at a site is the sweep working; a sweep not run is how all three of
+  this round's findings got here.
+
+  **And a conjunct whose antecedent is the property you want enforces nothing**
+  (PR #895 review round 8, `v0.35.21`).  This round's sharpest finding is not in
+  a scanner at all — it is in the kernel, and it is the invariant-level form of
+  *a presence check is not a relation check*.  `passiveServerIdle` reads "an
+  unbound thread that is **not queued and not current** is in one of these
+  `ipcState`s".  The property the tree wants at a donation pop is *an unbound
+  thread is not queued*, and that is precisely the conjunct's own **hypothesis**
+  — so a thread left `.unbound` **and still runnable** satisfies it vacuously,
+  and every bundle theorem over it stays true while the defect is live.
+
+  The defect it hid: `replyRecvPostReceiveDonation`'s Call arm donates the newly
+  dequeued client's context to the **receiver** `tid` and descheduled nobody,
+  which is right exactly when `tid` *is* the recorded server — the non-delegated
+  steady state — and wrong on a **delegated** reply, where the recorded server
+  gave its context back in the pop and receives none.  It then stays on its run
+  queue and is selected at its legacy TCB priority charged to no reservation,
+  which is WS-OD OD3.6's defect on the path OD3.5 had just made live.  The arm's
+  own comment names the distinction two lines above the bug (*"not the (possibly
+  delegated) recorded server"*) and its justification sentence ignores it, so:
+  **a justification that holds on one side of a distinction the code already
+  makes is not a justification — say which side, or make the code not care.**
+  `replyRecvServerDeschedule` is the named answer, with the write set, the
+  confinement and both bundle proofs carrying it, and the witness pair in
+  `tests/SmpIpcSuite.lean` §3.9b is delegated *and* non-delegated, because a
+  deschedule that fires unconditionally passes the first and breaks the second.
+
+  The round's three gate findings are all rules this file already carries, each
+  unswept by exactly one step.  `#+\s*Safety` accepts `/// #Safety`, which
+  CommonMark renders as a paragraph — the gate whose whole subject is *what a
+  caller is told* accepting text that tells the caller nothing.  The upward
+  justification walk decided a multi-line `#[cfg(all( … ))]` one physical line at
+  a time and stopped at its `))]`, which is *a nested construct is not a sibling*
+  applied to Lean and never to Rust attributes; the remedy consumes the closer's
+  pending run and requires the balancing line to open an attribute, because a
+  multi-line *expression* ending in `]` is code and extending a run across it is
+  the fail-open direction.  And `\bextern\b` matches inside `r#extern`, so
+  `mod r#extern { … }` parsed as a foreign block — the `r#` exclusion sitting on
+  `UNSAFE_KEYWORD` eight lines away in the file this scanner was *moved out of*,
+  one round earlier.
+
+  That last one is the measurement worth keeping.  Round 7's remedy was **give
+  the sweep an artefact** — two gates consolidated onto one shared view so a
+  single mutation fails both.  It worked, and it did not stop the very cut that
+  performed the consolidation from writing a fresh regex missing a rule the same
+  file states.  **Sharing the answer stops two answers from diverging; it does
+  not make a new answer inherit what the old one learned.**  When you move a
+  scanner, carry its neighbours' exclusions with it — or, better, reach for the
+  existing pattern instead of writing one that looks like it.
+
+  Two mechanical notes.  A census whose headline is one derivation while its
+  breakdown is another describes no set: the reply-stack summary counted
+  `derived.length` beside disciplines counted over the registry, so the figures
+  stopped adding up the moment a site entered through the second frontier, and
+  the closure `stating + mirrors + halfSteps = registry` is asserted now.  And a
+  registry cannot name a `private def` with a name literal — Lean mangles one to
+  `_private.<Module>.0.<name>` and a numeric component is not an identifier — so
+  the entry is built with Lean's own `mkPrivateNameCore` rather than with a
+  resemblance to it.
+
+
+  **And a rule stated is not a rule enforced — give it a check, not a third
+  telling** (PR #895 review round 9, `v0.35.22`).  Round 8 closed with *sharing
+  an answer stops two answers from diverging; it does not make a new answer
+  inherit what the old one learned*, and recorded it in this file.  Round 9 found
+  **six more** bare keyword spellings in the very file whose one correct pattern
+  carries the rule, ten lines below the comment explaining it.  Measured:
+  `check_unsafe_block_justifications.py` held **seven** `\bunsafe` regex literals
+  and exactly one had the raw-identifier exclusion, so `struct r#unsafe { … }`
+  read as an unsafe block and Tier 0 demanded a justification of safe Rust.
+
+  That is this file's own enumeration-versus-derivation rule at the level of a
+  **regex fragment**, and the two previous remedies could not reach it: fixing a
+  site does not reach the site nobody has written yet, and consolidating a *walk*
+  does not constrain a *new pattern* written beside it.  Writing the lesson down
+  a third time would have been the move that had already failed twice.
+
+  **So the remedy is a mechanism.**  `rust_code_view.keyword(word)` is the one
+  fragment every keyword pattern composes, and `bare_keyword_literals()` reads
+  the gate sources and refuses any bare word-boundary keyword spelling written
+  outside it, wired into the view's self-test.  The next such pattern fails on
+  the day it is written.  Two things make it honest: it reads **code, not
+  prose** — `_python_code_view` blanks `#` comments and, via `ast`, docstrings,
+  because `keyword`'s own docstring quotes the bad spelling in order to explain
+  it and a check that counted it would force the file to stop explaining itself
+  — and it is mutation-tested in all three directions, since a discipline check
+  that cannot fire is indistinguishable from one that is wrong.  **When a rule
+  has been restated twice, the third response is not prose.**
+
+  Two corollaries this round paid for.  **An inert witness reads as coverage
+  while asserting nothing**: the first case written for the unsafe-attribute
+  classification was a *site* case, and a file whose only `unsafe` is an
+  attribute produces no sites, so it passed vacuously with the fix reverted —
+  the mutation harness caught it by **not** failing, and the witness moved to the
+  scan the fix actually lives on.  And **a fix can reopen a closed finding**: the
+  new doc-attribute scan was first written `#!?\[`, accepting the *inner*
+  `#![doc]` form, which is round 4's *inner rustdoc documents the enclosing
+  module* — round 4's own witness failed immediately, which is what witnesses are
+  for.
+
+  The round's other three findings are each a question this file already answers,
+  asked of the wrong artefact.  Rust 2024's `#[unsafe(no_mangle)]` is the only
+  spelling a 2024 crate may use for those attributes and matched no known form,
+  so the explicit default branch failed the whole file — classified now, with
+  **no** per-site obligation, because it attaches to an item and asserts
+  something about the linker namespace that two other gates already enforce.  A
+  `///` attaches to the item that *follows*, so the comment after a scope opener
+  documents the first item inside it; the run takes the trailing portion after
+  the last code character, which is the other side of round 6's rule rather than
+  a widening of it, since that one was documentation sitting *before* an
+  intervening item.  And `#[doc = r"…\n# Safety"]` is a **raw** literal whose
+  `\n` is two characters, so rustdoc publishes no heading: two rounds had
+  narrowed that regex and the question itself was wrong, so the value is
+  **decoded** by its literal kind and a real line-start question asked of the
+  result — *a spelling is not the text*, which is *a spelling is not a read* one
+  artefact over.
+
+
+  **And when two rounds' findings land in each other's fixes, the fix's SHAPE is
+  the defect** (PR #895 review round 10, `v0.35.23`).  Round 9 closed with *a
+  rule stated is not a rule enforced — give it a check, not a third telling*, and
+  built one.  Round 10 then found five more, **two of them inside round 9's own
+  fixes**, and the useful reading is not the instances: it is that both were the
+  same *kind* of mistake, made at the point where a fix chooses what to trust.
+
+  **A proxy is not the fact, at the scheduler.**  `replyRecvServerDeschedule`
+  accepted the core its caller had already computed — `determineExecutingCore`,
+  which finds a core the thread is *current* on and otherwise answers
+  `bootCoreId`.  A **queued** server matches nothing there, so the deschedule
+  edited the boot core's queue while the server sat on another and the
+  temporal-isolation defect the step exists to close survived on the preempted
+  path.  `determineTargetCore` is no better and the measurement says why:
+  `affinityAdmitsCore` is `true` on *every* core for an unpinned thread, so
+  `runQueueAffinityConsistentOnCore` does not pin one to that answer either.
+  Both are proxies; the fact is **placement**, and `removeRunnableOnCore` writes
+  the run queue *and* the current slot of whatever core it is handed.
+  `placedCoreOf?` is the witness, tied to `runnableOnSomeCore ||
+  runningOnSomeCore` by theorem so a third answer cannot appear.
+
+  Two things generalise.  **A parameter is a place for a caller to be wrong**:
+  the fix is not a better argument at the call site but *no argument* — the step
+  resolves its own core, and its footprint reads the same call, so the transition
+  and the declaration cannot name different cores.  And **a witness that supplies
+  the answer tests the fixture, not the code**: §3.9b passed `serverCore` by hand
+  and so asserted nothing about the resolver production actually used, which is
+  why a green suite sat over a live defect for a whole cut.  With the parameter
+  gone there is nothing left to supply.  Ask of any witness: *could this have
+  failed if the production path computed its input differently?*
+
+  **And the view you read depends on the question** — the same rule this file
+  states for Lean structure, arriving at a gate that had deliberately chosen raw
+  text.  The justification run is raw because what matters is what a reviewer
+  reads, and that is right for *reading* a comment and wrong for *deciding
+  whether something is one*: an ordinary `// #[doc = "# Safety"]` was decoded as a
+  real attribute and a `"// SAFETY: …"` inside `#[allow(reason = …)]` counted as
+  a real comment.  Both fail open.  Comment spans are now *derived from the code
+  view* rather than re-lexed — a maximal run of blanked bytes holding a byte the
+  raw text did not blank **is** a comment — because a second Rust lexer is this
+  file's one-question-two-answers hazard.
+
+  Two more corollaries about witnesses, both earned rather than reasoned.  **A
+  fix whose revert breaks nothing is indistinguishable from no fix**: the domain
+  correction here was first shipped with no witness at all, and the mutation
+  harness caught it by reporting `MISSED` — the case lists could not reach it,
+  because the function reads the real workspace, so it needed a synthetic tree.
+  And **bounding a negative is not automatically safe**: the two Tier 3 anchors
+  on the deschedule were mutation-tested in both directions, silent on the clean
+  tree and firing on a mutation that keeps every token and moves the pre-fix
+  spelling back inside the declaration.
+
+  **And a witness drawn from a finding tests the finding** (PR #895 review round
+  11, `v0.35.24`).  Round 10's reading was that a fix's *shape* is the defect
+  when two rounds land in each other's fixes; round 11 makes it three, with
+  three of its four findings inside round 10's own code, and names where the
+  shape comes from.  Every case list in these gates had been grown the same way:
+  a round reports a spelling, the fix adds a witness for **that spelling** plus a
+  control, and the next round supplies one nobody enumerated — a raw doc
+  literal, a `#[unsafe(…)]` attribute, a scope opener, a `*`-decorated block
+  comment, attribute-shaped text inside a string.  That is this file's own *a
+  recognised set is not a derived set*, applied to a gate's **test cases** rather
+  than to its input, and it fails the same way: silently, because the cases that
+  exist all pass.
+
+  **So enumerate the space instead of the findings.**  The remedy already existed
+  one file over — `per_core_state_matrix` pins the lock by classifying every
+  entry point in every per-core state — and it is a *matrix*, not a list: every
+  marker FORM crossed with every ENCLOSURE, with the verdict a property of the
+  enclosure alone (a real comment justifies; a literal or a commented-out
+  spelling never does).  A spelling the gate has not considered is then a missing
+  **row** — visible, and addable without waiting for a review round to supply
+  it.  Its first run on `check_unsafe_block_justifications.py` found **five**
+  defects no round had reported: one fail-closed (an undecorated `/*\nSAFETY: …*/`
+  refused), and four fail-open — a `/**` inside a line comment, inside a string,
+  or nested in another block comment each publishing a `# Safety` section; a
+  `///` heading at the start of a line *inside a string literal* satisfying the
+  line-anchored scan; and `UnterminatedLiteral` in no handler, so a file the
+  shared lexer cannot finish reached the operator as a traceback rather than as
+  the refusal the gate's own "one failure channel" claims.
+
+  Three things fall out of running it.  **Keep the tables symmetric**: the
+  declaration side omitted the plain string-literal enclosure the block side had
+  carried since round 10, and that asymmetry is what hid the `///` cell — the
+  same defect one level up, inside the matrix meant to close it.  **A
+  declaration-bounded negative is a statement about that declaration**: round
+  10's Tier 3 anchor was scoped to `replyRecvServerDeschedule` while the relation
+  is about *every* deschedule of the recorded server, so the sibling arm
+  twenty-five lines away kept the retired spelling and the anchor's silence read
+  as coverage.  And **a harness that re-spells the gate's own decision absorbs
+  the defect it is there to find**: the refusal handler was written out three
+  times, `UnterminatedLiteral` was missing from two of them, and the self-test's
+  private copy caught what the scanner would have crashed on — one `REFUSALS`
+  constant now, which is also what makes dropping a member *detectable*.
+
+  **And a matrix enumerates the dimensions you thought of** (PR #895 review
+  round 12, `v0.35.25`).  Round 11's remedy was to stop drawing witnesses from
+  findings and enumerate the space instead — every marker FORM crossed with
+  every ENCLOSURE.  Round 12 then found three more in the same gate, and the
+  useful reading is *where* they landed: not in a cell, but **off the grid**.  A
+  `# Safety` inside a fenced code block is a markdown enclosure; `#/* c */[doc
+  = …]` is a token-separation form; `pub unsafe fn λ()` is a *name* form, a
+  dimension of the site scanner the justification matrix does not reach at all.
+  The matrix worked exactly as designed — each is now a row — and the lesson is
+  that its **axes** were themselves a recognised set.
+
+  **So take the axes from the artefact's grammar, not from the findings.**  The
+  question a gate asks has a small number of dimensions, and they are readable
+  off the language rather than off a review: for a doc comment they are *which
+  marker*, *what encloses it lexically*, *what encloses it in the rendered
+  markup*, and *how the item is named*.  Each round-12 finding added an axis and
+  then all of its values at once, which is why one cut closed six defects
+  including two the review did not report.
+
+  **And when the property is about the whole artefact, build the artefact.**
+  That is the sharper half.  A fence is a property of the *rendered document*,
+  and three separate line-oriented patterns — a `///` scan, a doc-block scan, a
+  decoded-attribute scan — structurally could not see it, however many spellings
+  each one learned.  rustdoc concatenates every doc source on an item into one
+  markdown input, so `rendered_doc_markdown` now does too and
+  `publishes_safety_heading` asks the single question of it.  Three patterns
+  became one, a cross-form fence (opened in a `///`, closing after a `#[doc]`)
+  became answerable at all, and every rule about which markers attach to the
+  item moved to the one place that builds the document.  **Reconstructing what
+  the real tool consumes is not a bigger scanner; it is the end of a class of
+  scanner defect** — and it is the same payoff shape as round 7's *give the
+  sweep an artefact*, one level up.
+
+  Two corollaries this round paid for.  **A field name is not a receiver
+  type**: the store census matched `.objects[…]?` by spelling, so an executable
+  definition over any other type with an `objects` field was counted as a
+  kernel-state read and refused by an enforced zero.  Resolving the receiver is
+  an elaborator question and this gate runs before any build, so the *ambiguity*
+  is bounded instead — `OBJECTS_FIELD_OWNERS` is derived from the sources and
+  reconciled both ways, making a new owner a **named** Tier 0 failure rather
+  than a mystery rejection.  Running that derivation found six owners where the
+  first guess named four, one of them (`BootstrapBuilder.objects : List`)
+  already indexable: the ambiguity was live, not hypothetical.  And **a name is
+  not a definition, in Lean too**: `Prop`-alias resolution accepted any alias
+  with the same final component, so `B.Pred := Nat` read as specification
+  because some other namespace declared a `Pred := Prop`.  Aliases carry
+  qualified identities now and resolve against the use site's enclosing
+  namespaces, longest prefix first — which is what the elaborator does, and the
+  third case in its witness set is the one that stops the fix from degrading
+  into *a bare alias never resolves*, since refusing valid specification text is
+  a defect in its own right.
+
+  Finally, the round's own mechanical lesson, and the second time this PR has
+  paid for it: **an inline mutation with no assertion is an inert mutation.**
+  Two of this round's mutation checks reported the fix as unverified and one
+  reported it as verified when the edit had silently matched nothing — the
+  difference being a `assert s.count(old) == 1` the throwaway script omitted.
+  The harness asserts it; a one-off mutation run by hand must too.  And **a
+  mutation must revert the whole defect**: the alias fix has two halves, and
+  reverting either alone left a witness passing, while reverting both — the
+  actual pre-fix state — failed immediately.
+
+  **And a mirror of a part is not a mirror of the whole — sharing an
+  implementation transfers its preconditions** (PR #895 review round 13,
+  `v0.35.26`).  Round 12 said *when the property is about the whole artefact,
+  build the artefact*, and meant a rendered document.  Round 13 is that rule
+  meeting three different units, two of its three findings inside round 12's own
+  fixes — the fourth consecutive round where findings land in the previous
+  round's code.
+
+  The one worth keeping is not a scanner.  `Reply.consumed` keeps a stack head's
+  links, and its docstring says why in terms: *the pop that follows clears
+  them*.  That sentence is a **precondition on the caller**, not a description —
+  and `FrozenOps` adopted the record without it.  Sharing `consumed` between the
+  live and frozen surfaces was *right*, by this file's own one-question-one-answer
+  rule; what the sharing also moved, invisibly, was an obligation the frozen
+  surface could not discharge, because it models no donation pop.  So a frozen
+  state captured mid-chain left the answered Reply failing `Reply.isFree`
+  forever: never re-linkable, never retypeable, and no passive server could
+  complete a second call/reply cycle on it.  **When you reach for a shared
+  answer, read what it requires of you, not only what it returns** — a function
+  whose correctness depends on what runs *after* it is a contract, and adopting
+  it is accepting that contract.
+
+  Where the fix goes carries the second half.  `frozenEndpointReply` is refined
+  against the **bare** `endpointReply`, which also leaves a head linked, and the
+  differential scenario compares exactly that — so putting the pop inside it
+  would have broken the refinement the surface exists to check, while fixing the
+  symptom.  The frozen `.reply` *operation* is the reply leg **then** the
+  donation return, as the live one is, so the composite is where the pop belongs
+  and the refined mirror is left alone.  **Ask which unit the property is about
+  before choosing where to fix it**: the leg refines, the operation composes, and
+  a fix at the wrong level trades a visible defect for an invisible one.
+
+  The two scanner findings are the same rule at smaller units, and both are the
+  *unit* being smaller than the property.  A binder-default scan asked its
+  question of the enclosing group's whole span, so a `let` in a nested group that
+  had already closed suppressed a real default — filing an executable read as
+  `SPEC region=sig`, the one region the Tier 1 reconciliation does not judge, so
+  it bypassed **both** tiers rather than one; the span is walked at depth now,
+  through the depth-zero walk every other top-level-token question in that file
+  already used.  And the markdown enclosure axis round 12 created had one value —
+  fenced code — where CommonMark's grammar has several: **HTML blocks hold raw
+  text**, so a `# Safety` heading inside `<!-- ... -->` published nothing and
+  satisfied the gate.  The axis is taken from the grammar rather than from the
+  reported spelling: all seven block types, both end conditions, an unterminated
+  block running to the end of the document, and type 7's inability to interrupt a
+  paragraph.  **A new axis is enumerated at all of its values on the day it is
+  added**, or the next round supplies the ones that were skipped.
+
+  One mechanical note, and it is the *witness* rule again rather than a new one:
+  each hidden matrix row is paired with a control that ends the enclosure, so the
+  row is known to fail on the enclosure and not on the marker; and the census
+  case for the binder fix is decisive only because round 12's own case keeps
+  passing under the mutation — a fix that narrows a rule must be shown to narrow
+  it rather than to disable it.
+
+  **And six rules did not close this class, which is itself the finding**
+  (PR #895 review round 14, `v0.35.27`).  Rounds 9 through 14 each added a rule
+  to this section — *give it a check not a third telling*, *a witness drawn from
+  a finding tests the finding*, *take the axes from the grammar*, *build the
+  artefact*, *sharing an implementation transfers its preconditions* — and each
+  round after it found more.  Do not read that as six failures of nerve; read
+  the **distribution**.  Every one of those six rounds found at least one defect
+  in `check_unsafe_block_justifications.py` or its shared view, and rounds 10,
+  11, 13 and 14 each found one in the frozen surface.  Two artefacts, six
+  rounds.  The rules were locally right and structurally beside the point.
+
+  **Cause one: a gate that hand-implements a language front-end will be fed a
+  construct it has not seen, forever.**  Those two files are 3,591 lines
+  implementing Rust lexing, Rust item parsing and CommonMark; the store census
+  implements Lean declaration parsing.  This is round 16's own observation —
+  *the set of valid spellings that defeats a regex is unbounded while the set a
+  gate has seen is finite* — arriving at the level of the whole gate rather than
+  of one pattern.  The exit is round 17's, and it was taken **once**: the Lean
+  classifier's verdict is reconciled against `findDeclarationRanges?` at Tier 1,
+  and round 6 then confirmed the mechanism by finding it would have caught a
+  defect it never saw.  It was never generalised, and the generalisation is not
+  subtle: **Rust's front-end is `rustc`, and the `# Safety` question's front-end
+  is `rustdoc`** — the tool whose output the property is defined by.  Round 12
+  wrote *build the artefact* and then hand-rolled a markdown renderer instead of
+  asking the renderer.
+
+  **Cause two: a hand-written second implementation whose fidelity is checked by
+  a hand-written list.**  `FrozenOps` mirrors live transitions and
+  `frozenRunAgrees` would catch a divergence, but which pairs are driven through
+  both sides is a handful of scenarios and the pairing itself is a Markdown
+  table.  Rounds 10, 11, 13 and 14 are one shape — a *part* of a live operation
+  reproduced with a step omitted that the live code pairs with it — and 13 and
+  14 are the same defect twice, the second inside the first's fix.  That is this
+  section's own strongest rule (*one question answered in two places will
+  diverge*) meeting the artefact deliberately built to be two places.
+
+  **What changed, and what did not.**  Both causes are now rows in
+  `docs/REGISTERED_DEBT.md` table C with closure targets before v1.0.0, because
+  the remedies are a reconciliation against the real tools and a derived
+  differential coverage set — work, not wording.  What this cut *does* do is
+  narrow cause two at its own site: a frozen mirror names the live function that
+  **completes** a step (`frozenApplyReplyDonation` pairs the donation return with
+  the deschedule) rather than the one nested inside it, so the pairing is
+  structural.  **When a rule has been restated six times, stop restating it and
+  write down what the restating measured.**
+
+  **And a claim made at the wrong UNIT is a claim about something else** (PR #895
+  review round 15, `v0.35.28`).  Round 13 said *ask which unit the property is
+  about* and applied it to where a fix goes.  Round 15 is the same question asked
+  of where a *verdict* is taken, in two artefacts that share nothing else, and
+  the two together are why this is a class rather than two bugs.
+
+  A Setext heading's content is the **whole** preceding paragraph (CommonMark
+  4.3), and the round-14 check read the line directly above the underline — so
+  `/// This is not a contract`, `/// Safety`, `/// ===` satisfied a gate whose
+  subject is what a caller is told, while rustdoc titles that heading "This is
+  not a contract Safety".  Fail-open, on the gate with an empty baseline.  And
+  the frozen surface's differential coverage table said `.reply` was checked
+  against `endpointReply` — the **bare** reply, a *leg*.  The live `.reply`
+  *operation* is that leg plus the donation return plus a priority-inheritance
+  revert, and nothing compared the frozen composite against it, so "reply:
+  checked" stood through **four consecutive review rounds** in which that
+  composite was found to be missing the donation pop, then the server's
+  deschedule, then the inheritance revert, then a missing-server refusal.
+  (Round 22 corrected the *counterpart* this round chose: the leg differential
+  runs against `endpointReplyOnCore` and the operation one against
+  `endpointReplyCrossCoreDispatch`, both read out of `frozenBranchLiveLeg` /
+  `frozenBranchLiveOperation` rather than named in a comment.  Do not cite this
+  paragraph for either name.)  In
+  both cases the check ran, reported truthfully about the unit it examined, and
+  that unit was not the one the claim was read as being about.
+
+  **So name the unit in the claim, and make the smaller claim unable to stand in
+  for the larger.**  The heading verdict is taken from the paragraph's first
+  line, where its content begins.  The coverage table gained a second, separate
+  claim (`frozenBranchOperationChecked`) with its own scenario list reconciled in
+  both directions, three `decide` interlocks, and — the load-bearing part — a
+  *stated reason* on every branch that has only a leg check, so the next step
+  composed onto a live operation is a row somebody has to write.  Merging the two
+  lists would have re-created the defect inside its own remedy.
+
+  Two corollaries, both earned.  **A new unit changes which leaf blocks matter**:
+  carrying the paragraph's first line means a thematic break and an ATX heading
+  must now end the paragraph, one in each direction — the break so `Safety` /
+  `***` / `===` is refused, the heading so `# Overview` / `Safety` / `===` is
+  *accepted* — and each needs its own mutation, since a case that survives the
+  pre-fix code tests nothing.  And **a mechanism worth building finds something
+  on its first run**: the operation-level differential immediately failed, on a
+  bug in the same cut's own fix — `frozenUpdatePipBoost` looked for the thread in
+  the bucket its *old effective priority* names, where the live `updatePipBoost`
+  asks whether the thread is in the queue at all and removes it from wherever it
+  is.  The divergence is visible only on a state where a thread's bucket and its
+  effective priority have already drifted apart, which is precisely the state a
+  reversion exists to repair.  A mechanism that passes everything on the day it
+  lands has not yet been shown to measure anything.
+
+  **And when a real front-end exists, the scanner is not the authority — hand it
+  the question** (the maintainer's instruction, `v0.35.28`).  The rule above
+  fixes a verdict taken at the wrong unit; this one retires the artefact that
+  kept taking them.  Round 14 registered the generalisation as debt and round
+  15's P1 was the **seventh consecutive round** to find a defect in the same
+  hand-written front-end, which is the measurement that registering it again was
+  not the move.
+
+  *The `unsafe` question's front-end is rustc; the `# Safety` question's is
+  rustdoc.*  `sele4n-hal` and `sele4n-abi` deny
+  `clippy::undocumented_unsafe_blocks` and `clippy::missing_safety_doc` at their
+  crate roots.  The first is rustc's own parse of the block and of the comment
+  run above it — no `//` versus `/*` versus `r#unsafe` versus attribute-nesting
+  question can be got wrong, because there is no second parser to get it wrong
+  in.  The second renders the item's documentation with the parser rustdoc uses,
+  so fences, HTML blocks, Setext underlines and raw doc literals — four of the
+  last seven rounds' findings — are decided by the tool whose output the caller
+  actually reads.
+
+  **Two things about turning a lint on were established by mutation, and either
+  would have shipped a false green.**  `cargo clippy -- -W <lint>` reaches only
+  the final compilation unit and is **silent** for every workspace member: the
+  first run reported zero findings and deleting a real `// SAFETY:` comment
+  still reported zero.  And the host lane cannot see the
+  `#[cfg(target_arch = "aarch64")]` majority of a HAL: the same deletion yields
+  **0** findings on the host and **2** on `aarch64-unknown-none`.  *A lint that
+  is not running is indistinguishable from a lint that passes*, which is this
+  file's inert-witness rule arriving at a tool nobody thinks to test.  Delete a
+  real justification and watch the lane you rely on fail before believing it.
+
+  **The scanner stays, and says what it now owns.**  Tier 0 runs before any
+  build, so the fast approximation is still worth having; and three things
+  structurally escape the lints — a non-`pub` `unsafe fn`, an `unsafe fn`
+  declared inside an `extern` block (no lint requires a contract of a *foreign*
+  declaration, and this tree has ten Lean upcalls that need one), and the ARM ARM
+  citation census.  Its output prints its authority and its residue beside its
+  ratio, because a number that implies an authority it does not have is the
+  defect this section keeps recording.
+
+  **And the same instruction applied inwards: a mirror must not re-answer a
+  question that has a live answer.**  The round-15 frozen fix added five
+  hand-written counterparts of live functions, which is more of the duplication
+  that produced the churn.  Two were pure questions about a `TCB` record — and
+  the frozen store holds the **live** `TCB` — so they are the live accessors
+  now: `TCB.boostedPriority` and `TCB.blockingServer?`
+  (`Model/Object/Types.lean`).  Under them sits `Priority.raisedBy`
+  (`Prelude.lean`), "a base raised by an inherited boost", which was written
+  inline at **eleven** sites across the scheduler, the IPC wake path, the
+  priority-setting path and the frozen run queue.  Its base is a **parameter**
+  because it is not always the thread's own: a `.bound` thread's base is its
+  reservation's.  Fixing it at the TCB would have covered ten of eleven and left
+  the eleventh spelling its own `match` — *an abstraction that does not fit its
+  subject is how a duplicate survives a de-duplication.*
+
+  Three things that cut records.  **An accessor ships with its frame**:
+  `TCB.blockingServer?_congr` and `TCB.boostedPriority_congr` say which fields
+  each reads, because a consumer that instead unfolds the accessor inside a
+  `filterMap` also rewrites the tail's *bound* occurrences and desynchronises the
+  induction hypothesis — a hazard one proof in `Compute.lean` had already
+  documented one level up, and which reappeared the moment the accessor was
+  introduced.  **A pin is not a substitute for an upstream answer, and a pin whose subject is
+  gone is deleted, not kept**: `effectiveRunQueuePriority` and
+  `ipcEffectiveRunQueuePriority` were two bodies because importing the scheduler
+  from the IPC module would close an import cycle, held together by a `rfl`
+  obligation stated in the first module that sees both names.  That pin is
+  exactly what this project prescribes when a second implementation must exist —
+  and it need not have existed, because the shared answer belongs in the
+  **model**, upstream of both, where the cycle objection never applied.  *Look
+  for the upstream home before reaching for the pin.*  Both names are now gone
+  and every site calls `TCB.boostedPriority`; the pin went with them, because
+  once one side is deleted it has no subject, and a theorem that can only be
+  `rfl` asserts nothing while reading like a check — this file's own
+  inert-witness defect, arriving as the *residue of a de-duplication*.  A pin is
+  worth exactly the divergence it can still see.  And
+  **the de-duplication's own grep missed a copy**: `effectiveBucketPriority`
+  binds its base with a `let`, so a search for `Nat.max tcb.priority.val` did not
+  see it; it surfaced only when a proof stopped closing.
+
+  **And a fix retires more than it changes — sweep what was PINNING the thing
+  you deleted** (PR #895 review round 16, `v0.35.29`).  Three findings, and the
+  honest reading of them is that two were rules already in this file applied at
+  one site and not at its sibling: `classify_extern_item` decided a foreign
+  item's kind by *searching its interior*, which is round 15's wrong-unit rule
+  one artefact over (the question is what the item **starts** with, so
+  `decl!(#[doc = "…"] fn fake());` read as a plain `fn` and the macro was
+  consumed rather than refused); and `lean_store_read_census.py` classified over
+  raw bytes while its own `_SIGNATURE_END` comment asserted the view had blanked
+  strings, which is *gates read code, prose reads prose* — the shared overlay
+  keeps string contents **deliberately**, because a Tier 3 anchor may be about
+  what an `asm!` template puts in the symbol table, and this census's question
+  needs them gone.  The third is round 13's *a new axis is enumerated at all of
+  its values*: the fence axis knew that a fence hides a heading and not
+  CommonMark 4.5's rule that a **backtick** fence's info string may hold no
+  backtick, so ```` ```rust`x ```` opened a fence that does not exist.
+
+  The one worth writing down is the fourth, which no review reported and which
+  the first fix *created*.  Replacing the interior search retired
+  `_EXTERN_FN_ITEM`, `_MACRO_INVOCATION` and `_EXTERN_NON_FN_ITEM` — and a Tier
+  3 anchor named the third, so it went on reporting PASS over a definition the
+  classifier no longer consulted.  **A pin on a dead symbol is a tautology**: it
+  says nothing about the live code while reading in the report exactly like a
+  check that decides something.  And the way one is made is not by writing a bad
+  anchor — the anchor was correct when written — but by **deleting the thing it
+  watched**.  So a fix's blast radius includes the artefacts that watch what it
+  changed, and those fail *silently by construction*, since reporting PASS is
+  their ordinary output.  When a cut retires a definition, sweep every anchor,
+  baseline, registry and census that names it.
+
+  Two mechanical consequences.  The anchor is repointed at the symbol's **read**
+  rather than its definition, because a pin on a definition is a presence check
+  even when the symbol is live — the set can be defined here and consulted
+  nowhere, which is the same tautology one step later.  And, this being the
+  second tautological pin this PR has been shown, the response is the round-9
+  one rather than a third telling: `scripts/check_anchor_symbol_liveness.py`
+  (Tier 0) refuses any Tier 3 anchor naming a Python symbol its target binds and
+  the tracked tree never reads.  Its domain is derived on both sides, a target
+  that is missing or unparseable **fails** rather than being skipped, and its
+  decisive case keeps the anchor and the definition and adds only a reader.
+
+
+  And the same reading applied to the fix itself: `_skip_item_prelude` first
+  re-derived the `[` position from a raw regex match and carried its own
+  bracket-matching loop, while `attribute_opens_at` already answered the first
+  and `attribute_spans` already inlined the second.  Both are one answer now,
+  and the payoff is measured rather than asserted — one token-preserving
+  mutation of `_matching_square` fails the self-tests of `rust_code_view`,
+  `check_unsafe_block_justifications.py` **and** `check_kernel_entry_exports.py`.
+  *Before writing a helper, find the one this tree already has.*
+
+  Finally, the evidence for preferring a sweep to a count.  `v0.35.28` recorded
+  `Priority.raisedBy` as collapsing **eleven** inline spellings; re-running the
+  search over the landed cut found a **twelfth**, in
+  `schedContextConfigureBoundPropagate`, which computed the bucket a reconfigured
+  thread moves to from its `priority` argument while storing the record beside
+  it.  It reads the stored record now, and the collapse is definitionally
+  identical.  *A number in a changelog is what one search found; it is not the
+  set.*
+
+  **And a proxy can be the LENIENT side — check which tool the property is
+  about** (PR #895 review round 17, `v0.35.30`).  Two findings, both in code
+  written for round 16, which is five consecutive rounds landing in the previous
+  round's fixes.  The first is this file's own *a recognised set is not a derived
+  set* applied to a gate's **domain**, in the gate written last cut to close that
+  shape one level up: `check_anchor_symbol_liveness.py` unioned every name read
+  in any tracked module, so an unrelated `def helper(_DEAD)` kept a dead anchor
+  green.  A read is **resolved** to the anchored module's symbol now — the
+  target's own scope, an attribute on the imported module (plain or aliased), or
+  a `from` import — with intra-module scope decided by **`symtable`**, CPython's
+  own analysis, so shadowing by a parameter, comprehension target or nested `def`
+  is not a form to enumerate.  *Round 17's instruction — ask the language's own
+  front-end — applies to Python too, and `symtable` is it.*
+
+  The second is why this entry exists.  `MD_SAFETY_HEADING` matched `Safety`
+  case-insensitively on a word boundary, accepting four spellings
+  `clippy::missing_safety_doc` rejects — and clippy does not examine a **private**
+  `unsafe fn`, so there this scanner is the only enforcement.  The accepted set
+  was then **measured** rather than recalled, with one `pub unsafe fn` per
+  spelling compiled under the workspace's own clippy: `Safety`, `SAFETY`,
+  `Implementation safety`, `Implementation Safety`.  That mattered in both
+  directions — the review proposed restricting to the first two, which would have
+  refused the two clippy accepts.
+
+  **And the measurement found the two authorities disagreeing.**  For a Setext
+  heading whose underlined paragraph spans lines, `cargo doc` renders
+  `id="safetyand-more-text"` and `id="this-is-not-a-contractsafety"` — neither
+  publishes a Safety section — while clippy **accepts both**, comparing each Text
+  event of the heading rather than the heading's text.  On this shape the lint is
+  the *lenient* one.  `v0.35.28` said the `# Safety` question's front-end is
+  rustdoc and then reached for the lint that approximates it; the gate follows the
+  **rendering**, because that is what a caller reads, and requires the paragraph
+  to be a single line.  *So "hand the question to the real front-end" is not
+  finished by naming a tool: when two tools answer, the one the property is
+  defined by wins, and which that is has to be checked rather than assumed.*
+
+  Two mechanical notes.  A previous round's recorded expectation is evidence, not
+  authority: round 15's control asserted `True` for the multi-line Setext form on
+  the strength of the first-line rule it had just introduced, and measurement
+  corrected it while **vindicating** that round's actual finding.  And a
+  hand-kept figure beside a derivation drifts on contact — the liveness gate's
+  self-test printed `len(_CASES) + 3`, already wrong by two; it counts the checks
+  that ran.
+
+  **And an approximation is not the oracle — check whether the exact answer is
+  already in reach** (PR #895 review round 18).  Three findings, all three in
+  code this PR wrote, and all three the same thing: a gate deciding a question
+  about a *language* with a pattern written by hand.  Round 14 named that class
+  and registered it as debt on the reasoning that the remedy is "a reconciliation
+  against the real tools — work, not wording".  Round 18 is the evidence that the
+  deferral was partly wrong: **two of the three had an exact oracle in the
+  standard library the whole time**, and the reason nobody used it is that nobody
+  asked whether one existed.
+
+  The identifier case is the clearest.  `[^\W\d]` is Python's *word* class and
+  the question was `XID_Start`; rustc accepts `pub unsafe fn \u2118()` (Sm),
+  `\u212e()` (So) and `\u1885()` (Mn), and `\w` matches none of them, so a
+  declaration spelled with one raised **no obligation at all** and then failed
+  its file as an unrecognised form.  Round 12 had already widened this class once
+  for the same reason, which is the signal: *a class that needs widening a second
+  time is not a class, it is a table someone is guessing at.*  **Python's
+  identifier grammar is UAX#31 — the same one Rust uses** — so `str.isidentifier()`
+  answers it, and the agreement is measured rather than assumed: over 28
+  codepoints spanning every plausible category, 27 agree and the sole divergence
+  is a lone `_`, which Python accepts as a whole identifier and Rust reserves as
+  the wildcard.
+
+  **That reading was half right, and round 21 supplies the other half.**  The
+  rule really is shared; the *table* is not, and the 28-codepoint probe could
+  not see that because every one of its codepoints was assigned in both
+  editions.  `str.isidentifier()` was retired one round later — see **an oracle
+  is exact only up to the version of the data it reads** below — so do not cite
+  this paragraph as licence to reach for it.
+
+  Two corollaries.  **The reach of a fix is the question, not the finding**: the
+  reported site was one gate's declaration scanner, and the same question was
+  being asked by seven hand-written classes across five files — so the remedy is
+  round 9's, not a seventh patch.  One fragment derived from the oracle, and
+  `bare_ident_literals` refusing a new ASCII class in any gate source, with
+  `NON_RUST_IDENT_SOURCES` naming the files that legitimately ask a *different*
+  language's question (a POSIX shell variable, a GAS label and a Lean identifier
+  are all ASCII by their own grammars) and reconciled in both directions, so a
+  stale classification fails as loudly as an unclassified pattern.  And **a
+  measurement can carry the defect it is sizing**: the first scan for rebound
+  import aliases reported three, all false, because it counted
+  `os.environ["X"] = "y"` as rebinding `os` — a `Subscript` target mutates an
+  object and binds no name.  The real count is zero, which is what makes the
+  fail-closed fix free; had the false three been believed, the fix would have
+  been weakened to accommodate them.
+
+  **And when two authorities disagree, the accepted set is their INTERSECTION —
+  and which one is strict can flip** (PR #895 review round 19).  Round 17 found
+  `clippy::missing_safety_doc` and rustdoc disagreeing on a multi-line Setext
+  heading and took the *rendering*, on the reasoning that the property is what a
+  caller reads.  Round 19 is the same axis one level in — **inline markup inside
+  the heading** — and it shows that reasoning was half the rule.  Measured on
+  fifteen forms under this workspace's own toolchain: they disagree in **both**
+  directions.  `` `Safety` ``, `&#83;afety`, `**Saf**ety` and `Saf<!-- c -->ety`
+  all render `Safety` and clippy **refuses** each (a code span is a `Code` event;
+  the other three split the title across two `Text` events); `[Safety]` clippy
+  accepts while rustdoc renders `[Safety]` and warns `broken_intra_doc_links`.
+  Following the rendering alone would let Tier 0 green a file the crate's own
+  `-D warnings` lint then rejects — so *neither tool is "the" authority*, and
+  naming one is not the end of the question even after you have measured it.
+  The measurement stands and is what the gate's own output reports; what this
+  round *did* with it — accept the intersection, by rendering the heading — was
+  superseded one round later, for the reason its own closing paragraph gives.
+  See **a rule stated in a docstring is not a rule in the code** below.
+
+  The finding itself was the **fail-closed** direction — `/// # **Safety**`
+  refused, a correctly documented `unsafe fn` rejected — which round 6 recorded
+  as a defect in its own right and which this section otherwise spends its time
+  on the opposite of.  *A spelling is not the text*: a heading's content is
+  markup that renders to something else, which is *a spelling is not a read* one
+  artefact over, at the one place round 12's "build the artefact" had stopped
+  short — it built the markdown document and then matched the heading's raw
+  bytes.
+
+  **Two things about this round are worth more than the fix.**  First, round 18
+  narrowed the debt row to "Rust item parsing and the CommonMark residue", and
+  round 19 landed *inside the residue that row had just named*, one cut later.
+  That is the narrowing working as a measurement and **not** working as a
+  remedy: **predicting where the next finding will be is not preventing it**, so
+  a narrowed row is evidence the analysis is right and no evidence at all that
+  the gap is closing.  Second, round 18's own rule was applied *before* writing
+  anything — *is an exact oracle in reach?* — and the answer here was **no**: no
+  CommonMark implementation is available at Tier 0, which runs before any build.
+  Recording the `no` is what makes the bounded reader honest rather than lazy;
+  it refuses every inline form it cannot render, which keeps the site in the
+  violation set (a visible failure) rather than clearing it silently.
+
+  **And a rule stated in a docstring is not a rule in the code — the narrowest
+  gap in this whole section** (PR #895 review round 20).  Round 19 closed by
+  applying round 18's rule before writing anything and recording the answer:
+  *is an exact oracle in reach?* — **no**, no CommonMark implementation is
+  available at Tier 0 — and therefore "it refuses every inline form it cannot
+  render".  That sentence is right, it is the correct engineering call, and it
+  went into the docstring and into this file.  The code shipped in the same cut
+  peeled emphasis runs and extracted link labels by hand.
+
+  Round 20 is the two cells that gap produces, and they are worth naming because
+  neither is exotic.  `# ** Safety **` is **inactive** emphasis — CommonMark 6.2:
+  a left-flanking delimiter run may not be followed by whitespace — so rustdoc
+  renders the asterisks literally and publishes no Safety section, while a
+  peeler that strips a matched `**`/`**` pair reads `Safety`.  And
+  an ATX heading whose content is a bracketed `Safety` label, an inline
+  destination and a trailing `junk)` renders `Safetyjunk)`, while a label
+  extractor anchored on the brackets reads `Safety`.  Both were accepted; both are the fail-open
+  direction on the gate whose baseline is empty.
+
+  **The distance between a stated rule and an implemented one is where this
+  section's findings now live.**  Nine of the last twelve rounds found a defect
+  in a hand-written front-end, and this file has said so since round 14 and
+  registered it as debt; round 19 went further and *derived the right rule from
+  first principles* — and then the hand-written renderer was written anyway,
+  because refusing markup felt like it would reject valid documentation.  It
+  does not: **measured before choosing**, every Safety heading in this tree is
+  already written plainly (26 `/// # Safety`, 3 `/// ## Safety`, 3 `//! #
+  Safety`, 2 `//! ## Safety`, zero carrying inline markup), so requiring the
+  canonical spelling costs the tree nothing.  *Take the measurement that tells
+  you the strict option is free, and the temptation to approximate disappears.*
+  The heading's content must now **be** one of the four measured titles; every
+  inline form is refused, including the seven both authorities accept, and the
+  gate says which kind of refusal each is.  That is round 16's exit —
+  **where the subject is code this project writes, require a canonical spelling
+  and refuse the rest** — reaching the last construct in this file that was
+  still being parsed.
+
+  The round's second finding is the **enumeration** rule meeting a language that
+  grew.  `rebound_import_names` was a hand-written `ast` walk over binding
+  constructs, and the review reported one it missed: a `match` capture.
+  Measuring the walk rather than patching the reported cell found the shape — it
+  handled *every* binder Python had before PEP 634 and **none** of structural
+  pattern matching's, which is four forms, not one.  An enumeration of a
+  language's binders is a list of the ones that existed when it was written, so
+  the next grammar addition empties it silently.  The exit is round 18's, and
+  the oracle was already imported in the very cut that wrote the walk:
+  **`symtable` is CPython's own binding analysis**, and `is_assigned()` is False
+  for a name bound only by an import and True the moment anything else binds it.
+  The enumeration is deleted; all eleven forms and both non-binding controls
+  (`x.k[i] = v`, `x.attr = v`) are answered without the oracle being told they
+  exist.
+
+  Two mechanical notes, both earned.  **Measure the walk, not the cell**: fixing
+  the reported `match` capture alone would have left three siblings live and the
+  next round would have supplied one — and the same measurement corrected this
+  file's own first draft of this entry, which claimed the walk had missed the
+  walrus and `except ... as` too.  It had not; it handled both, and saying
+  otherwise would have overstated the finding.  And **a conservative answer is
+  defensible only when you have measured what it costs**: the whole-module
+  binding query over-refuses a receiver shadowed only in an unrelated function,
+  which the docstring declares — and across all 31 tracked `.py` files, zero
+  import-bound names are assigned at module scope and zero at nested scope, so
+  the conservative query and the exact one agree on the entire tree.  The
+  alternative (ask the module scope alone) is fail-**open** for a shadowed read,
+  which is the thing the gate exists to catch.
+
+  **And an oracle is exact only up to the version of the data it reads**
+  (PR #895 review round 21).  Round 18's instruction — *check whether the exact
+  answer is already in reach* — is right, and this is the question to ask
+  immediately after it: **what edition of what table is that answer computed
+  from, and does the other side read the same one?**
+
+  Three P2s, all three fail-**closed**, all three on valid Rust this tree would
+  refuse.  `str.isidentifier()` and rustc both implement UAX#31 — the *rule* is
+  genuinely shared, which is what made round 18's reasoning sound — but they
+  read different editions of the Unicode table it ranges over.  Measured on this
+  environment: CPython 3.11 carries Unicode **14.0**, where U+1C89 is
+  *unassigned*, while rustc **1.94.1** compiles `pub unsafe fn Ᲊ() {}` with
+  nothing worse than an `uncommon_codepoints` warning.  So a documented
+  `unsafe fn` named with it raised no obligation and the explicit default branch
+  then refused the whole file; and `\b`, defined against `\w`, saw a boundary
+  *inside* the valid identifier `unsafeᲉ`, so `\bunsafe\b` matched its first six
+  characters and Tier 0 demanded a justification of safe Rust.
+
+  **Round 18's measurement was itself a recognised set** — this file's oldest
+  domain rule, arriving inside the evidence that justified an oracle.  Twenty-
+  eight codepoints spanning every plausible *category*, and category was the
+  wrong axis: every one of them was assigned in both editions, so the probe was
+  structurally blind to skew and would have reported 27/28 however far the two
+  tables had drifted.  *When a measurement licenses a dependency, ask what it
+  could not have seen.*
+
+  The exit is **not** a third table.  Pinning rustc's XID data into a Python
+  gate is the enumeration this project keeps retiring, and it goes stale at the
+  next toolchain bump.  Instead the *question* changes to one no Unicode release
+  can move: **every delimiter, operator and piece of punctuation in Rust source
+  is ASCII** — rustc rejects non-ASCII punctuation outright — so outside
+  comments and literals a non-ASCII character is part of an identifier.  That
+  gives *a character may continue an identifier unless it is ASCII and neither
+  alphanumeric nor `_`*, a fact about Rust's **grammar** rather than about a
+  codepoint table, and for the two questions this tree actually asks it is
+  **exact rather than merely safe**: a keyword adjacent to an identifier
+  character is not a keyword but one longer identifier, and a name is only ever
+  terminated by ASCII punctuation.  Where it does over-approximate — `×` and `·`
+  are admitted and rustc refuses them — the self-test *asserts the
+  over-approximation* rather than leaving a reader to rediscover it, because
+  neither can stand beside a name in code that compiles.
+
+  Two things the fix records.  **A retired oracle takes its dead API with it**:
+  `is_rust_identifier` existed only to state round 18's `_` divergence, its sole
+  readers were its own self-test rows, and its body was the retired call — a pin
+  on a question nothing asks, which this file already names a tautology, so it
+  is deleted rather than rewritten.  And **free exactness is still worth
+  taking**: `ident_start` excludes ASCII digits, because `0-9` is a fact about
+  ASCII and costs no table, even though the class beyond ASCII stays generous.
+
+  The round's third finding is the same *whose question is this* shape in a
+  different artefact.  `CARGO_TARGET_DIR` is **cargo's** setting, so a relative
+  value resolves from the **invocation** directory; the gate joined it onto
+  whatever root its scan had narrowed to, so `CARGO_TARGET_DIR=rust/target` run
+  from the repository root excluded `rust/rust/target` — which does not exist —
+  while cargo wrote to `rust/target`, which was therefore scanned.  Generated
+  `.rs` under a build script's `OUT_DIR` is code no contributor wrote, so an
+  unsafe site there would have failed Tier 0 against a file nobody can edit.
+  *When you honour another tool's setting, resolve it the way that tool does.*
+
+  **And the sweep found a fourth, in the check written to make sweeps
+  unnecessary.**  Running this round's own rule — *when a fix names a relation,
+  grep for every other place that asks it* — over Python's `\b` turned up two
+  more Rust-keyword boundaries, and the reason `bare_keyword_literals` had not
+  reported them is that it recognised **one shape**: `\b<keyword>\b`, a single
+  keyword with a boundary on each side.  A keyword inside an alternation with a
+  `\s+` tail (`check_claim_evidence_citations.py`'s Rust declaration head) and
+  a one-sided boundary (`check_tlbi_broadcast_discipline.py`'s FFI export
+  pattern) were both invisible.  Round 9 built that check so "the next such
+  pattern fails on the day it is written"; **a discipline check that enumerates
+  the shapes it has seen is the defect it exists to close, one level down.**
+
+  The question is widened to the one being asked — *does this regex literal use
+  a word boundary while naming a scanned keyword as a whole word?* — which
+  over-approximates deliberately, because the remedy for a false positive is to
+  compose `keyword()`, which is what the author wanted anyway; a literal
+  genuinely asking another language's question goes in
+  `NON_RUST_KEYWORD_SOURCES`, reconciled in both directions like every other
+  classification here.
+
+  One mechanical note, and it is this file's own rule repaying its cost
+  immediately.  The widened question was first written to search the raw line,
+  and the `b` of `\b` is an identifier character — so the whole-word lookbehind
+  failed on `\bunsafe\b` and the derived question **missed the very spelling it
+  subsumes**.  Nothing on the live tree would have caught that, because the
+  plain pattern still ran beside it; what caught it was the witness asserting
+  the *unchanged* row next to the new ones. **Keep the rows a fix does not
+  change** — that is what distinguishes a fix that generalises from one that
+  merely moves. A two-character regex escape is one token, so escapes are
+  blanked before the keyword question is asked.
+  **And the name a claim cites is its load-bearing half, so it cannot live in a
+  comment** (PR #895 review round 22).  Four findings, and the pattern across
+  them is one this file has been circling: three are *my own previous rounds'
+  fixes*, and the fourth is a coverage claim whose counterpart was prose.
+
+  The narrow one first, because it is the sweep rule failing at the smallest
+  possible distance.  Round 14 found that **an angle bracket is not always a
+  delimiter** — an array length and a const-generic argument are const
+  *expressions*, so `[u8; 1 << 2]` in a signature raises a `<`-counting depth
+  twice with nothing to lower it — and fixed it in `extern_block_items`, writing
+  the reasoning into that function's docstring.  Round 18 then wrote
+  `_body_open_brace` **one function above it**, counting `<` unconditionally,
+  under a docstring asserting the opposite of the grammar (*"a comparison or a
+  shift cannot appear in a type"*).  Both directions shipped: `-> [u8; 1 << 2]`
+  never finds the body, and `-> [u8; 8 >> 1]` clamps the shared counter at zero
+  and then lets the closing `]` drive it negative.  Each answers `FILE_SCOPE`,
+  which no allowlist entry matches — so a **justified** site inside such a
+  function is reported unjustified, Tier 0 refusing valid Rust.
+
+  The remedy is not round 14's, and the difference is the point: dropping angle
+  brackets is right when the subject is a `;` (which `[` and `{` already cover)
+  and wrong when the subject **is** a brace, since `-> Foo<{ 1 }> { .. }` would
+  answer with the const-generic block.  Two counters, with `<`/`>` read **only
+  outside every bracket group**, is *exact* rather than merely safe, and for the
+  reason round 14 gave: Rust requires a non-trivial const argument to be braced
+  and an array length to sit inside `[` … `]`, so an operator `<` is always
+  inside a bracket group and a delimiter `<` never is.  **The same grammatical
+  fact answers both questions; only the direction differs.**
+
+  **And the remedy for F1 is not the patch — it is that the question now has one
+  owner.**  Two scans in that file asked *where does a Rust signature end*: one
+  for the `;` that terminates a foreign item, one for the `{` that opens a body.
+  The nesting rule is identical for both and was written twice, and the second
+  copy reintroduced the defect the first had removed.  Patching the second would
+  have left the file in exactly the state that produced the finding, so
+  `signature_terminator` states the rule once — brackets nest, angles nest only
+  at bracket depth zero, `->` is one token, a terminator counts only at zero on
+  both counters — and both scans read it, differing only in which characters they
+  pass as terminators.  The payoff is measured rather than asserted: **one**
+  token-preserving mutation of that function now fails **four** witnesses across
+  *both* questions, where before it would have failed only the body rows.
+
+  That is the round-7 remedy (*give the sweep an artefact*), and round 9's lesson
+  says it is not sufficient — sharing an answer stops two implementations from
+  diverging and does not stop a **third** from being written beside them.  So the
+  discipline is enforced too: `hand_rolled_angle_nesting()` refuses an
+  angle-bracket *character* test anywhere in that file outside the owner, which
+  is the shape such a scan is written in.  **The scope was measured before it was
+  chosen** — the file holds exactly two such tests and both are in the owner,
+  while every other one under `scripts/` asks a different language's question
+  (Lean notation, a Lean arrow, a Markdown autolink, a CommonMark HTML-block end
+  condition, a regex group name), so a whole-repository check would be mostly
+  classification and this one costs nothing.  It is pinned in **both**
+  directions, because a discipline check that cannot fire is indistinguishable
+  from one that is wrong: removing the owner's exemption makes it report the
+  owner's own two tests, and a probe appends a second implementation to a copy of
+  the file and requires a hit.  Two things that probe records — a fixture must
+  not be **self-referential** (the first version anchored on a `def` line whose
+  text the probe's own source also contained, so the splice landed inside a
+  string literal and the copy would not parse) and it builds its `<` from
+  `chr(60)`, because a literal there would be a hit in the probe's own source and
+  exempting the probe by location is the hole the check exists to refuse.
+
+  The two other scanner findings are the same shape at their own level.  A
+  foreign declaration may mark itself `unsafe` (RFC 3484's per-item marker,
+  whose `safe fn` opt-out the gate already read), so the keyword pass **and**
+  the foreign-item pass both yielded it: one declaration, two rows, every total
+  and any baseline doubled — and invisible to a case list that only asks
+  *"is each site found justified?"*, since both rows carry the same good
+  justification.  A cardinality defect needs a cardinality witness, so the
+  gate grew `_SITE_INVENTORY_CASES`, which name the declarations a fixture must
+  produce and fail on a repeat.  The region now belongs to exactly one pass, and
+  the direction is forced: the foreign walk is *derived* from the item structure
+  and refuses a form it cannot read, so nothing inside the braces escapes it,
+  while the keyword pass sees only what carries the token.  And
+  `check_anchor_symbol_liveness.py` — the gate written last round to retire
+  tautological pins — asked *"does this name occur as a global read"* where its
+  question is *"does anything else read it"*, so `def _dead(n): return
+  _dead(n - 1)` kept its own anchor alive.  That is this file's oldest rule
+  inside the gate built to close one instance of it; reads are **attributed** to
+  the declaration they occur in now, nesting carried, with the cycle residue
+  stated rather than assumed away.
+
+  The fourth is the one worth the entry's title.  Round 15 fixed *a claim made
+  at the wrong UNIT* — leg versus operation — and left **which instance** of the
+  unit, in a **comment**: `frozenBranchOperationChecked`'s only `true` row said
+  it was checked against `endpointReplyWithDonation`.  That is the *single-core*
+  composite, with no production caller, and it opens with the bare
+  `endpointReply`, which keeps the `replier == expected` gate the cross-core
+  spelling dropped (PR #822 review 6J-lYm: authority is the presented reply
+  capability, and seL4-MCS reply caps are delegatable).  The live `.reply` arm
+  dispatches `endpointReplyCrossCoreDispatch`, which accepts a delegate — and so
+  does `frozenEndpointReply`.  So on a delegated input the frozen composite
+  agrees with the **kernel** and disagrees with the named counterpart, and the
+  row's `true` was read as the former.  Latent only because every fixture made
+  the replier *be* the recorded server, where the two counterparts coincide.
+
+  **A counterpart named in prose is a claim nothing reconciles**, so both
+  counterparts are data now (`frozenBranchLiveOperation`,
+  `frozenBranchLiveLeg`), each with a both-directions interlock — and the leg
+  table is the sweep this round owed, because it asked the identical question
+  with the identical answer wrong, which is round 11's *keep the tables
+  symmetric* one artefact over.  A string is not a check and does not pretend to
+  be: what pins the counterpart is a theorem **pair**,
+  `endpointReplyCrossCoreDispatch_independent_of_replier` and
+  `endpointReplyWithDonation_refuses_delegated_replier`, which together say the
+  two are not interchangeable — the lesson `API.lean`'s `syscallDelegates`
+  records from its own review round 11, that a *name* establishes a declaration
+  exists and not that it says anything about the claim citing it.  The scenarios
+  carry the delegated shape and assert the superseded composite **refuses** it,
+  so the choice is measured at the point of use.  And the live steps the
+  differential does not reach — the fault branch and the WS-RA delivered-message
+  staging that `replyTransferOnCore` wraps the spine in — are **stated**
+  (`frozenBranchOperationFrontier`) rather than implied, because a claim that
+  stops at "checked" implies an authority over the whole arm it does not have.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor
@@ -2122,17 +3460,266 @@ so the fail-closed direction is unchanged.  In the same cut
 `frozenSchedContextUnbind` gained the `isDonated` refusal its live counterpart
 has carried since `v0.35.4` and its own docstring already claimed.
 
-**One residual is registered rather than closed** (WS-RM).  The **reply** path
-does not yet run the detach: it relies on the answered frame being the head,
-which every reply of the nested Call pattern satisfies but which a *delegated*
-reply capability answering its caller out of order does not.  The consequence is
-fail-closed — the later pop's reciprocity test refuses the stale link and the
-reply returns `.invalidArgument`, writing nothing — so it is a wedged call chain
-rather than a corrupted one.  New code must not assume the reply path takes the
-answered frame off its stack.  Plan:
-[`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
+**The residual registered at `v0.35.4` is closed** (WS-RM, `v0.35.6`): both
+removal paths run seL4's `reply_remove`, and the reply path's own section below
+records what new code must respect.
 
 Plan: [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md).
+
+### WS-RM seL4's `reply_remove` on the reply path — COMPLETE (registered v0.35.4; RM1–RM6 v0.35.6)
+
+`v0.35.4` made the reply stack doubly linked and wired the detach into the
+**cancellation** path, leaving the **reply** path relying on the answered frame
+being the head — which every reply of the nested Call pattern satisfies and a
+*delegated* reply capability answering out of order does not.  Twenty-six
+sub-tasks across six phases, all at `v0.35.6`.  Seven things new code must
+respect.
+
+(1) **One removal step, and both spines call it.**  `removeCallerReplyFrame
+caller rid` is seL4's `reply_remove`: `detachReplyFrameAboveOrSelf` (the detach
+folded to the identity on refusal — a non-reciprocating upward link means
+"nothing above me on my stack", which the chain relation permits by design since
+it is stated *downward*), then `SystemState.consumeCallerReply`.
+`endpointReplyOnCore`, `endpointReply` and `endpointReplyRecv` all run it, and a
+Tier 3 negative refuses a bare consume in any of the three.  **The order inside
+it is the content** — the detach reads the link the consume clears — and a
+second negative refuses the swap.  `removeCallerReplyFrame_eq_consume_of_no_frame_above`
+is the definitional equality that makes every repair a case split whose `none`
+branch is the pre-WS-RM proof verbatim.
+
+(2) **The reply leg's head case is stated, not hidden.**  A frame that *heads* a
+scheduling context keeps its links when its caller is consumed (`Reply.consumed`,
+deliberately — the pop validates the head by them), so the leg's post-state
+satisfies `donationChainWellFormedExcept … rid` and nothing stronger.  It stands
+to the reply leg as `ipcInvariantFullExceptDonationOwner` stands to the bare
+reply, and `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` is
+the composite that discharges it: the donation pop that follows in the same
+transition re-heads the frame below.  `faultReplyOnCore_preserves_donationChainWellFormed`
+and `replyTransferOnCore_preserves_donationChainWellFormed` (seL4's
+`doReplyTransfer`) compose it; the staging writes frame the chain
+(`stageDeliveredMessage_donationChainFrame` and its two siblings).
+
+The composite carries **one** condition beyond the chain invariant, and it is a
+**pre-state** fact: `answeredHeadContextIsServerDonation` — the context the
+answered frame heads is the one the recorded reply server holds.  It is the
+third of the tree's *local coherence facts* about a single reply, beside
+`replyDonationOwnerIsAnsweredCaller` and `replyStackHeadIsAnsweredReply`, and
+like them it is **stated rather than derived**: `donationOwnerValid` relates a
+caller's recorded reply target to no donation, and `donationChainWellFormed`
+carries no binding clause at all, by its own *what is deliberately absent*.
+Vacuous wherever the answered frame heads nothing — every reply in a tree with
+no donation — with both vacuity discharges named
+(`answeredHeadContextIsServerDonation_of_no_caller` / `_of_no_reply`), and
+`tests/SmpIpcSuite.lean` §3.21 exhibits its premises and its conclusion on a
+state the live operations reach, since a hypothesis nothing exhibits is
+indistinguishable from one that cannot hold.  It is at the **pre**-state exactly
+as the bundle composite's `hDonationReturned` beside it is, and unlike
+`hStackValid`: `replyStackOuterCallerValid`'s subject is a state the pop runs on,
+whereas a `schedContextBinding` is something the reply leg provably does not
+write (`endpointReplyOnCore_donationOwnerFrameExcept`), so the transport belongs
+inside the proof rather than on every caller.  That is also what makes the reply
+*transfer* carry the fact **once**: its two branches reply with `IpcMessage.empty`
+and with `msg`, which at the post-state were two spellings differing only in a
+message the question never reads.
+
+(3) **`.reply` and `.replyRecv` declare the frame the detach writes.**
+`answeredReplyFrameAbove?` is resolved from the same
+`(st.getTcb? target).bind (·.replyObject)` expression the arm's existing reply
+member comes from, so the footprint and the transition cannot disagree about
+which frame is answered.  **`maxLockSetSize` is 22** and the RPi5 per-lock cost
+and envelope move with it, in the canonical sentence this file carries above.  No
+*reachable* footprint grew: the new member and the donation-return members are
+mutually exclusive, so `lockSet_endpointReplyRecvOnCore_size_le_eighteen` is
+unmoved.  **And declaring a member is not proving the transition writes it** —
+the Tier 3 anchor over each footprint's definition asks only that the resolver
+*occur* there, which is a presence check.  The relation is
+`lockSet_endpointReply_frameAbove_write_mem` and `lockSet_replyRecv_frameAbove_write_mem`
+at full arity, with `lockSet_endpointReplyOnCore_covers_detachedFrameAbove` and
+its `.replyRecv` twin resolved: the reply-path siblings of the coverage the
+cancellation path has carried since `v0.35.4`
+(`lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove`), which the cut that
+added the reply-path member did not sweep onto it.
+
+**And running that sweep over every resolved footprint found one more.**
+`lockSet_cancelDonationOnCore` had `_correct` and `_size_le` and no coverage
+layer at all, while each of its parametric members already carried a
+write-membership lemma — so nothing tied a member to the **resolver** the
+resolved footprint reads it from, which is the whole content of a resolved
+coverage theorem.  Neither neighbour stands in for it: `_correct` is about the
+*kinds* of the members present and `_size_le` about how many there are, and
+a footprint can satisfy both while naming the wrong object.  The six are
+`lockSet_cancelDonationOnCore_covers_victim` (both arms of the resolution),
+`…_covers_bindingSchedContext` and `…_covers_stateLevel` (through
+`cancelBindingSc?`), `…_covers_donatedOwner` (through `cancelDonatedOwner?`),
+`…_covers_pop` and `…_covers_outerCaller_key` (through
+`cancelDonationPopMembers?`) — the last a declared **key** rather than a write,
+because the pop *reads* that TCB to check it is a waiting donor, with a Tier 3
+negative refusing the write spelling.  `lockSet_notificationWaitOnCore` has no
+coverage layer and needs none: it resolves nothing, so its parametric lemmas are
+already the statement at full arity.
+
+(4) **`.replyRecv` pops the donation *between* its two legs**, which is
+seL4-MCS's own `doReplyTransfer` → `reply_remove` → `receiveIPC` order — and it
+has to be.  The receive leg re-links the very Reply `rid` the reply leg just
+answered, and `Reply.isFree` reads **both** stack links, so a frame still heading
+a context is not linkable: with the pop last, `linkCallerReply` and the
+server-first stash both refused `.replyCapInvalid` and **no passive server whose
+client had donated could ever complete a `seL4_ReplyRecv`**.  That was a live
+defect on the MCS steady state, found while closing this workstream and fixed in
+the same cut.  The fused `replyRecvReturnDonation` is retired and split into
+`replyRecvPopDonation` (between the legs) and `replyRecvPostReceiveDonation`
+(after the receive leg, taking the popped context as an argument), each with its
+own bundle theorem stated at the state its own step runs on.  New code must not
+read the fused name as live.
+
+(5) **The dispatch payoff's receive-leg hypotheses are stated at the post-pop
+state.**  `replyRecvPostPopState` and `replyRecvPoppedContext` are *total*
+accessors over the pop, so `syscallDispatchQuiescence.replyRecvStage` stays a
+flat pre-state-computable pack rather than a quantification nested under the
+pop's own success; the pop's two obligations (`hSrvIdle1`, `hStackValid1`) are
+stated at the reply leg's committed state, which is where it runs.  Stating the
+receive-leg fields at the reply leg's own state is a claim about a state the
+receive leg no longer runs on.
+
+(6) **Every reply-stack write names a chain result.**
+`SeLe4n/Testing/ReplyStackWriteCensus.lean` (Tier 1) derives the write-site set
+from the elaborated environment — by **two** derivations, and a site found by
+either is a site: a project definition whose own body references one of the
+chain-write primitives (`SystemState.consumeReply` and
+`SystemState.consumeCallerReply` among them), and one that builds a `Reply` or
+`SchedContext` record and stores it, which is what catches a writer that names no
+helper at all.  Both are reconciled against a registry in both directions.  A
+site either **states** its chain results (each named theorem must mention the
+site *and* a `donationChain…` form) or is recorded as a **half-step** of the
+composite that completes it, and the half-step chain must terminate in a stating
+entry.  The counts are **printed by the census** and deliberately not mirrored
+here: a hand-kept figure beside a derivation is the shape this file warns about,
+and this one went stale the first time the frontier widened.  A new
+definition that consumes a caller's Reply bare is a build failure on the day it
+is written — which is the shape this workstream exists to close, and the one
+level above the frontier the census deliberately stops at (composites inherit by
+`donationChainFrame`'s algebra, which is a composition rather than a claim).
+
+**And "every" meant every module either root reaches** (PR #895 review,
+`v0.35.12`).  `SeLe4n/Kernel/FrozenOps/` is reached by neither, and it is in no
+staged allowlist: it is built only by its own `lean_exe` target
+(`tests.FrozenOpsSuite`), so the closure this census claims held for every
+module except one that writes the live `Reply` record — `FrozenKernelObject.reply` carries `SeLe4n.Kernel.Reply`, links and
+all, and `Model.freeze` copies a live state's Reply objects verbatim, so a
+frozen state taken mid-call-chain holds a real reply stack.  And the gap was not
+theoretical: `frozenEndpointReply` cleared a caller's Reply **bare**, which is
+WS-RM's own defect surviving on the surface nothing was looking at.  Bringing it
+in cost three things.  The frozen reply now runs a frozen `reply_remove`
+(`frozenDetachReplyFrameAboveOrSelf` then the consume, in that order, since the
+detach reads the link the consume clears).  `frozenLinkCallerReply`'s guard read
+`caller.isNone` where `Model.linkReply` reads `Reply.isFree` — a fifth guard
+deciding one question differently, so a frame still on a live stack was linkable
+there while the live kernel refuses it; it reads `isFree` now.  And the
+discipline gained a third constructor, `mirrors`: `donationChainWellFormed` is a
+predicate on `SystemState` and the frozen store is a `FrozenMap`, so demanding a
+`donationChain…` result of a frozen site would demand a theorem that cannot be
+written, while accepting no record would be the silence this census refuses.  A
+`mirrors` entry names the live twin, which must itself resolve to a stating
+entry — a frozen writer with no live twin is a transition the live kernel never
+performs, which is a finding rather than an exemption.
+
+(7) **`donationChainFrame_of_objects_insert` is public and lives beside the
+predicate.**  It was private to the cancellation shape module; the fault-reply
+path needs the same fact, and a second copy in a module the first does not import
+is the one-question-two-answers shape this tree keeps paying for.
+
+**And the removal does not preserve the donation accounting — the cost, measured,
+and whose it is** (the post-landing audit, corrected at `v0.35.14`).  Taking a
+caller out of the *middle* of a chain is destructive to which thread ends up
+owning the scheduling context: the removal moves no context, and the later pop
+donates to whatever the remaining stack says is outermost.  On
+`owner → middle → server`, a delegate answering `owner` out of order leaves
+`owner` **`.unbound` permanently**, and the server's in-order reply then settles
+the context **`.bound` on `middle`** — which the in-order unwind would instead
+have left `.donated … owner`, still owed outward.  So a callee that delegates
+its caller's reply capability to a confederate can capture that caller's
+reservation.  New code must not read WS-RM as accounting-preserving, and must not
+read a successful pop as evidence that the context reached its owner.
+
+**The cost is `cancelledMiddleCallerPolicy`'s, not the removal's, and a
+depth-two witness cannot tell the difference.**  A two-frame stack's lower frame
+is its *bottom*, so `severAtCut` (write `prev := none` into the frame above) and
+the alternative `spliceOutTheCut` (write the cut frame's own `prev`) write the
+same value, and §3.20 measures a shape both policies share.  §3.22 of
+`tests/SmpIpcSuite.lean` is the depth-three witness where they differ: every
+frame below the cut leaves the context's stack, so the reservation settles on a
+thread strictly *inside* the chain and its owner is left `.unbound` two hops
+outside the cut, while the same stack unwound in order delivers it outward still
+owed.  Three frames is the shallowest stack on which any of that is visible.
+
+**Why the splice is not taken, and the claim that is deliberately not made.**
+This kernel decides whether a reply pops a donation from the **recorded server's
+binding** (`endpointReplyServerDonation?`), not from whether the answered frame
+heads a context; `severAtCut` is exactly what keeps those two facts equivalent,
+and it is what the three *stated* pre-state coherence hypotheses
+(`replyStackHeadIsAnsweredReply`, `replyDonationOwnerIsAnsweredCaller`,
+`answeredHeadContextIsServerDonation`) need — no invariant in this tree entails
+them.  Splicing re-heads a frame whose recorded server is gone and `.unbound`, so
+answering it runs no pop and leaves a consumed frame heading a context: the state
+`replyStackOuterCaller?_of_consumed_frame` refuses and the pinning `v0.35.4`
+closed.  Recovering the accounting therefore means moving the pop's *trigger* to
+head-ness and its *source* to `SchedContext.boundThread` — registered debt with a
+closure target, not a preference.
+
+**And `severAtCut` is a divergence from seL4-MCS, not an inheritance of it.**
+Until `v0.35.14` this file asserted the opposite.  Checked against upstream
+source, `reply_remove`'s non-head branch **splices** —
+`REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
+reply->replyPrev` — so the frame above inherits the cut frame's own outward
+pointer and every frame below stays reachable from the head.  v1.0.0 must not
+claim seL4-MCS reply-stack semantics at chain depth ≥ 3.  **A `reply_remove_tcb`
+reference elsewhere in this tree names an operation's shape; it is not evidence
+about what upstream writes** — that conflation is how the false claim survived
+eight cuts.
+
+Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
+
+
+### WS-HP The head-driven donation pop — PLANNED (registered v0.35.16)
+
+The reply path decides whether to pop a donated scheduling context from the
+**recorded server's binding** (`endpointReplyServerDonation?`), not from whether
+the answered frame heads a context.  `severAtCut` is exactly what keeps those
+two facts equivalent — and it is a **divergence** from seL4-MCS, whose
+`reply_remove` splices, so the frames below a cut stay reachable from the head
+there.  The consequence is measured rather than described: at reply-stack depth
+≥ 3 a middle removal drops the frames below the cut, the reservation settles
+`.bound` on a thread strictly *inside* the chain, and its owner is left
+`.unbound` for good (`tests/SmpIpcSuite.lean` §3.22; §3.20's depth-two witness
+structurally cannot show it, because a two-frame stack's lower frame is its
+bottom and both policies then write the same value).
+
+The correction is **two changes in a forced order**, not one: the splice alone
+is unsound under a binding-driven trigger, because it re-heads a frame whose
+recorded server is by then `.unbound`, so answering it runs no pop and leaves a
+consumed frame heading a context — the object pinning `v0.35.4` closed.  So the
+trigger moves first (HP4, HP5), then the sever becomes a splice (HP6), and
+HP2.3 makes that ordering a machine-checked fact rather than a note.
+
+Three things a reader should take from the plan rather than infer.  (1) **The
+payoff is larger than the accounting**: under the head-driven trigger the three
+*stated* pre-state coherence hypotheses the reply path carries
+(`replyStackHeadIsAnsweredReply`, `replyDonationOwnerIsAnsweredCaller`,
+`answeredHeadContextIsServerDonation`) become derivable and are deleted (HP7) —
+no invariant in this tree entails them today.  (2) **The cost is stated**:
+`maxLockSetSize` 22 → 23 and the RPi5 per-lock cost 15 → 14 µs, because the
+splice writes the frame below and no footprint names it (HP3.5).  (3) **HP5 is
+not optional**, and its reason is derived: after the splice a frame becomes the
+head whose recorded reply target is gone, so a *cancellation* there would leave
+a `.donated` binding naming a `.ready` owner.
+
+No sub-task has started.  Registered in
+[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C with closure target
+**before v1.0.0**; until it closes, v1.0.0 must not claim that completing a call
+chain returns a client's reservation, nor seL4-MCS reply-stack semantics at
+chain depth ≥ 3.
+
+Plan: [`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md).
 
 ### WS-SM SMP multi-core completion — IN FLIGHT (v0.31.2 → v1.0.0)
 
@@ -2317,7 +3904,7 @@ code may assume:
   a budget admits at the declared ceiling, with
   `WCRT_lockSet_le_budget_of_admissible` the payoff and
   `rpi5Tick_refuses_sixty_micro_sections` the `decide`-checked negative.  At
-  HEAD, the declared lock-set ceiling is **21**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3780 µs**.
+  HEAD, the declared lock-set ceiling is **22**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3960 µs**.
   Those three figures are **derived**, and since WS-OD OD3.15
   `scripts/check_lock_ceiling_figures.py` (Tier 0) holds every prose copy of them
   to the Lean sources: the constants and the formula that combines them are read
@@ -2464,7 +4051,7 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **172**
+  reports **zero** conjuncts bound on a post-state across all **176**
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements, measured over the comment-free code view with the conjunct set,
   the bundle family and each bundle's own pre-state all *derived* rather than
@@ -2694,6 +4281,27 @@ code may assume:
   return, and must not add a bundle theorem that threads `donationOwnerValid` on
   such a state: it would be vacuous rather than conditional, which is how the
   nine pre-RR3.12 reply bundles asserted nothing on the ordinary seL4-MCS path.
+- **...and the bare reply and the leg the kernel dispatches disagree about
+  delegated authority** (PR #895 review round 22).  `endpointReplyOnCore` dropped
+  the `replier == expected` gate at PR #822 review 6J-lYm — authority is the
+  presented reply capability, which the dispatch resolves, and seL4-MCS reply
+  caps are delegatable — while the **bare** `endpointReply`, `endpointReplyRecv`
+  and the single-core `endpointReplyWithDonation` that composes the first still
+  carry it.  The live `.reply` arm routes through
+  `replyTransferOnCoreChecked` → `endpointReplyCrossCoreDispatch`, so **the
+  kernel admits a delegated reply-cap holder and the single-core composites
+  refuse one**, whatever `endpointReplyOnCore`'s "mirrors the single-core
+  `endpointReply`" wording suggests.  Two things new code must respect.  (1) The
+  divergence is pinned in both directions —
+  `endpointReplyCrossCoreDispatch_independent_of_replier` (every use of `replier`
+  is the unused `_replier`, so a delegate gets the non-delegated behaviour) and
+  `endpointReplyWithDonation_refuses_delegated_replier` — so a coverage claim, a
+  refinement or a mirror must name *which* spelling it is about; `frozenBranchLiveLeg`
+  and `frozenBranchLiveOperation` carry the frozen surface's counterparts as data
+  for exactly that reason.  (2) The direction is fail-**closed** (legitimate
+  authority declined, never illegitimate authority admitted) and the single-core
+  composite has no production caller, so this is a divergence to respect rather
+  than a hole; giving the question one answer is registered debt.
 - **A bare endpoint splice's post-state does not satisfy
   `ipcStateQueueMembershipConsistent`.**  `endpointQueueRemoveDual` takes a
   thread out of its endpoint queue and deliberately does **not** touch that
@@ -3296,12 +4904,59 @@ code may assume:
   (non-broadcast) call site to `scripts/tlbi_local_allowlist.txt`.
 - **An `unsafe fn` body is not an unsafe context** (`v0.34.129`).  `sele4n-abi`
   and `sele4n-hal` both deny `unsafe_op_in_unsafe_fn`, so a hardware operation,
-  a raw-pointer dereference or a foreign call inside one of the HAL's thirteen
+  a raw-pointer dereference or a foreign call inside one of the HAL's ten
   `unsafe fn`s must sit in its own `unsafe { … }` block with its own
   `// SAFETY:` comment — which is what makes the HAL's stated discipline
-  (*every unsafe block carries a `// SAFETY:` comment*, enforced by
-  `scripts/check_arm_arm_citations.sh`) reach the bodies where the hardware
-  access actually happens.  It also makes an *absence* checkable: the host
+  (*every unsafe block carries a `// SAFETY:` comment*) reach the bodies where
+  the hardware access actually happens.  **That discipline is enforced by
+  `scripts/check_unsafe_block_justifications.py` (Tier 0) since `v0.35.9`, and
+  was enforced by nothing before it**: this file and
+  `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` row F.3 both named
+  `scripts/check_arm_arm_citations.sh`, which the v0.30.11 audit planned as
+  R12.C and which no commit on any branch ever contained.  A claimed gate is
+  the worst kind of stale claim, because the discharge row it backs reads as
+  evidence.  The live gate asks each site kind its own question — a `// SAFETY:`
+  comment in the contiguous run above an `unsafe` **block**, a `# Safety` doc
+  section on an `unsafe fn` **declaration**, which are Rust's two idioms and not
+  interchangeable — and the tree is at **136 of 136 justified** (114 blocks and
+  22 declarations, both counts emitted by the gate rather than written down
+  here), so its baseline is empty and any new unjustified site fails outright
+  rather than raising a floor.
+
+  **The declarations became 22 at `v0.35.18`, and the ten are a domain the gate
+  never examined** (PR #895 review round 5).  A foreign item carries no `unsafe`
+  token of its own — the block header does, and only in edition 2024 — so every
+  `extern "C" { fn … }` in this tree declared a caller-facing unsafe obligation
+  that no count, no inventory and no baseline could see.  Ten are live Lean
+  upcalls, and each one's precondition existed only as a `//` comment for the
+  reviewer: a caller of `lean_handle_fault` had no rustdoc statement that the
+  call is sound only on a ready core and only for an EL0-origin exception.  Each
+  publishes a `# Safety` section now, so the empty baseline survives; a new
+  foreign declaration must carry one on the day it is written.
+
+  **The count was 125 until `v0.35.15`, and the missing site was a domain
+  defect** (PR #895 review round 3).  The census globbed `*/src/**/*.rs`, which
+  names the crate libraries and silently omits everything else cargo compiles —
+  integration tests, `build.rs`, examples, benches.  `rust/sele4n-hal/tests/`
+  carries a real `unsafe` block, so the figure described a subset of the tree
+  while reading as a measurement of it, and the empty baseline would have stayed
+  green over an unjustified site in any omitted file.  The set is derived now:
+  every `.rs` file under the workspace that is not build output.
+
+  **And the gate meant that sentence only from `v0.35.12`** (PR #895 review): it
+  accepted a `// SAFETY:` comment on a declaration too, as a fallback, under the
+  very comment saying the two are not interchangeable.  That is not leniency —
+  the idioms publish to different audiences.  A `// SAFETY:` comment is inside
+  the file, for the reviewer reading the next line; a `# Safety` section is
+  rustdoc, for the **caller** who must discharge the obligation and never opens
+  this file.  Taking the first for the second passes an `unsafe fn` that exposes
+  no contract at all to the people bound by it.  All twelve declarations already
+  carried a `# Safety` section, so removing the fallback failed nothing and
+  refuses the next one documented the wrong way; the self-test pins the
+  separation in **both** directions, each case keeping the justification and
+  writing it in the other kind's idiom.  The ARM ARM citation count is reported beside it and deliberately not
+  enforced: deciding which sites touch hardware needs the body, which is the
+  analysis-instead-of-a-contract shape this file retires twice above.  It also makes an *absence* checkable: the host
   `raw_syscall` mock is `unsafe fn` for signature parity alone, and its body
   compiling with no block is the compiler's statement of that, where before it
   was a docstring's.  The lint was added because the claim it replaces was

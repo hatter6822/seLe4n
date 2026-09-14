@@ -506,7 +506,7 @@ none toggle `machine.interruptsEnabled`.
     Context save only modifies `objects` (writes register context to TCB). -/
 theorem saveOutgoingContext_preserves_interruptsEnabled (st : SystemState) :
     (saveOutgoingContext st).machine.interruptsEnabled = st.machine.interruptsEnabled := by
-  unfold saveOutgoingContext
+  unfold saveOutgoingContext SystemState.getTcb?
   split
   · rfl
   · split <;> simp_all
@@ -517,7 +517,7 @@ theorem restoreIncomingContext_preserves_interruptsEnabled
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).machine.interruptsEnabled =
     st.machine.interruptsEnabled := by
-  unfold restoreIncomingContext
+  unfold restoreIncomingContext SystemState.getTcb?
   split <;> simp_all
 
 /-- AG5-G: `setCurrentThread` preserves `interruptsEnabled`.
@@ -566,7 +566,7 @@ theorem schedule_preserves_interruptsEnabled (st : SystemState) :
     ∀ st', schedule st = .ok ((), st') →
     st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
   intro st' hStep
-  unfold schedule at hStep
+  unfold schedule SystemState.getTcb? at hStep
   -- Case split on chooseThread result
   split at hStep
   · -- chooseThread error
@@ -600,7 +600,7 @@ theorem timerTick_preserves_interruptsEnabled (st : SystemState) :
     ∀ st', timerTick st = .ok ((), st') →
     st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
   intro st' hStep
-  unfold timerTick at hStep
+  unfold timerTick SystemState.getTcb? at hStep
   split at hStep
   · -- No current thread: { st with machine := tick st.machine }
     simp at hStep; rw [← hStep]; exact tick_preserves_interruptsEnabled st.machine

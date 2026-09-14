@@ -121,7 +121,7 @@ make the theorem assume what it claims to prove.
 `scripts/check_ipc_invariant_dethreading.py` (Tier 0) measures this over the
 comment-free code view, deriving the conjunct set and each bundle's own
 pre-state rather than matching binder names, and reports **zero** conjuncts
-bound on a post-state across all **172** statements in the family, with the
+bound on a post-state across all **176** statements in the family, with the
 conjunct set and the bundle family both derived from the sources.  The figure is
 spelled in the form the gate reads, so a cut that grows the family fails until
 this sentence is corrected — it said 146 while the tree measured 170, unwatched,
@@ -199,6 +199,43 @@ frame donating a *different* context. `maxLockSetSize` does not move — the
 `.call` footprint already write-locks every object the push writes — so no
 published WCRT or covert-channel figure is recomputed.
 See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.7 for the canonical text.
+
+**The reply path runs `reply_remove` too** (WS-RM, `v0.35.6`).  `v0.35.4` wired
+the detach into the **cancellation** path and left the **reply** path relying on
+the answered frame being the head — which every reply of the nested Call pattern
+satisfies and a *delegated* reply capability answering out of order does not.
+`removeCallerReplyFrame` is the one removal step, called by
+`endpointReplyOnCore` and by both single-core spines; `.reply` and `.replyRecv`
+declare the frame it writes (`answeredReplyFrameAbove?`, resolved from the same
+expression the arm's existing reply member comes from), which takes the declared
+lock-set ceiling to **22** -- with that member proved a declared *write* rather
+than merely declared (`lockSet_endpointReplyOnCore_covers_detachedFrameAbove` and
+its `.replyRecv` twin, the reply-path siblings of the cancellation path's own);
+the reply leg's head case is stated as `donationChainWellFormedExcept` and
+discharged by the donation pop that follows it in the same transition
+(`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`, with the
+fault reply and the reply *transfer* composing it, under one pre-state local
+coherence fact, `answeredHeadContextIsServerDonation`); and `.replyRecv`'s pop moved
+**between** the legs, which is seL4-MCS's own `doReplyTransfer` → `reply_remove`
+→ `receiveIPC` order and which the receive leg's re-link requires, since
+`Reply.isFree` reads both stack links.  What keeps the surface closed is derived
+rather than listed: `ReplyStackWriteCensus` (Tier 1) collects every definition
+that writes reply-stack data from the elaborated environment and requires each to
+name a chain result, or to be recorded as a half-step of the composite that does,
+or — on the frozen execution surface, which has no chain predicate of its own —
+as mirroring a live site that states one — with the primitive list it starts from
+held to the code by a second, independent derivation, since `storeObject` takes a
+whole object and a record update can rewrite a stack link without naming any
+helper.  The frozen surface joined at `v0.35.12`: it is reached by neither
+library root, so the closure held everywhere except one module that writes the
+live `Reply` record, and the frozen reply was clearing a caller's Reply bare —
+this workstream's own defect, on the surface nothing was looking at.  The cost is stated with the fix:
+removing a caller from the *middle* of a chain does not preserve the donation
+accounting, so a delegate answering an owner out of order leaves that owner
+`.unbound` and the context settles on the intermediate caller — seL4-MCS's own
+`reply_remove` answer, pinned by `tests/SmpIpcSuite.lean` §3.20 rather than
+described.  See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.8 for the
+canonical text.
 
 **A donation moves budget, period and deadline — not priority or domain**
 (`v0.35.3`).  Closing WS-OD surfaced an authority crossing in both directions:
@@ -455,7 +492,7 @@ platform rather than with the lock.
 > eighteen with no hypothesis, because the re-donation members and the
 > pre-receive return are mutually exclusive on the send queue.
 >
-> At HEAD, the declared lock-set ceiling is **21**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3780 µs** —
+> At HEAD, the declared lock-set ceiling is **22**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3960 µs** —
 > the canonical spelling `scripts/check_lock_ceiling_figures.py` (Tier 0, WS-OD
 > OD3.15) holds to the Lean sources, so this chapter cannot go stale behind the
 > constant the way it did between OD3.7 and OD3.14. See

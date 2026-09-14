@@ -72,7 +72,7 @@ def registerService (reg : ServiceRegistration) : Kernel Unit :=
     else
       match reg.endpointCap.target with
       | .object epId =>
-        match st.objects[epId]? with
+        match st.getObject? epId with
         | none => .error .invalidCapability
         -- R4-C.2 (L-09): Target must be an endpoint object
         | some (.endpoint _) =>
@@ -335,7 +335,7 @@ theorem registerService_error_duplicate
     (st : SystemState) (reg : ServiceRegistration)
     (hDup : st.serviceRegistry[reg.sid]? ≠ none) :
     registerService reg st = .error .illegalState := by
-  unfold registerService
+  unfold registerService SystemState.getObject?
   simp [hDup]
 
 /-- Service registration with unknown interface returns `objectNotFound`. -/
@@ -344,7 +344,7 @@ theorem registerService_error_unknown_interface
     (hNoDup : st.serviceRegistry[reg.sid]? = none)
     (hNoIface : st.interfaceRegistry[reg.iface.ifaceId]? = none) :
     registerService reg st = .error .objectNotFound := by
-  unfold registerService
+  unfold registerService SystemState.getObject?
   simp [hNoDup, hNoIface]
 
 /-- Revoking a non-existent service returns `objectNotFound`. -/
@@ -381,7 +381,7 @@ theorem registerService_error_no_write_right
     (hEp : st.objects[epId]? = some (.endpoint ep))
     (hNoWrite : Capability.hasRight reg.endpointCap .write = false) :
     registerService reg st = .error .illegalAuthority := by
-  unfold registerService
+  unfold registerService SystemState.getObject?
   simp [hNoDup, hHasIface, hTarget, hEp, hNoWrite]
 
 /-- Service registration preserves objects. -/
@@ -389,7 +389,7 @@ theorem registerService_preserves_objects
     (st st' : SystemState) (reg : ServiceRegistration)
     (hStep : registerService reg st = .ok ((), st')) :
     st'.objects = st.objects := by
-  unfold registerService at hStep
+  unfold registerService SystemState.getObject? at hStep
   split at hStep
   · cases hStep
   · split at hStep
@@ -429,7 +429,7 @@ theorem registerService_preserves_scheduler
     (st st' : SystemState) (reg : ServiceRegistration)
     (hStep : registerService reg st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
-  unfold registerService at hStep
+  unfold registerService SystemState.getObject? at hStep
   split at hStep
   · cases hStep
   · split at hStep

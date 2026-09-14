@@ -69,7 +69,7 @@ honest statement is the budget condition solved for the measurable factor:
 `admissibleCriticalSection` gives the largest per-lock cost a budget admits
 (`WCRT_lockSet_le_budget_of_admissible`), which for the RPi5 tick is **15 µs**
 (`admissibleCriticalSection_rpi5Tick`).  The 60 µs the master plan §7.2 assumed
-does **not** fit — `21 · 3 · 60 = 3780 µs`
+does **not** fit — `22 · 3 · 60 = 3960 µs`
 (`rpi5Tick_refuses_sixty_micro_sections`), nor did it at any previous ceiling —
 and the boundary at that cost is a footprint of five locks
 (`rpi5Tick_sixty_micro_section_footprint_boundary`), which is what the plan's
@@ -298,15 +298,21 @@ donation pop reads below its reply-stack head), and **WS-OD OD3.5** from 37 µs
 whenever the ceiling does — which is the point of stating it as a theorem rather
 than a paragraph: a cut that widens a footprint pays here, visibly.
 
+**WS-RM (`v0.35.6`)** raised the ceiling 21 → 22 and this figure did **not**
+move: `1000 / (22 · 3)` floors to the same 15.  That is what a derived figure
+looks like when the derivation absorbs a raise, and it is why the number is read
+off this theorem rather than off a paragraph that would have had to guess.
+
 How much of the ceiling no reachable state takes up is stated where the
-footprint is, not here: `lockSet_endpointReplyRecvOnCore_size_le_eighteen`. -/
+footprint is, not here: `lockSet_endpointReplyRecvOnCore_size_le_nineteen`
+unconditionally, and `…_size_le_eighteen` under the coherence facts. -/
 theorem admissibleCriticalSection_rpi5Tick :
     admissibleCriticalSection rpi5TickBudgetMicros = 15 := by decide
 
 /-- WS-RR RR7.31: **and the plan's own assumption fails it.**  A 60 µs per-lock
-section gives `21 · 3 · 60 = 3780 µs`, which is outside the 1 ms tick — so the
+section gives `22 · 3 · 60 = 3960 µs`, which is outside the 1 ms tick — so the
 §7.2 conclusion "comfortably fits within the 1-ms timer tick budget" is false at
-`maxLockSetSize = 21`.  Stated as a negative so the arithmetic is pinned in the
+`maxLockSetSize = 22`.  Stated as a negative so the arithmetic is pinned in the
 direction that matters: a future cut that raises `maxLockSetSize` again, or that
 grounds `tCs` at 60 µs, has to confront this theorem rather than a paragraph.
 WS-OD OD3.5 is the first cut to have done so.

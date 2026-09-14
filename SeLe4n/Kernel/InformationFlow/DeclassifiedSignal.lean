@@ -1661,12 +1661,12 @@ theorem declassifiedSignal_ordinary_eq_signal (ctx : GenericLabelingContext)
     -- ordinary signal's own recovery — the target gate is the ordinary
     -- signal's none-arm, decided through the typed accessor.
     have hL : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
-        (if (st.objects[notificationId]?).isSome then (st, .error .invalidCapability)
+        (if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
          else (st, .error .objectNotFound)) := by
-      rw [← getObjectType?_isSome_eq_raw]
+      rw [SystemState.getObject?_eq_getElem, ← getObjectType?_isSome_eq_raw]
       simp [notificationSignalDeclassifiedOnCore, hCur, hN]
     have hR : notificationSignalBoundOnCore notificationId badge c st =
-        (if (st.objects[notificationId]?).isSome then (st, .error .invalidCapability)
+        (if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
          else (st, .error .objectNotFound)) := by
       unfold notificationSignalBoundOnCore boundDeliveryTarget? notificationSignalOnCore
       rw [hN]

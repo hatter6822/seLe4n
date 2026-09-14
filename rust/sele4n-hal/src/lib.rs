@@ -57,6 +57,41 @@
 // and it is edition 2024's default, so the behaviour is acquired here
 // deliberately rather than at some future edition bump.
 #![deny(unsafe_op_in_unsafe_fn)]
+// **The unsafe-documentation discipline is enforced by rustc and rustdoc, not by
+// a scanner.**  `scripts/check_unsafe_block_justifications.py` grew a Rust lexer,
+// a Rust item parser and a CommonMark implementation in order to ask two
+// questions the real front-ends already answer, and seven consecutive review
+// rounds found a defect in one of those three.  The two lints below are the
+// front-ends themselves:
+//
+//   * `undocumented_unsafe_blocks` is rustc's own parse of the block and of the
+//     comment run above it — no `//` vs `/*` vs `r#unsafe` vs attribute-nesting
+//     question can be got wrong, because there is no second parser to get it
+//     wrong in.
+//   * `missing_safety_doc` renders the item's documentation with the same
+//     markdown parser rustdoc uses and looks for the published section — so
+//     fences, HTML blocks, Setext underlines and raw doc attributes are decided
+//     by the tool whose output the caller actually reads.
+//
+// They are denied at the crate root rather than passed on a command line
+// because `cargo clippy -- -W …` reaches only the final compilation unit and is
+// silent for every workspace member; that silence is indistinguishable from a
+// clean tree, and was, until it was mutation-tested.
+//
+// **The cross lane is where the block lint has teeth.**  Most of this crate is
+// `#[cfg(target_arch = "aarch64")]`, so the host lane compiles those blocks out
+// and the lint cannot see them: deleting a real `// SAFETY:` comment produces 0
+// findings on the host and 2 on `aarch64-unknown-none`.  Both lanes run clippy
+// with `-D warnings`, and the cross one is `scripts/test_aarch64_cross_build.sh`.
+//
+// What the lints do NOT cover, and what the scanner therefore still owns: a
+// non-`pub` `unsafe fn` (out of `missing_safety_doc`'s reach), an `unsafe fn`
+// declared inside an `extern` block (no lint requires a contract of a foreign
+// declaration, and this crate has ten Lean upcalls that need one), and the ARM
+// ARM citation census.  The scanner says so in its own output rather than
+// claiming the whole surface.
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::missing_safety_doc)]
 #![allow(unsafe_code)]
 
 // ============================================================================

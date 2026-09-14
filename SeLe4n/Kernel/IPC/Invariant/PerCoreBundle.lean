@@ -64,10 +64,15 @@ established SM4.D per-core form `passiveServerIdle_perCore`
 
 **AK7 typed-accessor discipline** (matching SM4.D): every per-core
 predicate routes TCB / Reply / SchedContext lookups through the typed
-`getTcb?` / `getReply?` / `getSchedContext?` accessors (zero new
-`tid`-keyed raw-lookup sites); endpoint / notification lookups keep the
-raw `objects[oid]?` form (`ObjId`-keyed, outside `RAW_LOOKUP_TID`) so the
-bodies stay textually parallel to the single-core surface.
+`getTcb?` / `getReply?` / `getSchedContext?` accessors.  The endpoint /
+notification predicates keep the raw `objects[oid]?` form so the bodies
+stay textually parallel to the single-core surface; they are
+propositions, so they sit in the census's diagnostic `STORE_READ_SPEC`
+population rather than the enforced `STORE_READ_CODE` one, which is
+**zero**.  (The older justification here named `RAW_LOOKUP_TID` and the
+`tid`- versus `ObjId`-keyed distinction.  That metric was retired at
+v0.35.7: it summed both populations, and the key type was never the
+property -- four id types carry `.toObjId`.)
 
 Axiom-clean: every theorem depends only on the standard foundational
 axioms (`propext` / `Quot.sound` / `Classical.choice`).

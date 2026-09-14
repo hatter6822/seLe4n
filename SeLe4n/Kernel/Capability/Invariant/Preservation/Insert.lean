@@ -87,7 +87,7 @@ theorem cspaceInsertSlot_preserves_replyCapPointsToValidReply
     (hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     replyCapPointsToValidReply st' := by
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   cases hPre : st.objects[addr.cnode]? with
   | none => simp [hPre] at hStep
   | some preObj =>
@@ -155,7 +155,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
   -- WS-H4: Transfer new components through storeObject(CNode) → storeCapabilityRef chain
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
-    unfold cspaceInsertSlot at hStep
+    unfold cspaceInsertSlot SystemState.getCNode? at hStep
     cases hPre : st.objects[addr.cnode]? with
     | none => simp [hPre] at hStep
     | some preObj =>
@@ -201,7 +201,7 @@ theorem cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     replyCapPointsToValidReply st' := by
-  unfold cspaceDeleteSlotCore at hStep
+  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
   cases hPre : st.objects[addr.cnode]? with
   | none => simp [hPre] at hStep
   | some preObj =>
@@ -258,7 +258,7 @@ theorem cspaceInsertSlot_cdt_eq
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.cdt = st.cdt := by
-  unfold cspaceInsertSlot at hStep
+  unfold cspaceInsertSlot SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>

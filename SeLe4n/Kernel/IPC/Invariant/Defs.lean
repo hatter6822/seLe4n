@@ -512,7 +512,7 @@ theorem endpointQueuePopHead_returns_head
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st')) :
     (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some tid := by
-  unfold endpointQueuePopHead at hPop
+  unfold endpointQueuePopHead SystemState.getObject? at hPop
   rw [hObj] at hPop; simp only at hPop
   cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
   | none => simp [hHead] at hPop
@@ -563,7 +563,7 @@ theorem endpointQueuePopHead_returns_pre_tcb
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
     st.objects[tid.toObjId]? = some (.tcb headTcb) := by
-  unfold endpointQueuePopHead at hPop
+  unfold endpointQueuePopHead SystemState.getObject? at hPop
   rw [hObj] at hPop; simp only at hPop
   cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
   | none => simp [hHead] at hPop
@@ -637,7 +637,7 @@ theorem endpointQueuePopHead_send_sender_carries_message
     cases hp : t.pendingMessage with
     | none => rw [hSend, hp] at h; simp at h
     | some m => simp
-  unfold endpointQueuePopHead at hPop
+  unfold endpointQueuePopHead SystemState.getObject? at hPop
   rw [hObj] at hPop; simp only at hPop
   cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
   | none => simp [hHead] at hPop
@@ -2009,21 +2009,52 @@ theorem cleanupDonationStackValid_of_no_stacks (st : SystemState)
 -- WS-OD OD5.2 — what a cancelled MIDDLE caller's scheduling context does
 -- ============================================================================
 
-/-- **WS-OD OD5.2: the two answers plan §3.4 puts to this workstream, named.**
+/-- **WS-OD OD5.2: the answers plan §3.4 puts to this workstream, named.**
 
-`Reply` carries `prev` and no `next`, so a cancelled *middle* caller's frame
-cannot be spliced out of a reply stack by a backward scan the way seL4's
-doubly-linked `reply_remove` does.  What happens to that thread's scheduling
-context is therefore a decision, and the plan forbids inheriting one by
-omission.  Both candidates are named here so that the choice below is a
-statement rather than an accident of a field read. -/
+What happens to the scheduling context of a *middle* caller taken out of a chain
+— by a cancellation, or by a delegated reply capability answering out of order —
+is a decision, and the plan forbids inheriting one by omission.  Every candidate
+is named here so that the choice below is a statement rather than an accident of
+a field read.
+
+**The premise this list was first written under is gone** (`v0.35.4`).  It read
+"`Reply` carries `prev` and no `next`, so a middle frame cannot be spliced out of
+a reply stack by a backward scan", which was true of the singly linked stack and
+has not been true since the stack became doubly linked: `Reply.next` is exactly
+the field a splice needs.  `spliceOutTheCut` is the candidate that field made
+available, and it is named rather than the stale sentence being trimmed — a
+policy justified by a data structure the tree no longer has is a justification
+that has stopped being read. -/
 inductive CancelledMiddleCallerPolicy where
-  /-- **Sever at the cut.**  The cancelled caller's frame stays on the stack with
-  its `caller` consumed; the pop that later reaches it reads `none` and binds the
-  *innermost live* caller `.bound scId`, so the context stops at the cut and the
-  threads below it never see it again.  This is seL4-MCS's non-head
-  `reply_remove` branch, and it is `O(1)` at every depth. -/
+  /-- **Sever at the cut.**  The frame above the cut stops linking down
+  (`detachReplyFrameAbove` writes `prev := none`), so every frame *below* the cut
+  leaves the context's stack; the pop that later reaches the frame above reads
+  `none` and binds that caller `.bound scId`.  `O(1)` at every depth, and the
+  policy this kernel implements.
+
+  What it costs is **measured** at stack depth three in `tests/SmpIpcSuite.lean`
+  §3.22, not described: at depth two the frame below the cut is the bottom of the
+  stack, so this and `spliceOutTheCut` write the same value into the frame above
+  and the two cannot be told apart. -/
   | severAtCut
+  /-- **Splice the cut frame out.**  The ordinary doubly-linked-list removal: the
+  frame above takes the cut frame's own `prev`, the frame below takes its `next`.
+  The frames below stay on the stack, so the reservation goes on travelling
+  outward to the thread that owns it — strictly better accounting, and also
+  `O(1)`.
+
+  **This is what seL4-MCS does**, confirmed against its source at `v0.35.14`
+  rather than assumed: `reply_remove`'s non-head branch writes
+  `REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
+  reply->replyPrev`, so the frame above inherits the cut frame's own outward
+  pointer and every frame below stays reachable from the head.  `severAtCut` is
+  therefore a **divergence** from upstream and not an inheritance of it — which
+  is the opposite of what this file asserted before that check.
+
+  `cancelledMiddleCallerPolicy`'s third reason is why this kernel diverges, and
+  it is a property of **when this kernel pops** rather than of the splice
+  itself. -/
+  | spliceOutTheCut
   /-- **Reclaim to the cancelled thread.**  The cancellation reaches the
   context's real holder through `SchedContext.scReply` / `boundThread` and hands
   the context back to the thread being cancelled, consistent with the depth-1
@@ -2048,17 +2079,42 @@ Chosen for three reasons, in order of weight.
    is not, so a reclaim that traverses the chain could not be given a footprint
    at all -- the same argument OD3.7 makes for the pop's single frame of
    lookahead.
-3. **It is seL4-MCS's answer, structurally as well as in effect.**  seL4's reply
-   stack is doubly linked, and `reply_remove_tcb` on a non-head frame *breaks*
-   the stack at it: the frame above stops linking down, everything below is cut
-   off, and the frame itself is unlinked.  Since `v0.35.4` this model's stack is
-   doubly linked too (`Reply.next`), and the cancellation runs exactly that
-   detach (`detachCancelledCallerFrame` → `detachReplyFrameAbove`) before the
-   caller link is consumed.  The scheduling context settles on the innermost
-   live caller — the frame above the cut is now the bottom of its stack, so the
-   pop that reaches it binds that thread `.bound scId` outright — and reaches no
-   thread below the cut, so a component written against seL4's timeout semantics
-   sees the same owner.
+3. **It keeps this kernel's pop trigger sound**, which is the reason that
+   actually carries the decision and the one a reader must not mistake for an
+   appeal to upstream.  This kernel decides whether a reply pops a donation from
+   the **recorded server's binding** (`endpointReplyServerDonation?`, resolved
+   through `recordedReplyServer?`), *not* from whether the answered frame heads a
+   context.  Under `severAtCut` those two facts stay equivalent: a frame heads a
+   context exactly while the server it recorded still holds the donation, since a
+   server that donated onward pushed a new head, and the frames below a cut leave
+   the stack altogether rather than waiting to be re-headed.
+
+   `spliceOutTheCut` breaks the equivalence.  It re-heads a frame whose recorded
+   server is by then gone and `.unbound`, so answering that frame runs **no** pop;
+   `Reply.consumed` keeps a head's links; and the resulting state is a consumed
+   frame heading a context while a live `.donated` holder still names its owner —
+   exactly what `replyStackOuterCaller?_of_consumed_frame` refuses, and the object
+   pinning `v0.35.4` closed.  The three coherence facts the reply path carries as
+   *stated* pre-state hypotheses — `replyStackHeadIsAnsweredReply`,
+   `replyDonationOwnerIsAnsweredCaller` and `answeredHeadContextIsServerDonation`
+   — are that equivalence in the form their consumers need, and no invariant in
+   this tree entails them.
+
+   So taking the splice means moving the pop's *trigger* to head-ness and its
+   *source* to `SchedContext.boundThread`, which is a workstream rather than a
+   field write.  It is registered in `docs/REGISTERED_DEBT.md` with a closure
+   target, not left as an unexamined preference.
+
+   **And this is a divergence from seL4-MCS, stated as one.**  Until `v0.35.14`
+   this file asserted the opposite — that severing was upstream's structural
+   answer.  Checked against the source, `reply_remove`'s non-head branch splices
+   (`next->replyPrev = reply->replyPrev`), so every frame below a cut stays on
+   the stack there and the reservation goes on travelling outward.  The
+   divergence costs what `tests/SmpIpcSuite.lean` §3.22 measures, it is registered
+   in `docs/REGISTERED_DEBT.md` with an owner and a closure target, and v1.0.0
+   must not claim seL4-MCS reply-stack semantics at chain depth ≥ 3.  A
+   `reply_remove_tcb` reference elsewhere in this tree names an operation's
+   *shape*; it is not evidence about what upstream writes.
 
    Before `v0.35.4` the same policy was implemented by *leaving the cut frame on
    the stack* with its `caller` consumed and letting the pop read a consumed
@@ -2070,19 +2126,24 @@ Chosen for three reasons, in order of weight.
    (`replyStackOuterCaller?_of_consumed_frame`, `.error .illegalState`) rather
    than reading it as the bottom.
 
-What it costs is stated rather than hidden.  Neither the cancelled thread nor the
+What it costs is measured rather than hidden.  Neither the cut thread nor the
 chain's **original** owner gets the scheduling context back: it settles on the
-innermost live caller, bound `.bound scId` outright, and **no later pop carries it
-below the cut** -- the frames below were cut off, and a `.bound` holder is not a
-donation, so nothing pops it.  In MCS terms the budget was already spent
-downward.  Cancelling a middle caller therefore requires authority to suspend
-that thread -- a capability its callees do not hold by virtue of being callees --
-and what it costs is that thread's callers' reservation.  It is a **fairness**
-divergence, not a safety one: the resulting state satisfies `donationOwnerValid`
-and `passiveServerIdle`, no budget is lost to the system, and — since `v0.35.4` —
-no object is pinned: the cut-off frames leave the structure as their callers are
-answered or cancelled (`Reply.consumed`), and the context's stack empties when
-the upper part is popped. -/
+caller immediately above the cut, bound `.bound scId` outright, and **no later
+pop carries it below the cut** -- the frames below left the stack, and a `.bound`
+holder is not a donation, so nothing pops it.  At stack depth three
+(`tests/SmpIpcSuite.lean` §3.22) that owner is two hops outside the cut and the
+reservation settles on a thread strictly inside the chain, where the *same* stack
+unwound in order delivers it outward still owed; depth three is the shallowest
+stack on which this is visible at all.
+
+The authority needed is the authority to unblock the thread being cut -- a
+suspend right over it, or possession of its reply capability, which a callee's
+confederate may legitimately hold.  It is a **fairness** divergence, not a safety
+one: the resulting state satisfies `donationOwnerValid` and `passiveServerIdle`,
+no budget is lost to the system, and -- since `v0.35.4` -- no object is pinned,
+because a frame cut off the stack carries no `.head` link and so is cleared
+outright when its own caller is consumed (`Reply.consumed`'s non-head branch,
+exercised in §3.22). -/
 def cancelledMiddleCallerPolicy : CancelledMiddleCallerPolicy := .severAtCut
 
 /-- WS-OD OD5.2: and the decision is checkable, not merely declared -- a cut that
@@ -2337,7 +2398,7 @@ def schedContextStackHead? : Option KernelObject → Option (Option SeLe4n.Reply
 to the state's own lookup, so the walk and the frame read one projection. -/
 def replyStackLinksAt? (st : SystemState) (rid : SeLe4n.ReplyId) :
     Option (Option SeLe4n.ReplyId × Option ReplyStackLink) :=
-  replyStackLinks? st.objects[rid.toObjId]?
+  replyStackLinks? (st.getObject? rid.toObjId)
 
 @[simp] theorem replyStackLinks?_reply (r : Reply) :
     replyStackLinks? (some (.reply r)) = some (r.prev, r.next) := rfl
@@ -2526,7 +2587,7 @@ theorem donationChainWalk_mono (st : SystemState) :
       obtain ⟨r, tail, hR, hNext, hRec, rfl⟩ := donationChainWalk_succ_some h
       rw [donationChainWalk_succ]
       have hLinks : replyStackLinksAt? st rid = some (r.prev, r.next) := by
-        unfold replyStackLinksAt?; rw [hR]; rfl
+        unfold replyStackLinksAt? SystemState.getObject?; rw [hR]; rfl
       rw [hLinks]
       simp only []
       rw [if_pos hNext, ih (.frame rid) r.prev tail hRec]
@@ -2676,14 +2737,14 @@ theorem donationChainWalk_exists_of_agree_or_cut {st st' : SystemState} :
         refine ⟨rid0 :: tail', ?_⟩
         rw [donationChainWalk_succ]
         have hLinks : replyStackLinksAt? st' rid0 = some (r0.prev, r0.next) := by
-          rw [hEq]; unfold replyStackLinksAt?; rw [hR0]; rfl
+          rw [hEq]; unfold replyStackLinksAt? SystemState.getObject?; rw [hR0]; rfl
         rw [hLinks]
         simp [hNext0, hTail']
       · have hrq : rq = r0 := KernelObject.reply.inj (Option.some.inj (hRq.symm.trans hR0))
         refine ⟨[rid0], ?_⟩
         rw [donationChainWalk_succ]
         have hLinks : replyStackLinksAt? st' rid0 = some (none, r0.next) := by
-          unfold replyStackLinksAt?; rw [hRq']; simp [hPrev', hNext', hrq]
+          unfold replyStackLinksAt? SystemState.getObject?; rw [hRq']; simp [hPrev', hNext', hrq]
         rw [hLinks]
         simp [hNext0]
 
@@ -2903,7 +2964,7 @@ theorem donationChainWalk_congr_on_chain {st st' : SystemState} :
       obtain ⟨r, tail, hR, hNext, hRec, rfl⟩ := donationChainWalk_succ_some h
       rw [donationChainWalk_succ]
       have hLinks : replyStackLinksAt? st rid = some (r.prev, r.next) := by
-        unfold replyStackLinksAt?; rw [hR]; rfl
+        unfold replyStackLinksAt? SystemState.getObject?; rw [hR]; rfl
       rw [hAgree rid List.mem_cons_self, hLinks]
       simp only []
       rw [if_pos hNext,
@@ -2983,6 +3044,74 @@ structure donationChainWellFormed (st : SystemState) : Prop where
     st.objects[scId.toObjId]? = some (.schedContext sc) →
     ∃ (fuel : Nat) (chain : List SeLe4n.ReplyId),
       donationChainFrom st scId fuel sc.scReply = some chain
+
+/-- **WS-RM (`v0.35.6`): the chain invariant with `Reply.wellFormed` relaxed at one
+key** — the honest statement about the state a reply leg leaves when the frame it
+answered is a stack **head**.
+
+A head keeps its links when its caller is consumed, deliberately: the donation pop
+that removes it runs in the same transition right after the reply leg and
+validates the head by that very link (WS-OD plan §3.3).  So between the two the
+frame at `rid` has `caller = none` and a live `.head` link, which
+`Reply.wellFormed` forbids — and **only** that: the context still names the frame
+and the frame still names the context, no `prev` names it (its `next` is a
+`.head`, so `prevLinkReciprocal` in the pre-state admits none), and every walk is
+over links nothing moved.
+
+It stands to the reply leg as `ipcInvariantFullExceptDonationOwner` stands to the
+bare reply: the composite that discharges it is where the pop runs
+(`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`), and
+`donationChainWellFormed_of_except` is the upgrade. -/
+structure donationChainWellFormedExcept (st : SystemState) (rid : SeLe4n.ReplyId) : Prop where
+  /-- Every stored Reply **other than `rid`** is locally well formed. -/
+  replyWellFormedExcept : ∀ (q : SeLe4n.ReplyId) (r : Reply), q ≠ rid →
+    st.objects[q.toObjId]? = some (.reply r) → r.wellFormed
+  /-- A context's head resolves to a Reply heading that context. -/
+  headLinkReciprocal : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+    st.objects[scId.toObjId]? = some (.schedContext sc) →
+    ∀ q : SeLe4n.ReplyId, sc.scReply = some q →
+      ∃ r : Reply, st.objects[q.toObjId]? = some (.reply r) ∧ r.next = some (.head scId)
+  /-- A Reply heading a context is that context's head. -/
+  headLinkResolves : ∀ (q : SeLe4n.ReplyId) (r : Reply) (scId : SeLe4n.SchedContextId),
+    st.objects[q.toObjId]? = some (.reply r) → r.next = some (.head scId) →
+    ∃ sc : SchedContext, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
+      sc.scReply = some q
+  /-- Every `prev` link is answered by the frame it names. -/
+  prevLinkReciprocal : ∀ (q : SeLe4n.ReplyId) (r : Reply) (below : SeLe4n.ReplyId),
+    st.objects[q.toObjId]? = some (.reply r) → r.prev = some below →
+    ∃ b : Reply, st.objects[below.toObjId]? = some (.reply b) ∧ b.next = some (.frame q)
+  /-- Each context's stack, walked from its head, terminates. -/
+  headTerminates : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+    st.objects[scId.toObjId]? = some (.schedContext sc) →
+    ∃ (fuel : Nat) (chain : List SeLe4n.ReplyId),
+      donationChainFrom st scId fuel sc.scReply = some chain
+
+/-- The whole invariant is the relaxed one plus well-formedness at the one key it
+relaxes — so a composite that later removes that frame discharges the transient
+by supplying exactly that fact. -/
+theorem donationChainWellFormed_of_except {st : SystemState} {rid : SeLe4n.ReplyId}
+    (h : donationChainWellFormedExcept st rid)
+    (hAt : ∀ r : Reply, st.objects[rid.toObjId]? = some (.reply r) → r.wellFormed) :
+    donationChainWellFormed st where
+  replyWellFormed := by
+    intro q r hq
+    by_cases hEq : q = rid
+    · subst hEq; exact hAt r hq
+    · exact h.replyWellFormedExcept q r hEq hq
+  headLinkReciprocal := h.headLinkReciprocal
+  headLinkResolves := h.headLinkResolves
+  prevLinkReciprocal := h.prevLinkReciprocal
+  headTerminates := h.headTerminates
+
+/-- The relaxed form is weaker, at any key. -/
+theorem donationChainWellFormedExcept_of_wellFormed {st : SystemState}
+    (h : donationChainWellFormed st) (rid : SeLe4n.ReplyId) :
+    donationChainWellFormedExcept st rid where
+  replyWellFormedExcept := fun q r _ hq => h.replyWellFormed q r hq
+  headLinkReciprocal := h.headLinkReciprocal
+  headLinkResolves := h.headLinkResolves
+  prevLinkReciprocal := h.prevLinkReciprocal
+  headTerminates := h.headTerminates
 
 /-- WS-OD OD3.2: **the pop's head validation succeeds.**
 
@@ -3121,8 +3250,13 @@ first two projections are exactly what the walk and the four link fields
 consult; the third is what `replyWellFormed` — a Reply whose caller is gone
 carries no link — needs, since a step could otherwise consume the caller of a
 linked frame while framing its links, which is the one shape that is not a frame
-(a head frame's consumption on the reply path, closed by the pop that follows
-it in the same transition).  Every step that rewrites no Reply satisfies the
+— a head frame's consumption on the reply path, since `Reply.consumed` keeps a
+head's links deliberately.  It is a *transient*, not an exception: the reply leg
+leaves `donationChainWellFormedExcept` at that one key and the donation pop that
+follows it in the same transition discharges it
+(`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`, WS-RM
+`v0.35.6`).  A **non**-head consumption clears the links too, so it fails
+`replyLinks` as well and is not a borderline case.  Every step that rewrites no Reply satisfies the
 third field trivially (`of_no_chain_object_write`), and a step that *links* a
 caller (`linkReply`) satisfies it vacuously.
 
@@ -3268,6 +3402,57 @@ theorem donationChainFrame_of_storeObject
       exact hCaller r' (Option.some.inj hR) hC
     · rw [storeObject_objects_ne st st' oid k obj hk hObjInv hStore] at hR
       exact ⟨r', hR, hC⟩
+
+/-- **WS-OD OD5.6**: a single object-store insert frames the donation chain when
+the inserted object carries the same reply-stack data as the object it replaces
+and consumes no caller.
+
+The `storeObject`-free sibling of `donationChainFrame_of_storeObject`: several
+transitions write the object store with a direct `RHTable.insert` rather than
+through `storeObject`, and stating the frame once is what keeps each of them
+from re-deriving the same two-case lookup split.
+
+**WS-RM (`v0.35.6`)** re-homed it here, beside the predicate it is about.  It
+was private to the cancellation shape module, and the fault-reply path needs the
+same fact -- a second copy in a module the first does not import is the
+one-question-two-answers shape this tree keeps paying for. -/
+theorem donationChainFrame_of_objects_insert
+    {st : SystemState} {k0 : SeLe4n.ObjId} {obj : KernelObject}
+    (hInv : st.objects.invExt)
+    (hLinks : replyStackLinks? (some obj) = replyStackLinks? st.objects[k0]?)
+    (hHead : schedContextStackHead? (some obj) = schedContextStackHead? st.objects[k0]?)
+    (hCaller : ∀ r' : Reply, obj = .reply r' → r'.caller = none →
+      ∃ r : Reply, st.objects[k0]? = some (.reply r) ∧ r.caller = none) :
+    donationChainFrame st { st with objects := st.objects.insert k0 obj } := by
+  have hPoint : ∀ k : SeLe4n.ObjId,
+      (st.objects.insert k0 obj)[k]? = if k = k0 then some obj else st.objects[k]? := by
+    intro k
+    by_cases hk : k = k0
+    · subst hk
+      rw [if_pos rfl]
+      exact RobinHood.RHTable.getElem?_insert_self st.objects k obj hInv
+    · rw [if_neg hk]
+      exact RobinHood.RHTable.getElem?_insert_ne st.objects k0 k obj
+        (by simpa using fun h => hk h.symm) hInv
+  refine ⟨fun k => ?_, fun k => ?_, fun k r' hR hC => ?_⟩
+  · show replyStackLinks? ((st.objects.insert k0 obj)[k]?) = _
+    rw [hPoint k]
+    by_cases hk : k = k0
+    · subst hk; rw [if_pos rfl]; exact hLinks
+    · rw [if_neg hk]
+  · show schedContextStackHead? ((st.objects.insert k0 obj)[k]?) = _
+    rw [hPoint k]
+    by_cases hk : k = k0
+    · subst hk; rw [if_pos rfl]; exact hHead
+    · rw [if_neg hk]
+  · have hR' : (st.objects.insert k0 obj)[k]? = some (.reply r') := hR
+    rw [hPoint k] at hR'
+    by_cases hk : k = k0
+    · subst hk
+      rw [if_pos rfl] at hR'
+      exact hCaller r' (Option.some.inj hR') hC
+    · rw [if_neg hk] at hR'
+      exact ⟨r', hR', hC⟩
 
 /-- A TCB store at a key holding no Reply and no SchedContext frames the chain. -/
 theorem donationChainFrame_of_storeObject_tcb
@@ -3427,6 +3612,79 @@ theorem donationChainWellFormed_of_frame {st st' : SystemState}
   · intro rid r' below hR' hPrev'
     obtain ⟨r, hR, hP, _⟩ := hReplyPre rid.toObjId r' hR'
     obtain ⟨b, hB, hBNext⟩ := hInv.prevLinkReciprocal rid r below hR (by rw [hP]; exact hPrev')
+    obtain ⟨b', hB', _, hBN⟩ := hReplyPost below.toObjId b hB
+    exact ⟨b', hB', by rw [hBN]; exact hBNext⟩
+  · intro scId sc' hSc'
+    obtain ⟨sc, hSc, hH⟩ := hScPre scId.toObjId sc' hSc'
+    obtain ⟨fuel, chain, hChain⟩ := hInv.headTerminates scId sc hSc
+    refine ⟨fuel, chain, ?_⟩
+    rw [hH] at hChain
+    unfold donationChainFrom at hChain ⊢
+    rw [donationChainWalk_congr hFrame.replyLinks]
+    exact hChain
+
+/-- **WS-RM (`v0.35.6`): the frame transports the relaxed form too**, at the same
+key — so a step that moves no chain data cannot turn the head transient into a
+different one.  Every clause but the first is the unrelaxed clause verbatim; the
+first is the unrelaxed argument with the exempt key carried through. -/
+theorem donationChainWellFormedExcept_of_frame {st st' : SystemState}
+    {rid : SeLe4n.ReplyId} (hFrame : donationChainFrame st st')
+    (hInv : donationChainWellFormedExcept st rid) :
+    donationChainWellFormedExcept st' rid := by
+  have hReplyPre : ∀ (oid : SeLe4n.ObjId) (r' : Reply),
+      st'.objects[oid]? = some (.reply r') →
+      ∃ r : Reply, st.objects[oid]? = some (.reply r) ∧ r.prev = r'.prev ∧ r.next = r'.next := by
+    intro oid r' hR'
+    have hEq := hFrame.replyLinks oid
+    rw [hR'] at hEq
+    obtain ⟨r, hR, hP, hN⟩ := replyStackLinks?_eq_some_iff.mp hEq.symm
+    exact ⟨r, hR, hP, hN⟩
+  have hReplyPost : ∀ (oid : SeLe4n.ObjId) (r : Reply),
+      st.objects[oid]? = some (.reply r) →
+      ∃ r' : Reply, st'.objects[oid]? = some (.reply r') ∧ r'.prev = r.prev ∧ r'.next = r.next := by
+    intro oid r hR
+    have hEq := hFrame.replyLinks oid
+    rw [hR] at hEq
+    obtain ⟨r', hR', hP, hN⟩ := replyStackLinks?_eq_some_iff.mp hEq
+    exact ⟨r', hR', hP, hN⟩
+  have hScPre : ∀ (oid : SeLe4n.ObjId) (sc' : SchedContext),
+      st'.objects[oid]? = some (.schedContext sc') →
+      ∃ sc : SchedContext, st.objects[oid]? = some (.schedContext sc) ∧ sc.scReply = sc'.scReply := by
+    intro oid sc' hSc'
+    have hEq := hFrame.stackHeads oid
+    rw [hSc'] at hEq
+    obtain ⟨sc, hSc, hH⟩ := schedContextStackHead?_eq_some_iff.mp hEq.symm
+    exact ⟨sc, hSc, hH⟩
+  have hScPost : ∀ (oid : SeLe4n.ObjId) (sc : SchedContext),
+      st.objects[oid]? = some (.schedContext sc) →
+      ∃ sc' : SchedContext, st'.objects[oid]? = some (.schedContext sc') ∧ sc'.scReply = sc.scReply := by
+    intro oid sc hSc
+    have hEq := hFrame.stackHeads oid
+    rw [hSc] at hEq
+    obtain ⟨sc', hSc', hH⟩ := schedContextStackHead?_eq_some_iff.mp hEq
+    exact ⟨sc', hSc', hH⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · intro q r' hNe hR' hC
+    obtain ⟨r, hR, hCPre⟩ := hFrame.callerKept q.toObjId r' hR' hC
+    obtain ⟨r0, hR0, hP, hN⟩ := hReplyPre q.toObjId r' hR'
+    rw [hR] at hR0
+    have hEq : r0 = r := KernelObject.reply.inj (Option.some.inj hR0).symm
+    subst hEq
+    have hWf := hInv.replyWellFormedExcept q r0 hNe hR hCPre
+    exact ⟨by rw [← hP]; exact hWf.1, by rw [← hN]; exact hWf.2⟩
+  · intro scId sc' hSc' q hRid
+    obtain ⟨sc, hSc, hH⟩ := hScPre scId.toObjId sc' hSc'
+    obtain ⟨r, hR, hNext⟩ := hInv.headLinkReciprocal scId sc hSc q (by rw [hH]; exact hRid)
+    obtain ⟨r', hR', _, hN⟩ := hReplyPost q.toObjId r hR
+    exact ⟨r', hR', by rw [hN]; exact hNext⟩
+  · intro q r' scId hR' hNext'
+    obtain ⟨r, hR, _, hN⟩ := hReplyPre q.toObjId r' hR'
+    obtain ⟨sc, hSc, hHead⟩ := hInv.headLinkResolves q r scId hR (by rw [hN]; exact hNext')
+    obtain ⟨sc', hSc', hH⟩ := hScPost scId.toObjId sc hSc
+    exact ⟨sc', hSc', by rw [hH]; exact hHead⟩
+  · intro q r' below hR' hPrev'
+    obtain ⟨r, hR, hP, _⟩ := hReplyPre q.toObjId r' hR'
+    obtain ⟨b, hB, hBNext⟩ := hInv.prevLinkReciprocal q r below hR (by rw [hP]; exact hPrev')
     obtain ⟨b', hB', _, hBN⟩ := hReplyPost below.toObjId b hB
     exact ⟨b', hB', by rw [hBN]; exact hBNext⟩
   · intro scId sc' hSc'
@@ -6233,7 +6491,7 @@ theorem returnDonatedSchedContext_ok_under_invariants
     intro heq; exact hOwnerNeRecv (SeLe4n.ThreadId.toObjId_injective _ _ heq)
   -- WS-OD OD3.2: the pop's head validation, and the Reply it resolved.
   obtain ⟨head?, hHead, hBelow⟩ := hHeadRes sc hScObj
-  unfold returnDonatedSchedContext
+  unfold returnDonatedSchedContext SystemState.getSchedContext?
   rw [hScObj]
   simp only []
   -- WS-RR RR2.8: the `sc.boundThread = some serverTid` guard is a
@@ -6288,7 +6546,7 @@ theorem returnDonatedSchedContext_ok_under_invariants
         exact hRecvObj)
     have hOwnerNotResEq : owner.isReserved = false := Bool.eq_false_iff.mpr hOwnerNotRes
     have hLkOwner2 : lookupTcb s2 owner = some ownerTcb := by
-      unfold lookupTcb
+      unfold lookupTcb SystemState.getTcb?
       rw [hOwnerNotResEq]
       simp only [Bool.false_eq_true, if_false]
       rw [hOwnerObj2]
@@ -6306,7 +6564,7 @@ theorem returnDonatedSchedContext_ok_under_invariants
         exact hRecvObj2
       have hRecvNotResEq : receiver.isReserved = false := Bool.eq_false_iff.mpr hRecvNotRes
       have hLkRecv3 : lookupTcb pair3.2 receiver = some recvTcb := by
-        unfold lookupTcb
+        unfold lookupTcb SystemState.getTcb?
         rw [hRecvNotResEq]
         simp only [Bool.false_eq_true, if_false]
         rw [hRecvObj3]

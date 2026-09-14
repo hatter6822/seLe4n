@@ -510,7 +510,7 @@ theorem lookupTcb_eq_none_of_no_tcb
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hNo : ∀ t : TCB, st.objects[tid.toObjId]? ≠ some (.tcb t)) :
     lookupTcb st tid = none := by
-  unfold lookupTcb
+  unfold lookupTcb SystemState.getTcb?
   split
   · rfl
   · split
@@ -1456,7 +1456,7 @@ def lifecycleRetypeObject
     (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
   fun st =>
-    match st.objects[target]? with
+    match st.getObject? target with
     | none => .error .objectNotFound
     | some currentObj =>
         if st.lifecycle.objectTypes[target]? = some currentObj.objectType then
@@ -1498,7 +1498,7 @@ theorem lifecycleRetypeObject_tlbShootdown_eq
     (st st' : SystemState)
     (h : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     st'.tlbShootdown = st.tlbShootdown := by
-  unfold lifecycleRetypeObject at h
+  unfold lifecycleRetypeObject SystemState.getObject? at h
   revert h
   cases hObj : st.objects[target]? with
   | none => intro h; cases h

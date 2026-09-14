@@ -201,6 +201,44 @@ theorem endpointReplyWithDonation_unfold
        | none => .error .invalidArgument) := by
   rfl
 
+/-- **WS-OD / PR #895 review round 22: this composite REFUSES a delegated
+reply-cap holder, and the live `.reply` operation does not.**
+
+`endpointReplyWithDonation` is the *single-core* donation-aware reply and has no
+production caller: the live `.reply` arm routes through
+`replyTransferOnCoreChecked` → `endpointReplyCrossCoreDispatch`, whose leg
+`endpointReplyOnCore` dropped the `replier == expected` gate for a stated reason
+(PR #822 review 6J-lYm — authority flows from *holding* the reply capability, and
+seL4-MCS reply caps are delegatable, so a copied or minted cap held by a
+different server is legitimate).  This composite still carries that gate, through
+the **bare** `endpointReply` it opens with.
+
+So the two live composites answer one question two ways, and this theorem is the
+half that has content — `endpointReplyCrossCoreDispatch_independent_of_replier`
+(`IPC/CrossCore/EndpointReplyDispatch.lean`) is the other.  Stated together they
+say the two are **not interchangeable**, which is what stops a coverage claim
+naming one from being read as a claim about the other: the frozen `.reply`
+mirror accepts a delegated replier, as the live spine does, and named this
+composite as its counterpart for three review rounds.
+
+The refusal is fail-*closed* (legitimate authority declined, never illegitimate
+authority admitted), so this is a divergence to record rather than a hole to
+plug; giving the question one answer is registered debt. -/
+theorem endpointReplyWithDonation_refuses_delegated_replier
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (st : SystemState)
+    (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
+    (hRegs : msg.registers.size ≤ maxMessageRegisters)
+    (hCaps : msg.caps.size ≤ maxExtraCaps)
+    (hTcb : lookupTcb st target = some tcb)
+    (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
+    (hDelegated : (replier == expected) = false) :
+    endpointReplyWithDonation replier target msg st = .error .replyCapInvalid := by
+  have hReply : endpointReply replier target msg st = .error .replyCapInvalid := by
+    unfold endpointReply
+    simp only [Nat.not_lt.mpr hRegs, Nat.not_lt.mpr hCaps, if_false, hTcb, hIpc,
+      hDelegated, Bool.false_eq_true, if_false]
+  simp only [endpointReplyWithDonation, hReply]
+
 /-- AJ1-D (M-01): `endpointReplyRecvWithDonation` decomposes into:
 `endpointReplyRecv` → `applyReplyDonation` → `revertPriorityInheritance`,
 gated by a `receiver.toValid?` shim. -/
@@ -680,8 +718,8 @@ context to the receiver — seL4-MCS's `receiveIPC` reaches it through
 `reply_push` → `schedContext_donate`, so the server runs the request on the
 client's own reservation and the work is charged where it belongs.
 
-This is the step `replyRecvReturnDonation`'s third stage performs, lifted out of
-it so that `.receive` performs *the same one*.  It did not: the `.receive`
+This is the step `replyRecvPostReceiveDonation` performs, lifted out of it so
+that `.receive` performs *the same one*.  It did not: the `.receive`
 dispatch arm ran `endpointReceiveDualWithCapsOnCore` and staged frames, with no
 donation anywhere on the path, so a passive server taking its **first** request
 with `seL4_Recv` received no budget while the same server taking its second and

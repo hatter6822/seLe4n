@@ -617,7 +617,7 @@ def projectObjects (ctx : LabelingContext) (observer : IfObserver) (st : SystemS
     SeLe4n.ObjId → Option KernelObject :=
   fun oid =>
     if objectObservable ctx observer oid then
-      (st.objects[oid]?).map (projectKernelObject ctx observer)
+      (st.getObject? oid).map (projectKernelObject ctx observer)
     else
       none
 
@@ -1077,7 +1077,7 @@ theorem serviceOrchestrationOutsideNiBoundary
   congr 1
   · -- projectObjects: depends on objects only
     funext oid
-    simp only [projectObjects]
+    simp only [projectObjects, SystemState.getObject?]
     cases objectObservable ctx observer oid <;> simp [hObjects]
   · -- projectRunnable: depends on scheduler only
     simp [projectRunnable, hScheduler]

@@ -16,7 +16,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.35.5";
+const KERNEL_VERSION: &str = "0.35.35";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
@@ -437,6 +437,13 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
             crate::gic::halt_all();
         }
         extern "C" {
+            /// # Safety
+            ///
+            /// The primary PE's one-time boot install, and the only Lean upcall
+            /// that runs *outside* the readiness gate — it is the call that
+            /// initialises the runtime the gate stands for, so it must happen
+            /// exactly once, on the boot core, before any other Lean upcall on
+            /// any PE.  `dtb_ptr` must be the firmware's device-tree pointer.
             fn lean_kernel_main(dtb_ptr: u64);
         }
         // SAFETY: lean_kernel_main is the Lean-compiled entry point linked from
@@ -636,7 +643,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.35.5");
+        assert_eq!(KERNEL_VERSION, "0.35.35");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is

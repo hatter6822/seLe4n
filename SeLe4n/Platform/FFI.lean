@@ -1757,8 +1757,8 @@ def writeFfiRegistersToTcb
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 : UInt64) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
       let layout := SeLe4n.arm64DefaultLayout
       let rf := tcb.registerContext
       -- x0 → capPtrReg (= ⟨0⟩); x1 → msgInfoReg (= ⟨1⟩) — `decodeMsgInfo`
@@ -1772,7 +1772,7 @@ def writeFfiRegistersToTcb
       let rf := writeReg rf layout.syscallNumReg ⟨syscallId.toNat⟩
       let tcb' := { tcb with registerContext := rf }
       { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
-  | _ => st
+  | none => st
 
 /-- WS-RC R2.B.1 helper: Read the syscall return value from a thread's
     `x0` register, per AAPCS64.
@@ -1798,15 +1798,15 @@ returns `0` — `syscallEntryChecked` should never produce a `.ok`
 result with such a state, so the `0` arm is a totality witness, not
 a behavioural shortcut. -/
 def readReturnValue (st : SystemState) (tid : SeLe4n.ThreadId) : UInt64 :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
       let v := tcb.registerContext.gpr ⟨0⟩
       -- Take low 64 bits explicitly; the model uses `Nat` but the FFI
       -- contract is 64-bit.  Values ≥ 2^64 cannot be produced by
       -- well-typed verified handlers because `RegValue` is constructed
       -- from `UInt64.toNat` everywhere it's written.
       v.toNat.toUInt64
-  | _ => 0
+  | none => 0
 
 -- ============================================================================
 -- WS-RA — the FFI half of the return-frame seam (RA.B.2, RA.B.5a)
@@ -2600,7 +2600,7 @@ error rather than faulting (seL4-MCS's `lookupReply` faults there);
 registered debt, not a silent divergence. -/
 def syscallCapFaultOf (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
     (tid : SeLe4n.ThreadId) (ke : KernelError) : Option Fault :=
-  match st.objects[tid.toObjId]? with
+  match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
     match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
         st tid layout tcb.registerContext 32 with
@@ -2609,7 +2609,7 @@ def syscallCapFaultOf (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
       match capFaultReceivePhase? decoded.syscallId with
       | none => none
       | some inRecv =>
-        match st.objects[tcb.cspaceRoot]? with
+        match st.getObject? tcb.cspaceRoot with
         | some (.cnode rootCn) =>
           let gate : SyscallGate :=
             { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
@@ -3199,7 +3199,7 @@ theorem writeFfiRegistersToTcb_scheduler
     (st : SystemState) (tid : SeLe4n.ThreadId) (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 : UInt64) :
     (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler = st.scheduler := by
-  unfold writeFfiRegistersToTcb
+  unfold writeFfiRegistersToTcb SystemState.getTcb?
   split <;> rfl
 
 /-- **WS-RR RR7.3**: the capability guarantee at the **exported seam**.
@@ -3551,7 +3551,7 @@ theorem writeFfiRegistersToTcb_id_when_not_tcb
     (x0 x1 x2 x3 x4 x5 : UInt64)
     (hNotTcb : ∀ tcb : TCB, st.objects[tid.toObjId]? ≠ some (.tcb tcb)) :
     writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 = st := by
-  unfold writeFfiRegistersToTcb
+  unfold writeFfiRegistersToTcb SystemState.getTcb?
   cases h : st.objects[tid.toObjId]? with
   | none => rfl
   | some obj =>
@@ -3574,7 +3574,7 @@ theorem readReturnValue_zero_when_not_tcb
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hNotTcb : ∀ tcb : TCB, st.objects[tid.toObjId]? ≠ some (.tcb tcb)) :
     readReturnValue st tid = 0 := by
-  unfold readReturnValue
+  unfold readReturnValue SystemState.getTcb?
   cases h : st.objects[tid.toObjId]? with
   | none => rfl
   | some obj =>

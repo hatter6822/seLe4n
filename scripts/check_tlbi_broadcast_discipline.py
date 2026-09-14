@@ -105,8 +105,13 @@ LOCAL_WRAPPERS = (
 # round 4), one layer up.
 LEAN_LOCAL_BINDINGS = ("ffiTlbiAll", "ffiTlbiByAsid", "ffiTlbiByVaddr")
 FFI_MODULE = "rust/sele4n-hal/src/ffi.rs"
+# The boundaries come from `rust_code_view.keyword`, not from Python's `\b`:
+# `\b` is defined against `\w`, which is a Unicode-*table* question, so it
+# disagrees with rustc on any codepoint the two editions do not share
+# (PR #895 review round 21).
 _FFI_TLBI_EXPORT_RE = re.compile(
-    r'\bpub\s+extern\s+"C"\s+fn\s+(ffi_tlbi_[a-z0-9_]+)\s*\('
+    r"pub\s+" + rust_code_view.keyword("extern") + r'\s+"C"\s+'
+    + rust_code_view.keyword("fn") + r"\s+(ffi_tlbi_[a-z0-9_]+)\s*\("
 )
 
 # Any REFERENCE to a local wrapper, not only a call.  Requiring `name(`
@@ -140,7 +145,7 @@ VARIANT_DECISION = "tlbi_variant_for"
 # `V { .. }`) is NOT matched, and the check refuses the enum rather than
 # reading past it -- a payload variant's arm has a different shape, so a
 # scanner that skipped it would silently stop checking that arm.
-_ENUM_VARIANT_RE = re.compile(r"\A([A-Za-z_][A-Za-z0-9_]*)\Z")
+_ENUM_VARIANT_RE = re.compile(r"\A(" + rust_code_view.ident() + r")\Z")
 
 # `re.MULTILINE` is load-bearing: without it `^` anchors only at offset 0, so
 # every declaration after the first line is invisible and every reference
@@ -686,7 +691,8 @@ def _top_level_split(view: str, start: int, end: int, sep: str) -> list[tuple[in
     return pieces
 
 
-_ARM_CALL_RE = re.compile(r"\A([A-Za-z_][A-Za-z0-9_]*)\s*\(([^()]*)\)\Z")
+_ARM_CALL_RE = re.compile(
+    r"\A(" + rust_code_view.ident() + r")\s*\(([^()]*)\)\Z")
 
 
 def broadcast_variants(root: str) -> tuple[list[str], list[str]]:
@@ -945,7 +951,7 @@ def check_local_wrapper_inventory(root: str) -> list[str]:
     return problems
 
 
-_CALL_TOKEN_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+_CALL_TOKEN_RE = re.compile(r"\b(" + rust_code_view.ident() + r")\s*\(")
 
 
 def local_ffi_exports(root: str) -> set[str]:

@@ -104,11 +104,13 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
                   -- The sender blocks on the core it is RUNNING on.
                   (removeRunnableOnCore st'' sender executingCore, .ok none)
   | none =>
-      -- Typed-accessor dispatch (AK7 cascade discipline), exactly as
-      -- `endpointReceiveDualOnCore`: `getEndpoint?` is `none` both for an absent
-      -- object and for a wrong-kinded one, so recover the single-core error
-      -- distinction without a raw object-store variant match.
-      if (st.objects[endpointId]?).isSome then (st, .error .invalidCapability)
+      -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
+      -- `none` for both an absent object and a wrong-kinded one, so the
+      -- presence question is asked of the kind-agnostic accessor `getObject?`
+      -- -- a present-but-wrong-kind object fails with `.invalidCapability`, a
+      -- genuinely absent one with `.objectNotFound`.  Reading the store raw
+      -- here would have been the very pattern the comment claimed to avoid.
+      if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
 /-- WS-SM SM6: the absent-endpoint arm is fail-closed — the pre-state is
@@ -131,25 +133,6 @@ theorem endpointSendDualOnCore_absent_endpoint (endpointId : SeLe4n.ObjId)
     endpointSendDualOnCore endpointId sender msg executingCore st
       = (st, .error .objectNotFound) := by
   simp [endpointSendDualOnCore, hTooLarge, hTooMany, hNoEndpoint, hAbsent]
-
-/-- WS-SM SM6 (**the duplication guard**): the IPC-local
-`ipcEffectiveRunQueuePriority` computes the scheduler's
-`effectiveRunQueuePriority`.
-
-`Endpoint.lean` carries its own copy of the PIP-effective priority because
-importing `Scheduler.Invariant` from there would close an import cycle, and its
-docstring says the two agree. Until now nothing checked that: two independent
-definitions agreeing by convention is exactly the case this project requires be
-enforced structurally. This is the first module that sees both names, so this
-is the first place the claim can be *stated* — and with it stated, a change to
-either body that the other does not mirror stops the build rather than silently
-re-bucketing every wake.
-
-`rfl`, today; the point is that it is a compile-time obligation, not that it is
-hard. -/
-theorem ipcEffectiveRunQueuePriority_eq_effectiveRunQueuePriority (tcb : TCB) :
-    ipcEffectiveRunQueuePriority tcb
-      = SeLe4n.Kernel.effectiveRunQueuePriority tcb := rfl
 
 /-- WS-SM SM6 (**the wake bridge**): on the boot core, the per-core wake commits
 exactly what the single-core `ensureRunnable` commits.
@@ -212,7 +195,7 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
   by_cases hMem : (st.scheduler.runQueueOnCore bootCoreId).contains tid = true
   · simp [hSome, hMem, RunQueue.mem_iff_contains]
   · simp [hSome, hMem, RunQueue.mem_iff_contains, hObj,
-      ipcEffectiveRunQueuePriority_eq_effectiveRunQueuePriority]
+      TCB.boostedPriority]
 
 /-- WS-SM SM6 (**the blocking leg's bootCore bridge**): with no receiver waiting,
 the per-core send on the boot core commits **exactly** the single-core
@@ -242,7 +225,7 @@ theorem endpointSendDualOnCore_bootCore_block_eq_single (endpointId : SeLe4n.Obj
   -- as a hypothesis would put a raw object-store pattern on the public surface.
   have hRaw := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
   unfold endpointSendDualOnCore
-  unfold endpointSendDual at hSingle
+  unfold endpointSendDual SystemState.getObject? at hSingle
   simp only [hRegs, hCaps, hRaw, hEp, hNoReceiver, if_false] at hSingle ⊢
   repeat' split at hSingle
   all_goals simp_all [removeRunnableOnCore_bootCoreId]
@@ -284,7 +267,7 @@ theorem endpointSendDualOnCore_bootCore_rendezvous_eq_single (endpointId : SeLe4
     intro h; rw [endpointSendDual] at hSingle; simp [hRegs, h] at hSingle
   have hRaw := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
   unfold endpointSendDualOnCore
-  unfold endpointSendDual at hSingle
+  unfold endpointSendDual SystemState.getObject? at hSingle
   -- PR #873 round 17: both sides now resolve the sender first, so the split is
   -- shared. The declining arm cannot be this `.ok`, which is what discharges it
   -- without adding a hypothesis to the statement.

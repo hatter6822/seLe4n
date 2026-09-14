@@ -102,9 +102,9 @@ theorem endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed
   split
   · -- bounds1 fails: LHS = .error .ipcMessageTooLarge
     -- endpointSendDualWithCaps delegates to endpointSendDual which checks bounds
-    unfold endpointSendDualWithCaps endpointSendDual; simp [*]
+    unfold endpointSendDualWithCaps endpointSendDual SystemState.getObject?; simp [*]
   · split
-    · unfold endpointSendDualWithCaps endpointSendDual; simp [*]
+    · unfold endpointSendDualWithCaps endpointSendDual SystemState.getObject?; simp [*]
     · -- The gate branch: `hGate` in context already reduced the `ite` above, so
       -- what remains is a reflexivity. Verified load-bearing: dropping `hGate`
       -- leaves the `if endpointFlowGate … then … else .flowDenied` unreduced and

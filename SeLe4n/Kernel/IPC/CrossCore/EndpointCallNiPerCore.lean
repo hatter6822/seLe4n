@@ -71,7 +71,7 @@ theorem endpointQueuePopHead_machine_eq
     (tid : SeLe4n.ThreadId)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st')) :
     st'.machine = st.machine := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -127,7 +127,7 @@ theorem endpointQueueEnqueue_machine_eq
     (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     st'.machine = st.machine := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -505,6 +505,27 @@ theorem consumeCallerReply_preserves_projectionOnCore (ctx : LabelingContext)
   exact projectStateOnCore_congr ctx observer
     (consumeCallerReply_preserves_projection ctx observer st st' caller rid
       hCallerObjHigh hIdxComplete hObjInv hStep)
+    (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
+
+/-- WS-RM (`v0.35.6`): the per-core form of
+`removeCallerReplyFrame_preserves_projection`.  The detach the removal adds ahead
+of the consume writes one Reply's `prev`, which `projectKernelObject` strips, and
+neither leg touches the scheduler or the machine registers, so the per-core
+congruence applies on every core under exactly the consume's own hypotheses. -/
+theorem removeCallerReplyFrame_preserves_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (c : CoreId)
+    (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
+  have hSched := removeCallerReplyFrame_scheduler_eq st st' caller rid hStep
+  have hMach := removeCallerReplyFrame_machine_eq st st' caller rid hStep
+  exact projectStateOnCore_congr ctx observer
+    (removeCallerReplyFrame_preserves_projection ctx observer st st' caller rid
+      hCallerObjHigh hIdxComplete hObjInv hObjSetInv hStep)
     (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
 
 /-- WS-SM SM6.A.7 (per-core / ∀-core non-interference): a cross-core endpoint

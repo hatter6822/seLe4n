@@ -1,3 +1,2679 @@
+## v0.35.35 — PR #895 review round 22: the name a claim cites is its load-bearing half
+
+Four P2 findings, and the pattern across them is one this branch has been
+circling: **three are in my own earlier rounds' fixes**, and the fourth is a
+coverage claim whose counterpart was prose.
+
+**F1 — an angle bracket is not always a delimiter** (`scripts/rust_code_view.py`).
+Round 14 found exactly this class in `extern_block_items` and wrote the reasoning
+into that function's docstring; round 18 then wrote `_body_open_brace` **one
+function above it**, counting `<` unconditionally, under a docstring asserting the
+opposite of the grammar (*"a comparison or a shift cannot appear in a type"*).  An
+array length and a const-generic argument are const *expressions*, so both
+directions shipped: `-> [u8; 1 << 2]` raises the depth twice with nothing to lower
+it, and `-> [u8; 8 >> 1]` clamps the shared counter at zero and then lets the
+closing `]` drive it negative.  Each answers `FILE_SCOPE`, which no allowlist
+entry matches, so a **justified** site inside such a function is reported
+unjustified — Tier 0 refusing valid Rust.
+
+The remedy is not round 14's, and the difference is the point: dropping angle
+brackets is right when the subject is a `;` (`[` and `{` already cover it) and
+wrong when the subject **is** a brace, since `-> Foo<{ 1 }> { .. }` would answer
+with the const-generic block.  Two counters, with `<`/`>` read **only outside
+every bracket group**, is *exact* rather than merely safe, for the reason round 14
+gave: Rust requires a non-trivial const argument to be braced and an array length
+to sit inside `[` … `]`, so an operator `<` is always inside a bracket group and a
+delimiter `<` never is.  Four witnesses, three of which fail under the true
+pre-fix relation; the const-generic and `Fn(..)`-bound rows pass under both,
+because a fix must be shown to narrow rather than to disable.
+
+**And the remedy is that the question now has one owner.**  Patching the second
+copy would have left the file in exactly the state that produced the finding, so
+`signature_terminator` states the rule once — brackets nest, angles nest only at
+bracket depth zero, `->` is one token, a terminator counts only at zero on both
+counters — and both scans read it, differing only in the characters they pass as
+terminators.  Measured payoff: **one** token-preserving mutation of that function
+now fails **four** witnesses across *both* questions, where before it would have
+failed only the body rows.  And because sharing an answer does not stop a *third*
+implementation from being written beside the two, `hand_rolled_angle_nesting()`
+refuses an angle-bracket character test in that file outside the owner — scope
+measured before it was chosen (the file has exactly two such tests, both in the
+owner; every other one under `scripts/` asks a different language's question), and
+pinned in both directions, since a discipline check that cannot fire is
+indistinguishable from one that is wrong.
+
+**F2 — the counterpart a coverage claim cites was a comment**
+(`SeLe4n/Kernel/FrozenOps/Agreement.lean`, `tests/FrozenOpsSuite.lean`).  Round 15
+fixed *a claim made at the wrong unit* — leg versus operation — and left **which
+instance** of the unit: `frozenBranchOperationChecked`'s only `true` row said it
+was checked against `endpointReplyWithDonation`.  That is the *single-core*
+composite, with no production caller, and it opens with the bare `endpointReply`,
+which keeps the `replier == expected` gate the cross-core spelling dropped
+(PR #822 review 6J-lYm: authority is the presented reply capability, and seL4-MCS
+reply caps are delegatable).  The live `.reply` arm dispatches
+`endpointReplyCrossCoreDispatch`, which accepts a delegate — and so does
+`frozenEndpointReply`.  So on a delegated input the frozen composite agrees with
+the **kernel** and disagrees with the named counterpart, and the row's `true` was
+read as the former.  Latent only because every fixture made the replier *be* the
+recorded server, where the two counterparts coincide.
+
+- Both counterparts are **data** now — `frozenBranchLiveOperation` and
+  `frozenBranchLiveLeg`, each with a both-directions interlock.  The leg table is
+  the sweep this round owed: it asked the identical question with the identical
+  answer wrong, which is round 11's *keep the tables symmetric* one artefact over.
+- A string is not a check and does not pretend to be.  What pins the counterpart
+  is a theorem **pair** — `endpointReplyCrossCoreDispatch_independent_of_replier`
+  (every use of `replier` is the unused `_replier`, so a delegate gets the
+  non-delegated behaviour) and `endpointReplyWithDonation_refuses_delegated_replier`
+  — which together say the two are not interchangeable.  That is the lesson
+  `API.lean`'s `syscallDelegates` records from its own review round 11: a *name*
+  establishes that a declaration exists, not that it says anything about the claim
+  citing it.
+- Both scenarios carry the **delegated** shape, and each asserts the superseded
+  composite **refuses** it, so the choice of counterpart is measured at the point
+  of use rather than named.  FO-031 runs against `endpointReplyOnCore` and FO-041
+  against `endpointReplyCrossCoreDispatch`, through two adapters.
+- The live steps the differential does not reach — `replyTransferOnCore`'s fault
+  branch and the WS-RA delivered-message staging — are **stated**
+  (`frozenBranchOperationFrontier`) rather than implied, because a claim that stops
+  at "checked" implies an authority over the whole arm it does not have.
+- Four docstrings claiming `frozenEndpointReply` mirrors the bare `endpointReply`
+  are corrected, the module's frozen↔live table included.
+
+**F3 — one foreign declaration, two discovery passes**
+(`scripts/check_unsafe_block_justifications.py`).  A foreign declaration may mark
+itself `unsafe` (RFC 3484's per-item marker, whose `safe fn` opt-out the gate
+already read), so the keyword pass **and** the foreign-item pass both yielded it:
+one declaration, two rows, `UNSAFE_SITES_TOTAL`, `UNSAFE_FN_DECLARATIONS`, the ARM
+ratio and any baseline all doubled — and an *undocumented* one produced two
+violations a single baseline entry could not account for.  Invisible to a case list
+that only asks *"is each site found justified?"*, since both rows carry the same
+good justification.  A cardinality defect needs a cardinality witness, so the gate
+grew `_SITE_INVENTORY_CASES`, naming the declarations a fixture must produce and
+failing on a repeat.  The region belongs to exactly one pass now, and the direction
+is forced: the foreign walk is *derived* from the item structure and refuses a form
+it cannot read, while the keyword pass sees only what carries the token.  The
+tree's own figure is unchanged at 136/136 (114 blocks, 22 declarations) — no
+declaration here is spelled that way, which is why it was latent.
+
+**F4 — a reference is not an incoming read**
+(`scripts/check_anchor_symbol_liveness.py`).  The gate written last round to
+retire tautological pins asked *"does this name occur as a global read"* where its
+question is *"does anything else read it"*, so `def _dead(n): return _dead(n - 1)`
+kept its own anchor alive.  That is this project's oldest rule inside the gate
+built to close one instance of it.  Reads are **attributed** to the declaration
+they occur in now, with nesting carried, so a self-reference from a closure inside
+the definition does not count either; the cycle residue (two definitions
+referencing each other and nothing else) is stated in the docstring with its
+fail-open direction rather than assumed away.  Six new cases, three decisive under
+the pre-fix relation and three unchanged.
+
+**Registered.**  The live divergence F2 exposed is recorded rather than silently
+carried: `endpointReplyOnCore` admits a delegated reply-cap holder and the bare
+`endpointReply` / `endpointReplyRecv` / `endpointReplyWithDonation` refuse one.
+It is fail-*closed* (legitimate authority declined, never illegitimate authority
+admitted) and the single-core composite has no production caller, so it is a
+divergence to respect rather than a hole — a standing constraint in `CLAUDE.md` and
+a row in `docs/REGISTERED_DEBT.md` table C, pinned in both directions by the
+theorem pair above.
+
+## v0.35.34 — Round 21: an oracle is exact only up to the version of its table
+
+**PR #895 review round 21.**  Three P2 findings, all three fail-**closed** —
+valid Rust this tree would have refused — and two of them land on round 18's
+central claim, that `str.isidentifier()` *is* the Rust identifier oracle.
+
+**F1 — `pub fn unsafeᲉ() {}` was rejected as an unrecognised `unsafe` form.**
+U+1C89 is a legal Rust `XID_Continue` character, but Python's `\b` is defined
+against `\w`, which is a Unicode-table question; this CPython does not have the
+codepoint, so `\b` found a boundary *inside* the identifier and `\bunsafe\b`
+matched its first six characters.  Tier 0 demanded a justification of safe Rust.
+
+**F2 — a correctly documented `pub unsafe fn Ᲊ()` raised no obligation and then
+failed its file.**  Measured on this environment: CPython **3.11.15 carries
+Unicode 14.0**, where U+1C89 is *unassigned* and `str.isidentifier()` is
+`False`; rustc **1.94.1** compiles the declaration with nothing worse than an
+`uncommon_codepoints` warning.
+
+**The rule is shared; the table is not.**  Python and Rust both implement
+UAX#31, which is what made round 18's reasoning sound — but they read different
+editions of the data it ranges over.  And round 18's evidence could not have
+shown that: its 28 codepoints spanned every plausible *category*, and every one
+of them was assigned in **both** editions, so the probe was structurally blind
+to skew and would have reported 27/28 however far the two tables had drifted.
+That is this project's own recognised-set-is-not-a-derived-set defect, arriving
+inside the measurement that licensed an oracle.
+
+**The exit is not a third table.**  Pinning rustc's XID data into a Python gate
+is the enumeration this tree keeps retiring, and it goes stale at the next
+toolchain bump.  The *question* changes instead, to one no Unicode release can
+move: every delimiter, operator and piece of punctuation in Rust source is
+ASCII — rustc rejects non-ASCII punctuation outright — so outside comments and
+literals a non-ASCII character is part of an identifier.  Hence
+
+    a character may continue an identifier unless it is ASCII
+    and neither alphanumeric nor `_`
+
+which is a fact about Rust's **grammar**, not about a codepoint table.  For the
+two questions this tree asks it is exact rather than merely safe: a keyword
+adjacent to an identifier character is not a keyword but one longer identifier,
+and a name is only ever terminated by ASCII punctuation.  `keyword()` now asks
+its boundaries of that class instead of `\b`.
+
+Where the class does over-approximate — `×` (Sm) and `·` (Po) are admitted and
+rustc refuses them — the self-test **asserts the over-approximation** rather
+than leaving it to be rediscovered, since neither can stand beside a name in
+code that compiles.  `ident_start` still excludes ASCII digits, because `0-9` is
+a fact about ASCII and costs no table.
+
+**F3 — a relative `CARGO_TARGET_DIR` was resolved from the wrong directory.**
+It is cargo's setting, so cargo joins it onto the **invocation** directory; the
+gate joined it onto whatever root its scan had narrowed to.  Launched at the
+repository root with `CARGO_TARGET_DIR=rust/target`, it excluded
+`rust/rust/target` — which does not exist — while cargo wrote to `rust/target`,
+which was therefore scanned.  Generated `.rs` under a build script's `OUT_DIR`
+is code no contributor wrote, so an unsafe site there would have failed Tier 0
+against a file nobody can edit.
+
+**F4 — found by running this round's own sweep, in the check built to make
+sweeps unnecessary.**  Grepping every other Rust-keyword boundary turned up two
+more, and `bare_keyword_literals` had not reported them because it recognised
+one *shape*: `\b<keyword>\b`.  A keyword inside an alternation with a `\s+`
+tail (`check_claim_evidence_citations.py`'s Rust declaration head) and a
+one-sided boundary (`check_tlbi_broadcast_discipline.py`'s FFI export pattern)
+were both invisible.  Round 9 built that check so the next such pattern would
+fail on the day it was written; a discipline check that enumerates the shapes it
+has seen is the defect it exists to close, one level down.  The question is
+widened to *does this regex literal use a word boundary while naming a scanned
+keyword as a whole word?*, over-approximating on purpose — the remedy for a
+false positive is to compose `keyword()` — with `NON_RUST_KEYWORD_SOURCES` for a
+literal genuinely asking another language's question, reconciled both ways.
+Both live sites now compose `keyword()`.
+
+The widened question was first written against the raw line, where the `b` of
+`\b` is an identifier character, so its whole-word lookbehind **missed the very
+spelling it subsumes**.  The live tree would not have shown that, since the
+plain pattern still ran beside it; the witness asserting the *unchanged* row
+next to the new ones is what caught it.  Regex escapes are blanked before the
+keyword question is asked.
+
+**Also in this cut.**  `is_rust_identifier` is deleted rather than rewritten:
+it existed only to state round 18's lone-`_` divergence, its sole readers were
+its own self-test rows, and its body was the retired call — a pin on a question
+nothing asks.  Its Unicode-range derivation goes with it, so importing
+`rust_code_view` no longer pays ~0.38s building 656 + 763 codepoint ranges.
+
+Mutation-verified against the actual pre-fix code on all three: the pre-fix
+`keyword('unsafe')` matches inside `unsafeᲉ` and the fixed one does not; the
+pre-fix `ident()` refuses U+1C89 and the fixed one accepts it while still
+refusing a delimiter; the pre-fix file enumeration scans
+`rust/target/debug/build/x/out/gen.rs` under a relative setting and the fixed
+one does not.  Every gate composing these fragments passes its self-test
+(`rust_code_view`, the unsafe gate, anchor liveness, kernel entry exports, TLBI
+discipline), and the live tree is unmoved at **136/136** justified unsafe sites
+and **66** anchors with a live reader.
+
+- Files: `scripts/rust_code_view.py`,
+  `scripts/check_unsafe_block_justifications.py`,
+  `scripts/check_claim_evidence_citations.py`,
+  `scripts/check_tlbi_broadcast_discipline.py`, `CLAUDE.md`, `AGENTS.md`.
+- Version bumped 0.35.33 → 0.35.34.
+
+Refs: `CLAUDE.md` — *an oracle is exact only up to the version of the data it reads*
+
+## v0.35.33 — Round 20: the rule round 19 stated, now the rule the code runs
+
+**PR #895 review round 20.**  Three findings, all three in code written for
+rounds 18 and 19, and the two P1s share one cause worth stating before either:
+round 19 asked round 18's question before writing anything — *is an exact oracle
+in reach?* — and recorded the correct answer, **no**, no CommonMark
+implementation is available at Tier 0, and therefore "the reader refuses every
+inline form it cannot render".  That sentence went into the docstring and into
+`CLAUDE.md`.  The code shipped in the same cut peeled emphasis runs and
+extracted link labels by hand.  **The distance between a stated rule and an
+implemented one is where this section's findings now live.**
+
+**P1a — `/// # [Safety](https://e.invalid)junk)` published a Safety section.**
+rustdoc renders that heading `Safetyjunk)`; a label extractor anchored on
+`[`…`]` reads `Safety`.
+
+**P1b — `/// # ** Safety **` published one too.**  That is *inactive* emphasis
+(CommonMark 6.2: a left-flanking delimiter run may not be followed by
+whitespace), so rustdoc renders the asterisks literally and publishes nothing;
+a peeler that strips a matched `**`/`**` pair reads `Safety`.
+
+Both are the fail-open direction on the gate whose baseline is empty, and both
+reproduce on the actual pre-fix code (`heading_publishes_safety` returns `True`
+for each).
+
+**The fix is round 16's exit, and it was measured before being taken.**  The
+heading's content must now **be** one of the four titles round 17 measured
+`clippy::missing_safety_doc` to accept, and every inline form is refused rather
+than rendered — including the seven both authorities accept, because deciding
+what markup renders to is a CommonMark question and Tier 0 has no renderer.
+That reads strict until the cost is measured: every Safety heading in this tree
+is already written plainly (26 `/// # Safety`, 3 `/// ## Safety`, 3
+`//! # Safety`, 2 `//! ## Safety`, zero carrying inline markup), so the refusal
+costs the tree nothing and makes the question decidable.  *Take the measurement
+that tells you the strict option is free, and the temptation to approximate
+disappears.*  `rendered_heading_title` and the three inline-markup patterns
+under it are deleted; `heading_publishes_safety` is one membership test.  The
+gate's `heading verdict:` line reports the canonical spelling and still carries
+round 17's and round 19's measurements of where the two authorities disagree,
+because that disagreement is why neither can be deferred to.
+
+The matrix keeps every inline row as a **refusal** annotated with what the two
+authorities do — some forms both accept and the reader is deliberately stricter,
+some only rustdoc accepts, some neither does — plus the two round-20 cells and
+two controls that keep the refusal from reading as "headings never publish".
+Mutation-verified end to end: transplanting the new matrix onto the actual
+round-19 file fails exactly the ten cells whose verdict changed, the two P1s
+among them, while every unchanged cell passes under both.
+
+**P2 — an import alias rebound by a `match` capture still resolved.**
+`rebound_import_names` was a hand-written `ast` walk, and a `case subject:`
+binds through no `Name` in `Store` context, so `module_import_facts` kept the
+import mapping while the receiver denoted something else — fail-open in the one
+direction this gate exists to close, since the set it builds is a set of
+*readers* and one it invents keeps a dead pin alive.
+
+**Measuring the walk rather than patching the reported cell found the shape.**
+It handled *every* binder Python had before PEP 634 — assignment, augmented,
+annotated, `for`, `with ... as`, `except ... as`, the walrus, `def`, `class` —
+and **none** of structural pattern matching's: `MatchAs` bare and after a class
+pattern, `MatchStar`, a `MatchMapping` rest.  Four forms, not the one reported.
+An enumeration of a language's binders is a list of the ones that existed when
+it was written, so the next grammar addition empties it silently.
+
+The enumeration is deleted rather than extended, because the oracle was already
+imported in the very cut that wrote the walk: **`symtable` is CPython's own
+binding analysis**, and `is_assigned()` is `False` for a name bound only by an
+import and `True` the moment anything else binds it (`is_parameter()` asked
+beside it, since one does not imply the other).  All eleven binding forms and
+both non-binding controls — `x.k[i] = v` and `x.attr = v`, which mutate an
+object and bind no name — are answered without the oracle being told they exist.
+The self-test pins the whole family, including the walrus and `except ... as`
+rows that round 18 *did* handle, because a fix must be shown to generalise
+rather than to be a different rule that happens to cover the reported cell; a
+mutation restoring round 18's actual body fails exactly the four `match` rows
+and passes those two.
+
+**Two mechanical notes, both earned.**  Measuring the walk also corrected this
+cut's own first draft, which claimed round 18 had missed the walrus and
+`except ... as`; it had not, and saying otherwise would have overstated the
+finding.  And a conservative answer is defensible only when its cost is
+measured: the whole-module binding query over-refuses a receiver shadowed only
+in an unrelated function, which the docstring declares — and across all 31
+tracked `.py` files, zero import-bound names are assigned at module scope and
+zero at nested scope, so the conservative query and the exact one agree on the
+entire tree.  The alternative (ask the module scope alone) is fail-**open** for
+a shadowed read, which is the thing the gate exists to catch.
+
+The tree holds at **136/136** justified unsafe sites (114 blocks, 22
+declarations) and **66** Python-target anchors with a live reader.
+
+- Files: `scripts/check_unsafe_block_justifications.py`,
+  `scripts/check_anchor_symbol_liveness.py`, `CLAUDE.md`, `AGENTS.md`.
+- Version bumped 0.35.32 → 0.35.33.
+
+Refs: `CLAUDE.md` — *a rule stated in a docstring is not a rule in the code*
+
+## v0.35.32 — Round 19: the heading's rendered title, and the two authorities measured against each other
+
+**PR #895 review round 19.**  One finding, and it is the **fail-closed**
+direction: `/// # **Safety**` renders as `<h2 id="safety">Safety</h2>` and
+clippy accepts it, while the gate matched the *raw markdown* and refused — so
+Tier 0 rejected a correctly documented `unsafe fn`.  A spelling is not the text:
+a heading's content is markup that renders to something else, and the property
+is about what a **caller reads**.
+
+**Round 18's question was asked and answered `no`.**  Before hand-writing
+anything: is an exact oracle in reach?  It is not — this gate runs at Tier 0,
+before any build, and no CommonMark implementation is available to it.  Saying
+so is the point; the reader is therefore *bounded* and refuses what it cannot
+render, which keeps the site in the unjustified set (a visible failure) rather
+than silently clearing it.
+
+**Both authorities were measured, and they disagree in both directions.**
+Fifteen inline forms compiled under this workspace's own rustdoc and clippy
+(1.94.1):
+
+* both accept — plain, `*x*`, `**x**`, `***x***`, `__x__`, `<b>x</b>`, and an
+  inline link carrying a destination;
+* rustdoc renders `Safety` and **clippy refuses** — `` `Safety` `` (a code span
+  is a `Code` event, not `Text`), `&#83;afety`, `**Saf**ety`, `Saf<!-- c -->ety`
+  (each splits the title across two `Text` events);
+* **clippy accepts** and rustdoc renders `[Safety]` — the shortcut link, on
+  which rustdoc *also* warns `broken_intra_doc_links`.
+
+Round 17 recorded that naming one tool does not finish the question, and took
+the rendering because clippy was then the lenient side.  **Here clippy is the
+strict side**, and taking the rendering alone would let Tier 0 pass a file the
+crate's own denied lint fails.  So neither tool is "the" authority and the rule
+is the **intersection**: accept only what both accept.  The gate's own output
+now says that, because a number that implies an authority it does not have is
+the defect this project keeps recording.
+
+`rendered_heading_title` computes the rendered text; `heading_publishes_safety`
+and `atx_heading_content` / `setext_publishes_safety` are the two call sites, so
+the ATX and Setext syntaxes cannot disagree about one question.  The raw-spelling
+matchers `MD_SAFETY_HEADING`, `MD_SAFETY_SETEXT_TEXT` and `SAFETY_HEADING_TITLE`
+are retired, and the sweep round 16 prescribes found nothing pinning them.
+
+Fifteen matrix rows enumerate the new **inline-markup axis** at every measured
+value — the seven both accept, the five they split on, and three controls that
+keep the widening from becoming "any emphasis anywhere passes".  Mutation-verified
+against the actual pre-fix behaviour: restoring the raw-spelling comparison fails
+exactly the eight acceptance cases.  Live tree unchanged at **136/136**.
+
+Refs: docs/REGISTERED_DEBT.md table C (the CommonMark residue this row named)
+
+## v0.35.31 — Round 18: the return type parsed, the receiver resolved, and the identifier oracle
+
+**PR #895 review round 18.**  Three findings, all three in code this PR wrote,
+and all three the *same* thing: a gate approximating a language front-end by
+hand.  That is the debt row round 14 registered — and what round 18 shows is
+that the deferral was partly wrong, because **two of the three questions had an
+exact oracle in the standard library the whole time** and nobody looked.
+
+**A semicolon inside a return type is not an item terminator** (`fn_bodies`).
+`fn f() -> [u8; 1] { … }` carries a `;` in an array type, so the scan read the
+function as a bodyless declaration and dropped it from the map: `enclosing_fn`
+then answered `<file scope>` for every offset inside it, which rejects a
+correctly allowlisted TLBI caller and attributes an `unsafe` block to module
+scope.  Measured on the tree: **2346 → 2382 bodies, thirty-six invisible**.  A
+sibling is worse than losing the body — `fn g() -> Foo<{ N }> { … }` carries a
+`{` in a const-generic argument, which was taken for the body's and recorded a
+span that is **not** the body.  The signature is walked with a depth counter
+over `(`, `[` and `<` now, `->` consumed as a unit, and only a depth-zero `;` or
+`{` decides; an unterminated signature yields no body, which is fail-closed
+because an offset the map cannot place inherits no exemption.  `build.rs` held
+**two** copies of the same defect, both routed through one new
+`fn_body_open_brace`.
+
+**A rebound name is not a receiver** (`check_anchor_symbol_liveness.py`).
+`import subject; subject = object(); print(subject.A)` counted as a read of the
+target's `A` and kept a dead anchor green — fail-open in the one direction that
+gate exists to close, since it builds a set of *readers* and an invented reader
+keeps a pin alive that names nothing.  Whether an occurrence still denotes the
+module is a dataflow question no scanner decides, so the name is **refused**:
+the read stops counting and the form is reported, naming the stem, so an anchor
+on that target fails visibly.  Swept onto the `from`-import sibling.  Measured:
+no tracked module rebinds an import alias, so it costs nothing today — and the
+first measurement said three did, because it counted `os.environ["X"] = "y"` as
+rebinding `os`, which is this very class inside the attempt to size it.
+
+**And an approximation is not the oracle.**  `[^\W\d]` — round 12's widening of
+the identifier class — is Python's *word* class, not `XID_Start`: rustc 1.94.1
+accepts `pub unsafe fn ℘()`, `℮()` and `ᢅ()` (Sm, So, Mn), and `\w` matches none
+of them, so such a declaration raised no obligation and then failed the file as
+an unrecognised form.  Widening a third time was the move that had already
+failed twice.  **Python's identifier grammar is UAX#31, the same one Rust uses**,
+so the class is derived from `str.isidentifier()` — measured against rustc over
+28 codepoints spanning every plausible category: **27 agree, and the sole
+divergence is a lone `_`**, which Python accepts as a whole identifier and Rust
+reserves as the wildcard.  That divergence cannot reach a *start*-character
+question (`_foo` is fine) and is stated where it can, in `is_rust_identifier`.
+
+Seven hand-written identifier classes were swept onto the shared fragment, and
+— as in round 9, whose keyword remedy this mirrors — the rule is now
+**enforced**: `bare_ident_literals` refuses a new ASCII class in any gate
+source, with `NON_RUST_IDENT_SOURCES` naming the five files that legitimately
+ask a different language's question and the grammar each is about, reconciled
+in both directions so a stale classification fails too.
+
+Every fix is mutation-verified against the **actual** pre-fix behaviour in both
+directions, including the round-17 state specifically: reverting to `[^\W\d]`
+fails on exactly round 18's three codepoints while round 12's `λ` still passes,
+so the fix is shown to widen rather than to replace.
+
+Refs: docs/REGISTERED_DEBT.md table C (hand-written language front-ends)
+
+## v0.35.30 — PR #895 review round 17: resolved reads instead of a global union, the measured Safety-title set, and the case where clippy is the lenient one
+
+Two findings, **both in code written for round 16**, which makes five consecutive
+rounds landing in the previous round's fixes.  Each was reproduced against the
+tree before being acted on and mutation-verified against the actual pre-fix
+behaviour.
+
+**A matching spelling is not a read of that symbol** (P2, fail-open — and in the
+gate written last cut to close exactly this shape one level up).
+`check_anchor_symbol_liveness.py` built its reader set as a **global union** of
+every name read in any tracked module, so an unrelated `def helper(_DEAD)` put
+`_DEAD` in `readers` and kept a genuinely dead anchor green.  That is this file's
+own *a recognised set is not a derived set* applied to the gate's **domain**, in
+the gate whose subject is a pin that says nothing — and the round-16 CHANGELOG
+claim that "its domain is derived on both sides" was false in exactly the
+direction the review names.
+
+A read is now **resolved** to the anchored module's symbol, by the three routes
+that exist: from the target itself, as an attribute on the imported module
+(plain or aliased — `import rust_code_view as _share` is live in this tree), or
+through a `from` import.  Intra-module scope is decided by **`symtable`**,
+CPython's own scope analysis, so a parameter, comprehension target, `with`
+binding or nested `def` that shadows a module global is not a form anyone has to
+enumerate — and that closes the same defect *inside* the target file, which the
+review did not report.  A star or relative import naming a target fails the gate
+rather than being read past; an unrelated dotted import does not.  The deciding
+mutation is the true pre-fix behaviour — the union with no scope analysis — and
+it fails **seven** cases including the reviewer's own.
+
+**And the Safety title set was measured, not recalled** (P1, fail-open).
+`MD_SAFETY_HEADING` matched `Safety` case-insensitively on a word boundary, so
+`# safety`, `# SaFeTy`, `# Safety:` and `# Safety Requirements` all passed —
+while `clippy::missing_safety_doc` rejects every one of them.  Clippy does not
+examine a **private** `unsafe fn` at all, so for those this scanner is the only
+enforcement and a heading it alone accepts publishes no caller contract.
+
+The accepted set comes from a probe crate compiled under the workspace's own
+clippy, one `pub unsafe fn` per spelling: `Safety`, `SAFETY`,
+`Implementation safety` and `Implementation Safety`, with CommonMark's optional
+closing hashes and trailing whitespace.  Measuring mattered in both directions —
+the review proposed restricting to `Safety` or `SAFETY`, which would have
+refused the two `Implementation …` spellings clippy accepts, the fail-closed
+direction round 6 recorded as a defect in its own right.  One alternation now
+composes both the ATX and the Setext matcher.  The tree is unchanged at 136/136:
+every real declaration already writes `# Safety`.
+
+**And the sharpest thing this round measured is that the two authorities
+disagree.**  Checking the Setext forms against `cargo doc` as well as clippy:
+rustdoc renders `id="safetyand-more-text"` for `Safety` / `and more text` / `---`
+and `id="this-is-not-a-contractsafety"` for `This is not a contract` / `Safety` /
+`---`, so **neither multi-line form publishes a Safety section** — while clippy
+**accepts both**, because it compares each Text event of the heading rather than
+the heading's text.  On this shape the lint is the lenient one.
+
+The gate follows rustdoc, which is what a caller actually reads, and requires the
+underlined paragraph to be a single line.  That vindicates round 15's finding
+rather than reversing it — round 15 was right about the rendering — and corrects
+its *control*, whose `True` had been set by the first-line rule it introduced
+rather than by measurement.  `v0.35.28` recorded that the `# Safety` question's
+front-end is rustdoc; this round is the evidence that `missing_safety_doc` is a
+lint approximating it, not the thing itself.  **A proxy is not the fact, with the
+proxy on the side you did not expect.**
+
+One mechanical note: the liveness gate's self-test printed `len(_CASES) + 3`,
+which was already wrong by two the moment cases were added.  It counts the
+checks that ran.
+
+Refs: docs/REGISTERED_DEBT.md table C (Tier 0 convention gates)
+
+## v0.35.29 — PR #895 review round 16: the item's leading form, the census's own view, CommonMark's backtick-in-info rule, and a pin this cut's own fix left dead
+
+Three findings, each reproduced against the tree before being acted on and each
+mutation-verified in **both** directions — the pre-fix behaviour, and the
+plausible over-correction beside it.  Then a fourth, self-inflicted, found by
+running this project's sweep rule on the first fix rather than by waiting for a
+review round to supply it.
+
+**A form occurring in an item is not the item's form** (P1, fail-open).
+`rust_code_view.classify_extern_item` decided what a foreign item is by
+*searching its interior*: `fn` first, then a macro invocation, then the
+symbol-free set.  So `decl!(#[doc = "…"] fn fake());` — an item-position macro
+carrying function-shaped tokens in its **arguments** — classified as a plain
+`fn`.  The macro was therefore read past instead of refused, and whatever
+declaration its expansion really emits was in no inventory, on the scanner whose
+own rule (round 21, restated in `CLAUDE.md`) is that a macro inside a foreign
+block is refused rather than read past.  Both gates that share this walk —
+`check_kernel_entry_exports.py` and `check_unsafe_block_justifications.py` — were
+affected, which is round 7's consolidation working: one defect, one fix.
+
+Reversing the order is not the fix, and the reviewer's own control is why:
+`fn f(x: m!());` is a function declaration with a macro in its *type*, and it is
+the `fn` that declares the symbol.  The two cases are the same two tokens in the
+two orders, so **no** interior search can separate them — the distinction is
+which form the item *starts* with.  The item is now read from its head
+(`_skip_item_prelude` consumes attributes and the `pub` / `safe` / `unsafe`
+qualifiers a foreign item may carry), and the three leading forms are matched
+anchored.  A head this scanner cannot locate is `unknown`, which both callers
+refuse: this module builds *requirements*, and round 25's rule is that a
+requirement it drops is a check nobody runs.  Both orders are pinned as
+mutations, and each fails a different witness.
+
+**A spelling quoted in a string is not a read** (P2, fail-closed).
+`lean_store_read_census.py` classified over `path.read_text()` while
+`_SIGNATURE_END`'s own comment asserted the view had blanked strings.  It had
+not, so `def diagnostic : String := "avoid .objects[raw]? syntax"` counted as an
+executable raw store read — and `STORE_READ_CODE` is a `ZERO_METRICS` entry, so
+Tier 0 would have refused correct code with no way to regenerate past it.  The
+Tier 1 elaborator reconciliation could not correct it either: it sees a genuine
+executable `def` and *agrees* with the classifier about the declaration.
+Refusing valid text is the safe direction and still a defect, which round 6
+recorded in as many words.  `census_view` blanks string contents in process —
+byte-aligned and idempotent over an already comment-free file, so every line,
+column and offset is unchanged, and no second whole-repo overlay is built.  The
+decisive control is the same spelling outside quotes, which must still count.
+
+**A backtick fence's info string may not contain a backtick** (P2,
+fail-closed).  CommonMark 4.5 forbids it, and gives the reason: otherwise
+ordinary inline code would open a fence.  So ```` ```rust`x ```` opens nothing
+and a `# Safety` heading below it **is** published — while the unsafe gate read
+a fence, hid the heading, and reported the declaration undocumented.  A **tilde**
+fence carries no such restriction, and that asymmetry is the whole content of
+`_opens_fence`; both controls keep the backtick and change only what carries it.
+
+**And the first fix left a pin with nothing behind it.**  The leading-form
+rewrite retired `_EXTERN_FN_ITEM`, `_MACRO_INVOCATION` and
+`_EXTERN_NON_FN_ITEM`, and a Tier 3 anchor named the third — so the check went on
+reporting PASS over a definition the classifier no longer consulted.  **A pin on
+a dead symbol is a tautology**: it says nothing about the live code while reading
+in the report exactly like a check that decides something.  All three are
+deleted, their docstrings re-homed onto the live regexes, and the anchor is
+repointed at the symbol's **read** rather than its definition — because a pin on
+a definition is a presence check even when the symbol is live, and the set can be
+defined here and consulted nowhere.
+
+The same reading applied to the fix itself.  `_skip_item_prelude` first
+re-derived the `[` position from a raw regex match and carried its own
+bracket-matching loop — while `attribute_opens_at` already answered the first
+and `attribute_spans` already inlined the second.  Both are one answer now, and
+the payoff is measured rather than asserted: a single token-preserving mutation
+of `_matching_square` (the closing bracket it counts) fails the self-tests of
+`rust_code_view`, `check_unsafe_block_justifications.py` **and**
+`check_kernel_entry_exports.py`.  *Before writing a helper, find the one this
+tree already has.*
+
+That is the second time this cut's author has been shown a tautological pin, so
+per this project's own escalation rule the third response is not prose:
+`scripts/check_anchor_symbol_liveness.py` (Tier 0, 8 self-test cases) refuses any
+Tier 3 anchor naming a Python symbol its target binds and the tracked tree never
+reads.  Its domain is derived — every anchor over a `.py` target, every reader in
+the tracked Python tree — a target that is missing or unparseable **fails**
+rather than being skipped, and its decisive case keeps the anchor and the
+definition and adds only a reader.  It fires on the pre-fix state and is clean on
+66 anchors today.
+
+**And the honest reading of the round as a whole**: all three findings are the
+front-end row registered in `docs/REGISTERED_DEBT.md` table C, and none is in a
+question a real front-end answers — the item split decides which linker symbols a
+foreign block requires, which no lint reports; the Lean classifier runs at Tier 0,
+where no elaborator is available, which is why its Tier 1 reconciliation exists;
+and the CommonMark defect is in the residue `clippy::missing_safety_doc`
+structurally cannot reach (a non-`pub` `unsafe fn`, a foreign declaration, and
+the `aarch64` half the host lane elides).  So `v0.35.28`'s adoption of the real
+front-ends narrowed the row and did not close it, and the row is updated with
+this round's evidence rather than left reading as though it had.
+
+**A twelfth inline `max(base, boost)`**, found by running the same sweep on
+v0.35.28 rather than trusting its count of eleven:
+`schedContextConfigureBoundPropagate` computed the bucket a reconfigured thread
+moves to from the `priority` argument while storing the record beside it, so the
+stored priority and the bucket were two expressions.  It reads
+`boundTcb2.boostedPriority` — the record being stored — and the collapse is
+definitionally identical (`cases` on the boost, `rfl` on each arm), so no
+computed bucket moves.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md
+
+## v0.35.28 — PR #895 review round 15: the Setext heading's whole paragraph, the frozen reply's inheritance revert and its missing-server refusal, and an operation-level differential that found a fourth divergence
+
+Three findings, all reproduced against the tree before being acted on, and one
+mechanism — because two of the three are the fifth and sixth instance of a
+single class this PR has now met in five consecutive rounds.
+
+**A Setext heading's content is the whole paragraph** (P1,
+`scripts/check_unsafe_block_justifications.py`).  Round 14 taught the gate
+CommonMark's second heading syntax and read the verdict off the line directly
+above the underline.  A Setext heading's content is the **entire** preceding
+paragraph, which 4.3 permits to span lines, so `/// This is not a contract`,
+`/// Safety`, `/// ===` satisfied the gate while rustdoc titles that heading
+"This is not a contract Safety" — no Safety section at all, and fail-OPEN on a
+gate whose baseline is empty.  The verdict is now taken from the paragraph's
+**first** line, where the heading's content begins, and two leaf blocks that end
+a paragraph are recognised for the first time because carrying the first line
+makes them matter: a thematic break (`Safety` / `***` / `===` must NOT count)
+and an ATX heading (`# Overview` / `Safety` / `===` must count — round 6's rule
+that the safe direction is still a direction).  Four matrix rows, each
+mutation-tested against its own clause; the live tree is unmoved at 136/136.
+
+**The frozen reply reverts priority inheritance** (P2,
+`SeLe4n/Kernel/FrozenOps/`).  A server blocked-on by a high-priority client
+carries that client's priority in `TCB.pipBoost`, and `frozenEnsureRunnable`
+buckets by it — so answering the client leaves the server queued at a priority
+inherited from a call it has already completed.  Both live compositions
+recompute (`revertPriorityInheritance`, `propagatePipChainCrossCore`); this
+surface did not.  `frozenRevertPriorityInheritance` is the mirror, over
+`frozenWaitersOf` / `frozenComputeMaxWaiterPriority` / `frozenBlockingServer` /
+`frozenUpdatePipBoost`, and it runs on **every** successful reply, donation or
+none.  `frozenEffectivePriority` is extracted in the same cut so the enqueue and
+the reversion cannot answer "which bucket" differently.
+
+**...and it refuses a caller with no recorded server** (P2).  Both live
+spellings answer `.replyCapInvalid` for `.blockedOnReply _ none` — the live
+comment records the retired `none => true` branch as a confused-deputy risk
+(AK1-B / I-H02) — and this mirror bound the recorded server and never read it.
+The binder stays unused for *authority*, exactly as in `endpointReplyOnCore`: a
+delegated replier is still legitimate, and what is refused is the absence of a
+recorded server, not a mismatch with it.
+
+**The mechanism: a leg-level agreement is not an operation-level one.**  Rounds
+13, 14 and both frozen findings above are one defect — the mirror omits a step
+the live operation performs — and the coverage table read "reply: checked"
+through all four, because the differential it names compares the frozen reply
+against the **bare** `endpointReply`, a leg.  The live `.reply` *operation* is
+that leg plus the donation return plus the inheritance revert, and nothing
+compared the frozen composite against it.  `frozenBranchOperationChecked` /
+`frozenBranchOperationUncheckedReason` state the second claim separately, with
+three interlock theorems (`decide`): checked-or-reasoned, no row both, and an
+operation claim implies its leg claim.  `operationDifferentialScenarios` backs
+it with executions and is reconciled against the claim in both directions, so a
+`true` row nothing runs fails — the treatment the leg claim already had.  The
+remaining twelve branches carry stated reasons, two of which are findings in
+their own right: the live `.call` and `.receive` rendezvous donate a scheduling
+context (`applyCallDonation`, WS-OD OD3.6's
+`applyReceiveRendezvousDonation`) and this surface mirrors neither.
+
+**It found a fourth divergence on its first run — in this cut's own fix.**
+`frozenUpdatePipBoost` looked for the thread in the bucket its **old effective
+priority** names; the live `updatePipBoost` asks whether the thread is in the
+queue at all and removes it from wherever it is.  On a state where a thread's
+bucket and its effective priority have already drifted apart — exactly the state
+a reversion exists to repair — the frozen side left it where it was.  Caught by
+`FO-041`, mutation-verified, and fixed here.
+
+**Witnesses.**  `FO-004f` (the boost is recomputed from the *remaining* waiter,
+so clearing it unconditionally fails too), `FO-004g` (the refusal, with a
+control that replies to the same fixture with a server recorded), and `FO-041`
+(the whole operation against `endpointReplyWithDonation`, in both the
+state-agreement and refusal directions).  Every mutation was run against
+pre-fix behaviour and confirmed to fail.  The suite's "33 scenarios" literal —
+against 40 distinct `FO-` ids and 34 runner invocations, a number nothing
+computed — is replaced by the two differential list lengths, which compute
+themselves.
+
+
+**...and the class is closed at its cause, not at its instance** (the
+maintainer's instruction, in the same cut).  Round 14 registered the
+generalisation and round 15's P1 was the seventh consecutive round to find a
+defect in the hand-written front-end, so it is taken rather than registered
+again.
+
+*The `unsafe` question goes to rustc; the `# Safety` question goes to rustdoc.*
+`sele4n-hal` and `sele4n-abi` deny `clippy::undocumented_unsafe_blocks` and
+`clippy::missing_safety_doc` at their crate roots.  The first is rustc's own
+parse of the block and of the comment run above it; the second renders the
+item's documentation with the parser rustdoc uses and looks for the published
+section — so fences, HTML blocks, Setext underlines and raw doc literals are
+decided by the tool whose output the caller actually reads, not by a
+re-implementation of it.  Two facts were established by mutation rather than
+assumed, and both would have shipped a false green: `cargo clippy -- -W <lint>`
+reaches only the final compilation unit and is **silent** for every workspace
+member, and the host lane cannot see the `#[cfg(target_arch = "aarch64")]`
+majority of the HAL — deleting a real `// SAFETY:` comment produces **0**
+findings on the host and **2** on `aarch64-unknown-none`.  Both lanes run
+`-D warnings`.  The scanner stays, because Tier 0 runs before any build and
+because three things structurally escape the lints — a non-`pub` `unsafe fn`, an
+`unsafe fn` inside an `extern` block (ten Lean upcalls, and no lint requires a
+contract of a foreign declaration), and the ARM ARM census — and its output now
+names its authority and its residue rather than implying it owns the surface.
+
+*And the frozen mirror stops re-answering questions that have live answers.*
+The round-15 fix added five hand-written frozen counterparts, which is more of
+the duplication that produced the churn.  Two of the five were pure questions
+about a `TCB` record — the frozen store holds the **live** `TCB` — so they are
+now the live accessors: `TCB.boostedPriority` and `TCB.blockingServer?`
+(`Model/Object/Types.lean`), each with a `simp` equation and a **frame lemma**
+stated at the accessor, so a consumer rewriting one TCB into another gets the
+frame instead of unfolding (which, inside a `filterMap`, also rewrites the
+tail's bound occurrences and desynchronises the induction hypothesis — a hazard
+one proof in `Compute.lean` already documented one level up).
+
+Underneath them is `Priority.raisedBy` (`Prelude.lean`), "a base raised by an
+inherited boost", which was written out inline at **eleven** sites: the four
+arms of `effectiveSchedParams`, `resolveEffectivePrioDeadline`,
+`effectiveBucketPriority`, `effectiveRunQueuePriority`,
+`ipcEffectiveRunQueuePriority`, both boost sources in
+`migrateRunQueueBucketOnCore`, and the frozen run queue.  The base is a
+**parameter** because it is not always the thread's: a `.bound` thread's base is
+its reservation's `SchedContext.priority`.  Fixing it at the TCB would have
+covered ten of eleven and left the eleventh spelling its own `match`, which is
+how a duplicate survives a de-duplication.
+
+One pair is worth naming: `effectiveRunQueuePriority` and
+`ipcEffectiveRunQueuePriority` existed as two bodies because importing
+`Scheduler.Invariant` from `IPC/Operations/Endpoint.lean` would close an import
+cycle, and they were held together by `ipcEffectiveRunQueuePriority_eq_effectiveRunQueuePriority`
+— a `rfl` obligation stated in the first module that sees both names, precisely
+so a change to either body that the other did not mirror would stop the build.
+That is the *pin* this project prescribes when a second implementation must
+exist.  It need not exist: the shared answer lives in the **model**, upstream of
+both, so the cycle objection never applied to it.  **Both names are deleted, and
+the pin with them** — 108 applications rewritten across 14 files, three theorems
+renamed along with their Tier 3 anchor and their `CLAIM_EVIDENCE_INDEX` citation
+— so the concept has exactly one definition, `TCB.boostedPriority`, and every
+site calls it.
+
+Keeping the pin as a tautology was considered and rejected: once one side is
+gone it has no subject, and a theorem that can only be `rfl` asserts nothing
+while reading like a check.  That is this file's own inert-witness defect, and a
+pin is worth exactly as much as the divergence it can still see.
+
+Nine proofs moved with the definitions, each repaired at the accessor's frame
+rather than by re-unfolding; `lake build` is clean and the frozen differential
+(FO-031, FO-041) is unmoved.
+
+Refs: docs/REGISTERED_DEBT.md §C (frozen differential coverage; convention-gate front-ends)
+
+## v0.35.27 — Round 14: three fixes, and the two causes behind six rounds of them
+
+**Review round 14 (2 P1, 1 P2), all reproduced before being fixed and
+mutation-verified.**  Two of the three are in code written hours earlier for
+round 13, which makes this the fifth consecutive round where findings land in
+the previous round's fixes — so this entry is mostly about *why*, and the
+remedies are registered rather than asserted.
+
+**The fixes.**  `extern_block_items` counted `<` and `>` as nesting, so a valid
+foreign signature carrying a shift — `pub fn f(x: *const [u8; 1 << 2]);` —
+raised the depth twice with nothing to lower it and **every following
+declaration merged into that item**.  Measured: the block reported one item and
+an undocumented `pub fn undocumented();` after it existed for no site count, no
+inventory and no baseline, with the gate green.  Angle brackets are not nesting
+here and never were — the docstring already said *brackets*, and a `;` can only
+reach a generic position inside an array type or a const-generic block, which
+`[` and `{` already cover.  Separately, `publishes_safety_heading` knew one of
+CommonMark's two heading syntaxes, so a declaration documented `Safety` /
+`======` was refused though rustdoc had published its `<h2 id="safety">` — the
+fail-*closed* direction, which round 6 recorded as a defect in its own right.
+Eight matrix rows (93 → 101 cells) take that axis at all of its values, each
+accepting row paired with a control that changes only what the underline titles
+or what encloses it.
+
+**And the frozen `.reply` left its server on the run queue.**
+`applyReplyDonation` is `returnDonatedSchedContextResolved …` **followed by**
+`removeRunnable replier`; round 13 mirrored the inner call and not the live
+caller that pairs them, so a server that had just handed its reservation back
+stayed selectable, `.unbound` and charged to nobody — the temporal-isolation
+defect rounds 9-11 closed on the live `.replyRecv` arm, reproduced here by the
+fix that recorded the rule against it.  The remedy is not the missing line but
+`frozenApplyReplyDonation`, a mirror of the live function that **completes** the
+step, so the pairing is structural rather than remembered.
+
+**The two causes, measured rather than asserted.**  (1) The Tier 0 convention
+gates hand-implement three language front-ends — Rust lexing, Rust item parsing
+and CommonMark across 3,591 lines, plus Lean declaration parsing in the store
+census — and *every* round from 9 to 14 found a construct in one of them.  Six
+successive rules were written into `CLAUDE.md` to close it and the rounds
+continued, which is the measurement that another rule is not the remedy.
+`CLAUDE.md` already names the exit and it was taken once, for Lean, at round 5;
+what was never generalised is that Rust's front-end is `rustc` and that the
+`# Safety` question's front-end is **rustdoc** — the tool whose behaviour the
+property is about.  (2) The frozen surface is a hand-written second
+implementation whose differential coverage is a hand-written scenario list, so a
+mirror may omit a step its twin performs and nothing reports it; rounds 10, 11,
+13 and 14 are all that shape.  Both are now rows in `docs/REGISTERED_DEBT.md`
+table C with closure targets before v1.0.0, which is what this project's own
+rule prescribes when the optimal implementation is out of scope for the cut.
+
+## v0.35.26 — Round 13: a mirror of a part is not a mirror of the whole
+
+**Review round 13 (3 P1 findings), all reproduced before being fixed.** Two are
+inside round 12's own code, which makes this the fourth consecutive round where
+findings land in the previous round's fixes; the entry is about what the three
+share rather than about the patches.
+
+**The frozen `.reply` mirrored its reply *leg* while being the whole operation.**
+`Reply.consumed` deliberately keeps a stack head's links — its docstring says
+why, in terms: *the pop that follows clears them*. That is a **precondition on
+the caller**, and `FrozenOps` adopted the record without it: the surface has no
+donation pop, so a frozen state captured mid-donation-chain (`freeze` copies
+Reply objects verbatim, links and all) left the answered Reply failing
+`Reply.isFree` for good — never re-linkable by the next `Call` rendezvous, never
+retypeable, so no passive server could complete a second call/reply cycle on it.
+Reproduced end to end with a discriminating control, the only difference between
+the two runs being whether the Reply heads a context.
+
+The fix is a composite, and **where it goes is the content**:
+`frozenEndpointReply` is refined against the **bare** `endpointReply` (which also
+leaves a head linked) and `FrozenOpsSuite`'s FO-031 compares exactly that, so a
+pop moved inside it would have broken the refinement this surface exists to
+check. `frozenEndpointReplyWithDonationReturn` runs the reply leg then
+`frozenReturnDonatedSchedContextResolved` — the frozen counterparts of
+`returnDonatedSchedContext` and `storeDonationHeadPop`, with both live guards
+(the context must really be bound to the server; the outer caller must be
+acceptable) and the **live** `donationReturnBinding`, so the two surfaces cannot
+disagree about which binding a return mints. `scThreadIndex` is deliberately not
+maintained: no frozen operation writes it and `frozenStateAgrees` does not
+compare it, so becoming its only writer would be a second answer to a question
+this surface has already settled. The reply-stack write census caught both new
+write sites on its first build — which is the census working — and they are
+registered as `mirrors` entries; it now reports 22 sites, 5 of them frozen.
+
+**A keyword in a closed nested group does not own this `:=`.**
+`_binding_open_at` scanned the enclosing group's whole span, so
+`(obj : (let T := Option KernelObject; T) := st.objects[oid]?)` — which Lean
+accepts — read the binder's default separator as that `let`'s assignment and
+filed the executable read `SPEC region=sig`. Signature rows are the one region
+the Tier 1 elaborator reconciliation does not judge, so the read bypassed **both**
+enforcement tiers rather than one. The span is walked at depth now, through the
+`_depth_zero_scan` every other top-level-token question in that file already
+uses, so the nesting rule has one implementation and not a second that can
+disagree.
+
+**A fence is not the only enclosure in the rendered document.** Round 12 made
+`publishes_safety_heading` ask its question of the document rustdoc actually
+reads; CommonMark 4.6 **HTML blocks** hold raw text, so `/// <!--`,
+`/// # Safety`, `/// -->` published no heading and satisfied the gate anyway.
+The axis is taken from the grammar rather than from the finding: all seven block
+types, with the two end conditions (a string on a line; a blank line), an
+unterminated block running to the end of the document, and type 7's inability to
+interrupt a paragraph. Fourteen matrix rows, each hidden row paired with a
+control that ends the block — so a row is known to fail on the **enclosure**
+rather than on the marker. The live tree is unmoved at 136/136.
+
+Every fix is mutation-verified against pre-fix behaviour, with the mutation
+confirmed to fail: reverting the frozen composite fails FO-004c; reverting the
+span walk fails the new census case while leaving round 12's own case passing —
+which is how the fix is known to narrow the rule rather than disable it;
+reverting the HTML-block tracking fails 8 matrix rows while the 6 controls still
+pass.
+
+## v0.35.25 — PR #895 review round 12: a matrix enumerates the dimensions you thought of
+
+Six findings, and where they landed is the point: round 11 replaced this gate's
+case lists with a **form matrix**, and three of round 12's findings are not cells
+in it — they are **axes it did not have**.
+
+**A `# Safety` inside a fenced code block published nothing and was accepted**
+(P1, fail-open, reproduced on all three doc forms).  rustdoc renders
+
+```rust
+/// ```text
+/// # Safety
+/// ```
+```
+
+as literal text, so the declaration exposes no caller-facing contract at all —
+and three separate line-oriented patterns each accepted it, because the enclosure
+is a property of the *rendered document* and no per-line predicate can see one.
+
+The fix is the artefact rather than a fourth pattern.  rustdoc concatenates every
+doc source on an item — `///` lines, `/** … */` blocks, `#[doc = …]` attributes —
+into one markdown input, so `rendered_doc_markdown` now builds exactly that, in
+source order and de-decorated the way rustdoc de-decorates it, and
+`publishes_safety_heading` asks the single question of it (CommonMark fences,
+indented code, and the ATX heading rule).  Three patterns became one, a
+cross-form fence — opened in a `///`, closing after a `#[doc]` — became
+answerable at all, and `SAFETY_DECL_LINE`, `DOC_BLOCK_LINE` and
+`SAFETY_HEADING_LINE` are deleted rather than left beside their replacement.
+
+**And two more axes, with all of their values:**
+
+- **Token separation.**  Rust treats a comment as whitespace *between tokens*, so
+  `#/* why */[doc = "# Safety"]` is one valid attribute that rustfmt accepts and
+  rustdoc publishes — and **seven** scanners here required a literal `#[`, which
+  made the documented item below read as undocumented.  They compose
+  `rust_code_view.ATTRIBUTE_OPEN` now; sharing the fragment is the remedy because
+  this PR has twice measured that restating the sweep rule does not make a new
+  pattern inherit what the old ones learned.
+- **The name.**  `pub unsafe fn λ()` compiles, and an ASCII-only class made it
+  **no site at all**, so its obligation was never raised and the explicit default
+  branch then failed the whole file.  Rust identifiers are UAX#31; the four
+  askers of that question are swept together, and `_SITE_NAME_FORMS` is the new
+  dimension.
+
+**The store census: two name-resolution defects, one of them live.**
+
+- **A field name is not a receiver type.**  The read patterns key on the spelling
+  `.objects[…]?`, so an executable definition over any *other* type with an
+  `objects` field is counted as a kernel-state read and refused by the enforced
+  `STORE_READ_CODE = 0`.  Resolving the receiver is an elaborator question and
+  this gate runs in Tier 0, before any build — so the **ambiguity** is bounded
+  instead: `OBJECTS_FIELD_OWNERS` is derived from the sources and reconciled in
+  both directions, making a new owner a *named* Tier 0 failure rather than a
+  mystery rejection.  Running that derivation found **six** owners where the
+  first guess named four, and one of them — `BootstrapBuilder.objects : List`,
+  which `GetElem?` makes indexable — is a live ambiguity, not a hypothetical.
+- **A `let` inside a binder type owns its own `:=`.**  `(h : (let obj :=
+  st.objects[oid]?; obj = none))` is valid Lean, and reading that `:=` as the
+  start of an executable default filed a type-level read as CODE — refusing a
+  valid declaration against the enforced zero, which the declaration-level Tier 1
+  reconciliation structurally cannot correct.
+- **A `Prop` alias is resolved by qualified name.**  The fallback accepted any
+  alias with the same final component, so `B.Pred := Nat` read as specification
+  because another namespace declared a `Pred := Prop`, and a raw store read in
+  that declaration merged into `sig` and escaped both gates.  Aliases carry
+  qualified identities now and resolve against the use site's enclosing
+  namespaces, longest prefix first.
+
+Live figures unmoved: the unsafe gate at 136/136 (114 blocks, 22 declarations),
+`STORE_READ_CODE=0`, `STORE_READ_SPEC=4637`.  The matrix is at 79 cells.
+
+Every fix is mutation-verified against **pre-fix** behaviour and each revert
+fails a *named* case.  Two of those runs were themselves defective first — an
+inline mutation with no `assert` matched nothing and reported the fix as
+verified, and the alias mutation reverted one of the fix's two halves and passed
+— both of which this entry's `CLAUDE.md` section records.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md
+
+## v0.35.24 — PR #895 review round 11: a witness drawn from a finding tests the finding
+
+Four findings, and **three of them are in the code written to close round 10's**,
+whose findings were in round 9's.  Three rounds running is no longer evidence
+about the instances; the entry below fixes them and then says what the shape is.
+
+**The deschedule was wired on one arm of two.**  Round 10 replaced the proxy core
+inside `replyRecvServerDeschedule` — and `replyRecvPostReceiveDonation`'s *other*
+arm, twenty-five lines away, still called `removeRunnableOnCore st recordedServer
+serverCore` directly with the same proxy.  So the temporal-isolation defect
+reported closed at round 9 and re-closed at round 10 was still live on the
+non-Call path: a server queued on core 2 had core 0's run queue edited.
+
+- `descheduleAtPlacement` (`IPC/CrossCore/EndpointCall.lean`) is the one step —
+  `placedCoreOf?` resolved *inside* it, so no caller can supply a core at all —
+  and **both** arms call it.  `replyRecvServerDeschedule` is its
+  self-reply-guarded instance; the non-Call arm is the bare call.
+- `descheduleAtPlacementCores` is the write-set half, read by both
+  `replyRecvDescheduleAndWalkWriteSet` and `replyRecvServerDescheduleWriteSet`,
+  so the footprint and the transition resolve placement by the same expression.
+- **The Tier 3 negative is re-scoped to the transition.**  Round 10 bounded it to
+  `replyRecvServerDeschedule`, which is a declaration-bounded anchor for a
+  relation about *every* deschedule of the recorded server — so it was silent on
+  the live sibling and its silence read as coverage.  The two positives that
+  pinned `placedCoreOf?` *inside* the helper and its write-set half are retired
+  for anchors on the delegation, and `placedCoreOf?` is pinned in exactly the two
+  definitions that read it: a resolver spelled a third time is a third answer.
+
+**`opaque` with a body was read as valueless.**  Round 6 taught
+`lean_store_read_census.py` the keyword and round 7 made an unterminated
+signature a named failure; together they closed the signature region eagerly for
+every `opaque`, so an `opaque` *with* a body had its body filed as signature —
+`sig`, the region no verdict judges.  That is round 7's own *a skip is a sink*,
+inside the fix for it.  `_declaration_is_valueless` looks ahead for a real body,
+testing the **declaration boundary first** so a later declaration's `:=` cannot
+answer for this one.  The live tree is unmoved (`STORE_READ_CODE=0`,
+`STORE_READ_SPEC=4637`); all 73 `opaque`s in the tree carry bodies and were
+being misfiled.
+
+**Attribute-shaped text inside a string donated a heading it never publishes.**
+`declaration_documents_safety` searched the whole kept view for `#[doc = …]`, so
+`#[allow(unused, reason = r##"#[doc = \"# Safety\"]"##)]` documented the
+`unsafe fn` below it.  Real attribute extents now come from
+`rust_code_view.attribute_spans` on the **string-free** view and their values are
+read off the byte-aligned kept one — structure from one view, the text a
+predicate is about from the other.
+
+**And the case lists became a form matrix** — which is the round's actual
+subject.  Three rounds running, the witnesses here were drawn from the
+*findings*: each round added a case for exactly the defect reported plus a
+control, and the next round supplied a spelling nobody had enumerated.  That is
+this project's own *a recognised set is not a derived set*, applied to its own
+test cases — and the remedy is the one `per_core_state_matrix` already used for
+the lock: enumerate the space.  Every marker FORM crossed with every ENCLOSURE,
+the verdict a property of the enclosure alone, so a spelling this gate has not
+considered is a missing **row** rather than the next round's finding.
+
+Its first run found **five defects no review round had reported**, one
+fail-closed and four fail-open:
+
+- A `SAFETY:` marker in an **undecorated** block comment (`/*\nSAFETY: …\n*/`)
+  was rejected — the only fail-closed cell, and a form `rust/` may legitimately
+  write.
+- A `/**` written inside a line comment, inside a string literal, or nested in
+  another block comment **published a `# Safety` section**.  `block_comment_spans`
+  gates every opener on the code view — a `/` the view blanked — and the nesting
+  walk only measures extent; a line comment's extent is its line, so a `/*`
+  inside one is never examined.
+- `doc_block_bodies` returned the span *including* its `/**` delimiter, which
+  defeats the line-anchored heading pattern, so the legitimate bare doc block was
+  rejected once the enclosure gate landed.  The body is what sits between the
+  delimiters.
+- A `///` heading at the start of a line **inside a string literal** satisfied the
+  line-anchored `///` scan.  That scan reads comment text now
+  (`comment_text_of` of the block-blanked run), not the run.
+- `rust_code_view.UnterminatedLiteral` was in **no** handler, so a file the shared
+  lexer cannot finish reached the operator as a traceback rather than as the
+  refusal the gate's own "one failure channel" comment claims.  The three
+  hand-written handler tuples are now one `REFUSALS` constant — which is also
+  what makes the omission *detectable*: the harness's private copy had been
+  silently absorbing what the scanner would have crashed on.
+
+`_DECL_ENCLOSURES` also gained the plain string-literal enclosure its sibling
+table had carried since round 10; the asymmetry between the two tables was the
+same defect one level up, and it is what hid the `///` cell.
+
+All five are mutation-verified against pre-fix behaviour: each revert makes a
+named matrix cell — or the refusal case — fail.  The gate is unmoved on the live
+tree at 136/136 (114 blocks, 22 declarations).
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md
+
+## v0.35.23 — PR #895 review round 10: a proxy is not the fact, at the scheduler
+
+Five findings.  **Two are defects in the previous cut's own fixes** — one of them
+the kernel one — and that is what this entry is about: a round whose findings are
+in the code written to close the last round's findings is evidence about the
+*shape* of the fix, not about the instance.
+
+**The round-9 deschedule was a no-op on exactly the case it was written for.**
+`replyRecvServerDeschedule` took the `serverCore` its caller had already
+computed, and `replyRecvBody` computes that as
+`determineExecutingCore st recordedServer` — a core the server is **current**
+on, falling back to `bootCoreId`.  A server that is *queued rather than running*
+matches nothing there, so the deschedule edited the boot core's run queue while
+the server sat on another, and the temporal-isolation defect round 9 reported as
+closed survived untouched on the preempted path.  Reproduced before acting: a
+server queued on core 2 resolves to core 0 and is still on core 2 afterwards.
+
+`determineTargetCore` — the review's suggestion — is no better, and the
+measurement is the reason: `affinityAdmitsCore` is `true` on **every** core for
+an unpinned thread, so `runQueueAffinityConsistentOnCore` does not pin such a
+thread to that resolver's answer either; an unpinned server may legitimately sit
+on any queue while it says `bootCoreId`.  Both are **proxies**.  The fact a
+removal is about is where the thread is *placed*, and `removeRunnableOnCore`
+writes the run queue **and** the current slot of the core it is handed, so the
+witness has to cover both.  That is this file's own *a proxy is not the fact*
+(PR #889 review round 23), at the scheduler.
+
+- `placedCoreOf?` (`Scheduler/Operations/Selection.lean`) is that witness, beside
+  the two predicates it is built from.  `placedCoreOf?_isSome_iff` ties it to
+  `runnableOnSomeCore || runningOnSomeCore` and `placedCoreOf?_sound` says a
+  resolved core really holds the thread — so the resolver and the predicates
+  cannot drift, which is the failure this whole class keeps producing.
+- **The parameter is gone.**  `replyRecvServerDeschedule` resolves its own core;
+  a caller cannot hand a run-queue removal a core computed for the
+  priority-inheritance walk.  `replyRecvServerDescheduleWriteSet` reads the *same*
+  call, so the footprint and the transition cannot name different cores.
+- **The witness could not have caught it, and now can.**  `tests/SmpIpcSuite.lean`
+  §3.9b passes `serverCore` **by hand** — it supplied the very answer production
+  was getting wrong.  Four new assertions pin the fixture's real shape: the server
+  is queued and *not current*, the retired proxy answers the boot core, the
+  resolver answers core 1.  With no parameter left to supply, the assertion
+  exercises the resolver rather than the fixture's opinion of it.
+
+**The gate findings are one defect and two domains.**
+
+*The view you read depends on the question.*  The justification run is
+deliberately raw — what matters is what a reviewer reads — and that reasoning is
+right for **reading** a comment and wrong for **deciding whether something is
+one**.  So `// #[doc = "# Safety"]`, an ordinary comment, was decoded as a real
+attribute (round 9's own scan, over raw text), and
+`#[allow(unused, reason = "// SAFETY: not a comment")]` supplied a marker from
+inside a string literal.  Both fail **open**, on a gate with an empty baseline.
+`comment_text_of` derives the comment spans *from the code view* rather than
+re-lexing — a maximal run of blanked bytes holding at least one byte the raw text
+did not blank **is** a comment — and the doc scan reads `rust_code_view.code`,
+which keeps string contents and blanks the comment.
+
+*A macro-valued doc attribute is decided, not skipped.*  `#[doc = concat!(…)]`
+publishes a section rustdoc renders and the scanner reported the declaration
+undocumented.  `concat!` of string literals is expanded; anything this scanner
+cannot evaluate — `include_str!`, a user macro — is **refused by name**, because
+"undocumented" and "unreadable" are different claims and only one of them is true.
+
+*And the domain exclusion named a directory instead of a directory.*
+`compiled_rust_sources` dropped any path with a component called `target`, so
+`rust/sele4n-hal/src/target/aarch64.rs` — an ordinary module on a tree organised
+by hardware target — was never scanned.  Cargo's output **root** is excluded now,
+`CARGO_TARGET_DIR` honoured.  That is round 3's domain defect reintroduced by the
+filter written to fix it.
+
+Every fix is mutation-verified against the **pre-fix** behaviour, and the harness
+earned its keep twice more.  The domain fix was first shipped with **no witness
+at all** — the mutation reported `MISSED`, because `compiled_rust_sources` reads
+the real workspace and no case list can reach it; it has a synthetic-tree witness
+now.  And the two Tier 3 anchors on the deschedule were mutation-tested in both
+directions, since bounding a *negative* is not automatically safe: silent on the
+clean tree, firing on a mutation that keeps every token and puts the pre-fix
+spelling back inside the declaration.
+
+Gate self-tests: **65** site cases (5 new), **6** form-scan, **6** reconciliation,
+3 domain and 3 doc-refusal cases; the live gate is unmoved at **136/136** with an
+empty baseline.  `maxLockSetSize` does not move and no fixture changed.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md (WS-RM closure)
+
+## v0.35.22 — PR #895 review round 9: one spelling for a keyword, and a check that enforces it
+
+Five findings, all in the two Tier 0 Rust scanners.  Two fail **open** and three
+fail **closed** — Tier 0 refusing valid Rust — and the first of them is the
+third consecutive round of one defect, which is what this entry is about.
+
+**A keyword had seven spellings and one of them knew the rule.**
+`check_unsafe_block_justifications.py` held **seven** `\bunsafe` regex literals;
+exactly one, `UNSAFE_KEYWORD`, carried the `(?<!r#)` exclusion, under a comment
+ten lines long explaining why a raw identifier is not the keyword.  The other six
+were written beside it.  So `struct r#unsafe { x: u32 }` — an ordinary item Rust
+accepts — was read as an unsafe block, and Tier 0 demanded a justification of
+safe code.
+
+The rule was never in doubt; the *reach* of each fix was.  `v0.35.17` put the
+exclusion on the keyword scan for `r#unsafe`.  `v0.35.21` put the identical
+exclusion on `rust_code_view`'s `extern` scan for `r#extern`, and recorded the
+lesson that *sharing an answer stops two answers from diverging; it does not make
+a new answer inherit what the old one learned*.  Round 9 found six more bare
+spellings in the same file as the one carrying the rule.  Writing the lesson down
+a third time would have been the same move that failed twice.
+
+**So the remedy is a mechanism rather than a sixth patch.**
+`rust_code_view.keyword(word)` is the one fragment; every keyword pattern in both
+gates and the view composes it.  `bare_keyword_literals()` then reads the gate
+sources and reports any bare word-boundary keyword spelling written outside it,
+wired into the view's self-test — so the next such pattern fails on the day it is
+written rather than two review rounds later.  It reaches the pattern nobody has
+written yet, which is the one thing site-by-site fixes cannot do.
+
+- The check reads **code, not prose**: `_python_code_view` blanks `#` comments
+  and docstrings, with the docstring spans taken from `ast` rather than a
+  quote-state walk, because which literals are documentation is a question about
+  Python's grammar.  `keyword`'s own docstring quotes the bad spelling in order
+  to explain it, and a check that counted it would force this file to stop
+  explaining itself.
+- Mutation-tested in all three directions: a bare literal in code position fails
+  the self-test; the same spelling in a docstring and in a `#` comment do not.
+
+**Rust 2024's unsafe attribute is a form, not an unknown.**  `#[unsafe(no_mangle)]`
+is the only spelling a 2024 crate may use for these attributes; the keyword scan
+found the token, no entry accepted the position, and the explicit default branch
+failed the whole file.  It is classified now with **no** per-site obligation, for
+the reason `unsafe impl` two entries above carries none: it attaches to an item
+and asserts something about the linker namespace, and that story is already
+enforced by `check_kernel_entry_exports.py` and `check_identifier_naming.py`.
+Demanding a `// SAFETY:` here would put the justification in a third place and
+check it in none.
+
+**The line that ends a justification run may still carry the item's
+documentation.**  A `///` attaches to the item that *follows*, so on
+`pub mod m { /// # Safety` the comment documents the first item inside the module
+while only `pub mod m {` intervenes — and the walk, stopping at the whole line,
+reported a correctly documented `unsafe fn` as unjustified.  The run now takes
+the trailing portion after the last code character.  That is not a widening of
+round 6's rule but its other side: round 6's defect was documentation sitting
+*before* an intervening item, which that item consumes and which stays inside the
+code region.  Both hold at once because the distinction is a byte offset, and the
+round-6 witness is exercised in both its same-line and prior-line forms.
+
+**A spelling is not the text.**  `#[doc = r"not a heading\n# Safety"]` is a RAW
+literal, so the `\n` is two ordinary characters, rustdoc publishes no heading, and
+an `unsafe fn` with no caller-facing contract satisfied the gate.  Two earlier
+rounds had narrowed that regex — round 5 stopped arbitrary prose preceding the
+`#`, round 8 required the whitespace after it — and the question itself was
+wrong, so no third narrowing could fix it.  `_doc_attribute_values` **decodes**
+each literal by its own kind and `SAFETY_HEADING_LINE` asks a real line-start
+question of the result.  The superseded `SAFETY_DECL_ATTR` is deleted rather than
+left beside its replacement: a retired pattern that once decided a question is
+what a later cut reaches for by name.
+
+**The marker is `SAFETY:`, and the colon is part of it.**  Requiring only a word
+boundary let a comment that explicitly *disclaims* the obligation satisfy it —
+`// SAFETY is not established.` justified an unsafe block and kept the empty
+baseline green.  Measured before changing it: all 138 markers in the tree already
+carry the colon, so the tightening refuses the next disclaimer without touching a
+live site.
+
+Every fix is mutation-verified against the **pre-fix** behaviour, and one of those
+mutations earned its keep: the first witness written for the unsafe attribute was
+a *site* case, and a file whose only `unsafe` is an attribute produces no sites —
+so it passed vacuously with the fix reverted.  The harness caught it by **not**
+failing, and the witness moved to the form scan where the fix actually lives.  An
+inert witness reads as coverage while asserting nothing.
+
+A second self-inflicted defect was caught by an existing witness: the new doc
+attribute scan was first written `#!?\[`, which accepts the **inner** `#![doc]`
+form — reopening round 4's finding that inner rustdoc documents the enclosing
+module.  Round 4's own case failed immediately, which is what witnesses are for.
+
+Gate self-tests: **60** site cases, **6** form-scan cases (3 new), 6
+reconciliation cases; `rust_code_view` gains 5 witnesses including the discipline
+check.  The live gate is unmoved at **136/136** with an empty baseline, and no
+kernel transition, theorem or fixture changed.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md (WS-RM closure)
+
+## v0.35.21 — PR #895 review round 8: a delegated reply left its server unbudgeted
+
+Four findings.  The first is a **kernel defect**, not a gate defect, and it is
+the invariant-level form of *a presence check is not a relation check*.
+
+**A delegated `seL4_ReplyRecv` left the recorded server runnable with no
+scheduling context.**  `replyRecvPostReceiveDonation`'s Call arm donates the
+newly dequeued client's context to the **receiver** `tid` and descheduled
+nobody — correct exactly when `tid` *is* the recorded server (the non-delegated
+passive-server steady state), wrong on a delegated reply, where the server gave
+its context back in the pop and receives none.  It then stays on its run queue
+and is selected at its legacy TCB priority **charged to no reservation**, which
+is WS-OD OD3.6's defect on the path OD3.5 had just made live.  A server can
+arrange it deliberately by delegating its own reply capability.  **Medium**:
+temporal isolation, not confidentiality or integrity, and not reachable on
+hardware — no core is marked `lean_ready` anywhere in the tree.
+
+- `passiveServerIdle` **cannot** catch it: the conjunct reads "an unbound thread
+  that is *not queued and not current* is in one of these `ipcState`s", and the
+  property wanted here — *an unbound thread is not queued* — is its own
+  hypothesis.  A thread left unbound **and** runnable satisfies it vacuously,
+  which is why every bundle theorem over it stayed true.
+- The arm's own comment names the distinction two lines above the bug (*"not the
+  (possibly delegated) recorded server"*) while its justification sentence
+  ignores it, and its docstring already stated the intent the code missed (*"the
+  now-passive `recordedServer` is descheduled on its own core"*) — the
+  implement-the-improvement rule, with the better artefact already in the file.
+- `replyRecvServerDeschedule` is the named answer: the identity on a
+  non-delegated reply, the deschedule on a delegated one, run on the
+  **pre-donation** state because it is a consequence of the pop rather than of
+  the new donation.  `replyRecvServerDescheduleWriteSet` and
+  `replyRecvServerDeschedule_confinedToCores` carry it into the per-core write
+  set — a footprint omitting those cores would be false of exactly that arm —
+  and both bundle proofs (`_preserves_ipcInvariantFull`,
+  `_preserves_replenishQueueAffinityConsistent_smp`) discharge the new arm from
+  the machinery the sibling arm already used.
+- **Witness pair**, `tests/SmpIpcSuite.lean` §3.9b: delegated → the server is off
+  its run queue, not current, and `.unbound`; non-delegated → it keeps its place
+  *because it received the queued caller's context itself*.  A deschedule that
+  fires unconditionally passes the first and fails the second.  The decisive
+  mutation inverts the condition, keeps every token, **compiles**, and fails the
+  delegated assertion.
+
+**Three gate findings, each a rule this file already carries, unswept by one
+step.**
+
+- `#+\s*Safety` accepts `/// #Safety`, which CommonMark renders as a paragraph —
+  the gate whose whole subject is what a *caller* is told, accepting text that
+  tells the caller nothing.  Fixed in all three spellings at once (`///`,
+  `#[doc = …]`, `/** … */`), since they answer one question in three syntaxes.
+- The upward justification walk decided a multi-line `#[cfg(all( … ))]` one
+  physical line at a time and stopped at its `))]`, reporting a correctly
+  documented declaration **unjustified** — Tier 0 refusing valid Rust.  That is
+  *a nested construct is not a sibling*, applied to Lean and never to Rust
+  attributes.  The closer now opens a pending run consumed until the brackets
+  balance, and the balancing line must itself open an attribute: a multi-line
+  *expression* ending in `]` is code, and extending a run across it is the
+  fail-open direction the run's contract forbids.  Bracket arithmetic reads the
+  string-free view, since a `]` inside a literal is text.
+- `\bextern\b` matches inside `r#extern`, so `mod r#extern { … }` and
+  `struct r#extern { … }` parsed as foreign blocks in **both** consumers.  The
+  `r#` exclusion sits on `UNSAFE_KEYWORD` eight lines from where this scanner was
+  moved *out of*, one round earlier.
+
+That last one measures round 7's own remedy: sharing an answer stops two answers
+from diverging, and does not make a new answer inherit what the old one learned.
+
+Six new site cases (51 total) and two new `rust_code_view` witnesses; each fix
+mutation-verified against the pre-fix behaviour.  Live gate unmoved at **136/136**
+with an empty baseline.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md (WS-RM closure)
+## v0.35.20 — PR #895 review round 7: a skip is a sink
+
+Three findings, one meta-shape: a fix landed where an earlier review pointed and
+the question's other askers were left.  The remedy is an artefact for the sweep
+rather than a fourth restatement of the rule.
+
+**The signature boundary was a sink.**  `scripts/lean_store_read_census.py`
+ended a signature at `:=` or `where`, and Lean's direct equation syntax
+(`def f : A → B` then `| p => rhs`) carries neither — so **4778 lines of body
+across 263 declarations** were emitted as *signature*, which is SPEC and which
+`StoreReadClassificationCensus` deliberately does not judge.  Round 5 sent the
+classifier's verdict to the elaborator and round 6 made that reconciliation
+judge both directions; neither touched the boundary, so every parse failure
+drained into the one region nothing checks.
+
+- `SIG_END` gains a depth-zero equation-clause terminator, with `||`, `|||`,
+  `|>.` and `<|>` excluded by shape rather than by a list.  Measured over the
+  tree: 1633 depth-zero bars in signature regions are clause bars and the only
+  4 others are `||` / `|||`.
+- An unterminated signature is now a **refusal**, not a filing.  Every
+  declaration form has a body except `opaque` and `axiom` (`BODYLESS_KINDS`,
+  73 of them, every one a single line), so a form the parser cannot close fails
+  Tier 0 with a reason instead of silently checking less.
+- `SeLe4n/Testing/StoreReadClassificationCensus.lean` reports the residue the
+  skip legitimately leaves: signature rows sitting inside *executable*
+  declarations, which is **5** — against the 4778 that had been hiding there.
+  Its result is a record rather than a six-tuple, since the counts are read at
+  nine call sites.
+- Six self-test cases, each mutation-verified against the pre-fix behaviour;
+  35 cases in total.
+
+**An item macro in a foreign block was examined by nothing.**
+`scripts/check_unsafe_block_justifications.py` scanned `extern` blocks for `fn`
+and read past everything else, so `unsafe extern "C" { decl!(); }` — which Rust
+expands into real declarations — produced no site, and the empty baseline stayed
+green over it.  `CLAUDE.md` recorded the refusal as implemented; it was, in
+`scripts/check_kernel_entry_exports.py` alone.
+
+- The foreign-block walk moves to `scripts/rust_code_view.py`:
+  `extern_blocks` (ABI-literal resolution, brace matching),
+  `extern_block_items`, and `classify_extern_item` → `fn` / `macro` /
+  `non-fn` / `unknown`.  **Both gates read it**, so one mutation now fails both
+  self-tests; only what an item *means* stays per gate — a linker symbol in one,
+  an unsafe obligation in the other.
+- `UnreadableExternItem` routes into the unsafe gate's existing fail-closed
+  channel.  `UnreadableExternBlock` was raised and caught nowhere at all.
+- Witnesses in all three files: four refusal cases, a `static` that must **not**
+  be refused, and nine `rust_code_view` witnesses covering raw-hashed ABIs, a
+  brace inside a literal, and a macro in a `fn` signature.
+
+**The write frontier measured a spelling.**
+`SeLe4n/Testing/ReplyStackWriteCensus.lean` named the **frozen** table primitive
+(`FrozenMap.set`) and omitted the **live** one (`RHTable.insert`), so a
+definition that builds a `Reply` and writes
+`{ st with objects := st.objects.insert … }` — how `Lifecycle/Suspend.lean`
+writes a consumed Reply — was in neither derivation.  That is round 1 of this
+same PR (*a spelling is not a read*) on the same two tables, opposite direction.
+
+- `objectStorePrimitives` names both tables' writes; `objectStoreHelpers` is
+  kept as a **pin**, each entry required to reach a primitive.  The pin found
+  two further defects on its first run: `SystemState.storeObject`, which names
+  no declaration at all, and `storeObjectChecked`, a live helper the list had
+  never mentioned.
+- The widened frontier surfaced **21** definitions.  All are classified: 18
+  chain-neutral with their assignment lists as the reason, and 3 — the tree's
+  own depth-2 chain fixture, which stores a `SchedContext` heading the stack and
+  two linked `Reply` objects — registered as write sites.  The census of chain
+  writes could not previously see the fixture that exercises the chain.
+- The registry reconciles against **both** derivations, since a site found only
+  by the record-constructing frontier is a write site too.
+- The summary's arithmetic is closed: `stating + mirrors + halfSteps` must equal
+  the registry, which it did not once a site entered by the second route.
+- A private registry entry is built with Lean's own `mkPrivateNameCore`: a name
+  literal cannot spell `_private.<Module>.0.<name>`.
+
+**Also**: `docs/codebase_map.json` is pretty-printed again.  It had been so for
+its whole history until `v0.35.19` regenerated it without `--pretty`, which is
+the form `scripts/sync_documentation_metrics.sh` and `.github/workflows/
+codebase_map_sync.yml` both write — so every run of either produced a
+three-megabyte reformat.  The freshness check compares parsed payloads, not
+bytes, which is why nothing caught it.
+
+Three Tier 3 anchors move with the foreign-block walk rather than being deleted:
+the symbol-free item set and the `unknown` default are pinned in
+`scripts/rust_code_view.py`, and **both** gates are pinned on reading
+`classify_extern_item` — a gate returning to its own answer is what they now
+refuse.
+
+No kernel transition, theorem or fixture changed; `STORE_READ_CODE` remains 0
+and the golden trace is byte-identical.
+
+Refs: `docs/planning/REPLY_FRAME_REMOVAL_PLAN.md` (WS-RM closure)
+## v0.35.19 — PR #895 review round 6: a marker nested in another comment, and a keyword the classifier never saw
+
+Round 6 found **seven** more defects in the two Tier 0 scanners — six reported,
+one found while fixing them — and every one is the class rounds 1–5 have been
+circling: a scanner asserting something about a *token it found* where the
+property is a *relation*, or never examining an input at all.  Four fail
+**open**, two fail **strict**, and the seventh was self-inflicted inside a fix.
+
+**`scripts/lean_store_read_census.py`.**
+
+- **`opaque` was not a declaration keyword** (P1, fail-open).  The tree has
+  **73** `opaque` declarations at column zero, and each left the classifier's
+  state pointing at whatever preceded it — so an executable `opaque` body
+  following a `theorem` had its reads emitted under the theorem's name as
+  `SPEC`, past the enforced `STORE_READ_CODE = 0`.  Measured: no `opaque` body
+  holds a recognised read today, so the floor was not false; the hole was open
+  and unoccupied.  `opaque` and `axiom` are recognised now, and what bounds the
+  *class* is the elaborator — `StoreReadClassificationCensus` asks
+  `findDeclarationRanges?` which declaration owns each line, so a misattributed
+  read is a Tier 1 failure whatever spelling caused it.
+- **A binder's default value was filed as specification** (P1, fail-open).
+  `def step (obj : T := st.objects[oid]?)` evaluates that default whenever the
+  argument is omitted, so it is executable exactly as the body is — while the
+  binder *type* beside it is a hypothesis.  Emitting the whole signature as one
+  bucket let an executable read bypass the zero, and it escaped the Tier 1
+  reconciliation too, which skips `sig` rows because a declaration-level verdict
+  cannot adjudicate a hypothesis binder.  Defaults now carry their own region
+  and are judged; the split is gated on the same `is_prop_decl` the body uses,
+  so a `theorem`'s defaulted binder stays a proof.
+- **A result type that is an ALIAS of `Prop` was filed as code** (P2,
+  fail-strict).  `abbrev Pred := Prop` compiles, and testing the terminal result
+  for the literal token rejected legitimate specification text against an
+  enforced zero.  `prop_aliases` resolves them transitively over the tree —
+  **zero declared today**, measured, so nothing live moves — and the residue
+  keeps failing closed.
+
+**`SeLe4n/Testing/StoreReadClassificationCensus.lean`.**  The reconciliation
+judged only rows filed `SPEC`, so it could not report the alias defect above.
+It now judges both directions, and a `CODE` row inside a declaration the
+elaborator calls a proposition is reported as a classifier defect with the
+remedy named.  **2169** body lines agree in both directions (the 24
+accessor-body rows are now judged), 2104 signatures, 0 unplaced, 0 tied.
+
+**`scripts/check_unsafe_block_justifications.py`.**
+
+- **A doc marker nested inside another comment was accepted** (P1, fail-open).
+  Rust block comments nest and rustdoc publishes nothing from the inner one, so
+  `/* … /** # Safety */ … */` documents nothing — yet scanning the run for `/**`
+  anywhere accepted the `unsafe fn` below it.  One nesting walk settles the
+  sibling relation too: a `///` line or `#[doc]` attribute spelled *inside* a
+  block comment no longer matches either.
+- **A preceding item on the same line donated its documentation** (P1,
+  fail-open).  In `unsafe extern "C" { #[doc = "# Safety"] fn a(); fn b(); }`
+  the second foreign function inherited the first's attribute.  The two site
+  kinds now ask different questions of that line, and the difference is the
+  point: a **block** is evaluated inside the statement it sits in, so a binding
+  prefix (`let inner = unsafe { … }`) is not something that executed in between
+  — Rust's convention, and clippy's, puts the comment above that statement —
+  while for a **declaration**, code before it on its own line is a different
+  *item*.  Applying the strict rule to blocks would have failed 18 live sites.
+- **A raw string's hashes are balanced** (P2, fail-strict).  `r#"C"#` is a legal
+  ABI spelling; consuming only the opening hashes left the trailing `#` where
+  every surrounding pattern wanted whitespace, so a valid declaration yielded no
+  site *and* was rejected as an unrecognised form — the gate failing correct
+  Rust.
+- **…and the seventh, inside that fix**: adding a capture group to the shared
+  `ABI` fragment silently renumbered `UNSAFE_FN_NAME`'s groups, so every
+  declaration's name became `None`.  A numbered group beside a shared fragment
+  is fragile by construction; both patterns use named groups now.
+
+The unsafe gate is at **136/136** with an empty baseline and the store-read
+census at `STORE_READ_CODE=0` / `STORE_READ_SPEC=4637`, both byte-identical
+across all six fixes.  Self-tests: **29** census cases (5 new) and **44** site
+cases (8 new), every one mutation-tested in both directions on the live tree.
+
+One mechanical note worth keeping, because it nearly produced a false green: the
+first mutation written for the same-line-prefix fix *substituted a different
+correct rule* rather than reverting the defect, and the fixture passed under it.
+A mutation has to revert the defect, not exchange one sound rule for another.
+
+Refs: docs/REGISTERED_DEBT.md WS-RM
+
+## v0.35.18 — a parser for a language you are not parsing
+
+Seven review findings, all verified against the code before acting, all in the
+two Python gates rounds 3 and 4 touched.  Four failed **open** and three failed
+**strict**.  Three of them were in code written hours earlier to fix round 4,
+whose findings were in code written to fix round 3 — and that is the entry, not
+the seven patches.
+
+**The cause.**  `scripts/lean_store_read_census.py` decides two *structural*
+questions — which declaration owns a line, and whether that declaration is
+executable — and decides both by reading text, because it runs in Tier 0 before
+any build.  Across three rounds it was taught seven legal Lean spellings it had
+not seen: a hypothesis binder, a `where` equation body, an ASCII arrow, a
+`structure` field default, a leading indentation, a defaulted binder, a
+per-field reset.  `CLAUDE.md` already names the class — *the set of valid
+spellings that defeat a regex is unbounded while the set a gate has seen is
+finite* — and the exit: **a Lean question goes to the Lean elaborator.**
+
+**The exit, taken at the tier that can take it.**  The elaborator answers both
+questions exactly: `findDeclarationRanges?` gives each declaration's source span
+(17203 kernel constants carry one) and the conclusion of its type says whether
+it is specification.  The classifier cannot ask, where it lives.  So
+`SeLe4n/Testing/StoreReadClassificationCensus.lean` (Tier 1) asks for it: the
+classifier emits its own per-line verdicts (`--attribution`), the module puts
+the same lines to the elaborator, and the build fails wherever they disagree.
+**2145 body lines reconcile.**
+
+Three things that shaped it, each found by running it rather than reading it.
+Its first run reported **271** disagreements, every one a *predicate* the
+classifier had filed correctly: `Meta.isProp` asks whether a declaration is a
+*proof*, and `def p : SystemState → Prop` is not one — the check was wrong, not
+the classifier, and `ReplyStackWriteCensus` had already settled that question as
+`isPredicate`.  Its second reported **5**, every one a hypothesis binder inside
+an executable declaration (`mkRetypeTarget`), which a declaration-level verdict
+structurally cannot adjudicate — so the classifier now reports the *region* and
+signature reads are counted, not judged.  And the enforced direction **cannot
+fire on this tree**: with `STORE_READ_CODE` at zero there is no misfiled
+executable read to find, so a mutation making every `def` body specification
+changes nothing.  It carries five synthetic witnesses for that reason, as
+`BootEntryContract` does.
+
+**The three Lean findings, at their causes.**  `DECL` was anchored at column
+zero, so an indented `def` after a `theorem` had its body attributed to the
+theorem and its read filed `SPEC` — the fail-open one.  `_signature_end` used a
+bare `search` under a comment promising "the first **top-level** `:=`", so a
+defaulted binder `(fallback : Nat := 0)` closed the signature early; it and the
+structure-default split now share **one** depth walk, which is what the previous
+cut should have done when it wrote the second.  And a field default no longer
+runs to the end of its declaration: it ends where the next field begins, which
+retires an over-approximation the last cut called harmless and which was
+fail-strict.  `STORE_READ_CODE=0` and `STORE_READ_SPEC=4637` are byte-identical
+across all three.
+
+**The four Rust findings.**  A raw-string ABI (`extern r"C"`) matched none of the
+**four** copies of the ABI pattern in one file — widening three left the fourth,
+so a valid declaration yielded no site while the keyword scan rejected the file;
+there is one named `ABI` now.  `#[doc = "…no # Safety section."]` satisfied the
+heading test, because `[^"]*` let arbitrary text precede the `#` while Markdown
+renders that as prose.  A line *starting* `#[` was treated as attribute-only, so
+`#[allow(unused)] let x = compute();` carried a `// SAFETY:` comment across a
+real statement — against the run's own stated contract that nothing may execute
+between a justification and the operation it justifies.
+
+**And the domain finding, which was the largest.**  A foreign item carries no
+`unsafe` token of its own, so `extern "C" { fn … }` declarations were examined
+by **nothing** — not the count, not the inventory, not the baseline.  Ten live
+Lean upcalls (`lean_kernel_main`, `lean_handle_fault`, `secondary_entry`, …)
+each declared a caller-facing obligation that appeared in a `//` comment for the
+reviewer and nowhere a caller reads.  Each now publishes a `# Safety` section
+stating its real precondition — the readiness gate, the EL0 origin, the
+once-only boot install.  The gate reports **136 of 136** with its baseline still
+**empty**, which is a property this project states rather than a floor it raises.
+
+Every fix is mutation-verified in both directions on the live tree.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md (WS-RM, the write census)
+
+## v0.35.17 — the scanner's default branch, and a stated frontier nothing printed
+
+Seven corrections: one found by running a gate and reading its output, six from
+PR #895's fourth review round.  Five of the six are the **same class one level
+over** from rounds 2 and 3 — those policed a gate's *predicate* and then its
+*domain*; these are its **default branch**, which is a domain written as an
+omission.  A scanner that silently answers when it cannot read its input has
+decided something, and in every instance below it decided the fail-open way.
+
+**A metric that is not measured is not zero.**  `ak7_cascade_check_monotonic.sh`
+reads each metric with a helper that answers `0` for a key the capture does not
+contain, and that default is fail-open for **every** comparison the gate makes:
+a should-drop metric passes (`0 <= baseline`), a should-grow metric passes
+against a missing baseline, the total/inventory reconciliation passes (both
+sides read `0`), and a `ZERO_METRICS` entry passes outright.  So the census
+invocation dropping out of `ak7_cascade_baseline.sh`, a renamed key or a
+truncated capture would each have satisfied the enforced zero by **deleting the
+measurement**, with the gate printing `OK   STORE_READ_CODE  0`.  `SORRY_COUNT`
+and `AXIOM_COUNT` — this project's two headline zero claims — rode on the same
+default.  Presence is now asserted before value is compared, for every metric in
+every capture: exactly one emitted line, since zero is a deleted measurement and
+two is a capture whose second value the reader would silently discard.  Four
+self-test cases, all **deletions**, deliberately: a token-preserving mutation
+structurally cannot exhibit this, because the defect *is* the token's absence.
+
+**A field default is executable.**  `structure` and `class` sat in the store-read
+census's `PROP_KINDS`, so every line of their bodies was specification — but a
+field may carry a default, and a default is a term the elaborator compiles.  A
+raw store read there was filed `SPEC` and walked around the enforced
+`STORE_READ_CODE=0`.  The split is now at the field's own `:=`, so field *types*
+stay spec (the invariant bundles in this tree are structures whose fields are
+propositions about the store) while defaults are code.  Two corrections inside
+that fix, both caught by measuring rather than reading: bracket depth must carry
+**across lines**, or the second line of a multi-line record literal in a field's
+type reads as a default opening — *a nested construct is not a sibling*, inside
+the remedy for a different defect — and a `Prop`-sorted structure has no
+executable content at all, so it stays spec whole.  The tree is still at
+`STORE_READ_CODE=0`, `STORE_READ_SPEC=4637`, both byte-identical.
+
+**Lean has two arrow spellings and the census knew one.**  `_returns_prop` split
+on `→` only, so `def p : SystemState -> Prop` read as returning something
+executable and a raw read in that predicate was classified `CODE` — the
+fail-*strict* direction, rejecting legitimate specification code against an
+enforced zero.
+
+**Inner rustdoc documents the enclosing module.**  `//!`, `/*!` and
+`#![doc = …]` attach to the item that *contains* them; the unsafe-justification
+gate accepted all three on an `unsafe fn`, so a module opening `//! # Safety`
+justified the first function below it while that function published no contract
+to its callers.  Outer rustdoc only now (`///`, `/**`, `#[doc = …]`), with
+`////` and `/***` refused for the reason rather than by accident — the Rust
+reference excludes a fourth `/` and a third `*`, and the `/***` form *was* being
+accepted.
+
+**A raw identifier is not the keyword.**  `r#unsafe` names an ordinary item
+called `unsafe`; the keyword scan matched inside it, no known form accepted the
+position, and the gate **failed the file**.  The same relation had been swept
+onto the declaration pattern beside it in `v0.35.13` and not onto the keyword
+scan — this project's sweep rule failing in the way it describes.
+
+**And a narrower resemblance is still not a relation.**  `v0.35.15` answered "a
+prefix list filters user names" by requiring the prefix plus a **numeral** —
+and `eq_1` is as legal a definition name as `eq_clearReply`, so a writer named
+that way was still filtered out of both derivations before its constants were
+read.  The exit is not a sixth narrowing but the environment: `Meta.isMatcherCore`
+is pure — which the previous cut's own comment said it was not — and every one of
+the 5185 `eq_N`/`proof_N` constants in this environment is `Prop`-typed and so
+excluded structurally.  With those two facts the whole name list is **redundant**,
+measured at **zero** definition-shaped non-`Prop` writers kept only by a name
+test, so `isGeneratedComponent` was deleted rather than narrowed a third time.
+`isAuxiliary` is now environment-derived and nothing else.  A definition named
+exactly `eq_1` is a permanent witness, and the matcher check is derived — every
+constant the environment reports as a matcher must be recognised — rather than
+pinned on one hand-picked name that would age out with its parent.
+
+**And the frontier that was stated and never printed.**  `chainWriteFrontier`
+was written in `v0.35.15`, given a docstring saying it "says so in the census's
+own output", cited in those terms in that cut's prose — and referenced by
+nothing.  Lean does not lint an unused top-level `def`, so the census went on
+printing the bare site count while the scope qualifying it lived only in
+comments.  A count with no scope beside it reads as a measurement, which is the
+defect the frontier exists to prevent; that cut shipped it inside its own remedy
+for it.  It prints now, and the claim is structural rather than restated: the
+summary is built as a value and **checked to carry the frontier before it is
+logged**, so a reword that drops it fails elaboration.
+
+Every fix is mutation-verified in both directions on the live tree.  No
+behavioural change anywhere: 17 write sites (8 stating, 3 mirroring),
+`STORE_READ_CODE=0`, 126 of 126 unsafe sites justified.
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md (WS-RM, the write census)
+
+
+## v0.35.16 — WS-HP registered: the head-driven donation pop
+
+`v0.35.14` registered the donation-accounting divergence and corrected the
+documentation that described it wrongly, and stopped there.  That is half of
+what the **implement-the-improvement rule** requires: where the optimal
+implementation is out of scope for a cut, the audit "must split the work into
+the proper sequence of PRs … rather than treating documentation surgery as a
+substitute for the code change."  This cut is the sequence.
+
+[`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md)
+— **38 sub-tasks across 9 phases, HP1..HP9**, in execution order.  The
+correction is two changes in a **forced** order rather than one: the splice
+alone is unsound under this kernel's binding-driven trigger, because it re-heads
+a frame whose recorded server is by then `.unbound`, so answering it runs no pop
+and leaves a consumed frame heading a context — the object pinning `v0.35.4`
+closed.  So the trigger moves to head-ness first (HP4, HP5), then the sever
+becomes a splice (HP6); **HP2.3 states the equivalence `severAtCut` maintains
+and the splice breaks**, so a cut that reorders them has to falsify a theorem
+rather than ignore a note.
+
+Three things the plan fixes that the debt row could not say.  **HP5 is not
+optional**, and its reason is derived: after the splice a frame becomes the head
+whose recorded reply target is gone, so a *cancellation* there would leave a
+`.donated` binding naming a `.ready` owner.  **The payoff exceeds the
+accounting**: under the head-driven trigger the three *stated* coherence
+hypotheses the reply path carries become derivable and are deleted (HP7) — no
+invariant in this tree entails them today.  And **the cost is stated up front**:
+`maxLockSetSize` 22 → 23, the RPi5 per-lock cost 15 → 14 µs, because the splice
+writes the frame below and no footprint names it.
+
+HP1–HP3 are inert; HP4, HP5 and HP6 are each one cut; no phase may run in
+parallel with another.  The acceptance gate's ten boxes are each ticked by a
+machine-checked artefact or an executed run, and the interim contracts stand
+until it closes: new code must not read a successful pop as evidence that the
+context reached its owner, and v1.0.0 must not claim seL4-MCS reply-stack
+semantics at chain depth ≥ 3.
+
+`docs/REGISTERED_DEBT.md` table C's row now names **WS-HP** as its owner rather
+than a workstream that merely reopens the same model, and `CLAUDE.md` /
+`AGENTS.md` carry the status-index section.  No code changes.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md
+Refs: docs/REGISTERED_DEBT.md table C (donation accounting at depth ≥ 3)
+
+## v0.35.15 — PR #895 review round 3: a domain written as an exclusion
+
+Seven findings across two review rounds, all verified against the code first,
+and all one defect: **the gate's *domain* spelled as a hand-written exclusion
+rather than derived.**  Round 2 named that class (*a recognised set is not a
+derived set*) and fixed it at the four sites the review pointed at.  Round 3
+found four more, each the same rule unswept onto a sibling.
+
+**The unsafe census scanned `*/src/**/*.rs`** — the crate libraries, and
+silently not the integration tests, `build.rs`, examples or benches that cargo
+also compiles.  `rust/sele4n-hal/tests/readiness_gate_after_mark.rs` carries a
+real `unsafe` block, so the reported 125 described a subset of the tree while
+reading as a measurement of it.  The set is derived now: **126 of 126
+justified** (114 blocks, 12 declarations).
+
+**Its declaration idiom accepted an ordinary block comment.**  `SAFETY_DECL`'s
+`\*` alternative matched a continuation line of any `/* … */`, so
+`/*\n * # Safety\n */` passed while rustdoc published nothing to the caller
+bound by the obligation — the fail-open direction, and the mirror image of
+`v0.35.12`'s own fix.  A heading counts now only from `///`, `//!`, a `/**` or
+`/*!` block, or Rust's `#[doc = "# Safety"]` attribute form, which publishes the
+identical section and had been rejected.
+
+**The store-read census read a binder as a result.**  `PROP_RESULT` was
+`:\s*Prop\b` over the whole signature, so
+`def step (proof : Prop) (st : SystemState) : SystemState` classified as
+Prop-valued and a raw store read in its body was filed `SPEC` — walking around
+the enforced `STORE_READ_CODE = 0` floor.  The terminal result type is parsed
+now (first `:` at bracket depth zero, last top-level arrow); the tree is still
+at zero under the stricter classifier, which is the measurement that no
+executable read was hiding there.
+
+**The reply-stack census filtered user names as compiler auxiliaries.**
+`"eq_".isPrefixOf` is true of a contributor's `eq_clearReply`, so such a
+definition was excluded from both derivations *before* its used constants were
+read and could write the stack unregistered.  A generated component carries the
+prefix plus a **numeral**; that shape is required now, and a generated form the
+test misses is reported rather than skipped.
+
+**And its chain-result check was a presence check.**  It asked
+`getUsedConstants` of the whole theorem type, so a registry entry could name a
+theorem taking `donationChainWellFormed st` as an unused *hypothesis* and
+concluding nothing.  The chain predicate must appear in the **conclusion** now,
+and must be a predicate rather than any `donationChain`-prefixed constant —
+`donationChainWitnessContext` is a record, not a claim.
+
+**The frontier's store half was direct, and the fix is bounded on purpose.**  A
+writer that builds `.reply { r with prev := none }` and hands it to a store
+helper was in neither derivation.  Making the store half transitive to match the
+constructor half reports **22 composites** — `endpointCall`, `endpointReply`,
+`dispatchWithCap` — which is the frontier this census deliberately stops at.  So
+each disjunct pairs a transitive side with a direct one: reached through helpers
+and stored directly, or built directly and stored through one hop.  Delegating
+both at once is outside the frontier, and `chainWriteFrontier` says so in the
+census's own output rather than letting the count read as a proof of absence.
+
+Every fix carries a witness that fails without it, mutation-verified in both
+directions on the live tree: the prefix-only auxiliary test fires the
+user-named-writer witness, and the direct-only store half fires the
+delegated-store witness.  `CLAUDE.md` / `AGENTS.md` record the class — *a
+predicate over a domain you filtered is a measurement of the filter*.
+
+No kernel transition changes; `maxLockSetSize` is unmoved at 22.
+
+Refs: #895
+Refs: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md row F.3
+
+## v0.35.14 — the middle-removal cost is the policy's, measured at depth three
+
+A question about WS-RM's stated residual — *"the removal does not preserve the
+donation accounting, and that is a stated cost rather than a defect"* — turned
+out to have two wrong halves: the cost is **larger** than the statement said,
+and the justification for accepting it rested on a claim about source this
+repository does not vendor.
+
+**The cost belongs to `severAtCut`, and a depth-two witness cannot see it.**
+`detachReplyFrameAbove` writes `above.prev := none`, so every frame *below* a cut
+leaves the context's reply stack.  `§3.20` measures a **two**-frame stack, whose
+lower frame is its bottom — there `severAtCut` and the ordinary
+doubly-linked-list splice write the same value into the frame above, so the
+witness was measuring a shape both policies share and the cost read as inherent
+to removing a middle frame.  It is not.  `tests/SmpIpcSuite.lean` **§3.22** is
+the depth-three witness, built by pushing the live `donateSchedContext` twice:
+the frames below the cut leave the stack, the reservation settles `.bound` on a
+thread strictly *inside* the chain, its owner is left `.unbound` two hops
+outside the cut, and the **same stack unwound in order** delivers it outward
+still owed.  Three frames is the shallowest stack on which any of that is
+visible.  Seventeen assertions, including the payoff half — a frame cut off the
+stack carries no `.head` link, so its own caller can still be answered and the
+frame is freed outright, which is why the policy pins no object.
+
+**The justification was false, and it was checked rather than argued.**  Three
+docstrings asserted that severing is seL4-MCS's structural answer (*"`reply_remove_tcb`
+on a non-head frame breaks the stack at it"*), and the policy inductive's premise
+read *"`Reply` carries `prev` and no `next`, so a middle frame cannot be spliced
+out"* — which stopped being true at `v0.35.4`, when the stack became doubly
+linked.  Checked against upstream source, seL4-MCS **splices**: `reply_remove`'s
+non-head branch writes
+`REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
+reply->replyPrev`, so the frame above inherits the cut frame's own outward
+pointer and every frame below stays reachable from the head.  The link
+orientation this tree assumes (`next` toward the head/context, `prev` outward)
+was confirmed to match, which is what makes that reading sound.
+
+So `severAtCut` is a **divergence** from upstream, not an inheritance of it — the
+reverse of what the tree said for eight cuts — and the divergence is what §3.22
+measures.  The conflation that let it survive: a `reply_remove_tcb` reference
+naming an operation's *shape* was read as evidence about what upstream *writes*.
+
+What carries the decision instead is an in-tree fact: **this kernel pops on the
+recorded server's binding** (`endpointReplyServerDonation?`), not on whether the
+answered frame heads a context, and `severAtCut` is exactly what keeps those two
+equivalent.  Splicing re-heads a frame whose recorded server is by then
+`.unbound`, so answering it runs no pop, `Reply.consumed` keeps a head's links,
+and the state is a consumed frame heading a context — what
+`replyStackOuterCaller?_of_consumed_frame` refuses and what `v0.35.4` closed.
+The three *stated* pre-state coherence hypotheses
+(`replyStackHeadIsAnsweredReply`, `replyDonationOwnerIsAnsweredCaller`,
+`answeredHeadContextIsServerDonation`) are that equivalence in the form their
+consumers need, and no invariant in this tree entails them.
+
+`CancelledMiddleCallerPolicy` gains a third constructor, **`spliceOutTheCut`**,
+so upstream's answer — the candidate the doubly linked stack made available here
+— is named rather than absent; `cancelledMiddleCallerPolicy` still reads `.severAtCut` and every
+theorem over it is unchanged.  Recovering the accounting means moving the pop's
+*trigger* to head-ness and its *source* to `SchedContext.boundThread` — a
+workstream, registered in `docs/REGISTERED_DEBT.md` table C with owner **WS-CB**
+and closure target **before v1.0.0**, with two interim contracts: new code must
+not read a successful pop as evidence the context reached its owner, and v1.0.0
+must not claim seL4-MCS reply-stack semantics at chain depth ≥ 3.  That
+table's closing claim (*"every one strengthens a surface that is already
+correct"*) is corrected in the same cut, since the new row is neither a
+soundness gap nor a strengthening.
+
+No transition changes; no proof is weakened; `maxLockSetSize` is unmoved at 22.
+
+Refs: docs/REGISTERED_DEBT.md table C (donation accounting at depth ≥ 3)
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md §9
+
+## v0.35.13 — PR #895 review round 2: a recognised set is not a derived set
+
+Five findings, all verified against the code first.  One is a defect in the
+kernel model; four are the same defect in four gates, and the cut treats them as
+one class rather than four patches.
+
+**The frozen reply left its own frame un-free.**  `Reply.consumed` keeps a
+frame's links only when it **heads** a scheduling context — the pop that follows
+clears them — and clears `prev` and `next` on every other frame.  `v0.35.12`'s
+frozen mirror stored `{ r with caller := none }` unconditionally, which is the
+head branch applied to every case: a non-head frame was left with no caller and
+its links intact, falsifying `Reply.wellFormed` there, failing `Reply.isFree`
+forever so the object could never be relinked or retyped, and diverging from the
+live transition under `frozenStateAgrees`.  It stores `r.consumed` now — the
+live function, which is where that question was already answered.
+
+**The gates: six of the eight findings across both rounds were one defect.**
+Every rule this project has written about scanners polices the *predicate* — what
+a gate asserts of an element it found.  None polices the *domain* — whether it
+found them all.  A predicate miss can fire on a real element; a domain miss is
+silent by construction, and the gate reports a number that reads as a
+measurement of absence.
+
+Where the domain **is** derivable, it is now derived:
+
+- `ReplyStackWriteCensus` asked "constructs **and** stores" of one body, which a
+  writer defeats by delegating the construction (`clearPrev r` builds it, the
+  caller stores it, neither is a candidate).  `reachesChainConstructor` follows
+  calls — walked backwards from the storing definitions and memoised, since
+  nearly everything reaches a constructor forwards — and the store half stays
+  direct, because the site is where the store happens.  Seven newly visible
+  definitions are classified with reasons; a planted split-conjunction witness
+  pins both directions.
+- Its auxiliary filter asks the environment (`isAuxRecursor`, `isRecCore`)
+  instead of matching name prefixes, which had already missed `casesOn`,
+  `recOn`, `below`, `brecOn` and `noConfusion`.
+
+Where the domain is a **coding convention over unbounded syntax**, there is no
+closed formulation — in text or in the environment — and the claim is fixed
+instead:
+
+- The store-read census recognises the qualified call (`RHTable.get? st.objects
+  k`, the third spelling in two rounds) and a `where` equation body, whose
+  signature never closed, so every read of such a declaration was filed as
+  specification and went unenforced.  It now prints `STORE_READ_SCOPE` beside
+  the number: *a floor, not a proof of absence.*
+- The unsafe-justification gate matches ABI qualifiers, so `pub unsafe extern
+  "C" fn` is a site rather than being skipped entirely, and keys it by its own
+  name.  Its `UNSAFE_KNOWN_FORMS` table makes the default branch explicit: an
+  `unsafe` matching no known form **fails the gate**, so the unrecognised set is
+  visible rather than assumed empty.
+
+Measured rather than asserted: **245** hand-written executable definitions
+mention the object-table projection — writing the store is what a transition
+does — so "never mention it" is not a stateable contract; and deriving a
+read-set from result types classified `FrozenMap.set`, a *write*, as a read.
+Both measurements are why the claim moved rather than the mechanism.
+
+One mechanical note, earned inside the remedy: `Name.isInternal` looks like the
+environment's answer to "did Lean generate this" and is true of the `_private.…`
+mangling, so adding it to the auxiliary filter would have excluded **every
+`private def` in the kernel** — the same class, inside its own fix.  The
+census's planted witness caught it before it built.
+
+All 33 frozen differential scenarios pass, including FO-031.
+
+## v0.35.12 — PR #895 review: a spelling is not a read, two idioms are not one, and the frozen surface was never in the closure
+
+Three findings from the review of PR #895, each verified against the code before
+being acted on, and each against a gate this range itself wrote.
+
+**A spelling is not a read** (`scripts/lean_store_read_census.py`).  The
+`STORE_READ_CODE` zero that `v0.35.8` made a `ZERO_METRICS` entry counted
+`s.objects[k]?` and not `s.objects.get? k` — *the same read*, since the
+`GetElem?` instance is `RHTable.get?` and this tree proves it by `rfl`
+(`objects_getElem?_eq_get?`).  Forty executable reads were in the method form,
+and one of them said so in its own docstring: `Concurrency.updateObjectAt` was
+written that way *"so the AK7-cascade raw-match floor stays at its v0.31.2
+baseline"*, which is choosing a spelling to evade a metric, and its second claim
+— that no typed accessor applied — was false, `getObject?` being the
+kind-agnostic one.  The census reads both spellings now and the tree is back to
+**zero** honestly:
+
+- `chooseBestRunnableEffective` reads `getTcb?` and `chooseThreadOnCore` passes
+  `getObject?`, with `chooseBestRunnableEffective_unbound_equiv` and the
+  `PerCoreChooseThread` inductions restated in accessor vocabulary; the seven-way
+  kind analyses collapse to the accessor's two arms, which is what an accessor is
+  for.
+- The **frozen** execution surface gains the accessor family it never had
+  (`FrozenSystemState.getObject?` and seven typed siblings in
+  `Model/FrozenState.lean`), `FrozenOps.frozenLookup*` are stated over them
+  rather than beside them, and twenty-nine frozen transitions stop discriminating
+  variants at the call site.  Where a site distinguishes *wrong kind* from
+  *absent* — two different error codes — it reads `getObject?` and keeps its
+  arms, since the typed accessor answers `none` to both and collapsing them would
+  change behaviour.
+- The exemption is now **per declaration**, not per file: `Model/State.lean` was
+  skipped whole, which is a 4800-line module that is not only accessors.
+  `ACCESSOR_BODIES` names the twenty-one bodies that *are* the accessors and the
+  store primitives, reconciled in both directions in **every** mode — `--rows`
+  included, since that is the mode Tier 0 calls.
+
+**Two idioms are not one** (`scripts/check_unsafe_block_justifications.py`).  The
+gate accepted a `// SAFETY:` comment on an `unsafe fn` *declaration* as a
+fallback, under the comment saying the two idioms are not interchangeable.  They
+address different readers — a comment is for the reviewer of the next line, a
+`# Safety` section is rustdoc for the caller who must discharge the obligation —
+so the fallback passed a declaration publishing no contract to the people bound
+by it.  All twelve declarations already carried a `# Safety` section, so removing
+it failed nothing; the self-test pins the separation in both directions, each
+case keeping the justification and writing it in the other kind's idiom.  The
+gate also emits the block and declaration counts, because prose cited a figure
+nothing produced and it had gone stale — `CLAUDE.md` said the HAL has thirteen
+`unsafe fn`s where it has ten.
+
+**The frozen surface was never in the closure**
+(`SeLe4n/Testing/ReplyStackWriteCensus.lean`).  WS-RM's closure statement —
+*every reply-stack write names a chain result* — held for every module either
+library root reaches, and `SeLe4n/Kernel/FrozenOps/` is reached by neither and is
+in no staged allowlist.  `FrozenKernelObject.reply` carries the live
+`SeLe4n.Kernel.Reply`, links and all, and `Model.freeze` copies a live state's
+Reply objects verbatim, so a frozen state taken mid-call-chain holds a real reply
+stack — and `frozenEndpointReply` was clearing a caller's Reply **bare**, which
+is WS-RM's own defect surviving on the surface nothing watched.  Bringing it in
+cost three things:
+
+- `frozenDetachReplyFrameAbove` / `…OrSelf`, the frozen `reply_remove`, and the
+  frozen reply runs the detach **before** the consume, in the order the live one
+  does, since the detach reads the link the consume clears.
+- `frozenLinkCallerReply` read `caller.isNone` where `Model.linkReply` reads
+  `Reply.isFree` — a fifth guard deciding one question differently, so a frame
+  still on a live reply stack was linkable there while the live kernel refuses
+  it.  It reads `isFree` now.
+- `ChainDiscipline` gains `mirrors`: `donationChainWellFormed` is a predicate on
+  `SystemState` and the frozen store is a `FrozenMap`, so requiring a
+  `donationChain…` result of a frozen site would require a theorem that cannot be
+  written, while accepting no record would be the silence the census refuses.  A
+  `mirrors` entry names the live twin, which must itself resolve to a stating
+  entry.  Seventeen sites, eight stating, three mirroring.
+
+Every gate change is mutation-verified on the live tree: the census's decisive
+self-test case keeps the read and changes only its spelling, and fails under the
+old regex; the registry's staleness check fires in `--rows`; the unsafe gate's
+two new cases keep the justification and swap the idiom; the reply-stack census
+rejects a freshly injected bare frozen consume; and the three new Tier 3
+negatives are silent on a clean tree and fire on a token-preserving mutation.
+One of them did not, the first time — a gap opening at a newline cannot cross a
+token that sits mid-line — which is how the flaw was found before it shipped; a
+sweep of every anchor in the file found no second instance.
+
+All 33 frozen differential scenarios pass, including `FO-031`, which is the
+agreement between the frozen reply and the live one.
+
+## v0.35.11 — The sweep, run over every resolved footprint
+
+`v0.35.10` closed the reply path's missing coverage and observed, without acting
+on it, that `lockSet_cancelDonationOnCore` had none either.  Leaving it there is
+this project's own sweep rule failing in the way it describes — *a fix applied
+at one site and not its siblings leaves the class open and reads as closed* — so
+the class is closed here instead, over **every** state-resolved footprint in the
+tree rather than the two a finding happened to name.
+
+### The census, and the one real gap it found
+
+Ten footprints resolve members from the state.  Nine carry a coverage layer
+tying each member to the resolver it comes from; `lockSet_cancelDonationOnCore`
+carried `lockSet_cancelDonationOnCore_correct` and `…_size_le` and nothing else,
+while every one of its *parametric* members already had a write-membership
+lemma.  So the relation the resolved layer exists to state — that the object a
+resolver names is a declared member, in the mode the operation needs — was
+stated nowhere for that footprint.
+
+Neither neighbour stands in for it, and the distinction is the point:
+`_correct` quantifies over the members that *are* present and constrains their
+`LockKind`, and `_size_le` bounds how many there are.  A footprint that resolved
+the wrong SchedContext, or dropped the donated arm's original owner, satisfies
+both unchanged.
+
+Six theorems close it: `lockSet_cancelDonationOnCore_covers_victim` (proved on
+both arms of the resolution, since the donor's binding is rewritten whether or
+not its TCB resolves), `…_covers_bindingSchedContext` and `…_covers_stateLevel`
+through `cancelBindingSc?`, `…_covers_donatedOwner` through
+`cancelDonatedOwner?`, and `…_covers_pop` and `…_covers_outerCaller_key` through
+`cancelDonationPopMembers?`.  The last is a declared **key** rather than a
+write, because the pop *reads* that TCB to check it is a waiting donor and
+rewrites the answered caller's binding, not its — a Tier 3 negative refuses the
+write spelling, verified silent on the clean tree and firing on a mutation that
+keeps the member and changes only its mode.
+
+`lockSet_notificationWaitOnCore` is the tenth and needs nothing: it takes no
+state and resolves nothing, so its parametric lemmas already are the statement
+at full arity.  That is a reasoned zero, recorded rather than left to look like
+the gap this cut just closed.
+
+No footprint, resolver or transition changed, so `maxLockSetSize` is unmoved at
+22 and every figure derived from it with it.  What changed is that the
+declarations are now checkable.  Six Tier 3 anchors, `SELE4N_SPEC.md` §8.12.8,
+`CLAUDE.md`, `AGENTS.md` and `CLAIM_EVIDENCE_INDEX.md`.
+
+Version bumped 0.35.10 -> 0.35.11.
+
+## v0.35.10 — The chain payoff was never unconditional, and the detach's member was declared but never proved written
+
+A second, deeper audit of the WS-RM cut (`v0.35.6`), reading the code rather than
+what the documents say about it.  The workstream's substance holds under every
+check the first pass made and several it did not: the removal's fail-closed
+arms, the fold's soundness on the refusal arm, the three live spines, the
+`.replyRecv` leg order, the total accessors over the pop, the axiom surface of
+every chain theorem, five Tier 3 negatives re-run under token-preserving
+mutation of the live tree, and the Tier 1 census re-run against a freshly
+injected bare reply-stack writer.  Two findings, both closed here, and both the
+same shape one level apart: a claim about a relation that only a presence had
+been established for.
+
+### 1. The composite's condition existed, was stated at the wrong state, and was carried twice
+
+`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` is not
+unconditional and never was.  It carries `hHeadReturned` — *if the answered
+frame heads a scheduling context, the recorded reply server holds that context*
+— and the WS-RM plan's own acceptance gate item 3 said the theorem "holds
+unconditionally, head case included".  It does not, and it cannot: the condition
+relates a reply frame to a **binding**, `donationOwnerValid` relates a caller's
+recorded reply target to no donation, and `donationChainWellFormed` carries no
+binding clause at all by its own *what is deliberately absent*.  It belongs to
+the same species as `replyDonationOwnerIsAnsweredCaller`,
+`replyStackHeadIsAnsweredReply` and `donationHolderIsReplyTarget`: a local
+coherence fact the model states because the invariants do not entail it.
+
+What was genuinely wrong is where it was stated.  Its sibling on the same
+transition, four hundred lines above it in the same file, states the analogous
+`hDonationReturned` on the **pre**-state and transports it across the reply leg
+inside the proof — the reply leg provably writes no `schedContextBinding`
+(`endpointReplyOnCore_donationOwnerFrameExcept`).  WS-RM's condition was written
+against the post-reply-leg state instead, pushing that transport onto every
+caller, and its docstring justified this by analogy with `hStackValid` — whose
+subject, `replyStackOuterCallerValid`, genuinely *is* a property of the state the
+pop runs on.  The cost was concrete and visible in the tree:
+`replyTransferOnCore_preserves_donationChainWellFormed` took **two** such
+hypotheses, `hHeadReturnedFault` and `hHeadReturned`, differing only in the
+message appearing inside the post-state expression — a message the question
+never reads.  At the pre-state they are one proposition, and a caller now
+supplies it once.
+
+Closed by naming it: `answeredHeadContextIsServerDonation st target`
+(`SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean`), stated on the
+pre-state, with the transport inside the composite's proof and both vacuity
+discharges named (`_of_no_caller`, `_of_no_reply`).  The three consumers take the
+named fact; the reply transfer's hypothesis count falls from two to one, which is
+a strictly stronger theorem.  `tests/SmpIpcSuite.lean` §3.21 now exhibits the
+condition's premises *and* its conclusion on a state built by the live
+operations, because a hypothesis nothing exhibits is indistinguishable from one
+that cannot hold.  A Tier 3 positive pins the pre-state spelling and a
+token-preserving negative refuses the post-state one — verified silent on the
+clean tree and firing on a mutation that keeps every token and moves only the
+state the binding is read at.
+
+The plan's acceptance item 3, `SELE4N_SPEC.md` §8.12.8 item 3, GitBook 12,
+`CLAUDE.md`, `AGENTS.md` and `CLAIM_EVIDENCE_INDEX.md` all say what the theorem
+actually proves.
+
+### 2. The detach's footprint member was declared, and nothing proved the transition writes it
+
+`.reply` and `.replyRecv` declare `answeredReplyFrameAbove? st target` for the
+frame the removal's detach rewrites, and the Tier 3 anchors over those footprints
+ask that the resolver *occur* in each definition.  That is a presence check.
+Every sibling member of the family has the relation as well —
+`lockSet_endpointReplyOnCore_covers_pop`, `…_covers_preReturn`,
+`…_covers_queueNeighbour`, `…_covers_cdt`, `…_covers_redonationOldHead` — and so
+does the **cancellation** path's own detach member, which has carried
+`lockSet_cancelIpcBlocking_detached_frame_above_write_mem` and
+`lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove` since `v0.35.4`.  The
+cut that added the reply-path member did not sweep that coverage onto it, which
+is this project's own rule failing in the way it describes: *when a fix names a
+relation, grep for every other place that asks it.*
+
+Closed with the four theorems the family's shape requires:
+`lockSet_endpointReply_frameAbove_write_mem` and
+`lockSet_replyRecv_frameAbove_write_mem` at full arity, and
+`lockSet_endpointReplyOnCore_covers_detachedFrameAbove` with its `.replyRecv`
+twin resolved.  No footprint changed, so `maxLockSetSize` is unmoved at 22 and
+every derived figure with it; what changed is that the declaration is now
+checkable.  Four Tier 3 anchors, `SELE4N_SPEC.md` §8.12.8 item 2, GitBook 12,
+`CLAUDE.md`, `AGENTS.md` and `CLAIM_EVIDENCE_INDEX.md`.
+
+### What the audit re-verified rather than changed
+
+The removal itself: `detachReplyFrameAbove`'s two refusal arms are reachable on a
+well-formed state — the chain invariant deliberately carries no converse for
+upward `.frame` links — and `detachReplyFrameAboveOrSelf_unreferenced` is what
+licenses folding them to the identity, on all three arms.  The reciprocity test
+before the one write is what confines the detach to the frame that genuinely sits
+above the answered one, so the authority a reply capability carries is not
+widened by it.  `removeCallerReplyFrame`'s `rid` comes from the answered thread's
+own `replyObject` at all three call sites.  The `.replyRecv` leg order is
+seL4-MCS's, with the receive leg's dequeue target read from the post-pop state.
+Every chain theorem depends on `propext`, `Classical.choice` and `Quot.sound`
+alone.
+
+Version bumped 0.35.9 -> 0.35.10.
+
+## v0.35.9 — WS-RM post-landing audit: a claimed gate that never existed, and five claims the code had moved out from under
+
+A deep audit of the WS-RM cut (`v0.35.6`) and the branch around it.  The
+workstream's own claims hold — one removal step, both spines calling it, the
+order pinned, the chain payoff unconditional, the `.replyRecv` pop between the
+legs, the runtime witness exercising the defect with a paired negative, and every
+Tier 3 negative firing under a token-preserving mutation of the live tree.  Five
+findings, all closed here; the fifth and sixth were found outside WS-RM — one in
+the assurance machinery the whole tree rests on, one in a lock-coverage docstring
+the tree had moved out from under.
+
+### 1. The removal does not preserve the donation accounting, and nothing said so
+
+Taking a caller out of the **middle** of a chain is destructive to which thread
+ends up owning the scheduling context.  On `owner → middle → server`, a delegate
+answering `owner` out of order leaves `owner` **`.unbound` permanently**, and the
+server's in-order reply then settles the context **`.bound` on `middle`** — where
+the in-order unwind would have left it `.donated … owner`, still owed outward.  A
+callee that delegates its caller's reply capability to a confederate can
+therefore capture that caller's reservation.
+
+This is seL4-MCS's own `reply_remove` answer — a non-head removal moves no
+scheduling context, and the later `reply_pop` donates to the head frame's own
+caller — and the authority required is already the authority to unblock the
+victim, so it is a **cost, not a defect**.  What was wrong is that it was
+unstated: before `v0.35.6` the same input wedged fail-closed, and WS-OD states
+the identical cost for the cancellation path (`severAtCut`: "the original owner's
+reservation ends up with that caller") while the reply path acquired it silently.
+
+It is now pinned rather than described.  `tests/SmpIpcSuite.lean` §3.20 asserts
+both halves — the owner left `.unbound` after the out-of-order removal, and the
+in-order contrast leaving the intermediate caller `.donated … owner` — so a cut
+that changed the accounting would fail rather than drift.  Stated in the WS-RM
+plan §9, `SELE4N_SPEC.md` §8.12.8 (now seven items), GitBook 12, `CLAUDE.md` and
+`AGENTS.md`.
+
+### 2. The census's primitive list was an enumeration standing in for a derivation
+
+`ReplyStackWriteCensus` derives its write-site set with
+`usesDirectly env chainWritePrimitives`, and that list is nine hand-written
+names.  `storeObject` takes a whole `KernelObject`, so a definition writing
+`{ r with next := … }` directly — calling none of the nine — was invisible to the
+census *and* to the registry it drives, which is the one mechanism this project
+points at for "every reply-stack write names a chain result".
+
+`primitiveCoverageViolations` is the independent second derivation: a project
+definition that builds a `Reply` or `SchedContext` record **and** reaches a store
+must be a primitive, a registered site, or carry a stated reason in
+`chainNeutralConstructors`.  It over-approximates on purpose — it sees *that* a
+record was built, not which field moved — so it fails closed, and narrowing it in
+the scanner would be the analysis-instead-of-contract shape this project has
+retired twice.
+
+Run on the live tree it yields exactly two exemptions, each a property of the
+code rather than a convention: `linkReply` writes `Reply.caller` only and is
+gated on `Reply.isFree` (no link in either direction), and
+`schedContextConfigure` rebuilds a SchedContext for its CBS parameters with
+`scReply` outside the update's assignment list.  Both directions are reconciled,
+so a stale exemption fails too.
+
+`censusWitnessDirectLinkWrite` is the witness, and it is asserted to be
+**invisible** to the name-based derivation and **visible** to the record-based
+one — a witness the old mechanism could see would assert nothing about the hole.
+Mutation-tested on the real tree: removing its exclusion fails the build with the
+offending declaration named.
+
+### 3. The claim-evidence index claimed more than the step proves
+
+Row: "the answered frame comes off its reply stack before its caller link is
+consumed, so no frame is left on a stack with its caller gone whichever way it
+leaves".  For a frame that *heads* a scheduling context the removal does neither:
+`Reply.consumed` keeps a head's links deliberately, because the pop validates the
+head by them, and the step's own statement is the relaxed
+`…_head_preserves_donationChainWellFormedExcept` — which the row's own evidence
+column already listed.  The claim is true of the **transition**, not of the step
+it named.  `SELE4N_SPEC.md` §8.12.8 item 3 had it right; only the index row was
+overstated, and it now says which artefact carries which half.
+
+### 4. A census docstring described a filter the filter does not implement
+
+`isDefinitionShaped`'s docstring said a `Prop`-valued `def` — "predicates,
+well-formedness conditions" — is excluded "by the type check the caller performs
+in `MetaM`".  `Meta.isProp` asks whether a declaration's **type is** a
+proposition, so it answers `false` for `def p : SystemState → Prop`, whose type
+is a `Type`.  The filter excludes a proof written with `def` and nothing else.
+
+Fail-closed (such a definition would be *reported* as an unregistered site, not
+skipped) and the tree contains none, so the mechanism is sound; the docstring was
+not.  It now says which shape each half excludes and which direction the gap
+fails in.
+
+### 5. A gate `CLAUDE.md` and the discharge index both named had never been written
+
+`CLAUDE.md` states the HAL's discipline — *every unsafe block carries a
+`// SAFETY:` comment* — and attributed its enforcement to
+`scripts/check_arm_arm_citations.sh`.
+`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` row F.3 names the same script as
+the **discharge mechanism** for findings DEEP-RUST-01/02, with
+`bash scripts/check_arm_arm_citations.sh` in its "reachability check" column.
+
+**That script does not exist and never did.**  No commit on any branch of this
+repository contains it, `scripts/test_tier0_hygiene.sh` never referenced it, and
+no SAFETY-comment gate existed anywhere in `scripts/`.  So the discipline was
+stated in the project's top-level guidance, recorded as discharging two audit
+findings, and checked by nothing — for four minor versions, across a branch that
+added 4191 lines of Rust to the HAL.
+
+`scripts/check_unsafe_block_justifications.py` is the gate, written against what
+the tree actually is and wired into Tier 0.  It asks **each site kind its own
+question**, because Rust has two idioms and they are not interchangeable: an
+`unsafe` **block** *discharges* an obligation locally and takes a `// SAFETY:`
+comment (what `clippy::undocumented_unsafe_blocks` reads); an `unsafe fn`
+**declaration** *publishes* one to its callers and takes a `# Safety` doc
+section.  The relation is the **contiguous comment run above the site** — a line
+carrying code ends it — rather than a fixed window, because a window is a
+presence check an unrelated comment satisfies.
+
+**The tree is at 125 of 125 justified.**  The fourteen sites that were not are
+fixed in this cut rather than baselined: three host cache tests, the DTB header
+read, the cross-core suspend upcall, five GIC SGI-table sites, the shootdown and
+reschedule handler registrations, and the timer and reschedule Lean entries.
+Each justification is derived from the code around it — most were the enclosing
+`unsafe fn`'s own `# Safety` contract discharging the callee's precondition, or
+an existing explanation that needed attaching to the block Rust's convention puts
+it on.  So the baseline is **empty** and the gate is a prohibition, not a floor.
+
+The ARM ARM citation count the original finding named — **50 of 125** — is
+reported beside the enforced figure and deliberately not enforced: requiring an
+architecture-manual citation of a raw-pointer dereference that touches no
+hardware would be a scanner matching a keyword, and deciding which sites touch
+hardware needs the body, which is the analysis-instead-of-a-contract shape this
+project has retired twice.
+
+The discharge row is corrected rather than deleted, because what it records is
+the finding: an evidence index whose reachability check names a command that does
+not exist is worse than an open row, since an open row is visible.
+
+**Three corrections the gate needed, all of the class this project documents.**
+Written as a presence check on `SAFETY`, it reported every correctly documented
+`unsafe fn` in the tree (34 sites) — the wrong token for that kind.  Given
+statement-scoped attachment to resolve four formatting cases, it reported 108 —
+the anchor was wrong, and the right answer was to move the comments in the code
+rather than make the scanner cleverer.  And it counted `unsafe fn(u8) -> T` in a
+type position as a site, which performs nothing.  Sixteen self-test cases, each
+token-preserving: the comment below the block, a statement between them, the
+token in a string literal, a `# Safety` section offered for a block, an
+`unsafe fn` pointer type, `unsafe impl`.  Mutation-tested on the live tree.
+
+### 6. Three stale claims in a lock-coverage docstring, from footprints that moved
+
+`SeLe4n/Kernel/InformationFlow/FineLockFlow.lean`'s SM8.D.5 umbrella theorem is
+the statement that an endpoint's write lock authorizes the link writes of every
+TCB in its queue — a security-relevant claim about lock coverage.  Its docstring
+carried three claims the tree had moved out from under, all from WS-OD's
+`v0.35.4` footprint rename and the ceiling raises after it:
+
+- it cited `lockSet_tcbSuspend_blocked_endpoint_write_mem` in the **present
+  tense** ("already says"), a theorem retired with the parametric
+  `lockSet_tcbSuspend` footprint it was about;
+- it described "the `lockSet_tcbSuspend_*_write_mem` family" as the live family,
+  and no member of it exists under that name;
+- and its "why the footprint is not simply widened" argument rested on
+  `maxLockSetSize` being **eleven** and the suspend footprint **nine**, "so the
+  two would fit exactly".  The ceiling is 22 and
+  `lockSet_tcbSuspendOnCore_size_le_sixteen` is the live bound, so the two fit
+  with room over and "exactly" is false.
+
+The conclusion the paragraph reaches is unaffected — the neighbour locks are
+redundant rather than unaffordable, which was always the load-bearing reason, and
+the paragraph's own closing sentence already said the decision does not rest on
+the arithmetic.  What is fixed is the prose: the retired names are described by
+what they were rather than cited as live, and the paragraph now quotes **neither**
+derived figure, pointing at the canonical ceiling sentence
+`scripts/check_lock_ceiling_figures.py` enforces instead.  That gate did not catch
+this and was right not to: `CLAUDE.md` deliberately lets narrative name an old
+value ("OD3.5 raised the ceiling to 11"), and the defect was a *live* arithmetic
+conclusion drawn from narrative figures — a shape the gate cannot see and a
+reader can.
+
+### Verified, not assumed
+
+- Every WS-RM Tier 3 negative fires under a token-preserving mutation of the live
+  tree: the removal's order swapped, the cross-core spine reverted to a bare
+  `consumeCallerReply`, and `.replyRecv`'s receive leg fed the pre-pop state.
+  Each paired positive goes silent on the same mutation.
+- `consumeCallerReply` has exactly one call site outside its own theorems —
+  inside `removeCallerReplyFrame` — read off the comment-free code view, and the
+  unqualified spelling does not resolve in either spine's namespace, so the
+  negatives are exact for the revert they exist to catch.
+- The reply arm's authority is capability-gated at the dispatch layer: the arm
+  requires `cap.target = .replyCap rid` and takes the answered thread from
+  `replyAnsweredCaller?`, so neither the victim nor the frame is caller-chosen.
+- `maxLockSetSize = 22` with `admissibleCriticalSection` at 15 µs and a uniform
+  60 µs envelope of 3960 µs — arithmetically consistent and gate-enforced.
+- 125 of 125 Rust `unsafe` sites carry a justification of the kind their form
+  calls for, enforced at zero from this cut.
+- Zero `sorry`, zero `axiom`, zero in-source TODO/FIXME; `lake build` clean;
+  `cargo clippy -D warnings` clean; `cargo fmt --check` clean; 1344 host Rust
+  tests and 112 conformance tests pass; the aarch64 cross build passes; every
+  multi-line Tier 3 anchor is declaration-bounded (zero unbounded gaps).
+
+Refs: docs/planning/REPLY_FRAME_REMOVAL_PLAN.md §9
+
+## v0.35.8 — AK7 reader hygiene: the executable residue is zero, and the floor is a prohibition
+
+Closes the `docs/REGISTERED_DEBT.md` §C row **AK7 reader hygiene, the executable
+residue** by finishing the migration rather than carrying it, and replaces the
+metric's rolling ceiling with a zero that regenerating the baseline cannot clear.
+
+`v0.35.7` split `RAW_LOOKUP_TID` into `STORE_READ_CODE` (raw object-store reads
+in the body of a declaration whose result is not a `Prop`) and `STORE_READ_SPEC`
+(everything else, diagnostic), and drove the kernel and platform trees to zero.
+It then registered the remaining **76** — 65 `Testing/MainTraceHarness.lean`
+trace bodies, 10 `Testing/InvariantChecks.lean` helpers, and one proof case
+split in `Platform/RPi5/ProofHooks.lean` — as post-v1.0.0 debt, held at a
+per-key inventory floor.  That is the superseded metric's own shape one
+population narrower, and it carried the superseded metric's own escape: a cut
+that exceeds a ceiling may re-anchor it, which `RAW_LOOKUP_TID` did four times
+in three days.
+
+**`STORE_READ_CODE` is now 0** and is enforced as a `ZERO_METRICS` entry beside
+`SORRY_COUNT` and `AXIOM_COUNT`.  Every raw store read left in the tree is
+either a proposition — which has no helper form, since `getTcb? k = none` holds
+for an absent key and a wrong-kinded object alike — or one of the typed
+accessors' own bodies in `SeLe4n/Model/State.lean`, which the census exempts by
+name.
+
+### The migration
+
+- **`SeLe4n/Testing/MainTraceHarness.lean`, 65 → 0.**  Every site was a
+  single-variant `match st.objects[k]? with | some (.tcb t) => … | _ => …`, so
+  each became the typed accessor with a two-arm match: `getTcb?`,
+  `getSchedContext?`, `getReply?`, `getEndpoint?`, `getUntyped?`, `getCNode?`.
+  Three `.map KernelObject.objectType` reads became `getObjectType?`
+  (definitional), and the trace-equivalence comparison stayed kind-agnostic
+  through `getObject?` (also definitional), because it compares whole objects
+  and the typed read would be weaker there.
+- **`SeLe4n/Testing/InvariantChecks.lean`, 10 → 0.**  The CSpace, capability
+  rights, VSpace ASID and ASID-table checks discriminate a variant and now read
+  it; `lifecycleMetadataChecks` and `checkLifecycleObjectTypeLockstep` are
+  variant-agnostic by intent and read `getObject?`.  One check strengthened: a
+  `.cnodeSlot` capability's backing is now `getCNode?`, since that capability
+  names the CNode it descends and a non-CNode target is not backed for the
+  purpose the check states.
+- **`SeLe4n/Platform/RPi5/ProofHooks.lean`, 1 → 0.**  The remaining read was a
+  bridge — `have hObj : st.objects[…]? = some (.tcb tcb)` — needed only because
+  `registerContextStableCheck_budget` and
+  `contextSwitchState_preserves_proofLayerInvariantBundle` took the store form
+  as a hypothesis.  Each has exactly one caller, so both hypotheses are restated
+  in the accessor vocabulary and the bridge moved inside the theorems, where it
+  belongs.  The hook's own eight-arm store split became the two-arm accessor
+  split its comment had claimed since `v0.35.7`.
+- **The golden fixture is byte-identical.**  That is the measurement, not an
+  assumption: the deferral's stated reason was that migrating the harness
+  "risks a fixture churn with no proof-correctness gain", and running
+  `lake exe sele4n` against `tests/fixtures/main_trace_smoke.expected` after the
+  migration shows no churn at all.
+
+### Two specification predicates went with them
+
+Found while fixing a linter warning the `v0.35.7` sweep left in
+`Platform/RPi5/RuntimeContract.lean`, and fixed rather than documented:
+
+- `budgetPositive` and `currentBudgetPositive` (`Kernel/Scheduler/Invariant.lean`)
+  read the store raw while their per-core twins `budgetPositiveOnCore` and
+  `currentBudgetPositiveOnCore` have used the typed accessors since SM4.C — one
+  question with two answers, with the boot-core one the worse.  Both now read
+  `getTcb?` / `getSchedContext?`, which is the same proposition: the seven
+  non-matching constructors and the absent key all map to the accessor's `none`.
+  `budgetPositive_subset` (`Scheduler/Operations/Preservation.lean`) restates
+  that body inline and follows.
+- `registerContextStableCheck_budget`'s proof is rewritten around
+  `SystemState.getTcb?_frame` / `getSchedContext?_frame`: the context switch
+  writes `machine` and `scheduler` only, so each post-state read frames back to
+  `st` and one two-arm case analysis serves the check and the predicate
+  together.
+
+`STORE_READ_SPEC` fell 4373 → 4365 as a side effect.  It remains unenforced in
+both directions, by design.
+
+### The gate
+
+- `STORE_READ_CODE` moved from the should-drop list into `ZERO_METRICS`.  A
+  ceiling invites the next cut that exceeds it to raise the ceiling; a zero can
+  only be relaxed by editing the gate's own list, which is visible and
+  reviewable.  The failure epilogue now says this in as many words, so a reader
+  is not told to re-anchor a baseline that will not help.
+- **The per-key inventory for this metric was deleted, not kept.**  At zero a
+  cardinality and a set say the same thing, and keeping both would be the
+  duplication hazard this project keeps paying for, inside the gate written to
+  close it.  What replaced it is the *relation*: the gate asserts that
+  `STORE_READ_CODE` equals the sum of its own `STORE_READ_CODE_SITE` rows, in
+  the baseline and in the current capture, so a hand-edited or truncated file
+  claiming "none" beside a live site row is refused as a gate defect.  The rows
+  are still emitted, because when the zero breaks they are what names the
+  offending `(file, declaration)` — the failure message prints them.
+- **The self-test grew a second case shape** (10 cases, all passing).  The two
+  claims are token-preserving with respect to different things, so the harness
+  asserts a different invariant for each: the six inventory cases hold every
+  scalar byte-identical, and the three census cases move the scalars while the
+  harness asserts the fixture is internally consistent.  The decisive case keeps
+  the baseline and the current value **equal at one** — everything a `:drop`
+  metric asks, and exactly what a zero floor must still reject.  A tenth case
+  covers the inconsistent capture.  The inert-mutation guard was verified to
+  fire on both shapes.
+
+### Metrics
+
+`RAW_MATCH_TOTAL` 50 → 44 (TCB 25 → 22, SchedContext 10 → 7); `RAW_SITE` pinned
+sites 45 → 39; `STORE_READ_CODE` 76 → **0**; `STORE_READ_SPEC` 4373 → 4365;
+`GETTCB_ADOPTION` 2369 → 2403, `GETSCHEDCTX_ADOPTION` 385 → 402,
+`GETENDPOINT_ADOPTION` 179 → 190, `GETUNTYPED_ADOPTION` 14 → 16,
+`GETCNODE_ADOPTION` 142 → 146, `GETVSPACEROOT_ADOPTION` 48 → 51.
+
+Refs: docs/REGISTERED_DEBT.md §C (AK7 reader hygiene, the executable residue)
+
+## v0.35.7 — Every kernel store read goes through a typed accessor, and the AK7 lookup floor stops being a ratchet
+
+**The raw object-store read is gone from executable kernel code.**  `SeLe4n/Kernel`
+and `SeLe4n/Platform` held **89** raw `st.objects[…]?` reads in transition bodies;
+they hold **none**.  Each one had a typed reader available and declined to use it:
+the variant-discriminating two-way matches became `getTcb?` / `getSchedContext?` /
+`getReply?` / `getEndpoint?` / `getCNode?` / `getVSpaceRoot?` / `getUntyped?`, the
+three-way ones (right variant / wrong kind / absent) became `getObject?`, and the
+type-only read became `getObjectType?`.  `lookupTcb` is now `getTcb?` behind its
+reserved-id refusal rather than a second spelling of the same store read, and
+`replyStackLinksAt?` reads `getObject?`.
+
+Six sites in `SeLe4n/Kernel` still match `.objects[`; every one is a **hypothesis
+binder or a result type** (`mkRetypeTarget`'s `hTypeMeta`, `bridgeSignatureWitness`'s
+antecedent), which is a proposition, not a read.  One in
+`Platform/RPi5/ProofHooks.lean` is a proof case split inside a `def` returning a
+record of proofs; it is recorded in place as the census's single known over-count
+rather than contorted to satisfy the scanner.
+
+**The migration is a simplification, not a translation.**  A raw variant match
+forces a proof to enumerate all eight `KernelObject` constructors; the accessor has
+already collapsed seven of them into its own `none`, so each such case analysis
+became two arms.  Sixteen eight-way splits went this way across `BlockingGraph`,
+`Preservation`, `PerCore`, `PerCoreInvariantSuite`, `RuntimeContract` and
+`Selection`.  `effectiveBucketPriority` carried a note deferring exactly this on
+the ground that it would "cascade through the entire scheduler invariant module
+without proof-correctness benefit"; the cascade was three sites in one file and all
+three got shorter.  The note is replaced by what was measured.
+
+**The object-table frame family is stated once.**  `getTcb?_congr_at` and its nine
+siblings (pointwise: a read depends on the table only at its own key) and the ten
+`…_frame` corollaries now sit in `SeLe4n/Model/State.lean` beside the accessors they
+are about.  The tree had answered that question in four places — a
+`getTcb?_congr_objects` in `Architecture/InvariantPerCore.lean` and another in
+`IPC/Invariant/PerCore.lean`, both `private` so neither could serve the other, a
+third in `IPC/Invariant/PerCoreBundlePreservation.lean`, and a
+`getSchedContext?_frame` spelled differently again in
+`Scheduler/PriorityInheritance/Compute.lean`.  The pointwise form comes first
+because that is the one a per-slot hypothesis supplies; the frame is its corollary.
+
+### The AK7 lookup floor was measuring the wrong population
+
+`RAW_LOOKUP_TID` is retired and replaced by `STORE_READ_CODE` (enforced) and
+`STORE_READ_SPEC` (diagnostic), derived by `scripts/lean_store_read_census.py`.
+The superseded metric was wrong in four ways at once, and the fourth is why it had
+been re-anchored upward four times in three days (1609 → 1600 → 1678 → 1711):
+
+1. **It summed two populations.**  Of its 1711 counted lines, 1490 were in
+   `theorem`s, 114 in `Prop`-valued `def`s, 48 in `structure` fields and 6 in
+   `inductive`s — **96.9% specification vocabulary** — against 53 lines of
+   executable code.  So the number tracked how much invariant text the project had
+   written, and an invariant cut could not help but raise it.  A proposition about
+   the store has no helper form: `getTcb? k = none` holds for an absent key and a
+   wrong-kinded object alike, so a frame statement quantified over every key cannot
+   be phrased through a variant accessor without weakening it.  `STORE_READ_SPEC`
+   is therefore reported and never enforced, exactly as `RAW_MATCH_UNCLASSIFIED` is
+   and for the same stated reason.
+2. **It was not `_TID`.**  The pattern was `grep -c "\.toObjId\]?"` and four types
+   carry `.toObjId` — `ThreadId`, `SchedContextId`, `ReplyId`, `KindedObjId` — so
+   WS-OD's and WS-RM's reply-stack and scheduling-context vocabulary moved a figure
+   whose name claimed it was about threads.
+3. **It counted lines, not occurrences.**  Two reads on one line counted once, and
+   a reflow that joined two lines lowered it.
+4. **`RAW_LOOKUP_SITE` was keyed by `(file)` alone.**  Its sibling `RAW_SITE` was
+   refined to `(file, declaration, variant)` in PR #893 review round 6, with the
+   reason recorded in the gate's own header — a per-file key is a cardinality one
+   level up, so hygienizing one declaration while another starts reading raw leaves
+   the row unmoved.  That refinement was never swept onto the sibling: this is the
+   project's own sweep rule failing in the way it describes.
+
+`STORE_READ_CODE_SITE` is keyed by `(file, declaration)` with an occurrence count,
+and the monotonic gate's self-test gains three token-preserving cases the
+superseded figure admitted by construction: a read moved between declarations of
+one file, a read moved **from a proposition into a transition** (the sum unchanged,
+which is all the old metric could see) and its converse moved the other way, which
+must pass because it is the migration working.  `lean_store_read_census.py` carries
+its own nine-case self-test — body vs binder, `Prop`-valued `def` vs transition,
+occurrences vs lines, and the wiring through the comment-free view — run in Tier 0.
+
+At this cut `STORE_READ_CODE` is **76**, of which **75** are in `SeLe4n/Testing`
+(the executable trace harness and the invariant-check helpers) and one is the
+`ProofHooks` over-count above.  The kernel's own figure is zero.
+
+Refs: docs/REGISTERED_DEBT.md (AK7 reader-hygiene residual)
+
+## v0.35.6 — WS-RM: the reply path runs seL4's `reply_remove`, and the passive server's `ReplyRecv` loop completes
+
+**WS-RM closes in one cut — all twenty-six sub-tasks across RM1..RM6 — and
+closing it turned up a second defect in the same arm, fixed here too.**
+
+### 1. The reply path did not take the answered frame off its reply stack
+
+Registered at `v0.35.4` and the remaining shape of the finding that cut was
+opened to fix.  `v0.35.4` made the reply stack doubly linked so a frame can be
+cut out of the middle in `O(1)`, and wired that detach into the **cancellation**
+path.  The **reply** path was left as it was: `endpointReplyOnCore` ran
+`SystemState.consumeCallerReply` with no detach, and `Reply.consumed` clears both
+stack links on any frame that is not a head — so when the answered frame had a
+frame above it, the consume falsified
+`donationChainWellFormed.prevLinkReciprocal` at that frame.
+
+Reachable, because authority to reply flows from *holding the reply capability*
+and a copied or minted one held by a different server is legitimate delegated
+authority: on a chain `C1 → C2 → S` a delegate can answer `C1` out of order while
+`S` has pushed a frame above `C1`'s.  Fail-closed rather than corrupting — the
+later pop's reciprocity test refuses the stale link and returns
+`.invalidArgument` having written nothing — so the cost was a **wedge**: that
+reply failed permanently, the intermediate caller stayed blocked and the
+scheduling context stayed with the server.  **Medium**, availability only, and
+not exploitable today (nothing boots).
+
+`removeCallerReplyFrame caller rid` is seL4's `reply_remove`: the detach folded
+to the identity on refusal — a non-reciprocating upward link means "nothing above
+me on my stack", which the chain relation permits by design since it is stated
+*downward* — then the consume.  `endpointReplyOnCore`, `endpointReply` and
+`endpointReplyRecv` all run it.  The order inside it is the content, because the
+detach reads the link the consume clears; Tier 3 negatives refuse a bare consume
+in any of the three spines and refuse the swap inside the composite, each
+mutation-tested in both directions.
+`removeCallerReplyFrame_eq_consume_of_no_frame_above` is the definitional
+equality that makes every repair a case split whose `none` branch is the
+pre-WS-RM proof verbatim.
+
+**The head case is stated, not hidden.**  A frame that *heads* a scheduling
+context keeps its links when its caller is consumed (`Reply.consumed`,
+deliberately — the pop validates the head by them), so the reply leg's post-state
+satisfies `donationChainWellFormedExcept … rid` and nothing stronger.  It stands
+to the reply leg as `ipcInvariantFullExceptDonationOwner` stands to the bare
+reply, and `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` is
+the composite that discharges it: the donation pop that follows in the same
+transition re-heads the frame below.  `faultReplyOnCore_preserves_donationChainWellFormed`
+and `replyTransferOnCore_preserves_donationChainWellFormed` — seL4's
+`doReplyTransfer` — compose it.
+
+**`.reply` and `.replyRecv` declare the frame the detach writes.**
+`answeredReplyFrameAbove?` is resolved from the same
+`(st.getTcb? target).bind (·.replyObject)` expression the arm's existing reply
+member comes from, so the footprint and the transition cannot disagree about
+which frame is answered.  The declared ceiling `maxLockSetSize` moves 21 → **22**
+and every figure derived from it moves with it: `admissibleCriticalSection` for
+the 1 ms RPi5 tick is now **15 µs** and the uniform 60 µs envelope **3960 µs**,
+in the canonical spelling `scripts/check_lock_ceiling_figures.py` holds at its
+five pinned sites.  **No *reachable* footprint grew**: the new member and the
+donation-return members are mutually exclusive, so
+`lockSet_endpointReplyRecvOnCore_size_le_eighteen` is unmoved.
+
+### 2. ...and `.replyRecv` popped its donation too late to complete its own loop
+
+**Found while threading RM5.2's payoff through `replyRecvBody`, reported before
+being fixed, and fixed here under RM5.2 — which already owns that function.**
+
+`replyRecvBody`'s legs ran reply → receive → donation.  The receive leg re-links
+the very Reply `rid` the reply leg just answered — faithful seL4-MCS one-object
+reuse — and `Reply.isFree` reads **both** stack links, deliberately (`v0.35.4`
+made the stash admission and the link guard ask one question after they had
+disagreed).  On the MCS passive-server steady state the answered Reply *heads*
+the donated scheduling context, and `Reply.consumed` keeps a head's links — so
+after the reply leg that object was consumed and **not** free, and both admission
+paths refused: `linkCallerReply` and the server-first stash each returned
+`.replyCapInvalid`.
+
+So **no passive server whose client had donated could ever complete a
+`seL4_ReplyRecv`** — the steady state of the pattern the arm exists for (`Recv`
+once, then `ReplyRecv` forever).  Fail-closed, a **liveness** defect rather than
+a safety one, and not exploitable today.  Nothing caught it: every runtime
+witness of `.replyRecv` ran on a state where the answered Reply headed no
+context, and refusing is invariant-preserving, so no bundle theorem is false of
+the refusing program.
+
+The pop now runs **between** the legs, which is seL4-MCS's own `doReplyTransfer`
+→ `reply_remove` → `receiveIPC` order.  `replyRecvReturnDonation` is retired and
+split into `replyRecvPopDonation` (the return, on the reply leg's committed
+state) and `replyRecvPostReceiveDonation` (the re-donation, the deschedule and
+the priority-inheritance walk, on the receive leg's committed state, **taking the
+popped context as an argument** rather than re-reading a binding the pop has
+already cleared).  Each carries its own `_preserves_ipcInvariantFull` and
+`_preserves_replenishQueueAffinityConsistent_smp`, stated at the state its own
+step runs on, and `PerCoreDonationStep` gains a constructor for each in place of
+the fused one.  `replyRecvPostPopState` / `replyRecvPoppedContext` are *total*
+accessors over the pop, so `syscallDispatchQuiescence.replyRecvStage` stays a
+flat pre-state-computable pack while its receive-leg fields move to the post-pop
+state.
+
+This is **not** the reversal the plan's §9 declines.  That bullet is about
+`.reply`'s own ordering — running the donation pop before the reply leg, which
+would erase the head transient RM2.3 states and RM5.1 discharges.  Here the reply
+leg still runs first.
+
+### 3. Every reply-stack write names a chain result — derived, not listed
+
+`SeLe4n/Testing/ReplyStackWriteCensus.lean` (Tier 1) collects the write-site set
+from the **elaborated environment** — a project definition whose own body
+references one of the chain-write primitives, `SystemState.consumeReply` and
+`SystemState.consumeCallerReply` among them — and reconciles it against a
+registry in both directions.  A site either **states** its chain results (each
+named theorem must mention the site *and* a `donationChain…` form, so a name is
+not taken for a subject) or is recorded as a **half-step** of the composite that
+completes it, with the half-step chain required to terminate in a stating entry.
+Fourteen sites, eight stating.  A new definition that consumes a caller's Reply
+bare is a build failure on the day it is written.
+
+The frontier is deliberately one level above the primitives rather than the
+transitive closure — taken transitively it is the whole dispatcher — and that
+loses nothing, because it is closed under refinement: every path from a composite
+down to a primitive passes through some direct site, and composites inherit by
+`donationChainFrame`'s algebra, which is a composition rather than a claim.  Its
+witnesses run in both directions, including a planted bare consume that the
+derived half must refuse.
+
+### 4. Witnesses
+
+`tests/SmpIpcSuite.lean` §3.20 builds a depth-2 chain, answers the outer caller
+**out of order through a delegated reply capability**, asserts the frame above
+has its `prev` cleared and the answered frame is `Reply.isFree`, and then
+completes the in-order reply that used to fail — with the same consume minus the
+detach as its paired negative, since a fixture exercising only the in-order path
+would pass before this cut and after it.  §3.21 runs the passive server's
+`seL4_ReplyRecv` loop end to end, with the un-popped receive leg's
+`.replyCapInvalid` refusal as *its* paired negative.
+`tests/SmpCrossCoreReplySuite.lean` §3.9 pins the removal inert on the in-order
+path and firing exactly once otherwise.
+
+### 5. Housekeeping
+
+- `donationChainFrame_of_objects_insert` was `private` to the cancellation shape
+  module and the fault-reply path needs the same fact; it is public and lives in
+  `IPC/Invariant/Defs.lean`, beside the predicate it is about, rather than being
+  copied into a module the first does not import.
+- The `ipcInvariantFull` bundle family measures **176** statements, up from 172:
+  the two `.replyRecv` half-steps and the two fault-reply forms.  Still zero
+  conjuncts bound on a post-state.
+- The AK7 `raw_lookup_tid` floor is re-anchored 1678 → 1711.  The thirty-three
+  new occurrences are all *statement* vocabulary in the donation-chain family —
+  hypotheses and conclusions quantifying over the object store at `ReplyId` and
+  `SchedContextId` keys, phrased exactly as `donationChainWellFormed`'s own
+  fields are — and not object-store reads inside transitions, which is what the
+  metric is about; every `raw_match_*` variant-discriminating count is unmoved,
+  and the typed-helper adoption floors rise with the cut.
+
 ## v0.35.5 — the `.replyRecv` footprint declares the invoker's own pre-receive return
 
 **One P1 and two P2 findings from an automated review of PR #894, all three

@@ -1140,7 +1140,7 @@ theorem objects_getElem?_eq_get? (s : SystemState) (k : SeLe4n.ObjId) :
 `tcbReplyServer`. -/
 theorem blockingServer_eq_bind (s : SystemState) (tid : SeLe4n.ThreadId) :
     blockingServer s tid = (s.objects.get? tid.toObjId).bind tcbReplyServer := by
-  unfold blockingServer tcbReplyServer
+  unfold blockingServer SystemState.getTcb? tcbReplyServer
   rw [objects_getElem?_eq_get? s tid.toObjId]
   cases s.objects.get? tid.toObjId with
   | none => rfl

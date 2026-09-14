@@ -278,6 +278,35 @@ namespace Priority
 instance : ToString Priority where
   toString prio := toString prio.toNat
 
+/-- **A base priority raised by an inherited boost** — the one answer to the
+question priority inheritance asks of every scheduling decision.
+
+Priority inheritance records a raise as an `Option Priority`; a thread runs at
+the larger of its base and that raise, and an absent boost leaves the base
+alone.  The expression `⟨Nat.max base.val boost.val⟩` under a two-arm `match` was
+written out at **eight** sites — four in `effectiveSchedParams`, one each in
+`resolveEffectivePrioDeadline`'s callers, the endpoint wake, the scheduler
+invariant's bucket reading, and the frozen mirror of the run queue — which is
+this project's one-question-two-answers hazard at the size of an expression, and
+is how the frozen surface came to answer it a ninth time (`v0.35.28`).
+
+The **base is a parameter** rather than fixed at the thread's own priority,
+because it is not always the thread's: a `.bound` thread's base is its
+reservation's (`SchedContext.priority`), and a thread-owned base is its TCB's.
+Fixing it at the TCB would have covered seven of the eight sites and left the
+eighth spelling its own `match` — an abstraction that does not fit its subject
+is how a duplicate survives a de-duplication. -/
+@[inline] def raisedBy (base : Priority) : Option Priority → Priority
+  | none => base
+  | some boost => ⟨Nat.max base.val boost.val⟩
+
+/-- `raisedBy` is transparent to `simp`, so a proof that knows the boost reduces
+it exactly as it reduced the inline `match` it replaces. -/
+@[simp] theorem raisedBy_none (base : Priority) : base.raisedBy none = base := rfl
+
+@[simp] theorem raisedBy_some (base boost : Priority) :
+    base.raisedBy (some boost) = ⟨Nat.max base.val boost.val⟩ := rfl
+
 end Priority
 
 /-- M-03/WS-E6: Scheduling deadline for EDF (Earliest Deadline First) tie-breaking.

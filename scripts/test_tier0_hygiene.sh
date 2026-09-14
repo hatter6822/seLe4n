@@ -322,6 +322,16 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/rust_code_view.py" --self-test
 # symbol exists only in a comment.
 run_check "HYGIENE" "${SCRIPT_DIR}/test_code_view_wiring.sh"
 
+# ... and the store-read census, which decides which POPULATION each raw
+# `st.objects[…]` read belongs to.  Its failure mode is the one that made
+# `RAW_LOOKUP_TID` meaningless: classify a proposition's vocabulary as a
+# transition's and the enforced number becomes dominated by invariant text, so
+# every cut re-anchors it upward and the ceiling stops meaning anything.  The
+# self-test pins the classification (body vs binder, `Prop`-valued `def` vs
+# transition, occurrences not lines) and the wiring through the comment-free
+# view, on fixtures rather than on the tree.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/lean_store_read_census.py" --self-test
+
 # ... and the acceptance-gate skip accounting, whose failure mode is the
 # same shape: a sub-test that cannot run used to `exit 0`, `run_check`
 # scored it PASS, and tier 4 printed "All checks passed" over fourteen
@@ -443,6 +453,18 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py"
 
+# The unsafe-justification gate (post-landing audit of WS-RM, v0.35.9).
+# `CLAUDE.md` stated the HAL's discipline -- every unsafe block carries a
+# `// SAFETY:` comment -- and attributed its enforcement to
+# `scripts/check_arm_arm_citations.sh`, which the v0.30.11 audit planned as
+# R12.C and whose discharge index row F.3 names as the mechanism discharging
+# DEEP-RUST-01/02.  That script was never written: no commit on any branch
+# contains it and Tier 0 never ran it.  So the discipline was stated, relied on
+# by a discharge row, and checked by nothing; this is the gate, and the tree is
+# at **zero** unjustified sites, so its baseline is empty and any new one fails.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_unsafe_block_justifications.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_unsafe_block_justifications.py"
+
 # WS-RR RR3.1: `ipcInvariantFull` de-threading.  A bundle that binds a
 # conjunct applied to its own post-state proves "*if* the post-state already
 # satisfies the conjunct, the transition is fine" -- not that the transition
@@ -471,5 +493,18 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_ipc_invariant_dethreading.py"
 # its harness refuses a check whose only rejecting fixture deletes a token.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py"
+
+# A Tier 3 anchor that pins a Python symbol nothing reads is a TAUTOLOGY: it
+# reports PASS whatever the live code does, while reading in the report exactly
+# like a check that decides something.  Round 16 of PR #895's review produced
+# one -- the leading-form rewrite of `classify_extern_item` left three
+# interior-search regexes with no consumer, and the anchor naming one of them
+# went on passing over a definition the classifier no longer consulted.  The
+# anchor was repointed at the symbol's READ; this is what stops the next one
+# going dead unnoticed, since a fix applied at one site and not swept onto its
+# siblings is this project's most-repeated defect.  Self-test first, and its
+# decisive case keeps the anchor and the definition and adds only a reader.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_symbol_liveness.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_symbol_liveness.py"
 
 finalize_report

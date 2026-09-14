@@ -90,7 +90,7 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
     by_cases hEq : cnodeId = target.toObjId
     · subst hEq
       have hTargetTcb : ∃ tcb', st.objects[target.toObjId]? = some (.tcb tcb') := by
-        unfold lookupTcb at hLookup; cases hObj : st.objects[target.toObjId]? with
+        unfold lookupTcb SystemState.getTcb? at hLookup; cases hObj : st.objects[target.toObjId]? with
         | none => simp [hObj] at hLookup
         | some obj => cases obj with
           | tcb t => exact ⟨t, rfl⟩
@@ -156,6 +156,52 @@ theorem consumeCallerReply_preserves_capabilityInvariantBundle
       rw [hGet'']
       exact Option.some_ne_none _
 
+/-- **WS-RM (`v0.35.6`)**: the *removal* preserves the bundle.  It is
+`consumeCallerReply` run at the state the detach left, and the detach writes one
+`.reply` slot that already held a Reply — so no CNode moves, the CDT and its slot
+map are untouched, and every key that resolved still resolves.  Proved directly
+rather than by composing a detach-level bundle lemma: the bundle's CDT clauses
+read fields the detach frames by `rfl`, so a second bundle statement about the
+fold would be a copy of this reasoning at a state no transition visits. -/
+theorem removeCallerReplyFrame_preserves_capabilityInvariantBundle
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  have hObjInv : st.objects.invExt := hInv.2.2.2.2.2.1
+  refine consumeCallerReply_preserves_capabilityInvariantBundle
+    (detachReplyFrameAboveOrSelf st rid) st' caller rid ?_ hStep
+  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, _hObjInv, hRCPV⟩
+  have hCnodeBwd : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
+      (detachReplyFrameAboveOrSelf st rid).objects[cnodeId]? = some (.cnode cn) →
+      st.objects[cnodeId]? = some (.cnode cn) :=
+    fun cnodeId cn hCn => (detachReplyFrameAboveOrSelf_non_reply_agree st rid hObjInv cnodeId
+      (.cnode cn) (fun rr => by exact KernelObject.noConfusion)).mp hCn
+  refine ⟨cspaceLookupSound_holds _, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro cnodeId cn hCn
+    exact hBounded cnodeId cn (hCnodeBwd cnodeId cn hCn)
+  · intro nodeId ref hRef
+    rw [detachReplyFrameAboveOrSelf_cdtNodeSlot_eq st rid] at hRef
+    intro hNone
+    rcases detachReplyFrameAboveOrSelf_objects_rewrite st rid hObjInv ref.cnode with h | ⟨_, r', _, hr', _⟩
+    · exact hComp nodeId ref hRef (h ▸ hNone)
+    · rw [hr'] at hNone; cases hNone
+  · unfold cdtAcyclicity
+    rw [detachReplyFrameAboveOrSelf_cdt_eq st rid]
+    exact hAcyclic
+  · intro cnodeId cn hCn
+    exact hDepthPre cnodeId cn (hCnodeBwd cnodeId cn hCn)
+  · exact detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv
+  · intro oid cn slot cap rid' hObj hLook hTgt
+    have hPre := hRCPV oid cn slot cap rid' (hCnodeBwd oid cn hObj) hLook hTgt
+    cases hGet : st.getReply? rid' with
+    | none => exact absurd hGet hPre
+    | some r' =>
+      obtain ⟨r'', hGet'', _⟩ := detachReplyFrameAboveOrSelf_reply_rewrite st rid hObjInv
+        rid'.toObjId r' ((SystemState.getReply?_eq_some_iff st rid' r').mp hGet)
+      rw [(SystemState.getReply?_eq_some_iff _ rid' r'').mpr hGet'']
+      exact Option.some_ne_none _
+
 /-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves capabilityInvariantBundle.
 Reply stores a TCB with message (not a CNode), so CSpace invariants are preserved.
 Updated for WS-H1 reply-target scoping (replier parameter + replyTarget validation).
@@ -208,7 +254,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
                       rw [← hStep]; exact hMid
                     | some rid =>
                       simp only [hRO] at hStep
-                      exact consumeCallerReply_preserves_capabilityInvariantBundle
+                      exact removeCallerReplyFrame_preserves_capabilityInvariantBundle
                         _ _ target rid hMid hStep
               · -- authorized = false
                 simp_all
@@ -1294,7 +1340,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
     cspaceRevoke_preserves_capabilityInvariantBundle st stRevoked cleanup hInv hRevoke
   -- cspaceRevoke preserves cdtNodeSlot
   have hRevokedNS : stRevoked.cdtNodeSlot = st.cdtNodeSlot := by
-    unfold cspaceRevoke at hRevoke
+    unfold cspaceRevoke SystemState.getCNode? at hRevoke
     cases hLookup : cspaceLookupSlot cleanup st with
     | error e => simp [hLookup] at hRevoke
     | ok pair =>

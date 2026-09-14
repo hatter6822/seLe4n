@@ -5,8 +5,11 @@
 # / DEF-AK7-F.writer.hygiene closure) to track residual hygiene migration:
 #   * `RAW_MATCH_*`         — raw `match st.objects[id]?` patterns by variant.
 #                             SHOULD-DROP metric (every commit ≤ baseline floor).
-#   * `RAW_LOOKUP_TID`      — bare `tid.toObjId` lookup at object store.
-#                             SHOULD-DROP metric.
+#   * `STORE_READ_CODE`     — raw object-store reads in executable positions.
+#                             SHOULD-STAY-ZERO metric: the migration reached
+#                             zero, so this is a prohibition rather than a
+#                             ceiling anyone may re-anchor.
+#   * `STORE_READ_SPEC`     — the same reads in propositions (diagnostic).
 #   * `GETTCB_ADOPTION`,
 #     `GETSCHEDCTX_ADOPTION` — typed-helper call sites in production / tests.
 #                             SHOULD-GROW metric (every commit ≥ baseline floor).
@@ -311,15 +314,43 @@ count_classified_match_sites() {
   awk -v mode=sites "$RAW_MATCH_AWK" "${KERNEL_FILES[@]}"
 }
 
-# Helper: `<file> <count>` rows for the bare `tid.toObjId` object-store lookup,
-# per file for the same reason.
-emit_raw_lookup_rows() {
-  (grep -c "\.toObjId\]?" "${KERNEL_FILES[@]}" 2>/dev/null || true) \
-    | awk -F: '$2 > 0 {print $1, $2}' | sort
+# The object-store READ census (`scripts/lean_store_read_census.py`).
+#
+# This replaces the old `RAW_LOOKUP_TID` / `RAW_LOOKUP_SITE` pair, which was a
+# `grep -c "\.toObjId\]?"` over the kernel tree and was wrong in four ways at
+# once.  It counted *lines*, so two reads on one line counted once and a reflow
+# lowered the number.  It was named `_TID` while four types carry `.toObjId`
+# (`ThreadId`, `SchedContextId`, `ReplyId`, `KindedObjId`), so reply-stack and
+# scheduling-context vocabulary moved a figure that claimed to be about
+# threads.  It keyed rows by `(file)` alone, while its sibling `RAW_SITE` had
+# been refined to `(file, declaration, variant)` in PR #893 review round 6 for
+# the stated reason that a per-file key is a cardinality one level up -- the
+# refinement was never swept onto this metric.  And, decisively, it counted a
+# read in a *theorem statement* and a read in a *transition body* as the same
+# thing: 96.9% of the figure was specification vocabulary, so the number
+# tracked how much invariant text the project had written rather than how much
+# unhygienic code it had, and every invariant cut re-anchored it upward
+# (1609 -> 1600 -> 1678 -> 1711 over three days).
+#
+# The census answers the two questions separately.  `STORE_READ_CODE` is the
+# migratable population -- a raw read in the body of a declaration whose result
+# is not a `Prop` -- and is enforced AT ZERO: every store read in the tree
+# outside `SeLe4n/Model/State.lean`, where the typed accessors are defined and
+# the raw read IS their body, now sits in a proposition, so the honest floor is
+# "none" rather than "no more than last time".  `STORE_READ_SPEC` is everything
+# else and
+# is a diagnostic, for the same reason `RAW_MATCH_UNCLASSIFIED` is: a
+# proposition about the store has no helper form (`getTcb? k = none` holds both
+# for an absent key and for a wrong-kinded object, so a frame statement
+# quantified over every key cannot be phrased through a variant accessor
+# without weakening it), and holding it to a drop would make writing an
+# invariant a Tier 0 failure.
+emit_store_read_rows() {
+  python3 "${REPO_ROOT}/scripts/lean_store_read_census.py" --rows
 }
 
 RAW_MATCH_ROWS="$(emit_raw_match_rows)"
-RAW_LOOKUP_ROWS="$(emit_raw_lookup_rows)"
+STORE_READ_ROWS="$(emit_store_read_rows)"
 
 # The scalar per-variant totals are now *derived* from the inventory rather than
 # recomputed, so the two can never disagree about the same tree.
@@ -367,10 +398,12 @@ RAW_MATCH_ALL=$( (grep -cE "match.*\.objects\[" "${KERNEL_FILES[@]}" 2>/dev/null
 RAW_MATCH_CLASSIFIED_SITES=$(count_classified_match_sites)
 RAW_MATCH_UNCLASSIFIED=$(( RAW_MATCH_ALL - RAW_MATCH_CLASSIFIED_SITES ))
 
-# RAW_LOOKUP_TID — `tid.toObjId` projected at object-store boundaries. Derived
-# from the per-file rows, so the total and the inventory cannot diverge.
-RAW_LOOKUP_TID=$(printf '%s\n' "${RAW_LOOKUP_ROWS}" \
-  | awk 'NF {s += $2} END {print s + 0}')
+# The two scalars, derived from the census rows so the totals and the
+# inventory cannot diverge.
+STORE_READ_CODE=$(printf '%s\n' "${STORE_READ_ROWS}" \
+  | awk -F'|' '/^STORE_READ_CODE_SITE=/ {s += $NF} END {print s + 0}')
+STORE_READ_SPEC=$(printf '%s\n' "${STORE_READ_ROWS}" \
+  | awk -F'|' '/^STORE_READ_SPEC_SITE=/ {s += $NF} END {print s + 0}')
 
 # Typed-helper adoption (kernel + tests + harness; excludes the helper
 # definition file itself).
@@ -454,7 +487,7 @@ raw_match_cnode          = $RAW_MATCH_CNODE
 raw_match_vspaceroot     = $RAW_MATCH_VSPACEROOT
 raw_match_total          = $RAW_MATCH_TOTAL
 raw_match_unclassified   = $RAW_MATCH_UNCLASSIFIED
-raw_lookup_tid           = $RAW_LOOKUP_TID
+store_read_spec          = $STORE_READ_SPEC (diagnostic)
 
 ## Typed-helper adoption (should-grow)
 
@@ -479,20 +512,31 @@ sentinel_check_dispatch  = $SENTINEL_CHECK_DISPATCH
 reader_hygiene_suite_tests           = $READER_HYGIENE_SUITE_TESTS
 kerrormatrix_rows        = $KERRORMATRIX_ROWS
 
-## Proof-surface health (should-stay-zero)
+## Proof-surface health and reader hygiene (should-stay-zero)
 
 sorry_count              = $SORRY_COUNT
 axiom_count              = $AXIOM_COUNT
+store_read_code          = $STORE_READ_CODE
 
 ## Machine-diffable block
 ##
-## RAW_SITE / RAW_LOOKUP_SITE rows are the binding floors: the gate refuses any
-## (file, variant) pair absent from the baseline, and holds every pair present
-## to its recorded count. The scalars below are derived from those rows and are
-## kept as human-readable diagnostics.
+## RAW_SITE rows are the binding floor: the gate refuses any key absent from
+## the baseline, and holds every key present to its recorded count.  They are
+## keyed by the enclosing DECLARATION, because a per-file key is a cardinality
+## one level up -- hygienizing one declaration while another starts reading raw
+## leaves a per-file row unmoved, which is the movement the inventory exists to
+## catch.
+##
+## STORE_READ_CODE_SITE rows get no inventory floor, because STORE_READ_CODE is
+## enforced at zero and at zero a cardinality and a set say the same thing.
+## They are emitted anyway, for two reasons: the gate asserts that the total is
+## their sum, so a capture claiming "none" beside a live row is refused as a
+## defect rather than passed; and when the zero is broken they are what tells
+## the reader WHERE.  STORE_READ_SPEC_SITE rows are recorded but not enforced.
+## The scalars below are derived from these rows.
 
 $(printf '%s\n' "${RAW_MATCH_ROWS}" | awk 'NF {print "RAW_SITE=" $1 "|" $2 "|" $3 "|" $4}')
-$(printf '%s\n' "${RAW_LOOKUP_ROWS}" | awk 'NF {print "RAW_LOOKUP_SITE=" $1 "|" $2}')
+$(printf '%s\n' "${STORE_READ_ROWS}")
 
 RAW_MATCH_TCB=$RAW_MATCH_TCB
 RAW_MATCH_SCHEDCONTEXT=$RAW_MATCH_SCHEDCONTEXT
@@ -503,7 +547,8 @@ RAW_MATCH_CNODE=$RAW_MATCH_CNODE
 RAW_MATCH_VSPACEROOT=$RAW_MATCH_VSPACEROOT
 RAW_MATCH_TOTAL=$RAW_MATCH_TOTAL
 RAW_MATCH_UNCLASSIFIED=$RAW_MATCH_UNCLASSIFIED
-RAW_LOOKUP_TID=$RAW_LOOKUP_TID
+STORE_READ_CODE=$STORE_READ_CODE
+STORE_READ_SPEC=$STORE_READ_SPEC
 GETTCB_ADOPTION=$GETTCB_ADOPTION
 GETSCHEDCTX_ADOPTION=$GETSCHEDCTX_ADOPTION
 GETENDPOINT_ADOPTION=$GETENDPOINT_ADOPTION

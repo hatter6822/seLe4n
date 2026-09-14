@@ -400,7 +400,7 @@ def endpointQueuePopHead
     (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool)
     (st : SystemState) : Except KernelError (SeLe4n.ThreadId × TCB × SystemState) :=
-  match st.objects[endpointId]? with
+  match st.getObject? endpointId with
   | some (.endpoint ep) =>
       let q := if isReceiveQ then ep.receiveQ else ep.sendQ
       match q.head with
@@ -450,7 +450,7 @@ theorem endpointQueuePopHead_popped_eq_head
     (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (popped, poppedTcb, st')) :
     popped = head := by
   revert hPop
-  unfold endpointQueuePopHead
+  unfold endpointQueuePopHead SystemState.getObject?
   rw [hEp]
   simp only []
   rw [hHead]
@@ -476,7 +476,7 @@ def endpointQueueEnqueue
     (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId)
     (st : SystemState) : Except KernelError SystemState :=
-  match st.objects[endpointId]? with
+  match st.getObject? endpointId with
   | some (.endpoint ep) =>
       match lookupTcb st tid with
       | none => .error .objectNotFound
@@ -516,7 +516,7 @@ theorem endpointQueuePopHead_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
     st'.objects.invExt := by
-  unfold endpointQueuePopHead at hStep
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -574,7 +574,7 @@ theorem endpointQueueEnqueue_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     st'.objects.invExt := by
-  unfold endpointQueueEnqueue at hStep
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -657,7 +657,7 @@ def endpointQueueRemove
     (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId)
     (st : SystemState) : Except KernelError SystemState :=
-  match st.objects[endpointId]? with
+  match st.getObject? endpointId with
   | some (.endpoint ep) =>
     match lookupTcb st tid with
     | none => .error .objectNotFound
@@ -729,7 +729,7 @@ theorem endpointQueueRemove_scheduler_eq
     (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
     st'.scheduler = st.scheduler := by
-  unfold endpointQueueRemove at hStep
+  unfold endpointQueueRemove SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -752,7 +752,7 @@ theorem endpointQueueRemove_machine
     (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
     st'.machine = st.machine := by
-  unfold endpointQueueRemove at hStep
+  unfold endpointQueueRemove SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -777,7 +777,7 @@ theorem endpointQueueRemove_serviceRegistry_eq
     (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
     st'.serviceRegistry = st.serviceRegistry := by
-  unfold endpointQueueRemove at hStep
+  unfold endpointQueueRemove SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -803,7 +803,7 @@ theorem endpointQueueRemove_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
     st'.objects.invExt := by
-  unfold endpointQueueRemove at hStep
+  unfold endpointQueueRemove SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -918,7 +918,7 @@ theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
     (a : SeLe4n.ObjId) (ot : TCB) (ha : st.objects.get? a = some (.tcb ot)) :
     ∃ ot', st'.objects.get? a = some (.tcb ot') ∧ f ot = f ot' := by
-  unfold endpointQueueRemove at h
+  unfold endpointQueueRemove SystemState.getObject? at h
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at h
   | some obj => cases obj with
@@ -1134,7 +1134,7 @@ theorem endpointQueueRemove_getTcb_backward_upToField {α : Type} (f : TCB → �
     ∃ ot, st.objects[a]? = some (.tcb ot) ∧ f ot = f ot' := by
   rw [RHTable_getElem?_eq_get?] at ha
   have hmain : FieldRefinesBack f st.objects st'.objects := by
-    unfold endpointQueueRemove at h
+    unfold endpointQueueRemove SystemState.getObject? at h
     cases hObj : st.objects[endpointId]? with
     | none => simp [hObj] at h
     | some obj => cases obj with
@@ -1214,7 +1214,7 @@ theorem endpointQueueRemove_unwritten_kind_backward
     st.objects[oid]? = some o := by
   rw [RHTable_getElem?_eq_get?] at hPost ⊢
   refine (?_ : UnwrittenKindBack P st.objects st'.objects).2 oid o hP hPost
-  unfold endpointQueueRemove at h
+  unfold endpointQueueRemove SystemState.getObject? at h
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at h
   | some obj => cases obj with
@@ -1337,7 +1337,7 @@ theorem endpointQueueRemove_unwritten_kind_forward
     st'.objects[oid]? = some o := by
   rw [RHTable_getElem?_eq_get?] at hPre ⊢
   refine (?_ : UnwrittenKindFwd P st.objects st'.objects).2 oid o hP hPre
-  unfold endpointQueueRemove at h
+  unfold endpointQueueRemove SystemState.getObject? at h
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at h
   | some obj => cases obj with
@@ -1440,7 +1440,7 @@ theorem endpointQueueRemove_objects_present_backward
     st.objects[oid]? ≠ none := by
   rw [RHTable_getElem?_eq_get?] at hPost ⊢
   refine (?_ : KeyPresenceBack st.objects st'.objects).2 oid hPost
-  unfold endpointQueueRemove at h
+  unfold endpointQueueRemove SystemState.getObject? at h
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at h
   | some obj => cases obj with
@@ -1478,7 +1478,7 @@ theorem endpointQueueRemove_objectIndexSet_eq
     (st st' : SystemState)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
     st'.objectIndexSet = st.objectIndexSet := by
-  unfold endpointQueueRemove at h
+  unfold endpointQueueRemove SystemState.getObject? at h
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at h
   | some obj => cases obj with
@@ -1610,7 +1610,7 @@ theorem endpointQueueRemove_succeeds_under_forwardBackward
     (hEp : st.objects[endpointId]? = some (.endpoint ep))
     (hLk : lookupTcb st tid = some tcb) :
     ∃ st', endpointQueueRemove endpointId isReceiveQ tid st = .ok st' := by
-  unfold endpointQueueRemove
+  unfold endpointQueueRemove SystemState.getObject?
   rw [hEp, hLk]
   exact ⟨_, rfl⟩
 

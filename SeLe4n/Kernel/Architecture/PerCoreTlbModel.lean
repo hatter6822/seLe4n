@@ -450,7 +450,7 @@ theorem tlbEntryOk_of_frame {st st' : SystemState} {c : CoreId} {e : TlbEntry}
   rcases h with hCon | ⟨desc, hmem, hmatch⟩
   · obtain ⟨rootId, root, hResolve, hLookup⟩ := hCon
     refine Or.inl ⟨rootId, root, ?_, hLookup⟩
-    unfold resolveAsidRoot at hResolve ⊢
+    unfold resolveAsidRoot SystemState.getVSpaceRoot? at hResolve ⊢
     rw [hObjects, hAsidTable]; exact hResolve
   · exact Or.inr ⟨desc, hPend desc hmem, hmatch⟩
 
@@ -470,7 +470,7 @@ theorem tlbEntryConsistent_of_frame {st st' : SystemState} {e : TlbEntry}
     (h : tlbEntryConsistent st e) : tlbEntryConsistent st' e := by
   obtain ⟨rootId, root, hResolve, hLookup⟩ := h
   refine ⟨rootId, root, ?_, hLookup⟩
-  unfold resolveAsidRoot at hResolve ⊢
+  unfold resolveAsidRoot SystemState.getVSpaceRoot? at hResolve ⊢
   rw [hObjects, hAsidTable]; exact hResolve
 
 /-- **WS-SM SM7.F.2**: on a **quiescent** shootdown state (no pending
@@ -541,7 +541,7 @@ theorem tlbConsistent_of_subset_of_state_frame {st st' : SystemState}
     tlbConsistent st' t' := by
   intro entry hMem rootId root hResolve
   have hResolve' : resolveAsidRoot st entry.asid = some (rootId, root) := by
-    unfold resolveAsidRoot at hResolve ⊢
+    unfold resolveAsidRoot SystemState.getVSpaceRoot? at hResolve ⊢
     rw [hAsidTable, hObjects] at hResolve
     exact hResolve
   exact hConsist entry (hSub entry hMem) rootId root hResolve'

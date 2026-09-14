@@ -195,6 +195,7 @@ fn main() {
     // The views come first: every scanner below reads them, so a
     // stripper defect would otherwise be reported as a clean tree.
     verify_rust_code_views();
+    verify_fn_body_open_brace();
     verify_lean_upcall_scanner();
     verify_handler_routing_scanner();
     verify_classifier_scanner();
@@ -5128,6 +5129,141 @@ fn scan_library_tests_avoid_halting_seams() {
     }
 }
 
+/// **PR #895 review round 18**: the signature walk decides on depth, not on
+/// the first delimiter it meets.
+///
+/// Every rejecting case here **keeps the tokens and moves the delimiter into
+/// a type**, which is the mutation that finds this class: a case that deletes
+/// the return type is satisfied by the superseded scan.
+fn verify_fn_body_open_brace() {
+    // `want` is the text the resolved brace must open, or `None` for a
+    // bodyless declaration.  Naming the body's own opening text is what
+    // distinguishes "found the body" from "found *a* brace": the
+    // const-generic case has a brace before the body's, and a check that
+    // merely asked for `Some` would pass on either.
+    let case = |label: &str, source: &str, want: Option<&str>| {
+        let at = source.find("fn ").expect("fixture has no `fn`");
+        let got = fn_body_open_brace(source, at);
+        match (got, want) {
+            (Some(open), Some(prefix)) => assert!(
+                source[open..].starts_with(prefix),
+                "PR #895 review round 18: `{label}` -- resolved a brace opening \
+                 {:?}, not the body's {prefix:?}\nsource: {source:?}",
+                &source[open..(open + prefix.len()).min(source.len())]
+            ),
+            (None, None) => {}
+            _ => panic!(
+                "PR #895 review round 18: `{label}` -- expected {want:?}, got \
+                 {got:?}\nsource: {source:?}"
+            ),
+        }
+    };
+
+    // The two shapes the superseded scan got wrong, each KEEPING the delimiter
+    // and moving it inside a type -- the mutation that finds this class.  A
+    // case that deleted the return type would pass under the old scan too.
+    case(
+        "array return type carries a semicolon",
+        "fn f() -> [u8; 1] { [0] }\n",
+        Some("{ [0] }"),
+    );
+    case(
+        "const-generic argument carries a brace",
+        "fn g() -> A<{ N }> { h() }\n",
+        Some("{ h() }"),
+    );
+    // ...and the controls, which must keep their pre-fix verdicts.
+    case("plain return type", "fn p() -> u8 { 0 }\n", Some("{ 0 }"));
+    case("no return type", "fn q() { }\n", Some("{ }"));
+    case("extern declaration is bodyless", "fn r() -> u64;\n", None);
+    case(
+        "trait method signature is bodyless",
+        "fn s(&self) -> [u8; 2];\n",
+        None,
+    );
+    case(
+        "where clause before the body",
+        "fn t<T>() -> [T; 3] where T: Copy { u() }\n",
+        Some("{ u() }"),
+    );
+    case(
+        "nested generic over an array",
+        "fn v() -> R<Vec<[u8; 4]>, E> { w() }\n",
+        Some("{ w() }"),
+    );
+    case(
+        "function-pointer return type",
+        "fn x() -> fn(u8) -> u8 { y }\n",
+        Some("{ y }"),
+    );
+    case(
+        "unterminated signature is refused",
+        "fn z() -> [u8; 1]\n",
+        None,
+    );
+}
+
+/// The offset of the `{` opening the body of the `fn` whose keyword sits at
+/// `at`, or `None` when that `fn` has no body.
+///
+/// **PR #895 review round 18**, swept from the sibling finding against
+/// `scripts/rust_code_view.py`'s `_body_open_brace`.  Both this file's callers
+/// took the first `{` after the keyword and treated any `;` before it as the
+/// mark of a bodyless declaration.  A return type breaks both halves:
+/// `fn f() -> [u8; 1] { .. }` carries a `;` inside an array type, so the
+/// function was dropped from the map entirely, and `fn g() -> Foo<{ N }> { .. }`
+/// carries a `{` inside a const-generic argument, which was taken for the
+/// body's and recorded a span that is not the body.
+///
+/// So the signature is walked with a depth counter over `(`, `[` and `<`, and
+/// only a depth-zero `{` or `;` decides.  `->` is consumed as a unit so its
+/// `>` closes no group.  An unterminated signature yields `None`, which drops
+/// the function from the map — the fail-closed direction, since an offset the
+/// map cannot place is attributed to no function and inherits no exemption.
+fn fn_body_open_brace(code: &str, at: usize) -> Option<usize> {
+    let mut chars = code[at..].char_indices().peekable();
+    // Skip to the end of the parameter list.
+    let mut depth = 0usize;
+    let mut seen_paren = false;
+    for (index, ch) in chars.by_ref() {
+        if ch == '(' {
+            depth += 1;
+            seen_paren = true;
+        } else if ch == ')' {
+            depth -= 1;
+            if depth == 0 {
+                let _ = index;
+                break;
+            }
+        }
+    }
+    if !seen_paren {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut skip_next = false;
+    while let Some((index, ch)) = chars.next() {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        match ch {
+            '-' if chars.peek().is_some_and(|(_, c)| *c == '>') => skip_next = true,
+            '(' | '[' | '<' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            // `>` only ever closes a generic in a return type or a `where`
+            // clause; a comparison or a shift cannot appear there.
+            '>' => depth = depth.saturating_sub(1),
+            '{' if depth == 0 => return Some(at + index),
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            ';' if depth == 0 => return None,
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Every `fn` definition in `code`: its name, the byte offset the line holding
 /// its signature starts at, and its brace-matched body span.
 ///
@@ -5153,14 +5289,11 @@ fn fn_definitions(code: &str) -> Vec<(String, usize, usize, usize)> {
         if name.is_empty() {
             continue;
         }
-        let Some(open) = code[at..].find('{').map(|i| at + i) else {
+        // One answer for "where does this `fn`'s body start", shared with the
+        // dual scanner below (PR #895 review round 18).
+        let Some(open) = fn_body_open_brace(code, at) else {
             continue;
         };
-        // A `;` before the brace means a bodyless declaration (an `extern`
-        // block item, or a trait method signature).
-        if code[at..open].contains(';') {
-            continue;
-        }
         let mut depth = 0usize;
         let mut close = open;
         for (index, ch) in code[open..].char_indices() {
@@ -7782,13 +7915,11 @@ fn enclosing_fn_span(code: &str, offset: usize) -> Option<(String, usize, usize)
         if name.is_empty() {
             continue;
         }
-        let Some(open) = code[at..].find('{').map(|i| at + i) else {
+        // One answer for "where does this `fn`'s body start", shared with the
+        // dual scanner below (PR #895 review round 18).
+        let Some(open) = fn_body_open_brace(code, at) else {
             continue;
         };
-        // A `;` before the brace means a bodyless declaration.
-        if code[at..open].contains(';') {
-            continue;
-        }
         let mut depth = 0usize;
         let mut end = open;
         for (index, ch) in code[open..].char_indices() {

@@ -113,12 +113,13 @@ def notificationSignalOnCore (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
           | .error e => (st, .error e)
           | .ok ((), st') => (st', .ok none)
   | none =>
-      -- Typed-accessor dispatch (AK7 cascade discipline): `getNotification?` is
-      -- `none` for both an absent object and a wrong-kinded one.  Recover the
-      -- single-core error distinction without a raw object-store variant match: a
-      -- present-but-wrong-kind object fails with `.invalidCapability`, a genuinely
-      -- absent one with `.objectNotFound`.
-      if (st.objects[notificationId]?).isSome then (st, .error .invalidCapability)
+      -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
+      -- `none` for both an absent object and a wrong-kinded one, so the
+      -- presence question is asked of the kind-agnostic accessor `getObject?`
+      -- -- a present-but-wrong-kind object fails with `.invalidCapability`, a
+      -- genuinely absent one with `.objectNotFound`.  Reading the store raw
+      -- here would have been the very pattern the comment claimed to avoid.
+      if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
 /-- WS-SM SM6.B.1 (plan §3.1): notification wait across cores.
@@ -177,9 +178,13 @@ def notificationWaitOnCore (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.Thre
                         | .error e => (st, .error e)
                         | .ok st'' => (removeRunnableOnCore st'' waiter executingCore, .ok none)
   | none =>
-      -- Typed-accessor dispatch (AK7 cascade discipline) — same wrong-kind vs
-      -- absent recovery as `notificationSignalOnCore`.
-      if (st.objects[notificationId]?).isSome then (st, .error .invalidCapability)
+      -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
+      -- `none` for both an absent object and a wrong-kinded one, so the
+      -- presence question is asked of the kind-agnostic accessor `getObject?`
+      -- -- a present-but-wrong-kind object fails with `.invalidCapability`, a
+      -- genuinely absent one with `.objectNotFound`.  Reading the store raw
+      -- here would have been the very pattern the comment claimed to avoid.
+      if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
 -- ============================================================================
@@ -755,7 +760,7 @@ theorem notification_ne_waiter_of_store
   intro hEq
   rw [hEq] at hNtfn
   have hLk : lookupTcb st' waiter = none := by
-    unfold lookupTcb
+    unfold lookupTcb SystemState.getTcb?
     by_cases hRes : waiter.isReserved
     · simp [hRes]
     · simp [hRes, hNtfn]

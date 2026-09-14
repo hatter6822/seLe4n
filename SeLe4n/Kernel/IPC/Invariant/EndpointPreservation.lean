@@ -73,6 +73,42 @@ theorem consumeCallerReply_preserves_ipcInvariant
     (fun tt => by exact KernelObject.noConfusion)
     (fun rr => by exact KernelObject.noConfusion)).mp hObj)
 
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves `schedulerInvariantBundle` —
+the detach it runs first is one more object-store write, so the scheduler is
+still untouched and the current thread's TCB still survives. -/
+theorem removeCallerReplyFrame_preserves_schedulerInvariantBundle
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hInv : schedulerInvariantBundle st)
+    (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  obtain ⟨hQCC, hRQU, hCTV⟩ := hInv
+  have hSched := removeCallerReplyFrame_scheduler_eq st st' caller rid hStep
+  have hBwd := removeCallerReplyFrame_tcb_backward st st' caller rid hObjInv hStep
+  refine ⟨by rw [hSched]; exact hQCC, by rw [hSched]; exact hRQU, ?_⟩
+  unfold currentThreadValid at hCTV ⊢
+  rw [hSched]
+  cases hCur : st.scheduler.currentOnCore bootCoreId with
+  | none => exact True.intro
+  | some tid =>
+    rw [hCur] at hCTV
+    obtain ⟨tcb, hT⟩ := hCTV
+    obtain ⟨tx, hTx, _⟩ := hBwd tid.toObjId tcb hT
+    exact ⟨tx, hTx⟩
+
+/-- **WS-RM (`v0.35.6`)**: and `ipcInvariant` — the removal's three writes are a
+`.reply` slot, another `.reply` slot and a `.tcb` slot, never a `.notification`. -/
+theorem removeCallerReplyFrame_preserves_ipcInvariant
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariant st)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ipcInvariant st' := by
+  have hNT := removeCallerReplyFrame_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  intro oid ntfn hObj
+  exact hInv oid ntfn ((hNT oid (.notification ntfn)
+    (fun tt => by exact KernelObject.noConfusion)
+    (fun rr => by exact KernelObject.noConfusion)).mp hObj)
+
 /-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves schedulerInvariantBundle.
 Reply stores a TCB (with message) and calls ensureRunnable, similar to
 endpointReceive unblocking. Updated for WS-H1 reply-target scoping. -/
@@ -161,7 +197,7 @@ theorem endpointReply_preserves_schedulerInvariantBundle
                     rw [← hStep]; exact hMid
                   | some rid =>
                     simp only [hRO] at hStep
-                    exact consumeCallerReply_preserves_schedulerInvariantBundle _ _ target rid hMid hObjInvMid hStep
+                    exact removeCallerReplyFrame_preserves_schedulerInvariantBundle _ _ target rid hMid hObjInvMid hStep
             · -- authorized = false
               simp_all
 
@@ -221,7 +257,7 @@ theorem endpointReply_preserves_ipcInvariant
                     rw [← hStep]; exact hMid
                   | some rid =>
                     simp only [hRO] at hStep
-                    exact consumeCallerReply_preserves_ipcInvariant _ _ target rid hObjInvMid hMid hStep
+                    exact removeCallerReplyFrame_preserves_ipcInvariant _ _ target rid hObjInvMid hMid hStep
             · -- authorized = false
               simp_all
 
@@ -400,7 +436,7 @@ theorem endpointSendDual_preserves_ipcInvariant
     (hInv : ipcInvariant st) (hObjInv : st.objects.invExt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     ipcInvariant st' := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -462,7 +498,7 @@ theorem endpointSendDual_message_bounded
     (sender : SeLe4n.ThreadId) (msg : IpcMessage)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     msg.bounded := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   -- If bounds checks fail, hStep contradicts .ok
   by_cases hR : maxMessageRegisters < msg.registers.size
   · simp [hR] at hStep
@@ -476,7 +512,7 @@ theorem endpointCall_message_bounded
     (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     msg.bounded := by
-  unfold endpointCall at hStep
+  unfold endpointCall SystemState.getObject? at hStep
   by_cases hR : maxMessageRegisters < msg.registers.size
   · simp [hR] at hStep
   · by_cases hC : maxExtraCaps < msg.caps.size
@@ -520,7 +556,7 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -645,7 +681,7 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -849,7 +885,7 @@ theorem endpointReceiveDual_preserves_ipcInvariant
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     ipcInvariant st' := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1262,7 +1298,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1585,7 +1621,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2027,7 +2063,7 @@ theorem endpointSendDual_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), stMid)) :
     stMid.objects.invExt := by
-  unfold endpointSendDual at hStep
+  unfold endpointSendDual SystemState.getObject? at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
@@ -2086,7 +2122,7 @@ theorem endpointReceiveDual_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, stMid)) :
     stMid.objects.invExt := by
-  unfold endpointReceiveDual at hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with

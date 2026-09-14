@@ -42,6 +42,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_identifier_naming as _naming  # noqa: E402
 import lean_code_view as _lean_code_view  # noqa: E402
+import rust_code_view  # noqa: E402
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 INDEX = "docs/CLAIM_EVIDENCE_INDEX.md"
@@ -53,6 +54,8 @@ INDEX = "docs/CLAIM_EVIDENCE_INDEX.md"
 # rather than defaulted.
 CITATION_EXEMPTIONS: dict[str, str] = {
     "seL4_Fault_tag": "seL4's own ABI field name, cited for fidelity",
+    "seL4_ReplyRecv": "seL4's own syscall name, cited for fidelity",
+    "reply_remove": "seL4's own kernel function name, cited for fidelity",
     "seL4_MsgMaxExtraCaps": "seL4 constant, cited for fidelity",
     "seL4_MsgMaxLength": "seL4 constant, cited for fidelity",
     "native_decide": "a Lean tactic, not a declaration",
@@ -74,9 +77,19 @@ LEAN_DECL = re.compile(
     r"(?:private |protected |partial |noncomputable |unsafe |scoped )*"
     r"(?:theorem|lemma|def|abbrev|structure|inductive|instance|class|opaque|axiom"
     r"|macro|notation) +([A-Za-z_«][A-Za-z0-9_.'«»!?]*)", re.M)
+# **Boundaries from Rust's grammar, not from Python's `\b`** (PR #895 review
+# round 21).  `\b` is defined against `\w`, a Unicode-table question, so it
+# finds a boundary inside any identifier spelled with a codepoint this CPython
+# and rustc do not both have -- reading `<ident>fn foo` as a declaration of
+# `foo`.  The keywords this gate scans for are the ones `rust_code_view`
+# already spells; `macro_rules!` is not a keyword at all (it is a macro name
+# ending in `!`) so it keeps its own boundary, which the `!` makes exact.
 RUST_DECL = re.compile(
-    r"\b(?:fn|struct|enum|trait|const|static|type|mod|macro_rules!)\s+"
-    r"([A-Za-z_][A-Za-z0-9_]*)")
+    "(?:"
+    + "|".join(rust_code_view.keyword(word) for word in
+               ("fn", "struct", "enum", "trait", "const", "static", "type", "mod"))
+    + r"|(?<![A-Za-z0-9_])macro_rules!)"
+    + r"\s+([A-Za-z_][A-Za-z0-9_]*)")
 PY_DECL = re.compile(r"^\s*(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)"
                      r"|^([A-Za-z_][A-Za-z0-9_]*)\s*[:=]", re.M)
 SH_DECL = re.compile(r"^\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(\)"

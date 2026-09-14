@@ -106,12 +106,12 @@ be selected is not visible in its TCB. -/
 def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
   let objectsAgree :=
     ls.objectIndex.all (fun oid =>
-      match fs.objects.get? oid, ls.getObject? oid with
+      match fs.getObject? oid, ls.getObject? oid with
       | some f, some l => frozenObjectAgrees f l
       | none,   none   => true
       | _, _           => false)
     && fs.objects.indexMap.toList.all (fun kv =>
-         match fs.objects.get? kv.1, ls.getObject? kv.1 with
+         match fs.getObject? kv.1, ls.getObject? kv.1 with
          | some f, some l => frozenObjectAgrees f l
          | none,   none   => true
          | _, _           => false)
@@ -277,8 +277,47 @@ def frozenBranchDifferentiallyChecked : FrozenOpBranch → Bool
   | .endpointReceiveFromBlockedSender => true  -- against `endpointReceiveDual`
   | .endpointReceiveFromBlockedCaller => true  -- against `endpointReceiveDual`
   | .endpointCallParks => true                 -- against `endpointCall`
-  | .endpointReplyToBlockedCaller => true      -- against `endpointReply`
+  | .endpointReplyToBlockedCaller => true      -- against the leg named in
+                                               -- `frozenBranchLiveLeg` below
   | _ => false
+
+/-- **WHICH live leg a differentially-checked branch is run beside.**
+
+The sibling of `frozenBranchLiveOperation`, and the sweep PR #895 review round 22
+owed: that round named the *operation* claim, and this table asked the identical
+question — with the identical answer wrong.  The `.reply` row said
+`endpointReply`, the **bare** single-core leg, while `frozenEndpointReply` mirrors
+`endpointReplyOnCore`, whose `_replier` is unused; the bare leg keeps the
+`replier == expected` gate the cross-core spelling dropped (PR #822 review
+6J-lYm), so the two part company on a delegated reply-cap holder.  Both claims
+were latent for one reason: every fixture made the replier the recorded server,
+where the counterparts coincide.
+
+Keeping the two tables symmetric is itself a rule this file has paid for — round
+11 found a hidden matrix cell in exactly the asymmetry between a declaration side
+and a block side — so the leg counterpart is data here for the same reason the
+operation counterpart is. -/
+def frozenBranchLiveLeg : FrozenOpBranch → String
+  | .notificationSignalToBoundThread => "notificationSignalBound"
+  | .notificationWaitConsumesBadge => "notificationWait"
+  | .notificationWaitBlocks => "notificationWait"
+  | .endpointSendParks => "endpointSendDual"
+  | .endpointSendToWaitingReceiver => "endpointSendDual"
+  | .endpointReceiveFromBlockedSender => "endpointReceiveDual"
+  | .endpointReceiveFromBlockedCaller => "endpointReceiveDual"
+  | .endpointCallParks => "endpointCall"
+  | .endpointReplyToBlockedCaller => "endpointReplyOnCore"
+  | _ => ""
+
+/-- **A leg counterpart is named exactly for the differentially-checked branches.**
+
+Both directions, as with the operation table: an unnamed `true` row claims a
+comparison against nothing, and a named `false` row reads like a check that does
+not run. -/
+theorem frozenBranchLiveLeg_named_iff_differentiallyChecked :
+    FrozenOpBranch.all.all (fun b =>
+      !(frozenBranchLiveLeg b).isEmpty == frozenBranchDifferentiallyChecked b) = true := by
+  decide
 
 /-- Why a branch is not yet run beside its live counterpart.  Non-empty exactly
 for the unchecked ones, so the interlock cannot be satisfied by a blank row. -/
@@ -288,6 +327,181 @@ def frozenBranchUncheckedReason : FrozenOpBranch → String
   | .endpointReceiveBlocks => "blocking receive; scenario owed"
   | .endpointCallToWaitingReceiver => "call rendezvous; scenario owed"
   | _ => ""
+
+/-! ### ...and at WHICH UNIT the comparison runs
+
+**A leg-level agreement is not an operation-level one** (PR #895 review round
+15).  The rows above say a branch's frozen transition is run beside a live
+counterpart; they do not say *which* live counterpart, and for `.reply` the
+answer is the **bare** `endpointReply` — a leg.  The live `.reply` *operation*
+is that leg followed by the donation return and a priority-inheritance revert
+(`endpointReplyWithDonation`), and nothing compared the frozen composite against
+it.  So the table read "reply: checked" through three consecutive review rounds
+in which the composite was found to be missing the donation pop, then the
+server's deschedule, then the inheritance revert — each one a step the live
+operation performs and the mirror did not, each one invisible to a differential
+that stops at the leg.
+
+This is the project's own *a proxy is not the fact*, and the remedy is round
+13's second half: **ask which unit the property is about.**  The leg claim is
+true and stays; what was missing is a second, separately stated claim.  A branch
+whose live operation pairs further steps with its leg must therefore either
+carry an operation-level differential or say why it is owed, exactly as the leg
+claim already works — so the next step added to a live composite is a row
+somebody has to write.
+
+What this still cannot see is a step with no frozen counterpart *and* no live
+constant to name, and a guard the frozen side simply omits: the operation-level
+differential catches those only on a state that exercises them, which is why the
+scenario is the unit of the claim and not the definition.
+
+### ...and WHICH instance of that unit (PR #895 review round 22)
+
+Round 15 fixed *leg versus operation* and left **which operation**, and the
+answer lived in a **comment** — the one artefact nothing here reconciles.  The
+row below named `endpointReplyWithDonation`, which is the *single-core* composite
+and has no production caller: the live `.reply` arm routes through
+`replyTransferOnCoreChecked` → `endpointReplyCrossCoreDispatch`.  The two are not
+interchangeable, and they differ on exactly the authority question this surface
+mirrors — the cross-core leg dropped the `replier == expected` gate (PR #822
+review 6J-lYm: authority is the presented reply capability, and seL4-MCS reply
+caps are delegatable) while the single-core composite still opens with the bare
+`endpointReply`, which keeps it.  `frozenEndpointReply` accepts a delegated
+replier, as the live spine does.  So on a delegated input the frozen composite
+agrees with the **kernel** and disagrees with the named counterpart, and the row's
+`true` was read as the former.
+
+Latent only because the scenario was non-delegated — the replier *was* the
+recorded server, where the two counterparts coincide — which is this project's
+own *a proxy is not the fact* at the operation unit.
+
+Three things this cut changes.  The counterpart becomes **data**
+(`frozenBranchLiveOperation`) with an interlock, so it is reconciled rather than
+read.  Its identity is pinned by a theorem PAIR rather than by a name —
+`endpointReplyCrossCoreDispatch_independent_of_replier` and
+`endpointReplyWithDonation_refuses_delegated_replier` — because a name check
+establishes that some declaration exists, not that it says anything about the
+claim citing it (the lesson `API.lean`'s `syscallDelegates` records from review
+round 11).  And the live steps the differential does **not** reach are stated
+(`frozenBranchOperationFrontier`) instead of implied, so a checked row bounds its
+own claim: a number that implies an authority it does not have is what this
+project keeps finding.
+-/
+
+/-- Whether the branch's **whole live operation** — leg plus every step the live
+kernel pairs with it — is run beside the frozen composite. -/
+def frozenBranchOperationChecked : FrozenOpBranch → Bool
+  | .endpointReplyToBlockedCaller => true   -- `frozenEndpointReplyWithDonationReturn`
+                                            -- against the live spine named in
+                                            -- `frozenBranchLiveOperation` below
+  | _ => false
+
+/-- Why a branch's operation-level differential is owed.  Non-empty exactly for
+the branches without one, so the interlock cannot be met by a blank row.
+
+A branch whose live operation **is** its leg says so here rather than claiming an
+operation-level check it does not run: that is a statement about the live kernel,
+and it is the one that stops being true when someone composes a step onto it. -/
+def frozenBranchOperationUncheckedReason : FrozenOpBranch → String
+  | .endpointReplyToBlockedCaller => ""
+  | .notificationSignalToBoundThread => "live operation is the leg"
+  | .notificationSignalToWaiter => "leg differential owed first"
+  | .notificationSignalStoresBadge => "leg differential owed first"
+  | .notificationWaitConsumesBadge => "live operation is the leg"
+  | .notificationWaitBlocks => "live operation is the leg"
+  | .endpointSendToWaitingReceiver => "live operation is the leg"
+  | .endpointSendParks => "live operation is the leg"
+  -- WS-OD OD3.6 gave the live `.receive` rendezvous a SchedContext donation
+  -- (`applyReceiveRendezvousDonation`); this surface mirrors the leg only.
+  | .endpointReceiveFromBlockedSender => "receive-rendezvous donation not mirrored"
+  | .endpointReceiveFromBlockedCaller => "receive-rendezvous donation not mirrored"
+  | .endpointReceiveBlocks => "leg differential owed first"
+  -- ...and the live `.call` rendezvous donates the caller's context
+  -- (`applyCallDonation`), which `frozenEndpointCall` does not perform.
+  | .endpointCallToWaitingReceiver => "leg differential owed first"
+  | .endpointCallParks => "call-rendezvous donation not mirrored"
+
+/-- **Every branch is either checked at the operation, or says why not.**
+
+The sibling of `frozenBranch_checked_or_reasoned`, and total over
+`FrozenOpBranch.all` for the same reason. -/
+theorem frozenBranch_operation_checked_or_reasoned :
+    FrozenOpBranch.all.all (fun b =>
+      frozenBranchOperationChecked b
+        || !(frozenBranchOperationUncheckedReason b).isEmpty) = true := by
+  decide
+
+/-- **A reason is not a substitute for the check**, at this unit too: no branch
+may be both operation-checked and carry a reason it is not. -/
+theorem frozenBranchOperationUncheckedReason_only_when_unchecked :
+    FrozenOpBranch.all.all (fun b =>
+      !(frozenBranchOperationUncheckedReason b).isEmpty
+        == !frozenBranchOperationChecked b) = true := by
+  decide
+
+/-- **WHICH live operation an operation-checked branch is run beside.**
+
+Data rather than a comment, because the counterpart's identity is the load-bearing
+half of the claim and a comment is the one artefact nothing here reconciles: this
+row said `endpointReplyWithDonation` — the *single-core* composite, with no
+production caller and a reply leg that refuses a delegated reply-cap holder —
+while the live `.reply` arm routes through `replyTransferOnCoreChecked` →
+`endpointReplyCrossCoreDispatch`, which accepts one (PR #895 review round 22).
+
+A string is not a check, and this one does not pretend to be: what pins the
+counterpart is the theorem pair named in the section prose above.  What the
+string buys is that the claim *states* its counterpart where the interlocks can
+see it, so a branch claiming an operation-level check with no counterpart named
+does not elaborate. -/
+def frozenBranchLiveOperation : FrozenOpBranch → String
+  | .endpointReplyToBlockedCaller => "endpointReplyCrossCoreDispatch"
+  | _ => ""
+
+/-- **A counterpart is named exactly for the operation-checked branches.**
+
+Both directions, for the reason every other table here is reconciled both ways: a
+`true` row with no counterpart claims a comparison against nothing, and a named
+counterpart on an unchecked row reads like a check that does not run. -/
+theorem frozenBranchLiveOperation_named_iff_operationChecked :
+    FrozenOpBranch.all.all (fun b =>
+      !(frozenBranchLiveOperation b).isEmpty == frozenBranchOperationChecked b) = true := by
+  decide
+
+/-- **The live steps an operation-level differential does NOT reach.**
+
+Stated rather than implied.  `endpointReplyCrossCoreDispatch` is the live `.reply`
+spine, and the arm wraps it in `replyTransferOnCoreChecked` → `replyTransferOnCore`
+— seL4's `doReplyTransfer` — which adds a **fault branch** (a faulted caller takes
+`faultReplyOnCore` instead) and the WS-RA **delivered-message staging**
+(`Architecture.stageDeliveredMessage`, which writes the woken caller's register
+context).  This surface mirrors neither, so a claim that stopped at "checked"
+would imply an authority over the whole arm that it does not have — the shape this
+project keeps finding in figures that read as measurements.
+
+Non-empty is permitted on a *checked* row: unlike
+`frozenBranchOperationUncheckedReason`, this is not an excuse for the absence of a
+check but the boundary of one that runs. -/
+def frozenBranchOperationFrontier : FrozenOpBranch → String
+  | .endpointReplyToBlockedCaller =>
+      "replyTransferOnCore's fault branch and delivered-message staging"
+  | _ => ""
+
+/-- **A frontier bounds a check; it does not stand in for one.**
+
+An unchecked branch states its reason and has no frontier to state, so a frontier
+on one would be a boundary drawn around nothing. -/
+theorem frozenBranchOperationFrontier_only_when_checked :
+    FrozenOpBranch.all.all (fun b =>
+      (frozenBranchOperationFrontier b).isEmpty || frozenBranchOperationChecked b) = true := by
+  decide
+
+/-- **The operation claim implies the leg claim.**  A differential that runs the
+whole operation necessarily runs its leg, so an operation-checked branch whose
+leg is unchecked is a table that contradicts itself. -/
+theorem frozenBranchOperationChecked_implies_leg_checked :
+    FrozenOpBranch.all.all (fun b =>
+      !frozenBranchOperationChecked b || frozenBranchDifferentiallyChecked b) = true := by
+  decide
 
 /-- **Every branch is either checked or carries a stated reason.**
 

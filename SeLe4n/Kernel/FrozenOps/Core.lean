@@ -94,35 +94,26 @@ abbrev FrozenKernel := KernelM FrozenSystemState KernelError
 Uses `FrozenMap.get?` — one hash in indexMap + one array access. -/
 def frozenLookupObject (id : SeLe4n.ObjId) : FrozenKernel FrozenKernelObject :=
   fun st =>
-    match st.objects.get? id with
+    match st.getObject? id with
     | some obj => .ok (obj, st)
     | none => .error .objectNotFound
 
 /-- Q7-A: Look up a TCB by ThreadId in frozen state.
 Mirrors `lookupTcb` from builder phase: sentinel check + type match. -/
 def frozenLookupTcb (st : FrozenSystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
-  if tid.isReserved then none
-  else match st.objects.get? tid.toObjId with
-  | some (.tcb tcb) => some tcb
-  | _ => none
+  if tid.isReserved then none else st.getTcb? tid
 
 /-- Q7-A: Look up an endpoint by ObjId in frozen state. -/
 def frozenLookupEndpoint (st : FrozenSystemState) (epId : SeLe4n.ObjId) : Option Endpoint :=
-  match st.objects.get? epId with
-  | some (.endpoint ep) => some ep
-  | _ => none
+  st.getEndpoint? epId
 
 /-- Q7-A: Look up a notification by ObjId in frozen state. -/
 def frozenLookupNotification (st : FrozenSystemState) (nId : SeLe4n.ObjId) : Option Notification :=
-  match st.objects.get? nId with
-  | some (.notification n) => some n
-  | _ => none
+  st.getNotification? nId
 
 /-- Q7-A: Look up a frozen CNode by ObjId in frozen state. -/
 def frozenLookupCNode (st : FrozenSystemState) (cnId : SeLe4n.ObjId) : Option FrozenCNode :=
-  match st.objects.get? cnId with
-  | some (.cnode cn) => some cn
-  | _ => none
+  st.getCNode? cnId
 
 -- ============================================================================
 -- Q7-B: Core Mutation Primitives (Value-Only)
@@ -275,10 +266,14 @@ def frozenEnsureRunnable (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
   match frozenLookupTcb st tid with
   | none => .error .objectNotFound
   | some tcb =>
-      let prio : SeLe4n.Priority :=
-        match tcb.pipBoost with
-        | none => tcb.priority
-        | some boost => ⟨Nat.max tcb.priority.val boost.val⟩
+      -- **`TCB.boostedPriority`, the live accessor, not a frozen copy of it.**
+      -- The frozen store holds the live `TCB` record, so "which bucket does this
+      -- thread belong in" has no frozen-specific content and must not have a
+      -- frozen-specific answer: the inline `match tcb.pipBoost` that stood here
+      -- was one of nine spellings of one expression, and the reversion below
+      -- would have needed a tenth.  All of them now read
+      -- `Priority.raisedBy` through `Model/Object/Types.lean`.
+      let prio : SeLe4n.Priority := tcb.boostedPriority
       let bucket := (st.scheduler.byPriority.get? prio).getD []
       if bucket.contains tid then .ok st
       else
@@ -310,6 +305,129 @@ def frozenRemoveRunnable (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
       else acc)
     cleared
 
+-- ============================================================================
+-- **Frozen priority inheritance** (PR #895 review round 15)
+-- ============================================================================
+
+/-- **The threads directly blocked on `tid` via Reply IPC** -- `waitersOf`'s
+frozen counterpart (`Scheduler/PriorityInheritance/BlockingGraph.lean`).
+
+The live version folds `objectIndex`; this one folds the frozen object map,
+which is the same population by construction (`Model.freeze` copies every
+object).  A thread is a waiter of `tid` exactly when its `ipcState` records
+`tid` as the server it is blocked on. -/
+def frozenWaitersOf (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    : List SeLe4n.ThreadId :=
+  st.objects.fold (init := []) fun acc _id obj =>
+    match obj with
+    -- `TCB.blockingServer?` is the live reading of the blocking edge, shared
+    -- with `waitersOf` and `blockingServer`, so the frozen walk and the live one
+    -- provably follow the same edges rather than two matches that agree today.
+    | .tcb tcb => if tcb.blockingServer? == some tid then tcb.tid :: acc else acc
+    | _ => acc
+
+/-- **The highest effective priority among `tid`'s waiters**, or `none` when it
+has none -- `computeMaxWaiterPriority`'s frozen counterpart.
+
+"Effective" is `TCB.boostedPriority`, the same accessor the frozen run queue
+buckets by, so a boost computed here and the bucket it lands a thread in cannot
+disagree.  (The live version reads `effectiveSchedParams`, which additionally
+consults the waiter's SchedContext; this surface has no scheduling-parameter
+resolution and buckets by the TCB alone, so consulting one here would be a
+*second* answer to the question `frozenEnsureRunnable` already decides.) -/
+def frozenComputeMaxWaiterPriority (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    : Option SeLe4n.Priority :=
+  (frozenWaitersOf st tid).foldl (fun acc waiterTid =>
+    match st.getTcb? waiterTid with
+    | some waiterTcb =>
+        let prio := waiterTcb.boostedPriority
+        match acc with
+        | none => some prio
+        | some curMax => some ⟨Nat.max curMax.val prio.val⟩
+    | none => acc) none
+
+/-- **The server `tid` is blocked on**, if any -- `blockingServer`'s frozen
+counterpart.  One step of the blocking graph, read off the thread's own
+`ipcState`. -/
+def frozenBlockingServer (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    : Option SeLe4n.ThreadId :=
+  (st.getTcb? tid).bind TCB.blockingServer?
+
+/-- **Recompute `tid`'s inherited boost from its current waiters, and re-bucket
+it** -- `updatePipBoost`'s frozen counterpart.
+
+Two halves, and the second is why this cannot be a bare field write.  The frozen
+run queue is keyed by `TCB.boostedPriority`, so a thread whose boost changes
+while it sits in a bucket is in the *wrong* bucket -- and a later
+`frozenEnsureRunnable` would not repair it: that function appends when the
+thread is absent from the bucket for its new priority, so the thread would end
+up in **two**.  The live `updatePipBoost` migrates for exactly this reason.
+
+The migration is conditional on the thread actually being in a bucket, mirroring
+the live `if tid ∈ runQueueOnCore` -- and it is deliberately not spelled as
+`frozenRemoveRunnable` followed by `frozenEnsureRunnable`, because the removal
+also clears `current`, which the live migration does not do.  A running thread's
+current slot is not a run-queue bucket and a priority change must not vacate
+it. -/
+def frozenUpdatePipBoost (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    : FrozenSystemState :=
+  match st.getTcb? tid with
+  | none => st
+  | some tcb =>
+      let newBoost := frozenComputeMaxWaiterPriority st tid
+      if tcb.pipBoost == newBoost then st
+      else
+        let tcb' := { tcb with pipBoost := newBoost }
+        let oldPrio := tcb.boostedPriority
+        let newPrio := tcb'.boostedPriority
+        let st' : FrozenSystemState :=
+          { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+        -- **Queued ANYWHERE, not queued at `oldPrio`.**  The live
+        -- `updatePipBoost` asks `tid ∈ runQueueOnCore` -- membership in the
+        -- queue -- and then `RunQueue.remove tid` takes it out of whichever
+        -- bucket holds it.  Looking only in the bucket `oldPrio` names assumes
+        -- a thread's bucket always equals its effective priority, and a state
+        -- where the two have drifted apart is exactly the one a reversion has
+        -- to repair: on such a state the thread was left where it was while the
+        -- live kernel moved it, which the operation-level differential (FO-041)
+        -- caught on its first run.  `frozenRemoveRunnable` searches every
+        -- bucket for the same reason, and says so.
+        let queued := st'.scheduler.byPriority.indexMap.toList.any (fun kv =>
+          ((st'.scheduler.byPriority.get? kv.1).getD []).contains tid)
+        if oldPrio == newPrio || !queued then st'
+        else
+          let dropped := st'.scheduler.byPriority.indexMap.toList.foldl
+            (fun bp kv =>
+              let bucket := (bp.get? kv.1).getD []
+              if bucket.contains tid then bp.insert kv.1 (bucket.filter (· != tid)) else bp)
+            st'.scheduler.byPriority
+          let newBucket := (dropped.get? newPrio).getD []
+          { st' with scheduler := { st'.scheduler with
+              byPriority := dropped.insert newPrio (newBucket ++ [tid]) } }
+
+/-- **Revert priority inheritance for `tid` and the chain above it** --
+`revertPriorityInheritance`'s frozen counterpart, and the step the frozen reply
+was missing.
+
+Structurally identical to propagation, as the live pair is: `frozenUpdatePipBoost`
+always recomputes from the *current* waiters, so unblocking a caller and blocking
+a new one are the same operation on the server's boost.
+
+Fuel defaults to the object count, which bounds any acyclic chain, and running
+out returns the state reached so far -- the live function's own semantics. -/
+def frozenRevertPriorityInheritance (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    (fuel : Nat := st.objects.size) : FrozenSystemState :=
+  match fuel with
+  | 0 => st
+  | fuel' + 1 =>
+      let st' := frozenUpdatePipBoost st tid
+      -- The chain topology is read from the PRE-update state, as the live walk
+      -- does: `frozenUpdatePipBoost` writes `pipBoost` and a bucket, never an
+      -- `ipcState`, so the blocking graph is unchanged either way.
+      match frozenBlockingServer st tid with
+      | some nextServer => frozenRevertPriorityInheritance st' nextServer fuel'
+      | none => st'
+
 /-- **Link a dequeued caller to the server's reply object** (PR #873 round 17),
 mirroring `SystemState.linkCallerReply`.
 
@@ -324,9 +442,15 @@ transition later consumes. Without it the frozen receive woke the caller, which
 is a transition the live kernel never performs. -/
 def frozenLinkCallerReply (st : FrozenSystemState) (caller : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) : Except KernelError FrozenSystemState :=
-  match st.objects.get? rid.toObjId with
+  match st.getObject? rid.toObjId with
   | some (.reply r) =>
-      if r.caller.isNone then
+      -- **`Reply.isFree`, not `caller.isNone`** — the one spelling of "this
+      -- Reply may be linked to a new caller", which reads *both* stack links as
+      -- well.  This guard read the caller alone, so a frame still on a live
+      -- reply stack was linkable here while `Model.linkReply` refuses it; that
+      -- is the fifth guard deciding one question differently, and `isFree`'s own
+      -- docstring records the last time this tree paid for it.
+      if r.isFree then
         match st.objects.set rid.toObjId (.reply { r with caller := some caller }) with
         | none => .error .objectNotFound
         | some objects' =>
@@ -342,6 +466,210 @@ def frozenLinkCallerReply (st : FrozenSystemState) (caller : SeLe4n.ThreadId)
                 else .error .replyCapInvalid
       else .error .replyCapInvalid
   | _ => .error .replyCapInvalid
+
+/-- **WS-RM, frozen mirror**: detach the reply-stack frame sitting *above* `rid`.
+
+`FrozenKernelObject.reply` carries the **live** `SeLe4n.Kernel.Reply`, links and
+all, and `Model.freeze` copies a live state's Reply objects verbatim — so a
+frozen state taken mid-call-chain holds a doubly linked reply stack exactly as
+the live one does.  Consuming a frame's `caller` while leaving it on that stack
+therefore falsifies the chain's `prevLinkReciprocal` on this surface for the same
+reason it did on the live one, and the frozen reply was doing precisely that.
+
+This is `detachReplyFrameAbove`'s counterpart, clause for clause: no Reply at
+`rid` and a frame that heads a context or sits at the top are the identity; an
+upward `.frame` link whose target is missing is `.objectNotFound`; and a target
+that does **not** reciprocate is `.invalidArgument` rather than a write, which
+is what confines the one store to the genuine frame above. -/
+def frozenDetachReplyFrameAbove (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
+    Except KernelError FrozenSystemState :=
+  match st.getReply? rid with
+  | none => .ok st
+  | some r =>
+    match r.next with
+    | some (.frame above) =>
+      match st.getReply? above with
+      | none => .error .objectNotFound
+      | some a =>
+        if a.prev != some rid then .error .invalidArgument
+        else
+          match st.objects.set above.toObjId (.reply { a with prev := none }) with
+          | none => .error .objectNotFound
+          | some objects' => .ok { st with objects := objects' }
+    | _ => .ok st
+
+/-- **WS-RM, frozen mirror**: the detach folded to the identity on its refusal.
+
+The live `detachReplyFrameAboveOrSelf` and this one make the same reading: a
+non-reciprocating upward link means "nothing above me on my stack", which the
+chain relation permits by design since it is stated downward. -/
+def frozenDetachReplyFrameAboveOrSelf (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
+    FrozenSystemState :=
+  (frozenDetachReplyFrameAbove st rid).toOption.getD st
+
+/-- **WS-RM, frozen mirror**: the reply-stack head the context `scId` owns.
+
+`donationHeadOf?`'s counterpart, clause for clause: a context heading no stack
+answers `none`; a recorded head that resolves to no Reply is `.objectNotFound`;
+and a head whose own upward link does not name **this** context is
+`.invalidArgument` rather than a value, so a stale `scReply` commits nothing. -/
+def frozenDonationHeadOf? (st : FrozenSystemState) (scId : SeLe4n.SchedContextId)
+    (sc : SeLe4n.Kernel.SchedContext) :
+    Except KernelError (Option (SeLe4n.ReplyId × SeLe4n.Kernel.Reply)) :=
+  match sc.scReply with
+  | none => .ok none
+  | some rid =>
+    match st.getReply? rid with
+    | some r =>
+      if r.next != some (.head scId) then .error .invalidArgument
+      else .ok (some (rid, r))
+    | none => .error .objectNotFound
+
+/-- **WS-RM, frozen mirror**: may this pop hand the context to `newOwner?`?
+
+`outerCallerAcceptable`'s counterpart.  `none` -- the bottom of the stack -- is
+always acceptable; a named outer caller must be neither of the two threads the
+pop rewrites, must hold no binding of its own, and must be waiting on its reply.
+Fail-closed on an unresolvable thread, since the pop mints a binding for it. -/
+def frozenOuterCallerAcceptable (st : FrozenSystemState)
+    (serverTid originalOwner : SeLe4n.ThreadId) :
+    Option SeLe4n.ThreadId → Bool
+  | none => true
+  | some outer =>
+    outer != originalOwner && outer != serverTid &&
+      (match st.getTcb? outer with
+       | none => false
+       | some outerTcb =>
+         outerTcb.schedContextBinding == .unbound &&
+           (match outerTcb.ipcState with
+            | .blockedOnReply _ _ => true
+            | _ => false))
+
+/-- **WS-RM, frozen mirror**: the thread one frame below this context's stack
+head -- the thread the context is owed to next.
+
+`replyStackOuterCaller?`'s counterpart, and it validates the link it follows for
+the same reason: Reply objects are re-linked to new callers, so a stale `prev`
+over a reused Reply would hand a scheduling context to an unrelated thread. -/
+def frozenReplyStackOuterCaller? (st : FrozenSystemState)
+    (scId : SeLe4n.SchedContextId) : Except KernelError (Option SeLe4n.ThreadId) :=
+  match st.getSchedContext? scId with
+  | none => .error .objectNotFound
+  | some sc =>
+    match frozenDonationHeadOf? st scId sc with
+    | .error e => .error e
+    | .ok none => .ok none
+    | .ok (some (headRid, head)) =>
+      match head.prev with
+      | none => .ok none
+      | some below =>
+        match st.getReply? below with
+        | none => .error .objectNotFound
+        | some b =>
+          if b.next != some (.frame headRid) then .error .invalidArgument
+          else
+            match b.caller with
+            | none => .error .illegalState
+            | some outer => .ok (some outer)
+
+/-- **WS-RM, frozen mirror**: clear the popped head's links and re-head the
+frame below it onto `scId`.
+
+`storeDonationHeadPop`'s counterpart, and the identity where the context heads
+no stack.  Written as its own definition rather than inline in the return below
+because the *order* is the content -- the head is cleared before the frame below
+is re-headed, so the two writes cannot be read as one. -/
+def frozenStoreDonationHeadPop (st : FrozenSystemState) (scId : SeLe4n.SchedContextId) :
+    Option (SeLe4n.ReplyId × SeLe4n.Kernel.Reply) → Except KernelError FrozenSystemState
+  | none => .ok st
+  | some (rid, r) =>
+    match st.getReply? rid with
+    | none => .error .objectNotFound
+    | some h =>
+      match st.objects.set rid.toObjId (.reply { h with prev := none, next := none }) with
+      | none => .error .objectNotFound
+      | some cleared =>
+        let st1 : FrozenSystemState := { st with objects := cleared }
+        match r.prev with
+        | none => .ok st1
+        | some below =>
+          match st1.getReply? below with
+          | none => .error .objectNotFound
+          | some b =>
+            match st1.objects.set below.toObjId
+                    (.reply { b with next := some (.head scId) }) with
+            | none => .error .objectNotFound
+            | some reheaded => .ok { st1 with objects := reheaded }
+
+/-- **WS-RM, frozen mirror**: hand a donated scheduling context back.
+
+`returnDonatedSchedContext`'s counterpart -- the four object writes, in the live
+order: the SchedContext rebinds to `originalOwner` and re-points `scReply` at the
+frame below its head, the popped head's links are cleared and that frame
+re-headed, the owner takes `donationReturnBinding` (the **live** function, so the
+two surfaces cannot disagree about which binding a return mints), and the server
+goes `.unbound`.  Both of the live guards come with it: the context must really
+be bound to the server, and the outer caller must be acceptable before it is
+handed one.
+
+**`scThreadIndex` is deliberately not maintained**, and that is this surface's
+existing answer rather than an omission here: no frozen operation writes it --
+`frozenSchedContextBind` and `frozenSchedContextUnbind` rebind without touching
+it -- and `frozenStateAgrees` does not compare it.  Becoming its only writer
+would be a second answer to a question the surface has already settled. -/
+def frozenReturnDonatedSchedContext (st : FrozenSystemState)
+    (serverTid : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId) (newOwner? : Option SeLe4n.ThreadId) :
+    Except KernelError FrozenSystemState :=
+  match st.getSchedContext? scId with
+  | none => .error .objectNotFound
+  | some sc =>
+    if sc.boundThread != some serverTid then .error .invalidArgument
+    else if !frozenOuterCallerAcceptable st serverTid originalOwner newOwner? then
+      .error .invalidArgument
+    else
+      match frozenDonationHeadOf? st scId sc with
+      | .error e => .error e
+      | .ok head? =>
+        let sc' := { sc with boundThread := some originalOwner,
+                             scReply := head?.bind (fun p => p.2.prev) }
+        match st.objects.set scId.toObjId (.schedContext sc') with
+        | none => .error .objectNotFound
+        | some rebound =>
+          match frozenStoreDonationHeadPop { st with objects := rebound } scId head? with
+          | .error e => .error e
+          | .ok st2 =>
+            match st2.getTcb? originalOwner with
+            | none => .error .objectNotFound
+            | some ownerTcb =>
+              match st2.objects.set originalOwner.toObjId
+                      (.tcb { ownerTcb with
+                        schedContextBinding :=
+                          SeLe4n.Kernel.donationReturnBinding scId newOwner? }) with
+              | none => .error .objectNotFound
+              | some owned =>
+                let st3 : FrozenSystemState := { st2 with objects := owned }
+                match st3.getTcb? serverTid with
+                | none => .error .objectNotFound
+                | some serverTcb =>
+                  match st3.objects.set serverTid.toObjId
+                          (.tcb { serverTcb with
+                            schedContextBinding := .unbound }) with
+                  | none => .error .objectNotFound
+                  | some released => .ok { st3 with objects := released }
+
+/-- **WS-RM, frozen mirror**: the return with its outer caller resolved.
+
+`returnDonatedSchedContextResolved`'s counterpart: the thread the context is owed
+to next is read off the stack rather than supplied, so a caller cannot name one
+the structure does not agree with. -/
+def frozenReturnDonatedSchedContextResolved (st : FrozenSystemState)
+    (serverTid : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId) : Except KernelError FrozenSystemState :=
+  match frozenReplyStackOuterCaller? st scId with
+  | .error e => .error e
+  | .ok newOwner? =>
+    frozenReturnDonatedSchedContext st serverTid scId originalOwner newOwner?
 
 /-- Q7-B: Store a TCB's IPC state in frozen state. -/
 def frozenStoreTcbIpcState (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
@@ -383,8 +711,8 @@ def frozenSaveOutgoingContext (st : FrozenSystemState)
   match (st.scheduler.current) with
   | none => .ok st
   | some outTid =>
-      match st.objects.get? outTid.toObjId with
-      | some (.tcb outTcb) =>
+      match st.getTcb? outTid with
+      | some outTcb =>
           let obj := FrozenKernelObject.tcb { outTcb with registerContext := st.machine.regs }
           match st.objects.set outTid.toObjId obj with
           | some objects' => .ok { st with objects := objects' }
@@ -396,8 +724,8 @@ Returns explicit error if the thread's object is missing or not a TCB.
 Mirrors `restoreIncomingContext` from builder phase. -/
 def frozenRestoreIncomingContext (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     : Except KernelError FrozenSystemState :=
-  match st.objects.get? tid.toObjId with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
       .ok { st with machine := st.machine.setRegsOnCore bootCoreId tcb.registerContext }
   | _ => .error .objectNotFound
 
@@ -474,7 +802,7 @@ def frozenQueuePushTailObjects (objects : FrozenMap SeLe4n.ObjId FrozenKernelObj
 def frozenQueuePushTail (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st : FrozenSystemState)
     : Except KernelError FrozenSystemState :=
-  match st.objects.get? endpointId with
+  match st.getObject? endpointId with
   | some (.endpoint ep) =>
       match frozenLookupTcb st tid with
       | none => .error .objectNotFound
@@ -505,7 +833,7 @@ A thread with no `queuePPrev` is on no queue at all and is refused
 def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st : FrozenSystemState)
     : Except KernelError FrozenSystemState :=
-  match st.objects.get? endpointId with
+  match st.getObject? endpointId with
   | some (.endpoint ep) =>
       match frozenLookupTcb st tid with
       | none => .error .objectNotFound
