@@ -510,13 +510,18 @@ private def runDonationChecks : IO Unit := do
                (some (schedContextLock scId, .write)))
              (some (tcbLock clientLocalTid, .write)))
            (some (stateLevelLock, .write))).pairs))
-  -- A replier holding no donated SC: the cross-core donation return is a no-op (ok).
-  match SeLe4n.ThreadId.toValid? serverTid with
-  | some serverV =>
-      assertBool "applyReplyDonationOnCore on a non-donating replier is a no-op (ok)"
-        (match applyReplyDonationOnCore stBase serverV bootCoreId bootCoreId with
+  -- **WS-HP HP4.3**: a reply whose answered frame heads no scheduling context is
+  -- a no-op (ok).  This is the head-driven reading of what used to be stated as
+  -- "a replier holding no donated SC"; `stBase` carries no reply stack at all,
+  -- so the trigger declines and the step is the identity.
+  match SeLe4n.ThreadId.toValid? clientLocalTid with
+  | some clientV =>
+      assertBool "applyReplyDonationOnCore on a frame heading no context is a no-op (ok)"
+        (match applyReplyDonationOnCore stBase replyId707 clientV bootCoreId bootCoreId with
          | .ok _ => true | .error _ => false)
-  | none => assertBool "serverTid is a valid thread id" false
+      assertBool "…and the trigger really does decline there, so this is not a vacuous pass"
+        (decide (replyFrameHeadHolder? stBase replyId707 = none))
+  | none => assertBool "clientLocalTid is a valid thread id" false
   -- WS-SM SM6.D (PR #822 review 6J90-... donation): the donation return is keyed on
   -- the RECORDED SERVER, not the (possibly delegated) cap holder.  Build a state
   -- where `clientLocalTid` is `blockedOnReply (some serverTid)` and `serverTid`
@@ -567,6 +572,13 @@ private def runDonationChecks : IO Unit := do
   -- The paired negative is what makes this a witness rather than a fixture: it
   -- asserts the server IS on core 2 before the return, so a witness that passed
   -- because the fixture never queued it would fail here.
+  --
+  -- **WS-HP HP4.3**: the fixture now carries the *reply stack* a live `Call`
+  -- donation leaves, because the pop is keyed on the answered frame: the client's
+  -- Reply heads the context and the context names it back.  Before the flip the
+  -- pop read the recorded server's `.donated` binding and no stack was needed --
+  -- which is a state no live path produces, so the stronger fixture is also the
+  -- more faithful one.
   let stQueuedServer : SystemState :=
     enqueueRunnableOnCore
       (BootstrapBuilder.empty
@@ -575,9 +587,15 @@ private def runDonationChecks : IO Unit := do
             (.tcb { mkTcb 601 50 none .ready with
                       schedContextBinding := .donated scId clientLocalTid })
         |>.withObject clientLocalTid.toObjId
-            (.tcb (mkTcb 602 30 none (.blockedOnReply epId (some serverTid))))
+            (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
+                      replyObject := some replyId707 })
+        |>.withObject replyId707.toObjId
+            (.reply { replyId := replyId707, caller := some clientLocalTid,
+                      next := some (.head scId) })
         |>.withObject scId.toObjId
-            (.schedContext { SchedContext.empty scId with boundThread := some serverTid })
+            (.schedContext { SchedContext.empty scId with
+                              boundThread := some serverTid,
+                              scReply := some replyId707 })
         |>.withRunnable []
         |>.build)
       core2 serverTid
@@ -587,9 +605,11 @@ private def runDonationChecks : IO Unit := do
     (decide (determineExecutingCore stQueuedServer serverTid = bootCoreId))
   assertBool "…so the placement resolver and the superseded proxy disagree here"
     (decide (placedCoreOf? stQueuedServer serverTid = some core2))
-  match SeLe4n.ThreadId.toValid? serverTid with
-  | some serverV =>
-      match applyReplyDonationOnCore stQueuedServer serverV core2 core2 with
+  assertBool "…and the head-driven trigger names the queued server as the holder"
+    (decide (replyFrameHeadHolder? stQueuedServer replyId707 = some (scId, serverTid)))
+  match SeLe4n.ThreadId.toValid? clientLocalTid with
+  | some clientV =>
+      match applyReplyDonationOnCore stQueuedServer replyId707 clientV core2 core2 with
       | .ok stAfter =>
           assertBool "the donation return DESCHEDULES a queued recorded server (v0.35.37)"
             (!(stAfter.scheduler.runQueueOnCore core2).contains serverTid)
@@ -617,7 +637,7 @@ private def runDonationChecks : IO Unit := do
                   ).scheduler.runQueueOnCore core2 |>.contains serverTid))
       | .error _ =>
           assertBool "the donation return succeeds on the queued-server shape" false
-  | none => assertBool "serverTid is a valid thread id" false
+  | none => assertBool "clientLocalTid is a valid thread id" false
 
 private def runDispatchChecks : IO Unit := do
   IO.println "--- §3.6 SM6.C cross-core dispatch + SM6.C.9 chain bound ---"

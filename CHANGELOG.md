@@ -1,3 +1,257 @@
+## v0.35.38 — WS-HP HP4: the reply path's donation pop is head-driven, on both surfaces
+
+The cut WS-HP exists for, and the only one in the workstream that changes what
+the live kernel does.  Both reply spines now decide whether to pop a donated
+scheduling context from **whether the answered reply frame heads one**, not from
+whether the recorded reply server holds a `.donated` binding.  Behaviour is
+preserved on every state this tree reaches — the golden trace is byte-identical,
+which is the plan's own acceptance measurement — because the two triggers agree
+wherever `severAtCut` can put the state, and HP2 proved that.  What the flip buys
+is that HP6 can then make the splice sound: the divergence it creates is exactly
+the orphan head the binding-driven trigger cannot see.
+
+**What flipped.**  `applyReplyDonation` and `applyReplyDonationOnCore` take the
+answered **frame** and the answered **caller**, and resolve the context and its
+holder themselves.  `replyRecvPopDonation` does too, and on that arm the frame
+needs no resolving at all: `rid` *is* the reply capability the arm was invoked
+with.  `returnDonatedSchedContext`'s four arguments come from three places now —
+the context and its `serverTid` off the frame's `.head` link and that context's
+`boundThread`, the `originalOwner` from the answered caller, `newOwner?` off the
+reply stack as before.
+
+**What did not, and why each one is a decision.**  `replyDonationReturn?` stays
+as the binding-driven "does this thread hold a donated context" resolver: its
+argument means the *holder* while the trigger's means the answered *caller*, so
+re-keying it in place would have changed the meaning at 57 call sites with every
+one still typechecking — the plan's §3.8.2 hazard at its worst, because there the
+two are not even the same question.  The priority-inheritance reversion still
+walks from `recordedReplyServer?`, because it keys on waiters
+(`TCB.blockingServer?`) rather than on donations, and a walk from the context's
+`boundThread` would start at the wrong thread on exactly a delegated reply.  The
+two pre-receive cleanups keep the binding resolver, because "does this receiver
+still hold a donation" *is* a question about a binding.  The `.replyCapInvalid`
+arm stays, because "no recorded server" and "no head context" are different facts
+and collapsing them would turn every donation-free reply into an error.  Each is
+pinned by a token-preserving Tier 3 negative.
+
+**The resolver had to split, and the plan did not see it.**
+`answeredReplyObject?` is the answered caller's own forward link — the one
+`linkCallerReply` writes and `consumeCallerReply` **clears** — and the pop runs
+*after* the reply leg, which is seL4-MCS's `doReplyTransfer` order and the one
+this kernel keeps because the server needs the returned budget while it replies.
+So `answeredFrameHeadContext? st1 target` is `none` on every state the pop ever
+sees, and §3.8.4's "the operation resolves the pop from the same argument the
+footprint does" could not be implemented as written.  HP1's own docstring had said
+so.  `replyFrameHeadHolder? st rid` is the frame-keyed resolver and
+`answeredFrameHeadContext?` is now its composition; the pop takes the reply id,
+resolved on the pre-state through the one expression the footprint's members also
+come from, and everything it *decides* is read at the state it runs on.  Passing
+the resolved pair instead would have made both pre-state reads and put
+`returnDonatedSchedContext`'s `boundThread` guard back to work — the shape HP4
+exists to retire.
+
+**The pop validates the thread it rewrites** (HP4.6).  Before the flip the
+recipient came out of the holder's `.donated scId owner` binding and
+`donationOwnerValid` puts a donation's owner `.unbound`, so it was provably
+unbound and no check was needed.  The head-driven recipient is the answered
+caller, which no binding the operation reads constrains — and a caller that
+acquired a reservation of its own while blocked (`schedContextBind` binds a
+blocked thread, deliberately) would have had it silently overwritten by
+`donationReturnBinding`, orphaning a live `SchedContext` whose `boundThread` still
+named that thread.  `donationRecipientAcceptable` is the guard, O(1) and
+fail-closed, with `returnDonatedSchedContext_rejects_bound_recipient` for the
+refusal direction and `_ok_recipient_unbound` for what a successful pop witnesses.
+It is inert on every reachable state and it found three malformed trace fixtures
+on its first run: `stRet`, `stReplyDon` and `stCleanup` all used the
+*pre*-donation caller TCB (`.bound scId`) as the recipient, which is two threads
+bound to one context — and which is why `caller_rebound` and `caller_recovered`
+read `true` there without the return having run.  Those three readings are
+measurements now.
+
+**One coherence hypothesis survives, and it is not one of the three.**  The chain
+composite `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` loses
+`answeredHeadContextIsServerDonation` outright: the relaxation sits at the
+answered frame and the pop is now keyed on that same frame, so they name one
+context by construction rather than by hypothesis.  That is HP7's payoff arriving
+three phases early.  What replaces it is `replyFrameHeadIsBound` — a scheduling
+context that heads a reply stack is bound to a thread — which is strictly weaker
+(the retired one implies it through `donationOwnerValid`), vacuous on every reply
+whose frame heads nothing, and the one arm construction does not close: a frame
+heading a context bound to nobody, where the pop would be the identity while the
+leg had already relaxed the chain there.  `answeredFrameHeadContext?`'s docstring
+argues that arm is unreachable, and that argument is about *reachability* —
+`donationChainWellFormed` carries no binding clause, so it is stated rather than
+assumed, and HP7 is where it becomes one.
+
+**And "this reply returns no donation" became two facts.**  `hNoDonationOwnedBy`
+made the relaxation empty and, under the binding-driven trigger, also made the pop
+the identity.  It no longer does: a frame heading a context held by a thread whose
+binding names some *other* owner satisfies the first and not the second.  Both are
+stated, and on a reachable state they coincide.
+
+**The footprints keep their binding-driven resolvers, and the gap is closed by a
+theorem rather than by prose.**  `lockSet_endpointReplyOnCore` resolves its
+donation members through `endpointReplyServerDonation?` while the pop now reads
+`replyFrameHeadHolder?`, so `lockSet_endpointReplyOnCore_covers_headDrivenPop`
+states what has to hold — the SchedContext the pop writes and the TCB it unbinds
+carry declared write locks — and proves it through HP2.1.  A footprint that omits
+a written object is *false*, so this is not an observation that can live in a
+comment.  Repointing the resolvers is **HP6.8**: that cut is the one that makes
+the divergence reachable, it rewrites these same members anyway, and doing it here
+would have made the two sharp bounds depend on a coherence fact HP7 then deletes.
+
+**Mechanical notes.**  `replyDonationOwnerHome` is retired for
+`replyDonationHolderHome`, which reads the same trigger the operation runs — a
+source home read off a binding while the pop reads a frame is one question with
+two answers, and they diverge on exactly the state HP6 creates.  The two
+decompositions bind the holder as a `ValidThreadId`, because the operation's
+`.invalidArgument` arm established that.  The pop's pre-state conditions are
+stated at `(endpointReplyOnCore … st).1` — `hStackValid`'s existing convention in
+the same signatures, and a pre-state-computable expression, so the de-threading
+discipline is respected and no transport lemma stands between what a caller
+discharges and what the pop consumes.  `applyReplyDonationOnCore`'s two
+replenishment-home hypotheses swap conditionality: the answered caller is the
+operation's own argument and so the *destination*, while the *source* is the
+holder the trigger resolves; getting that backwards typechecks and migrates the
+wrong queue, which is why the shared migration lemma threads both endpoints.
+
+**And the frozen mirror flips in the same cut** (HP4.7, a sub-task this cut adds;
+§3.8.8).  `frozenEndpointReplyWithDonationReturn` is the mirror of the live
+`.reply` **operation**, and `frozenBranchOperationChecked
+.endpointReplyToBlockedCaller = true` is a machine-checked claim that the two run
+beside each other.  Leaving that mirror binding-driven would have made it a second
+answer to the question the live operation had just re-keyed — the project's *one
+question answered in two places will diverge*, with the divergence already
+scheduled at HP6 — so registering it as debt would have been documenting an
+asymmetry the implement-the-improvement rule requires removing.  Removing it costs
+nothing here: the frozen composite is *handed* `replyId`, and `frozenEndpointReply`
+refuses it unless the target's own `replyObject` names it, so the frozen arm asks
+the head question of exactly the frame the live operation recovers through
+`answeredReplyObject?`.  `frozenReplyFrameHeadContext?` and
+`frozenReplyFrameHeadHolder?` (`FrozenOps/Core.lean`) mirror the live resolvers
+clause for clause, reciprocity included — a one-sided link is not a head, because
+reading a stale reference over a re-used Reply as one is what hands a reservation
+to a thread owed nothing.  `frozenEndpointReplyServerDonation?` is **deleted**
+rather than left beside the new reading, since it existed solely as this
+composite's trigger and a definition nothing reads is a tautology on a surface
+whose whole purpose is to have one answer.  `frozenApplyReplyDonation`'s first
+parameter is renamed `holder`: it was `replier` and was being passed the recorded
+server.
+
+**And the frozen pop was missing a live guard, which is what asking the question
+found.**  `frozenReturnDonatedSchedContext` carried two of the live pop's three
+guards — the context is really bound to the server, and the outer caller is
+acceptable — under a docstring saying in terms that *"both of the live guards come
+with it"*.  HP4.6 had added a third: the head-driven recipient is the **answered
+caller**, which no binding the operation reads constrains, so without a guard a
+reply silently overwrites a reservation that caller acquired for itself while
+blocked.  The sentence was true when it was written and false from HP4.6 onward,
+and the direction is the one that matters on a differential surface — the mirror
+*succeeds* where the kernel refuses.  `frozenDonationRecipientAcceptable` is the
+counterpart, in the live position (after the outer caller, before every write) and
+with the live fail-open-on-an-unresolvable-recipient reading, since shadowing the
+operation's own `.objectNotFound` would change an error code rather than refuse a
+write.  Not a gap in the shipped kernel — `FrozenOps` is linked into no image — but
+a real divergence on the surface whose whole purpose is to have none.
+
+**And the same question, asked once more, found the live pop's ID promotion
+missing too.**  `applyReplyDonation` promotes its holder through
+`ThreadId.toValid?` and answers `.invalidArgument` when it will not promote; the
+mirror went straight to the return, so a SchedContext bound to the **sentinel**
+thread — malformed, admitted by no live invariant, and copied verbatim by
+`Model.freeze` if one existed — took a different arm on each surface.  The
+refusal is at the unit the live code puts it (the mirror of the step that
+promotes, not the return nested inside it) and is spelled `holder.isReserved`
+rather than with `toValid?`: this surface uses `toValid?` **nowhere** —
+`frozenLookupTcb` is how it asks whether an id is usable, and that predicate *is*
+`isReserved`, which is exactly `= sentinel` — so the condition is the live one and
+the vocabulary is this surface's.  Importing `toValid?` would have been a second
+validity convention on a surface that has already settled the question, which is
+the reasoning `frozenReturnDonatedSchedContext`'s own notes give for declining to
+become `scThreadIndex`'s only writer.  A Tier 3 negative refuses `toValid?` in
+either frozen module, so the convention stays one.
+
+**And `FO-041` had never fired the pop, on either side.**  Through review rounds
+13, 14, 15 and 22 that operation-level differential grew halves for delegation, a
+stale boost and a missing guard, and not one of them gave the recorded server a
+`.donated` binding — so the donation return *round 13 added to this surface* was
+compared on neither side, and round 15's operation-level claim, built to stop
+exactly that substitution, was resting on it.  `FO-042` closes it with two halves.
+The first gives the answered caller's frame a real head link over a real
+SchedContext, so both sides pop, and asserts the **post**-state on the live side
+(the reservation back on its owner, the holder unbound), because agreement between
+two identities reads exactly like agreement between two pops.  The second is the
+state where the two candidate triggers **disagree** — the recorded server holds
+the donation and the answered frame heads nothing — where the retired reading would
+pop, the live operation does not, and the mirror must not: reverting the frozen
+trigger to the binding reading fails that assertion and leaves all ten of its
+neighbours passing, which is the token-preserving mutation this project requires
+of a witness.  A third half is the recipient guard: the answered caller already
+holds a reservation, the live pop refuses, and the mirror must too — reverting to
+the genuine pre-fix behaviour (no frozen guard at all) fails exactly that
+assertion with every neighbour, *including* "the live pop REFUSES to overwrite
+it", still passing; a fourth is the sentinel holder, with the same shape.  Twenty-four Tier 3 anchors cover HP4.7, each positive paired with
+a token-preserving negative (the component swap, the dropped reciprocity, the PIP
+re-keying, the retired resolver's return, and the guard asked of the thread the
+pop unbinds rather than the one it rebinds).
+
+**Two stale fixtures, and both were unreachable states.**
+`tests/SyscallDispatchSuite.lean`'s `sd052b` / `sd052c` hand-build a `.donated`
+binding with **no frame on the context's reply stack** and a donor left `.bound` on
+the context it had donated away.  Neither is a state the live kernel can produce:
+since WS-OD OD4.1 `donateSchedContext` is a four-store *push* that is fail-closed
+on the donor's `replyObject`, so a donation always has a frame; and two threads
+bound to one SchedContext is what HP4.6's recipient guard refuses.  Both were
+invisible while the pop read the recorded server's binding — it looked at neither
+the stack nor the recipient — and both are exactly what the head-driven trigger
+reads, so the fixtures now carry the stack a real donating Call leaves and the
+donor is `.unbound`.  Each gained a pre-state assertion that the trigger resolves
+(`sd052b_pre_donation_frame_heads_the_context` and its `sd052c` twin), so the
+donation-switch check downstream is measuring the arm rather than the fixture's
+opinion of it.  This is the same correction three golden-trace fixtures needed
+earlier in the cut, which is what makes it a class rather than two typos: a
+hand-built donation is only as reachable as the invariants nobody was checking.
+
+**Registering a workstream widens a gate's grammar.**
+`scripts/check_identifier_naming.py` derives its family codes from the rows of
+`docs/REGISTERED_DEBT.md`'s *Workstream registry* table, and WS-HP had no row —
+an omission this cut also fixes, since the registry is the project's workstream
+index and every other in-flight workstream has one.  Adding it made `hp` a
+recognised family, so twenty-nine pre-existing Lean hypothesis binders in four
+untouched files (`hp0`, `hp1`, `hp2`, `hp12`, `hp13`, `hp23`, `hp1x`, `hp2x`)
+became newly ambiguous with `HP1`, `HP2`, … and the pre-commit hook blocked.
+
+They are **renamed**, not baselined.  Omitting the registry row to keep the gate
+quiet would be contorting the tree to satisfy a scanner, and regenerating the
+baseline is documented for *retiring* grandfathered names rather than for
+pardoning newly visible ones — its own docstring warns that the flag will
+"happily record newly introduced ones".  The gate is also right on the merits:
+once WS-HP exists, `hp1` in a proof genuinely does read as a phase code.  So they
+take names that say what they are — `hNotFirstAboveSecond`, `hSecondAtLeastFirst`,
+`hNarrowAt` / `hWideAt`, `hPrevEq` — which is what internal-first naming wanted of
+them anyway.  All four modules rebuild unchanged.
+
+**Anchor sweep.**  Four anchors elsewhere in the Tier 3 surface named spellings
+this cut changed, and the sweep found two defects of its own kind rather than
+only stale text.  The WS-RM order anchor on `replyRecvBody` spelled the pop's
+*arguments* while its subject is the **order**, so a re-keying broke an anchor
+that is not about keys — it is argument-agnostic now, and what the pop is keyed on
+is pinned once, in the HP4 section.  OD4.4's six-site census anchored two sites by
+their argument list, which duplicated the HP4 section's component-order claim;
+those two are declaration-bounded resolver-presence checks now, which is what that
+census is actually about, with token-preserving negatives for the bare pop.  And
+the two pre-receive cleanup anchors named `Donation/Primitives.lean` for
+definitions that live in `Endpoint.lean` — fail-closed, so they reported rather
+than passed, and both spellings (`cleanupPreReceiveDonation` and its `…Checked`
+twin, held pointwise equal on `.ok`) are pinned now, since a flip reaching one and
+not the other would break that equality instead of the reading.
+
+Plan: [`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md)
+§3.8, whose §3.8.7 records the five things implementing it corrected and §3.8.8
+why the frozen mirror's trigger belongs in this cut rather than in HP8.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md §3.8
+
 ## v0.35.37 — a delegated reply deschedules the server where it actually is
 
 The `v0.35.36` finding, fixed at the site it was reported against.  `CLAUDE.md`'s

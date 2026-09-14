@@ -4,7 +4,7 @@
 > **Predecessor finding**: [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
 > table C, registered `v0.35.14` — the removal does not preserve the donation
 > accounting at reply-stack depth ≥ 3.
-> **Sub-task count**: 40 across 9 phases (HP1..HP9), each phase numbered in the
+> **Sub-task count**: 42 across 9 phases (HP1..HP9), each phase numbered in the
 > order it is to be implemented.
 
 ## Context — why this exists
@@ -422,6 +422,145 @@ The acceptance measurement is in §6's HP4 row and it is the golden trace, not a
 build: a flip that compiles and changes a dispatch outcome is exactly the failure
 this ordering exists to catch.
 
+#### 3.8.7 What implementing it corrected
+
+Five things the design above got wrong, recorded here because the plan is the
+canonical source for this phase's design and a plan that still describes the
+superseded shape is worse than no plan.
+
+**The pop cannot resolve its own trigger, and §3.8.4 assumed it could.**
+`answeredReplyObject?` is the answered caller's own forward link — the one
+`linkCallerReply` wrote and `consumeCallerReply` **clears** — and the donation pop
+runs *after* the reply leg, which is seL4-MCS's `doReplyTransfer` order and the
+one this kernel keeps because the server needs the returned budget while it
+replies. So `answeredFrameHeadContext? st1 target` is `none` on every state the
+pop ever sees. HP1's own docstring had said so ("every one of those sites must
+read it from the **pre**-state") and §3.8.4 did not read it.
+
+The fix is a split, not a passed pair: `replyFrameHeadHolder? st rid` is the
+frame-keyed resolver and `answeredFrameHeadContext?` is its composition with
+`answeredReplyObject?`. The pop takes the **reply id**, resolved on the pre-state
+through the one expression the footprint members also come from, and resolves the
+context and its holder itself at the state it runs on. Passing the resolved
+*pair* instead would have made both a pre-state read and put
+`returnDonatedSchedContext`'s `boundThread` guard back to work, which is the shape
+HP4 exists to retire — so the split is what keeps §3.8.3's second consequence
+true.
+
+**`replyDonationReturn?` is not re-keyed, and §3.8.6 step 1 was wrong to say it
+would be.** Its argument means the thread that *holds* a donated context; the
+trigger's means the thread whose reply is being *answered*. Re-keying it in place
+would have changed its argument's meaning at 57 call sites while every one of
+them still typechecked — the §3.8.2 hazard at its worst, because there the two
+spellings are not even the same resolver. It stays as the binding-driven
+"does this thread hold a donated context" resolver, which is a question the tree
+still asks (the two pre-receive cleanups, the cancellation reclaim, the witnesses);
+what moved to the trigger is the *characterisation* of `applyReplyDonation`.
+
+**One coherence hypothesis survives, and it is not one of the three.** The chain
+composite loses `answeredHeadContextIsServerDonation` outright — the pop and the
+relaxation name one frame by construction now — and gains `replyFrameHeadIsBound`:
+a scheduling context that heads a reply stack is bound to a thread. It is strictly
+weaker (the retired one implies it through `donationOwnerValid`), it is vacuous on
+every reply whose frame heads nothing, and it is what rules out the arm
+`replyFrameHeadHolder?` declines on — a frame heading a context bound to nobody,
+where the pop would be the identity while the leg had already relaxed the chain
+there. `answeredFrameHeadContext?`'s docstring argues that arm is unreachable, and
+that argument is about *reachability*: `donationChainWellFormed` carries no binding
+clause. HP7 is where it becomes one.
+
+**The pop's conditions are stated at the state the pop runs on.** The bundle
+payoff's `hDonationReturned` was a pre-state fact transported across the reply leg
+through `endpointReplyOnCore_sameSchedContextBindings`; its head-driven form is
+about the reply *stack*, which the leg does rewrite, so there is no free
+transport. All three pop-side conditions therefore follow `hStackValid`'s
+existing convention in that same signature — stated at
+`(endpointReplyOnCore … st).1`, a pre-state-computable expression, so the
+de-threading discipline is respected and no transport lemma stands between what a
+caller discharges and what the pop consumes. The *frame* stays on the genuine
+pre-state, for the reason above.
+
+**And "this reply returns no donation" became two facts.** `hNoDonationOwnedBy`
+(nothing is donated by the answered caller) made the relaxation empty and, under
+the binding-driven trigger, also made the pop the identity. It no longer does: a
+frame heading a context held by a thread whose binding names some *other* owner
+satisfies the first and not the second. `endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull`
+takes both, and on a reachable state they coincide.
+
+*A note for HP7*: `replyDonationReturn?` reads the thread through `lookupTcb`
+(which refuses a reserved id) while `endpointReplyDonation?` reads it through
+`getTcb?`. The two therefore answer differently on a reserved thread — fail-closed
+on the `lookupTcb` side — which is one question with two answers. HP4 retires
+neither, because the pop now asks neither; giving the question one answer belongs
+with the retirement of the resolver that survives.
+
+#### 3.8.8 Why the frozen mirror's trigger flips inside HP4, not inside HP8
+
+HP8 as written puts the frozen surface's whole catch-up after HP6, on the
+reasoning that `FrozenOps` mirrors *transitions* and the transitions settle
+there. That is right for the **splice** and wrong for the **trigger**, and the
+difference is which cut creates the divergence.
+
+`frozenEndpointReplyWithDonationReturn` is the mirror of the live `.reply`
+*operation*, and `frozenBranchOperationChecked .endpointReplyToBlockedCaller =
+true` is a machine-checked claim that the two are run beside each other. HP4
+makes the live operation head-driven. From that instant a binding-driven mirror
+is answering the pop question a second way — `CLAUDE.md`'s *one question answered
+in two places will diverge*, with the divergence already on this plan's own
+schedule at HP6 — and the coverage row's `true` is a claim about an agreement
+that no longer holds on states HP6 makes reachable. Registering that as debt
+would be documenting an asymmetry between two paths, which this project's
+implement-the-improvement rule forbids where making them symmetric is available.
+It is available: the frozen composite is *handed* `replyId`, and
+`frozenEndpointReply` refuses it unless the target's own `replyObject` names it,
+so the frozen arm needs no resolver relocation at all — it asks the head question
+of exactly the frame the live operation recovers through `answeredReplyObject?`.
+
+So **HP4.7** flips it, and HP8.2 narrows to the splice half. Two things fell out
+of doing it, and both are findings rather than bookkeeping.
+
+1. **The frozen binding-driven resolver is deleted, not left beside the new
+   one.** `frozenEndpointReplyServerDonation?` existed solely as this composite's
+   trigger; keeping it would leave two readings on the surface whose entire
+   purpose is to have one. A pin on a symbol nothing reads is a tautology.
+
+2. **`FO-041` never fired the pop on either side.** Through review rounds 13, 14,
+   15 and 22 that scenario grew halves for delegation, a stale boost and a
+   missing guard, and not one of them gave the recorded server a `.donated`
+   binding — so the donation return *round 13 added to this surface* was compared
+   on neither side, and the operation-level claim that round 15 built to stop
+   exactly this substitution was resting on it. `FO-042` is the fix: one half
+   where the frame heads a real context so both sides pop, with the post-state
+   asserted on the live side so agreement is agreement with a pop; and one half
+   where the two candidate triggers **disagree** — the server holds the donation
+   and the answered frame heads nothing — where the retired reading would pop,
+   the live operation does not, and the mirror must not. That second half is the
+   mutation that decides the flip: reverting the frozen trigger to the binding
+   reading fails it and leaves all ten of its neighbours passing, which is the
+   token-preserving shape this project requires of a witness.
+
+3. **The frozen pop was missing HP4.6's recipient guard** — found by asking the
+   question the flip raises rather than reported. It carried two of the live
+   pop's three guards under a docstring saying *"both of the live guards come
+   with it"*, a sentence that was true when written and false from HP4.6 onward.
+   The guard is head-driven-specific, which is why it could not have been missing
+   earlier: under the binding reading the recipient *is* the binding's recorded
+   owner, which the operation has already seen hold nothing. `FO-042`'s third
+   half is its witness, and reverting to the genuine pre-fix behaviour (no frozen
+   guard) fails exactly that assertion while every neighbour — *including* "the
+   live pop REFUSES to overwrite it" — still passes.
+
+4. **...and the live pop's ID promotion was missing as well.**
+   `applyReplyDonation` refuses a holder `ThreadId.toValid?` will not promote;
+   the mirror went straight to the return, so a SchedContext bound to the
+   sentinel thread took a different arm on each surface. The refusal sits at the
+   unit the live code puts it and is spelled `holder.isReserved`, because this
+   surface uses `toValid?` nowhere — `frozenLookupTcb` is its "is this id
+   usable" and *is* `isReserved`, which is exactly `= sentinel`. Importing
+   `toValid?` would have been a second validity convention where the surface has
+   one, which is the reasoning it already gives for declining `scThreadIndex`; a
+   Tier 3 negative keeps `toValid?` out of both frozen modules.
+
 ## 4. Sequencing
 
 Phases run in order. **No phase may run in parallel with another** — HP3, HP4,
@@ -464,9 +603,9 @@ difference.
 | HP1 | The trigger's resolvers, inert | 2 |
 | HP2 | The equivalence and the derivable coherence facts, inert | 4 |
 | HP3 | The footprint member and the ceiling, declared ahead of the code | 5 |
-| HP4 | The reply path's trigger flips (one cut) | 6 |
+| HP4 | The reply path's trigger flips (one cut) | 7 |
 | HP5 | The cancellation path's trigger flips (one cut) | 4 |
-| HP6 | The splice replaces the sever (one cut) | 7 |
+| HP6 | The splice replaces the sever (one cut) | 8 |
 | HP7 | The three stated hypotheses retire | 4 |
 | HP8 | The frozen mirror | 3 |
 | HP9 | Witnesses, anchors, documentation, closure | 5 |
@@ -535,7 +674,7 @@ over-declaring is sound.
 size bound left at the old arity — and `check_lock_ceiling_figures.py` passes
 with no stale figure in any tracked prose.
 
-### HP4 — The reply path's trigger flips (6 sub-tasks)
+### HP4 — The reply path's trigger flips (7 sub-tasks)
 
 One cut: `endpointReplyOnCore_post_agrees` relates the two spines at every
 object key. Behaviour-preserving on every reachable state by HP2.1, which is
@@ -550,12 +689,13 @@ leave `_post_agrees` with two moving parts and no way to attribute a failure.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| HP4.1 | **First** relocate `answeredReplyObject?` and `answeredFrameHeadContext?` from `IPC/CrossCore/EndpointReply.lean` down beside `replyFrameHeadContext?` in `IPC/Operations/Endpoint.lean`: HP1 put them where their HP1 consumers are, and `Donation/Primitives.lean` — the module the single-core spine lives in — imports `Endpoint.lean` alone, so as written that spine cannot call the resolver (§3.8.4). A relocation, never a second spelling. Then `replyDonationReturn?` and `endpointReplyServerDonation?` re-keyed onto it, **in place** — a second spelling of either would be the one-question-two-answers hazard on the hottest IPC path (§3.8.1). Each gets an `_eq_answeredFrameHeadContext?` bridge so the theorems about it move by rewrite rather than by re-proof. `recordedReplyServer?` is untouched and keeps every consumer outside the pop. Consumes HP2.1 | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/Operations/Donation.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` | M |
-| HP4.2 | `applyReplyDonation` re-keyed: it takes `target` and resolves the pop from the same expression the footprint resolves its members from, which is the `a parameter is a place for a caller to be wrong` rule (§3.8.4). `applyReplyDonation_characterisation` restated — it is what every reply-side invariant proof runs on, so it is the single point through which 172 references move. Consumes HP4.1 | `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean`, `SeLe4n/Kernel/IPC/Operations/Donation.lean` | L |
+| HP4.1 | **First** relocate `answeredReplyObject?` and `answeredFrameHeadContext?` from `IPC/CrossCore/EndpointReply.lean` down beside `replyFrameHeadContext?` in `IPC/Operations/Endpoint.lean`: HP1 put them where their HP1 consumers are, and `Donation/Primitives.lean` — the module the single-core spine lives in — imports `Endpoint.lean` alone, so as written that spine cannot call the resolver (§3.8.4). A relocation, never a second spelling. Then **split the resolver at the reply object**: `replyFrameHeadHolder? st rid` is the frame-keyed form the pop reads and `answeredFrameHeadContext?` becomes its composition, because the reply leg clears the answered caller's link to its frame before the pop runs (§3.8.7). `replyDonationReturn?` and `endpointReplyServerDonation?` are **not** re-keyed — their argument means the *holder*, the trigger's means the answered *caller*, so re-keying in place would have changed the meaning at 57 typechecking call sites (§3.8.7). `recordedReplyServer?` is untouched and keeps every consumer outside the pop. Consumes HP2.1 | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` | M |
+| HP4.2 | `applyReplyDonation` re-keyed: it takes the answered **frame** (resolved on the pre-state through the same `answeredReplyObject?` expression the footprint's members come from) and the answered **caller**, and resolves the context and its holder itself at the state it runs on — the `a parameter is a place for a caller to be wrong` rule, applied to everything the pop can still ask its own state (§3.8.4, §3.8.7). `applyReplyDonation_characterisation` restated — it is what every reply-side invariant proof runs on, so it is the single point through which 172 references move. Also `answeredHeadHolderDonation` → `replyFrameHeadHolderDonation`: the one binding fact the trigger does not witness, named once so HP7 has one symbol to delete. Consumes HP4.1 | `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean`, `SeLe4n/Kernel/IPC/Operations/Donation.lean` | L |
 | HP4.3 | `applyReplyDonationOnCore` re-keyed the same way, which **retires `replyDonationOwnerHome`**: it resolves the owner's home from the *binding* at the call site while the operation resolves the same owner from the *frame*, so after the flip the two answers can disagree on exactly the orphan-head state HP4 exists for (§3.8.4). The two migration-home arguments themselves **stay** parameters — `determineTargetCore` is the correct resolver for a replenish queue, which is keyed by affinity rather than placement, so there is no proxy there to remove and internalising them would be restatement with no correctness content. `applyReplyDonationOnCore_eq_single` and `_post_agrees` re-proved. Consumes HP4.2 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | L |
-| HP4.4 | `endpointReplyCrossCoreDispatch`'s body, and `lockSet_endpointReplyOnCore` / `lockSet_endpointReplyRecvOnCore` repointed so every member is resolved from the same `target` the pop is. The **PIP walk does not move** — it keys on waiters, so its argument stays `recordedReplyServer?` — and the `.replyCapInvalid` arm stays, because "no recorded server" and "no head context" are different facts (§3.8.5). Consumes HP4.3 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
-| HP4.5 | `.replyRecv`'s `replyRecvPopDonation` — between the legs, where WS-RM put it — and the dispatch payoff's `replyRecvStage` fields restated at the post-pop state. Consumes HP4.4 | `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, `SeLe4n/Kernel/API.lean` | L |
-| HP4.6 | The **recipient guard** (§3.3): the pop refuses an `originalOwner` that is not `.unbound`, with `returnDonatedSchedContext_rejects_bound_recipient` proving the refusal commits nothing, and `outerCallerAcceptable` re-examined at its new arguments rather than assumed to carry (§3.8.3). Plus the three Tier 3 negatives §3.8.2 and §3.8.5 call for — the component swap, the PIP re-keying, and the two pre-receive cleanups keeping their binding-driven resolver — each mutation-tested in both directions. Consumes HP4.5 | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `scripts/test_tier3_invariant_surface.sh` | M |
+| HP4.4 | `endpointReplyCrossCoreDispatch`'s body, which resolves the answered frame on the pre-state and threads it to the pop. The **PIP walk does not move** — it keys on waiters, so its argument stays `recordedReplyServer?` — and the `.replyCapInvalid` arm stays, because "no recorded server" and "no head context" are different facts (§3.8.5). The two footprints keep their binding-driven resolvers and gain `lockSet_endpointReplyOnCore_covers_headDrivenPop` instead, because repointing them belongs to the phase that makes the divergence reachable and would otherwise make the two sharp bounds depend on a coherence fact HP7 deletes (§3.8.7). The row that does it names this one. Consumes HP4.3 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
+| HP4.5 | `.replyRecv`'s `replyRecvPopDonation` — between the legs, where WS-RM put it — re-keyed on the frame the reply capability names and the caller it answers; on this arm the frame needs no resolving, because `rid` **is** the capability. Its three preservation theorems, the two total accessors, the NI confinement and the dispatch payoff's `replyRecvStage` fields all restated. Consumes HP4.4 | `SeLe4n/Kernel/API.lean`, `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` | L |
+| HP4.6 | The **recipient guard** (§3.3): `donationRecipientAcceptable` refuses an `originalOwner` that is not `.unbound`, with `returnDonatedSchedContext_rejects_bound_recipient` proving the refusal commits nothing and `_ok_recipient_unbound` the fact a successful pop witnesses; `outerCallerAcceptable` re-examined at its new arguments rather than assumed to carry (§3.8.3). Plus the Tier 3 negatives §3.8.2 and §3.8.5 call for — the component swap, the PIP re-keying, the pre-state frame resolution, and the two pre-receive cleanups keeping their binding-driven resolver — each token-preserving. Consumes HP4.5 | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `scripts/test_tier3_invariant_surface.sh` | M |
+| HP4.7 | **The frozen mirror's trigger, in the same cut** (§3.8.8): `frozenReplyFrameHeadContext?` / `frozenReplyFrameHeadHolder?` beside the frozen detach, and `frozenEndpointReplyWithDonationReturn` re-keyed on them — the frozen arm needs no resolver relocation, because `replyId` **is** the presented capability and `frozenEndpointReply` refuses it unless the target's `replyObject` names it. `frozenEndpointReplyServerDonation?` is deleted rather than left beside the new reading, and `frozenApplyReplyDonation`'s first parameter is renamed `holder` (it was `replier` and denoted the recorded server). And the frozen pop gains HP4.6's **recipient guard** (`frozenDonationRecipientAcceptable`), which it was missing under a docstring claiming it carried every live guard — the direction that matters, since a mirror missing a guard succeeds where the kernel refuses — and the live step's **ID promotion**, spelled in this surface's own `isReserved` vocabulary. `FO-042` fires the pop on both sides — which `FO-041` never did in four review rounds — and its second half is the state where the two candidate triggers disagree. Consumes HP4.6 | `SeLe4n/Kernel/FrozenOps/Core.lean`, `SeLe4n/Kernel/FrozenOps/Operations.lean`, `tests/FrozenOpsSuite.lean`, `scripts/test_tier3_invariant_surface.sh` | M |
 
 **Acceptance**: every existing reply theorem holds unchanged, `smp_ipc_suite`
 and `smp_cross_core_reply_suite` pass with no fixture edit, and the golden trace
@@ -580,7 +720,29 @@ gone, and a binding-driven reclaim would leave a `.donated` binding naming a
 `cancelIpcBlocking` preserves `donationOwnerValid` and `passiveServerIdle` on
 every arm with no new hypothesis.
 
-### HP6 — The splice replaces the sever (7 sub-tasks)
+**The fixture sweep HP4 owes this phase, already run.** A hand-built `.donated`
+binding is only as reachable as the invariants nobody was checking, and HP4 paid
+for that five times — three golden-trace fixtures and `SyscallDispatchSuite`'s
+`sd052b` / `sd052c`, each carrying a donation with **no frame on the context's
+reply stack** (unreachable since WS-OD OD4.1 made `donateSchedContext` a push that
+is fail-closed on the donor's `replyObject`) and a donor left `.bound` on the
+context it had donated away (which HP4.6's recipient guard refuses). So the tree
+was swept for every remaining one, and exactly one is this phase's:
+
+- `tests/SmpCancellationSuite.lean`'s `stDonated` (Scenario F, the donated
+  cancellation arm) — **needs the stack and an `.unbound` donor at HP5.1**, since
+  that is the cut that makes the reclaim read the frame.
+- `tests/SuspendResumeSuite.lean`'s `sr023` and `tests/NegativeStateSuite.lean`'s
+  `.donated ⟨8888⟩ ⟨9999⟩` need **nothing**: both are arm-selection negatives that
+  never reach a pop, so no trigger reads their stack. Recorded so the next sweep
+  does not re-derive it.
+
+Each corrected fixture takes a pre-state assertion that the trigger resolves, as
+`sd052b_pre_donation_frame_heads_the_context` does — without one, a frame heading
+nothing makes the pop the identity and every downstream check measures the fixture
+instead of the arm.
+
+### HP6 — The splice replaces the sever (8 sub-tasks)
 
 One cut: both removal paths call one step, and `removeCallerReplyFrame`'s
 algebra is stated over it.
@@ -602,6 +764,7 @@ be landed earlier, and HP6.4 was always going to need HP4 and HP5 anyway (§4).
 | HP6.5 | `removeCallerReplyFrame_preserves_donationChainWellFormed` over the splice — reciprocity is *maintained* rather than vacated, so the argument is shorter than the sever's: `above.prev = some below` and `below.next = .frame above` are written together. Consumes HP6.4 | `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | L |
 | HP6.6 | `cancelledMiddleCallerPolicy := .spliceOutTheCut`, with `cancelledMiddleCaller_splices_at_cut` replacing `…_severs_at_cut`, and `replyStackOuterCaller?_follows_policy` restated. HP2.3's negative twin is retired *here*, in the cut that earns it. Consumes HP6.5 | `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | M |
 | HP6.7 | **The payoff**: `donationAccountingPreserved_atCallDepthThree` — on the depth-3 witness, a middle removal leaves the reservation owed outward and the later pop delivers it to its owner. `tests/SmpIpcSuite.lean` §3.22 inverts from a COST witness to a PAYOFF witness in the same cut, keeping the in-order contrast. Consumes HP6.6 | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `tests/SmpIpcSuite.lean` | L |
+| HP6.8 | **The two reply footprints repointed onto the head-driven trigger**, which HP4 deliberately left (§3.8.7): `lockSet_endpointReplyOnCore` / `lockSet_endpointReplyRecvOnCore` resolve their donation members through `endpointReplyServerDonation?` while the pop reads `replyFrameHeadHolder?`, and this is the cut that makes the two disagree on a reachable state — `spliceOutTheCut` can leave an orphan head, which `severAtCut` provably cannot. The theorem HP4.4 left in its place — `lockSet_endpointReplyOnCore_covers_headDrivenPop` — is what holds the gap closed until here and is **deleted** by this row, since the members then come from the trigger itself; this row therefore consumes HP4.4 as well as HP6.7. The two sharp bounds re-proved: the `owner = target` merge the head-driven footprint no longer has becomes the `holder = recorded server` one, which is why this row could not land before HP7 retires the coherence facts it would otherwise depend on. Consumes HP6.7 | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` | L |
 
 **Acceptance**: §3.22's assertions read the owner receiving its reservation, the
 in-order contrast is unchanged, and §3.20's depth-2 halves pass byte-identically
@@ -625,10 +788,15 @@ with its bundle count updated in every prose site it holds.
 `FrozenOps` is reached by neither library root and must stay in step (PR #895
 review, `v0.35.12`).
 
+**The trigger half already landed, as HP4.7.** §3.8.8 says why: HP4 is the cut
+that makes the live `.reply` operation head-driven, so that is the cut in which a
+binding-driven mirror of it becomes a second answer to one question. What remains
+here is the **splice**, whose divergence HP6 creates.
+
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | HP8.1 | `frozenSpliceReplyFrameOut` beside the frozen detach, mirroring HP6.1 | `SeLe4n/Kernel/FrozenOps/Core.lean` | M |
-| HP8.2 | `frozenEndpointReply` runs the frozen splice and the head-driven pop. Consumes HP8.1, HP6.4 | `SeLe4n/Kernel/FrozenOps/Operations.lean` | M |
+| HP8.2 | `frozenEndpointReply` runs the frozen **splice**; its pop is already head-driven (HP4.7). Consumes HP8.1, HP6.4 | `SeLe4n/Kernel/FrozenOps/Operations.lean` | M |
 | HP8.3 | `SeLe4n/Testing/ReplyStackWriteCensus.lean`'s registry updated — the new sites recorded, the frozen ones as `mirrors` entries naming their live twins. Consumes HP8.2 | `SeLe4n/Testing/ReplyStackWriteCensus.lean` | M |
 
 **Acceptance**: `lake exe frozen_ops_suite` passes all differential scenarios,

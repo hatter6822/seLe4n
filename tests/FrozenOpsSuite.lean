@@ -999,6 +999,35 @@ private def diffAddReply (ist : IntermediateState) (rid : SeLe4n.ReplyId)
     (r : SeLe4n.Kernel.Reply) : IntermediateState :=
   Builder.createObject ist rid.toObjId (.reply r) (fun _ h => nomatch h) (fun _ h => nomatch h)
 
+private def diffAddSchedContext (ist : IntermediateState) (scId : SeLe4n.SchedContextId)
+    (sc : SeLe4n.Kernel.SchedContext) : IntermediateState :=
+  Builder.createObject ist scId.toObjId (.schedContext sc)
+    (fun _ h => nomatch h) (fun _ h => nomatch h)
+
+/-- **WS-HP HP8.1**: the donated scheduling context the FO-042 halves below move.
+
+Held by the recorded server, owed back to the answered caller, and — in the
+donating half — recorded as heading the answered frame's stack, which is what
+makes the head-driven trigger fire. -/
+private def diffScId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 66
+
+private def diffDonatedSc (head? : Option SeLe4n.ReplyId) : SeLe4n.Kernel.SchedContext :=
+  { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    boundThread := some diffB, scReply := head?, isActive := true }
+
+/-- **WS-HP HP4.7**: a reservation the *answered caller* holds in its own right.
+
+The recipient guard's subject: a caller that acquired a scheduling context while
+blocked is one whose binding the pop must not overwrite, and under the head-driven
+trigger nothing the operation reads rules that state out. -/
+private def diffOwnScId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 67
+
+private def diffCallerOwnSc : SeLe4n.Kernel.SchedContext :=
+  { scId := diffOwnScId, budget := ⟨80⟩, period := ⟨800⟩, priority := ⟨30⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨40⟩,
+    boundThread := some diffA, isActive := true }
+
 /-! ### Comparing like layers
 
 A frozen operation is the syscall, not the bare transition: with no dispatcher in
@@ -1383,6 +1412,158 @@ private def differentialEndpointReplyOperationAgrees : IO Unit := do
       (liveWithTaint .reply diffDelegate (SeLe4n.CPtr.ofNat 0)
         (liveReplySpine diffDelegate diffA msg) delegated.state))
 
+/-- FO-042 (**WS-HP HP8.1**): **the operation with a donation actually on the
+stack**, and the state on which the two candidate triggers part company.
+
+FO-041 above compares the whole `.reply` operation, and through four review
+rounds not one of its halves gave the recorded server a `.donated` binding — so
+the donation pop the round-13 finding *added to this surface* has never been
+executed by a differential, on either side.  A leg that is never taken is not
+compared; that is this project's own *a witness drawn from a finding tests the
+finding*, one level in: the fixtures grew to exhibit delegation, a stale boost and
+a missing guard, and nobody went back and made the pop fire.
+
+The two halves here are the pop and its trigger.
+
+**The pop.**  The answered caller's Reply *heads* the donated context and the
+context names it back, so both surfaces resolve a holder and hand the reservation
+to the answered caller.  The controls assert the pre-state really is donating and
+the post-state really moved it — agreement between two identities would otherwise
+read exactly like agreement between two pops.
+
+**The trigger.**  `HP4` made the live operation read the answered **frame**
+(`replyFrameHeadHolder?`) where it had read the recorded server's `.donated`
+binding, and until HP8.1 this surface still read the binding.  The second half is
+a state where those two readings **disagree**: the server holds a donation and
+the answered frame heads nothing.  The retired reading would pop here; the live
+operation does not, and the frozen composite must not either.  The assertions
+name both facts, so the choice of trigger is measured rather than described —
+and that is also the mutation that decides it, since it keeps every token of the
+donation and changes only which artefact records the stack. -/
+private def differentialEndpointReplyDonationAgrees : IO Unit := do
+  let msg : IpcMessage := { registers := #[⟨17⟩], caps := #[], badge := none }
+  let rid : SeLe4n.ReplyId := ⟨506⟩
+  -- The answered caller: blocked on its reply, holding the frame, and `.unbound`
+  -- because it donated its context away at the `Call`.
+  let caller : TCB := { diffTcb 62 with
+    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid,
+    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+  -- The recorded server: holds the donation, runnable, and carrying the boost the
+  -- reversion must clear, so the two live steps are both observable.
+  let server : TCB := { diffTcb 63 with
+    pipBoost := some ⟨200⟩, schedContextBinding := .donated diffScId diffA }
+  -- ### Half one: the frame HEADS the context, so both sides pop.
+  let heading := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
+    diffScId (diffDonatedSc (some rid))
+  expect "FO-042 control: the answered frame heads the donated context"
+    (SeLe4n.Kernel.replyFrameHeadHolder? heading.state rid == some (diffScId, diffB))
+  expect "FO-042 control: ...and the frozen surface reads the same frame"
+    (frozenReplyFrameHeadHolder? (freeze heading) rid == some (diffScId, diffB))
+  expect "FO-042 control: the recorded server starts holding the donation"
+    (match (freeze heading).getTcb? diffB with
+     | some t => t.schedContextBinding == .donated diffScId diffA
+     | none   => false)
+  expect "FO-042 control: the live operation succeeds"
+    (liveReplySpine diffB diffA msg heading.state).toOption.isSome
+  expect "FO-042 control: and so does the frozen composite"
+    (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze heading)).toOption.isSome
+  -- The pop really happened: the reservation is back on its owner and the holder
+  -- is unbound.  Asserted on the LIVE side, so the agreement below is agreement
+  -- with a pop rather than between two no-ops.
+  expect "FO-042: the live pop returns the context to the answered caller"
+    (match (liveReplySpine diffB diffA msg heading.state).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffA with
+          | some t => t.schedContextBinding == .bound diffScId
+          | none   => false) &&
+         (match post.getTcb? diffB with
+          | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+          | none   => false)
+     | none => false)
+  expect "FO-042: the frozen reply OPERATION agrees with the live one, donation and all"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze heading))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) heading.state))
+  -- ### Half two: the TRIGGERS DISAGREE.  Same donation, no stack frame.
+  let unheaded := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    rid { replyId := rid, caller := some diffA })
+    diffScId (diffDonatedSc none)
+  expect "FO-042 control: the binding-driven reading FIRES here (the server is donated)"
+    (match (freeze unheaded).getTcb? diffB with
+     | some t => t.schedContextBinding == .donated diffScId diffA
+     | none   => false)
+  expect "FO-042 control: ...while the head-driven reading does NOT (no frame heads it)"
+    (SeLe4n.Kernel.replyFrameHeadHolder? unheaded.state rid == none
+      && frozenReplyFrameHeadHolder? (freeze unheaded) rid == none)
+  expect "FO-042: the live operation performs no pop on that state"
+    (match (liveReplySpine diffB diffA msg unheaded.state).toOption with
+     | some (_, post) =>
+         match post.getTcb? diffB with
+         | some t => t.schedContextBinding == .donated diffScId diffA
+         | none   => false
+     | none => false)
+  expect "FO-042: and the frozen composite follows the LIVE trigger, not the retired one"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze unheaded))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) unheaded.state))
+  -- ### Half three: the RECIPIENT GUARD.  Same donation on the stack, but the
+  -- answered caller has acquired a reservation of its own while blocked, so the
+  -- pop would overwrite it.  The live pop refuses (`donationRecipientAcceptable`,
+  -- WS-HP HP4.6) and the frozen one must too — a mirror missing a live guard
+  -- succeeds where the kernel refuses, which is the direction that matters.
+  -- The guard is head-driven-specific: under the binding-driven reading the
+  -- recipient was the binding's own recorded owner, which the operation had
+  -- already seen hold nothing, so this half could not have existed before HP4.
+  let ownCaller : TCB := { diffTcb 62 with
+    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid,
+    schedContextBinding := .bound diffOwnScId }
+  let bound := diffAddSchedContext (diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) ownCaller) server)
+    rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
+    diffScId (diffDonatedSc (some rid))) diffOwnScId diffCallerOwnSc
+  expect "FO-042 control: the trigger still fires on this state"
+    (SeLe4n.Kernel.replyFrameHeadHolder? bound.state rid == some (diffScId, diffB)
+      && frozenReplyFrameHeadHolder? (freeze bound) rid == some (diffScId, diffB))
+  expect "FO-042 control: ...and the answered caller already holds a reservation"
+    (match (freeze bound).getTcb? diffA with
+     | some t => t.schedContextBinding == .bound diffOwnScId
+     | none   => false)
+  expect "FO-042: the live pop REFUSES to overwrite it"
+    (liveReplySpine diffB diffA msg bound.state).toOption.isNone
+  expect "FO-042: and the frozen composite refuses it too, with the same error"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze bound))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) bound.state))
+  -- ### Half four: the SENTINEL HOLDER.  A SchedContext bound to thread 0 is a
+  -- malformed state no live invariant admits — and `Model.freeze` would copy one
+  -- verbatim, which is what this surface's guards exist for.  The live pop
+  -- promotes the holder through `ThreadId.toValid?` and answers
+  -- `.invalidArgument`; the frozen one refuses on `holder.isReserved`, which is
+  -- the same condition in this surface's own vocabulary (`frozenLookupTcb` is
+  -- defined by it, and `isReserved` is exactly `= sentinel`).
+  let sentinelSc : SeLe4n.Kernel.SchedContext :=
+    { diffDonatedSc (some rid) with boundThread := some ⟨0⟩ }
+  let sentinelHeld := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
+    diffScId sentinelSc
+  expect "FO-042 control: the trigger resolves a SENTINEL holder on both surfaces"
+    (SeLe4n.Kernel.replyFrameHeadHolder? sentinelHeld.state rid == some (diffScId, ⟨0⟩)
+      && frozenReplyFrameHeadHolder? (freeze sentinelHeld) rid == some (diffScId, ⟨0⟩))
+  expect "FO-042: the live pop refuses a sentinel holder"
+    (liveReplySpine diffB diffA msg sentinelHeld.state).toOption.isNone
+  expect "FO-042: and the frozen composite refuses it with the same error"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze sentinelHeld))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) sentinelHeld.state))
+
 /-- FO-035: **a receive that dequeues a `.blockedOnCall` caller** (PR #873
 round 17).
 
@@ -1620,10 +1801,19 @@ Kept as its own list because it backs its own claim: the leg list above answers
 `frozenBranchOperationChecked`, and merging them would let a leg scenario
 satisfy an operation claim -- which is exactly the substitution that let
 "reply: checked" stand while the frozen composite was missing three of the live
-operation's steps in three consecutive review rounds. -/
+operation's steps in three consecutive review rounds.
+
+A **relation**, not a map: a branch may carry more than one scenario, and
+`.endpointReplyToBlockedCaller` carries two because they answer different
+questions about the same claim.  FO-041 exercises the operation's shape (the
+revert, the guard, a delegated cap holder) on states carrying no donation; FO-042
+(WS-HP HP8.1) exercises the donation pop itself and the state on which the two
+candidate triggers disagree.  Both reconciliation directions below are set
+containment, so a second row adds coverage and claims nothing extra. -/
 private def operationDifferentialScenarios :
     List (SeLe4n.Kernel.FrozenOps.FrozenOpBranch × IO Unit) :=
-  [ (.endpointReplyToBlockedCaller,     differentialEndpointReplyOperationAgrees) ]
+  [ (.endpointReplyToBlockedCaller,     differentialEndpointReplyOperationAgrees),
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyDonationAgrees) ]
 
 /-- The claim and the scenarios name the same syscalls, in both directions: a
 scenario for a syscall the table does not claim, or a claim with no scenario,

@@ -2083,6 +2083,40 @@ theorem lockSet_endpointReply_caller_tcb_write_mem (callerTid : ThreadId)
                 (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
                   (LockSet.mem_insertOrMerge_write_self _ _))
 
+/-- **WS-HP HP4.4**: the returned SchedContext is a declared **write** of
+`.reply`.
+
+The `.call` side has had this since SM6.A.5
+(`lockSet_endpointCall_donatedSc_write_mem`); the reply side asserted it only
+through `decide` in a witness, which is a statement about one fixture rather than
+about the footprint.  Stating it is what lets the head-driven pop's coverage be
+proved rather than argued: HP4 made the pop read a different resolver from the one
+the footprint resolves its members through, and the object that must be covered is
+this one. -/
+theorem lockSet_endpointReply_donatedSc_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
+    (scId : SchedContextId) (donatedOriginalOwnerTid : Option ThreadId)
+    (replyId : Option ReplyId)
+    (belowHeadReplyId : Option ReplyId) (outerCallerTid : Option ThreadId)
+    (donatedHeadReplyId : Option ReplyId)
+    (answeredFrameAbove : Option ReplyId)
+    (answeredFrameBelow : Option ReplyId) :
+    (schedContextLock scId, AccessMode.write)
+      ∈ (lockSet_endpointReply callerTid cnodeRootObjId replyTargetTid (some scId)
+          donatedOriginalOwnerTid replyId belowHeadReplyId outerCallerTid
+          donatedHeadReplyId answeredFrameAbove answeredFrameBelow).pairs := by
+  unfold lockSet_endpointReply
+  -- Eight optional extensions sit outside the SchedContext one: the owner, the
+  -- Reply, the head, the frame below the head, the outer caller, the state-level
+  -- lock, the frame above the answered reply and the frame below it.  Peeled until
+  -- the SchedContext layer closes, rather than by a hand-nested tower, so a member
+  -- added to this footprint cannot leave a nesting depth silently wrong
+  -- (WS-OD OD3.7) -- and the SchedContext layer is itself an extension, so the
+  -- peel has to stop at it rather than run to the base list.
+  repeat first
+    | exact LockSet.mem_insertOrMerge_write_self _ _
+    | apply mem_write_lockSetExtendOpt
+
 /-- **WS-OD (`v0.35.4`)**: the returned context's stack **head**, which the pop
 clears, is a declared write of `.reply` -- on every reachable state the same key
 as `replyId`, declared on its own account because the footprint is the union

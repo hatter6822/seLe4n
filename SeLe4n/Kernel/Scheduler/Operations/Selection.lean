@@ -104,7 +104,7 @@ theorem isBetterCandidate_transitive
   · have hLe31 : p3.toNat ≤ p1.toNat := Nat.le_of_not_gt h31
     by_cases h13 : p1.toNat < p3.toNat
     · omega
-    · have hp12 : p2.toNat > p1.toNat ∨ p2.toNat = p1.toNat := by
+    · have hSecondAtLeastFirst : p2.toNat > p1.toNat ∨ p2.toNat = p1.toNat := by
         by_cases hp : p2.toNat > p1.toNat
         · exact Or.inl hp
         · have : p2.toNat = p1.toNat := by
@@ -113,7 +113,7 @@ theorem isBetterCandidate_transitive
               simp [Nat.not_lt.mpr (Nat.le_of_lt hlt), hlt] at h12
             omega
           exact Or.inr this
-      have hp23 : p3.toNat > p2.toNat ∨ p3.toNat = p2.toNat := by
+      have hThirdAtLeastSecond : p3.toNat > p2.toNat ∨ p3.toNat = p2.toNat := by
         by_cases hp : p3.toNat > p2.toNat
         · exact Or.inl hp
         · have : p3.toNat = p2.toNat := by

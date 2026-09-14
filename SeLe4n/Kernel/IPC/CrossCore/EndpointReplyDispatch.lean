@@ -106,83 +106,106 @@ every single-core configuration — is a definitional no-op, so a replier placed
 on the boot core reduces to `applyReplyDonation`
 (`applyReplyDonationOnCore_eq_single_of_placed_at_bootCore`).
 
-`replierHome` / `ownerHome` are the migration's endpoints, resolved by the
-caller from the **pre**-state, so the `withLockSet` bracket can declare and
+`holderHome` / `ownerHome` are the migration's endpoints, resolved by the
+caller from the **pre**-state (`holderHome` is where the context's *outgoing*
+bound thread's replenishments live, `ownerHome` where the incoming one's will —
+both `determineTargetCore`, which is the correct resolver for a replenish queue
+because that queue is keyed by affinity rather than by placement), so the `withLockSet` bracket can declare and
 acquire both `SchedLockId.replenishQueue` write locks before the transition
 runs; the return itself never touches a `cpuAffinity`
 (`returnDonatedSchedContext_getTcb?_cpuAffinity_eq`), so a pre-state reading is
 the post-state's. -/
-def applyReplyDonationOnCore (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (replierHome ownerHome : CoreId) :
+def applyReplyDonationOnCore (st : SystemState) (rid : SeLe4n.ReplyId)
+    (targetVtid : SeLe4n.ValidThreadId)
+    (holderHome ownerHome : CoreId) :
     Except KernelError SystemState :=
-  let replier : SeLe4n.ThreadId := replierVtid.val
-  match lookupTcb st replier with
+  let target : SeLe4n.ThreadId := targetVtid.val
+  match replyFrameHeadHolder? st rid with
   | none => .ok st
-  | some replierTcb =>
-    match replierTcb.schedContextBinding with
-    | .donated scId originalOwner =>
-      match SeLe4n.ThreadId.toValid? originalOwner with
-      | some ownerVtid =>
+  | some (scId, holder) =>
+      match SeLe4n.ThreadId.toValid? holder with
+      | some holderVtid =>
           -- **WS-OD OD4.4**: the resolved return, exactly as the single-core twin
           -- `applyReplyDonation` runs it — the new owner comes off the context's
           -- own reply stack, so a depth-≥ 2 return settles the context on the
           -- thread that is still owed it rather than on the intermediate donor.
-          match returnDonatedSchedContextResolved st replierVtid.val scId ownerVtid.val with
+          -- **WS-HP HP4.3**: the thread that loses the context is the pair's
+          -- `holder` and the one that gains it is the argument, so the deschedule
+          -- and the migration's source both name `holder` — where before they
+          -- named the argument, because the argument *was* the server.
+          match returnDonatedSchedContextResolved st holderVtid.val scId target with
           | .error e => .error e
           | .ok st' =>
               .ok (descheduleAtPlacement
-                    (migrateSchedContextReplenishment st' scId replierHome ownerHome)
-                    replier)
+                    (migrateSchedContextReplenishment st' scId holderHome ownerHome)
+                    holder)
       | none => .error .invalidArgument
-    | _ => .ok st
 
-/-- WS-RR RR2.8: the **destination** core of the reply path's replenishment
-migration — the home core of the SchedContext's original owner, or the replier's
-own home when there is nothing to return (making the migration a definitional
-self-no-op on that arm).
+/-- **WS-HP HP4.3: the SOURCE core of the reply path's replenishment migration**
+-- the home core of the thread currently holding the context the answered frame
+heads, or the answered caller's own home when the frame heads nothing (which
+makes the migration a definitional self-no-op on exactly the arm that pops
+nothing).
+
+The `v0.35.38` replacement for `replyDonationOwnerHome`, which answered the
+*destination* question off the binding-driven trigger.  Under the head-driven
+trigger the destination is the answered caller, which every caller already holds,
+so only the source needs resolving -- and it must be resolved from the **same
+trigger the operation runs**, or the migration moves a queue the pop did not
+touch.  That is why this reads `replyFrameHeadHolder?` rather than a binding:
+the retired resolver's `replyDonationReturn?` and this operation's trigger are
+the two that HP6 makes disagree.
 
 A named function rather than an inline `match` because three readers must agree
 on it: the live dispatch that passes it to `applyReplyDonationOnCore`, the SM8.B
 per-core write set that mirrors the dispatch's control flow, and the RR2.9
 affinity proof.  Two of those are in other modules. -/
-def replyDonationOwnerHome (st : SystemState) (replier : SeLe4n.ThreadId) : CoreId :=
-  match replyDonationReturn? st replier with
-  | some (_, owner) => determineTargetCore st owner
-  | none            => determineTargetCore st replier
+def replyDonationHolderHome (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) : CoreId :=
+  match replyFrameHeadHolder? st rid with
+  | some (_, holder) => determineTargetCore st holder
+  | none             => determineTargetCore st target
+
+/-- The resolver on the popping arm: the holder's own home. -/
+theorem replyDonationHolderHome_of_head (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (h : replyFrameHeadHolder? st rid = some (scId, holder)) :
+    replyDonationHolderHome st rid target = determineTargetCore st holder := by
+  unfold replyDonationHolderHome; rw [h]
 
 /-- WS-RR RR2.8 (characterisation): the cross-core donation return *is* the
 `replyDonationReturn?` case split — the return, the migration and the
 deschedule on the returning arm, the identity otherwise. -/
 theorem applyReplyDonationOnCore_characterisation
-    (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (replierHome ownerHome : CoreId) :
-    applyReplyDonationOnCore st replierVtid replierHome ownerHome
-      = (match replyDonationReturn? st replierVtid.val with
-         | some (scId, owner) =>
-             match SeLe4n.ThreadId.toValid? owner with
-             | some ownerVtid =>
+    (st : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
+    (holderHome ownerHome : CoreId) :
+    applyReplyDonationOnCore st rid targetVtid holderHome ownerHome
+      = (match replyFrameHeadHolder? st rid with
+         | some (scId, holder) =>
+             match SeLe4n.ThreadId.toValid? holder with
+             | some holderVtid =>
                  -- **WS-OD OD4.4**: the model follows the operation onto the
-                 -- reply-stack resolver.
-                 (match returnDonatedSchedContextResolved st replierVtid.val scId
-                     ownerVtid.val with
+                 -- reply-stack resolver.  **WS-HP HP4.3**: and onto the
+                 -- head-driven trigger, whose pair names the thread that LOSES
+                 -- the context — so the deschedule and the migration source are
+                 -- `holder`, never the argument.
+                 (match returnDonatedSchedContextResolved st holderVtid.val scId
+                     targetVtid.val with
                   | .error e => .error e
                   | .ok st' =>
                       .ok (descheduleAtPlacement
-                            (migrateSchedContextReplenishment st' scId replierHome ownerHome)
-                            replierVtid.val))
+                            (migrateSchedContextReplenishment st' scId holderHome ownerHome)
+                            holder))
              | none => .error .invalidArgument
          | none => .ok st) := by
-  simp only [applyReplyDonationOnCore, replyDonationReturn?]
-  cases lookupTcb st replierVtid.val with
+  simp only [applyReplyDonationOnCore]
+  cases replyFrameHeadHolder? st rid with
   | none => rfl
-  | some replierTcb =>
-    simp only []
-    cases replierTcb.schedContextBinding with
-    | unbound => rfl
-    | bound _ => rfl
-    | donated scId owner =>
-      -- Both sides are now the same match tree, so the reduction closes it.
-      simp only []
+  | some pair =>
+    obtain ⟨_, holder⟩ := pair
+    cases hHV : SeLe4n.ThreadId.toValid? holder with
+    | none => rfl
+    | some holderVtid => rfl
 
 /-- `placedCoreOf?` reads the scheduler alone, so a step that writes only objects
 leaves it exactly where it was.  The transport the single-core bridge below needs,
@@ -207,109 +230,132 @@ which writes the core the replier is *on*, so an unconditional equation with the
 boot-pinned `removeRunnable` would be false of exactly the states the `v0.35.37`
 finding is about.  It is free on the configurations the bridge exists for — in a
 single-core model `allCores = [bootCoreId]`, so a placed thread is placed there
-— and a replier the state places **nowhere** is not covered, because there the
+— and a thread the state places **nowhere** is not covered, because there the
 single-core spelling still runs `removeRunnableOnCore … bootCoreId` while this
 one is the identity; the two agree extensionally and not definitionally, and
 claiming otherwise would be the kind of unproved convenience this cut is
-removing. -/
+removing.
+
+**WS-HP HP4.3**: the hypothesis is about the **holder the trigger names**, not
+about the argument, and it is quantified rather than fixed because the holder is
+resolved from the state — the argument is the thread that *gains* the context
+now, and its placement says nothing about the deschedule.  A hypothesis on
+`targetVtid` would have been about the wrong thread while still typechecking,
+which is the plan's SS3.8.2 hazard reaching a theorem statement. -/
 theorem applyReplyDonationOnCore_eq_single_of_placed_at_bootCore (st : SystemState)
-    (replierVtid : SeLe4n.ValidThreadId) (c : CoreId)
-    (hPlaced : placedCoreOf? st replierVtid.val = some bootCoreId) :
-    applyReplyDonationOnCore st replierVtid c c
-      = applyReplyDonation st replierVtid := by
+    (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId) (c : CoreId)
+    (hPlaced : ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+        replyFrameHeadHolder? st rid = some (scId, holder) →
+        placedCoreOf? st holder = some bootCoreId) :
+    applyReplyDonationOnCore st rid targetVtid c c
+      = applyReplyDonation st rid targetVtid := by
   simp only [applyReplyDonationOnCore, applyReplyDonation]
-  cases lookupTcb st replierVtid.val with
+  cases hTrig : replyFrameHeadHolder? st rid with
   | none => rfl
-  | some replierTcb =>
+  | some pair =>
+    obtain ⟨scId, holder⟩ := pair
     simp only []
-    cases replierTcb.schedContextBinding with
-    | unbound => rfl
-    | bound _ => rfl
-    | donated scId owner =>
+    cases SeLe4n.ThreadId.toValid? holder with
+    | none => rfl
+    | some holderVtid =>
       simp only []
-      cases SeLe4n.ThreadId.toValid? owner with
-      | none => rfl
-      | some ownerVtid =>
-        simp only []
-        cases hRet : returnDonatedSchedContextResolved st replierVtid.val scId ownerVtid.val with
-        | error e => rfl
-        | ok st' =>
-          obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-          have hSched : st'.scheduler = st.scheduler :=
-            returnDonatedSchedContext_scheduler_eq st st' _ _ _ _ hPop
-          simp only [migrateSchedContextReplenishment_noop, descheduleAtPlacement,
-            placedCoreOf?_congr_of_scheduler_eq _ hSched, hPlaced,
-            removeRunnableOnCore_bootCoreId]
+      cases hRet : returnDonatedSchedContextResolved st holderVtid.val scId targetVtid.val with
+      | error e => rfl
+      | ok st' =>
+        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+        have hSched : st'.scheduler = st.scheduler :=
+          returnDonatedSchedContext_scheduler_eq st st' _ _ _ _ hPop
+        simp only [migrateSchedContextReplenishment_noop, descheduleAtPlacement,
+          placedCoreOf?_congr_of_scheduler_eq _ hSched, hPlaced scId holder hTrig,
+          removeRunnableOnCore_bootCoreId]
 
 /-- WS-RR RR2.8 (decomposition): a successful cross-core donation return either
 left the state alone (no donated SchedContext) or ran the return, the migration
-and the deschedule, in that order. -/
+and the deschedule, in that order.
+
+**WS-HP HP4.3**: the holder is bound as a `ValidThreadId`, for the reason the
+single-core `applyReplyDonation_ok_decompose` gives — the operation's
+`.invalidArgument` arm established it, so a consumer reads it back out instead of
+re-deriving it. -/
 theorem applyReplyDonationOnCore_ok_decompose
-    (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (replierHome ownerHome : CoreId)
-    (h : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st'') :
-    (replyDonationReturn? st replierVtid.val = none ∧ st'' = st)
-    ∨ ∃ (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (st st'' : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
+    (holderHome ownerHome : CoreId)
+    (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'') :
+    (replyFrameHeadHolder? st rid = none ∧ st'' = st)
+    ∨ ∃ (scId : SeLe4n.SchedContextId) (holderVtid : SeLe4n.ValidThreadId)
         (newOwner? : Option SeLe4n.ThreadId) (st' : SystemState),
-        replyDonationReturn? st replierVtid.val = some (scId, owner) ∧
+        replyFrameHeadHolder? st rid = some (scId, holderVtid.val) ∧
         -- **WS-OD OD4.4**: the resolver's answer is part of the decomposition,
         -- exactly as in the single-core `applyReplyDonation_ok_decompose`.
         replyStackOuterCaller? st scId = .ok newOwner? ∧
-        returnDonatedSchedContext st replierVtid.val scId owner newOwner? = .ok st' ∧
+        -- **WS-HP HP4.3**: the return's `serverTid` is the trigger's `holder` and
+        -- its `originalOwner` is the argument — the two that swapped places.
+        returnDonatedSchedContext st holderVtid.val scId targetVtid.val newOwner? = .ok st' ∧
         st'' = descheduleAtPlacement
-          (migrateSchedContextReplenishment st' scId replierHome ownerHome)
-          replierVtid.val := by
+          (migrateSchedContextReplenishment st' scId holderHome ownerHome)
+          holderVtid.val := by
   rw [applyReplyDonationOnCore_characterisation] at h
-  cases hRet : replyDonationReturn? st replierVtid.val with
-  | none => rw [hRet] at h; exact Or.inl ⟨rfl, (Except.ok.inj h).symm⟩
+  cases hTrig : replyFrameHeadHolder? st rid with
+  | none => rw [hTrig] at h; exact Or.inl ⟨rfl, (Except.ok.inj h).symm⟩
   | some pair =>
-    obtain ⟨scId, owner⟩ := pair
-    rw [hRet] at h
+    obtain ⟨scId, holder⟩ := pair
+    rw [hTrig] at h
     simp only [] at h
-    cases hOV : SeLe4n.ThreadId.toValid? owner with
-    | none => rw [hOV] at h; cases h
-    | some ownerVtid =>
-      rw [hOV] at h
-      have hOEq : ownerVtid.val = owner :=
-        SeLe4n.ThreadId.toValid?_some_val_eq owner ownerVtid hOV
-      simp only [hOEq] at h
-      cases hR : returnDonatedSchedContextResolved st replierVtid.val scId owner with
+    cases hHV : SeLe4n.ThreadId.toValid? holder with
+    | none => rw [hHV] at h; cases h
+    | some holderVtid =>
+      rw [hHV] at h
+      have hHEq : holderVtid.val = holder :=
+        SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hHV
+      subst hHEq
+      simp only [] at h
+      cases hR : returnDonatedSchedContextResolved st holderVtid.val scId targetVtid.val with
       | error e => rw [hR] at h; cases h
       | ok st' =>
         rw [hR] at h
         obtain ⟨n, hRes, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
-        exact Or.inr ⟨scId, owner, n, st', rfl, hRes, hPop, (Except.ok.inj h).symm⟩
+        exact Or.inr ⟨scId, holderVtid, n, st', rfl, hRes, hPop, (Except.ok.inj h).symm⟩
 
 /-- WS-RR RR2.9 (frame): the cross-core donation return never advances the
 machine timer — the return writes objects, the migration writes replenish-queue
-slots, and the deschedule writes run-queue slots. -/
+slots, and the deschedule writes run-queue slots.
+
+**WS-HP HP4.3**: re-keyed on the answered frame's head context, so the return's
+*source* is the holder the trigger resolves and its *destination* is the answered
+caller.  The frame statement is unchanged — which of the two threads the store
+names does not change what the store leaves alone. -/
 theorem applyReplyDonationOnCore_machine_eq
-    (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (replierHome ownerHome : CoreId)
-    (h : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st'') :
+    (st st'' : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
+    (holderHome ownerHome : CoreId)
+    (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'') :
     st''.machine = st.machine := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid replierHome ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, n, st', _, _, hRet, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome h with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, st', _, _, hRet, hEq⟩
   · rw [hEq]
   · rw [hEq]
     show (descheduleAtPlacement _ _).machine = _
     simp only [descheduleAtPlacement_machine_eq, migrateSchedContextReplenishment_machine]
-    exact returnDonatedSchedContext_machine_eq st st' replierVtid.val scId owner n hRet
+    exact returnDonatedSchedContext_machine_eq st st' holderVtid.val scId targetVtid.val n hRet
 
 /-- WS-RR RR2.9 (frame): the cross-core donation return commits exactly the
 single-core return's object store — neither the migration nor the deschedule
-writes an object. -/
+writes an object.
+
+**WS-HP HP4.3**: the `none` arm names the head-driven trigger
+(`answeredFrameHeadContext?`) rather than the binding-driven resolver it
+replaces, and the `some` arm's return is stated at the holder-as-source,
+answered-caller-as-destination argument order the trigger produces. -/
 theorem applyReplyDonationOnCore_objects_eq
-    (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (replierHome ownerHome : CoreId)
-    (h : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st'') :
-    (replyDonationReturn? st replierVtid.val = none ∧ st''.objects = st.objects)
-    ∨ ∃ (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (st st'' : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
+    (holderHome ownerHome : CoreId)
+    (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'') :
+    (replyFrameHeadHolder? st rid = none ∧ st''.objects = st.objects)
+    ∨ ∃ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
         (newOwner? : Option SeLe4n.ThreadId) (st' : SystemState),
-        returnDonatedSchedContext st replierVtid.val scId owner newOwner? = .ok st' ∧
+        returnDonatedSchedContext st holder scId targetVtid.val newOwner? = .ok st' ∧
         st''.objects = st'.objects := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid replierHome ownerHome h with ⟨hNone, hEq⟩ | ⟨scId, owner, n, st', _, _, hRet, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome h with ⟨hNone, hEq⟩ | ⟨scId, holderVtid, n, st', _, _, hRet, hEq⟩
   · exact Or.inl ⟨hNone, by rw [hEq]⟩
-  · refine Or.inr ⟨scId, owner, n, st', hRet, ?_⟩
+  · refine Or.inr ⟨scId, holderVtid.val, n, st', hRet, ?_⟩
     rw [hEq, descheduleAtPlacement_preserves_objects,
       migrateSchedContextReplenishment_objects]
 
@@ -420,18 +466,31 @@ the reason the guards had to be symmetric before either theorem could be
 unconditional.  The final deschedule is then invisible to the invariant:
 `descheduleAtPlacement` writes a run queue and a current slot, never a replenish
 queue and never an object — at either of its branches, which is why both frames
-are proved at the step rather than per core here. -/
+are proved at the step rather than per core here.
+
+**WS-HP HP4.3 — the two home hypotheses swap conditionality, and that is the
+whole content of the re-keying here.**  Under the binding-driven trigger the
+*source* of the context was the operation's own argument (the recorded server),
+so its home was an unconditional equation, while the *destination* came out of
+the resolver and had to be stated under it.  Under the head-driven trigger the
+argument is the answered caller, which is the **destination**; the source is the
+holder the trigger resolves.  So `hOwnerHome` is now unconditional and
+`hHolderHome` is the one quantified over the trigger's answer.  Getting this
+backwards would not fail to elaborate — both shapes typecheck — it would migrate
+the replenishments in the wrong direction, which is why the migration's source
+and destination are threaded through the shared lemma rather than re-derived. -/
 theorem applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
-    (st st'' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
-    (replierHome ownerHome : CoreId)
+    (st st'' : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
+    (holderHome ownerHome : CoreId)
     (hObjInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
-    (hReplierHome : determineTargetCore st replierVtid.val = replierHome)
-    (hOwnerHome : ∀ scId owner, replyDonationReturn? st replierVtid.val = some (scId, owner) →
-        determineTargetCore st owner = ownerHome)
-    (h : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st'') :
+    (hHolderHome : ∀ scId holder,
+        replyFrameHeadHolder? st rid = some (scId, holder) →
+        determineTargetCore st holder = holderHome)
+    (hOwnerHome : determineTargetCore st targetVtid.val = ownerHome)
+    (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'') :
     replenishQueueAffinityConsistent_smp st'' := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid replierHome ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, n, st', hRes, _, hRet, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome h with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, st', hRes, _, hRet, hEq⟩
   · rw [hEq]; exact hCons
   · rw [hEq]
     -- The deschedule is a frame for the invariant; the substance is the migration.
@@ -440,8 +499,8 @@ theorem applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
         (descheduleAtPlacement_replenishQueueOnCore _ _ _)
         (descheduleAtPlacement_preserves_objects _ _)).mpr
       (returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
-        st st' replierVtid.val scId owner replierHome ownerHome hObjInv hCons hReplierHome
-        (hOwnerHome scId owner hRes) n hRet c)
+        st st' holderVtid.val scId targetVtid.val holderHome ownerHome hObjInv hCons
+        (hHolderHome scId holderVtid.val hRes) hOwnerHome n hRet c)
 
 -- ============================================================================
 -- §2  SM6.C.3 — Donation-chain lock-set extension
@@ -532,8 +591,15 @@ def endpointReplyCrossCoreDispatch
       -- (`replier = expected`) this is identical to the legacy `replier`-keyed path.
       match recordedReplyServer? st target with
       | some expected =>
+          -- **WS-HP HP4.4**: this shim no longer feeds the pop -- it is retained
+          -- as the *recorded server's* validation, which is the fact the
+          -- priority-inheritance reversion below walks from.  A sentinel
+          -- `expected` is a malformed `blockedOnReply` link and this arm has
+          -- refused it since SM6.C; dropping the shim with the pop would have
+          -- widened the accepted set as a side effect of a re-keying, which is
+          -- not what a refactor cut may do.
           match SeLe4n.ThreadId.toValid? expected with
-          | some expectedV =>
+          | some _expectedV =>
               -- `v0.35.37`: the deschedule's core is **not passed** — the step
               -- resolves the recorded server's own *placement*
               -- (`descheduleAtPlacement`).  SM6.D passed `determineExecutingCore
@@ -553,21 +619,48 @@ def endpointReplyCrossCoreDispatch
               -- resolves the thread it deschedules from the state already.
               -- WS-RR RR2.12: the live `.reply` arm now routes through the
               -- **migrating** donation return.  Both migration endpoints are
-              -- resolved from the **pre**-state `st`, which is what the
-              -- `withLockSet` bracket sees when it acquires the two
-              -- `SchedLockId.replenishQueue` write locks
-              -- (`endpointReplyCrossCoreDispatchSchedLockSet`), and which agrees
-              -- with the post-reply reading because `endpointReplyOnCore` writes
-              -- `ipcState` / queue links / the Reply object and never a
-              -- `schedContextBinding` or a `cpuAffinity`.  When the recorded
-              -- server holds no donated SchedContext there is nothing to move and
-              -- the endpoints coincide, making the migration a definitional
+              -- resolved at the state the pop runs on (`st1`), which is what
+              -- makes the affinity theorem's two home hypotheses hold by
+              -- definition rather than by a transport lemma; the `withLockSet`
+              -- bracket's pre-state reading of the same two
+              -- (`endpointReplyCrossCoreDispatchSchedLockSet`) agrees, because
+              -- `endpointReplyOnCore` writes `ipcState` / queue links / the Reply
+              -- object and never a `schedContextBinding` or a `cpuAffinity`.
+              -- When the answered frame heads no context there is nothing to move
+              -- and the endpoints coincide, making the migration a definitional
               -- no-op.
-              match applyReplyDonationOnCore st1 expectedV
-                  (determineTargetCore st expected) (replyDonationOwnerHome st expected) with
-              | .error e => (st, .error e)
-              | .ok st2 =>
-                  ((PriorityInheritance.propagatePipChainCrossCore st2 expected executingCore).1, .ok replySgi?)
+              --
+              -- **WS-HP HP4.4: the pop is keyed on the answered FRAME and the
+              -- answered CALLER, and the frame is resolved on the pre-state.**
+              -- `endpointReplyOnCore`'s `consumeCallerReply` has just cleared
+              -- `target.replyObject`, so `st1` no longer knows which frame this
+              -- reply answered -- `answeredReplyObject? st target` is the one
+              -- expression that does, and it is the same one the arm's footprint
+              -- members come from, so the declared footprint and the executed pop
+              -- cannot name different frames.  Everything the pop *decides* --
+              -- which context the frame heads, which thread holds it, which
+              -- caller is outer -- is read from `st1`.
+              --
+              -- `expected` is still what the priority-inheritance reversion walks
+              -- from, and deliberately: PIP keys on waiters
+              -- (`TCB.blockingServer?`), not on donations, so the chain starts at
+              -- the recorded server whatever the pop decided.
+              match answeredReplyObject? st target with
+              | none =>
+                  -- No answered frame: nothing heads a context through it, so the
+                  -- pop is the identity and only the reversion runs.
+                  ((PriorityInheritance.propagatePipChainCrossCore st1 expected executingCore).1,
+                    .ok replySgi?)
+              | some rid =>
+                match SeLe4n.ThreadId.toValid? target with
+                | none => (st, .error .invalidArgument)
+                | some targetV =>
+                  match applyReplyDonationOnCore st1 rid targetV
+                      (replyDonationHolderHome st1 rid target)
+                      (determineTargetCore st1 target) with
+                  | .error e => (st, .error e)
+                  | .ok st2 =>
+                      ((PriorityInheritance.propagatePipChainCrossCore st2 expected executingCore).1, .ok replySgi?)
           | none => (st, .error .invalidArgument)
       | none => (st, .error .replyCapInvalid)
 

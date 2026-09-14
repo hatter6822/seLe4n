@@ -507,6 +507,50 @@ def frozenDetachReplyFrameAboveOrSelf (st : FrozenSystemState) (rid : SeLe4n.Rep
     FrozenSystemState :=
   (frozenDetachReplyFrameAbove st rid).toOption.getD st
 
+/-- **WS-HP HP8.1, frozen mirror**: the scheduling context the frame `rid`
+**heads**, if it heads one.
+
+`replyFrameHeadContext?`'s counterpart, clause for clause, and it asks the same
+*reciprocal* question: the frame's upward link must name the context and the
+context's `scReply` must name the frame back.  A one-sided link is a stale
+reference over a re-used Reply, and reading it as a head is what would hand a
+scheduling context to a thread that is owed nothing.
+
+This exists because HP4 made the **live** `.reply` operation head-driven while
+this surface still read the recorded server's `.donated` binding.  The two
+triggers coincide on every state `severAtCut` leaves and part company on the
+states HP6's splice creates, so a binding-driven mirror of a head-driven
+operation is this project's *one question answered in two places* with the
+divergence already scheduled. -/
+def frozenReplyFrameHeadContext? (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
+    Option SeLe4n.SchedContextId :=
+  match st.getReply? rid with
+  | none => none
+  | some r =>
+    match r.next with
+    | some (.head scId) =>
+      match st.getSchedContext? scId with
+      | none => none
+      | some sc => if sc.scReply == some rid then some scId else none
+    | _ => none
+
+/-- **WS-HP HP8.1, frozen mirror**: the context the frame `rid` heads, **and the
+thread currently holding it**.
+
+`replyFrameHeadHolder?`'s counterpart.  The holder is the context's own
+`boundThread`, which is the thread the pop takes the reservation *from* — not the
+replier, who on a delegated reply capability holds nothing.  A context heading a
+frame with no bound thread answers `none` rather than a partial pair: there is
+nobody to unbind, so there is no pop to perform. -/
+def frozenReplyFrameHeadHolder? (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
+    Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match frozenReplyFrameHeadContext? st rid with
+  | none => none
+  | some scId =>
+    match (st.getSchedContext? scId).bind (·.boundThread) with
+    | none => none
+    | some holder => some (scId, holder)
+
 /-- **WS-RM, frozen mirror**: the reply-stack head the context `scId` owns.
 
 `donationHeadOf?`'s counterpart, clause for clause: a context heading no stack
@@ -544,6 +588,26 @@ def frozenOuterCallerAcceptable (st : FrozenSystemState)
            (match outerTcb.ipcState with
             | .blockedOnReply _ _ => true
             | _ => false))
+
+/-- **WS-HP HP4.7, frozen mirror**: may this pop hand the context to
+`originalOwner`?
+
+`donationRecipientAcceptable`'s counterpart, and it arrived with the head-driven
+trigger for the same reason the live one did: under the binding-driven reading the
+recipient was the binding's own recorded owner, so the operation had already seen
+it hold nothing; under the head-driven reading it is the **answered caller**, which
+no binding this operation reads constrains.  Without the guard a reply would
+silently overwrite a reservation that caller had acquired for itself while blocked.
+
+A recipient that does not resolve passes, exactly as on the live side: the
+operation's own later lookup reports `.objectNotFound` there, and shadowing that
+with `.invalidArgument` would change an error code rather than refuse a write.
+`frozenLookupTcb` is the reader, so a reserved id is refused the same way. -/
+def frozenDonationRecipientAcceptable (st : FrozenSystemState)
+    (originalOwner : SeLe4n.ThreadId) : Bool :=
+  match frozenLookupTcb st originalOwner with
+  | none => true
+  | some tcb => tcb.schedContextBinding == .unbound
 
 /-- **WS-RM, frozen mirror**: the thread one frame below this context's stack
 head -- the thread the context is owed to next.
@@ -608,9 +672,11 @@ order: the SchedContext rebinds to `originalOwner` and re-points `scReply` at th
 frame below its head, the popped head's links are cleared and that frame
 re-headed, the owner takes `donationReturnBinding` (the **live** function, so the
 two surfaces cannot disagree about which binding a return mints), and the server
-goes `.unbound`.  Both of the live guards come with it: the context must really
-be bound to the server, and the outer caller must be acceptable before it is
-handed one.
+goes `.unbound`.  All three of the live guards come with it: the context must
+really be bound to the server, the outer caller must be acceptable before it is
+handed one, and -- since WS-HP HP4.7 made this surface's pop head-driven -- so
+must the recipient.  The order is the live order, and all three precede every
+write.
 
 **`scThreadIndex` is deliberately not maintained**, and that is this surface's
 existing answer rather than an omission here: no frozen operation writes it --
@@ -626,6 +692,15 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
   | some sc =>
     if sc.boundThread != some serverTid then .error .invalidArgument
     else if !frozenOuterCallerAcceptable st serverTid originalOwner newOwner? then
+      .error .invalidArgument
+    -- **WS-HP HP4.7**: and the recipient, in the live order -- after the outer
+    -- caller, before any write.  The head-driven trigger hands the context to the
+    -- answered caller rather than to a binding's recorded owner, so this is the
+    -- guard that stops a reply from overwriting a reservation that caller had
+    -- acquired for itself.  A frozen surface missing a live guard is a mirror that
+    -- succeeds where the kernel refuses, which `frozenRunAgrees` would report as a
+    -- disagreement on exactly that state.
+    else if !frozenDonationRecipientAcceptable st originalOwner then
       .error .invalidArgument
     else
       match frozenDonationHeadOf? st scId sc with

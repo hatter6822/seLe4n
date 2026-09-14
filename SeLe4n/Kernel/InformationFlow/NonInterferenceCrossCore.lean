@@ -1862,6 +1862,21 @@ theorem descheduleAtPlacement_confinedToCores (st : SystemState)
   | none => exact observableSlotsConfinedToCores_refl st []
   | some c => exact removeRunnableOnCore_confinedToCores st tid c
 
+/-- **WS-HP HP4.4: the cores the head-driven pop's deschedule may write.**
+
+The thread the pop deschedules is the *holder* the trigger resolves, not the
+operation's argument, so the core list is resolved through that same trigger.
+Naming the argument's placement would typecheck and describe a different thread
+entirely -- the answered caller, which this leg does not deschedule at all -- and
+that is the plan's SS3.8.2 hazard reaching an information-flow claim.
+
+Empty when the frame heads nothing, which is exact: there the step is the
+identity. -/
+def replyDonationDescheduleCores (st : SystemState) (rid : SeLe4n.ReplyId) : List CoreId :=
+  match replyFrameHeadHolder? st rid with
+  | none => []
+  | some (_, holder) => descheduleAtPlacementCores st holder
+
 /-- SM8.B.2 / WS-RR RR2.8, corrected at `v0.35.37`: the cross-core donation
 **return** writes at most the core the state **places** the returning server on.
 Unlike the call-side `applyCallDonationOnCore` this is *not* per-core silent: the
@@ -1887,38 +1902,41 @@ the RR2.8 replenishment migration writes a queue SM8.A's
 leg still collapses to the one deschedule, and at a replier the state places
 nowhere the core list is empty because the step is the identity. -/
 theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
-    (replierVtid : SeLe4n.ValidThreadId) (replierHome ownerHome : CoreId)
-    (hStep : applyReplyDonationOnCore st replierVtid replierHome ownerHome = .ok st') :
-    observableSlotsConfinedToCores st st'
-      (descheduleAtPlacementCores st replierVtid.val) := by
-  rcases applyReplyDonationOnCore_ok_decompose st st' replierVtid replierHome
-    ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, owner, n, stRet, _, _, hRet, hEq⟩
+    (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
+    (holderHome ownerHome : CoreId)
+    (hStep : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st') :
+    observableSlotsConfinedToCores st st' (replyDonationDescheduleCores st rid) := by
+  rcases applyReplyDonationOnCore_ok_decompose st st' rid targetVtid holderHome
+    ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, stRet, hHead, _, hRet, hEq⟩
   · exact observableSlotsConfinedToCores_of_eq _ hEq
   · -- The core list is stated on the **pre**-state, which is the only state a
     -- caller holds.  That is sound because neither step before the deschedule
     -- moves a thread: the return writes objects alone and the migration writes
     -- replenish queues alone, so the two slices `placedCoreOf?` reads are fixed.
-    let stMig : SystemState := migrateSchedContextReplenishment stRet scId replierHome ownerHome
+    let stMig : SystemState := migrateSchedContextReplenishment stRet scId holderHome ownerHome
     have hMig : ∀ c : CoreId,
         stMig.scheduler.runQueueOnCore c = stRet.scheduler.runQueueOnCore c
         ∧ stMig.scheduler.currentOnCore c = stRet.scheduler.currentOnCore c :=
       fun c => migrateSchedContextReplenishment_runQueue_current_eq stRet scId
-        replierHome ownerHome c
+        holderHome ownerHome c
     have hRetSched : stRet.scheduler = st.scheduler :=
       returnDonatedSchedContext_scheduler_eq st stRet _ _ _ n hRet
-    have hCores : descheduleAtPlacementCores stMig replierVtid.val
-        = descheduleAtPlacementCores st replierVtid.val := by
+    have hList : replyDonationDescheduleCores st rid
+        = descheduleAtPlacementCores st holderVtid.val := by
+      unfold replyDonationDescheduleCores; rw [hHead]
+    have hCores : descheduleAtPlacementCores stMig holderVtid.val
+        = descheduleAtPlacementCores st holderVtid.val := by
       rw [descheduleAtPlacementCores_congr_of_runQueue_current_eq _ hMig]
       unfold descheduleAtPlacementCores
       rw [placedCoreOf?_congr_of_scheduler_eq _ hRetSched]
-    rw [hEq, ← hCores]
+    rw [hEq, hList, ← hCores]
     exact observableSlotsConfinedToCores_trans
       (by
         simpa using observableSlotsConfinedToCores_trans
           (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq hRetSched
             (returnDonatedSchedContext_machine_eq st stRet _ _ _ n hRet))
-          (migrateSchedContextReplenishment_confinedToCores stRet scId replierHome ownerHome))
-      (descheduleAtPlacement_confinedToCores stMig replierVtid.val)
+          (migrateSchedContextReplenishment_confinedToCores stRet scId holderHome ownerHome))
+      (descheduleAtPlacement_confinedToCores stMig holderVtid.val)
 
 /-- SM8.B.2: **the cores the live cross-core `.reply` may write**, recovered from
 the pre-state by mirroring `endpointReplyCrossCoreDispatch`'s own control flow —
@@ -1938,24 +1956,37 @@ def endpointReplyDispatchWriteSet (replier target : SeLe4n.ThreadId) (msg : IpcM
       match recordedReplyServer? st target with
       | some expected =>
           match SeLe4n.ThreadId.toValid? expected with
-          | some expectedV =>
-              match applyReplyDonationOnCore st1 expectedV
-                  (determineTargetCore st expected)
-                  (replyDonationOwnerHome st expected) with
-              | .error _ => []
-              | .ok st2 =>
-                  -- `v0.35.37`: the donation return's leg is the recorded server's
-                  -- **placement**, read off the same resolver the step uses, so the
-                  -- write set and the transition cannot name different cores.  It
-                  -- was `determineExecutingCore st expected`, which answers
-                  -- `bootCoreId` for a queued server — a core the step does not
-                  -- write and, worse, one it would have written had the proxy been
-                  -- the fact.  It is resolved at `st1` because that is the state
-                  -- the donation return runs on.
+          | some _expectedV =>
+              -- **WS-HP HP4.4**: the mirror follows the dispatch onto the answered
+              -- frame and the answered caller, including the arm where there is no
+              -- frame to pop and only the reply leg and the chain walk run.
+              match answeredReplyObject? st target with
+              | none =>
                   ([determineTargetCore st target]
-                    ++ descheduleAtPlacementCores st1 expectedV.val
-                    ++ pipChainWriteSet st2 expected executingCore
-                         st2.objectIndex.length)
+                    ++ pipChainWriteSet st1 expected executingCore st1.objectIndex.length)
+              | some rid =>
+                match SeLe4n.ThreadId.toValid? target with
+                | none => []
+                | some targetV =>
+                  match applyReplyDonationOnCore st1 rid targetV
+                      (replyDonationHolderHome st1 rid target)
+                      (determineTargetCore st1 target) with
+                  | .error _ => []
+                  | .ok st2 =>
+                      -- `v0.35.37`: the donation return's leg is the descheduled
+                      -- thread's **placement**, read off the same resolver the step
+                      -- uses, so the write set and the transition cannot name
+                      -- different cores.  It was `determineExecutingCore st
+                      -- expected`, which answers `bootCoreId` for a queued server —
+                      -- a core the step does not write and, worse, one it would have
+                      -- written had the proxy been the fact.  It is resolved at
+                      -- `st1` because that is the state the donation return runs on,
+                      -- and through the trigger because the thread it deschedules is
+                      -- the trigger's holder.
+                      ([determineTargetCore st target]
+                        ++ replyDonationDescheduleCores st1 rid
+                        ++ pipChainWriteSet st2 expected executingCore
+                             st2.objectIndex.length)
           | none => []
       | none => []
 
@@ -1990,21 +2021,33 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
         simp only []
         cases hEV : SeLe4n.ThreadId.toValid? expected with
         | none => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
-        | some expectedV =>
+        | some _expectedV =>
           simp only []
-          cases hDon : applyReplyDonationOnCore st1 expectedV
-              (determineTargetCore st expected)
-              (replyDonationOwnerHome st expected) with
-          | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
-          | ok st2 =>
+          cases hRid : answeredReplyObject? st target with
+          | none =>
             simp only []
-            exact observableSlotsConfinedToCores_trans
-              (observableSlotsConfinedToCores_trans hReply
-                (applyReplyDonationOnCore_confinedToCores st1 st2 expectedV
-                  (determineTargetCore st expected)
-                  (replyDonationOwnerHome st expected) hDon))
+            exact observableSlotsConfinedToCores_trans hReply
               (propagatePipChainCrossCore_confinedToCores executingCore
-                st2.objectIndex.length st2 expected)
+                st1.objectIndex.length st1 expected)
+          | some rid =>
+            simp only []
+            cases hTV : SeLe4n.ThreadId.toValid? target with
+            | none => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
+            | some targetV =>
+              simp only []
+              cases hDon : applyReplyDonationOnCore st1 rid targetV
+                  (replyDonationHolderHome st1 rid target)
+                  (determineTargetCore st1 target) with
+              | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
+              | ok st2 =>
+                simp only []
+                exact observableSlotsConfinedToCores_trans
+                  (observableSlotsConfinedToCores_trans hReply
+                    (applyReplyDonationOnCore_confinedToCores st1 st2 rid targetV
+                      (replyDonationHolderHome st1 rid target)
+                      (determineTargetCore st1 target) hDon))
+                  (propagatePipChainCrossCore_confinedToCores executingCore
+                    st2.objectIndex.length st2 expected)
 
 /-- SM8.B.2 (**the live `.reply` non-interference**): the syscall arm the kernel
 really runs on a cross-core `Reply` is invisible to any core outside its write
@@ -2076,39 +2119,44 @@ machine, and SM8.A's `onCore_perCore_independence` puts the replenish queue
 outside the observer's read set — so every core the fused resolution names comes
 from its post-receive half.  That is what lets `replyRecvBody` move the pop to
 the other side of the receive leg without its declared set changing. -/
-theorem replyRecvPopDonation_confinedToCores (recordedServer : SeLe4n.ThreadId)
+theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId)
     (st st' : SystemState) (returned? : Option SeLe4n.SchedContextId)
-    (hStep : replyRecvPopDonation recordedServer st = .ok (returned?, st')) :
+    (hStep : replyRecvPopDonation rid target st = .ok (returned?, st')) :
     observableSlotsConfinedToCores st st' [] := by
   unfold replyRecvPopDonation at hStep
-  split at hStep
-  · exact absurd hStep (by simp)
-  · next srvTcb _ =>
-    split at hStep
-    · next oldScId owner _ =>
-      split at hStep
-      · next srvV ownerV _ _ =>
-        split at hStep
-        · exact absurd hStep (by simp)
-        · next st1' hRet =>
+  cases hHead : replyFrameHeadHolder? st rid with
+  | none =>
+      rw [hHead] at hStep
+      have hEq : st = st' := (by simpa using hStep : none = returned? ∧ _).2
+      rw [← hEq]; exact observableSlotsConfinedToCores_refl st []
+  | some pair =>
+    obtain ⟨oldScId, holder⟩ := pair
+    rw [hHead] at hStep
+    simp only [] at hStep
+    cases hHV : holder.toValid? with
+    | none => rw [hHV] at hStep; simp only [] at hStep; cases hStep
+    | some holderV =>
+      cases hTV : target.toValid? with
+      | none => rw [hHV, hTV] at hStep; simp only [] at hStep; cases hStep
+      | some targetV =>
+        rw [hHV, hTV] at hStep
+        simp only [] at hStep
+        cases hRet : returnDonatedSchedContextResolved st holderV.val oldScId targetV.val with
+        | error e => rw [hRet] at hStep; simp only [] at hStep; cases hStep
+        | ok st1' =>
+          rw [hRet] at hStep
           obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
           have hReturn : observableSlotsConfinedToCores st st1' [] :=
             observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
               (returnDonatedSchedContext_scheduler_eq st st1' _ _ _ n hPopN)
               (returnDonatedSchedContext_machine_eq st st1' _ _ _ n hPopN)
           have hEq : migrateSchedContextReplenishment st1' oldScId
-              (determineTargetCore st recordedServer) (determineTargetCore st owner) = st' :=
+              (determineTargetCore st holder) (determineTargetCore st target) = st' :=
             (by simpa using hStep : some oldScId = returned? ∧ _).2
           rw [← hEq]
           simpa using observableSlotsConfinedToCores_trans hReturn
             (migrateSchedContextReplenishment_confinedToCores st1' oldScId _ _)
-      · next hNo =>
-        exfalso
-        revert hStep
-        rcases hSV : recordedServer.toValid? with _ | srvV <;>
-          rcases hOV : owner.toValid? with _ | ownerV <;> simp_all
-    · have hEq : st = st' := (by simpa using hStep : none = returned? ∧ _).2
-      rw [← hEq]; exact observableSlotsConfinedToCores_refl st []
 
 /-- **PR #895 review round 8**: the cores `replyRecvServerDeschedule` may write.
 
@@ -2368,7 +2416,9 @@ def replyRecvBodyWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadI
         -- (`replyRecvPopDonation_confinedToCores`), so it contributes nothing here
         -- — but the states the later legs branch on are its post-state, and a
         -- write set that mirrors a transition has to read the states it reads.
-        (match replyRecvPopDonation ((recordedReplyServer? st prevCaller).getD receiver) st1 with
+        -- **WS-HP HP4.5**: keyed on the frame and the answered caller, as the
+        -- transition is.
+        (match replyRecvPopDonation replyId prevCaller st1 with
          | .error _ => []
          | .ok (returnedSc?, st1p) =>
             endpointReceiveDualWriteSet st1p endpointId executingCore ++
@@ -2422,18 +2472,17 @@ theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)
     | ok replySgi =>
       simp only [] at hStep ⊢
       -- **WS-RM (`v0.35.6`)**: the pop, between the legs.
-      cases hPop : replyRecvPopDonation ((recordedReplyServer? st prevCaller).getD receiver)
-          st1 with
+      cases hPop : replyRecvPopDonation replyId prevCaller st1 with
       | error e => rw [hPop] at hStep; exact absurd hStep (by simp)
       | ok popPair =>
         obtain ⟨returnedSc?, st1p⟩ := popPair
         rw [hPop] at hStep
         simp only [] at hStep ⊢
         have hPopConf := replyRecvPopDonation_confinedToCores
-          ((recordedReplyServer? st prevCaller).getD receiver) st1 st1p returnedSc? hPop
+          replyId prevCaller st1 st1p returnedSc? hPop
         have hInv1p : st1p.objects.invExt :=
           replyRecvPopDonation_preserves_objects_invExt
-            ((recordedReplyServer? st prevCaller).getD receiver) st1 st1p returnedSc? hInv1 hPop
+            replyId prevCaller st1 st1p returnedSc? hInv1 hPop
         have hRecv := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver
           (some replyId) receiverCspaceRoot receiverSlotBase executingCore st1p hInv1p
         cases hRcv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)

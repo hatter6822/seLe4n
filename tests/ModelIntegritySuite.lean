@@ -1805,7 +1805,10 @@ def donation_primitives_reachable_via_operations_hub : IO Unit := do
   let _ : SystemState -> SeLe4n.ValidThreadId -> SeLe4n.ValidThreadId ->
           Except KernelError SystemState :=
     @applyCallDonation
-  let _ : SystemState -> SeLe4n.ValidThreadId ->
+  -- **WS-HP HP4.2**: the reply pop takes the answered *frame* and the answered
+  -- *caller*; the frame is resolved on the pre-state because the reply leg
+  -- clears the caller's link to it.
+  let _ : SystemState -> SeLe4n.ReplyId -> SeLe4n.ValidThreadId ->
           Except KernelError SystemState :=
     @applyReplyDonation
   -- Preservation theorems: scheduler / machine equality.
@@ -1819,9 +1822,9 @@ def donation_primitives_reachable_via_operations_hub : IO Unit := do
           applyCallDonation st callerVtid receiverVtid = .ok st' ->
           st'.machine = st.machine :=
     @applyCallDonation_machine_eq
-  let _ : ∀ (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
+  let _ : ∀ (st : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
             (st' : SystemState),
-          applyReplyDonation st replierVtid = .ok st' ->
+          applyReplyDonation st rid targetVtid = .ok st' ->
           st'.machine = st.machine :=
     @applyReplyDonation_machine_eq
   -- Atomicity predicate surface.

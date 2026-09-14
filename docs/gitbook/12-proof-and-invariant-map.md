@@ -215,7 +215,14 @@ the reply leg's head case is stated as `donationChainWellFormedExcept` and
 discharged by the donation pop that follows it in the same transition
 (`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`, with the
 fault reply and the reply *transfer* composing it, under one pre-state local
-coherence fact, `answeredHeadContextIsServerDonation`); and `.replyRecv`'s pop moved
+coherence fact -- `answeredHeadContextIsServerDonation` until WS-HP HP4
+(`v0.35.38`) made the pop read the very frame the relaxation sits at, which
+retires it for the strictly weaker `replyFrameHeadIsBound`, on the frozen mirror
+as well as on the live spines -- `frozenEndpointReplyWithDonationReturn` reads
+`frozenReplyFrameHeadHolder?` and the binding-driven frozen resolver is deleted,
+because the coverage table's `frozenBranchOperationChecked` claims the two are run
+beside each other and two readings of one question is what that claim forbids);
+and `.replyRecv`'s pop moved
 **between** the legs, which is seL4-MCS's own `doReplyTransfer` → `reply_remove`
 → `receiveIPC` order and which the receive leg's re-link requires, since
 `Reply.isFree` reads both stack links.  What keeps the surface closed is derived
@@ -232,10 +239,18 @@ live `Reply` record, and the frozen reply was clearing a caller's Reply bare —
 this workstream's own defect, on the surface nothing was looking at.  The cost is stated with the fix:
 removing a caller from the *middle* of a chain does not preserve the donation
 accounting, so a delegate answering an owner out of order leaves that owner
-`.unbound` and the context settles on the intermediate caller — seL4-MCS's own
-`reply_remove` answer, pinned by `tests/SmpIpcSuite.lean` §3.20 rather than
-described.  See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.8 for the
-canonical text.
+`.unbound` and the context settles on the intermediate caller.  That is a
+**divergence from seL4-MCS, not an inheritance of it** — checked against upstream
+source at `v0.35.14`, where `reply_remove`'s non-head branch *splices* so every
+frame below a cut stays reachable from the head — and it is pinned by
+`tests/SmpIpcSuite.lean` **§3.22**, the depth-three witness: §3.20's depth-two one
+structurally cannot show it, because a two-frame stack's lower frame is its bottom
+and both policies then write the same value there.  Recovering the accounting is
+**WS-HP**, whose HP4 (`v0.35.38`) has already moved the pop's trigger to the
+answered frame's head-ness on both the live and the frozen reply surfaces; HP6
+turns the sever into the splice.  See
+[`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.8 for the canonical text and
+§8.12.9 for the head-driven pop.
 
 **A donation moves budget, period and deadline — not priority or domain**
 (`v0.35.3`).  Closing WS-OD surfaced an authority crossing in both directions:

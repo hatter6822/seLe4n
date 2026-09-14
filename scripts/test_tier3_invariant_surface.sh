@@ -2066,12 +2066,24 @@ run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_lift' Se
 run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_of_resolved' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_eq_legacy_of_no_stack' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # Each site names the resolver, and none of them passes a literal `none` any
-# more.  These are the six the plan's row enumerates.
-run_check "INVARIANT" rg -n 'returnDonatedSchedContextResolved st replierVtid\.val scId ownerVtid\.val' SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean
+# more.  These are the six the plan's row enumerates.  The claim is the
+# RESOLVER's name at the site: the `…Resolved` wrapper is what computes the outer
+# caller, so a site naming it cannot be passing the literal `none` the bare
+# `returnDonatedSchedContext` takes.  The two reply-path sites are pinned
+# declaration-bounded rather than by their argument spelling, because WS-HP HP4
+# re-keyed their arguments and the component ORDER is pinned once, in this file's
+# HP4 section — a second copy here would be one question with two answers, and
+# the argument spelling is not what this row is about.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st" SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean'
 run_check "INVARIANT" rg -n 'returnDonatedSchedContextResolved st receiver scId originalOwner' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # (the suspend site is pinned by OD1.4's order anchor above, which OD4.4 updated
 # to the `…Resolved` spelling — one anchor for one question)
-run_check "INVARIANT" rg -n 'returnDonatedSchedContextResolved st srvV\.val oldScId ownerV\.val' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPopDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st" SeLe4n/Kernel/API.lean'
+# NEGATIVE: the bare pop at either reply-path site.  Token-preserving -- it keeps
+# the pop and drops the resolution, which is the pre-OD4.4 behaviour that pops at
+# the bottom of the stack whatever the stack says.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContext st" SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPopDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContext st" SeLe4n/Kernel/API.lean'
 # (the `.replyRecv` pop's confinement proof consumes the RESOLVED pop's own
 # decomposition rather than restating the call -- WS-RM moved the resolution into
 # `replyRecvPopDonation`, so the spelling is inherited from the definition the
@@ -12822,9 +12834,14 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def answeredHeadContextIsSer
 # the receive leg re-links a Reply that still heads a scheduling context, and
 # `Reply.isFree` reads both links, so `linkCallerReply` refused
 # `.replyCapInvalid` and the passive-server `ReplyRecv` loop could not complete.
+#
+# The pop's ARGUMENTS are deliberately not spelled here: this anchor's subject is
+# the order, and WS-HP HP4.5 re-keyed the pop.  What the pop is keyed on is pinned
+# once, in this file's HP4 section -- a second copy would be one question with two
+# answers, and a re-keying would then break an anchor that is not about keys.
 run_check "INVARIANT" rg -n '^def replyRecvPopDonation' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def replyRecvPostReceiveDonation' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBody[^\n]*(\n([ \t][^\n]*)?)*replyRecvPopDonation recordedServer st1[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) receiverCspaceRoot" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBody[^\n]*(\n([ \t][^\n]*)?)*replyRecvPopDonation [^\n]*st1 with[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) receiverCspaceRoot" SeLe4n/Kernel/API.lean'
 # NEGATIVE: the receive leg must not run on the PRE-pop state.  Token-preserving
 # -- it keeps the pop, the receive leg and both bindings, and feeds the receive
 # leg the state the reply leg committed instead of the one the pop did.
@@ -12882,7 +12899,13 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameBelow\?[^\n]*(
 # matters -- an "equivalence" with no exhibited disagreement would be a claim
 # that HP4 changes nothing.
 run_check "INVARIANT" rg -n '^def replyFrameHeadContext\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^def answeredFrameHeadContext\?' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# WS-HP HP4.1: both resolvers live in `Endpoint.lean` now, because the pop --
+# which is declared there -- keys on the frame one and the answered-caller one is
+# its composition.  A second thread-level spelling in the lower module is the
+# plan's SS3.8.2 hazard, so the composition is the anchor.
+run_check "INVARIANT" rg -n '^def answeredFrameHeadContext\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def replyFrameHeadHolder\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def answeredFrameHeadContext\?[^\n]*(\n([ \t][^\n]*)?)*some rid => replyFrameHeadHolder\? st rid" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 run_check "INVARIANT" rg -n '^theorem answeredFrameHeadContext\?_implies_serverDonation' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
 run_check "INVARIANT" rg -n '^theorem donationPopTriggers_disagree_at_orphan_head' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
 run_check "INVARIANT" rg -n '^theorem answeredHeadContextIsServerDonation_false_of_orphan_head' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
@@ -12953,7 +12976,13 @@ run_negative_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_bootCore
 
 # (4) The confinement theorem's core list comes from the SAME resolver the step
 # uses, which is what stops the claim and the transition naming different cores.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonationOnCore_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st replierVtid\.val" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+# WS-HP HP4.4: and through the TRIGGER, because the thread the step deschedules
+# is the holder the trigger resolves rather than the operation's argument.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonationOnCore_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*replyDonationDescheduleCores st rid" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyDonationDescheduleCores[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st holder" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+# NEGATIVE: token-preserving -- it keeps the core list and resolves it on the
+# ARGUMENT, which names the answered caller: a thread this leg never deschedules.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyDonationDescheduleCores[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st target" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
 # NEGATIVE: a fixed singleton core list is the presence-check version of the
 # claim -- it keeps the theorem and stops it being about the resolver.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonationOnCore_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*observableSlotsConfinedToCores st st. \[serverCore\]" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
@@ -12963,5 +12992,212 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonationOn
 # queued the server anywhere but the boot core.
 run_prose_check "TRACE" rg -n 'NEGATIVE: the superseded .determineExecutingCore. deschedule leaves it queued' tests/SmpCrossCoreReplySuite.lean
 run_prose_check "TRACE" rg -n 'the donation return DESCHEDULES a queued recorded server' tests/SmpCrossCoreReplySuite.lean
+
+# ============================================================================
+# WS-HP HP4 -- the reply path's donation pop is HEAD-driven
+# ============================================================================
+#
+# The plan's SS3.8.2 hazard is what every anchor here is shaped against.  The
+# retired resolver and the new one have the SAME TYPE and OPPOSITE second
+# components:
+#
+#   endpointReplyServerDonation? st target : Option (SchedContextId x ThreadId)
+#                                                                    ^ owner  -- GAINS the context
+#   replyFrameHeadHolder?        st rid    : Option (SchedContextId x ThreadId)
+#                                                                    ^ holder -- LOSES it
+#
+# and under the flip the pair also moves from `returnDonatedSchedContext`'s
+# `originalOwner` position to its `serverTid` one.  A substitution that swaps them
+# typechecks and is silently wrong, so every positive below is paired with a
+# token-preserving negative that keeps the resolver and the call and changes only
+# which component reaches which parameter.
+
+# (1) Both spines resolve the pop from the FRAME, at the state the pop runs on.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*match replyFrameHeadHolder\? st rid with" SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*match replyFrameHeadHolder\? st rid with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+# NEGATIVE: the binding-driven trigger must not decide the pop in either spine.
+# Token-preserving: `replyDonationReturn?` STAYS in the tree as the "does this
+# thread hold a donated context" resolver -- what it may no longer do is select
+# the pop's arm.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*match replyDonationReturn\? st" SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*match (replyDonationReturn\?|endpointReplyServerDonation\?) st" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+
+# (2) The pair's components reach the arguments they mean: the holder is the
+# return's `serverTid` and the operation's own argument is its `originalOwner`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st holderVtid\.val scId target" SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st holderVtid\.val scId target" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+# NEGATIVE: the swap.  This is the substitution the plan warns about, and it is
+# exactly token-preserving -- same resolver, same call, components exchanged.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st target scId holder" SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+# ...and the theorem that the pair's second component IS `sc.boundThread`, which
+# is what makes a proof needing the owner there fail rather than mislead.
+run_check "INVARIANT" rg -n '^theorem answeredFrameHeadContext\?_boundThread' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+
+# (3) The frame is resolved on the PRE-state and passed in, because the reply leg
+# clears the answered caller's link to it (`consumeCallerReply`).  This is the
+# one thing the pop cannot ask its own state, and the expression is the one the
+# arm's footprint members come from, so the declared footprint and the executed
+# pop cannot name different frames.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*match answeredReplyObject\? st target with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*applyReplyDonationOnCore st1 rid targetV" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+# NEGATIVE: resolving the frame at `st1` is the defect -- it is `none` there, so
+# the pop would never fire and every donation would leak.  Token-preserving: it
+# keeps the resolver and moves only its state argument.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*answeredReplyObject\? st1 target" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+
+# (4) The retired owner-home resolver is gone and its replacement reads the SAME
+# trigger the operation runs.  A source home read off a binding while the pop
+# reads a frame is one question with two answers, and they diverge on exactly the
+# state HP6 creates.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyDonationHolderHome[^\n]*(\n([ \t][^\n]*)?)*match replyFrameHeadHolder\? st rid with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+run_negative_check "INVARIANT" rg -n '^def replyDonationOwnerHome' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+
+# (5) The priority-inheritance walk does NOT move.  It keys on waiters
+# (`TCB.blockingServer?`), not on donations, so it starts at the recorded server
+# whatever the pop decided -- and a walk from the context's `boundThread` would
+# start at the wrong thread on exactly a delegated reply.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*propagatePipChainCrossCore st2 expected executingCore" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+# NEGATIVE: token-preserving -- keeps the walk and re-keys it on the holder.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*propagatePipChainCrossCore st2 holder" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+
+# (6) The two pre-receive cleanups KEEP the binding-driven reading, because they
+# ask a question about a *binding* -- "does this receiver still hold a donation"
+# -- and not about a frame: a thread abandoning a receive holds no reply
+# capability and answers nobody, so there is no answered frame to key on.
+# Re-keying them on the trigger would be the flip applied where it does not
+# belong.  Both spellings are pinned, because `…Checked` and its defensive twin
+# are held pointwise equal on `.ok` and a flip reaching one and not the other
+# would break that equality rather than the reading.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupPreReceiveDonation \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*recvTcb\.schedContextBinding with" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupPreReceiveDonationChecked[^\n]*(\n([ \t][^\n]*)?)*recvTcb\.schedContextBinding with" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# NEGATIVE: token-preserving -- it keeps the cleanup and swaps in the head-driven
+# resolver, at either spelling.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupPreReceiveDonation \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*replyFrameHeadHolder\?" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupPreReceiveDonationChecked[^\n]*(\n([ \t][^\n]*)?)*replyFrameHeadHolder\?" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+
+# (7) The `.replyCapInvalid` arm stays, and stays distinguishable from "no head
+# context": the first is a malformed reply and the second an ordinary reply with
+# no donation to return.  Collapsing them would turn every donation-free reply
+# into an error.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*\(st, \.error \.replyCapInvalid\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+
+# (8) HP4.6 -- the pop validates the thread it is about to rewrite.  The
+# head-driven recipient is the answered caller, which no binding the operation
+# reads constrains, so the guard is what stops a reply from overwriting a
+# reservation that caller had acquired for itself.
+run_check "INVARIANT" rg -n '^def donationRecipientAcceptable' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def returnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*if !donationRecipientAcceptable st originalOwner then" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_rejects_bound_recipient' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_recipient_unbound' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# NEGATIVE: token-preserving -- it keeps the guard and asks it of the SERVER,
+# which is the thread the pop unbinds rather than the one it rebinds, so the
+# check would pass on exactly the state it exists to refuse.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def returnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*if !donationRecipientAcceptable st serverTid then" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+
+# (9) The chain composite no longer carries `answeredHeadContextIsServerDonation`
+# -- the pop and the relaxation name one frame by construction now -- and what
+# replaced it is strictly weaker.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*replyFrameHeadIsBound" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*hHeadReturned : answeredHeadContextIsServerDonation" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
+
+# (10) The witnesses exhibit the head-driven shape, so a fixture that carried no
+# reply stack could not pass them.
+run_prose_check "TRACE" rg -n 'the head-driven trigger names the queued server as the holder' tests/SmpCrossCoreReplySuite.lean
+run_prose_check "TRACE" rg -n 'applyReplyDonationOnCore on a frame heading no context is a no-op' tests/SmpCrossCoreReplySuite.lean
+
+# (11) The declared footprint still resolves its donation members through the
+# BINDING -- repointing them is HP6's, which is the cut that makes the divergence
+# reachable -- so the property that matters is stated rather than argued: the
+# footprint covers what the head-driven pop writes.  A theorem, not a comment,
+# because a footprint that omits a written object is false.
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_headDrivenPop' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_donatedSc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+
+# (12) `.replyRecv`'s pop is head-driven too, and on that arm the frame needs no
+# resolving -- `rid` IS the reply capability the arm was invoked with.  Leaving it
+# binding-driven would be one question answered two ways on the two arms that ask
+# it, which is the defect HP4 exists to remove rather than to relocate.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPopDonation[^\n]*(\n([ \t][^\n]*)?)*match replyFrameHeadHolder\? st rid with" SeLe4n/Kernel/API.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPopDonation[^\n]*(\n([ \t][^\n]*)?)*srvTcb\.schedContextBinding with" SeLe4n/Kernel/API.lean'
+# ...and the body threads the capability's own reply id, not a re-resolution.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBody[^\n]*(\n([ \t][^\n]*)?)*replyRecvPopDonation rid prevCaller st1" SeLe4n/Kernel/API.lean'
+
+# ============================================================================
+# WS-HP HP8.1 -- the FROZEN mirror's pop is head-driven too
+# ============================================================================
+#
+# HP4 flipped the live `.reply` operation and the frozen composite mirrors that
+# operation, so leaving the mirror binding-driven would have been the divergence
+# `frozenBranchOperationChecked = true` claims not to exist -- latent today
+# (the two readings coincide on every state `severAtCut` leaves) and reachable the
+# moment HP6's splice lands.  Flipped in the same cut rather than registered,
+# because this project's rule for an asymmetry between two paths is to make them
+# symmetric, not to document the asymmetry.
+
+# (13) The frozen resolvers exist and ask the reciprocal question, clause for
+# clause with the live ones: a one-sided link is not a head.
+run_check "INVARIANT" rg -n '^def frozenReplyFrameHeadContext\?' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenReplyFrameHeadHolder\?' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReplyFrameHeadContext\?[^\n]*(\n([ \t][^\n]*)?)*if sc\.scReply == some rid then some scId else none" SeLe4n/Kernel/FrozenOps/Core.lean'
+# NEGATIVE: token-preserving -- keeps the head link and drops the reciprocity,
+# which is the reading that hands a context away over a re-used Reply.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReplyFrameHeadContext\?[^\n]*(\n([ \t][^\n]*)?)*\| some \(\.head scId\) => some scId" SeLe4n/Kernel/FrozenOps/Core.lean'
+
+# (14) The frozen composite's trigger IS the frame, read on the pre-state, and
+# the pop's subject is the frame's holder with the answered caller as recipient.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReplyWithDonationReturn[^\n]*(\n([ \t][^\n]*)?)*let headHolder\? := frozenReplyFrameHeadHolder\? st replyId" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReplyWithDonationReturn[^\n]*(\n([ \t][^\n]*)?)*frozenApplyReplyDonation st. holder scId targetId" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# NEGATIVE: the swap, exactly as on the live side -- same call, components
+# exchanged, so the reservation would go to the thread that already lost it.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReplyWithDonationReturn[^\n]*(\n([ \t][^\n]*)?)*frozenApplyReplyDonation st. targetId scId holder" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# NEGATIVE: and the retired binding-driven resolver is gone rather than left
+# beside the new one, since two readings on one surface is what the flip removes.
+run_negative_check "INVARIANT" rg -n 'frozenEndpointReplyServerDonation\?' SeLe4n/Kernel/FrozenOps/Operations.lean
+
+# (15) The priority-inheritance reversion still keys on the recorded server, as
+# the live walk does: PIP reads waiters, not donations.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReplyWithDonationReturn[^\n]*(\n([ \t][^\n]*)?)*frozenRevertPriorityInheritance st.. server" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReplyWithDonationReturn[^\n]*(\n([ \t][^\n]*)?)*frozenRevertPriorityInheritance st.. holder" SeLe4n/Kernel/FrozenOps/Operations.lean'
+
+# (16) And the differential actually FIRES the pop, which through four review
+# rounds of FO-041 it never did -- no half of that scenario gave the recorded
+# server a `.donated` binding, so the step round 13 added to this surface was
+# compared on neither side.  FO-042 pops on both, and its second half is the
+# state where the two candidate triggers disagree.
+run_prose_check "TRACE" rg -n 'the frozen reply OPERATION agrees with the live one, donation and all' tests/FrozenOpsSuite.lean
+run_prose_check "TRACE" rg -n 'the frozen composite follows the LIVE trigger, not the retired one' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^private def differentialEndpointReplyDonationAgrees' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def operationDifferentialScenarios[^\n]*(\n([ \t][^\n]*)?)*differentialEndpointReplyDonationAgrees" tests/FrozenOpsSuite.lean'
+
+# (17) And the frozen pop carries ALL THREE live guards, in the live order.  The
+# recipient guard is HP4.6's and arrived with the head-driven trigger for the same
+# reason the live one did -- under the binding reading the recipient was the
+# binding's own recorded owner, which the operation had already seen hold nothing.
+# The frozen pop had only two, under a docstring claiming it had every live one, so
+# a mirror succeeded where the kernel refuses: found by asking the question this
+# cut's flip raises, and its witness is FO-042's third half, which fails on the
+# genuine pre-fix behaviour and leaves every neighbour passing.
+run_check "INVARIANT" rg -n '^def frozenDonationRecipientAcceptable' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*frozenOuterCallerAcceptable st serverTid originalOwner newOwner\?[^\n]*(\n([ \t][^\n]*)?)*!frozenDonationRecipientAcceptable st originalOwner" SeLe4n/Kernel/FrozenOps/Core.lean'
+# NEGATIVE: token-preserving -- keeps the guard and asks it of the thread the pop
+# UNBINDS rather than the one it rebinds, so it would pass on exactly the state it
+# exists to refuse (and refuse every ordinary pop).  The live twin's own negative.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*!frozenDonationRecipientAcceptable st serverTid" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_prose_check "TRACE" rg -n 'the frozen composite refuses it too, with the same error' tests/FrozenOpsSuite.lean
+
+# (18) ...and the live twin's own ID PROMOTION, at the unit the live code puts it:
+# `applyReplyDonation` refuses a holder `ThreadId.toValid?` will not promote, so
+# its mirror refuses the same condition.  Spelled `isReserved` rather than with
+# `toValid?` because this surface uses `toValid?` nowhere -- `frozenLookupTcb` is
+# how it asks whether an id is usable and that predicate IS `isReserved` -- so the
+# condition is the live one and the vocabulary is this surface's, which keeps the
+# question one question here rather than two.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenApplyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*if holder\.isReserved then \.error \.invalidArgument" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# NEGATIVE: token-preserving -- keeps the refusal and asks it of the recipient,
+# which the leg has already refused, so the guard would decide nothing.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenApplyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*if originalOwner\.isReserved then" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# NEGATIVE: and the surface must not grow a second validity convention.
+run_negative_check "INVARIANT" rg -n 'toValid\?' SeLe4n/Kernel/FrozenOps/Operations.lean SeLe4n/Kernel/FrozenOps/Core.lean
+run_prose_check "TRACE" rg -n 'the frozen composite refuses it with the same error' tests/FrozenOpsSuite.lean
 
 finalize_report

@@ -302,14 +302,21 @@ theorem endpointReplyCrossCoreDispatch_preserves_objects_invExt
       | error e => exact hObjInv
       | ok replySgi? =>
           simp only
+          -- **WS-HP HP4.4**: two more splits than before the trigger flip — the
+          -- answered frame's resolution and the answered caller's validation.
           split
           · split
             · split
-              · exact hObjInv
-              · rename_i st2 hRet
-                exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
-                  _ _ _ _
-                  (applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hRep hRet)
+              · exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
+                  _ _ _ _ hRep
+              · split
+                · exact hObjInv
+                · split
+                  · exact hObjInv
+                  · rename_i st2 hRet
+                    exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
+                      _ _ _ _
+                      (applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hRep hRet)
             · exact hObjInv
           · exact hObjInv
 
@@ -528,9 +535,14 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
       st.getTcb? tid = some tcb →
       tcb.schedContextBinding ≠ .donated scId faulted)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hServerIdleAllowed : ∀ (expected : SeLe4n.ThreadId),
-      recordedReplyServer? st faulted = some expected →
-      ∀ tcb, st.getTcb? expected = some tcb → passiveServerIdleAllowed tcb.ipcState)
+    -- **WS-HP HP4.4**: the head-driven pop is the identity exactly when the
+    -- answered frame heads no scheduling context, which is the other half of
+    -- "this reply returns no donation" -- see
+    -- `endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull` for why the
+    -- binding half no longer implies it.
+    (hNoHead : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
+      replyFrameHeadHolder?
+        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid = none)
     (hTargetIdleAllowed : ∀ tcb : TCB,
       (endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st).1.getTcb? faulted
           = some tcb →
@@ -553,7 +565,7 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
             faulted IpcMessage.empty c st hInv hObjInv
             (fun t tcb' sc hS => hNoDonationOwnedBy t tcb' sc
               ((SystemState.getTcb?_eq_some_iff st t tcb').mpr hS))
-            hAllBudgetsNone hServerIdleAllowed hStackValid
+            hAllBudgetsNone hNoHead hStackValid
           have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
             faulted IpcMessage.empty c st hObjInv
           rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st
@@ -670,15 +682,20 @@ theorem faultReplyApplyOnCore_donationChainFrame (st : SystemState)
 Its second stage **is** the live `.reply` chain, so the reply path's own payoff
 (`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`) carries the
 whole of the chain reasoning; stage 3 writes a TCB and nothing else.  The
-hypothesis is therefore the reply payoff's own, at the same pre-state -- a fault
-reply that answers a caller whose reply frame *heads* a scheduling context leaves
-that context headless unless the donation pop beneath it re-heads the frame
-below, which is the relation `answeredHeadContextIsServerDonation` names. -/
+hypothesis is therefore the reply payoff's own -- a fault reply that answers a
+caller whose reply frame *heads* a scheduling context leaves that context
+headless unless the donation pop beneath it re-heads the frame below.
+
+**WS-HP HP4.4**: under the head-driven trigger the pop resolves that context from
+the very frame the relaxation sits at, so the coherence relation
+`answeredHeadContextIsServerDonation` is no longer needed; what remains is
+`replyFrameHeadIsBound`, which rules out a head context bound to nobody. -/
 theorem faultReplyOnCore_preserves_donationChainWellFormed
     (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (hHeadReturned : answeredHeadContextIsServerDonation st faulted) :
+    (hHeadBound : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
+      replyFrameHeadIsBound (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid) :
     donationChainWellFormed (faultReplyOnCore replier faulted mi regs c st).1 := by
   unfold faultReplyOnCore
   cases hTcb : st.getTcb? faulted with
@@ -688,7 +705,7 @@ theorem faultReplyOnCore_preserves_donationChainWellFormed
     | none => simpa only [hTcb, hFault] using hChain
     | some tf =>
       have hRepChain := endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
-        replier faulted IpcMessage.empty c st hObjInv hChain hHeadReturned
+        replier faulted IpcMessage.empty c st hObjInv hChain hHeadBound
       have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
         faulted IpcMessage.empty c st hObjInv
       rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st
@@ -717,14 +734,19 @@ theorem replyTransferOnCore_preserves_donationChainWellFormed
     (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (c : CoreId)
     (st st' : SystemState) (u : Unit)
     (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (hHeadReturned : answeredHeadContextIsServerDonation st callerTid)
+    -- **WS-HP HP4.4**: the fault arm and the ordinary arm reply with different
+    -- messages and the same *frame*, so the one condition still serves both.
+    (hHeadBoundFault : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some rid →
+      replyFrameHeadIsBound (endpointReplyOnCore replier callerTid IpcMessage.empty c st).1 rid)
+    (hHeadBound : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some rid →
+      replyFrameHeadIsBound (endpointReplyOnCore replier callerTid msg c st).1 rid)
     (hStep : replyTransferOnCore replier callerTid mi regs msg c st = .ok (u, st')) :
     donationChainWellFormed st' := by
   unfold replyTransferOnCore at hStep
   by_cases hF : threadHasPendingFault st callerTid
   · rw [if_pos hF] at hStep
     have hChainF := faultReplyOnCore_preserves_donationChainWellFormed replier callerTid
-      mi regs c st hObjInv hChain hHeadReturned
+      mi regs c st hObjInv hChain hHeadBoundFault
     rcases hFR : faultReplyOnCore replier callerTid mi regs c st with ⟨stF, resF⟩
     rw [hFR] at hStep hChainF
     simp only at hChainF
@@ -735,7 +757,7 @@ theorem replyTransferOnCore_preserves_donationChainWellFormed
         exact hStep.2 ▸ hChainF
   · rw [if_neg hF] at hStep
     have hChainR := endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
-      replier callerTid msg c st hObjInv hChain hHeadReturned
+      replier callerTid msg c st hObjInv hChain hHeadBound
     have hObjR := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier callerTid
       msg c st hObjInv
     rcases hRD : endpointReplyCrossCoreDispatch replier callerTid msg c st with ⟨stR, resR⟩

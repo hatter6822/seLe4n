@@ -179,20 +179,49 @@ rejection.  Under `donationOwnerValid` (an `ipcInvariantFull`
 conjunct), `originalOwner` is structurally non-sentinel, so the
 rejection arm is unreachable in production but provides
 defense-in-depth for any path that hasn't yet established that
-invariant. -/
-def applyReplyDonation (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
+invariant.
+
+**WS-HP HP4.2 (`v0.35.38`): the argument is the ANSWERED CALLER, not the
+server.**  This took the recorded server and read its `.donated` binding for both
+the context and its owner; it now takes `target` -- the thread whose reply is
+being answered -- and reads `answeredFrameHeadContext?`, so the context comes off
+the answered frame's own `.head` link and the thread that loses it is that
+context's `boundThread`.
+
+Three arguments therefore change where they come from, and the plan's SS3.8.2
+hazard is why this is a *renaming* rather than a substitution: the pair the old
+trigger produced was `(scId, owner)` -- the thread that **gains** the context --
+and the pair this one produces is `(scId, holder)` -- the thread that **loses**
+it.  Same type, opposite roles, and under the flip the pair also moves from the
+`originalOwner` position to the `serverTid` one.  A mechanical rewrite typechecks
+and is silently wrong, so every binder below names what it is.
+
+The recipient is `target` itself, which is what makes HP4.6's guard mandatory
+rather than defence in depth: the answered caller may have acquired a context of
+its own while blocked (`schedContextBind` binds a blocked thread), and the pop
+writes `donationReturnBinding` there unconditionally.
+
+**The answered frame is an argument, and it has to be** (`replyFrameHeadHolder?`
+records why): the reply leg runs first and `consumeCallerReply` clears the
+answered caller's `replyObject`, so by the time this operation executes there is
+no link from `target` to its frame left to follow.  `rid` is resolved on the
+pre-state through `answeredReplyObject?` -- the same expression the arm's
+footprint members come from, so the declared footprint and the executed pop
+cannot name different frames -- and everything the pop *decides* (which context
+the frame heads, which thread holds it, which caller is outer) is read from this
+operation's own state. -/
+def applyReplyDonation (st : SystemState) (rid : SeLe4n.ReplyId)
+    (targetVtid : SeLe4n.ValidThreadId)
     : Except KernelError SystemState :=
-  let replier : SeLe4n.ThreadId := replierVtid.val
-  match lookupTcb st replier with
-  | none => .ok st                          -- No-op: replier not found
-  | some replierTcb =>
-    match replierTcb.schedContextBinding with
-    | .donated scId originalOwner =>
-      -- AH2-B: Propagate return errors instead of swallowing them.
-      -- AN10-residual-1 deep-audit (H6): direct call to the typed wrapper
-      -- after promoting the stored `originalOwner` field via `toValid?`.
-      match SeLe4n.ThreadId.toValid? originalOwner with
-      | some ownerVtid =>
+  let target : SeLe4n.ThreadId := targetVtid.val
+  match replyFrameHeadHolder? st rid with
+  | none => .ok st                          -- No-op: the answered frame heads nothing
+  | some (scId, holder) =>
+      -- The thread that loses the context is the context's own `boundThread`,
+      -- so `returnDonatedSchedContext`'s `boundThread` guard is satisfied by
+      -- construction -- the operation reads the fact it used to check.
+      match SeLe4n.ThreadId.toValid? holder with
+      | some holderVtid =>
           -- **WS-OD OD4.4**: the new owner is resolved off the scheduling
           -- context's own reply stack, on this pop's pre-state.  At the bottom
           -- of the stack that is `none` and the return rebinds `.bound scId`
@@ -200,11 +229,10 @@ def applyReplyDonation (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
           -- context settles on the thread that is still owed it instead of on
           -- the intermediate donor — which would otherwise acquire another
           -- domain's reservation permanently (plan §3.2).
-          match returnDonatedSchedContextResolved st replierVtid.val scId ownerVtid.val with
+          match returnDonatedSchedContextResolved st holderVtid.val scId target with
           | .error e => .error e
-          | .ok st' => .ok (removeRunnable st' replier)
+          | .ok st' => .ok (removeRunnable st' holder)
       | none => .error .invalidArgument
-    | _ => .ok st                           -- No-op: no donation to return
 
 -- ============================================================================
 -- Z7-J/K: Donation operation structural theorems
@@ -246,7 +274,7 @@ theorem returnDonatedSchedContext_server_unbound
   -- second copy of its case analysis.  The fourth store made that copy
   -- non-compiling, which is exactly what the shared derivation exists to
   -- prevent — and what it prevented at three other sites in this file.
-  obtain ⟨_, _, _, serverTcb, s1, s2, s3, s4, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
+  obtain ⟨_, _, _, serverTcb, s1, s2, s3, s4, _, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -391,7 +419,7 @@ theorem returnDonatedSchedContext_machine_eq
   -- WS-RR RR7.22 (residual, remediation): read off the shared decomposition
   -- rather than re-running its case analysis, which this file used to carry a
   -- second copy of.
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   rw [hEq]
   show s4.machine = st.machine
@@ -469,44 +497,39 @@ all no-op paths return `.ok st` unchanged, and the success path delegates to
 `returnDonatedSchedContext` (preserves machine) followed by `removeRunnable`
 (only modifies scheduler). -/
 theorem applyReplyDonation_machine_eq
-    (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
+    (st : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
     (st' : SystemState)
-    (h : applyReplyDonation st replierVtid = .ok st') :
+    (h : applyReplyDonation st rid targetVtid = .ok st') :
     st'.machine = st.machine := by
   unfold applyReplyDonation at h
-  cases hLookup : lookupTcb st replierVtid.val with
-  | none => simp [hLookup] at h; cases h; rfl
-  | some replierTcb =>
-    simp only [hLookup] at h
-    cases hBinding : replierTcb.schedContextBinding with
-    | unbound => simp [hBinding] at h; cases h; rfl
-    | bound scId => simp [hBinding] at h; cases h; rfl
-    | donated scId originalOwner =>
-      simp only [hBinding] at h
-      -- AN10-residual-1 deep-audit: body now case-splits ONLY on
-      -- `originalOwner.toValid?` (the `replier` is already a
-      -- `ValidThreadId` argument).  The `none` arm yields `.error`
-      -- which contradicts `.ok st'`; the `some` arm reduces via the
-      -- wrapper `_eq` lemma + `toValid?_some_val_eq`.
-      cases hOV : SeLe4n.ThreadId.toValid? originalOwner with
-      | none => simp only [hOV] at h; cases h
-      | some ownerVtid =>
-          have hOEq : ownerVtid.val = originalOwner :=
-            SeLe4n.ThreadId.toValid?_some_val_eq originalOwner ownerVtid hOV
-          simp only [hOV, hOEq] at h
-          -- WS-OD OD4.4: the split is on the *resolved* return, which is the
-          -- operation the arm now runs; the frame is lifted through its own
-          -- decomposition rather than restated at a fixed `newOwner?`.
-          cases hReturn : returnDonatedSchedContextResolved st replierVtid.val scId
-              originalOwner with
-          | error _ => simp [hReturn] at h
-          | ok st'' =>
-            simp [hReturn] at h; cases h
-            obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
-            have hMach := returnDonatedSchedContext_machine_eq st st'' replierVtid.val scId
-              originalOwner n hPop
-            have hRem := removeRunnable_machine_eq st'' replierVtid.val
-            exact hRem.trans hMach
+  -- **WS-HP HP4.2**: the split is on the head-driven trigger, which is one
+  -- `Option` of a pair rather than a lookup and a binding constructor -- so the
+  -- case analysis is two arms rather than four, and the thread the deschedule
+  -- names is the pair's `holder` rather than the argument.
+  cases hTrig : replyFrameHeadHolder? st rid with
+  | none => simp only [hTrig] at h; cases h; rfl
+  | some pair =>
+    obtain ⟨scId, holder⟩ := pair
+    simp only [hTrig] at h
+    cases hHV : SeLe4n.ThreadId.toValid? holder with
+    | none => simp only [hHV] at h; cases h
+    | some holderVtid =>
+        have hHEq : holderVtid.val = holder :=
+          SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hHV
+        simp only [hHV, hHEq] at h
+        -- WS-OD OD4.4: the split is on the *resolved* return, which is the
+        -- operation the arm now runs; the frame is lifted through its own
+        -- decomposition rather than restated at a fixed `newOwner?`.
+        cases hReturn : returnDonatedSchedContextResolved st holder scId
+            targetVtid.val with
+        | error _ => simp only [hReturn] at h; cases h
+        | ok st'' =>
+          simp only [hReturn] at h; cases h
+          obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
+          have hMach := returnDonatedSchedContext_machine_eq st st'' holder scId
+            targetVtid.val n hPop
+          have hRem := removeRunnable_machine_eq st'' holder
+          exact hRem.trans hMach
 
 /-- AG8-G: cleanupPreReceiveDonation preserves machine state.
 All fallback paths return `st` unchanged, and the success path delegates to
@@ -856,7 +879,7 @@ theorem returnDonatedSchedContext_getTcb?_cpuAffinity_eq
     (tid : SeLe4n.ThreadId) :
     (st'.getTcb? tid).map (·.cpuAffinity) = (st.getTcb? tid).map (·.cpuAffinity) := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -895,7 +918,7 @@ theorem returnDonatedSchedContext_getSchedContext?_ne
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     st'.getSchedContext? scId' = st.getSchedContext? scId' := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear

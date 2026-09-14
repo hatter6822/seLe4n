@@ -2968,6 +2968,23 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     IO.println s!"[Z7D-001] donateSchedContext: server_bound={serverBound} sc_points_server={scPointsToServer}"
 
   -- Z7D-002: returnDonatedSchedContext — successful return
+  --
+  -- **WS-HP HP4.6**: the recipient is the caller **after** the donation, so its
+  -- binding is `.unbound` — which is what `donateSchedContext` leaves and what
+  -- `donationOwnerValid` requires of a donation's owner.  The pre-HP4.6 fixtures
+  -- reused the *pre*-donation `callerTcb` (`.bound scId`) as the recipient, which
+  -- is two threads bound to one scheduling context: a `donationBudgetTransfer`
+  -- violation in the fixture, and the reason `caller_rebound` and
+  -- `caller_recovered` read `true` below without the return having run.  The
+  -- recipient guard refuses that state, so the fixtures now exhibit the shape the
+  -- live kernel produces and the three readings are measurements rather than
+  -- restatements of what the fixture already held.
+  let callerDonated : KernelObject := .tcb {
+    tid := callerTid, priority := ⟨100⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+    ipcState := .blockedOnReply ⟨7010⟩ (some serverTid),
+    replyObject := some callerReplyId,
+    schedContextBinding := .unbound }
   let serverDonated : KernelObject := .tcb {
     tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
@@ -2977,7 +2994,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     budget := ⟨1000⟩, budgetRemaining := ⟨500⟩,
     boundThread := some serverTid, priority := ⟨100⟩ }
   let stRet := { st1 with
-    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
+    objects := ((st1.objects.insert callerTid.toObjId callerDonated).insert
       serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
   -- WS-OD OD3.1: the bottom-of-stack return — `callerTid` is the donation's
   -- original owner and no reply stack exists, so the context goes back `.bound`.
@@ -3024,11 +3041,25 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let schedulerUnchanged := (stAfterActive.scheduler.currentOnCore bootCoreId) == (stActive.scheduler.currentOnCore bootCoreId)
   IO.println s!"[Z7D-004] applyCallDonation active-server: scheduler_unchanged={schedulerUnchanged}"
 
-  -- Z7D-005: applyReplyDonation — donated server returns SchedContext
+  -- Z7D-005: applyReplyDonation — the answered caller's frame heads the context,
+  -- so the pop returns it.
+  -- **WS-HP HP4.2**: the pop is keyed on the answered caller and on its reply
+  -- *frame*, so this fixture carries the frame a live `Call` donation pushes --
+  -- the caller's Reply heads the context and the context names it back.  Before
+  -- the flip the pop read the server's `.donated` binding and the reply stack was
+  -- absent, which is a state no live path produces (OD4.1 made the same
+  -- correction to Z7D-001 for the same reason).
+  let callerReplyHead : KernelObject := .reply
+    { SeLe4n.Kernel.Reply.empty callerReplyId with
+      caller := some callerTid, next := some (.head scId) }
+  let scDonatedHead : SeLe4n.Kernel.SchedContext :=
+    { scDonated with scReply := some callerReplyId }
   let stReplyDon := { st1 with
-    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
-      serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
-  let stAfterReply := match SeLe4n.Kernel.applyReplyDonation stReplyDon serverVtid with
+    objects := (((st1.objects.insert callerTid.toObjId callerDonated).insert
+      serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonatedHead)).insert
+      callerReplyId.toObjId callerReplyHead }
+  let stAfterReply :=
+    match SeLe4n.Kernel.applyReplyDonation stReplyDon callerReplyId callerVtid with
     | .ok s => s | .error _ => stReplyDon
   let callerGotBack := match stAfterReply.getTcb? callerTid with
     | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
@@ -3038,17 +3069,21 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     | none => false
   IO.println s!"[Z7D-005] applyReplyDonation: caller_got_back={callerGotBack} server_passive={serverPassive}"
 
-  -- Z7D-006: applyReplyDonation — non-donated server is noop
+  -- Z7D-006: applyReplyDonation — a frame that heads no context is a no-op.
+  -- **WS-HP HP4.2**: the pre-flip reading of this case was "the server holds no
+  -- donated binding"; the head-driven reading is "the answered frame heads no
+  -- scheduling context", and here there is no frame at all.
   let stReplyNormal := { st1 with
     objects := (st1.objects.insert serverTid.toObjId serverTcb) }
-  let stAfterNormal := match SeLe4n.Kernel.applyReplyDonation stReplyNormal serverVtid with
+  let stAfterNormal :=
+    match SeLe4n.Kernel.applyReplyDonation stReplyNormal callerReplyId callerVtid with
     | .ok s => s | .error _ => stReplyNormal
   let unchanged := (stAfterNormal.scheduler.currentOnCore bootCoreId) == (stReplyNormal.scheduler.currentOnCore bootCoreId)
   IO.println s!"[Z7D-006] applyReplyDonation non-donated: unchanged={unchanged}"
 
   -- Z7D-007: cleanupDonatedSchedContext — lifecycle cleanup returns SC
   let stCleanup := { st1 with
-    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
+    objects := ((st1.objects.insert callerTid.toObjId callerDonated).insert
       serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
   let stCleaned := match SeLe4n.Kernel.cleanupDonatedSchedContext stCleanup serverTid with
     | .ok s => s | .error _ => stCleanup

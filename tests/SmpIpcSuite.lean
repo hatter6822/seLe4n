@@ -972,10 +972,16 @@ seL4-MCS's own `doReplyTransfer` -> `reply_remove` -> `receiveIPC` order) and
 context from the first to the second.  The migration facts below are about that
 pair, and this driver runs them exactly as the arm does; the receive leg is
 elided because these checks supply `nextThread` directly rather than dequeuing
-it, which is the same elision the pre-WS-RM fused step allowed. -/
-private def runReplyRecvDonationSteps (tid recordedServer nextThread : SeLe4n.ThreadId)
+it, which is the same elision the pre-WS-RM fused step allowed.
+
+**WS-HP HP4.5**: the pop is keyed on the reply capability's frame (`rid`) and the
+caller it answers (`prevCaller`), as the arm keys it, rather than on the recorded
+server's `.donated` binding.  The parameters mirror `replyRecvBody`'s own, because
+a driver that re-derives what the arm is handed is testing its own derivation. -/
+private def runReplyRecvDonationSteps (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (prevCaller recordedServer nextThread : SeLe4n.ThreadId)
     (serverCore : CoreId) (st : SystemState) : Except KernelError SystemState :=
-  match replyRecvPopDonation recordedServer st with
+  match replyRecvPopDonation rid prevCaller st with
   | .error e => .error e
   | .ok (returned?, st1) =>
       match replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned?
@@ -1043,7 +1049,18 @@ private def runDonationMigrationChecks : IO Unit := do
     -- round-trip arm alone cannot tell "both migrations ran" from "neither did":
     -- returning to the owner and re-donating to the same server lands the entries
     -- back where they started.
-    match runReplyRecvDonationSteps donServer donServer donServer c1 stCall with
+    -- **WS-HP HP4.5**: the driver's pop is keyed on the frame, so assert the
+    -- resolver answers before relying on it -- a pop that silently found no head
+    -- would be the identity, and every migration check below would then pass by
+    -- measuring nothing.  The binding-driven reading coincides here (the recorded
+    -- server *is* the holder on this state), which is why the two arms agreed
+    -- before HP4 and why a witness has to name which one it exercises.
+    assertBool "HP4.5: the answered frame names the holder and the donated context"
+      (replyFrameHeadHolder? stCall donReply == some (scClient, donServer))
+    assertBool "HP4.5: ...and the binding-driven reading agrees on this state"
+      (replyDonationReturn? stCall donServer == some (scClient, donClient))
+    match runReplyRecvDonationSteps donServer donReply donClient donServer donServer c1
+        stCall with
     | .error _ => assertBool "the .replyRecv return-only arm succeeds" false
     | .ok stRet =>
       assertBool "the .replyRecv return-only arm succeeds" true
@@ -1062,7 +1079,8 @@ private def runDonationMigrationChecks : IO Unit := do
     -- re-donation — and the third core is what makes them distinguishable.
     let stCallD : SystemState :=
       { stCall with objects := stCall.objects.insert donDelegate.toObjId (.tcb donDelegateTcb) }
-    match runReplyRecvDonationSteps donDelegate donServer donClient c1 stCallD with
+    match runReplyRecvDonationSteps donDelegate donReply donClient donServer donClient c1
+        stCallD with
     | .error _ => assertBool "the .replyRecv rendezvous arm succeeds" false
     | .ok stRr =>
       assertBool "the .replyRecv rendezvous arm succeeds" true
@@ -1095,7 +1113,8 @@ private def runDonationMigrationChecks : IO Unit := do
             ((ReplenishQueue.empty.insert scCaller2 400).insert scCaller2 500) }
     assertBool "pre: the queued caller's SC holds both replenishments on its home core 3"
       (decide (replenishCountFor stCallQ c3 scCaller2 = 2))
-    match runReplyRecvDonationSteps donDelegate donServer donCaller2 c1 stCallQ with
+    match runReplyRecvDonationSteps donDelegate donReply donClient donServer donCaller2 c1
+        stCallQ with
     | .error _ => assertBool "the .replyRecv distinct-caller rendezvous arm succeeds" false
     | .ok stQ =>
       assertBool "the .replyRecv distinct-caller rendezvous arm succeeds" true
@@ -1163,7 +1182,8 @@ private def runDonationMigrationChecks : IO Unit := do
     -- queued caller's context is donated to it and it must keep running — the
     -- passive-server steady state.  An unconditional deschedule passes the
     -- delegated case above and fails this one.
-    match runReplyRecvDonationSteps donServer donServer donCaller2 c1 stCallQ with
+    match runReplyRecvDonationSteps donServer donReply donClient donServer donCaller2 c1
+        stCallQ with
     | .error _ => assertBool "the .replyRecv non-delegated rendezvous arm succeeds" false
     | .ok stN =>
       assertBool "the .replyRecv non-delegated rendezvous arm succeeds" true
@@ -2741,7 +2761,19 @@ private def runReplyRecvLoopCompletionChecks : IO Unit := do
          | .ok _ => false)
       -- Leg two, in the live order: the donation pop runs between the legs, and
       -- it is what frees the Reply.
-      match replyRecvPopDonation donServer stAfterReply with
+      --
+      -- **WS-HP HP4.5: and this is the state that forces the pop's key.**  The
+      -- reply leg ran `consumeCallerReply`, so the answered caller no longer
+      -- holds a reply object and nothing keyed on *the caller* can find the
+      -- frame any more -- which is why `.reply`'s pop reads `answeredReplyObject?`
+      -- on its PRE-state and this arm takes `rid` from the reply capability it
+      -- was invoked with.  Both assertions below are about this state, after the
+      -- leg: the caller-keyed route is gone and the frame-keyed one still answers.
+      assertBool "HP4.5: the reply leg has consumed the caller's reply object"
+        (answeredReplyObject? stAfterReply donClient == none)
+      assertBool "HP4.5: ...while the frame still names the holder and the context"
+        (replyFrameHeadHolder? stAfterReply donReply == some (scClient, donServer))
+      match replyRecvPopDonation donReply donClient stAfterReply with
       | .error e => assertBool s!"the donation pop must succeed (got {reprStr e})" false
       | .ok (returned?, stPopped) =>
         assertBool "the pop hands the context back to its original owner"

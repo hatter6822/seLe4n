@@ -818,16 +818,16 @@ theorem isBetterCandidate_not_better_trans
     (h23 : isBetterCandidate p3 d3 p2 d2 = false) :
     isBetterCandidate p3 d3 p1 d1 = false := by
   unfold isBetterCandidate at *
-  have hp12 : ¬(p1.toNat > p2.toNat) := fun h => by simp [h] at h12
-  have hp23 : ¬(p2.toNat > p3.toNat) := fun h => by simp [h] at h23
-  have hp13 : ¬(p1.toNat > p3.toNat) := fun h => by omega
-  simp only [hp13, ↓reduceIte]
+  have hNotFirstAboveSecond : ¬(p1.toNat > p2.toNat) := fun h => by simp [h] at h12
+  have hNotSecondAboveThird : ¬(p2.toNat > p3.toNat) := fun h => by simp [h] at h23
+  have hNotFirstAboveThird : ¬(p1.toNat > p3.toNat) := fun h => by omega
+  simp only [hNotFirstAboveThird, ↓reduceIte]
   by_cases h1lt3 : p1.toNat < p3.toNat
   · simp [h1lt3]
   · simp only [h1lt3, ↓reduceIte]
-    simp only [show ¬(p1.toNat > p2.toNat) from hp12,
+    simp only [show ¬(p1.toNat > p2.toNat) from hNotFirstAboveSecond,
                show ¬(p1.toNat < p2.toNat) from by omega, ↓reduceIte] at h12
-    simp only [show ¬(p2.toNat > p3.toNat) from hp23,
+    simp only [show ¬(p2.toNat > p3.toNat) from hNotSecondAboveThird,
                show ¬(p2.toNat < p3.toNat) from by omega, ↓reduceIte] at h23
     revert h12 h23
     cases d1.toNat <;> cases d2.toNat <;> cases d3.toNat <;> simp_all <;> omega

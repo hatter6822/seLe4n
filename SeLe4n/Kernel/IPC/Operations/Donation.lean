@@ -122,23 +122,30 @@ def endpointReplyWithDonation
     (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
+    -- **WS-HP HP4.2**: the answered frame, read before the reply leg clears it.
+    let answered? := answeredReplyObject? st target
     match endpointReply replier target msg st with
     | .error e => .error e
     | .ok ((), st') =>
-      -- Apply donation return: if replier has donated SC, return it
+      -- Apply donation return: if the answered frame heads a context, pop it.
       -- AH2-C: Propagate donation return errors.
-      -- AN10-residual-1 deep-audit: `applyReplyDonation` now requires
-      -- `ValidThreadId`.  Promote `replier` via `toValid?` with
-      -- `.error .invalidArgument` rejection (unreachable under AL7).
-      match SeLe4n.ThreadId.toValid? replier with
-      | some replierVtid =>
-        match applyReplyDonation st' replierVtid with
-        | .error e => .error e
-        | .ok st'' =>
-          -- D4-M: Revert PIP — the client (target) is unblocked, so the replier's
-          -- pipBoost must be recomputed from remaining waiters. Propagate reversion
-          -- upward through the chain.
-          .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
+      -- **WS-HP HP4.2**: the pop takes the answered *caller* and the answered
+      -- *frame*, the latter resolved on the pre-state `st` above, because
+      -- `endpointReply`'s `consumeCallerReply` has just cleared the link from
+      -- `target` to it.  A reply with no frame pops nothing.
+      match SeLe4n.ThreadId.toValid? target with
+      | some targetVtid =>
+        match answered? with
+        | none =>
+            .ok ((), PriorityInheritance.revertPriorityInheritance st' replier)
+        | some rid =>
+          match applyReplyDonation st' rid targetVtid with
+          | .error e => .error e
+          | .ok st'' =>
+            -- D4-M: Revert PIP — the client (target) is unblocked, so the replier's
+            -- pipBoost must be recomputed from remaining waiters. Propagate reversion
+            -- upward through the chain.
+            .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
       | none => .error .invalidArgument
 
 /-- Z7: Donation-aware endpointReplyRecv. Composes:
@@ -159,21 +166,26 @@ def endpointReplyRecvWithDonation
     -- caller on the receive leg, threaded into the folded `endpointReplyRecv`.
     (replyId : Option SeLe4n.ReplyId) : Kernel Unit :=
   fun st =>
+    -- **WS-HP HP4.2**: the answered frame, read before the reply leg clears it.
+    let answered? := answeredReplyObject? st replyTarget
     match endpointReplyRecv endpointId receiver replyTarget msg replyId st with
     | .error e => .error e
     | .ok ((), st') =>
       -- Z7-D1: Return old donation AFTER reply+receive completes
       -- AH2-C: Propagate donation return errors.
-      -- AN10-residual-1 deep-audit: `applyReplyDonation` now requires
-      -- `ValidThreadId`.  Promote `receiver` via `toValid?` with
-      -- `.error .invalidArgument` rejection (unreachable under AL7).
-      match SeLe4n.ThreadId.toValid? receiver with
-      | some receiverVtid =>
-        match applyReplyDonation st' receiverVtid with
-        | .error e => .error e
-        | .ok st'' =>
-          -- D4-M: Revert PIP for the reply portion
-          .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
+      -- **WS-HP HP4.2**: the pop takes the answered caller `replyTarget` and its
+      -- pre-state frame, for the reason `endpointReplyWithDonation` records.
+      match SeLe4n.ThreadId.toValid? replyTarget with
+      | some targetVtid =>
+        match answered? with
+        | none =>
+            .ok ((), PriorityInheritance.revertPriorityInheritance st' receiver)
+        | some rid =>
+          match applyReplyDonation st' rid targetVtid with
+          | .error e => .error e
+          | .ok st'' =>
+            -- D4-M: Revert PIP for the reply portion
+            .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
       | none => .error .invalidArgument
 
 -- ============================================================================
@@ -192,12 +204,15 @@ theorem endpointReplyWithDonation_unfold
     (match endpointReply replier target msg st with
      | .error e => .error e
      | .ok ((), st') =>
-       match SeLe4n.ThreadId.toValid? replier with
-       | some replierVtid =>
-         match applyReplyDonation st' replierVtid with
-         | .error e => .error e
-         | .ok st'' =>
-           .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
+       match SeLe4n.ThreadId.toValid? target with
+       | some targetVtid =>
+         match answeredReplyObject? st target with
+         | none => .ok ((), PriorityInheritance.revertPriorityInheritance st' replier)
+         | some rid =>
+           match applyReplyDonation st' rid targetVtid with
+           | .error e => .error e
+           | .ok st'' =>
+             .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
        | none => .error .invalidArgument) := by
   rfl
 
@@ -249,12 +264,15 @@ theorem endpointReplyRecvWithDonation_unfold
     (match endpointReplyRecv endpointId receiver replyTarget msg replyId st with
      | .error e => .error e
      | .ok ((), st') =>
-       match SeLe4n.ThreadId.toValid? receiver with
-       | some receiverVtid =>
-         match applyReplyDonation st' receiverVtid with
-         | .error e => .error e
-         | .ok st'' =>
-           .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
+       match SeLe4n.ThreadId.toValid? replyTarget with
+       | some targetVtid =>
+         match answeredReplyObject? st replyTarget with
+         | none => .ok ((), PriorityInheritance.revertPriorityInheritance st' receiver)
+         | some rid =>
+           match applyReplyDonation st' rid targetVtid with
+           | .error e => .error e
+           | .ok st'' =>
+             .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
        | none => .error .invalidArgument) := by
   rfl
 
@@ -404,43 +422,96 @@ def replyDonationReturn? (st : SystemState) (replier : SeLe4n.ThreadId) :
       | _ => none
   | none => none
 
+/-- **WS-HP HP4.2: the frame's head context is held *from* the answered caller**
+-- the one fact the head-driven pop needs that the trigger itself does not
+witness.
+
+`replyFrameHeadHolder? st rid = some (scId, holder)` is read entirely off the
+reply stack: the frame heads `scId`, and `holder` is `scId`'s `boundThread`.
+That fixes both threads the pop rewrites and is what makes the pop's own
+`boundThread` guard vacuous (`answeredFrameHeadContext?_boundThread`).  What it
+says nothing about is the *binding* on `holder`, and the return's invariant
+surface is stated over that binding -- `donationOwnerValid` constrains a
+`.donated scId owner` holder, and every consumer of
+`returnDonatedSchedContext_preserves_ipcInvariantFull` reaches it through
+`replyDonationReturn?_some_char`.
+
+So this is the binding half, and it names *which* owner: the answered caller.
+It is `replyDonationOwnerIsAnsweredCaller` (`Locks/ResolvedFootprintBounds.lean`)
+re-expressed at the head-driven trigger, and it is a fact a caller discharges,
+exactly as that one is -- `donationChainWellFormed` carries no binding clause, so
+no invariant in this tree entails it.  WS-HP HP7 is what retires it; until then
+it is stated rather than assumed, and stating it here rather than inlining the
+quantifier at each consumer is what gives HP7 a single symbol to delete.
+
+Vacuous wherever the frame heads no context, which is every reply in a tree with
+no donation (`replyFrameHeadHolderDonation_of_no_head`). -/
+def replyFrameHeadHolderDonation (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) : Prop :=
+  ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
+    replyDonationReturn? st holder = some (scId, target)
+
+/-- The vacuity discharge: a reply whose frame heads no scheduling context
+carries no obligation. -/
+theorem replyFrameHeadHolderDonation_of_no_head (st : SystemState)
+    (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+    (h : replyFrameHeadHolder? st rid = none) :
+    replyFrameHeadHolderDonation st rid target := by
+  intro scId holder hHead; rw [h] at hHead; cases hHead
+
 /-- WS-RR RR2.5 (characterisation): the single-core donation return *is* the
 `replyDonationReturn?` case split — the mirror of
 `applyCallDonation_characterisation`, and the shape every reply-side invariant
 proof runs on.  Without it each such proof re-derives the same four-deep match
 by hand, and each derivation is a place the operation and its model can drift
-apart. -/
+apart.
+
+**WS-HP HP4.2 (`v0.35.38`): stated over `answeredFrameHeadContext?`.**  The plan
+row said to re-key `replyDonationReturn?` itself; implementing it showed that is
+the wrong move, and the reason is worth keeping.  That resolver's **argument** is
+the recorded server and the trigger's is the answered caller — *different
+threads* — so re-keying it in place would silently change what its argument means
+at every one of its consumers, all of which keep typechecking.  The plan's SS3.8.2
+hazard is about the returned pair's second component; this is the same hazard one
+level up, on the argument, and it is worse because no binder name is even
+involved.
+
+So `replyDonationReturn?` stays exactly what it is — *does this thread hold a
+donated context*, a question about a **binding** that survives the flip — and the
+characterisation moves to the trigger.  A consumer that was really asking "does
+this reply pop a donation" reads `answeredFrameHeadContext?` on `target`; one
+asking "does this thread hold a donation" keeps the binding resolver.  Those are
+two questions, and conflating them is what the pre-HP4 spine did. -/
 theorem applyReplyDonation_characterisation
-    (st : SystemState) (replierVtid : SeLe4n.ValidThreadId) :
-    applyReplyDonation st replierVtid
-      = (match replyDonationReturn? st replierVtid.val with
-         | some (scId, owner) =>
-             (match SeLe4n.ThreadId.toValid? owner with
-              | some ownerVtid =>
+    (st : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId) :
+    applyReplyDonation st rid targetVtid
+      = (match replyFrameHeadHolder? st rid with
+         | some (scId, holder) =>
+             (match SeLe4n.ThreadId.toValid? holder with
+              | some holderVtid =>
                   -- WS-OD OD4.4: the resolved return — the model follows the
                   -- operation onto the reply-stack resolver, or it is a model of
-                  -- a different program.
-                  (match returnDonatedSchedContextResolved st replierVtid.val scId
-                      ownerVtid.val with
+                  -- a different program.  **WS-HP HP4.2**: the thread that loses
+                  -- the context is the pair's `holder`, and the one that gains it
+                  -- is the argument.
+                  (match returnDonatedSchedContextResolved st holderVtid.val scId
+                      targetVtid.val with
                    | .error e => .error e
-                   | .ok st' => .ok (removeRunnable st' replierVtid.val))
+                   | .ok st' => .ok (removeRunnable st' holderVtid.val))
               | none => .error .invalidArgument)
          | none => .ok st) := by
-  simp only [applyReplyDonation, replyDonationReturn?]
-  cases lookupTcb st replierVtid.val with
+  simp only [applyReplyDonation]
+  cases replyFrameHeadHolder? st rid with
   | none => rfl
-  | some replierTcb =>
+  | some pair =>
+    obtain ⟨_, holder⟩ := pair
     simp only []
-    cases replierTcb.schedContextBinding with
-    | unbound => rfl
-    | bound _ => rfl
-    | donated _ _ =>
+    cases hHV : SeLe4n.ThreadId.toValid? holder with
+    | none => rfl
+    | some holderVtid =>
         simp only []
-        cases SeLe4n.ThreadId.toValid? _ with
-        | none => rfl
-        | some ownerVtid =>
-            simp only []
-            cases returnDonatedSchedContextResolved st replierVtid.val _ ownerVtid.val <;> rfl
+        rw [SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hHV]
+        cases returnDonatedSchedContextResolved st holder _ targetVtid.val <;> rfl
 
 /-- WS-RR RR2.1 / RR2.2 (operation): the cross-core `.call` SchedContext
 donation — the single-core `applyCallDonation` **plus** the SM5.H.4

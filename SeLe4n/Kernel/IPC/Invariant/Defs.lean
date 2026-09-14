@@ -6474,7 +6474,7 @@ theorem severAtCut_pop_leaves_no_head {st st' : SystemState}
       ∃ sc', st'.getSchedContext? scId = some sc' ∧ sc'.scReply = none := by
   refine ⟨rfl, ?_⟩
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hScObj, _, hHead, hS1, hPop, hLk2, hS3, hLk3, hS4, hEq⟩ :=
+    hScObj, _, _, hHead, hS1, hPop, hLk2, hS3, hLk3, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   -- The head the pop validated is the cut frame, so the `scReply` it writes is `none`.
   have hHeadEq : head? = some (rid, r) :=
@@ -6567,7 +6567,7 @@ theorem returnDonatedSchedContext_ok_under_invariants
   -- Recover hypotheses from donationOwnerValid.
   have hRecvObj : st.objects[receiver.toObjId]? = some (.tcb recvTcb) :=
     lookupTcb_some_objects st receiver recvTcb hLk
-  obtain ⟨⟨sc, hScObj, hScBound⟩, ownerTcb, hOwnerObj, _, _⟩ :=
+  obtain ⟨⟨sc, hScObj, hScBound⟩, ownerTcb, hOwnerObj, hOwnerUnbound, _⟩ :=
     hDOV receiver recvTcb scId owner hRecvObj hBind
   -- Type-disjointness of SchedContext vs TCB objIds.
   have hScNeOwner : scId.toObjId ≠ owner.toObjId :=
@@ -6594,6 +6594,17 @@ theorem returnDonatedSchedContext_ok_under_invariants
   -- hypothesis — the pop refuses an outer caller it cannot validate, so a claim
   -- that it succeeds owes that fact.  The order is the operation's own.
   rw [if_neg (by simp [hOuterOk])]
+  -- **WS-HP HP4.6**: ...and then the recipient guard, discharged from the same
+  -- `donationOwnerValid` witness: a donation's owner is `.unbound`, which is
+  -- exactly what the guard asks.  That is why the guard costs nothing on any
+  -- path that resolves its recipient from a binding.
+  rw [if_neg (by
+    have hLkOwner : lookupTcb st owner = some ownerTcb := by
+      unfold lookupTcb SystemState.getTcb?
+      rw [Bool.eq_false_iff.mpr hOwnerNotRes]
+      simp only [Bool.false_eq_true, if_false]
+      rw [hOwnerObj]
+    simp [donationRecipientAcceptable_eq_of_some st owner ownerTcb hLkOwner, hOwnerUnbound])]
   rw [hHead]
   simp only []
   generalize hS1 : storeObject scId.toObjId

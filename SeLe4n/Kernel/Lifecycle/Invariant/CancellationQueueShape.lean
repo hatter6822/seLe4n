@@ -245,13 +245,13 @@ theorem sweptQueue_wellFormed
       exact ⟨t1, removeFromAllEndpointQueues_tcb_frame st v hExt1 hd.toObjId t1 h1,
         by rw [hp]; exact hVPrevNone hh⟩
     · rw [if_neg hh] at hhd
-      obtain ⟨t0, h0, hp0⟩ := hWF.2.1 hd hhd
-      refine carryPrev hd.toObjId t0 h0 ?_ |>.imp (fun t' h => ⟨h.1, by rw [h.2]; exact hp0⟩)
+      obtain ⟨t0, h0, hPrevEq⟩ := hWF.2.1 hd hhd
+      refine carryPrev hd.toObjId t0 h0 ?_ |>.imp (fun t' h => ⟨h.1, by rw [h.2]; exact hPrevEq⟩)
       intro n hn hEq
       obtain ⟨tN, hN, hNPrev⟩ := hLink.1 v tcbV hVObj n hn
       rw [hEq, h0] at hN
       have hEqT : tN = t0 := (KernelObject.tcb.inj (Option.some.inj hN)).symm
-      rw [hEqT, hp0] at hNPrev
+      rw [hEqT, hPrevEq] at hNPrev
       cases hNPrev
   · -- P3: the tail has no successor
     intro tl htl

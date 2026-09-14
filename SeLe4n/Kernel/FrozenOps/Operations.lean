@@ -953,24 +953,6 @@ def frozenRecordedReplyServer? (st : FrozenSystemState) (target : SeLe4n.ThreadI
       | _                                 => none
   | none => none
 
-/-- **WS-RM, frozen mirror**: the donation this reply returns, paired with its
-original owner -- `endpointReplyServerDonation?`'s counterpart.
-
-Read from the **recorded server's** binding, not the (possibly delegated) cap
-holder's, exactly as the live resolver does: a delegated reply capability is
-legitimate authority and does not move the donation. -/
-def frozenEndpointReplyServerDonation? (st : FrozenSystemState)
-    (target : SeLe4n.ThreadId) : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
-  match frozenRecordedReplyServer? st target with
-  | none => none
-  | some server =>
-      match st.getTcb? server with
-      | some tcb =>
-          match tcb.schedContextBinding with
-          | .donated scId originalOwner => some (scId, originalOwner)
-          | _                           => none
-      | none => none
-
 /-- **WS-RM, frozen mirror of `applyReplyDonation`** — the return **and** the
 deschedule, as one step.
 
@@ -986,13 +968,29 @@ nobody -- the temporal-isolation defect PR #895 rounds 9-11 closed on the live
 with the deschedule, and reproduced the defect on this surface -- that round's
 own rule, *sharing an implementation transfers its preconditions*, failing inside
 the fix that recorded it.  A frozen mirror of a live step therefore names the
-live function that **completes** it, never the one nested inside. -/
-def frozenApplyReplyDonation (st : FrozenSystemState) (replier : SeLe4n.ThreadId)
+live function that **completes** it, never the one nested inside.
+
+**The sentinel holder is refused here, as the live twin refuses it** (WS-HP
+HP4.7).  `applyReplyDonation` promotes the holder through `ThreadId.toValid?` and
+answers `.invalidArgument` when it will not promote; that promotion is the live
+step's, not `returnDonatedSchedContext`'s, so it belongs at this unit.  It is
+spelled `holder.isReserved` rather than with `toValid?` because this surface uses
+`toValid?` nowhere -- `frozenLookupTcb` is how it asks whether an id is usable,
+and that predicate *is* `isReserved`, which in turn is exactly `= sentinel`
+(`Prelude.lean`).  So the condition is the live one and the vocabulary is this
+surface's, which is what keeps "is this id usable" one question here rather than
+two.  Reachable only on a malformed frozen state -- a SchedContext bound to the
+sentinel thread, which no live invariant admits and which `Model.freeze` would
+copy verbatim if one existed -- and that is precisely the class this surface's
+guards exist for. -/
+def frozenApplyReplyDonation (st : FrozenSystemState) (holder : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) :
     Except KernelError FrozenSystemState :=
-  match frozenReturnDonatedSchedContextResolved st replier scId originalOwner with
-  | .error e => .error e
-  | .ok st' => .ok (frozenRemoveRunnable st' replier)
+  if holder.isReserved then .error .invalidArgument
+  else
+    match frozenReturnDonatedSchedContextResolved st holder scId originalOwner with
+    | .error e => .error e
+    | .ok st' => .ok (frozenRemoveRunnable st' holder)
 
 /-- **WS-RM, frozen mirror of the whole `.reply` operation** (PR #895 review
 round 13).
@@ -1015,8 +1013,29 @@ keeping: the bare live reply leaves a head linked too, so moving the pop into th
 mirror would make it diverge from the very function it refines -- the refinement
 that currently holds is what tells this surface apart from a guess.
 
-The donation is resolved on the **pre**-state, because the reply clears the
-`ipcState` the recorded server is read from.
+The donation is resolved on the **pre**-state, because the reply clears both
+things a resolver could key on: the `ipcState` that records the server, and the
+`replyObject` that names the answered frame.
+
+**...and it is resolved from the FRAME** (WS-HP HP8.1).  HP4 made the live
+`.reply` operation head-driven — `endpointReplyCrossCoreDispatch` reads
+`replyFrameHeadHolder?` and pops the context the answered frame **heads** — and
+this mirror read the recorded server's `.donated` binding.  The two coincide on
+every state `severAtCut` leaves, which is why nothing here failed, and part
+company on the states HP6's splice creates: that is this project's *one question
+answered in two places will diverge*, with the divergence already on the
+schedule.  The frame needs no resolving here, because `replyId` **is** the
+presented reply capability and `frozenEndpointReply` refuses it unless the
+target's own `replyObject` names it — so this surface asks the head question of
+exactly the frame the live operation recovers through `answeredReplyObject?`.
+
+Two consequences worth stating.  The pop's subject is the frame's **holder**
+(the context's `boundThread`), which on a delegated reply capability is neither
+the replier nor, once HP6 lands, necessarily the recorded server.  And the
+recipient is `targetId` — the caller being answered — rather than the binding's
+recorded `originalOwner`; the two agree wherever `donationOwnerValid` holds, and
+the frame reading is the one that stays true when a middle frame has been
+spliced out.
 
 **...and priority inheritance is reverted on every successful reply** (PR #895
 review round 15), donation or none.  The answered caller was blocked *on* the
@@ -1043,14 +1062,15 @@ def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
     (targetId : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (msg : IpcMessage) :
     FrozenKernel Unit :=
   fun st =>
-    let donation? := frozenEndpointReplyServerDonation? st targetId
+    -- **WS-HP HP8.1**: the head-driven trigger, read on the pre-state.
+    let headHolder? := frozenReplyFrameHeadHolder? st replyId
     let server? := frozenRecordedReplyServer? st targetId
     match frozenEndpointReply replierId targetId replyId msg st with
     | .error e => .error e
     | .ok ((), st') =>
-      match donation?, server? with
-      | some (scId, originalOwner), some server =>
-          match frozenApplyReplyDonation st' server scId originalOwner with
+      match headHolder?, server? with
+      | some (scId, holder), some server =>
+          match frozenApplyReplyDonation st' holder scId targetId with
           | .error e => .error e
           | .ok st'' => .ok ((), frozenRevertPriorityInheritance st'' server)
       | _, some server => .ok ((), frozenRevertPriorityInheritance st' server)

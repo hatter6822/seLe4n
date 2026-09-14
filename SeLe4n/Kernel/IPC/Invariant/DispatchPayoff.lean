@@ -162,13 +162,19 @@ theorem replyRecvBody_preserves_ipcInvariantFull
       ((endpointReplyOnCore tid prevCaller msg ec st).1).objects[s.toObjId]?
         = some (.tcb sTcb) →
       sTcb.schedContextBinding ≠ .donated sc0 prevCaller)
-    -- **WS-RM**: the pop's own two obligations, at the state it runs on.  The
-    -- recorded server's `ipcState` must be one `passiveServerIdle` permits, and
-    -- the return resolves its new owner off the context's own reply stack.
-    (hSrvIdle1 : ∀ tcb,
-      (endpointReplyOnCore tid prevCaller msg ec st).1.getTcb?
-          ((recordedReplyServer? st prevCaller).getD tid) = some tcb →
-      passiveServerIdleAllowed tcb.ipcState)
+    -- **WS-RM**: the pop's own obligations, at the state it runs on.  The holder's
+    -- `ipcState` must be one `passiveServerIdle` permits, and the return resolves
+    -- its new owner off the context's own reply stack.
+    -- **WS-HP HP4.5**: both are quantified over the head-driven trigger, because
+    -- the thread the pop unbinds is read off `SchedContext.boundThread` rather
+    -- than supplied; `hHolderDonation1` is the binding half HP7 retires.
+    (hHolderDonation1 : replyFrameHeadHolderDonation
+      (endpointReplyOnCore tid prevCaller msg ec st).1 rid prevCaller)
+    (hHolderIdle1 : ∀ scId holder,
+      replyFrameHeadHolder? (endpointReplyOnCore tid prevCaller msg ec st).1 rid
+          = some (scId, holder) →
+      ∀ tcb, (endpointReplyOnCore tid prevCaller msg ec st).1.getTcb? holder = some tcb →
+        passiveServerIdleAllowed tcb.ipcState)
     (hStackValid1 : ∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore tid prevCaller msg ec st).1
         scId serverTid originalOwner)
@@ -177,21 +183,21 @@ theorem replyRecvBody_preserves_ipcInvariantFull
     -- context's own reply stack, at the state the reply leg and the donation pop
     -- committed.
     (hCleanupStack1 : cleanupDonationStackValid
-      (replyRecvPostPopState ((recordedReplyServer? st prevCaller).getD tid)
+      (replyRecvPostPopState rid prevCaller
         (endpointReplyOnCore tid prevCaller msg ec st).1) tid)
     (hReceiverReady1 : ∃ tcb : TCB,
-      (replyRecvPostPopState ((recordedReplyServer? st prevCaller).getD tid)
+      (replyRecvPostPopState rid prevCaller
         (endpointReplyOnCore tid prevCaller msg ec st).1).getTcb? tid = some tcb ∧
       tcb.ipcState = .ready)
     (hBudgets1 : allTimeoutBudgetsNone
-      (replyRecvPostPopState ((recordedReplyServer? st prevCaller).getD tid)
+      (replyRecvPostPopState rid prevCaller
         (endpointReplyOnCore tid prevCaller msg ec st).1))
     (hReplyIdValid1 : replyIdEstablishFresh
-      (replyRecvPostPopState ((recordedReplyServer? st prevCaller).getD tid)
+      (replyRecvPostPopState rid prevCaller
         (endpointReplyOnCore tid prevCaller msg ec st).1) rid)
     (hCapBadges1 : ∀ (tcb : TCB),
       (endpointReceiveDualOnCore epId tid (some rid) ec
-          (replyRecvPostPopState ((recordedReplyServer? st prevCaller).getD tid)
+          (replyRecvPostPopState rid prevCaller
             (endpointReplyOnCore tid prevCaller msg ec st).1)).1.getTcb? tid = some tcb →
       ∀ m, tcb.pendingMessage = some m →
       ∀ (i : Nat) (c : TransferCap), m.caps[i]? = some c →
@@ -201,7 +207,7 @@ theorem replyRecvBody_preserves_ipcInvariantFull
         (st2 : SystemState),
       endpointReceiveDualWithCapsOnCore epId tid (some rid) receiverCspaceRoot
           receiverSlotBase ec
-          (replyRecvPostPopState ((recordedReplyServer? st prevCaller).getD tid)
+          (replyRecvPostPopState rid prevCaller
             (endpointReplyOnCore tid prevCaller msg ec st).1)
         = (st2, .ok (nextThread, summary2, sgi2)) →
       st2.objects.invExt ∧
@@ -211,7 +217,7 @@ theorem replyRecvBody_preserves_ipcInvariantFull
         st2.getTcb? tid' = some tcb → tcb.schedContextBinding ≠ .donated scId tid) ∧
       (∀ st3, replyRecvPostReceiveDonation tid ((recordedReplyServer? st prevCaller).getD tid)
           nextThread (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD tid))
-          (replyRecvPoppedContext ((recordedReplyServer? st prevCaller).getD tid)
+          (replyRecvPoppedContext rid prevCaller
             (endpointReplyOnCore tid prevCaller msg ec st).1)
           st2 = .ok ((), st3) →
         st3.objects.invExt))
@@ -229,27 +235,27 @@ theorem replyRecvBody_preserves_ipcInvariantFull
     ipcInvariantFull_of_exceptDonationOwner_of_no_edge _ prevCaller hExc1 hNoEdge1
   cases hReply : endpointReplyOnCore tid prevCaller msg ec st with
   | mk st1 res1 =>
-      rw [hReply] at hStep hInv1 hObjInv1 hSrvIdle1 hStackValid1 hCleanupStack1 hReceiverReady1 hBudgets1 hReplyIdValid1 hCapBadges1 hReturnStage
+      rw [hReply] at hStep hInv1 hObjInv1 hHolderDonation1 hHolderIdle1 hStackValid1 hCleanupStack1 hReceiverReady1 hBudgets1 hReplyIdValid1 hCapBadges1 hReturnStage
       cases res1 with
       | error e => simp only [] at hStep; cases hStep
       | ok u =>
           simp only [] at hStep
           -- **WS-RM**: the donation pop, between the two legs.
-          cases hPop : replyRecvPopDonation ((recordedReplyServer? st prevCaller).getD tid) st1 with
+          cases hPop : replyRecvPopDonation rid prevCaller st1 with
           | error e => rw [hPop] at hStep; cases hStep
           | ok pairP =>
             obtain ⟨returnedSc?, st1p⟩ := pairP
             rw [hPop] at hStep
             simp only [] at hStep
-            rw [replyRecvPostPopState_eq_of_ok _ st1 st1p returnedSc? hPop] at hCleanupStack1 hReceiverReady1 hBudgets1 hReplyIdValid1 hCapBadges1 hReturnStage
-            rw [replyRecvPoppedContext_eq_of_ok _ st1 st1p returnedSc? hPop] at hReturnStage
+            rw [replyRecvPostPopState_eq_of_ok _ _ st1 st1p returnedSc? hPop] at hCleanupStack1 hReceiverReady1 hBudgets1 hReplyIdValid1 hCapBadges1 hReturnStage
+            rw [replyRecvPoppedContext_eq_of_ok _ _ st1 st1p returnedSc? hPop] at hReturnStage
             have hInv1p : ipcInvariantFull st1p :=
               replyRecvPopDonation_preserves_ipcInvariantFull
-                ((recordedReplyServer? st prevCaller).getD tid) st1 st1p returnedSc?
-                hObjInv1 hInv1 hSrvIdle1 hStackValid1 hPop
+                rid prevCaller st1 st1p returnedSc?
+                hObjInv1 hInv1 hHolderDonation1 hHolderIdle1 hStackValid1 hPop
             have hObjInv1p : st1p.objects.invExt :=
               replyRecvPopDonation_preserves_objects_invExt
-                ((recordedReplyServer? st prevCaller).getD tid) st1 st1p returnedSc?
+                rid prevCaller st1 st1p returnedSc?
                 hObjInv1 hPop
             obtain ⟨tcbR, hT1, hReadyR⟩ := hReceiverReady1
             have hT1obj := (SystemState.getTcb?_eq_some_iff st1p tid tcbR).mp hT1
@@ -394,12 +400,39 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
   replyStage : ∀ rid (r : Reply) (callerTid : SeLe4n.ThreadId),
     decoded.syscallId = .reply → cap.target = .replyCap rid →
     st.getReply? rid = some r → r.caller = some callerTid →
-    (∀ expected, recordedReplyServer? st callerTid = some expected →
-      (∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
-        st.objects[s.toObjId]? = some (.tcb sTcb) →
-        sTcb.schedContextBinding = .donated sc callerTid →
-        replyDonationReturn? st expected = some (sc, callerTid)) ∧
-      (∀ tcb, st.getTcb? expected = some tcb → passiveServerIdleAllowed tcb.ipcState)) ∧
+    -- **WS-HP HP4.5: the donation pop's three conditions, at the state it runs
+    -- on.**  The head-driven trigger reads the answered *frame*, which the reply
+    -- leg has already unlinked from the caller, so the frame is named on the
+    -- genuine pre-state and everything the pop decides about it is stated at the
+    -- leg's committed state -- a pre-state-computable expression, exactly as the
+    -- stack-validity conjunct below already is.
+    (∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
+      (endpointReplyOnCore tid callerTid
+          { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+            caps := #[], badge := cap.badge }
+          (determineExecutingCore st tid) st).1.objects[s.toObjId]? = some (.tcb sTcb) →
+      sTcb.schedContextBinding = .donated sc callerTid →
+      ∃ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid ∧
+        replyFrameHeadHolder? (endpointReplyOnCore tid callerTid
+            { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+              caps := #[], badge := cap.badge }
+            (determineExecutingCore st tid) st).1 hid = some (sc, s)) ∧
+    (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
+      replyFrameHeadHolderDonation (endpointReplyOnCore tid callerTid
+          { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+            caps := #[], badge := cap.badge }
+          (determineExecutingCore st tid) st).1 hid callerTid) ∧
+    (∀ (hid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+      answeredReplyObject? st callerTid = some hid →
+      replyFrameHeadHolder? (endpointReplyOnCore tid callerTid
+          { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+            caps := #[], badge := cap.badge }
+          (determineExecutingCore st tid) st).1 hid = some (scId, holder) →
+      ∀ tcb, (endpointReplyOnCore tid callerTid
+          { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+            caps := #[], badge := cap.badge }
+          (determineExecutingCore st tid) st).1.getTcb? holder = some tcb →
+        passiveServerIdleAllowed tcb.ipcState) ∧
     -- **WS-OD OD4.4**: the arm's donation return resolves its new owner off the
     -- context's own reply stack, at the state the reply leg committed; this is
     -- the obligation that resolution carries.
@@ -427,16 +460,29 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
         = some (.tcb sTcb) →
       sTcb.schedContextBinding ≠ .donated sc0 prevCaller) ∧
     -- **WS-RM (`v0.35.6`)**: the donation pop runs between the two legs, and
-    -- these are its two obligations, at the state it runs on -- the recorded
-    -- server's `ipcState` is one `passiveServerIdle` permits, and (WS-OD OD4.4)
-    -- the return resolves its new owner off the context's own reply stack.
-    (∀ tcb, (endpointReplyOnCore tid prevCaller
+    -- these are its obligations, at the state it runs on -- the holder's
+    -- `ipcState` is one `passiveServerIdle` permits, and (WS-OD OD4.4) the return
+    -- resolves its new owner off the context's own reply stack.
+    -- **WS-HP HP4.5**: both are quantified over the head-driven trigger, and the
+    -- binding half is named, because the thread the pop unbinds is read off
+    -- `SchedContext.boundThread` rather than supplied.
+    replyFrameHeadHolderDonation (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
-        (determineExecutingCore st tid) st).1.getTcb?
-          ((recordedReplyServer? st prevCaller).getD tid) = some tcb →
-      passiveServerIdleAllowed tcb.ipcState) ∧
+        (determineExecutingCore st tid) st).1 rid prevCaller ∧
+    (∀ scId holder,
+      replyFrameHeadHolder? (endpointReplyOnCore tid prevCaller
+        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
+            1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
+          caps := #[], badge := replyBadge }
+        (determineExecutingCore st tid) st).1 rid = some (scId, holder) →
+      ∀ tcb, (endpointReplyOnCore tid prevCaller
+        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
+            1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
+          caps := #[], badge := replyBadge }
+        (determineExecutingCore st tid) st).1.getTcb? holder = some tcb →
+        passiveServerIdleAllowed tcb.ipcState) ∧
     (∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
@@ -447,30 +493,27 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     -- donation the receiver abandoned; the pop resolves its new owner off that
     -- context's own reply stack, at the state the reply leg **and the donation
     -- pop** committed (WS-RM).
-    cleanupDonationStackValid (replyRecvPostPopState
-      ((recordedReplyServer? st prevCaller).getD tid)
+    cleanupDonationStackValid (replyRecvPostPopState rid prevCaller
       (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
         (determineExecutingCore st tid) st).1) tid ∧
     (∃ tcb : TCB,
-      (replyRecvPostPopState ((recordedReplyServer? st prevCaller).getD tid)
+      (replyRecvPostPopState rid prevCaller
         (endpointReplyOnCore tid prevCaller
           { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
               1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
             caps := #[], badge := replyBadge }
           (determineExecutingCore st tid) st).1).getTcb? tid = some tcb ∧
       tcb.ipcState = .ready) ∧
-    allTimeoutBudgetsNone (replyRecvPostPopState
-      ((recordedReplyServer? st prevCaller).getD tid)
+    allTimeoutBudgetsNone (replyRecvPostPopState rid prevCaller
       (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
         (determineExecutingCore st tid) st).1) ∧
-    replyIdEstablishFresh (replyRecvPostPopState
-      ((recordedReplyServer? st prevCaller).getD tid)
+    replyIdEstablishFresh (replyRecvPostPopState rid prevCaller
       (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
@@ -478,7 +521,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
         (determineExecutingCore st tid) st).1) rid ∧
     (∀ (tcb : TCB),
       (endpointReceiveDualOnCore epId tid (some rid) (determineExecutingCore st tid)
-          (replyRecvPostPopState ((recordedReplyServer? st prevCaller).getD tid)
+          (replyRecvPostPopState rid prevCaller
             (endpointReplyOnCore tid prevCaller
               { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
                   1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
@@ -491,7 +534,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
         (sgi2 : Option (CoreId × Concurrency.SgiKind)) (st2 : SystemState),
       endpointReceiveDualWithCapsOnCore epId tid (some rid) gate.cspaceRoot
           decoded.capRecvSlot (determineExecutingCore st tid)
-          (replyRecvPostPopState ((recordedReplyServer? st prevCaller).getD tid)
+          (replyRecvPostPopState rid prevCaller
             (endpointReplyOnCore tid prevCaller
               { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
                   1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
@@ -505,7 +548,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
         st2.getTcb? tid' = some tcb → tcb.schedContextBinding ≠ .donated scId tid) ∧
       (∀ st3, replyRecvPostReceiveDonation tid ((recordedReplyServer? st prevCaller).getD tid)
           nextThread (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD tid))
-          (replyRecvPoppedContext ((recordedReplyServer? st prevCaller).getD tid)
+          (replyRecvPoppedContext rid prevCaller
             (endpointReplyOnCore tid prevCaller
               { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
                   1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
@@ -812,7 +855,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               | some callerTid =>
                   simp only [replyAnsweredCaller?_of_getReply st rid reply hR, hCaller]
                     at hStep
-                  obtain ⟨hDon, hReplyStack, hReplyInvExt⟩ :=
+                  obtain ⟨hDon, hHolderDon, hHolderIdle, hReplyStack, hReplyInvExt⟩ :=
                     hPack.replyStage rid reply callerTid hSy hTgt hR hCaller
                   -- WS-RR RR4.14: the seam's ordinary branch, under the pack's
                   -- stated confinement.  On an unfaulted caller it is the
@@ -825,8 +868,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                     tid callerTid
                     { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[], badge := cap.badge }
                     (determineExecutingCore st tid) st hInv hObjInv
-                    (fun expected hExp => (hDon expected hExp).1) hBudgets
-                    (fun expected hExp => (hDon expected hExp).2) hReplyStack
+                    hDon hHolderDon hBudgets hHolderIdle hReplyStack
                   cases hReply : endpointReplyCrossCoreDispatch tid callerTid
                       { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[], badge := cap.badge }
                       (determineExecutingCore st tid) st with
@@ -1000,8 +1042,8 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
           | ok triple =>
               obtain ⟨rid, prevCaller, replyBadge⟩ := triple
               simp only [hRR] at hStep
-              obtain ⟨hNoEdge1, hSrvIdle1, hStackValid1, hCleanupStack1, hReady1, hBudgets1,
-                  hRidFresh1, hBadges1, hRetStage⟩ :=
+              obtain ⟨hNoEdge1, hHolderDon1, hHolderIdle1, hStackValid1, hCleanupStack1,
+                  hReady1, hBudgets1, hRidFresh1, hBadges1, hRetStage⟩ :=
                 hPack.replyRecvStage rid prevCaller replyBadge epId hSy hTgt hRR
               cases hBody : replyRecvBody epId tid rid prevCaller
                   { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size, caps := #[], badge := replyBadge }
@@ -1014,8 +1056,8 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   obtain ⟨hInvB, hObjInvB⟩ := replyRecvBody_preserves_ipcInvariantFull
                     epId tid rid prevCaller _ gate.cspaceRoot decoded.capRecvSlot
                     (determineExecutingCore st tid) st stB summary
-                    hPack.reachable hNoEdge1 hSrvIdle1 hStackValid1 hCleanupStack1 hReady1
-                    hBudgets1 hRidFresh1 hBadges1 hRetStage hBody
+                    hPack.reachable hNoEdge1 hHolderDon1 hHolderIdle1 hStackValid1
+                    hCleanupStack1 hReady1 hBudgets1 hRidFresh1 hBadges1 hRetStage hBody
                   rw [← hStep]
                   exact stageDeliveredMessage_preserves_ipcInvariantFull stB tid _
                     hObjInvB hInvB

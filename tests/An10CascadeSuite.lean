@@ -735,27 +735,39 @@ def an10_e_applyCallDonation_wires_h5 : IO Bool := do
   | Except.error _ => return false
 
 /-- AN10-E.production-wiring — verify `applyReplyDonation` invokes the H6
-wrapper path on a state where the replier has a `.donated` binding.
+wrapper path on a state where the answered frame heads a donated context.
 End-to-end test confirming H6 is reachable from the IPC reply chain.
 
-AN10-residual-1 deep-audit: signature now requires `ValidThreadId`. -/
+AN10-residual-1 deep-audit: signature now requires `ValidThreadId`.
+
+**WS-HP HP4.2**: the pop is keyed on the answered *frame* and the answered
+*caller*, so this state carries the reply stack a live `Call` donation leaves —
+the owner's Reply heads the context and the context names it back — and the
+argument is the owner rather than the holder.  The pre-flip state had no reply
+stack at all, which no live path produces. -/
 def an10_e_applyReplyDonation_wires_h6 : IO Bool := do
   let replierTid : ThreadId := ThreadId.ofNat 10
   let originalOwnerTid : ThreadId := ThreadId.ofNat 20
-  let replierVtid : ValidThreadId := ⟨replierTid, by decide⟩
+  let ownerVtid : ValidThreadId := ⟨originalOwnerTid, by decide⟩
   let scId : SchedContextId := SchedContextId.ofNat 30
-  let sc : Kernel.SchedContext := { mkEmptySchedContext 30 with boundThread := some replierTid }
+  let ownerReplyId : SeLe4n.ReplyId := ⟨40⟩
+  let sc : Kernel.SchedContext := { mkEmptySchedContext 30 with
+    boundThread := some replierTid, scReply := some ownerReplyId }
   let replierTcb : TCB := { mkTcb 10 with
     schedContextBinding := .donated scId originalOwnerTid }
-  let ownerTcb : TCB := mkTcb 20
+  let ownerTcb : TCB := { mkTcb 20 with replyObject := some ownerReplyId }
+  let ownerReply : Kernel.Reply :=
+    { Kernel.Reply.empty ownerReplyId with
+        caller := some originalOwnerTid, next := some (.head scId) }
   let st : SystemState := { (default : SystemState) with
     objects := ((default : SystemState).objects
       |>.insert scId.toObjId (.schedContext sc)
       |>.insert replierTid.toObjId (.tcb replierTcb)
+      |>.insert ownerReplyId.toObjId (.reply ownerReply)
       |>.insert originalOwnerTid.toObjId (.tcb ownerTcb)) }
-  match SeLe4n.Kernel.applyReplyDonation st replierVtid with
+  match SeLe4n.Kernel.applyReplyDonation st ownerReplyId ownerVtid with
   | Except.ok st' =>
-      -- After return, the replier should be unbound, the original owner
+      -- After return, the holder should be unbound, the original owner
       -- should be bound, and the SC's boundThread should be the original owner.
       let replierUnbound : Bool := match st'.objects[replierTid.toObjId]? with
         | some (.tcb t) => t.schedContextBinding == .unbound

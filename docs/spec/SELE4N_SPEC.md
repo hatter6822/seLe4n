@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.37` (`lakefile.toml`) |
+| **Package version** | `0.35.38` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 378,887 across 330 Lean files |
-| **Test LoC** | 76,620 across 70 Lean test suites |
-| **Proved declarations** | 12,676 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 379,856 across 330 Lean files |
+| **Test LoC** | 76,925 across 70 Lean test suites |
+| **Proved declarations** | 12,693 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4505,15 +4505,20 @@ respect.
    discharges the transient, exactly as `returnDonatedSchedContext` discharges
    the relaxed donation-owner conjunct.  The fault reply and the reply
    *transfer* (seL4's `doReplyTransfer`) compose it.  It carries **one**
-   condition beyond the chain invariant, and it is a **pre-state** fact:
-   `answeredHeadContextIsServerDonation`, that the context the answered frame
-   heads is the one the recorded reply server holds — the third local coherence
-   fact about a single reply, beside `replyDonationOwnerIsAnsweredCaller` and
-   `replyStackHeadIsAnsweredReply`, stated rather than derived for the reason
-   those are, vacuous wherever the answered frame heads nothing, and exhibited
-   on a live-operation state by `tests/SmpIpcSuite.lean` §3.21.  It is at the
-   pre-state as the bundle composite's `hDonationReturned` is, which is what
-   lets the reply *transfer* carry it once rather than once per branch.
+   condition beyond the chain invariant, and it is a **pre-state** fact.  Until
+   `v0.35.38` that was `answeredHeadContextIsServerDonation` — that the context
+   the answered frame heads is the one the recorded reply server holds, the
+   third local coherence fact about a single reply, beside
+   `replyDonationOwnerIsAnsweredCaller` and `replyStackHeadIsAnsweredReply`,
+   stated rather than derived for the reason those are and exhibited on a
+   live-operation state by `tests/SmpIpcSuite.lean` §3.21.  **WS-HP HP4**
+   (§8.12.9) retired it from this composite: with the pop keyed on the very
+   frame the relaxation sits at, the two name one context by construction.  What
+   the composite carries instead is `replyFrameHeadIsBound` — strictly weaker,
+   vacuous wherever the answered frame heads nothing, and the one arm
+   construction does not close.  The remaining bundle composite's
+   `hDonationReturned` is still at the pre-state, which is what lets the reply
+   *transfer* carry it once rather than once per branch.
 4. **`.replyRecv`'s donation pop runs *between* the legs.**  seL4-MCS's own
    order is `doReplyTransfer` → `reply_remove` → `receiveIPC`, and it has to be:
    the receive leg re-links the very Reply the reply leg just answered, and
@@ -4568,10 +4573,87 @@ respect.
    cut frame's own `replyPrev` into the frame above, so every frame below stays
    reachable from the head there.  Moving to `spliceOutTheCut` requires moving
    the reply path's pop trigger from the recorded server's binding to the
-   answered frame's head-ness; that is registered in
-   `docs/REGISTERED_DEBT.md` with owner WS-CB and closure target before v1.0.0,
-   and until it closes v1.0.0 must not claim seL4-MCS reply-stack semantics at
-   chain depth ≥ 3.
+   answered frame's head-ness; that is **WS-HP**, registered in
+   `docs/REGISTERED_DEBT.md` with closure target before v1.0.0, and until it
+   closes v1.0.0 must not claim seL4-MCS reply-stack semantics at chain depth
+   ≥ 3.  The trigger flip itself landed for the reply path at `v0.35.38`
+   (§8.12.9); the splice is HP6.
+
+#### 8.12.9 The donation pop is head-driven — WS-HP HP4 (`v0.35.38`)
+
+Both reply spines and `.replyRecv`'s pop decide whether to return a donated
+scheduling context from **whether the answered reply frame heads one**
+(`replyFrameHeadHolder?`), not from whether the recorded reply server holds a
+`.donated` binding.  The two triggers agree on every state `severAtCut` can
+produce — `answeredFrameHeadContext?_implies_serverDonation` under the coherence
+facts, and `severAtCut_pop_leaves_no_head` rules out the state where they differ
+— so the flip preserves behaviour and the golden trace is byte-identical.  Its
+purpose is HP6: the orphan head a splice can leave is exactly what a
+binding-driven trigger cannot see.
+
+Seven properties of the surface this leaves.
+
+1. **The answered frame is an argument, and has to be.**  The reply leg's
+   `consumeCallerReply` clears the answered caller's `replyObject`, so
+   `answeredFrameHeadContext?` answers `none` at every state the pop runs on.
+   The frame is resolved on the **pre**-state through `answeredReplyObject?`, the
+   one expression the arm's footprint members also come from;
+   `answeredFrameHeadContext?` is that resolution composed with the frame-keyed
+   `replyFrameHeadHolder?` rather than a second spelling.  Everything the pop
+   *decides* is read at its own state, which is what keeps
+   `returnDonatedSchedContext`'s `boundThread` guard vacuous rather than
+   load-bearing.  `.replyRecv` needs no resolution at all: `rid` is the reply
+   capability the arm was invoked with.
+
+2. **The trigger's second component is the thread that LOSES the context**,
+   where the retired resolver's was the one that gains it — same type, opposite
+   role, and under the flip the pair also moves from
+   `returnDonatedSchedContext`'s `originalOwner` position to its `serverTid` one.
+   `answeredFrameHeadContext?_boundThread` is the theorem that the component *is*
+   `sc.boundThread`.
+
+3. **The pop validates the thread it rewrites.**  The head-driven recipient is
+   the answered caller, which no binding the operation reads constrains, so
+   `donationRecipientAcceptable` refuses one that is not `.unbound` — O(1),
+   fail-closed, inert on every reachable state, and what stops a reply from
+   overwriting a reservation the caller had acquired for itself while blocked.
+
+4. **`replyDonationReturn?` is not the trigger.**  It answers "does this thread
+   hold a donated context", which the two pre-receive cleanups and the
+   cancellation reclaim still ask; its argument is the holder while the
+   trigger's is the answered caller.
+
+5. **The priority-inheritance reversion is unmoved**, because it keys on waiters
+   rather than on donations — a walk from the context's `boundThread` would
+   start at the wrong thread on exactly a delegated reply.
+
+6. **The two reply footprints still resolve their donation members through the
+   binding**, and `lockSet_endpointReplyOnCore_covers_headDrivenPop` is what says
+   they cover what the head-driven pop writes.  Repointing them is HP6.8, the
+   cut that makes the divergence reachable.
+
+7. **The frozen mirror is head-driven too** (HP4.7).
+   `frozenEndpointReplyWithDonationReturn` reads
+   `frozenReplyFrameHeadHolder? st replyId` — no resolution needed there, because
+   `replyId` *is* the presented capability and `frozenEndpointReply` refuses it
+   unless the target's own `replyObject` names it — and hands the context to the
+   answered caller rather than to a binding's recorded owner.
+   `frozenEndpointReplyServerDonation?` is deleted rather than left beside the
+   new reading.  The flip belongs to this cut because
+   `frozenBranchOperationChecked .endpointReplyToBlockedCaller = true` is a
+   machine-checked claim that the frozen composite is run beside this operation,
+   so a binding-driven mirror of a head-driven operation would be one question
+   answered in two places.  `FO-042` is what makes that claim a measurement: it
+   fires the pop on both surfaces, which no half of `FO-041` had ever done, and
+   its second half is the state where the two candidate triggers disagree.
+   Asking that question also closed two live guards the mirror lacked: HP4.6's
+   **recipient guard** (item 3), which is head-driven-specific and so could not
+   have been absent before this flip, in the live order and before every write;
+   and the live step's **ID promotion** — `applyReplyDonation` refuses a holder
+   `ThreadId.toValid?` will not promote — spelled `holder.isReserved`, because
+   that surface asks "is this id usable" through `frozenLookupTcb`, whose
+   predicate *is* `isReserved` and is exactly `= sentinel`, so it gains no second
+   convention.  `FO-042`'s third and fourth halves are their witnesses.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

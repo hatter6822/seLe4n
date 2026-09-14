@@ -1613,6 +1613,50 @@ def outerCallerAcceptable (st : SystemState) (serverTid originalOwner : SeLe4n.T
     (serverTid originalOwner : SeLe4n.ThreadId) :
     outerCallerAcceptable st serverTid originalOwner none = true := rfl
 
+/-- **WS-HP HP4.6: the thread the pop hands the context TO holds none of its
+own.**
+
+The symmetric counterpart of `outerCallerAcceptable`, and the guard the
+head-driven trigger makes load-bearing.  Before WS-HP the recipient was read out
+of the *holder's* `.donated scId owner` binding, and `donationOwnerValid` puts a
+donation's owner `.unbound`, so the recipient was provably unbound and no check
+was needed.  The head-driven pop takes its recipient from the **answered caller**
+instead, and nothing the operation reads constrains that thread's binding: a
+caller that acquired a reservation of its own while blocked (`schedContextBind`
+binds a blocked thread, deliberately) would have it silently overwritten by
+`donationReturnBinding` -- orphaning a live `SchedContext` whose `boundThread`
+still names that thread, which is a `donationBudgetTransfer` violation created by
+a successful reply.
+
+O(1) and fail-closed, exactly the posture RR2.8's `boundThread` guard has, and
+inert on every state this tree reaches: `donationOwnerValid` puts the recipient
+`.unbound` on each of the five call sites that resolve it from a binding, and on
+the reply path `replyFrameHeadHolderDonation` does the same -- but that one is a
+*stated* hypothesis until HP7 retires it, and resting a write on a hypothesis the
+operation cannot see is what this guard removes.
+
+A recipient that does not resolve passes: the operation's own later lookup
+reports `.objectNotFound` there, and shadowing that with `.invalidArgument` would
+change an error code rather than refuse a write. -/
+def donationRecipientAcceptable (st : SystemState) (originalOwner : SeLe4n.ThreadId) : Bool :=
+  match lookupTcb st originalOwner with
+  | none => true
+  | some tcb => tcb.schedContextBinding == .unbound
+
+/-- A recipient that does not resolve passes the guard. -/
+@[simp] theorem donationRecipientAcceptable_of_none (st : SystemState)
+    (originalOwner : SeLe4n.ThreadId) (h : lookupTcb st originalOwner = none) :
+    donationRecipientAcceptable st originalOwner = true := by
+  unfold donationRecipientAcceptable; rw [h]
+
+/-- And on one that does, the guard **is** the binding test. -/
+theorem donationRecipientAcceptable_eq_of_some (st : SystemState)
+    (originalOwner : SeLe4n.ThreadId) (tcb : TCB)
+    (h : lookupTcb st originalOwner = some tcb) :
+    donationRecipientAcceptable st originalOwner
+      = (tcb.schedContextBinding == .unbound) := by
+  unfold donationRecipientAcceptable; rw [h]
+
 /-- WS-OD OD4.4: **neither arm of the widened binding is `.unbound`.**  The pop
 hands the context *back*, so the thread it rewrites always holds it afterwards —
 at the bottom of the stack as `.bound`, one level up as `.donated`.  Consumers
@@ -3482,6 +3526,226 @@ theorem replyFrameHeadContext?_congr {s1 s2 : SystemState} (rid : SeLe4n.ReplyId
       | frame _ => rfl
       | head sc0 => simp only [hSc sc0]
 
+-- ============================================================================
+-- WS-HP HP4.1: the head-driven trigger, at the answered caller
+-- ============================================================================
+--
+-- These two lived in `IPC/CrossCore/EndpointReply.lean` from HP1 until HP4.1,
+-- which is where their HP1 consumers are -- the reply footprint and the
+-- cross-core dispatch.  HP4 re-keys the *single-core* donation spine onto the
+-- trigger, and `IPC/Operations/Donation/Primitives.lean` imports **this** module
+-- alone, so the resolver had to come down to a module that spine can see.
+--
+-- A relocation, never a second spelling: the pair's second component means the
+-- context's *holder* -- the thread the pop unbinds -- while the binding-driven
+-- `endpointReplyServerDonation?` it replaces carries the *owner*, the thread the
+-- pop binds.  Same type, opposite roles (plan SS3.8.2), so two spellings free to
+-- drift would be the worst possible shape for this question.
+
+/-- **WS-HP HP1.1: the Reply object a reply answers.**
+
+The expression `answeredReplyFrameAbove?`, `answeredReplyFrameBelow?` and
+`answeredFrameHeadContext?` are all resolved from, named once so the footprint
+members, the removal and the pop's trigger cannot disagree about *which* frame a
+reply answers.  It is the answered caller's own forward link -- the one
+`linkCallerReply` wrote and `consumeCallerReply` clears -- so every one of those
+sites must read it from the **pre**-state. -/
+def answeredReplyObject? (st : SystemState) (target : SeLe4n.ThreadId) :
+    Option SeLe4n.ReplyId :=
+  (st.getTcb? target).bind (·.replyObject)
+
+/-- **WS-HP HP1.1: the scheduling context the answered frame HEADS, with that
+context's current holder** -- the pair the donation pop takes its arguments from
+once HP4 lands.
+
+`replyFrameHeadContext?` answers *which* context, off the frame's own `.head`
+link and validated against that context's `scReply`; this pairs it with
+`SchedContext.boundThread`, which is the thread the pop unbinds.  Both halves are
+reads of the context the frame names, so the pop's `scId` and its `serverTid` can
+no longer disagree -- where the binding-driven trigger took `scId` from the
+recorded server's `.donated` binding and `serverTid` from the recorded server,
+leaving `returnDonatedSchedContext`'s own `boundThread` guard to catch a drift
+between them.  Under this trigger that guard is satisfied by construction, which
+is the honest direction: the operation reads the fact it used to check.
+
+**A context with no bound thread declines**, and that arm is unreachable today:
+`donateSchedContext` and `returnDonatedSchedContext` both leave `boundThread` a
+`some`, and `schedContextUnbind` refuses a `.donated` holder outright, so no
+reachable state has a context heading a stack while bound to nobody.  It is
+written as a refusal rather than assumed away because the refusal is what keeps
+this total -- and because lifting that unbind refusal, which becomes sound
+exactly once this trigger is live, is the one change that makes the arm
+reachable.
+
+**WS-HP HP4.1 -- the resolver is split at the reply object, and the split is
+forced by the reply leg.**  `consumeCallerReply` clears the answered caller's
+`replyObject` (`answeredReplyObject?`'s own docstring says so), and the donation
+pop runs *after* the reply leg -- seL4-MCS's `doReplyTransfer` order, which this
+kernel keeps because the server needs the returned budget while it replies.  So
+the pop cannot ask `answeredFrameHeadContext?` of its own state: the answer is
+always `none` there.  What it can ask is `replyFrameHeadHolder?` of the frame,
+because the frame's `.head` link and the context's `scReply` and `boundThread`
+all survive the leg untouched -- `Reply.consumed` keeps a head frame's links
+deliberately, for exactly this reason.
+
+The pop therefore takes the answered **reply id**, resolved on the pre-state
+through the one expression the footprint members also come from, and resolves the
+context and its holder itself at the state it runs on.  That is what keeps the
+`boundThread` guard vacuous and the head validation a consequence rather than a
+hypothesis: both are reads of the pop's own state.  The alternative -- passing
+the resolved pair -- would make them pre-state reads again and put the guard
+back to work, which is the shape HP4 exists to retire. -/
+def replyFrameHeadHolder? (st : SystemState) (rid : SeLe4n.ReplyId) :
+    Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match replyFrameHeadContext? st rid with
+  | none => none
+  | some scId =>
+    match (st.getSchedContext? scId).bind (·.boundThread) with
+    | none => none
+    | some holder => some (scId, holder)
+
+/-- A frame that heads no context has no holder to report. -/
+@[simp] theorem replyFrameHeadHolder?_of_no_head (st : SystemState)
+    (rid : SeLe4n.ReplyId) (h : replyFrameHeadContext? st rid = none) :
+    replyFrameHeadHolder? st rid = none := by
+  unfold replyFrameHeadHolder?; rw [h]
+
+/-- **WS-HP HP4.1: the frame-keyed resolver's constructor.** -/
+theorem replyFrameHeadHolder?_of_head (st : SystemState) (rid : SeLe4n.ReplyId)
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (hHead : replyFrameHeadContext? st rid = some scId)
+    (hBt : (st.getSchedContext? scId).bind (·.boundThread) = some holder) :
+    replyFrameHeadHolder? st rid = some (scId, holder) := by
+  unfold replyFrameHeadHolder?; rw [hHead]; simp only [hBt]
+
+/-- **WS-HP HP4.1: what a `some` answer asserts** -- the frame heads the named
+context (with everything `replyFrameHeadContext?_eq_some` supplies about that),
+and the context is bound to the named holder. -/
+theorem replyFrameHeadHolder?_eq_some {st : SystemState} {rid : SeLe4n.ReplyId}
+    {scId : SeLe4n.SchedContextId} {holder : SeLe4n.ThreadId}
+    (h : replyFrameHeadHolder? st rid = some (scId, holder)) :
+    replyFrameHeadContext? st rid = some scId ∧
+      (st.getSchedContext? scId).bind (·.boundThread) = some holder := by
+  unfold replyFrameHeadHolder? at h
+  revert h
+  cases hHead : replyFrameHeadContext? st rid with
+  | none => intro h; cases h
+  | some scId0 =>
+    simp only []
+    cases hBt : (st.getSchedContext? scId0).bind (·.boundThread) with
+    | none => intro h; cases h
+    | some holder0 =>
+      simp only []
+      intro h
+      have hPair := Option.some.inj h
+      have h1 : scId0 = scId := congrArg Prod.fst hPair
+      have h2 : holder0 = holder := congrArg Prod.snd hPair
+      subst h1; subst h2
+      exact ⟨rfl, hBt⟩
+
+/-- **WS-HP HP4.4: a scheduling context that heads a reply stack is bound to a
+thread.**
+
+The one coherence fact the head-driven pop still needs, and the replacement for
+`answeredHeadContextIsServerDonation` in the chain composite -- strictly weaker
+than it, because it asks only that the head context has *a* holder rather than
+that a particular recorded server holds it.  It is what rules out the arm
+`replyFrameHeadHolder?` declines on: a frame that heads a context bound to nobody,
+where the pop would be the identity while the reply leg has already relaxed the
+chain at that frame.
+
+`answeredFrameHeadContext?`'s docstring argues the arm is unreachable
+(`donateSchedContext` and `returnDonatedSchedContext` both leave `boundThread` a
+`some`, and `schedContextUnbind` refuses a `.donated` holder), and that argument
+is about *reachability* rather than about an invariant -- `donationChainWellFormed`
+carries no binding clause at all.  So it is stated rather than assumed, and
+WS-HP HP7 is where it becomes a clause of the chain invariant and retires.
+
+Vacuous wherever the frame heads no context, which is every reply in a tree with
+no donation. -/
+def replyFrameHeadIsBound (st : SystemState) (rid : SeLe4n.ReplyId) : Prop :=
+  ∀ scId, replyFrameHeadContext? st rid = some scId →
+    ∃ holder, replyFrameHeadHolder? st rid = some (scId, holder)
+
+/-- The vacuity discharge. -/
+theorem replyFrameHeadIsBound_of_no_head (st : SystemState) (rid : SeLe4n.ReplyId)
+    (h : replyFrameHeadContext? st rid = none) : replyFrameHeadIsBound st rid := by
+  intro scId hHead; rw [h] at hHead; cases hHead
+
+/-- Under it, a frame that heads a context resolves a holder. -/
+theorem replyFrameHeadHolder?_ne_none_of_bound {st : SystemState} {rid : SeLe4n.ReplyId}
+    {scId : SeLe4n.SchedContextId} (hBound : replyFrameHeadIsBound st rid)
+    (hHead : replyFrameHeadContext? st rid = some scId) :
+    replyFrameHeadHolder? st rid ≠ none := by
+  obtain ⟨holder, hH⟩ := hBound scId hHead
+  rw [hH]; intro hx; cases hx
+
+/-- **WS-HP HP4.1: the frame-keyed resolver is a function of the store
+projections it reads** -- every Reply and every SchedContext.  The frame lemma a
+step that writes no chain object crosses, and the one the answered-caller form
+below is derived from. -/
+theorem replyFrameHeadHolder?_congr {s1 s2 : SystemState} (rid : SeLe4n.ReplyId)
+    (hReply : s2.getReply? rid = s1.getReply? rid)
+    (hSc : ∀ scId : SeLe4n.SchedContextId,
+      s2.getSchedContext? scId = s1.getSchedContext? scId) :
+    replyFrameHeadHolder? s2 rid = replyFrameHeadHolder? s1 rid := by
+  unfold replyFrameHeadHolder?
+  simp only [replyFrameHeadContext?_congr rid hReply hSc]
+  cases replyFrameHeadContext? s1 rid with
+  | none => rfl
+  | some scId => simp only [hSc scId]
+
+/-- **WS-HP HP1.1**: the answered caller's own frame, resolved through
+`replyFrameHeadHolder?`.  This is the **pre**-state form -- the footprint's and
+HP2's -- and it is the composition rather than a second spelling, so the two
+entry points cannot disagree about what a frame heads. -/
+def answeredFrameHeadContext? (st : SystemState) (target : SeLe4n.ThreadId) :
+    Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match answeredReplyObject? st target with
+  | none => none
+  | some rid => replyFrameHeadHolder? st rid
+
+/-- A thread holding no reply object answers no head. -/
+@[simp] theorem answeredFrameHeadContext?_of_no_reply (st : SystemState)
+    (target : SeLe4n.ThreadId) (h : answeredReplyObject? st target = none) :
+    answeredFrameHeadContext? st target = none := by
+  unfold answeredFrameHeadContext?; rw [h]
+
+/-- The resolver, unfolded on a thread whose reply object resolves. -/
+theorem answeredFrameHeadContext?_eq (st : SystemState) (target : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (h : answeredReplyObject? st target = some rid) :
+    answeredFrameHeadContext? st target = replyFrameHeadHolder? st rid := by
+  unfold answeredFrameHeadContext?; rw [h]
+
+/-- **WS-HP HP1.2: the resolver's constructor** -- the direction HP2.2's converse
+reads, and the one a witness uses to exhibit a live reply stack. -/
+theorem answeredFrameHeadContext?_of_head (st : SystemState) (target : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (hRid : answeredReplyObject? st target = some rid)
+    (hHead : replyFrameHeadContext? st rid = some scId)
+    (hBt : (st.getSchedContext? scId).bind (·.boundThread) = some holder) :
+    answeredFrameHeadContext? st target = some (scId, holder) := by
+  rw [answeredFrameHeadContext?_eq st target rid hRid]
+  exact replyFrameHeadHolder?_of_head st rid scId holder hHead hBt
+
+/-- **WS-HP HP1.2: what a `some` answer asserts** -- there is an answered frame,
+it heads the named context (with everything `replyFrameHeadContext?_eq_some`
+supplies about that), and the context is bound to the named holder. -/
+theorem answeredFrameHeadContext?_eq_some {st : SystemState} {target : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {holder : SeLe4n.ThreadId}
+    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    ∃ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid ∧
+      replyFrameHeadContext? st rid = some scId ∧
+      (st.getSchedContext? scId).bind (·.boundThread) = some holder := by
+  unfold answeredFrameHeadContext? at h
+  revert h
+  cases hRid : answeredReplyObject? st target with
+  | none => intro h; cases h
+  | some rid =>
+    simp only []
+    intro h
+    exact ⟨rid, rfl, (replyFrameHeadHolder?_eq_some h).1, (replyFrameHeadHolder?_eq_some h).2⟩
+
 /-- WS-RM (`v0.35.6`): **the detach folded to the identity on a refusal** — the
 one spelling of "take the frame above off this frame's stack, or leave the state
 alone".  Both removal paths need it and neither may fail on it, so it is defined
@@ -4193,6 +4457,13 @@ def returnDonatedSchedContext
     if !outerCallerAcceptable st serverTid originalOwner newOwner? then
       .error .invalidArgument
     else
+    -- **WS-HP HP4.6**: and validate the *recipient* the same way, for the reason
+    -- `donationRecipientAcceptable` records -- the head-driven trigger takes it
+    -- from the answered caller rather than from a binding `donationOwnerValid`
+    -- constrains, so the operation checks what it is about to overwrite.
+    if !donationRecipientAcceptable st originalOwner then
+      .error .invalidArgument
+    else
     -- WS-OD OD3.1: resolve and validate the reply-stack head **before** any
     -- store, so a head this context does not own commits nothing.
     match donationHeadOf? st scId sc with
@@ -4555,6 +4826,11 @@ theorem returnDonatedSchedContext_ok_storeChain
       -- incomplete description of the operation, and an incomplete description
       -- licenses conclusions the operation does not earn.
       outerCallerAcceptable st serverTid originalOwner newOwner? = true ∧
+      -- **WS-HP HP4.6**: and the recipient guard, for the same reason — a
+      -- successful pop witnesses that the thread it rewrote held no reservation
+      -- of its own, which is what makes `donationBudgetTransfer` survive a
+      -- recipient the operation did not read out of a binding.
+      donationRecipientAcceptable st originalOwner = true ∧
       donationHeadOf? st scId sc = .ok head? ∧
       storeObject scId.toObjId
         (.schedContext { sc with boundThread := some originalOwner,
@@ -4581,6 +4857,11 @@ theorem returnDonatedSchedContext_ok_storeChain
       -- WS-OD OD4.4: peel the outer-caller guard; a refused outer caller commits
       -- nothing, so the `.ok` branch carries its verdict.
       cases hOuterOk : outerCallerAcceptable st serverTid originalOwner newOwner? with
+      | false => simp only [Bool.not_false, if_true]; intro h; cases h
+      | true =>
+      simp only [Bool.not_true, Bool.false_eq_true, if_false]
+      -- **WS-HP HP4.6**: peel the recipient guard the same way.
+      cases hRecipOk : donationRecipientAcceptable st originalOwner with
       | false => simp only [Bool.not_false, if_true]; intro h; cases h
       | true =>
       simp only [Bool.not_true, Bool.false_eq_true, if_false]
@@ -4620,8 +4901,8 @@ theorem returnDonatedSchedContext_ok_storeChain
                       intro h
                       cases h
                       exact ⟨sc, head?, clientTcb, serverTcb, p1.2, s2, p3.2, p4.2, rfl,
-                        trivial, hHead, by rw [← hS1], hS2, hL1, by rw [← hS3], hL2,
-                        by rw [← hS4], rfl⟩
+                        trivial, trivial, hHead, by rw [← hS1], hS2, hL1, by rw [← hS3],
+                        hL2, by rw [← hS4], rfl⟩
     | _ => intro h; cases h
 
 /-- WS-OD OD4.4: **a successful pop validated its outer caller.**
@@ -4648,6 +4929,62 @@ theorem returnDonatedSchedContext_ok_outerAcceptable
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   exact hOuterOk
 
+/-- **WS-HP HP4.6: a successful pop validated its recipient**, so every consumer
+reads back that the thread the pop rebound held no reservation of its own. -/
+theorem returnDonatedSchedContext_ok_recipientAcceptable
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    donationRecipientAcceptable st originalOwner = true := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, hRecipOk, _⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  exact hRecipOk
+
+/-- **WS-HP HP4.6 (the useful form): a successful pop's recipient was
+`.unbound`.**  The fact `donationBudgetTransfer` needs of a recipient the
+operation did not read out of a binding -- and the reason the head-driven trigger
+cannot orphan a reservation the answered caller had acquired for itself. -/
+theorem returnDonatedSchedContext_ok_recipient_unbound
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st')
+    (tcb : TCB) (hLk : lookupTcb st originalOwner = some tcb) :
+    tcb.schedContextBinding = .unbound := by
+  have hOk := returnDonatedSchedContext_ok_recipientAcceptable st st' serverTid scId
+    originalOwner newOwner? h
+  rw [donationRecipientAcceptable_eq_of_some st originalOwner tcb hLk] at hOk
+  -- `BEq SchedContextBinding` is hand-written (`SchedContext/Types.lean`), so the
+  -- `==` is discharged by evaluation on the three constructors rather than
+  -- through a `LawfulBEq` instance the type does not carry.
+  revert hOk; cases tcb.schedContextBinding <;> simp [BEq.beq]
+
+/-- **WS-HP HP4.6 (the refusal): the pop declines a recipient that already holds a
+binding**, committing nothing.  The direction that says the guard fires, stated
+so a mutation which deletes it is visible: without the guard this state reaches
+the store chain and overwrites a live binding. -/
+theorem returnDonatedSchedContext_rejects_bound_recipient
+    (st : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (sc : SchedContext) (tcb : TCB)
+    (hSc : st.objects[scId.toObjId]? = some (.schedContext sc))
+    (hBoundThread : sc.boundThread = some serverTid)
+    (hOuter : outerCallerAcceptable st serverTid originalOwner newOwner? = true)
+    (hLk : lookupTcb st originalOwner = some tcb)
+    (hBound : tcb.schedContextBinding ≠ .unbound) :
+    returnDonatedSchedContext st serverTid scId originalOwner newOwner?
+      = .error .invalidArgument := by
+  have hRecip : donationRecipientAcceptable st originalOwner = false := by
+    rw [donationRecipientAcceptable_eq_of_some st originalOwner tcb hLk]
+    -- Same hand-written `BEq`: evaluate on the constructor the hypothesis rules in.
+    revert hBound; cases tcb.schedContextBinding <;> simp [BEq.beq]
+  unfold returnDonatedSchedContext SystemState.getSchedContext?
+  rw [hSc]
+  simp only [hBoundThread, bne_self_eq_false, Bool.false_eq_true, if_false, hOuter,
+    Bool.not_true, hRecip, Bool.not_false, if_true]
+
 /-- WS-OD OD3.3: **at an empty reply stack the pop is the pre-OD3 operation,
 store for store.**
 
@@ -4661,13 +4998,22 @@ This is the row that makes OD3 inert.  No transition in this tree writes
 state, the head clear is the identity, the head write is idempotent, and
 `replyStackOuterCaller?` answers `none` at every call site — so the operation's
 behaviour is bit-identical to pre-OD3 until the push lands, and the push is the
-only phase in this workstream that changes what the kernel does. -/
+only phase in this workstream that changes what the kernel does.
+
+**WS-HP HP4.6**: the equation now carries the recipient guard as a hypothesis
+rather than folding it into the right-hand side.  Either spelling is true; this
+one keeps the right-hand side *exactly* the pre-OD3 body, which is what the
+theorem is for — an equation whose right-hand side grows a guard every time the
+operation does stops being a statement about the legacy shape.  The hypothesis is
+discharged wherever the recipient is `.unbound`, which `donationOwnerValid` gives
+at every call site that resolves it from a binding. -/
 theorem returnDonatedSchedContext_eq_legacy_of_none
     (st : SystemState) (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
     (sc : SchedContext)
     (hSc : st.objects[scId.toObjId]? = some (.schedContext sc))
-    (hNoHead : sc.scReply = none) :
+    (hNoHead : sc.scReply = none)
+    (hRecip : donationRecipientAcceptable st originalOwner = true) :
     returnDonatedSchedContext st serverTid scId originalOwner none =
       (if sc.boundThread != some serverTid then .error .invalidArgument
        else
@@ -4704,7 +5050,8 @@ theorem returnDonatedSchedContext_eq_legacy_of_none
   rw [hSc]
   -- WS-OD OD4.4: at the bottom of the reply stack the outer-caller guard demands
   -- nothing, so it reduces away and the body is the pre-OD3 one exactly.
-  simp only [outerCallerAcceptable_none, Bool.not_true, Bool.false_eq_true, if_false,
+  -- **WS-HP HP4.6**: the recipient guard reduces away under its hypothesis.
+  simp only [outerCallerAcceptable_none, hRecip, Bool.not_true, Bool.false_eq_true, if_false,
     donationHeadOf?_of_no_stack st scId sc hNoHead,
     storeDonationHeadPop_none, donationReturnBinding_none, hSame]
 
@@ -4724,7 +5071,7 @@ theorem returnDonatedSchedContext_reply_rewrite
     (hReply : st.objects[oid]? = some (.reply r)) :
     ∃ r', st'.objects[oid]? = some (.reply r') ∧ replyStackRewrite r' r := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -4782,7 +5129,7 @@ theorem returnDonatedSchedContext_tcb_rewrite
     (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
     ∃ t', st'.objects[k]? = some (.tcb t') ∧ tcbBindingRewrite t' t0 := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -4825,7 +5172,7 @@ theorem returnDonatedSchedContext_tcb_rewrite_backward
     (k : SeLe4n.ObjId) (t' : TCB) (hk : st'.objects[k]? = some (.tcb t')) :
     ∃ t0, st.objects[k]? = some (.tcb t0) ∧ tcbBindingRewrite t' t0 := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -4894,7 +5241,7 @@ theorem returnDonatedSchedContext_other_tcb_eq
     (hPre : st.objects[k]? = some (.tcb t0)) :
     st'.objects[k]? = some (.tcb t0) := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _, _hHead, hS1, hClear, _hL1, hS3, _hL2, hS4, hEq⟩ :=
+    hSc, _, _, _hHead, hS1, hClear, _hL1, hS3, _hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   -- The SchedContext key holds a `.schedContext`, so it is not `k`.
   have hkSc : k ≠ scId.toObjId := by
@@ -4940,7 +5287,7 @@ theorem returnDonatedSchedContext_tcb_binding_cases
       ∃ t0, st.objects[k]? = some (.tcb t0) ∧
         t0.schedContextBinding = t'.schedContextBinding) := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -5022,7 +5369,7 @@ theorem returnDonatedSchedContext_objects_backward_of_kind
     (hPost : st'.objects[oid]? = some o) :
     st.objects[oid]? = some o := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -5065,7 +5412,7 @@ theorem returnDonatedSchedContext_objects_forward_of_kind
     (hPre : st.objects[oid]? = some o) :
     st'.objects[oid]? = some o := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -5101,7 +5448,7 @@ theorem returnDonatedSchedContext_preserves_objects_invExt'
     (hObjInv : st.objects.invExt)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     st'.objects.invExt := by
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -5118,7 +5465,7 @@ theorem returnDonatedSchedContext_preserves_objectIndexSet_invExt
     (hSetInv : st.objectIndexSet.table.invExt)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     st'.objectIndexSet.table.invExt := by
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have h1 := storeObject_preserves_objectIndexSet_invExt st s1 _ _ hSetInv hS1
   have h2 := storeDonationHeadPop_preserves_objectIndexSet_invExt h1 hClear
@@ -5136,7 +5483,7 @@ theorem returnDonatedSchedContext_preserves_objectIndexSetComplete
     (hComplete : objectIndexSetComplete st)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     objectIndexSetComplete st' := by
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -5174,7 +5521,7 @@ theorem returnDonatedSchedContext_objects_ne_stored
       sc.scReply = some rid → st.getReply? rid = some r → r.prev = some below →
       oid ≠ below.toObjId) :
     st'.objects[oid]? = st.objects[oid]? := by
-  obtain ⟨sc0, head?, _, _, s1, s2, s3, s4, hSc0, _, hHead, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
+  obtain ⟨sc0, head?, _, _, s1, s2, s3, s4, hSc0, _, _, hHead, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hScEq : sc0 = sc := by
     rw [hSc0] at hSc; exact KernelObject.schedContext.inj (Option.some.inj hSc)
@@ -5218,7 +5565,7 @@ theorem returnDonatedSchedContext_objects_ne_of_not_reply
     (hNeServer : oid ≠ serverTid.toObjId)
     (hNotReply : ∀ r : Reply, st.objects[oid]? ≠ some (.reply r)) :
     st'.objects[oid]? = st.objects[oid]? := by
-  obtain ⟨sc, head?, _, _, _, _, _, _, hSc, _, hHead, _, _, _, _, _, _, _⟩ :=
+  obtain ⟨sc, head?, _, _, _, _, _, _, hSc, _, _, hHead, _, _, _, _, _, _, _⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   refine returnDonatedSchedContext_objects_ne_stored st st' serverTid scId originalOwner
     newOwner? sc hSc hObjInv h oid hNeSc hNeOwner hNeServer ?_ ?_
@@ -5233,7 +5580,7 @@ theorem returnDonatedSchedContext_objects_ne_of_not_reply
     obtain ⟨hObj, _⟩ := donationHeadOf?_ok_resolves st scId sc p.1 p.2 (by rw [hHead])
     exact hNotReply p.2 (by rw [hEqK, ← hpFst]; exact hObj)
   · intro rid r below hRid hRep hPrev hEqK
-    obtain ⟨sc', head?', _, _, s1, _, _, _, hSc', _, hHead', hS1, hClear, _, _, _, _, _⟩ :=
+    obtain ⟨sc', head?', _, _, s1, _, _, _, hSc', _, _, hHead', hS1, hClear, _, _, _, _, _⟩ :=
       returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
     have hScEq : sc' = sc := by
       rw [hSc] at hSc'; exact (KernelObject.schedContext.inj (Option.some.inj hSc')).symm
@@ -5288,7 +5635,7 @@ theorem returnDonatedSchedContext_post_schedContext
         some (.schedContext { sc with boundThread := some originalOwner,
                                       scReply := head?.bind (fun p => p.2.prev) }) := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _, hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _, hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -5404,7 +5751,7 @@ theorem returnDonatedSchedContext_scheduler_eq
     (newOwner? : Option SeLe4n.ThreadId)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     st'.scheduler = st.scheduler := by
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   rw [hEq]
   show s4.scheduler = st.scheduler
@@ -5422,7 +5769,7 @@ theorem returnDonatedSchedContext_serviceRegistry_eq
     (newOwner? : Option SeLe4n.ThreadId)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     st'.serviceRegistry = st.serviceRegistry := by
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   rw [hEq]
   show s4.serviceRegistry = st.serviceRegistry
@@ -5446,7 +5793,7 @@ theorem returnDonatedSchedContext_tlbShootdown_eq
   -- WS-OD OD3.1: read off the operation's own decomposition rather than by a
   -- fourth copy of its case analysis, which is what the store chain exists for
   -- and what kept this frame from needing a fifth arm when the pop landed.
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   rw [hEq]
   show s4.tlbShootdown = st.tlbShootdown

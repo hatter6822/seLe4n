@@ -302,18 +302,18 @@ private theorem filter_mono {α : Type} (p1 p2 : α → Bool) (xs : List α)
   | nil => simp
   | cons x rest ih =>
     simp only [List.filter_cons]
-    by_cases hp2 : p2 x = true
-    · rw [if_pos hp2, if_pos (h x hp2)]; simp only [List.length_cons]; omega
-    · rw [if_neg hp2]
-      by_cases hp1 : p1 x = true
-      · rw [if_pos hp1]; simp only [List.length_cons]; omega
-      · rw [if_neg hp1]; exact ih
+    by_cases hNarrowAt : p2 x = true
+    · rw [if_pos hNarrowAt, if_pos (h x hNarrowAt)]; simp only [List.length_cons]; omega
+    · rw [if_neg hNarrowAt]
+      by_cases hWideAt : p1 x = true
+      · rw [if_pos hWideAt]; simp only [List.length_cons]; omega
+      · rw [if_neg hWideAt]; exact ih
 
 /-- Strict filter decrease: if some element passes p1 but not p2. -/
 private theorem filter_strict {α : Type} [DecidableEq α]
     (p1 p2 : α → Bool) (xs : List α)
     (h_sub : ∀ x, p2 x = true → p1 x = true)
-    (a : α) (ha : a ∈ xs) (hp1 : p1 a = true) (hp2 : p2 a = false)
+    (a : α) (ha : a ∈ xs) (hWideAt : p1 a = true) (hNarrowAt : p2 a = false)
     (hNod : xs.Nodup) :
     (xs.filter p2).length < (xs.filter p1).length := by
   induction xs with
@@ -323,16 +323,16 @@ private theorem filter_strict {α : Type} [DecidableEq α]
     simp only [List.filter_cons]
     rcases List.mem_cons.mp ha with heq | har
     · subst heq
-      rw [if_pos hp1, if_neg (by simp [hp2])]
+      rw [if_pos hWideAt, if_neg (by simp [hNarrowAt])]
       simp only [List.length_cons]
       exact Nat.lt_succ_of_le (filter_mono p1 p2 rest h_sub)
     · have ih' := ih har hNodR
-      by_cases hp2x : p2 x = true
-      · rw [if_pos hp2x, if_pos (h_sub x hp2x)]; simp only [List.length_cons]; omega
-      · rw [if_neg hp2x]
-        by_cases hp1x : p1 x = true
-        · rw [if_pos hp1x]; simp only [List.length_cons]; omega
-        · rw [if_neg hp1x]; exact ih'
+      by_cases hNarrowAtHead : p2 x = true
+      · rw [if_pos hNarrowAtHead, if_pos (h_sub x hNarrowAtHead)]; simp only [List.length_cons]; omega
+      · rw [if_neg hNarrowAtHead]
+        by_cases hWideAtHead : p1 x = true
+        · rw [if_pos hWideAtHead]; simp only [List.length_cons]; omega
+        · rw [if_neg hWideAtHead]; exact ih'
 
 /-- Adding nd to visited strictly decreases the unvisited-universe count.
 WS-G8: Updated for `Std.HashSet` visited set. -/
