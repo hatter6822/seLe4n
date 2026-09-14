@@ -1,3 +1,100 @@
+## v0.35.33 — Round 20: the rule round 19 stated, now the rule the code runs
+
+**PR #895 review round 20.**  Three findings, all three in code written for
+rounds 18 and 19, and the two P1s share one cause worth stating before either:
+round 19 asked round 18's question before writing anything — *is an exact oracle
+in reach?* — and recorded the correct answer, **no**, no CommonMark
+implementation is available at Tier 0, and therefore "the reader refuses every
+inline form it cannot render".  That sentence went into the docstring and into
+`CLAUDE.md`.  The code shipped in the same cut peeled emphasis runs and
+extracted link labels by hand.  **The distance between a stated rule and an
+implemented one is where this section's findings now live.**
+
+**P1a — `/// # [Safety](https://e.invalid)junk)` published a Safety section.**
+rustdoc renders that heading `Safetyjunk)`; a label extractor anchored on
+`[`…`]` reads `Safety`.
+
+**P1b — `/// # ** Safety **` published one too.**  That is *inactive* emphasis
+(CommonMark 6.2: a left-flanking delimiter run may not be followed by
+whitespace), so rustdoc renders the asterisks literally and publishes nothing;
+a peeler that strips a matched `**`/`**` pair reads `Safety`.
+
+Both are the fail-open direction on the gate whose baseline is empty, and both
+reproduce on the actual pre-fix code (`heading_publishes_safety` returns `True`
+for each).
+
+**The fix is round 16's exit, and it was measured before being taken.**  The
+heading's content must now **be** one of the four titles round 17 measured
+`clippy::missing_safety_doc` to accept, and every inline form is refused rather
+than rendered — including the seven both authorities accept, because deciding
+what markup renders to is a CommonMark question and Tier 0 has no renderer.
+That reads strict until the cost is measured: every Safety heading in this tree
+is already written plainly (26 `/// # Safety`, 3 `/// ## Safety`, 3
+`//! # Safety`, 2 `//! ## Safety`, zero carrying inline markup), so the refusal
+costs the tree nothing and makes the question decidable.  *Take the measurement
+that tells you the strict option is free, and the temptation to approximate
+disappears.*  `rendered_heading_title` and the three inline-markup patterns
+under it are deleted; `heading_publishes_safety` is one membership test.  The
+gate's `heading verdict:` line reports the canonical spelling and still carries
+round 17's and round 19's measurements of where the two authorities disagree,
+because that disagreement is why neither can be deferred to.
+
+The matrix keeps every inline row as a **refusal** annotated with what the two
+authorities do — some forms both accept and the reader is deliberately stricter,
+some only rustdoc accepts, some neither does — plus the two round-20 cells and
+two controls that keep the refusal from reading as "headings never publish".
+Mutation-verified end to end: transplanting the new matrix onto the actual
+round-19 file fails exactly the ten cells whose verdict changed, the two P1s
+among them, while every unchanged cell passes under both.
+
+**P2 — an import alias rebound by a `match` capture still resolved.**
+`rebound_import_names` was a hand-written `ast` walk, and a `case subject:`
+binds through no `Name` in `Store` context, so `module_import_facts` kept the
+import mapping while the receiver denoted something else — fail-open in the one
+direction this gate exists to close, since the set it builds is a set of
+*readers* and one it invents keeps a dead pin alive.
+
+**Measuring the walk rather than patching the reported cell found the shape.**
+It handled *every* binder Python had before PEP 634 — assignment, augmented,
+annotated, `for`, `with ... as`, `except ... as`, the walrus, `def`, `class` —
+and **none** of structural pattern matching's: `MatchAs` bare and after a class
+pattern, `MatchStar`, a `MatchMapping` rest.  Four forms, not the one reported.
+An enumeration of a language's binders is a list of the ones that existed when
+it was written, so the next grammar addition empties it silently.
+
+The enumeration is deleted rather than extended, because the oracle was already
+imported in the very cut that wrote the walk: **`symtable` is CPython's own
+binding analysis**, and `is_assigned()` is `False` for a name bound only by an
+import and `True` the moment anything else binds it (`is_parameter()` asked
+beside it, since one does not imply the other).  All eleven binding forms and
+both non-binding controls — `x.k[i] = v` and `x.attr = v`, which mutate an
+object and bind no name — are answered without the oracle being told they exist.
+The self-test pins the whole family, including the walrus and `except ... as`
+rows that round 18 *did* handle, because a fix must be shown to generalise
+rather than to be a different rule that happens to cover the reported cell; a
+mutation restoring round 18's actual body fails exactly the four `match` rows
+and passes those two.
+
+**Two mechanical notes, both earned.**  Measuring the walk also corrected this
+cut's own first draft, which claimed round 18 had missed the walrus and
+`except ... as`; it had not, and saying otherwise would have overstated the
+finding.  And a conservative answer is defensible only when its cost is
+measured: the whole-module binding query over-refuses a receiver shadowed only
+in an unrelated function, which the docstring declares — and across all 31
+tracked `.py` files, zero import-bound names are assigned at module scope and
+zero at nested scope, so the conservative query and the exact one agree on the
+entire tree.  The alternative (ask the module scope alone) is fail-**open** for
+a shadowed read, which is the thing the gate exists to catch.
+
+The tree holds at **136/136** justified unsafe sites (114 blocks, 22
+declarations) and **66** Python-target anchors with a live reader.
+
+- Files: `scripts/check_unsafe_block_justifications.py`,
+  `scripts/check_anchor_symbol_liveness.py`, `CLAUDE.md`, `AGENTS.md`.
+- Version bumped 0.35.32 → 0.35.33.
+
+Refs: `CLAUDE.md` — *a rule stated in a docstring is not a rule in the code*
+
 ## v0.35.32 — Round 19: the heading's rendered title, and the two authorities measured against each other
 
 **PR #895 review round 19.**  One finding, and it is the **fail-closed**

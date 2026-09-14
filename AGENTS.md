@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.32.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.33.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2158,7 +2158,10 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   Following the rendering alone would let Tier 0 green a file the crate's own
   `-D warnings` lint then rejects — so *neither tool is "the" authority*, and
   naming one is not the end of the question even after you have measured it.
-  The gate accepts what both accept and says so in its own output.
+  The measurement stands and is what the gate's own output reports; what this
+  round *did* with it — accept the intersection, by rendering the heading — was
+  superseded one round later, for the reason its own closing paragraph gives.
+  See **a rule stated in a docstring is not a rule in the code** below.
 
   The finding itself was the **fail-closed** direction — `/// # **Safety**`
   refused, a correctly documented `unsafe fn` rejected — which round 6 recorded
@@ -2181,6 +2184,72 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   Recording the `no` is what makes the bounded reader honest rather than lazy;
   it refuses every inline form it cannot render, which keeps the site in the
   violation set (a visible failure) rather than clearing it silently.
+
+  **And a rule stated in a docstring is not a rule in the code — the narrowest
+  gap in this whole section** (PR #895 review round 20).  Round 19 closed by
+  applying round 18's rule before writing anything and recording the answer:
+  *is an exact oracle in reach?* — **no**, no CommonMark implementation is
+  available at Tier 0 — and therefore "it refuses every inline form it cannot
+  render".  That sentence is right, it is the correct engineering call, and it
+  went into the docstring and into this file.  The code shipped in the same cut
+  peeled emphasis runs and extracted link labels by hand.
+
+  Round 20 is the two cells that gap produces, and they are worth naming because
+  neither is exotic.  `# ** Safety **` is **inactive** emphasis — CommonMark 6.2:
+  a left-flanking delimiter run may not be followed by whitespace — so rustdoc
+  renders the asterisks literally and publishes no Safety section, while a
+  peeler that strips a matched `**`/`**` pair reads `Safety`.  And
+  an ATX heading whose content is a bracketed `Safety` label, an inline
+  destination and a trailing `junk)` renders `Safetyjunk)`, while a label
+  extractor anchored on the brackets reads `Safety`.  Both were accepted; both are the fail-open
+  direction on the gate whose baseline is empty.
+
+  **The distance between a stated rule and an implemented one is where this
+  section's findings now live.**  Nine of the last twelve rounds found a defect
+  in a hand-written front-end, and this file has said so since round 14 and
+  registered it as debt; round 19 went further and *derived the right rule from
+  first principles* — and then the hand-written renderer was written anyway,
+  because refusing markup felt like it would reject valid documentation.  It
+  does not: **measured before choosing**, every Safety heading in this tree is
+  already written plainly (26 `/// # Safety`, 3 `/// ## Safety`, 3 `//! #
+  Safety`, 2 `//! ## Safety`, zero carrying inline markup), so requiring the
+  canonical spelling costs the tree nothing.  *Take the measurement that tells
+  you the strict option is free, and the temptation to approximate disappears.*
+  The heading's content must now **be** one of the four measured titles; every
+  inline form is refused, including the seven both authorities accept, and the
+  gate says which kind of refusal each is.  That is round 16's exit —
+  **where the subject is code this project writes, require a canonical spelling
+  and refuse the rest** — reaching the last construct in this file that was
+  still being parsed.
+
+  The round's second finding is the **enumeration** rule meeting a language that
+  grew.  `rebound_import_names` was a hand-written `ast` walk over binding
+  constructs, and the review reported one it missed: a `match` capture.
+  Measuring the walk rather than patching the reported cell found the shape — it
+  handled *every* binder Python had before PEP 634 and **none** of structural
+  pattern matching's, which is four forms, not one.  An enumeration of a
+  language's binders is a list of the ones that existed when it was written, so
+  the next grammar addition empties it silently.  The exit is round 18's, and
+  the oracle was already imported in the very cut that wrote the walk:
+  **`symtable` is CPython's own binding analysis**, and `is_assigned()` is False
+  for a name bound only by an import and True the moment anything else binds it.
+  The enumeration is deleted; all eleven forms and both non-binding controls
+  (`x.k[i] = v`, `x.attr = v`) are answered without the oracle being told they
+  exist.
+
+  Two mechanical notes, both earned.  **Measure the walk, not the cell**: fixing
+  the reported `match` capture alone would have left three siblings live and the
+  next round would have supplied one — and the same measurement corrected this
+  file's own first draft of this entry, which claimed the walk had missed the
+  walrus and `except ... as` too.  It had not; it handled both, and saying
+  otherwise would have overstated the finding.  And **a conservative answer is
+  defensible only when you have measured what it costs**: the whole-module
+  binding query over-refuses a receiver shadowed only in an unrelated function,
+  which the docstring declares — and across all 31 tracked `.py` files, zero
+  import-bound names are assigned at module scope and zero at nested scope, so
+  the conservative query and the exact one agree on the entire tree.  The
+  alternative (ask the module scope alone) is fail-**open** for a shadowed read,
+  which is the thing the gate exists to catch.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor

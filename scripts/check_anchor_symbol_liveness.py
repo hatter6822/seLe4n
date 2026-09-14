@@ -107,71 +107,42 @@ def module_scope_facts(source: str) -> "tuple[set[str], set[str]]":
     return bound, reads
 
 
-def _binding_statement_names(node) -> "set[str]":
-    """Names `node` binds, EXCLUDING the imports (which bind deliberately).
-
-    A `Subscript` or `Attribute` target mutates an object and binds no name --
-    `os.environ["X"] = "y"` does not rebind `os` -- so those are skipped.  That
-    distinction is not cosmetic: counting them reported three rebindings in this
-    workspace that do not exist, which is the defect class this gate is about,
-    inside the measurement taken to size it.
-    """
-    def stored(target) -> "set[str]":
-        if isinstance(target, ast.Name):
-            return {target.id}
-        if isinstance(target, (ast.Tuple, ast.List)):
-            return {n for e in target.elts for n in stored(e)}
-        if isinstance(target, ast.Starred):
-            return stored(target.value)
-        return set()
-
-    if isinstance(node, ast.Assign):
-        return {n for t in node.targets for n in stored(t)}
-    if isinstance(node, (ast.AugAssign, ast.AnnAssign, ast.For, ast.AsyncFor)):
-        return stored(node.target)
-    if isinstance(node, ast.NamedExpr):
-        return stored(node.target)
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-        return {node.name}
-    if isinstance(node, ast.ExceptHandler):
-        return {node.name} if node.name else set()
-    if isinstance(node, (ast.With, ast.AsyncWith)):
-        return {n for item in node.items if item.optional_vars
-                for n in stored(item.optional_vars)}
-    if isinstance(node, (ast.Lambda, ast.FunctionDef, ast.AsyncFunctionDef)):
-        return set()
-    return set()
-
-
-def rebound_import_names(tree) -> "set[str]":
+def rebound_import_names(source: str) -> "set[str]":
     """Import-bound names this module ALSO binds some other way.
 
-    **PR #895 review round 18.**  `module_import_facts` keyed attribute reads by
-    the receiver's *spelling*, so
+    **PR #895 review round 20.**  Round 18 answered this with a hand-written
+    `ast` walk over the binding constructs it had thought of, and the review
+    supplied one it had not — a `match` capture, `case subject:`.  Measuring
+    the walk rather than patching the reported cell found the shape: it
+    handled *every* binder Python had before PEP 634 (assignment, augmented
+    and annotated, `for`, `with ... as`, `except ... as`, the walrus, `def`
+    and `class`) and **none** of structural pattern matching's, which is a
+    whole family — `MatchAs` bare and after a class pattern, `MatchStar`, a
+    `MatchMapping` rest — four forms, not the one reported.  None binds
+    through a `Name` in `Store` context, so none was collected, and
+    `module_import_facts` kept the import mapping while the receiver denoted
+    something else.  That is fail-**open** here: the gate builds a set of
+    *readers*, and one it invents keeps a pin alive that names nothing.
 
-        import subject
-        subject = object()
-        print(subject.A)
+    The lesson is not that four beats one; it is that an enumeration of a
+    language's binders is a list of the ones that existed when it was written,
+    so the next grammar addition silently empties it.  **CPython already
+    answers this**: `symtable` reports `is_assigned()` **False** for a name
+    bound only by an import and **True** the moment anything else binds it —
+    measured across all eleven forms above plus the `subject.table[k] = v` and
+    `subject.x = v` controls, which bind no name and correctly read False.
+    Round 18's own rule (*check whether the exact answer is already in reach*)
+    applied to the gate round 18 wrote: the oracle was imported in that very
+    cut, for scope resolution, and asked nothing about binding.
 
-    counted as a read of the target's `A` and kept a dead anchor green.  That is
-    fail-**open** in the one direction this gate exists to close: the set it
-    builds is a set of *readers*, and a reader it invents keeps a pin alive that
-    names nothing.
-
-    Whether a given occurrence still refers to the module is a dataflow question
-    -- the import may come before or after the rebinding, on one branch or both
-    -- and no scanner decides it.  So the name is refused: the gate stops
-    counting reads through it AND reports the form, rather than reading past it.
-    That is this project's rule for a scanner that cannot decide, and it costs
-    nothing today -- no tracked module rebinds an import alias -- while refusing
-    the first one that does.
-
-    Function parameters and comprehension targets are included, because a read
-    inside such a scope resolves to the local and `attribute_reads` does not
-    record which scope it came from.  Over-refusing is the safe direction here:
-    it fails the gate visibly rather than passing silently.
+    Parameters are counted too (`is_parameter`, which `is_assigned` does not
+    imply): a read inside a scope that shadows the alias resolves to the
+    parameter, and `attribute_reads` does not record which scope a read came
+    from, so the fail-closed answer is to refuse the receiver.  Over-refusing
+    fails the gate visibly; under-refusing passes it silently.
     """
     imported: set[str] = set()
+    tree = ast.parse(source)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -183,17 +154,14 @@ def rebound_import_names(tree) -> "set[str]":
     if not imported:
         return set()
     rebound: set[str] = set()
-    for node in ast.walk(tree):
-        rebound |= _binding_statement_names(node) & imported
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            args = node.args
-            for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs,
-                        args.vararg, args.kwarg):
-                if arg is not None and arg.arg in imported:
-                    rebound.add(arg.arg)
-        elif isinstance(node, (ast.comprehension,)):
-            rebound |= _binding_statement_names(ast.Assign(
-                targets=[node.target], value=ast.Constant(value=None))) & imported
+    pending = [symtable.symtable(source, "<rebinding-scan>", "exec")]
+    while pending:
+        table = pending.pop()
+        for sym in table.get_symbols():
+            name = sym.get_name()
+            if name in imported and (sym.is_assigned() or sym.is_parameter()):
+                rebound.add(name)
+        pending.extend(table.get_children())
     return rebound
 
 
@@ -216,7 +184,7 @@ def module_import_facts(source: str):
     from_imports: dict[str, tuple[str, str]] = {}
     attribute_reads: dict[str, set[str]] = {}
     unresolved: list[str] = []
-    rebound = rebound_import_names(tree)
+    rebound = rebound_import_names(source)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -397,6 +365,48 @@ _CASES = [
      "A = 1\n",
      "import subject\n\n\ndef g(subject):\n    return subject.A\n",
      "^A", True),
+    # --- the binder family the round-18 enumeration missed (round 20) ------
+    # The review reported ONE cell (`case subject:`); the family is four, and
+    # they are enumerated here rather than the reported cell alone, because a
+    # witness drawn from a finding tests the finding.  All four are structural
+    # pattern matching's binders: none binds through a `Name` in `Store`
+    # context, so the hand-written walk collected none of them and kept the
+    # import mapping over a receiver that denotes something else.  `symtable`
+    # answers every one without being told it exists, which is why the
+    # enumeration is gone rather than extended.
+    ("a `match` capture rebinding the alias refuses the receiver",
+     "A = 1\n",
+     "import subject\n\n\ndef g(v):\n    match v:\n        case subject:\n"
+     "            return subject.A\n",
+     "^A", True),
+    ("a `match` star capture rebinding the alias refuses the receiver",
+     "A = 1\n",
+     "import subject\n\n\ndef g(v):\n    match v:\n        case [*subject]:\n"
+     "            return subject.A\n",
+     "^A", True),
+    ("a `match` mapping rest rebinding the alias refuses the receiver",
+     "A = 1\n",
+     "import subject\n\n\ndef g(v):\n    match v:\n        case {'k': 1, **subject}:\n"
+     "            return subject.A\n",
+     "^A", True),
+    ("a `match` class capture rebinding the alias refuses the receiver",
+     "A = 1\n",
+     "import subject\n\n\ndef g(v):\n    match v:\n        case int() as subject:\n"
+     "            return subject.A\n",
+     "^A", True),
+    # ...and two the round-18 walk DID handle, kept as the rows that say so:
+    # the fix must be shown to be a generalisation, not a different rule that
+    # happens to cover the reported cell.
+    ("a walrus rebinding the alias refuses the receiver",
+     "A = 1\n",
+     "import subject\n\n\ndef g(v):\n    if (subject := v):\n"
+     "        return subject.A\n",
+     "^A", True),
+    ("an `except ... as` rebinding the alias refuses the receiver",
+     "A = 1\n",
+     "import subject\n\n\ndef g():\n    try:\n        pass\n"
+     "    except ValueError as subject:\n        return subject.A\n",
+     "^A", True),
     # ...and the control that keeps the fix from degrading into "an alias with
     # any store nearby never resolves": a subscript or attribute target mutates
     # an object and rebinds no name.
@@ -404,6 +414,22 @@ _CASES = [
      "A = 1\n",
      "import subject\n\nsubject.table['k'] = 1\n\n\ndef g():\n    return subject.A\n",
      "^A", False),
+    # ...and the row that pins the query's DIRECTION where it is inexact.  A
+    # whole-module query answers for every scope, so a same-named local in an
+    # unrelated function refuses a module-scope receiver that really does denote
+    # the import.  That is the over-approximation the docstring declares -- the
+    # exact answer needs each attribute read attributed to its own scope, which
+    # `attribute_reads` does not record -- and it is taken deliberately, because
+    # the alternative (ask the module scope alone) is fail-OPEN for a shadowed
+    # read, which is the very thing this gate exists to catch.  Measured before
+    # choosing: across all 31 tracked `.py` files, zero import-bound names are
+    # assigned at module scope and zero at nested scope, so the two queries
+    # agree on the whole tree and the conservative one costs it nothing.
+    ("a nested-scope binding of the alias refuses the receiver (fail-closed)",
+     "A = 1\n",
+     "import subject\n\n\ndef other():\n    subject = 1\n    return subject\n"
+     "\n\ndef g():\n    return subject.A\n",
+     "^A", True),
     # --- the domain, not the predicate -----------------------------------
     ("a name the module does not bind draws no verdict",
      "A = 1\ndef f():\n    return A\n", "", "some prose the file mentions", False),
