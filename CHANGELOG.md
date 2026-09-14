@@ -1,3 +1,92 @@
+## v0.35.44 — WS-HP HP6.2: the two reply footprints read the pop's own trigger
+
+`lockSet_endpointReplyOnCore` and `lockSet_endpointReplyRecvOnCore` resolved their
+donation members from `endpointReplyServerDonation?` — the **recorded server's
+binding** — while the pop has read the answered reply frame since HP4.1.  Both now
+read `answeredFrameHeadContext? st target`, the expression
+`applyReplyDonationOnCore` itself reads, so the footprint and the transition cannot
+disagree about which context is popped or which thread is unbound.  Sound today —
+under `severAtCut` the two resolvers agree — which is why this lands *before* the
+splice: the splice is the change that makes them disagree, and a window with the
+splice landed and the repoint outstanding would carry a footprint that omits what
+the pop writes.
+
+**The slot's meaning changed, so the parameter did.**  The head reading's second
+component is the thread the pop sets `.unbound` where the binding reading's was the
+thread that *gains* the context — the same type, the opposite role — so
+`lockSet_endpointReply`'s and `lockSet_replyRecv`'s `donatedOriginalOwnerTid` is
+`donatedScHolderTid`, and the *recipient* needs no member at all: the head-driven
+pop hands the context to the answered caller, which is `replyTargetTid`.  `server`
+stays keyed on the **recorded** server, because that is the thread
+`propagatePipChainCrossCore` walks from and rewrites, and the splice can separate
+the two.  Measured against the composite's three write sites, not reasoned from the
+resolver.
+
+**Three write-membership lemmas had to be added, and their absence is the
+finding.**  The second donation member had **none** on either footprint, and
+`lockSet_replyRecv`'s SchedContext member had none either — so nothing in the tree
+could state that the objects the hottest IPC arm's pop writes carry declared write
+locks, and HP4.4's coverage stand-in had routed around the gap by *proving the
+holder is the recorded server* and citing `callerTid`'s lemma instead.  That worked
+under `severAtCut` and is exactly what the splice breaks.  With
+`lockSet_endpointReply_donatedHolder_tcb_write_mem`,
+`lockSet_replyRecv_donatedHolder_tcb_write_mem` and
+`lockSet_replyRecv_donatedSc_write_mem` the members are stated on their own
+account, and the coverage becomes definitional:
+`lockSet_endpointReplyOnCore_covers_donationPop` and its `.replyRecv` twin take
+**no hypothesis**, where the stand-in needed `donationOwnerValid` and
+`answeredHeadContextIsServerDonation`.  The stand-in is deleted; it also had no
+`.replyRecv` twin, so nothing had said that arm's pop wrote under declared locks.
+Found by asking the table to be symmetric, not by a review round.
+
+**And `v0.35.43`'s own correction was still wrong in one direction.**  It predicted
+that the repoint leaves the declared arity unmoved (true) and that the sharp bounds
+"stay conditional until HP7" (false in both halves):
+
+- `lockSet_endpointReplyRecvOnCore_size_le_eighteen` is now **unconditional**.  It
+  took `donationChainWellFormed` and `replyStackHeadIsAnsweredReply` to exclude the
+  removal's members from the pop's; under the head-driven trigger a frame that
+  heads a context provably has no frame above it and none below it
+  (`answeredReplyFrameAbove?_none_of_headContext`), so the exclusion is structural
+  and the bound holds on every state, reachable or not.
+- `lockSet_endpointReplyRecvOnCore_size_le_seventeen` is **retired**.  Its single
+  merge was `replyDonationOwnerIsAnsweredCaller` — the returned donation's *owner*
+  is the answered caller — and the head reading's second component is the thread
+  **running on** the context while the answered caller is `.blockedOnReply`, so the
+  coincidence occurs on no state this arm reaches: the merge is *false*, not
+  unproved.  The available substitute is *holder = recorded server*, which is
+  `answeredHeadContextIsServerDonation`'s content and precisely what the splice
+  falsifies at an orphan head, so a seventeen resting on it would stop holding in
+  the cut after next.
+
+That trade is the whole of what the repoint costs: one unit of reachable slack for
+two hypotheses and a figure that survives HP6.  If a later phase derives the
+holder/server fact, a sharper reachable bound becomes available again and belongs
+there, with the merge proved rather than assumed.  Both coherence facts now have
+**no consumer at all**, recorded at each predicate — the verification the
+retirement row asks for, done here rather than deferred.
+
+**The fixture sweep found HP5's own lesson once more.**
+`tests/SmpCrossCoreReplySuite.lean`'s delegated-reply state carried a `.donated`
+binding and **no reply stack**, so the repointed footprint declared nothing and its
+two assertions would have passed vacuously — which is how the witness failed the
+moment the repoint landed.  It carries the stack a live `Call` leaves now.  And
+because that shape has the holder *equal to* the recorded server, where the
+holder's lock is in the footprint through `server` under either resolver, it cannot
+be the witness for the repoint: a new **orphan-head** state puts a third thread on
+the context, the two resolvers there name different threads, and the footprint
+declares the one the pop unbinds.  A behavioural revert never reaches those rows —
+it fails the coverage theorem first, which is where the relation belongs.
+
+Five Tier 3 anchors were stale and are swept: the `.replyRecv` member anchor is
+repointed, the two that *pinned the eighteen bound's hypotheses* are deleted (a
+positive pin on a hypothesis a cut retired is a pin on a dead subject) and replaced
+by a negative that the bound carries none of the three coherence facts, the retired
+stand-in's anchor is deleted, and the suite string is repointed.  Seven new anchors
+pin the repoint in both directions.
+
+Version bumped 0.35.43 → 0.35.44.
+
 ## v0.35.43 — WS-HP: HP6.2's own claim about the sharp bounds, corrected by measurement
 
 HP6.2 (the footprint repoint, not yet implemented) claimed that repointing the two

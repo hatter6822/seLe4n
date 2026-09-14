@@ -646,68 +646,22 @@ theorem answeredFrameHeadContext?_implies_serverDonation (st : SystemState)
   · unfold endpointReplyServerDonation? endpointReplyDonation?
     simp only [hExp, hGetE, hB]
 
-/-- **WS-HP HP4.4: the declared `.reply` footprint covers what the HEAD-driven pop
-writes.**
+/-! **WS-HP HP6.2 (`v0.35.44`): the coverage stand-in is gone.**
 
-The footprint resolves its donation members through `endpointReplyServerDonation?`
--- the binding-driven resolver -- while the pop, since HP4, reads
-`replyFrameHeadHolder?`.  Those are the two resolvers HP2 relates, and this is
-where the relation stops being a safety net and becomes load-bearing: without it
-nothing says the SchedContext the pop writes and the TCB it unbinds carry declared
-write locks, and a footprint that omits a written object is *false*.
+`lockSet_endpointReplyOnCore_covers_headDrivenPop` stood here from HP4.4: the
+footprint resolved its donation members through `endpointReplyServerDonation?`
+while the pop read `replyFrameHeadHolder?`, so something had to say that the
+SchedContext the pop writes and the TCB it unbinds carry declared write locks,
+and it said so under HP2.1's two coherence facts.  HP6.2 repointed the
+footprints onto the pop's own trigger, which makes that coverage **definitional**
+— `lockSet_endpointReplyOnCore_covers_donationPop` and its `.replyRecv` twin
+take no hypothesis at all — so keeping a conditional restatement beside them
+would be a theorem whose content its own subject already supplies.
 
-Both members fall out of HP2.1.  The context is the same `scId` the binding
-resolver reports, so `lockSet_endpointReply_donatedSc_write_mem` applies; the
-holder **is** the recorded server (`holder = expected`), which is the thread the
-resolved footprint passes in its first argument, so
-`lockSet_endpointReply_caller_tcb_write_mem` applies.  The hypotheses are HP2.1's
-own — the two coherence facts HP7 retires, plus the answered caller resolving and a
-recorded server existing.
-
-Only this direction is needed: the head trigger firing implies the binding one
-does.  The converse would widen the footprint, which is sound.
-
-**Repointing the footprint's own resolvers is HP6.2's** (plan §3.8.7), which
-moved ahead of the splice at `v0.35.41`: a transition goes live only after the
-declarations that cover it, and the splice is what makes these two resolvers
-disagree — `spliceOutTheCut` can leave an orphan head, which `severAtCut` provably
-cannot (`severAtCut_pop_leaves_no_head`).  Doing it in this cut would have
-re-proved the two sharp bounds
-(`lockSet_endpointReplyRecvOnCore_size_le_eighteen` / `_seventeen`) twice.
-
-**What that repoint does and does not buy** (corrected `v0.35.43`, measured against
-the composite's write sites rather than reasoned from the resolver): the
-composite writes the answered caller (`endpointReplyOnCore`), the **recorded
-server** (`propagatePipChainCrossCore`) and, in the pop, the SC plus the
-**holder** plus the answered caller again.  So the repoint reuses the
-`donatedOriginalOwnerTid` slot for the holder — the recipient needs no slot,
-being `replyTargetTid` by construction — and the declared arity does not move.
-The 18 → 17 merge therefore changes its licence from
-`replyDonationOwnerIsAnsweredCaller` to *holder = recorded server*, which the
-splice can falsify at an orphan head; the sharp bounds stay conditional until HP7
-derives that fact.  What the repoint *does* make free is
-`replyStackHeadIsAnsweredReply`'s consumer, subsumed by HP2.4's
-`answeredFrameHeadContext?_head_is_answered_reply`. -/
-theorem lockSet_endpointReplyOnCore_covers_headDrivenPop (st : SystemState)
-    (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (target : SeLe4n.ThreadId) (tcb : TCB)
-    (scId : SeLe4n.SchedContextId) (holder expected : SeLe4n.ThreadId)
-    (hOwnerValid : donationOwnerValid st)
-    (hHeadReturned : answeredHeadContextIsServerDonation st target)
-    (hLk : lookupTcb st target = some tcb)
-    (hExp : recordedReplyServer? st target = some expected)
-    (hHead : answeredFrameHeadContext? st target = some (scId, holder)) :
-    (Concurrency.schedContextLock scId, Concurrency.AccessMode.write)
-      ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs ∧
-    (Concurrency.tcbLock holder, Concurrency.AccessMode.write)
-      ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
-  obtain ⟨hHolderEq, owner, hDon⟩ := answeredFrameHeadContext?_implies_serverDonation st target
-    tcb scId holder expected hOwnerValid hHeadReturned hLk hExp hHead
-  unfold lockSet_endpointReplyOnCore
-  rw [hDon, hExp, hHolderEq]
-  simp only [Option.map_some, Option.getD_some]
-  exact ⟨Concurrency.lockSet_endpointReply_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _,
-    Concurrency.lockSet_endpointReply_caller_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _⟩
+`answeredFrameHeadContext?_implies_serverDonation` above is **not** retired with
+it: that is HP2.1's equivalence, cited where this tree explains why the two
+readings agree on every state `severAtCut` can produce, and HP2.3 is what makes
+the splice falsify its hypotheses. -/
 
 /-- **WS-HP HP2.4: the head of the popped context IS the answered caller's reply
 object** -- `replyStackHeadIsAnsweredReply`'s content, as a theorem of the

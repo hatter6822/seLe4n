@@ -129,7 +129,11 @@ are mutually exclusive and no *reachable* footprint grows.  The bounds that
 record this are `lockSet_endpointReplyRecvOnCore_size_le_eighteen` (unconditional,
 from PR #894's own sender/pre-return mutual exclusion) and `…_size_le_seventeen`
 (under the owner merge); RM3.5 must show **both** unmoved, not the retired
-`…_size_le_fifteen`, which this cut's own widening superseded.
+`…_size_le_fifteen`, which this cut's own widening superseded.  (WS-HP HP6.2 at
+`v0.35.44` retired `…_size_le_seventeen` itself — its owner merge occurs on no
+state the head-driven trigger reaches — and made the eighteen unconditional in
+the same cut.  This paragraph records what RM measured; the live figure is the
+eighteen alone.)
 
 ## 4. Sequencing
 

@@ -1387,14 +1387,22 @@ private def runLubMergeChecks : IO Unit := do
   assertBool "the widest UNMERGED rendezvous .replyRecv shape has 18 locks"
     (decide (rendezvousReplyRecv.size = 18))
   -- …and this witness is deliberately the *unmerged* one: its
-  -- `donatedOriginalOwnerTid` is ⟨11⟩, which is not the answered caller ⟨7⟩ --
-  -- a shape `replyDonationOwnerIsAnsweredCaller` rules out on a reachable state.
-  -- The companion below is the same footprint with that one argument set to ⟨7⟩,
-  -- so the two differ in nothing else and the difference measures exactly what
-  -- `lockSet_endpointReplyRecvOnCore_size_le_seventeen`'s owner merge buys.
-  -- Pinning the unmerged width beside it is what stops "seventeen" from reading
-  -- as a fact about the definition rather than about the merge.
-  assertBool "…and the owner merge is worth exactly one lock"
+  -- `donatedScHolderTid` is ⟨11⟩, which is not the answered caller ⟨7⟩.  The
+  -- companion below is the same footprint with that one argument set to ⟨7⟩, so
+  -- the two differ in nothing else and the difference measures exactly what a
+  -- coincidence at that slot is worth: one lock.
+  --
+  -- **WS-HP HP6.2 (`v0.35.44`)**: it measures the *definition*, and that is all
+  -- it ever measured.  It used to stand beside
+  -- `lockSet_endpointReplyRecvOnCore_size_le_seventeen`, whose licence was
+  -- `replyDonationOwnerIsAnsweredCaller` -- and under the head-driven trigger
+  -- that slot carries the thread the pop *unbinds*, which is running on the
+  -- context while the answered caller is `.blockedOnReply`, so **no reachable
+  -- state produces this coincidence at all**.  The bound is retired and the
+  -- reachable figure is eighteen, unconditionally; this row stays because the
+  -- parametric merge is still a fact about the footprint a later phase may reach
+  -- through a different equality.
+  assertBool "…and a coincidence at the holder slot is worth exactly one lock"
     (decide ((lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                 (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩)
                 (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)

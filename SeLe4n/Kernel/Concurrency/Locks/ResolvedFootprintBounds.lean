@@ -129,9 +129,17 @@ flipped); this is its reply-side twin, and it is stated rather than derived for
 exactly that reason.
 
 Kept as a predicate on `(st, target)` rather than folded into a bundle: it is a
-*local* coherence fact about one reply, and the resolved bound below is the only
+*local* coherence fact about one reply, and the resolved bound below was its only
 consumer.  A conjunct of `ipcReachable` would oblige every transition to
-re-establish it for every thread. -/
+re-establish it for every thread.
+
+**WS-HP HP6.2 (`v0.35.44`): this predicate now has NO consumer.**  Its only one
+was `lockSet_endpointReplyRecvOnCore_size_le_seventeen`, retired in the same cut
+(see the note below the eighteen bound): the repointed footprint reads the pop's
+own trigger, whose second component is the thread the pop *unbinds* rather than
+the thread that receives the context, so the merge this fact licensed has no
+subject.  HP7.2 owns the deletion and its row says to *verify* this rather than
+remove it again — verified here. -/
 def replyDonationOwnerIsAnsweredCaller (st : SystemState) (target : SeLe4n.ThreadId) : Prop :=
   ∀ scId owner, endpointReplyServerDonation? st target = some (scId, owner) → owner = target
 
@@ -149,7 +157,13 @@ caller's own reply object"); this names it so the sharp bounds below can cite it
 It is what makes the WS-RM member **free**: the frame above the answered reply is
 `some` exactly when that reply is not a stack head, and under this fact a reply
 that is not the head means the context heads no stack at all — so the pop's three
-members are absent whenever the detach's one is present. -/
+members are absent whenever the detach's one is present.
+
+**WS-HP HP6.2 (`v0.35.44`): and this one has no consumer either.**  Its only one
+was the same retired bound, through `replyStackHead?_none_of_answeredFrameAbove`
+below.  Under the head-driven trigger the exclusion is structural
+(`answeredReplyFrameAbove?_none_of_headContext`), so both the fact and the lemma
+that consumed it are now dead weight, which HP7.2 retires. -/
 def replyStackHeadIsAnsweredReply (st : SystemState) (target : SeLe4n.ThreadId) : Prop :=
   ∀ scId owner h, endpointReplyServerDonation? st target = some (scId, owner) →
     replyStackHead? st scId = some h → (st.getTcb? target).bind (·.replyObject) = some h
@@ -351,25 +365,29 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twenty (st : SystemState)
       exact lockSet_replyRecv_size_le_twenty_of_no_sender
         _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
-/-- **WS-RM (`v0.35.6`): and eighteen on a coherent state — exactly where PR
-#894's review left it.**
+/-- **WS-RM (`v0.35.6`): eighteen — and since WS-HP HP6.2 (`v0.35.44`) with **no
+hypothesis at all**.**
 
 The detach's member costs the *reachable* footprint nothing, and this is the
-theorem that says so.  The answered frame has a frame above it exactly when it is
-not a stack head, and under `replyStackHeadIsAnsweredReply` a reply that is not
-the head means the returned context heads no stack
-(`replyStackHead?_none_of_answeredFrameAbove`) — so the three members the pop
-contributes are absent whenever the detach's one is present, and a blocking
-`.replyRecv` that detaches declares **sixteen**, two fewer than one that pops.
-Eighteen bounds both branches and both groups.
+theorem that says so: the answered frame has a frame above it exactly when it is
+not a stack head, so the three members the pop contributes are absent whenever the
+detach's one is present, and a blocking `.replyRecv` that detaches declares
+**sixteen**, two fewer than one that pops.  Eighteen bounds both branches and both
+groups.
 
-Stated with the coherence fact explicit rather than folded into `ipcReachable`,
-for the reason `replyDonationOwnerIsAnsweredCaller` gives. -/
+**What HP6.2 changed is the price of saying it.**  Under the binding-driven
+resolvers the exclusion needed `donationChainWellFormed` *and*
+`replyStackHeadIsAnsweredReply`, because nothing tied the context the footprint
+named to the frame the reply answered.  With the footprint repointed onto
+`answeredFrameHeadContext?` the exclusion is structural — a frame with a frame
+above it heads nothing (`answeredReplyFrameAbove?_none_of_headContext`,
+`answeredReplyFrameBelow?_none_of_headContext`) — so both hypotheses are gone and
+the bound holds on *every* state, reachable or not.  That is strictly stronger
+than what it replaces, and it is the first of the two coherence facts the repoint
+retires. -/
 theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
-    (hChain : donationChainWellFormed st)
-    (hHeadIs : replyStackHeadIsAnsweredReply st target) :
+    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
       ≤ 18 := by
   unfold lockSet_endpointReplyRecvOnCore
@@ -378,128 +396,54 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
       rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
         receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
       simp only [Option.map_none]
-      exact Nat.le_trans
-        (lockSet_replyRecv_size_le_eighteen_of_no_preReturn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-        (by decide : (18 : Nat) ≤ 18)
+      exact lockSet_replyRecv_size_le_eighteen_of_no_preReturn
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   | none =>
       rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
       simp only [Option.bind_none]
-      cases hAbove : answeredReplyFrameAbove? st target with
+      cases hHead : answeredFrameHeadContext? st target with
       | none =>
-          -- WS-HP HP3.1: no frame above means no frame below, which needs no
-          -- coherence fact -- the splice's member is declared only on a mid-stack
-          -- removal.  That is what keeps this figure at eighteen.
-          rw [answeredReplyFrameBelow?_of_no_frameAbove st target hAbove]
+          -- The pop contributes nothing, so only the removal's two members can be
+          -- live and thirteen bounds what is left.
+          simp only [Option.map_none, Option.bind_none]
+          exact Nat.le_trans
+            (lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head
+              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+            (by decide : (17 : Nat) ≤ 18)
+      | some pr =>
+          obtain ⟨scId, holder⟩ := pr
+          -- **WS-HP HP6.2**: the exclusion is structural under this trigger.  A
+          -- frame that heads a context has no frame above it and none below it,
+          -- so the removal's two members are absent on exactly the states the
+          -- pop's three are present -- no coherence fact required.
+          rw [answeredReplyFrameAbove?_none_of_headContext st target scId holder hHead,
+            answeredReplyFrameBelow?_none_of_headContext st target scId holder hHead]
+          simp only [Option.map_some]
           exact lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove
             _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      | some above =>
-          cases hDon : endpointReplyServerDonation? st target with
-          | none =>
-              simp only [Option.map_none, Option.bind_none]
-              exact Nat.le_trans
-                (lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide : (17 : Nat) ≤ 18)
-          | some pr =>
-              obtain ⟨scId, owner⟩ := pr
-              have hHead : replyStackHead? st scId = none :=
-                replyStackHead?_none_of_answeredFrameAbove st target scId owner above
-                  hChain hHeadIs hDon hAbove
-              simp only [Option.map_some, Option.bind_some, hHead,
-                replyStackBelowHead?_of_no_head st scId hHead]
-              exact Nat.le_trans
-                (lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide : (17 : Nat) ≤ 18)
 
-/-- **WS-OD OD3.7: and one narrower still under the donation discipline —
-seventeen.**
+/-! **WS-HP HP6.2 (`v0.35.44`): `lockSet_endpointReplyRecvOnCore_size_le_seventeen`
+is retired, and the reason is the whole of what the repoint costs.**
 
-**WS-OD OD3.13** moved the ceiling and this figure together (fourteen and
-thirteen); **WS-OD `v0.35.4`** added the head the pop clears and the old head the
-re-donation's push rewrites; **PR #894 review** added the invoking receiver's own
-pre-receive return and took the ceiling to twenty-one; **WS-RM (`v0.35.6`)** added
-the frame the removal's detach writes and took it to twenty-two.  What this
-theorem adds over the eighteen above is the one *merge* the invariants supply:
-the returned donation's owner is the answered caller, so two arguments name one
-key and `insertOrMerge` lubs the modes without moving the cardinality.
+OD3.7 stated seventeen — one below the bound above — and the single merge that
+bought it was `replyDonationOwnerIsAnsweredCaller`: the *owner* the binding-driven
+resolver reported is the answered caller, so two arguments named one key and
+`insertOrMerge` lubbed the modes without moving the cardinality.
 
-That merge is the whole of the remaining sharpening.  The other candidate — the
-recorded server with the invoking thread — holds exactly on a *non-delegated*
-reply, which is a case split rather than an invariant, and the delegated case is
-precisely the one WS-OD OD3.5 exists to declare and PR #894's review found still
-undeclared.
+Under the head-driven trigger that merge has no subject.  The pair's second
+component is the thread the pop sets `.unbound` — `sc.boundThread`, the thread
+*running on* the context — and the answered caller is `.blockedOnReply`, so the
+two are never the same thread on any state this arm reaches: the merge is not
+merely unproved, it is false.  What is available instead is *holder = the recorded
+server*, which is `answeredHeadContextIsServerDonation`'s content and exactly what
+the splice falsifies at an orphan head — so a seventeen resting on it would be a
+sharp figure that stops holding in the cut after next.
 
-Neither figure moves `maxLockSetSize`: the parametric bound is what
-`boundedWait_under_2pl` and the WCRT surface consume, and it must stay true of
-every argument value.  What these give is a smaller number available where the
-state permits — the relationship `lockSet_cancelIpcBlockingOnCore_size_le_thirteen`
-already has to the ceiling. -/
-theorem lockSet_endpointReplyRecvOnCore_size_le_seventeen (st : SystemState)
-    (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
-    (hChain : donationChainWellFormed st)
-    (hHeadIs : replyStackHeadIsAnsweredReply st target)
-    (hOwner : replyDonationOwnerIsAnsweredCaller st target) :
-    (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
-      ≤ 17 := by
-  unfold lockSet_endpointReplyRecvOnCore
-  cases hS : receiveRendezvousSender? st endpointObjId with
-  | some sender =>
-      -- A rendezvous: the invoker does not block, so its own pre-receive return
-      -- is absent.  **WS-HP HP3.1**: with the splice's member declared this branch
-      -- needs the owner merge to stay inside seventeen, where before the unmerged
-      -- eighteen sufficed -- so it case-splits on the returned donation, which is
-      -- exactly what `replyDonationOwnerIsAnsweredCaller` is for.
-      rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
-        receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
-      cases hDon : endpointReplyServerDonation? st target with
-      | none =>
-          -- No donation: the pop's five members are absent too, and thirteen
-          -- bounds what is left.
-          simp only [Option.map_none, Option.bind_none]
-          exact Nat.le_trans
-            (lockSet_replyRecv_size_le_thirteen_of_no_preReturn_of_no_donation
-              _ _ _ _ _ _ _ _ _ _ _ _ _) (by decide : (13 : Nat) ≤ 17)
-      | some pr =>
-          obtain ⟨scId, owner⟩ := pr
-          have hEq : owner = target := hOwner scId owner hDon
-          subst hEq
-          simp only [Option.map_some, Option.map_none]
-          exact lockSet_replyRecv_size_le_seventeen_of_owner_eq_target_of_no_preReturn
-            _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-  | none =>
-      rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
-      cases hDon : endpointReplyServerDonation? st target with
-      | none =>
-          -- Nothing to return: neither group of state-resolved members is live
-          -- but the invoker's own pre-receive return, so this is fourteen.
-          simp only [Option.map_none, Option.bind_none]
-          exact Nat.le_trans
-            (lockSet_replyRecv_size_le_fifteen_of_no_sender_of_no_donation
-              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) (by decide : (15 : Nat) ≤ 17)
-      | some pr =>
-          obtain ⟨scId, owner⟩ := pr
-          have hEq : owner = target := hOwner scId owner hDon
-          subst hEq
-          cases hAbove : answeredReplyFrameAbove? st owner with
-          | none =>
-              -- WS-HP HP3.1: no frame above means no frame below, with no
-              -- coherence fact -- which is why this figure does not move.
-              rw [answeredReplyFrameBelow?_of_no_frameAbove st owner hAbove]
-              simp only [Option.map_some, Option.bind_none]
-              exact lockSet_replyRecv_size_le_seventeen_of_owner_eq_target_of_no_sender_of_no_frameAbove
-                _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-          | some above =>
-              have hHead : replyStackHead? st scId = none :=
-                replyStackHead?_none_of_answeredFrameAbove st owner scId owner above
-                  hChain hHeadIs hDon hAbove
-              simp only [Option.map_some, Option.bind_some, Option.bind_none, hHead,
-                replyStackBelowHead?_of_no_head st scId hHead]
-              exact Nat.le_trans
-                (lockSet_replyRecv_size_le_sixteen_of_owner_eq_target_of_no_sender_of_no_head
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide : (16 : Nat) ≤ 17)
+So the reachable figure is **eighteen**, and it is now unconditional where before
+it took two coherence facts.  That is the trade this row makes, stated rather than
+absorbed: one unit of slack against two hypotheses and a figure that survives the
+splice.  If HP7 derives the holder/server fact, a sharper reachable bound becomes
+available again and belongs there, with the merge proved rather than assumed. -/
 
 /-- The resolved **receive** footprint.  Stated over the reply optional rather
 than at its default, so the receive-with-reply shape is bounded too. -/

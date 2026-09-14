@@ -518,7 +518,9 @@ platform rather than with the lock.
 > **No reachable state takes up the whole ceiling**:
 > `lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds every state at
 > eighteen with no hypothesis, because the re-donation members and the
-> pre-receive return are mutually exclusive on the send queue.
+> pre-receive return are mutually exclusive on the send queue.  WS-HP HP6.2
+> (`v0.35.44`) retired the sharper seventeen and made this one unconditional; the
+> canonical account is `SELE4N_SPEC.md` §8.12.6.
 >
 > At HEAD, the declared lock-set ceiling is **23**, the RPi5 tick admits **14 µs** per lock, and the uniform 60 µs envelope is **4140 µs** —
 > the canonical spelling `scripts/check_lock_ceiling_figures.py` (Tier 0, WS-OD

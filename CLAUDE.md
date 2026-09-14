@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.43.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.44.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3452,8 +3452,9 @@ tick, down from 20.  (4) **No
 *reachable* state declares twenty-one**: the re-donation members fire exactly
 when the endpoint has a queued sender and the pre-receive return exactly when it
 does not, so `lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds every
-state at **eighteen** with no hypothesis, and the owner merge takes a reachable
-`.replyRecv` to seventeen.  Twenty-one is what the *definition* can produce,
+state at **eighteen** with no hypothesis.  (The owner merge that used to take a
+reachable `.replyRecv` to seventeen is retired at WS-HP HP6.2 — see below.)
+Twenty-one is what the *definition* can produce,
 which is what `boundedWait_under_2pl` and the WCRT surface must consume.  The
 gap was excused by `lockSetForSyscall_replyRecv_refuses_donated_delegate`, **a
 theorem that was never written**; it is deleted.
@@ -3783,7 +3784,7 @@ a licence to delete the reclaim — deleting it reaches a state
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6.1 v0.35.41)
+### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6.1 v0.35.41, HP6.2 v0.35.44)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -3822,7 +3823,7 @@ HP2.3 makes that ordering a machine-checked fact rather than a note.
 | HP3 | LANDED | v0.35.37 | The removal's below-frame footprint member; `maxLockSetSize` 22 → 23 |
 | HP4 | LANDED | v0.35.38 | **The reply path's trigger flips** — both spines, the recipient guard, the payoff's packs, and the frozen mirror (HP4.7) |
 | HP5 | LANDED | v0.35.39 | **The cancellation path's trigger flips** — the resolver, the coherence fact re-keyed, two sentences turned into theorems, and the first witness that fires the reclaim (HP5.5) |
-| HP6 | IN FLIGHT | HP6.1 v0.35.41 | The removal family renamed (HP6.1), the two reply footprints repoint (HP6.2), then the splice replaces the sever |
+| HP6 | IN FLIGHT | HP6.1 v0.35.41, HP6.2 v0.35.44 | The removal family renamed (HP6.1), the two reply footprints repointed (HP6.2), then the splice replaces the sever |
 | HP7 | PENDING | — | The three stated coherence hypotheses retire |
 | HP8 | PENDING | — | The frozen mirror's **splice** follows (its trigger landed as HP4.7) |
 | HP9 | PENDING | — | Witnesses, anchors, documentation, closure |
@@ -3870,16 +3871,14 @@ because it keys on waiters rather than on donations — a walk from the context'
 the `.replyCapInvalid` arm still distinguishes "no recorded server" from "no head
 context": collapsing them would turn every donation-free reply into an error.
 
-(6) **The two reply footprints still resolve their donation members through the
-binding**, and the gap is held closed by
-`lockSet_endpointReplyOnCore_covers_headDrivenPop` rather than by prose — a
-footprint that omits a written object is false.  Repointing them is **HP6.2**,
-which must land *before* the splice: under `severAtCut` the two resolvers agree
-(`severAtCut_pop_leaves_no_head`), and the splice is the change that makes them
-disagree, so a window with the splice landed and the repoint outstanding carries a
-footprint that omits what the pop writes.  New code must not read the
-footprint's `endpointReplyServerDonation?` members as naming what the pop wrote;
-cite the coverage theorem.
+(6) **The two reply footprints resolved their donation members through the
+binding until HP6.2** (`v0.35.44`), with the gap held closed by
+`lockSet_endpointReplyOnCore_covers_headDrivenPop` — a footprint that omits a
+written object is false.  That repoint had to land *before* the splice: under
+`severAtCut` the two resolvers agree (`severAtCut_pop_leaves_no_head`), and the
+splice is the change that makes them disagree, so a window with the splice landed
+and the repoint outstanding would carry a footprint that omits what the pop
+writes.  The paragraph on HP6.2 below says what landed.
 
 (7) **The FROZEN mirror is head-driven too, and its binding-driven resolver is
 gone** (HP4.7).  `frozenEndpointReplyWithDonationReturn` reads
@@ -4022,6 +4021,61 @@ retired `detachCancelledCallerFrame` at `v0.35.6` and four *live* claims still
 named it — this file's own WS-OD item 5 and `SELE4N_SPEC.md` §8.12.7 twice.  That
 is the tautological-pin shape one artefact over: prose citing a declaration that
 does not exist reads exactly like prose citing one that does.
+
+**What new code must respect since HP6.2 (`v0.35.44`).**  The two reply
+footprints resolve their donation members through **the pop's own trigger**:
+`lockSet_endpointReplyOnCore` and `lockSet_endpointReplyRecvOnCore` read
+`answeredFrameHeadContext? st target`, the expression
+`applyReplyDonationOnCore` itself reads, so the footprint and the transition
+cannot disagree about which context is popped or which thread is unbound.  Six
+things follow.
+
+(1) **The pair's second component is the thread the pop UNBINDS**, and the
+parameter says so: `lockSet_endpointReply`'s and `lockSet_replyRecv`'s
+`donatedOriginalOwnerTid` is renamed `donatedScHolderTid`.  A resolved footprint
+that passes the *recipient* there declares a lock for a write the pop does not
+perform and omits one it does — the recipient needs no member, because the
+head-driven pop hands the context to the answered caller and that is
+`replyTargetTid`.
+
+(2) **Coverage is definitional, and stated on both arms.**
+`lockSet_endpointReplyOnCore_covers_donationPop` and its `.replyRecv` twin take
+**no hypothesis**; HP4.4's `lockSet_endpointReplyOnCore_covers_headDrivenPop`,
+which needed `donationOwnerValid` and `answeredHeadContextIsServerDonation` and
+reached the holder's TCB by *proving it was the recorded server*, is deleted.  A
+behavioural revert does not reach a witness — it fails the coverage theorem
+first, which is where this relation belongs.
+
+(3) **Three write-membership lemmas had to be added**, and their absence is the
+finding: the second donation member had **none** on either footprint, and
+`lockSet_replyRecv`'s SchedContext member had none either, so nothing could state
+that the objects the hottest IPC arm's pop writes carried declared write locks.
+The stand-in had routed around the gap through `callerTid`'s lemma.  Found by
+asking the table to be symmetric, not by a review round.
+
+(4) **`server` stays keyed on the RECORDED server**, because that is the thread
+`propagatePipChainCrossCore` walks from and rewrites, and the splice can make it a
+different thread from the holder — so both are declared.  Measured against the
+composite's three write sites rather than reasoned from the resolver.
+
+(5) **`lockSet_endpointReplyRecvOnCore_size_le_eighteen` is now unconditional**,
+where it took `donationChainWellFormed` and `replyStackHeadIsAnsweredReply`: under
+this trigger a frame that heads a context has no frame above it and none below
+(`answeredReplyFrameAbove?_none_of_headContext`), so the exclusion is structural.
+That is strictly stronger than what it replaces.
+
+(6) **`lockSet_endpointReplyRecvOnCore_size_le_seventeen` is RETIRED**, and this is
+what the repoint costs.  Its single merge was `replyDonationOwnerIsAnsweredCaller`
+— the *owner* is the answered caller — and the head reading's second component is
+the thread *running on* the context while the answered caller is
+`.blockedOnReply`, so that coincidence occurs on **no** state this arm reaches:
+the merge is false, not unproved.  The available substitute is *holder = recorded
+server*, which is `answeredHeadContextIsServerDonation`'s content and exactly what
+the splice falsifies, so a seventeen resting on it would stop holding in the cut
+after next.  One unit of slack traded for two hypotheses and a figure that
+survives HP6; if HP7 derives the holder/server fact a sharper reachable bound
+belongs there.  Both coherence facts now have **no consumer at all**, which is the
+verification HP7.2's row asks for.
 
 **And the splice is not the whole remedy — depth 2 needs HP10** (registered
 `v0.35.42`).  The register scoped this defect to reply-stack depth ≥ 3 and that

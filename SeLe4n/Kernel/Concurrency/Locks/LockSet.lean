@@ -1035,9 +1035,11 @@ pop of that stack refused, fail-closed, forever.  The removal
 *The cost is parametric only.*  The new member is `some` exactly when the
 answered frame is **not** a stack head, and the three members the donation return
 contributes — the head the pop clears, the frame below it and that frame's
-caller — are `some` only when it **is** (under
-`replyStackHeadIsAnsweredReply`, the local coherence fact the invariants supply
-and `lockSet_endpointReplyRecvOnCore_size_le_eighteen` now states).  So a
+caller — are `some` only when it **is**.  (That exclusion needed
+`replyStackHeadIsAnsweredReply` until WS-HP HP6.2 repointed the footprints onto
+the pop's own trigger, under which a frame heading a context provably has no
+frame above it, so `lockSet_endpointReplyRecvOnCore_size_le_eighteen` states it
+with no hypothesis at all.)  So a
 reachable footprint trades three members for one and the reachable figures do not
 move; twenty-two is the union over argument values no state realises together.
 `admissibleCriticalSection` is unchanged at **15 µs** — `1000 / (22 · 3) = 15`,

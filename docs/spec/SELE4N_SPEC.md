@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.43` (`lakefile.toml`) |
+| **Package version** | `0.35.44` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 380,460 across 330 Lean files |
-| **Test LoC** | 77,140 across 70 Lean test suites |
-| **Proved declarations** | 12,704 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 380,540 across 330 Lean files |
+| **Test LoC** | 77,224 across 70 Lean test suites |
+| **Proved declarations** | 12,706 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2964,11 +2964,20 @@ alongside the latent inventory (closing SMP-H3).
    endpoint has a queued sender and the invoker's pre-receive return
    exactly when it does not, so **no reachable state carries both
    groups**: `lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds
-   every state at eighteen with no hypothesis at all, and the owner
-   merge takes a reachable `.replyRecv` to seventeen
-   (`…_size_le_seventeen`).  Twenty-one is what the *definition* can
-   produce over all argument values, which is what
-   `boundedWait_under_2pl` and the WCRT surface must consume.
+   every state at eighteen with no hypothesis at all.  Twenty-one is
+   what the *definition* can produce over all argument values, which is
+   what `boundedWait_under_2pl` and the WCRT surface must consume.
+
+   WS-HP HP6.2 (`v0.35.44`) retired the sharper `…_size_le_seventeen`
+   and made the eighteen above unconditional, which is the whole of what
+   repointing the footprints onto the pop's own trigger costs and buys.
+   The seventeen's single merge was that the returned donation's *owner*
+   is the answered caller; the head-driven trigger's second component is
+   the thread **running on** the context while the answered caller is
+   `.blockedOnReply`, so the coincidence occurs on no state this arm
+   reaches — the merge is false rather than unproved.  In exchange the
+   eighteen lost both of its coherence hypotheses, because a frame that
+   heads a context provably has no frame above it.
 
    **At HEAD, the declared lock-set ceiling is **23**, the RPi5 tick admits **14 µs** per lock, and the uniform 60 µs envelope is **4140 µs**.**
    All three are *derived* — from `maxLockSetSize`, `numCores` and

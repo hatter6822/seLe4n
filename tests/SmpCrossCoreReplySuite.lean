@@ -208,6 +208,11 @@ private def clientLocalTid : SeLe4n.ThreadId := ⟨602⟩
 private def clientRemoteTid : SeLe4n.ThreadId := ⟨603⟩
 private def wrongTid : SeLe4n.ThreadId := ⟨604⟩
 private def scId : SeLe4n.SchedContextId := ⟨700⟩
+/-- **WS-HP HP6.2 (`v0.35.44`)**: a holder that is NOT the recorded reply server —
+the orphan-head shape the splice creates, and the one on which the repointed
+footprint and the retired binding-driven one name different threads. -/
+private def orphanHolderTid : SeLe4n.ThreadId := ⟨605⟩
+private def replyId709 : SeLe4n.ReplyId := ⟨709⟩
 private def replyMsg : IpcMessage :=
   { registers := #[SeLe4n.RegValue.ofNat 100, SeLe4n.RegValue.ofNat 200, SeLe4n.RegValue.ofNat 300],
     caps := #[], badge := none }
@@ -527,6 +532,13 @@ private def runDonationChecks : IO Unit := do
   -- where `clientLocalTid` is `blockedOnReply (some serverTid)` and `serverTid`
   -- holds `.donated scId clientLocalTid`; `wrongTid` is an unrelated (delegate)
   -- replier holding no donation.
+  -- **WS-HP HP6.2 (`v0.35.44`)**: the fixture carries the *reply stack* a live
+  -- `Call` donation leaves, for the reason HP4.3 gave the deschedule witness one:
+  -- the footprint's donation members are now resolved from the answered frame, so
+  -- a state with a `.donated` binding and no stack declares nothing at all and
+  -- the assertions below would pass vacuously -- which is how this witness
+  -- failed the moment the repoint landed.  A binding with no stack is also a
+  -- state no live path produces, so the stronger fixture is the faithful one.
   let stDonated : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
@@ -534,7 +546,15 @@ private def runDonationChecks : IO Unit := do
           (.tcb { mkTcb 601 50 none .ready with
                     schedContextBinding := .donated scId clientLocalTid })
       |>.withObject clientLocalTid.toObjId
-          (.tcb (mkTcb 602 30 none (.blockedOnReply epId (some serverTid))))
+          (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
+                    replyObject := some replyId707 })
+      |>.withObject replyId707.toObjId
+          (.reply { replyId := replyId707, caller := some clientLocalTid,
+                    next := some (.head scId) })
+      |>.withObject scId.toObjId
+          (.schedContext { SchedContext.empty scId with
+                            boundThread := some serverTid,
+                            scReply := some replyId707 })
       |>.withObject wrongTid.toObjId (.tcb (mkTcb 604 40 none .ready))
       |>.withRunnable [serverTid]
       |>.build)
@@ -553,6 +573,62 @@ private def runDonationChecks : IO Unit := do
   assertBool "delegated reply lock-set covers the recorded server's TCB write lock"
     (decide ((tcbLock serverTid, AccessMode.write)
       ∈ (lockSet_endpointReplyOnCore stDonated wrongTid cnRoot clientLocalTid).pairs))
+  -- ==========================================================================
+  -- `v0.35.44`: WS-HP HP6.2 — the ORPHAN HEAD, where the two resolvers disagree
+  -- ==========================================================================
+  --
+  -- The decisive witness for the repoint, and the shape above cannot be it: there
+  -- the holder *is* the recorded server, so the holder's TCB lock is in the
+  -- footprint through the `server` member whichever resolver supplies the pair,
+  -- and the assertion would pass with the repoint reverted.
+  --
+  -- Here `orphanHolderTid` runs on the context while `serverTid` is still the
+  -- caller's recorded reply target -- the state HP6's splice creates by re-heading
+  -- a frame whose recorded server has gone.  The binding-driven resolver reads
+  -- `serverTid`'s `.donated` binding and names `clientLocalTid`; the head-driven
+  -- one reads the frame and names `orphanHolderTid`, which is the thread the pop
+  -- actually sets `.unbound`.  A footprint that omits it is FALSE of the
+  -- transition, which this tree rates worse than a wide one.
+  let stOrphanHead : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject serverTid.toObjId
+          (.tcb { mkTcb 601 50 none .ready with
+                    schedContextBinding := .donated scId clientLocalTid })
+      |>.withObject orphanHolderTid.toObjId (.tcb (mkTcb 605 45 none .ready))
+      |>.withObject clientLocalTid.toObjId
+          (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
+                    replyObject := some replyId709 })
+      |>.withObject replyId709.toObjId
+          (.reply { replyId := replyId709, caller := some clientLocalTid,
+                    next := some (.head scId) })
+      |>.withObject scId.toObjId
+          (.schedContext { SchedContext.empty scId with
+                            boundThread := some orphanHolderTid,
+                            scReply := some replyId709 })
+      |>.withRunnable [serverTid]
+      |>.build)
+  assertBool "the two resolvers name DIFFERENT threads at an orphan head"
+    (decide (answeredFrameHeadContext? stOrphanHead clientLocalTid
+               = some (scId, orphanHolderTid)
+             ∧ endpointReplyServerDonation? stOrphanHead clientLocalTid
+               = some (scId, clientLocalTid)))
+  assertBool "…and the repointed footprint declares the thread the POP unbinds"
+    (decide ((tcbLock orphanHolderTid, AccessMode.write)
+      ∈ (lockSet_endpointReplyOnCore stOrphanHead wrongTid cnRoot clientLocalTid).pairs))
+  assertBool "…on .replyRecv too, which is the same reply leg"
+    (decide ((tcbLock orphanHolderTid, AccessMode.write)
+      ∈ (lockSet_endpointReplyRecvOnCore stOrphanHead wrongTid cnRoot clientLocalTid
+           epId).pairs))
+  -- NEGATIVE: the *retired* reading's second component is not declared as a write
+  -- here at all, so this pair of rows cannot both pass under a revert -- which is
+  -- what makes them a witness for the repoint rather than for the fixture.  (The
+  -- answered caller's own TCB is a declared write on its own account, as the reply
+  -- target, so the thread named is the recorded server's *binding owner* read back
+  -- through a thread that is neither principal.)
+  assertBool "NEGATIVE: the orphan head's holder is not the recorded server"
+    (!decide (answeredFrameHeadContext? stOrphanHead clientLocalTid
+                = some (scId, serverTid)))
   -- ==========================================================================
   -- `v0.35.37`: the donation return deschedules at the server's PLACEMENT
   -- ==========================================================================

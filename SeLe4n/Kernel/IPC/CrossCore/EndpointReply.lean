@@ -655,13 +655,31 @@ theorem answeredFrameHeadContext?_congr {s1 s2 : SystemState} (target : SeLe4n.T
   | some rid => exact replyFrameHeadHolder?_congr rid (hReply rid) hSc
 
 /-- WS-SM SM6.C.1: the concrete lock-set a cross-core `endpointReplyOnCore` on
-state `st` acquires — `lockSet_endpointReply` with the returned SchedContext +
-original owner **pre-resolved from `st`** via `endpointReplyServerDonation?` (the
-**recorded server's** donated binding — PR #822 review, not the possibly-delegated
-cap holder `replier`).  The caller being replied to (`target`) is a known
-argument, contributing its TCB **write** lock (the reply-state lifecycle write).
-This is the footprint the runtime `withLockSet` bracket (the SM5.I FFI seam)
-acquires before invoking `endpointReplyOnCore replier target … executingCore st`. -/
+state `st` acquires — `lockSet_endpointReply` with the pop's members **pre-resolved
+from `st`** through `answeredFrameHeadContext?`, the expression the pop itself
+reads.  The caller being replied to (`target`) is a known argument, contributing
+its TCB **write** lock (the reply-state lifecycle write).  This is the footprint
+the runtime `withLockSet` bracket (the SM5.I FFI seam) acquires before invoking
+`endpointReplyOnCore replier target … executingCore st`.
+
+**WS-HP HP6.2 (`v0.35.44`): resolved from the trigger, not from a binding.**  The
+donation members came from `endpointReplyServerDonation?` — the *recorded server's*
+binding — while the pop has read the answered frame since HP4.1.  Under
+`severAtCut` the two agree (`severAtCut_pop_leaves_no_head`) and
+`lockSet_endpointReplyOnCore_covers_headDrivenPop` held the gap closed with the
+two coherence facts as hypotheses; the splice is the change that makes them
+disagree, so the repoint lands *before* it — a transition goes live only after the
+declarations that cover it.  Coverage is now definitional
+(`lockSet_endpointReplyOnCore_covers_pop`), and the stand-in is deleted.
+
+Measured against the composite's three write sites rather than reasoned from the
+resolver: `endpointReplyOnCore` writes the answered caller, the Replies and the
+frame above; `propagatePipChainCrossCore expected` writes the **recorded server**;
+`applyReplyDonationOnCore` writes the SchedContext, the **holder**
+(`sc.boundThread`, set `.unbound`) and the answered caller again (the rebind).  So
+`server` stays keyed on the recorded server — the reversion's thread — and the
+holder takes `donatedScHolderTid`, with the recipient needing no member because it
+*is* `target`. -/
 def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (target : SeLe4n.ThreadId) : LockSet :=
   -- WS-SM SM6.D: the reply consumes the first-class Reply object the caller
@@ -669,36 +687,40 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
   -- `linkCallerReply`).  Resolving it from `st` puts the per-object reply
   -- **write**-lock in the footprint, serialising the `reply.caller := none`
   -- consume against any other core using a copied reply cap.
-  -- WS-SM SM6.D (PR #822 review): the donation returned on reply is the
-  -- **recorded server's** (`endpointReplyServerDonation? st target`), not the
-  -- (possibly delegated) cap holder `replier`'s — so the returned SC's write lock
-  -- and the original owner's TCB write lock cover the actual donation-return
-  -- writes the dispatch performs on the recorded server.  The first TCB **write**
-  -- lock is keyed on that recorded server too (`server`), since the reply's
-  -- server-side writes (donation clear + deschedule) land on the server, while the
-  -- cap holder `replier` is only read-locked via its CSpace root.  In the
-  -- non-delegated case (`server = replier`) the footprint is unchanged.
+  -- **WS-HP HP6.2**: the donation members are the pop's, read off
+  -- `answeredFrameHeadContext? st target` -- the composition of
+  -- `answeredReplyObject?` with `replyFrameHeadHolder?` that
+  -- `applyReplyDonationOnCore` itself reads, so the footprint and the transition
+  -- cannot disagree about which context is popped or which thread is unbound.
+  -- The first TCB **write** lock stays keyed on the **recorded** server
+  -- (`server`), because that is the thread `propagatePipChainCrossCore` walks
+  -- from and rewrites; the splice can make it a different thread from the
+  -- holder, which is why both are declared.  The cap holder `replier` is only
+  -- read-locked via its CSpace root, and in the non-delegated case
+  -- (`server = replier`) the footprint is unchanged.
   -- **WS-OD OD3.7**: and the two objects the donation return reads *below* the
   -- reply-stack head.  Resolved through `replyStackBelowHead?` on the very
-  -- SchedContext this arm returns — one resolver for one question, so the
+  -- SchedContext this arm pops — one resolver for one question, so the
   -- footprint cannot disagree with the walk `replyStackOuterCaller?` performs.
   -- Both are `none` below the first donating `Call`, so this arm's declared
   -- footprint was unchanged until OD4.1 (`v0.35.2`) wrote a `scReply`; it is
   -- load-bearing at depth >= 2 and inert at depth 1.
   let server := (recordedReplyServer? st target).getD replier
-  let belowHead := match (endpointReplyServerDonation? st target).map (·.1) with
+  let belowHead := match (answeredFrameHeadContext? st target).map (·.1) with
     | none => (none, none)
     | some scId => replyStackBelowHead? st scId
   lockSet_endpointReply server cnodeRootObjId target
-    ((endpointReplyServerDonation? st target).map (·.1))
-    ((endpointReplyServerDonation? st target).map (·.2))
+    ((answeredFrameHeadContext? st target).map (·.1))
+    ((answeredFrameHeadContext? st target).map (·.2))
     ((st.getTcb? target).bind (·.replyObject))
     belowHead.1 belowHead.2
     -- **WS-OD (`v0.35.4`)**: the head of the returned context's stack, which
-    -- the pop clears -- resolved on the same context the members above are,
-    -- and the same key as the answered caller's reply object on every
-    -- reachable state.
-    (((endpointReplyServerDonation? st target).map (·.1)).bind (replyStackHead? st))
+    -- the pop clears -- resolved on the same context the members above are.
+    -- **WS-HP HP6.2**: under the head-driven trigger this is *provably* the
+    -- answered caller's own reply object (`answeredFrameHeadContext?_head_is_answered_reply`,
+    -- no hypothesis), where the binding reading needed
+    -- `replyStackHeadIsAnsweredReply` to say so.
+    (((answeredFrameHeadContext? st target).map (·.1)).bind (replyStackHead? st))
     -- **WS-RM (`v0.35.6`)**: and the frame above the answered one, which the
     -- removal detaches before it consumes the caller link.
     (answeredReplyFrameAbove? st target)
@@ -862,18 +884,19 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
   -- root in WRITE mode exactly then.  Resolved from `st` by the same predicate
   -- the transition branches on, so the declared footprint and the transition
   -- cannot disagree about when the write happens.
-  -- **PR #892 review round 6**: the donation returned on this reply is the
-  -- **recorded server's**, resolved through `endpointReplyServerDonation?` — the
-  -- same resolver `lockSet_endpointReplyOnCore` has used since PR #822's review,
-  -- and for the same reason.  This arm read `endpointReplyDonation? st replier`,
-  -- the possibly-*delegated* cap holder's own binding, while `replyRecvBody`
-  -- passes `(recordedReplyServer? st prevCaller).getD tid` to
-  -- `replyRecvPopDonation`, which writes **that** server's binding and its
-  -- SchedContext.  On a delegated reply the two are different threads, so the
-  -- declared members named a donation the transition does not touch and omitted
-  -- the one it does — a footprint that is *false*, which this tree rates worse
-  -- than a wide one.  One question, two answers, with the right answer sitting
-  -- thirty lines up in this same file.
+  -- **PR #892 review round 6**: the donation returned on this reply is not the
+  -- cap holder's.  This arm read `endpointReplyDonation? st replier`, the
+  -- possibly-*delegated* holder's own binding, while the transition writes the
+  -- thread the reply leg's own frame names.  On a delegated reply the two are
+  -- different threads, so the declared members named a donation the transition
+  -- does not touch and omitted the one it does — a footprint that is *false*,
+  -- which this tree rates worse than a wide one.
+  -- **WS-HP HP6.2**: and the resolver is now the pop's own,
+  -- `answeredFrameHeadContext? st target`, for the reason
+  -- `lockSet_endpointReplyOnCore`'s docstring records — this arm's reply leg
+  -- *is* that transition, so the two footprints read one answer.  Note the
+  -- second component's role: it is the thread the pop sets `.unbound`, not the
+  -- thread that receives the context (which is `target`).
   --
   -- PR #892 review round 6 could only fix the *resolution* here: the entry
   -- resolver still refused the delegated case outright, because the recorded
@@ -889,18 +912,20 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
   -- is resolved unconditionally — on a non-delegated reply it *is* `replier` and
   -- `insertOrMerge`'s key merge collapses the two, so declaring it costs nothing
   -- there and is the only thing that made the delegated case declarable at all.
+  -- It is the thread the priority-inheritance reversion walks from, which the
+  -- splice can separate from the pop's holder, so HP6.2 leaves it keyed here.
   -- The re-donated SchedContext comes from the same send-queue head `newSender?`
   -- does, through the resolver `.call` uses for the same question.
   -- **WS-OD OD3.7**: the two below-head reads, resolved on the SchedContext this
-  -- arm returns — the same resolver the `.reply` arm uses, for the same
+  -- arm pops — the same resolver the `.reply` arm uses, for the same
   -- question.  This is the arm the ceiling moved for: at depth ≥ 2 they are two
   -- keys nothing else covers, taking the widest declared footprint to thirteen.
-  let belowHead := match (endpointReplyServerDonation? st target).map (·.1) with
+  let belowHead := match (answeredFrameHeadContext? st target).map (·.1) with
     | none => (none, none)
     | some scId => replyStackBelowHead? st scId
   lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender?
-    ((endpointReplyServerDonation? st target).map (·.1))
-    ((endpointReplyServerDonation? st target).map (·.2))
+    ((answeredFrameHeadContext? st target).map (·.1))
+    ((answeredFrameHeadContext? st target).map (·.2))
     ((st.getTcb? target).bind (·.replyObject))
     (receiveInstallsCaps st endpointObjId)
     (recordedReplyServer? st target)
@@ -914,7 +939,7 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     -- stack, which the reply leg's pop clears.  Both resolved by
     -- `replyStackHead?` on the contexts the members above already name.
     ((receiveRendezvousDonatedSc? st endpointObjId).bind (replyStackHead? st))
-    (((endpointReplyServerDonation? st target).map (·.1)).bind (replyStackHead? st))
+    (((answeredFrameHeadContext? st target).map (·.1)).bind (replyStackHead? st))
     -- **PR #894 review — the INVOKING receiver's own pre-receive return.**  The
     -- receive leg is `.receive`'s transition, so with no sender queued it runs
     -- `cleanupPreReceiveDonationChecked` on `replier`, and the donation return
@@ -1788,13 +1813,78 @@ theorem lockSet_endpointReceiveOnCore_covers_preReturn
     simp only [Option.isSome_some, Bool.or_true, if_true]
     exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
 
+/-- **WS-HP HP6.2 (`v0.35.44`): the donation pop's SchedContext and the TCB it
+unbinds are declared writes of the resolved `.reply` footprint — with no
+hypothesis.**
+
+This replaces HP4.4's `lockSet_endpointReplyOnCore_covers_headDrivenPop`, which
+had to bridge two resolvers: the footprint read the *recorded server's* binding
+while the pop read the answered frame, so coverage held only under
+`donationOwnerValid` and `answeredHeadContextIsServerDonation`, and it reached the
+holder's TCB by proving the holder **is** the recorded server — the very equation
+the splice breaks.  With the footprint repointed onto
+`answeredFrameHeadContext?`, the members *are* the trigger's answer and the
+relation is definitional.
+
+Both members are stated on their own account: the SchedContext through
+`lockSet_endpointReply_donatedSc_write_mem`, and the holder through
+`lockSet_endpointReply_donatedHolder_tcb_write_mem`, which HP6.2 had to add —
+the second donation member had no write-membership lemma on either footprint,
+which is why the stand-in had to route through `callerTid`'s.
+
+The *recipient* needs no member of its own: the head-driven pop hands the context
+to the answered caller, which is `target`, a non-optional argument of this
+footprint. -/
+theorem lockSet_endpointReplyOnCore_covers_donationPop
+    (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (hHead : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (schedContextLock scId, AccessMode.write)
+      ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs ∧
+    (tcbLock holder, AccessMode.write)
+      ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs := by
+  unfold lockSet_endpointReplyOnCore
+  rw [hHead]
+  simp only [Option.map_some]
+  exact ⟨lockSet_endpointReply_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _,
+    lockSet_endpointReply_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _⟩
+
+set_option maxHeartbeats 1000000 in
+/-- **WS-HP HP6.2**: and `.replyRecv`'s, which is the same pop because its reply
+leg is the `.reply` arm's transition.  Stated because the tables are symmetric:
+the stand-in this replaces had no `.replyRecv` twin at all, so nothing said the
+hottest IPC arm's pop wrote under declared locks. -/
+theorem lockSet_endpointReplyRecvOnCore_covers_donationPop
+    (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (hHead : answeredFrameHeadContext? st target = some (scId, holder)) :
+    (schedContextLock scId, AccessMode.write)
+      ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
+           endpointObjId).pairs ∧
+    (tcbLock holder, AccessMode.write)
+      ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
+           endpointObjId).pairs := by
+  unfold lockSet_endpointReplyRecvOnCore
+  rw [hHead]
+  simp only [Option.map_some]
+  refine ⟨?_, ?_⟩
+  · exact lockSet_replyRecv_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      _ _ _ _ _ _ _
+  · exact lockSet_replyRecv_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      _ _ _ _ _ _ _
+
 /-- **WS-OD (`v0.35.4`)**: the reply-stack pop's two Reply writes -- the head it
 clears and the frame below it re-heads -- are declared writes of the resolved
-`.reply` footprint, on the context the arm returns. -/
+`.reply` footprint, on the context the arm pops.
+
+**WS-HP HP6.2 (`v0.35.44`)**: keyed on the pop's own trigger.  It read the
+recorded server's binding, which is not what the pop reads, so on a state where
+the two disagree this said nothing about the objects the transition writes. -/
 theorem lockSet_endpointReplyOnCore_covers_pop
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
-    (hDon : endpointReplyServerDonation? st target = some (scId, owner)) :
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (hDon : answeredFrameHeadContext? st target = some (scId, holder)) :
     (∀ head, replyStackHead? st scId = some head →
       (replyLock head, AccessMode.write)
         ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs) ∧
@@ -1834,12 +1924,13 @@ theorem lockSet_endpointReplyRecvOnCore_covers_redonationOldHead
 
 set_option maxHeartbeats 1000000 in
 /-- **WS-OD (`v0.35.4`)**: and the reply leg's pop -- the head it clears and the
-frame below it re-heads -- on the context the arm returns. -/
+frame below it re-heads -- on the context the arm pops.  **WS-HP HP6.2**: keyed
+on the pop's own trigger, for the reason its `.reply` twin records. -/
 theorem lockSet_endpointReplyRecvOnCore_covers_pop
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
-    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
-    (hDon : endpointReplyServerDonation? st target = some (scId, owner)) :
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (hDon : answeredFrameHeadContext? st target = some (scId, holder)) :
     (∀ head, replyStackHead? st scId = some head →
       (replyLock head, AccessMode.write)
         ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
