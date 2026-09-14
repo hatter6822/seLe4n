@@ -649,6 +649,17 @@ theorem answeredFrameHeadContext?_eq (st : SystemState) (target : SeLe4n.ThreadI
            | some holder => some (scId, holder)) := by
   unfold answeredFrameHeadContext?; rw [h]
 
+/-- **WS-HP HP1.2: the resolver's constructor** -- the direction HP2.2's converse
+reads, and the one a witness uses to exhibit a live reply stack. -/
+theorem answeredFrameHeadContext?_of_head (st : SystemState) (target : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (hRid : answeredReplyObject? st target = some rid)
+    (hHead : replyFrameHeadContext? st rid = some scId)
+    (hBt : (st.getSchedContext? scId).bind (·.boundThread) = some holder) :
+    answeredFrameHeadContext? st target = some (scId, holder) := by
+  rw [answeredFrameHeadContext?_eq st target rid hRid]
+  simp only [hHead, hBt]
+
 /-- **WS-HP HP1.2: what a `some` answer asserts** -- there is an answered frame,
 it heads the named context (with everything `replyFrameHeadContext?_eq_some`
 supplies about that), and the context is bound to the named holder. -/

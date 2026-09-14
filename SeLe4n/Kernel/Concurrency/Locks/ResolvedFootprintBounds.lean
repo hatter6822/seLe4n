@@ -187,6 +187,118 @@ theorem replyStackHead?_none_of_answeredFrameAbove (st : SystemState)
       rw [hrr, hN] at hNext'
       cases hNext'
 
+-- ============================================================================
+-- WS-HP HP2.2: the trigger equivalence's converse
+-- ============================================================================
+
+/-- **WS-HP HP2.2: a donated context heads a reply stack.**
+
+The one fact HP2.2's converse needs that this tree does not already state, and
+plan §10's first open question, settled by attempting the proof:
+`donationChainWellFormed` carries **no binding clause at all** (its own *what is
+deliberately absent*), and `donationOwnerValid` relates a `.donated` holder to the
+context's `boundThread` but says nothing about its `scReply`.  So neither entails
+it, and it is stated here as a fourth *local* coherence fact rather than added to
+`ipcReachable` -- which would oblige every transition to re-establish it for every
+thread, for a predicate whose only consumer is the safety net below.
+
+It is true of every reachable state for a structural reason: `donateSchedContext`
+is the only operational construction site of a `.donated` binding and it is a
+**push** (WS-OD OD4), so it writes `scReply` in the same step that writes the
+binding; and the pop's own `.donated scId outer` arm re-heads the frame below the
+one it clears, so the context still heads a stack there.  Nothing in between
+clears `scReply` while leaving a `.donated` holder.
+
+**It does not survive HP4.** Once the pop's trigger *is* head-ness, the question
+"does this donated context head a stack" stops being asked: a context that heads
+no stack simply does not pop.  So unlike the three facts HP7 retires, this one is
+scaffolding for the flip and is deleted with the scaffolding. -/
+def donatedContextHeadsStack (st : SystemState) (server : SeLe4n.ThreadId) : Prop :=
+  ∀ (tcb : TCB) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId) (sc : SchedContext),
+    st.getTcb? server = some tcb → tcb.schedContextBinding = .donated scId owner →
+    st.getSchedContext? scId = some sc → sc.scReply ≠ none
+
+/-- A server holding no donation heads nothing, so the fact is vacuous -- the
+discharge every reply outside the donating path takes. -/
+theorem donatedContextHeadsStack_of_not_donated (st : SystemState)
+    (server : SeLe4n.ThreadId)
+    (hNot : ∀ (tcb : TCB) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId),
+      st.getTcb? server = some tcb → tcb.schedContextBinding ≠ .donated scId owner) :
+    donatedContextHeadsStack st server :=
+  fun tcb scId owner _ hTcb hB _ => absurd hB (hNot tcb scId owner hTcb)
+
+/-- **WS-HP HP2.2: the binding-driven trigger implies the head-driven one.**
+
+The direction that says HP4 does not **narrow** the set of states that pop: every
+reply whose recorded server holds a donation is a reply whose answered frame heads
+that donation's context, and the head-driven resolver reports the recorded server
+as the holder.
+
+Three facts carry it, and each is doing distinct work.  `donationOwnerValid` gives
+that the context is bound to the recorded server -- which is both the holder the
+resolver will report and the identification the flip needs.
+`donatedContextHeadsStack` gives that the context heads *a* stack, which no
+invariant in this tree states.  `replyStackHeadIsAnsweredReply` gives that the
+stack it heads is headed by the *answered caller's own* reply object, and
+`donationChainWellFormed.headLinkReciprocal` gives that that frame links back --
+which is exactly the reciprocity the head-driven resolver validates.
+
+Together with `answeredFrameHeadContext?_implies_serverDonation` this is the
+equivalence HP4 stands on: the flip changes which fact the pop reads and not which
+states it fires on. -/
+theorem serverDonation_implies_answeredFrameHeadContext? (st : SystemState)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (owner server : SeLe4n.ThreadId)
+    (hChain : donationChainWellFormed st)
+    (hOwnerValid : donationOwnerValid st)
+    (hHeadIs : replyStackHeadIsAnsweredReply st target)
+    (hHeadsStack : donatedContextHeadsStack st server)
+    (hExp : recordedReplyServer? st target = some server)
+    (hDon : endpointReplyServerDonation? st target = some (scId, owner)) :
+    answeredFrameHeadContext? st target = some (scId, server) := by
+  -- The recorded server's own binding, read off the arm's resolver.
+  have hServerDon : endpointReplyDonation? st server = some (scId, owner) := by
+    unfold endpointReplyServerDonation? at hDon
+    rw [hExp] at hDon
+    exact hDon
+  obtain ⟨sTcb, hSTcb, hB⟩ :
+      ∃ sTcb, st.getTcb? server = some sTcb ∧
+        sTcb.schedContextBinding = .donated scId owner := by
+    unfold endpointReplyDonation? at hServerDon
+    revert hServerDon
+    cases hT : st.getTcb? server with
+    | none => intro hc; cases hc
+    | some sTcb =>
+      simp only []
+      cases hBind : sTcb.schedContextBinding with
+      | unbound => intro hc; cases hc
+      | bound _ => intro hc; cases hc
+      | donated s o =>
+        simp only [Option.some.injEq, Prod.mk.injEq]
+        intro hc
+        exact ⟨sTcb, rfl, by rw [hBind, hc.1, hc.2]⟩
+  -- `donationOwnerValid`: the context is bound to that server.
+  obtain ⟨⟨sc, hScObj, hScBound⟩, _⟩ :=
+    hOwnerValid server sTcb scId owner ((SystemState.getTcb?_eq_some_iff st server sTcb).mp hSTcb) hB
+  have hSc : st.getSchedContext? scId = some sc :=
+    (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hScObj
+  -- The context heads a stack, and its head is the answered caller's reply object.
+  obtain ⟨rid, hScReply⟩ : ∃ rid, sc.scReply = some rid := by
+    cases hR : sc.scReply with
+    | none => exact absurd hR (hHeadsStack sTcb scId owner sc hSTcb hB hSc)
+    | some rid => exact ⟨rid, rfl⟩
+  have hStackHead : replyStackHead? st scId = some rid := by
+    unfold replyStackHead?; rw [hSc]; exact hScReply
+  have hRid : answeredReplyObject? st target = some rid :=
+    hHeadIs scId owner rid hDon hStackHead
+  -- And that frame links back, which is the reciprocity the resolver validates.
+  obtain ⟨r, hRObj, hRNext⟩ := hChain.headLinkReciprocal scId sc hScObj rid hScReply
+  refine answeredFrameHeadContext?_of_head st target rid scId server hRid
+    (replyFrameHeadContext?_of_head st rid r scId sc
+      ((SystemState.getReply?_eq_some_iff st rid r).mpr hRObj) hRNext hSc hScReply) ?_
+  rw [hSc]
+  exact hScBound
+
 /-- **WS-RM (`v0.35.6`): what a `.replyRecv` declares with no hypothesis at all —
 nineteen.**
 

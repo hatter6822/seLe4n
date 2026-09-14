@@ -529,6 +529,169 @@ theorem answeredHeadContextIsServerDonation_of_no_reply (st : SystemState)
   rw [hRO] at hRO'
   cases hRO'
 
+-- ============================================================================
+-- WS-HP HP2: the two donation-pop triggers agree on every coherent state
+-- ============================================================================
+
+/-- **WS-HP HP2.1: the head-driven trigger implies the binding-driven one.**
+
+The safety net that makes HP4 a *refactor* rather than a semantic change: on every
+state satisfying `donationOwnerValid` and the coherence fact
+`answeredHeadContextIsServerDonation`, a reply whose answered frame heads a
+context is exactly a reply whose recorded server holds that context's donation --
+and the holder the head-driven resolver reports **is** that recorded server.
+
+The second conjunct is the load-bearing half and it is not cosmetic: the
+binding-driven trigger takes its `serverTid` from `recordedReplyServer?` while the
+head-driven one takes it from `SchedContext.boundThread`, and
+`donationOwnerValid`'s first clause -- a `.donated scId _` holder is what `scId`
+is bound to -- is what identifies them.  Without it the flip could point
+`returnDonatedSchedContext` at a different thread, which is precisely what its own
+`boundThread` guard exists to refuse.
+
+Stated with `lookupTcb` rather than `getTcb?` at the answered caller because
+`answeredHeadContextIsServerDonation` is: the two differ on a reserved id, and a
+reserved thread is not a caller this path can reach. -/
+theorem answeredFrameHeadContext?_implies_serverDonation (st : SystemState)
+    (target : SeLe4n.ThreadId) (tcb : TCB)
+    (scId : SeLe4n.SchedContextId) (holder expected : SeLe4n.ThreadId)
+    (hOwnerValid : donationOwnerValid st)
+    (hHeadReturned : answeredHeadContextIsServerDonation st target)
+    (hLk : lookupTcb st target = some tcb)
+    (hExp : recordedReplyServer? st target = some expected)
+    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    holder = expected ∧
+      ∃ owner, endpointReplyServerDonation? st target = some (scId, owner) := by
+  obtain ⟨rid, hRid, hHead, hBt⟩ := answeredFrameHeadContext?_eq_some h
+  obtain ⟨r, sc, hR, hN, hSc, _⟩ := replyFrameHeadContext?_eq_some hHead
+  have hGet : st.getTcb? target = some tcb := getTcb?_of_lookupTcb st target tcb hLk
+  have hRO : tcb.replyObject = some rid := by
+    unfold answeredReplyObject? at hRid; rw [hGet] at hRid; exact hRid
+  have hBound : sc.boundThread = some holder := by rw [hSc] at hBt; exact hBt
+  obtain ⟨owner, hRet⟩ := hHeadReturned tcb rid r scId hLk hRO hR hN expected hExp
+  obtain ⟨eTcb, hLkE, hB⟩ := replyDonationReturn?_some_lookup st expected scId owner hRet
+  have hGetE : st.getTcb? expected = some eTcb := getTcb?_of_lookupTcb st expected eTcb hLkE
+  obtain ⟨⟨sc', hSc'Obj, hSc'Bound⟩, _⟩ :=
+    hOwnerValid expected eTcb scId owner ((getTcb?_eq_some_iff st expected eTcb).mp hGetE) hB
+  have hSame : sc' = sc :=
+    KernelObject.schedContext.inj (Option.some.inj
+      (hSc'Obj.symm.trans ((getSchedContext?_eq_some_iff st scId sc).mp hSc)))
+  refine ⟨?_, owner, ?_⟩
+  · rw [hSame] at hSc'Bound
+    exact Option.some.inj (hBound.symm.trans hSc'Bound)
+  · unfold endpointReplyServerDonation? endpointReplyDonation?
+    simp only [hExp, hGetE, hB]
+
+/-- **WS-HP HP2.4: the head of the popped context IS the answered caller's reply
+object** -- `replyStackHeadIsAnsweredReply`'s content, as a theorem of the
+head-driven resolver rather than a hypothesis a caller supplies.
+
+Under this trigger it is immediate: the resolver reads the context off the frame's
+own `.head` link and validates the context's `scReply` against that same frame, so
+the head and the answered reply object are the one `rid` the resolver matched.
+HP7 is what retires the stated predicate; this is the theorem that lets it. -/
+theorem answeredFrameHeadContext?_head_is_answered_reply (st : SystemState)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    ∃ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid ∧
+      replyStackHead? st scId = some rid := by
+  obtain ⟨rid, hRid, hHead, _⟩ := answeredFrameHeadContext?_eq_some h
+  obtain ⟨_, sc, _, _, hSc, hScReply⟩ := replyFrameHeadContext?_eq_some hHead
+  exact ⟨rid, hRid, by unfold replyStackHead?; rw [hSc]; exact hScReply⟩
+
+/-- **WS-HP HP2.4: the popped context's head validates** -- `donationHeadOf?`
+succeeds with the answered frame, so the pop's own head validation is a
+consequence of the trigger firing rather than a step that can refuse.
+
+This is what makes the head-driven pop provably reach its stores: under the
+binding-driven trigger `donationHeadOf?` could refuse (the context's head need not
+be the answered frame), and `donationHeadResolves` had to be carried as a
+hypothesis. -/
+theorem answeredFrameHeadContext?_donationHeadOf (st : SystemState)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    ∃ (rid : SeLe4n.ReplyId) (r : Reply) (sc : SchedContext),
+      answeredReplyObject? st target = some rid ∧
+      st.getSchedContext? scId = some sc ∧
+      donationHeadOf? st scId sc = .ok (some (rid, r)) := by
+  obtain ⟨rid, hRid, hHead, _⟩ := answeredFrameHeadContext?_eq_some h
+  obtain ⟨r, sc, hR, hN, hSc, hScReply⟩ := replyFrameHeadContext?_eq_some hHead
+  refine ⟨rid, r, sc, hRid, hSc, ?_⟩
+  unfold donationHeadOf?
+  rw [hScReply]
+  simp only [hR, hN, bne_self_eq_false, Bool.false_eq_true, if_false]
+
+/-- **WS-HP HP2.4: the pop's `boundThread` guard is satisfied by construction.**
+
+`returnDonatedSchedContext` refuses when the context is not bound to the
+`serverTid` it was handed.  Under the binding-driven trigger that was defence in
+depth against a drift `donationOwnerValid` rules out; under the head-driven one
+the holder *is* read from `SchedContext.boundThread`, so the guard cannot fire --
+the operation reads the fact it used to check, which is the honest direction. -/
+theorem answeredFrameHeadContext?_boundThread (st : SystemState)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
+    ∃ sc : SchedContext, st.getSchedContext? scId = some sc ∧
+      sc.boundThread = some holder := by
+  obtain ⟨_, _, hHead, hBt⟩ := answeredFrameHeadContext?_eq_some h
+  obtain ⟨_, sc, _, _, hSc, _⟩ := replyFrameHeadContext?_eq_some hHead
+  exact ⟨sc, hSc, by rw [hSc] at hBt; exact hBt⟩
+
+/-- **WS-HP HP2.3's negative twin: the state `spliceOutTheCut` creates under a
+binding-driven trigger, named exactly.**
+
+A frame that *heads* a context while the thread its caller recorded as its reply
+server holds no donation of that context falsifies
+`answeredHeadContextIsServerDonation` outright.  That is the orphan head the
+splice produces and the sever does not
+(`severAtCut_pop_leaves_no_head`, `IPC/Invariant/Defs.lean`): the splice's pop
+re-heads the frame below a cut, whose caller recorded a server that the
+cancellation removed.
+
+So this is the checkable form of "the splice breaks the equivalence HP4 stands
+on", and it is why HP6 may not precede HP4. -/
+theorem answeredHeadContextIsServerDonation_false_of_orphan_head (st : SystemState)
+    (target : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId) (r : Reply)
+    (scId : SeLe4n.SchedContextId) (expected : SeLe4n.ThreadId)
+    (hLk : lookupTcb st target = some tcb) (hRO : tcb.replyObject = some rid)
+    (hR : st.getReply? rid = some r) (hN : r.next = some (.head scId))
+    (hExp : recordedReplyServer? st target = some expected)
+    (hNoDon : ∀ owner, replyDonationReturn? st expected ≠ some (scId, owner)) :
+    ¬ answeredHeadContextIsServerDonation st target := by
+  intro hFact
+  obtain ⟨owner, hRet⟩ := hFact tcb rid r scId hLk hRO hR hN expected hExp
+  exact hNoDon owner hRet
+
+/-- **WS-HP HP2.3: and at such a state the two triggers demonstrably disagree.**
+
+The head-driven resolver fires -- the frame heads the context, the context names
+it back, and it is bound to a holder -- while the binding-driven one answers
+`none`, because the recorded server holds nothing.  So a `spliceOutTheCut` cut
+landing before HP4 would leave the live reply path popping on a fact that is
+false of exactly the states the splice makes reachable; and one landing *after*
+HP4 is the intended behaviour, since the head-driven pop returns the context to
+the caller the surviving stack names.
+
+This is the sharp statement of plan §4's second forced ordering, and the reason
+it is a theorem rather than a note. -/
+theorem donationPopTriggers_disagree_at_orphan_head (st : SystemState)
+    (target : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (r : Reply)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext)
+    (holder expected : SeLe4n.ThreadId)
+    (hRid : answeredReplyObject? st target = some rid)
+    (hR : st.getReply? rid = some r) (hN : r.next = some (.head scId))
+    (hSc : st.getSchedContext? scId = some sc) (hScReply : sc.scReply = some rid)
+    (hBound : sc.boundThread = some holder)
+    (hExp : recordedReplyServer? st target = some expected)
+    (hNoDon : endpointReplyDonation? st expected = none) :
+    answeredFrameHeadContext? st target = some (scId, holder) ∧
+      endpointReplyServerDonation? st target = none := by
+  refine ⟨answeredFrameHeadContext?_of_head st target rid scId holder hRid
+    (replyFrameHeadContext?_of_head st rid r scId sc hR hN hSc hScReply) ?_, ?_⟩
+  · rw [hSc]; exact hBound
+  · unfold endpointReplyServerDonation?
+    rw [hExp]; exact hNoDon
+
 /-- **WS-RM (`v0.35.6`): the live cross-core `.reply` dispatch preserves the
 donation chain — the theorem the workstream exists for.**
 

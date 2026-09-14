@@ -6426,6 +6426,97 @@ theorem schedContext_ne_tcb_at_objId
   rw [hSc] at hTcb
   cases hTcb
 
+-- ============================================================================
+-- WS-HP HP2.3 — why the policy flip may not precede the trigger flip
+-- ============================================================================
+
+/-- **WS-HP HP2.3: `severAtCut` leaves the popped context heading NO frame, and
+that is what keeps the two donation-pop triggers equivalent.**
+
+The pop writes `scReply := head?.bind (fun p => p.2.prev)`
+(`returnDonatedSchedContext_ok_storeChain`).  At a **cut** -- a head whose own
+`prev` the removal cleared -- that value is `none`, so after the pop the context
+heads nothing at all and no frame is left on its stack.  That is the whole reason
+this kernel may decide the pop from the recorded server's `.donated` binding: a
+frame heads a context exactly while the server it recorded still holds the
+donation, because the frames below a cut left the stack rather than waiting to be
+re-headed.
+
+**`spliceOutTheCut` breaks it, and this theorem is how the ordering is enforced
+rather than described.**  Under the splice the cut head's `prev` names the frame
+below, so the pop writes `scReply := some below` and that frame becomes the head
+-- while the thread its caller recorded as its reply server is by then gone and
+`.unbound`.  Answering it would then run **no** pop under a binding-driven
+trigger, `Reply.consumed` keeps a head's links, and the state is a consumed frame
+heading a context: the object pinning `v0.35.4` closed, and what
+`replyStackOuterCaller?_of_consumed_frame` refuses.
+`answeredHeadContextIsServerDonation_false_of_orphan_head`
+(`IPC/CrossCore/EndpointReplyDispatchInvariant.lean`) is the negative twin that
+names that state exactly.
+
+**So this theorem cannot survive HP6.**  Its first conjunct is the policy
+constant, so the cut that writes `cancelledMiddleCallerPolicy :=
+.spliceOutTheCut` must delete it -- and it may only do so once the reply and
+cancellation triggers are head-driven (HP4, HP5), because after that the
+equivalence this theorem protects is no longer load-bearing: a context that heads
+no stack simply does not pop.  Retiring it for any other reason is retiring the
+check that the ordering was respected. -/
+theorem severAtCut_pop_leaves_no_head {st st' : SystemState}
+    {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {originalOwner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {r : Reply}
+    (hObjInv : st.objects.invExt)
+    (hHeadIs : ∀ sc : SchedContext, st.objects[scId.toObjId]? = some (.schedContext sc) →
+      donationHeadOf? st scId sc = .ok (some (rid, r)))
+    (hCut : r.prev = none)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.severAtCut ∧
+      ∃ sc', st'.getSchedContext? scId = some sc' ∧ sc'.scReply = none := by
+  refine ⟨rfl, ?_⟩
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+    hScObj, _, hHead, hS1, hPop, hLk2, hS3, hLk3, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  -- The head the pop validated is the cut frame, so the `scReply` it writes is `none`.
+  have hHeadEq : head? = some (rid, r) :=
+    Except.ok.inj ((hHead.symm).trans (hHeadIs sc hScObj))
+  subst hHeadEq
+  have hWritten : (some (rid, r)).bind (fun p => p.2.prev) = none := by
+    simp only [Option.bind_some]; exact hCut
+  rw [hWritten] at hS1
+  -- Frame the SchedContext forward through the pop's remaining three stores.
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hPop
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have hSc1 : s1.getSchedContext? scId
+      = some { sc with boundThread := some originalOwner, scReply := none } :=
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
+      (storeObject_objects_eq' st _ _ _ hObjInv hS1)
+  have hSc2 : s2.getSchedContext? scId
+      = some { sc with boundThread := some originalOwner, scReply := none } :=
+    (storeDonationHeadPop_getSchedContext?_eq hInv1 hPop scId).trans hSc1
+  have hSc2Obj : s2.objects[scId.toObjId]?
+      = some (.schedContext { sc with boundThread := some originalOwner, scReply := none }) :=
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc2
+  have hNe2 : scId.toObjId ≠ originalOwner.toObjId :=
+    schedContext_ne_tcb_at_objId s2 scId originalOwner _ clientTcb hSc2Obj
+      (lookupTcb_some_objects s2 originalOwner clientTcb hLk2)
+  have hSc3Obj : s3.objects[scId.toObjId]?
+      = some (.schedContext { sc with boundThread := some originalOwner, scReply := none }) := by
+    rw [storeObject_objects_ne s2 s3 originalOwner.toObjId scId.toObjId _ hNe2 hInv2 hS3]
+    exact hSc2Obj
+  have hNe3 : scId.toObjId ≠ serverTid.toObjId :=
+    schedContext_ne_tcb_at_objId s3 scId serverTid _ serverTcb hSc3Obj
+      (lookupTcb_some_objects s3 serverTid serverTcb hLk3)
+  have hSc4Obj : s4.objects[scId.toObjId]?
+      = some (.schedContext { sc with boundThread := some originalOwner, scReply := none }) := by
+    rw [storeObject_objects_ne s3 s4 serverTid.toObjId scId.toObjId _ hNe3 hInv3 hS4]
+    exact hSc3Obj
+  refine ⟨{ sc with boundThread := some originalOwner, scReply := none },
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr ?_, rfl⟩
+  -- The final step rewrites `scThreadIndex` alone, so the object store is `s4`'s.
+  rw [hEq]
+  exact hSc4Obj
+
 /-- AK1-A (I-H01): `returnDonatedSchedContext` succeeds under
     `donationOwnerValid` combined with non-reservation of the participant
     thread IDs and the pop's head validation.  This is the structural

@@ -3646,6 +3646,18 @@ theorem replyFrameHeadContext?_eq_some {st : SystemState} {rid : SeLe4n.ReplyId}
     (h : st.getReply? rid = none) : replyFrameHeadContext? st rid = none := by
   unfold replyFrameHeadContext?; rw [h]
 
+/-- **WS-HP HP1.2: the resolver's constructor** -- a frame whose `next` names a
+context that names it back heads that context.  The direction HP2.2's converse
+reads, and the one a witness uses to exhibit a live stack. -/
+theorem replyFrameHeadContext?_of_head (st : SystemState) (rid : SeLe4n.ReplyId) (r : Reply)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext)
+    (hR : st.getReply? rid = some r) (hN : r.next = some (.head scId))
+    (hSc : st.getSchedContext? scId = some sc) (hScReply : sc.scReply = some rid) :
+    replyFrameHeadContext? st rid = some scId := by
+  unfold replyFrameHeadContext?
+  rw [hR]
+  simp only [hN, hSc, hScReply, beq_self_eq_true, if_true]
+
 /-- **WS-HP HP1.2: a frame with a frame above it heads nothing** -- so the pop's
 trigger and the splice's are mutually exclusive by construction, which is what
 keeps the *reachable* footprint bound where the declared ceiling grows. -/
