@@ -520,6 +520,31 @@ def endpointReplyCrossCoreDispatch
           | none => (st, .error .invalidArgument)
       | none => (st, .error .replyCapInvalid)
 
+/-- **PR #895 review round 22: the live `.reply` spine does not depend on the
+reply-cap HOLDER.**
+
+Every use of `replier` above is the one passed to `endpointReplyOnCore`, whose
+own parameter is `_replier`: the 6J-lYm gate removal made authority the presented
+reply capability, so the leg reads the caller's recorded server from the state
+and the cap holder's identity nowhere.  The donation return and the
+priority-inheritance reversion are then keyed on that recorded server
+(`recordedReplyServer? st target`), which is resolved from the pre-state and is
+therefore the same thread whichever delegate invoked.
+
+So a *delegated* reply gets exactly the non-delegated behaviour, and that is the
+property that makes this dispatch — rather than the superseded single-core
+`endpointReplyWithDonation` — the right live counterpart for a frozen mirror that
+accepts a delegated replier.  Its pair is
+`endpointReplyWithDonation_refuses_delegated_replier`
+(`IPC/Operations/Donation.lean`), which has the content: the two live composites
+answer one question two ways, so a coverage claim naming one is not a claim about
+the other.  Neither theorem alone says that; stated together they do. -/
+theorem endpointReplyCrossCoreDispatch_independent_of_replier
+    (replier replier' target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) :
+    endpointReplyCrossCoreDispatch replier target msg executingCore st =
+      endpointReplyCrossCoreDispatch replier' target msg executingCore st := rfl
+
 /-- WS-SM SM6.C (live `.reply` enforcement): the **information-flow-checked**
 cross-core reply dispatch — the cross-core analogue of `endpointReplyChecked`
 composed with `endpointReplyCrossCoreDispatch`.  Mirrors the single-core checked

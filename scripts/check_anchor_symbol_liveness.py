@@ -77,8 +77,8 @@ def anchors_in(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def module_scope_facts(source: str) -> "tuple[set[str], set[str]]":
-    """The names a module BINDS at module scope, and those it READS as globals.
+def module_scope_facts(source: str) -> "tuple[set[str], dict[str, set[str]]]":
+    """The names a module BINDS at module scope, and who READS each as a global.
 
     **Scope resolution is CPython's own** (`symtable`), not a walk over `Name`
     nodes.  A bare identifier is a read of the module's global only when no
@@ -88,22 +88,54 @@ def module_scope_facts(source: str) -> "tuple[set[str], set[str]]":
     finding this gate is for (PR #895 review round 17).  `symtable` is the
     compiler's own answer, so shadowing by a parameter, a comprehension target,
     a `with`/`except` binding or a nested `def` is not a form to enumerate.
+
+    **...and a reference is not an incoming read** (PR #895 review round 22).
+    The reads were returned as a flat SET, and the gate then asked "does this
+    name occur as a global read" where its question is "does anything else read
+    it" — this project's oldest rule, a presence check standing in for a
+    relation, inside the gate written to retire a different instance of it.  A
+    recursive definition references its own name from inside its own body, so
+    `def _dead(n): return _dead(n - 1)` put `_dead` in the set and kept a Tier 3
+    anchor on a helper nothing calls reading LIVE.  That is the tautological pin
+    this gate exists to refuse, surviving the refusal.
+
+    So each read is **attributed** to the declaration it occurs in — the name of
+    the nearest enclosing `def`/`class`, or `""` for module scope — and the
+    target route below asks for an owner other than the name itself.  Nesting is
+    carried, so a reference from a closure inside `_dead` is still `_dead`'s: if
+    nothing outside the definition calls it, nothing does.
+
+    What attribution does **not** decide is a CYCLE: two definitions that
+    reference each other and nothing else reads still own each other's reads, so
+    they read live.  That is over-approximating liveness, which for this gate is
+    the fail-OPEN direction, and it is stated rather than assumed away —
+    deciding it is reachability from an entry point, and the entry points here
+    include cross-module readers, so a module-scope-only seed would report every
+    helper of an imported function dead.  A mutual pair of dead anchored
+    definitions is the residue.
     """
     top = symtable.symtable(source, "<anchor-target>", "exec")
     bound = {sym.get_name() for sym in top.get_symbols()
              if sym.is_assigned() or sym.is_imported()}
-    reads: set[str] = set()
-    pending = [top]
+    reads: dict[str, set[str]] = {}
+    # `(table, owner)` — the owner is the nearest enclosing declaration's name,
+    # inherited by nested tables so a closure's reference is attributed to the
+    # declaration it is written inside.
+    pending = [(top, "")]
     while pending:
-        table = pending.pop()
+        table, owner = pending.pop()
         for sym in table.get_symbols():
             if not sym.is_referenced():
                 continue
             # At module scope every reference IS the global; inside a function
             # only one `symtable` resolved to the global scope.
             if table.get_type() == "module" or sym.is_global():
-                reads.add(sym.get_name())
-        pending.extend(table.get_children())
+                reads.setdefault(sym.get_name(), set()).add(owner)
+        for child in table.get_children():
+            child_owner = owner
+            if child.get_type() in ("function", "class") and not owner:
+                child_owner = child.get_name()
+            pending.append((child, child_owner))
     return bound, reads
 
 
@@ -233,7 +265,9 @@ def reads_target_symbol(facts, target_stem: str, name: str, is_target: bool) -> 
     """
     _, global_reads, module_aliases, from_imports, attribute_reads = facts
     if is_target:
-        return name in global_reads
+        # An owner other than the name itself: a definition's references to
+        # itself are not an incoming read of it.
+        return any(owner != name for owner in global_reads.get(name, ()))
     for alias, stem in module_aliases.items():
         if stem == target_stem and name in attribute_reads.get(alias, ()):
             return True
@@ -342,6 +376,29 @@ _CASES = [
      "A = 1\n\n\ndef helper(A):\n    return A\n", "", "^A", True),
     ("a comprehension target in the target's own module is not a read",
      "A = 1\n\n\ndef helper():\n    return [A for A in range(3)]\n", "", "^A", True),
+    # --- ...and a SELF-reference is not an incoming read (round 22) -------
+    # The flat read set answered "does this name occur as a global read", where
+    # the question is "does anything else read it" -- so a recursive definition
+    # kept its own anchor alive.  Each row keeps the definition and the anchor
+    # and changes only WHO references the name, which is the mutation this class
+    # needs; deleting the reference passes under the superseded set.
+    ("a recursive definition nothing else calls is NOT read",
+     "def _A(n):\n    return _A(n - 1)\n", "", "^_A", True),
+    ("...nor when the self-reference is written inside a closure",
+     "def _A(n):\n    def inner():\n        return _A(n - 1)\n    return inner\n",
+     "", "^_A", True),
+    ("...and the same holds for a self-referential class",
+     "class _A:\n    def clone(self):\n        return _A()\n", "", "^_A", True),
+    # ...and the rows the fix must NOT change: a real caller makes it live,
+    # whether it recurses or not.
+    ("a recursive definition WITH a caller is live",
+     "def _A(n):\n    return _A(n - 1)\n\n\ndef main():\n    return _A(3)\n",
+     "", "^_A", False),
+    ("a module-scope reference is an incoming read",
+     "def _A(n):\n    return n\n\n\n_USED = _A(1)\n", "", "^_A", False),
+    ("a caller in ANOTHER module is still an incoming read",
+     "def _A(n):\n    return _A(n - 1)\n",
+     "import subject\n\n\ndef g():\n    return subject._A(2)\n", "^_A", False),
     # A `from` import of a DIFFERENT module's same-named symbol is not a read
     # of this target's -- the route exists but does not resolve here.
     ("a `from` import of another module's same name is not a read",

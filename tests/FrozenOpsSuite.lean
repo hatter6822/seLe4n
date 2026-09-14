@@ -937,6 +937,12 @@ private def diffNotifId : SeLe4n.ObjId := ⟨61⟩
 private def diffA       : SeLe4n.ThreadId := ⟨62⟩
 private def diffB       : SeLe4n.ThreadId := ⟨63⟩
 private def diffCnId    : SeLe4n.ObjId := ⟨64⟩
+/-- A third thread: the **delegate** that holds a copied reply capability without
+being the caller's recorded server.  Needed because the two actors above cannot
+express delegation — `diffB` *is* the recorded server in every fixture here, which
+is exactly why the round-15 operation differential could not see the divergence
+round 22 found. -/
+private def diffDelegate : SeLe4n.ThreadId := ⟨65⟩
 
 /-- The actors share one CSpace root holding the operand capability at slot 0.
 
@@ -1023,6 +1029,41 @@ private def liveWithTaint {α : Type} (sid : SyscallId) (actor : SeLe4n.ThreadId
   | .ok (a, post) =>
       .ok (a, SeLe4n.Kernel.applySyscallTaint
                 (SeLe4n.Kernel.syscallTaintPlan st actor (diffDecoded sid capAddr)) st post)
+
+/-- **The live `.reply` spine, in the shape `liveWithTaint` consumes.**
+
+`endpointReplyCrossCoreDispatch` is what the live `.reply` arm routes through
+(`replyTransferOnCoreChecked` → `replyTransferOnCore` → this), and it answers
+`SystemState × Except _ (Option (CoreId × SgiKind))` because the runtime needs the
+cross-core poke.  The frozen surface models no per-core scheduler, so the SGI is
+discarded and the state compared; on a fixture whose threads are unpinned every
+`determineTargetCore` answers `bootCoreId`, so the per-core writes land where
+`frozenStateAgrees` reads them.
+
+The **superseded** single-core composite `endpointReplyWithDonation` is
+deliberately not used here (PR #895 review round 22): it has no production caller
+and its bare reply leg refuses a delegated reply-cap holder, which the live spine
+and the frozen mirror both accept. -/
+private def liveReplySpine (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (st : SystemState) : Except KernelError (Unit × SystemState) :=
+  match SeLe4n.Kernel.endpointReplyCrossCoreDispatch replier target msg bootCoreId st with
+  | (st', .ok _) => .ok ((), st')
+  | (_, .error e) => .error e
+
+/-- **The live reply LEG, in the same shape** — and the sweep the round-22 finding
+owed its sibling.
+
+The review named the operation-level claim; the leg claim one table above asked
+the identical question and had the identical answer wrong.  `frozenEndpointReply`
+mirrors `endpointReplyOnCore`, whose `_replier` parameter is unused, and *not* the
+bare `endpointReply`, which keeps the `replier == expected` gate the cross-core
+spelling dropped.  Both claims were latent for the same reason — every fixture
+here made the replier the recorded server, where the two coincide. -/
+private def liveReplyLeg (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (st : SystemState) : Except KernelError (Unit × SystemState) :=
+  match SeLe4n.Kernel.endpointReplyOnCore replier target msg bootCoreId st with
+  | (st', .ok _) => .ok ((), st')
+  | (_, .error e) => .error e
 
 /-- FO-026: the signal, against the live entry the `.notificationSignal` arm
 runs.  A notification with no ordinary waiter and a bound TCB parked on an
@@ -1190,8 +1231,13 @@ private def differentialEndpointCallAgrees : IO Unit := do
       (liveWithTaint .call diffA (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.endpointCall diffEpId diffA msg) ist.state))
 
-/-- FO-031: the reply, against `endpointReply`, delivering to a caller parked in
-`.blockedOnCall`. -/
+/-- FO-031: the reply LEG, against `endpointReplyOnCore` — the leg the live
+`.reply` arm dispatches — delivering to a caller parked in `.blockedOnReply`.
+
+Repointed from the bare single-core `endpointReply` at PR #895 review round 22:
+that one keeps the `replier == expected` gate the cross-core spelling dropped, so
+naming it made this claim false on a delegated reply-cap holder, which the frozen
+leg accepts.  The delegated half below is the shape that separates them. -/
 private def differentialEndpointReplyAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨13⟩], caps := #[], badge := none }
   -- The reply's authority is the presented reply capability, so the fixture has
@@ -1207,14 +1253,30 @@ private def differentialEndpointReplyAgrees : IO Unit := do
   -- Control: the reply really happens on both sides, so the agreement below is
   -- about a delivered reply rather than a shared refusal.
   expect "FO-031 control: the live reply succeeds (not a shared refusal)"
-    (SeLe4n.Kernel.endpointReply diffB diffA msg ist.state).toOption.isSome
+    (liveReplyLeg diffB diffA msg ist.state).toOption.isSome
   expect "FO-031 control: and so does the frozen one"
     (frozenEndpointReply diffB diffA rid msg (freeze ist)).toOption.isSome
   expect "FO-031: the frozen reply agrees with the live reply"
     (frozenRunAgrees unitResultAgrees
       (frozenEndpointReply diffB diffA rid msg (freeze ist))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
-        (SeLe4n.Kernel.endpointReply diffB diffA msg) ist.state))
+        (liveReplyLeg diffB diffA msg) ist.state))
+  -- **The delegated half, at the leg** (PR #895 review round 22's sweep).  The
+  -- frozen leg accepts a replier who is not the recorded server, and so does the
+  -- live leg the kernel dispatches; the BARE `endpointReply` refuses it, which is
+  -- why naming that one as the counterpart overstated agreement here too.
+  let delegatedLeg := diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) (diffTcb 63))
+    (diffTcb 65)) rid { replyId := rid, caller := some diffA }
+  expect "FO-031 control: the live leg accepts a DELEGATED replier"
+    (liveReplyLeg diffDelegate diffA msg delegatedLeg.state).toOption.isSome
+  expect "FO-031 control: and the BARE single-core reply refuses it"
+    (SeLe4n.Kernel.endpointReply diffDelegate diffA msg delegatedLeg.state).toOption.isNone
+  expect "FO-031: the frozen leg agrees with the live leg when DELEGATED"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReply diffDelegate diffA rid msg (freeze delegatedLeg))
+      (liveWithTaint .reply diffDelegate (SeLe4n.CPtr.ofNat 0)
+        (liveReplyLeg diffDelegate diffA msg) delegatedLeg.state))
 
 /-- FO-041 (PR #895 review round 15): **the whole `.reply` OPERATION, against
 `endpointReplyWithDonation`.**
@@ -1235,7 +1297,24 @@ the revert leaves a `pipBoost` the live one clears — a TCB-field disagreement
 `frozenStateAgrees` sees.  The second drops the recorded server from the
 caller's `ipcState`, where the live operation refuses and a composite missing
 the guard succeeds — a disagreement only the refusal half of `frozenRunAgrees`
-can see, which is why that half exists. -/
+can see, which is why that half exists.
+
+**...and against WHICH live operation** (PR #895 review round 22).  This compared
+the frozen composite against `endpointReplyWithDonation` — the *single-core*
+donation-aware reply, which has no production caller and whose bare reply leg
+refuses a delegated reply-cap holder.  The live `.reply` arm routes through
+`endpointReplyCrossCoreDispatch`, which accepts one (PR #822 review 6J-lYm), and
+so does `frozenEndpointReply`.  The two counterparts coincide only when the
+replier **is** the recorded server, which every fixture here was — so the claim
+read as agreement with the kernel while being agreement with a superseded sibling.
+
+The comparison is `liveReplySpine` now, and the third half is the delegated shape
+that separates them: a replier holding the caller's reply capability while the
+`ipcState` records someone else.  Its control asserts the superseded composite
+**refuses** exactly that input, so the choice of counterpart is measured here and
+not merely named — the Lean pair
+`endpointReplyCrossCoreDispatch_independent_of_replier` /
+`endpointReplyWithDonation_refuses_delegated_replier` is the general form. -/
 private def differentialEndpointReplyOperationAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨13⟩], caps := #[], badge := none }
   let rid : SeLe4n.ReplyId := ⟨505⟩
@@ -1250,7 +1329,7 @@ private def differentialEndpointReplyOperationAgrees : IO Unit := do
   -- Control: the operation really runs on both sides, so the agreement below is
   -- about a delivered reply rather than a shared refusal.
   expect "FO-041 control: the live reply operation succeeds"
-    (SeLe4n.Kernel.endpointReplyWithDonation diffB diffA msg ist.state).toOption.isSome
+    (liveReplySpine diffB diffA msg ist.state).toOption.isSome
   expect "FO-041 control: and so does the frozen composite"
     (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze ist)).toOption.isSome
   -- ...and the boost really is there to begin with, so the comparison is about
@@ -1263,7 +1342,7 @@ private def differentialEndpointReplyOperationAgrees : IO Unit := do
     (frozenRunAgrees unitResultAgrees
       (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze ist))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
-        (SeLe4n.Kernel.endpointReplyWithDonation diffB diffA msg) ist.state))
+        (liveReplySpine diffB diffA msg) ist.state))
   -- The refusal half: a caller whose `ipcState` records no server at all.  Both
   -- sides must decline it with the same error — the live one has since AK1-B
   -- (I-H02), which rated letting a reply through there a confused-deputy risk.
@@ -1276,9 +1355,33 @@ private def differentialEndpointReplyOperationAgrees : IO Unit := do
     (frozenRunAgrees unitResultAgrees
       (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze ist'))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
-        (SeLe4n.Kernel.endpointReplyWithDonation diffB diffA msg) ist'.state))
+        (liveReplySpine diffB diffA msg) ist'.state))
   expect "FO-041 control: and the live side really refuses (not a shared success)"
-    (SeLe4n.Kernel.endpointReplyWithDonation diffB diffA msg ist'.state).toOption.isNone
+    (liveReplySpine diffB diffA msg ist'.state).toOption.isNone
+  -- **The delegated half** (PR #895 review round 22): the replier holds the
+  -- caller's reply capability without being the recorded server.  `diffDelegate`
+  -- is a third thread, so `replier ≠ expected` and the two candidate live
+  -- counterparts part company here.
+  let boosted : TCB := { diffTcb 63 with pipBoost := some ⟨200⟩ }
+  let delegated := diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) boosted)
+    (diffTcb 65)) rid { replyId := rid, caller := some diffA }
+  expect "FO-041 control: the live spine accepts a DELEGATED replier"
+    (liveReplySpine diffDelegate diffA msg delegated.state).toOption.isSome
+  expect "FO-041 control: and so does the frozen composite"
+    (frozenEndpointReplyWithDonationReturn diffDelegate diffA rid msg
+      (freeze delegated)).toOption.isSome
+  -- ...and the superseded single-core composite REFUSES it, which is what makes
+  -- the choice of counterpart a measurement rather than a name.  Were the claim
+  -- still stated against it, the row would be false on exactly this shape.
+  expect "FO-041 control: the superseded single-core composite refuses it"
+    (SeLe4n.Kernel.endpointReplyWithDonation diffDelegate diffA msg
+      delegated.state).toOption.isNone
+  expect "FO-041: the frozen composite agrees with the live spine when DELEGATED"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffDelegate diffA rid msg (freeze delegated))
+      (liveWithTaint .reply diffDelegate (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffDelegate diffA msg) delegated.state))
 
 /-- FO-035: **a receive that dequeues a `.blockedOnCall` caller** (PR #873
 round 17).

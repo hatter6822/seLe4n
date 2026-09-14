@@ -1,3 +1,122 @@
+## v0.35.35 — PR #895 review round 22: the name a claim cites is its load-bearing half
+
+Four P2 findings, and the pattern across them is one this branch has been
+circling: **three are in my own earlier rounds' fixes**, and the fourth is a
+coverage claim whose counterpart was prose.
+
+**F1 — an angle bracket is not always a delimiter** (`scripts/rust_code_view.py`).
+Round 14 found exactly this class in `extern_block_items` and wrote the reasoning
+into that function's docstring; round 18 then wrote `_body_open_brace` **one
+function above it**, counting `<` unconditionally, under a docstring asserting the
+opposite of the grammar (*"a comparison or a shift cannot appear in a type"*).  An
+array length and a const-generic argument are const *expressions*, so both
+directions shipped: `-> [u8; 1 << 2]` raises the depth twice with nothing to lower
+it, and `-> [u8; 8 >> 1]` clamps the shared counter at zero and then lets the
+closing `]` drive it negative.  Each answers `FILE_SCOPE`, which no allowlist
+entry matches, so a **justified** site inside such a function is reported
+unjustified — Tier 0 refusing valid Rust.
+
+The remedy is not round 14's, and the difference is the point: dropping angle
+brackets is right when the subject is a `;` (`[` and `{` already cover it) and
+wrong when the subject **is** a brace, since `-> Foo<{ 1 }> { .. }` would answer
+with the const-generic block.  Two counters, with `<`/`>` read **only outside
+every bracket group**, is *exact* rather than merely safe, for the reason round 14
+gave: Rust requires a non-trivial const argument to be braced and an array length
+to sit inside `[` … `]`, so an operator `<` is always inside a bracket group and a
+delimiter `<` never is.  Four witnesses, three of which fail under the true
+pre-fix relation; the const-generic and `Fn(..)`-bound rows pass under both,
+because a fix must be shown to narrow rather than to disable.
+
+**And the remedy is that the question now has one owner.**  Patching the second
+copy would have left the file in exactly the state that produced the finding, so
+`signature_terminator` states the rule once — brackets nest, angles nest only at
+bracket depth zero, `->` is one token, a terminator counts only at zero on both
+counters — and both scans read it, differing only in the characters they pass as
+terminators.  Measured payoff: **one** token-preserving mutation of that function
+now fails **four** witnesses across *both* questions, where before it would have
+failed only the body rows.  And because sharing an answer does not stop a *third*
+implementation from being written beside the two, `hand_rolled_angle_nesting()`
+refuses an angle-bracket character test in that file outside the owner — scope
+measured before it was chosen (the file has exactly two such tests, both in the
+owner; every other one under `scripts/` asks a different language's question), and
+pinned in both directions, since a discipline check that cannot fire is
+indistinguishable from one that is wrong.
+
+**F2 — the counterpart a coverage claim cites was a comment**
+(`SeLe4n/Kernel/FrozenOps/Agreement.lean`, `tests/FrozenOpsSuite.lean`).  Round 15
+fixed *a claim made at the wrong unit* — leg versus operation — and left **which
+instance** of the unit: `frozenBranchOperationChecked`'s only `true` row said it
+was checked against `endpointReplyWithDonation`.  That is the *single-core*
+composite, with no production caller, and it opens with the bare `endpointReply`,
+which keeps the `replier == expected` gate the cross-core spelling dropped
+(PR #822 review 6J-lYm: authority is the presented reply capability, and seL4-MCS
+reply caps are delegatable).  The live `.reply` arm dispatches
+`endpointReplyCrossCoreDispatch`, which accepts a delegate — and so does
+`frozenEndpointReply`.  So on a delegated input the frozen composite agrees with
+the **kernel** and disagrees with the named counterpart, and the row's `true` was
+read as the former.  Latent only because every fixture made the replier *be* the
+recorded server, where the two counterparts coincide.
+
+- Both counterparts are **data** now — `frozenBranchLiveOperation` and
+  `frozenBranchLiveLeg`, each with a both-directions interlock.  The leg table is
+  the sweep this round owed: it asked the identical question with the identical
+  answer wrong, which is round 11's *keep the tables symmetric* one artefact over.
+- A string is not a check and does not pretend to be.  What pins the counterpart
+  is a theorem **pair** — `endpointReplyCrossCoreDispatch_independent_of_replier`
+  (every use of `replier` is the unused `_replier`, so a delegate gets the
+  non-delegated behaviour) and `endpointReplyWithDonation_refuses_delegated_replier`
+  — which together say the two are not interchangeable.  That is the lesson
+  `API.lean`'s `syscallDelegates` records from its own review round 11: a *name*
+  establishes that a declaration exists, not that it says anything about the claim
+  citing it.
+- Both scenarios carry the **delegated** shape, and each asserts the superseded
+  composite **refuses** it, so the choice of counterpart is measured at the point
+  of use rather than named.  FO-031 runs against `endpointReplyOnCore` and FO-041
+  against `endpointReplyCrossCoreDispatch`, through two adapters.
+- The live steps the differential does not reach — `replyTransferOnCore`'s fault
+  branch and the WS-RA delivered-message staging — are **stated**
+  (`frozenBranchOperationFrontier`) rather than implied, because a claim that stops
+  at "checked" implies an authority over the whole arm it does not have.
+- Four docstrings claiming `frozenEndpointReply` mirrors the bare `endpointReply`
+  are corrected, the module's frozen↔live table included.
+
+**F3 — one foreign declaration, two discovery passes**
+(`scripts/check_unsafe_block_justifications.py`).  A foreign declaration may mark
+itself `unsafe` (RFC 3484's per-item marker, whose `safe fn` opt-out the gate
+already read), so the keyword pass **and** the foreign-item pass both yielded it:
+one declaration, two rows, `UNSAFE_SITES_TOTAL`, `UNSAFE_FN_DECLARATIONS`, the ARM
+ratio and any baseline all doubled — and an *undocumented* one produced two
+violations a single baseline entry could not account for.  Invisible to a case list
+that only asks *"is each site found justified?"*, since both rows carry the same
+good justification.  A cardinality defect needs a cardinality witness, so the gate
+grew `_SITE_INVENTORY_CASES`, naming the declarations a fixture must produce and
+failing on a repeat.  The region belongs to exactly one pass now, and the direction
+is forced: the foreign walk is *derived* from the item structure and refuses a form
+it cannot read, while the keyword pass sees only what carries the token.  The
+tree's own figure is unchanged at 136/136 (114 blocks, 22 declarations) — no
+declaration here is spelled that way, which is why it was latent.
+
+**F4 — a reference is not an incoming read**
+(`scripts/check_anchor_symbol_liveness.py`).  The gate written last round to
+retire tautological pins asked *"does this name occur as a global read"* where its
+question is *"does anything else read it"*, so `def _dead(n): return _dead(n - 1)`
+kept its own anchor alive.  That is this project's oldest rule inside the gate
+built to close one instance of it.  Reads are **attributed** to the declaration
+they occur in now, with nesting carried, so a self-reference from a closure inside
+the definition does not count either; the cycle residue (two definitions
+referencing each other and nothing else) is stated in the docstring with its
+fail-open direction rather than assumed away.  Six new cases, three decisive under
+the pre-fix relation and three unchanged.
+
+**Registered.**  The live divergence F2 exposed is recorded rather than silently
+carried: `endpointReplyOnCore` admits a delegated reply-cap holder and the bare
+`endpointReply` / `endpointReplyRecv` / `endpointReplyWithDonation` refuse one.
+It is fail-*closed* (legitimate authority declined, never illegitimate authority
+admitted) and the single-core composite has no production caller, so it is a
+divergence to respect rather than a hole — a standing constraint in `CLAUDE.md` and
+a row in `docs/REGISTERED_DEBT.md` table C, pinned in both directions by the
+theorem pair above.
+
 ## v0.35.34 — Round 21: an oracle is exact only up to the version of its table
 
 **PR #895 review round 21.**  Three P2 findings, all three fail-**closed** —

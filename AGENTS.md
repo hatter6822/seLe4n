@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.34.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.35.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1894,7 +1894,12 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   revert, and nothing compared the frozen composite against it, so "reply:
   checked" stood through **four consecutive review rounds** in which that
   composite was found to be missing the donation pop, then the server's
-  deschedule, then the inheritance revert, then a missing-server refusal.  In
+  deschedule, then the inheritance revert, then a missing-server refusal.
+  (Round 22 corrected the *counterpart* this round chose: the leg differential
+  runs against `endpointReplyOnCore` and the operation one against
+  `endpointReplyCrossCoreDispatch`, both read out of `frozenBranchLiveLeg` /
+  `frozenBranchLiveOperation` rather than named in a comment.  Do not cite this
+  paragraph for either name.)  In
   both cases the check ran, reported truthfully about the unit it examined, and
   that unit was not the one the claim was read as being about.
 
@@ -2347,6 +2352,121 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   change** — that is what distinguishes a fix that generalises from one that
   merely moves. A two-character regex escape is one token, so escapes are
   blanked before the keyword question is asked.
+  **And the name a claim cites is its load-bearing half, so it cannot live in a
+  comment** (PR #895 review round 22).  Four findings, and the pattern across
+  them is one this file has been circling: three are *my own previous rounds'
+  fixes*, and the fourth is a coverage claim whose counterpart was prose.
+
+  The narrow one first, because it is the sweep rule failing at the smallest
+  possible distance.  Round 14 found that **an angle bracket is not always a
+  delimiter** — an array length and a const-generic argument are const
+  *expressions*, so `[u8; 1 << 2]` in a signature raises a `<`-counting depth
+  twice with nothing to lower it — and fixed it in `extern_block_items`, writing
+  the reasoning into that function's docstring.  Round 18 then wrote
+  `_body_open_brace` **one function above it**, counting `<` unconditionally,
+  under a docstring asserting the opposite of the grammar (*"a comparison or a
+  shift cannot appear in a type"*).  Both directions shipped: `-> [u8; 1 << 2]`
+  never finds the body, and `-> [u8; 8 >> 1]` clamps the shared counter at zero
+  and then lets the closing `]` drive it negative.  Each answers `FILE_SCOPE`,
+  which no allowlist entry matches — so a **justified** site inside such a
+  function is reported unjustified, Tier 0 refusing valid Rust.
+
+  The remedy is not round 14's, and the difference is the point: dropping angle
+  brackets is right when the subject is a `;` (which `[` and `{` already cover)
+  and wrong when the subject **is** a brace, since `-> Foo<{ 1 }> { .. }` would
+  answer with the const-generic block.  Two counters, with `<`/`>` read **only
+  outside every bracket group**, is *exact* rather than merely safe, and for the
+  reason round 14 gave: Rust requires a non-trivial const argument to be braced
+  and an array length to sit inside `[` … `]`, so an operator `<` is always
+  inside a bracket group and a delimiter `<` never is.  **The same grammatical
+  fact answers both questions; only the direction differs.**
+
+  **And the remedy for F1 is not the patch — it is that the question now has one
+  owner.**  Two scans in that file asked *where does a Rust signature end*: one
+  for the `;` that terminates a foreign item, one for the `{` that opens a body.
+  The nesting rule is identical for both and was written twice, and the second
+  copy reintroduced the defect the first had removed.  Patching the second would
+  have left the file in exactly the state that produced the finding, so
+  `signature_terminator` states the rule once — brackets nest, angles nest only
+  at bracket depth zero, `->` is one token, a terminator counts only at zero on
+  both counters — and both scans read it, differing only in which characters they
+  pass as terminators.  The payoff is measured rather than asserted: **one**
+  token-preserving mutation of that function now fails **four** witnesses across
+  *both* questions, where before it would have failed only the body rows.
+
+  That is the round-7 remedy (*give the sweep an artefact*), and round 9's lesson
+  says it is not sufficient — sharing an answer stops two implementations from
+  diverging and does not stop a **third** from being written beside them.  So the
+  discipline is enforced too: `hand_rolled_angle_nesting()` refuses an
+  angle-bracket *character* test anywhere in that file outside the owner, which
+  is the shape such a scan is written in.  **The scope was measured before it was
+  chosen** — the file holds exactly two such tests and both are in the owner,
+  while every other one under `scripts/` asks a different language's question
+  (Lean notation, a Lean arrow, a Markdown autolink, a CommonMark HTML-block end
+  condition, a regex group name), so a whole-repository check would be mostly
+  classification and this one costs nothing.  It is pinned in **both**
+  directions, because a discipline check that cannot fire is indistinguishable
+  from one that is wrong: removing the owner's exemption makes it report the
+  owner's own two tests, and a probe appends a second implementation to a copy of
+  the file and requires a hit.  Two things that probe records — a fixture must
+  not be **self-referential** (the first version anchored on a `def` line whose
+  text the probe's own source also contained, so the splice landed inside a
+  string literal and the copy would not parse) and it builds its `<` from
+  `chr(60)`, because a literal there would be a hit in the probe's own source and
+  exempting the probe by location is the hole the check exists to refuse.
+
+  The two other scanner findings are the same shape at their own level.  A
+  foreign declaration may mark itself `unsafe` (RFC 3484's per-item marker,
+  whose `safe fn` opt-out the gate already read), so the keyword pass **and**
+  the foreign-item pass both yielded it: one declaration, two rows, every total
+  and any baseline doubled — and invisible to a case list that only asks
+  *"is each site found justified?"*, since both rows carry the same good
+  justification.  A cardinality defect needs a cardinality witness, so the
+  gate grew `_SITE_INVENTORY_CASES`, which name the declarations a fixture must
+  produce and fail on a repeat.  The region now belongs to exactly one pass, and
+  the direction is forced: the foreign walk is *derived* from the item structure
+  and refuses a form it cannot read, so nothing inside the braces escapes it,
+  while the keyword pass sees only what carries the token.  And
+  `check_anchor_symbol_liveness.py` — the gate written last round to retire
+  tautological pins — asked *"does this name occur as a global read"* where its
+  question is *"does anything else read it"*, so `def _dead(n): return
+  _dead(n - 1)` kept its own anchor alive.  That is this file's oldest rule
+  inside the gate built to close one instance of it; reads are **attributed** to
+  the declaration they occur in now, nesting carried, with the cycle residue
+  stated rather than assumed away.
+
+  The fourth is the one worth the entry's title.  Round 15 fixed *a claim made
+  at the wrong UNIT* — leg versus operation — and left **which instance** of the
+  unit, in a **comment**: `frozenBranchOperationChecked`'s only `true` row said
+  it was checked against `endpointReplyWithDonation`.  That is the *single-core*
+  composite, with no production caller, and it opens with the bare
+  `endpointReply`, which keeps the `replier == expected` gate the cross-core
+  spelling dropped (PR #822 review 6J-lYm: authority is the presented reply
+  capability, and seL4-MCS reply caps are delegatable).  The live `.reply` arm
+  dispatches `endpointReplyCrossCoreDispatch`, which accepts a delegate — and so
+  does `frozenEndpointReply`.  So on a delegated input the frozen composite
+  agrees with the **kernel** and disagrees with the named counterpart, and the
+  row's `true` was read as the former.  Latent only because every fixture made
+  the replier *be* the recorded server, where the two counterparts coincide.
+
+  **A counterpart named in prose is a claim nothing reconciles**, so both
+  counterparts are data now (`frozenBranchLiveOperation`,
+  `frozenBranchLiveLeg`), each with a both-directions interlock — and the leg
+  table is the sweep this round owed, because it asked the identical question
+  with the identical answer wrong, which is round 11's *keep the tables
+  symmetric* one artefact over.  A string is not a check and does not pretend to
+  be: what pins the counterpart is a theorem **pair**,
+  `endpointReplyCrossCoreDispatch_independent_of_replier` and
+  `endpointReplyWithDonation_refuses_delegated_replier`, which together say the
+  two are not interchangeable — the lesson `API.lean`'s `syscallDelegates`
+  records from its own review round 11, that a *name* establishes a declaration
+  exists and not that it says anything about the claim citing it.  The scenarios
+  carry the delegated shape and assert the superseded composite **refuses** it,
+  so the choice is measured at the point of use.  And the live steps the
+  differential does not reach — the fault branch and the WS-RA delivered-message
+  staging that `replyTransferOnCore` wraps the spine in — are **stated**
+  (`frozenBranchOperationFrontier`) rather than implied, because a claim that
+  stops at "checked" implies an authority over the whole arm it does not have.
 
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor
@@ -4161,6 +4281,27 @@ code may assume:
   return, and must not add a bundle theorem that threads `donationOwnerValid` on
   such a state: it would be vacuous rather than conditional, which is how the
   nine pre-RR3.12 reply bundles asserted nothing on the ordinary seL4-MCS path.
+- **...and the bare reply and the leg the kernel dispatches disagree about
+  delegated authority** (PR #895 review round 22).  `endpointReplyOnCore` dropped
+  the `replier == expected` gate at PR #822 review 6J-lYm — authority is the
+  presented reply capability, which the dispatch resolves, and seL4-MCS reply
+  caps are delegatable — while the **bare** `endpointReply`, `endpointReplyRecv`
+  and the single-core `endpointReplyWithDonation` that composes the first still
+  carry it.  The live `.reply` arm routes through
+  `replyTransferOnCoreChecked` → `endpointReplyCrossCoreDispatch`, so **the
+  kernel admits a delegated reply-cap holder and the single-core composites
+  refuse one**, whatever `endpointReplyOnCore`'s "mirrors the single-core
+  `endpointReply`" wording suggests.  Two things new code must respect.  (1) The
+  divergence is pinned in both directions —
+  `endpointReplyCrossCoreDispatch_independent_of_replier` (every use of `replier`
+  is the unused `_replier`, so a delegate gets the non-delegated behaviour) and
+  `endpointReplyWithDonation_refuses_delegated_replier` — so a coverage claim, a
+  refinement or a mirror must name *which* spelling it is about; `frozenBranchLiveLeg`
+  and `frozenBranchLiveOperation` carry the frozen surface's counterparts as data
+  for exactly that reason.  (2) The direction is fail-**closed** (legitimate
+  authority declined, never illegitimate authority admitted) and the single-core
+  composite has no production caller, so this is a divergence to respect rather
+  than a hole; giving the question one answer is registered debt.
 - **A bare endpoint splice's post-state does not satisfy
   `ipcStateQueueMembershipConsistent`.**  `endpointQueueRemoveDual` takes a
   thread out of its endpoint queue and deliberately does **not** touch that

@@ -1421,6 +1421,26 @@ def sites(path: Path):
     enclosing scope would collapse every `unsafe fn` of a file onto one key — a
     cardinality one level up, which cannot see one declaration gaining a site
     while another gives one up.
+
+    **The interior of a foreign block belongs to exactly one pass** (PR #895
+    review round 22).  Two passes run here — the `unsafe` KEYWORD scan and the
+    foreign-ITEM walk — and inside an `unsafe extern` block a declaration may
+    carry the keyword explicitly (`unsafe fn f();`, RFC 3484's per-item marker,
+    whose `safe fn` opt-out this gate already reads).  Both passes then yielded
+    it, at two offsets seven bytes apart, so ONE declaration became TWO rows:
+    `UNSAFE_SITES_TOTAL`, `UNSAFE_FN_DECLARATIONS`, the ARM citation ratio and
+    any baseline all counted it twice, and an *undocumented* one produced two
+    violations a single baseline entry could not account for.  Latent only
+    because no declaration in this tree is spelled that way — which is round 5's
+    defect in this same gate, one pass over: a domain nobody measured.
+
+    The foreign pass owns that region, and the direction is the one this gate's
+    domain rule requires.  It is DERIVED from the item structure rather than
+    from a token — it splits the block into items, classifies each, and refuses
+    a form it cannot read — so nothing inside the braces escapes it, and
+    skipping the region in the keyword pass drops no requirement.  The reverse
+    assignment would: the keyword pass sees only what carries the token, so a
+    `fn` with no marker (the block-level default) has no site there at all.
     """
     raw = path.read_text(encoding="utf-8")
     view = rust_code_view.code_no_strings(raw)
@@ -1435,7 +1455,13 @@ def sites(path: Path):
     # the `// SAFETY:` on the block.  Resolving it in the scanner instead buys
     # four sites and costs the relation its sharpness, since a statement can be
     # long and its run then sits arbitrarily far from the operation.
+    # The half-open interiors the foreign-item pass owns, so the keyword pass
+    # below does not also report a declaration that marks itself `unsafe`.
+    foreign_interiors = [(open_at, end)
+                         for _kw, open_at, end in rust_code_view.extern_blocks(view)]
     for m in UNSAFE_SITE.finditer(view):
+        if any(open_at < m.start() < end for open_at, end in foreign_interiors):
+            continue
         named = UNSAFE_FN_NAME.match(view, m.start())
         if named:
             decl = named.group("name")
@@ -2117,6 +2143,57 @@ pub unsafe fn f() {}
 ]
 
 
+#: **What the site inventory IS, with multiplicity** — the shape a "every site is
+#: justified" case cannot assert.
+#:
+#: `_CASES` above asks whether each site found carries a justification, so a
+#: declaration reported TWICE with a good justification passes both rows and the
+#: harness prints two `OK`s.  That is a cardinality defect, and the rule this
+#: project states for it is that a set of keys and a count are different claims:
+#: here the claim is *this fixture has exactly these declaration sites*, so the
+#: expectation is the sorted list of names and a repeat is a failure.
+#:
+#: Round 22's finding is the first entry: inside an `unsafe extern` block a
+#: declaration may mark itself `unsafe` (RFC 3484's per-item marker, whose `safe`
+#: opt-out this gate already reads), and both the keyword pass and the
+#: foreign-item pass then yielded it.  The mutation for it is token-preserving in
+#: the way this class demands — the marker stays and only the region assignment
+#: moves — and the two controls below it keep the fix known to NARROW rather than
+#: to disable, since dropping the foreign interior from the keyword pass must not
+#: cost the unmarked declaration or the ordinary `unsafe fn` outside a block.
+_SITE_INVENTORY_CASES = [
+    ("an explicitly-`unsafe` foreign declaration is ONE site", """
+unsafe extern "C" {
+    /// # Safety
+    /// Documented.
+    unsafe fn explicit();
+}
+""", ["explicit"]),
+    ("...and so is an unmarked one, in the same block", """
+unsafe extern "C" {
+    /// # Safety
+    /// Documented.
+    unsafe fn explicit();
+    /// # Safety
+    /// Documented.
+    fn implicit();
+    safe fn opted_out();
+}
+""", ["explicit", "implicit"]),
+    ("an `unsafe fn` OUTSIDE a foreign block is still a site", """
+/// # Safety
+/// Documented.
+pub unsafe fn standalone() {}
+""", ["standalone"]),
+    ("...and a block inside a fn body is keyed by that fn, once", """
+fn holder() {
+    // SAFETY: documented.
+    unsafe { f() }
+}
+""", ["holder"]),
+]
+
+
 #: **The justification predicates, as a cross-product of forms rather than a
 #: list of cases** (PR #895 review round 11).
 #:
@@ -2442,6 +2519,21 @@ def _self_test() -> int:
                 failures += 1
             else:
                 print(f"  OK   self-test '{name}' ({'accept' if expect_ok else 'reject'})")
+    # **The site inventory, with multiplicity.**  `_CASES` above judges each
+    # site it is handed; nothing there notices a site handed over twice, which is
+    # exactly round 22's defect.  These rows name the declarations a fixture must
+    # produce, so a repeat fails.
+    for name, src, expected in _SITE_INVENTORY_CASES:
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "fixture.rs"
+            p.write_text(src, encoding="utf-8")
+            got = sorted(decl for _o, decl, _r, _d in sites(p))
+            if got != sorted(expected):
+                print(f"  SELF-TEST FAIL: '{name}' site inventory {got}, "
+                      f"want {sorted(expected)}")
+                failures += 1
+            else:
+                print(f"  OK   self-test '{name}' (inventory)")
     # **The form matrix.**  Every marker form crossed with every enclosure, with
     # the verdict a property of the ENCLOSURE alone — a real comment justifies,
     # a literal never does.  A spelling this gate has not considered shows up as
@@ -2654,7 +2746,8 @@ pub extern "C" fn exported() {}
         print(f"unsafe-justification gate self-test FAILED ({failures})")
         return 1
     print(f"unsafe-justification gate self-test passed "
-          f"({len(_CASES)} site cases, {len(form_cases)} form-scan cases, "
+          f"({len(_CASES)} site cases, {len(_SITE_INVENTORY_CASES)} inventory "
+          f"cases, {len(form_cases)} form-scan cases, "
           f"{len(checks)} reconciliation cases).")
     return 0
 

@@ -450,6 +450,104 @@ def _python_code_view(text: str) -> str:
     return "".join(out)
 
 
+#: A single-character comparison against an angle bracket: the shape a
+#: hand-rolled signature-nesting walk is written in.  A longer literal (a test
+#: fixture holding `1 << 2`, a regex group name) does not match, because the
+#: question is whether a scan is deciding *this character*.
+_ANGLE_CHAR_LITERAL = re.compile("[\"'][<>][\"']")
+
+
+def hand_rolled_angle_nesting() -> list[str]:
+    """Angle-bracket character tests in this file outside `signature_terminator`.
+
+    **The mechanism, rather than a third telling.**  Round 14 established that an
+    angle bracket is a delimiter only outside a bracket group, fixed it in
+    `extern_block_items`, and wrote the reasoning into that function's docstring.
+    Round 18 then wrote `_body_open_brace` four hundred lines above it, counting
+    `<` unconditionally, and round 22 found both directions of the same defect
+    there.  Sharing the answer (which this cut does) stops those two from
+    diverging; it does not stop a *third* scan from being written beside them,
+    which is exactly what `bare_keyword_literals` exists to prevent one artefact
+    over -- and what its own docstring says a fixed site cannot reach.
+
+    So the question is asked of this file's code: `signature_terminator` owns the
+    Rust signature-nesting rule, and a character test against `<` or `>` outside
+    it is a second implementation of it.  **Measured before choosing the scope**:
+    this file has exactly two such tests and both are in that function, while the
+    other angle-bracket tests under `scripts/` all ask a *different language's*
+    question -- Lean notation, a Lean arrow, a Markdown autolink, a CommonMark
+    HTML-block end condition, a regex group name -- so a whole-repository check
+    would be mostly classification and this one is free.  The scope is stated
+    rather than implied: it is this file, because this file is where the rule
+    lives and where it recurred twice.
+
+    Read over `_python_code_view`, since the docstrings here quote the character
+    in order to explain it -- the same reason `bare_keyword_literals` gives.
+    """
+    source = Path(__file__)
+    text = source.read_text(encoding="utf-8")
+    scrubbed = _python_code_view(text)
+    owned: tuple[int, int] | None = None
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.FunctionDef) and node.name == "signature_terminator":
+            owned = (node.lineno, node.end_lineno or node.lineno)
+            break
+    if owned is None:
+        # The owner is gone, so this check has no subject.  Refusing rather than
+        # passing: a check whose subject has been deleted is the tautological pin
+        # this project refuses elsewhere, and it reports PASS while asserting
+        # nothing.
+        return [f"{source.name}: signature_terminator is missing, so the "
+                f"signature-nesting rule has no owner"]
+    out: list[str] = []
+    for number, line in enumerate(scrubbed.splitlines(), start=1):
+        if owned[0] <= number <= owned[1]:
+            continue
+        found = _ANGLE_CHAR_LITERAL.search(line)
+        if found is not None:
+            out.append(f"{source.name}:{number}: {found.group(0)} tested outside "
+                       f"signature_terminator, which owns the "
+                       f"signature-nesting rule")
+    return out
+
+
+def _angle_nesting_probe() -> list[str]:
+    """`hand_rolled_angle_nesting` run over a copy of this file with a second
+    implementation appended, so the self-test knows the check can FIRE.
+
+    A discipline check that has never rejected anything is indistinguishable from
+    one that is wrong, and this one's live answer is empty by construction, so its
+    passing case asserts nothing on its own.  The append is the mutation the class
+    calls for: it keeps every existing test where it is and ADDS a character
+    comparison outside the owner, which is precisely the shape a third scan is
+    written in.
+
+    It appends rather than splices at an anchor, and that is not a style choice:
+    the first attempt anchored on a `def` line whose text this very docstring's
+    sibling also contains, so the splice landed inside the probe's own string
+    literal and the copy would not parse.  A scanner's fixture must not be
+    self-referential -- the same rule that keeps these gates reading a code view
+    rather than the prose describing it.
+    """
+    import tempfile
+    source = Path(__file__)
+    text = source.read_text(encoding="utf-8")
+    # The character is built from its code point rather than written, because a
+    # literal here would be a hit in the probe's own source -- and exempting the
+    # probe by location is the hole this check exists to refuse.
+    second = "\n\ndef _spliced_second_scan(ch: str) -> int:\n    return 1 if ch == " \
+             + repr(chr(60)) + " else 0\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / source.name
+        copy.write_text(text + second, encoding="utf-8")
+        saved = globals()["__file__"]
+        try:
+            globals()["__file__"] = str(copy)
+            return hand_rolled_angle_nesting()
+        finally:
+            globals()["__file__"] = saved
+
+
 def bare_keyword_literals() -> list[str]:
     """Every word-boundary Rust-keyword spelling written outside `keyword()`.
 
@@ -732,12 +830,33 @@ def _body_open_brace(view: str, after_name: int) -> int | None:
       the body: it records a **wrong** span, so the real body lies outside it
       and an offset inside the const-generic expression is attributed to `g`.
 
-    Depth counts ``(``, ``[`` and ``<``.  ``->`` is consumed as a unit so its
-    ``>`` does not close an angle group that was never opened, and ``>>``
-    closes two.  A scan that reaches the end of the view without settling is
-    unparseable and returns `None`, which is the fail-closed answer for a set
-    of *bodies*: an offset the map cannot place resolves to `FILE_SCOPE`, which
-    no allowlist entry matches.
+    The nesting rule is `signature_terminator`'s, and the terminator set is
+    ``"{;"``: a ``{`` at zero nesting opens the body, a ``;`` there means the item
+    has none.  Reading the character back is the whole distinction — conflating
+    "no body" with "keep looking" is what makes a declaration read as a function.
+
+    **An angle bracket is a delimiter only outside a bracket group** (PR #895
+    review round 22).  Counting ``<`` unconditionally, as this function did, is
+    wrong in both directions, because a return type may hold an *expression*: an
+    array length and a const-generic argument are const expressions, so
+    ``-> [u8; 1 << 2]`` raised the angle depth twice with nothing to lower it and
+    ``-> [u8; 8 >> 1]`` clamped the shared counter at zero and then let the
+    closing ``]`` drive it negative.  Both resolve to `FILE_SCOPE`, which no
+    allowlist entry matches — so a *justified* site in such a function is reported
+    unjustified — and the docstring this replaces asserted the opposite of the
+    grammar: *"a comparison or a shift cannot appear in a type"*.
+
+    Round 14 had already established that, and fixed it in `extern_block_items`
+    one function above; this scan was written afterwards and reintroduced it.  So
+    the rule is no longer restated here — it is **shared**, and one mutation of
+    `signature_terminator` now fails both functions' witnesses.  Dropping angle
+    brackets altogether, round 14's own remedy, is not available at this call
+    site: the subject of this scan **is** a brace, so ``-> Foo<{ 1 }> { .. }``
+    would answer with the const-generic block.  Same rule, different terminator.
+
+    A region that ends without a terminator is unparseable and returns `None`,
+    which is the fail-closed answer for a set of *bodies*: an offset the map
+    cannot place resolves to `FILE_SCOPE`, which no allowlist entry matches.
     """
     i = view.find("(", after_name)
     if i < 0:
@@ -754,34 +873,11 @@ def _body_open_brace(view: str, after_name: int) -> int | None:
         i += 1
     else:
         return None
-    depth = 0
-    while i < len(view):
-        ch = view[i]
-        if ch == "-" and view.startswith("->", i):
-            i += 2
-            continue
-        if ch in "([":
-            depth += 1
-        elif ch == "<":
-            depth += 1
-        elif ch in ")]":
-            depth -= 1
-        elif ch == ">":
-            # `>` only ever closes a generic here; a comparison or a shift
-            # cannot appear in a type or a `where` clause.  Guarded against
-            # going negative so a stray one cannot make a later `{` read as
-            # nested.
-            depth = max(0, depth - 1)
-        elif ch == "{":
-            if depth == 0:
-                return i
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-        elif ch == ";" and depth == 0:
-            return None
-        i += 1
-    return None
+    found = signature_terminator(view, i, len(view), "{;")
+    if found is None:
+        return None
+    offset, character = found
+    return offset if character == "{" else None
 
 
 def _matching_brace(view: str, opened: int) -> int | None:
@@ -1179,6 +1275,71 @@ def extern_blocks(view: str) -> list[tuple[int, int, int]]:
     return blocks
 
 
+#: The characters that nest inside a Rust *signature*, and their closers.
+#:
+#: `<` and `>` are deliberately absent: whether they nest is a question about
+#: position, which `signature_terminator` answers.
+_SIGNATURE_OPENERS = "([{"
+_SIGNATURE_CLOSERS = ")]}"
+
+
+def signature_terminator(view: str, start: int, end: int,
+                         terminators: str) -> "tuple[int, str] | None":
+    """First `terminators` character at zero nesting in `view[start:end]`.
+
+    Returns `(offset, character)`, or `None` if the region ends without one.
+
+    **The nesting rule this file answers ONCE** (PR #895 review round 22).  Two
+    scans here ask where a Rust signature ends — one for the `;` that terminates a
+    foreign item, one for the `{` that opens a body — and the nesting rule is the
+    same for both.  It was written twice, and the two disagreed about the one hard
+    case: round 14 established that **an angle bracket is not always a
+    delimiter**, because an array length and a const-generic argument are const
+    *expressions*, so `[u8; 1 << 2]` is valid in a signature; round 18 then wrote
+    the second scan counting `<` unconditionally, four hundred lines above the
+    docstring recording that finding.  Both directions shipped.
+
+    The rule, stated once:
+
+    * `(`, `[` and `{` nest and their closers unnest, clamped at zero so a stray
+      closer cannot make a later terminator read as nested;
+    * `<` and `>` nest **only while the bracket depth is zero**.  Rust requires a
+      non-trivial const argument to be braced and an array length to sit inside
+      `[` … `]`, so an operator `<` or `>` is always inside a bracket group and a
+      delimiter `<` or `>` never is.  That makes the test *exact*, not merely
+      safe;
+    * `->` is one token, so its `>` closes no generic list;
+    * a character in `terminators` counts only at zero on **both** counters, and
+      otherwise nests if it is also an opener — which is how the same scan can
+      treat `{` as a foreign item's nesting and as a function body's terminator.
+
+    A caller that wants a body brace passes `"{;"` and reads the character back,
+    because a `;` at zero nesting means *there is no body* rather than *keep
+    looking*: conflating the two is what makes a declaration read as a function.
+    """
+    bracket = 0
+    angle = 0
+    i = start
+    while i < end:
+        ch = view[i]
+        if ch == "-" and view.startswith("->", i):
+            i += 2
+            continue
+        at_zero = bracket == 0 and angle == 0
+        if ch in terminators and at_zero:
+            return (i, ch)
+        if ch in _SIGNATURE_OPENERS:
+            bracket += 1
+        elif ch in _SIGNATURE_CLOSERS:
+            bracket = max(0, bracket - 1)
+        elif bracket == 0 and ch == "<":
+            angle += 1
+        elif bracket == 0 and ch == ">":
+            angle = max(0, angle - 1)
+        i += 1
+    return None
+
+
 def extern_block_items(view: str, start: int, end: int) -> list[tuple[int, int]]:
     """The `;`-terminated items of a foreign block, as spans.
 
@@ -1199,21 +1360,27 @@ def extern_block_items(view: str, start: int, end: int) -> list[tuple[int, int]]
     position by way of an array type or a const-generic block, and `[` and `{`
     already cover both, so no `;` that must be hidden sits at angle-bracket depth
     alone.  The docstring above always said *brackets*; the code over-reached.
+
+    **The rule is `signature_terminator`'s** (PR #895 review round 22): this scan
+    and `_body_open_brace` were two implementations of one nesting question, and
+    the second reintroduced the defect the first had removed — in the same file,
+    four hundred lines from the docstring above recording it.  Stating the finding
+    a second time is what had already failed, so the answer is shared: one
+    mutation of that function now fails every witness here.  Counting angle
+    brackets at bracket depth zero, which the shared rule does and this scan did
+    not, costs nothing for a `;` — a declaration's generic list is balanced before
+    its terminator.
     """
     items: list[tuple[int, int]] = []
     at = start
-    depth = 0
     index = start
     while index < end:
-        character = view[index]
-        if character in "([{":
-            depth += 1
-        elif character in ")]}":
-            depth = max(0, depth - 1)
-        elif character == ";" and depth == 0:
-            items.append((at, index))
-            at = index + 1
-        index += 1
+        found = signature_terminator(view, index, end, ";")
+        if found is None:
+            break
+        offset, _character = found
+        items.append((at, offset))
+        at = index = offset + 1
     if view[at:end].strip():
         items.append((at, end))
     return items
@@ -1412,6 +1579,50 @@ def _self_test() -> int:
         "a `where` clause after an array return type still finds the body",
         enclosing_fn(where_array, where_array.index("TOKEN")) == "a",
         enclosing_fn(where_array, where_array.index("TOKEN")),
+    )
+    # PR #895 review round 22: **a shift operator is not a generic
+    # delimiter.**  An array length and a const-generic argument are const
+    # EXPRESSIONS, so a return type can hold `<<` and `>>` -- and the
+    # superseded scan counted `<` unconditionally, so `1 << 2` raised the depth
+    # twice with nothing to lower it and `8 >> 1` clamped the shared counter at
+    # zero and then let the closing `]` drive it negative.  Both answered
+    # `FILE_SCOPE`, which no allowlist entry matches, so a JUSTIFIED site in
+    # such a function was reported unjustified.
+    #
+    # Token-preserving in the way this class demands, and against the array row
+    # directly above: same body, same token, same `[u8; ...]` return type --
+    # only the length expression differs.  Round 14 had already found this
+    # class in `extern_block_items` and its fix is one function above the one
+    # this repairs; the sweep was not run, which is why both directions shipped.
+    shl_ret = "fn a() -> [u8; 1 << 2] {\n    TOKEN;\n}\n"
+    check(
+        "a shift-left in a return type does not hide the body",
+        enclosing_fn(shl_ret, shl_ret.index("TOKEN")) == "a",
+        enclosing_fn(shl_ret, shl_ret.index("TOKEN")),
+    )
+    shr_ret = "fn a() -> [u8; 8 >> 1] {\n    TOKEN;\n}\n"
+    check(
+        "a shift-right in a return type does not hide the body either",
+        enclosing_fn(shr_ret, shr_ret.index("TOKEN")) == "a",
+        enclosing_fn(shr_ret, shr_ret.index("TOKEN")),
+    )
+    # ...and the two directions compose: an operator inside a bracket group
+    # that is itself inside a generic argument list.
+    shl_in_generic = "fn a() -> B<[u8; 1 << 2]> {\n    TOKEN;\n}\n"
+    check(
+        "a shift inside a generic argument is not a delimiter either",
+        enclosing_fn(shl_in_generic, shl_in_generic.index("TOKEN")) == "a",
+        enclosing_fn(shl_in_generic, shl_in_generic.index("TOKEN")),
+    )
+    # The generic list on the fn's own NAME can hold a `Fn(..)` bound, so the
+    # first `(` this scan matches is inside it and the `>` that closes the list
+    # arrives with the angle counter already at zero.  Clamping is what keeps
+    # that from driving it negative.
+    fn_bound = "fn a<T: Fn(u8) -> u8>(x: T) -> u8 {\n    TOKEN;\n}\n"
+    check(
+        "a `Fn(..)` bound on the fn's own generics still finds the body",
+        enclosing_fn(fn_bound, fn_bound.index("TOKEN")) == "a",
+        enclosing_fn(fn_bound, fn_bound.index("TOKEN")),
     )
     # ...and the controls, so the fix is known to NARROW rather than to disable:
     # a genuinely bodyless declaration must still have no body.
@@ -1666,6 +1877,17 @@ def _self_test() -> int:
     # thing three rounds of site-by-site fixes could not do.
     bare = bare_keyword_literals()
     check("no gate spells a Rust keyword bare", not bare, "; ".join(bare))
+    # **...and the signature-nesting rule has one owner** (PR #895 review round
+    # 22).  The sibling discipline one level over: sharing an answer stops two
+    # implementations from diverging, and does not stop a third from being
+    # written.  Both directions are pinned -- the live tree is clean, and the
+    # check is known to FIRE, because a discipline check that cannot fire is
+    # indistinguishable from one that is wrong.
+    unowned = hand_rolled_angle_nesting()
+    check("the signature-nesting rule has one owner", not unowned,
+          "; ".join(unowned))
+    check("...and the check fires on a second implementation",
+          bool(_angle_nesting_probe()))
     # **The shape the check could not see** (PR #895 review round 21).  The
     # plain pattern requires `\b` on both sides of ONE keyword; an alternation
     # with a `\s+` tail is the same defect and passed unreported for as long as

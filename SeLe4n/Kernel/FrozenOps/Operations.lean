@@ -46,8 +46,8 @@ than misleading its next reader.
 | 7 | `frozenEndpointSend`         | `endpointSendDual`         | IPC          |
 | 8 | `frozenEndpointReceive`      | `endpointReceiveDual`      | IPC          |
 | 9 | `frozenEndpointCall`         | `endpointCall`             | IPC          |
-|10 | `frozenEndpointReply`        | `endpointReply`            | IPC          |
-|10a| `frozenEndpointReplyWithDonationReturn` | the `.reply` operation | IPC |
+|10 | `frozenEndpointReply`        | `endpointReplyOnCore`      | IPC          |
+|10a| `frozenEndpointReplyWithDonationReturn` | `endpointReplyCrossCoreDispatch` | IPC |
 |11 | `frozenCspaceLookup`         | `cspaceLookupSlot`         | Capability   |
 |12 | `frozenCspaceLookupSlot`     | `cspaceLookupSlot` (root)  | Capability   |
 |13 | `frozenCspaceMint`           | `cspaceMint`               | Capability   |
@@ -811,7 +811,18 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     | none => .error .objectNotFound
 
 /-- Q7-C2: Frozen endpoint reply — reply to a blocked caller.
-Mirrors `endpointReply`. -/
+
+Mirrors **`endpointReplyOnCore`** (`IPC/CrossCore/EndpointReply.lean`), the leg
+the live `.reply` arm dispatches, and *not* the bare single-core `endpointReply`
+this docstring used to name (PR #895 review round 22).  The two differ on exactly
+the authority question the body below decides: the cross-core leg's `_replier` is
+unused, because the 6J-lYm gate removal made authority the presented reply
+capability, while the bare leg keeps `replier == expected` and so refuses a
+delegated cap holder.  This mirror accepts one, as the comments in the body say
+and as `endpointReplyOnCore` does — so naming the bare leg made the claim false
+on every delegated input, and `FrozenOpsSuite`'s FO-031 differential compared
+against it.  `frozenBranchLiveLeg` (`FrozenOps/Agreement.lean`) now carries the
+counterpart as data rather than as this sentence. -/
 def frozenEndpointReply (replierId : SeLe4n.ThreadId)
     (targetId : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (msg : IpcMessage) :
     FrozenKernel Unit :=
@@ -986,8 +997,10 @@ def frozenApplyReplyDonation (st : FrozenSystemState) (replier : SeLe4n.ThreadId
 /-- **WS-RM, frozen mirror of the whole `.reply` operation** (PR #895 review
 round 13).
 
-`frozenEndpointReply` above is the mirror of the **bare** `endpointReply`, and
-that is exactly what `FrozenOpsSuite`'s FO-031 differential compares it against.
+`frozenEndpointReply` above is the mirror of the reply **leg**
+(`endpointReplyOnCore`; not the bare `endpointReply`, whose authority gate this
+surface does not carry — PR #895 review round 22), and that is exactly what
+`FrozenOpsSuite`'s FO-031 differential compares it against.
 But the live `.reply` *operation* is that reply **followed by the donation
 return**, and this surface had only the first half -- so `Reply.consumed`, which
 deliberately keeps a stack head's links because "the pop that follows clears
@@ -1009,11 +1022,14 @@ The donation is resolved on the **pre**-state, because the reply clears the
 review round 15), donation or none.  The answered caller was blocked *on* the
 recorded server, so it was one of that server's waiters and contributed to its
 `TCB.pipBoost`; the reply makes it `.ready`, so the boost has to be recomputed
-from whoever is left.  Both live compositions do this -- `endpointReplyWithDonation`
-with `revertPriorityInheritance` (`IPC/Operations/Donation.lean`) and
+from whoever is left.  Both live compositions do this -- the **live** spine
 `endpointReplyCrossCoreDispatch` with `propagatePipChainCrossCore`
-(`IPC/CrossCore/EndpointReplyDispatch.lean`) -- and this surface did not, so a
-stale boost survived.  That is not inert here: `frozenEnsureRunnable` buckets by
+(`IPC/CrossCore/EndpointReplyDispatch.lean`), which is what the `.reply` arm
+dispatches and what this composite is compared against, and the superseded
+single-core `endpointReplyWithDonation` with `revertPriorityInheritance`
+(`IPC/Operations/Donation.lean`, no production caller and a reply leg that
+refuses a delegated cap holder -- PR #895 review round 22) -- and this surface
+did not, so a stale boost survived.  That is not inert here: `frozenEnsureRunnable` buckets by
 `frozenEffectivePriority`, which reads `pipBoost`, so the next time the server is
 made runnable it enters the run queue at a priority it inherited from a client
 it has already answered.
@@ -1536,7 +1552,10 @@ def frozenOpCoverage : SyscallId → Bool
   | .reply => true            -- frozenEndpointReplyWithDonationReturn:
                              -- the reply leg then the donation return, as the
                              -- live `.reply` operation does.  `frozenEndpointReply`
-                             -- alone is the mirror of the BARE `endpointReply`.
+                             -- alone is the mirror of the LEG `endpointReplyOnCore`
+                             -- -- not the bare `endpointReply`, which keeps the
+                             -- `replier == expected` gate this surface does not
+                             -- (PR #895 review round 22).
   | .cspaceMint => true       -- frozenCspaceMint
   | .cspaceCopy => false      -- builder-only (structural copy)
   | .cspaceMove => false      -- builder-only (structural move)
