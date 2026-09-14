@@ -1098,7 +1098,8 @@ not move (`LockSet.size_insertOrMerge_of_containsKey`).
 That equality is a fact about *reachable* states, not one `ipcInvariantFull`
 entails: the bundle admits `.blockedOnReply epId rt` for any `rt` and relates
 `rt` to no donation, which is the same gap WS-RR RR7.22 met from the cancellation
-end and had to close with a stated `donationHolderIsReplyTarget`.  So the
+end and had to close with a stated `donationHolderIsReplyTarget` — since WS-HP
+HP5.3 the head-keyed `donatedContextIsOwnerFrameHead`.  So the
 resolved bound in `ResolvedFootprintBounds` supplies it as a hypothesis rather
 than deriving it, and this parametric form takes the equality directly.
 

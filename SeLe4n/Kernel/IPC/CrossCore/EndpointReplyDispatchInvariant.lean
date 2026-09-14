@@ -555,7 +555,9 @@ step.  **Not entailed by `ipcInvariantFull`**: `donationOwnerValid` relates a
 caller's recorded reply target to no donation, and `donationChainWellFormed`
 carries no binding clause at all (see its docstring's *what is deliberately
 absent*).  So it is stated, for exactly the reason WS-RR RR7.22 stated
-`donationHolderIsReplyTarget` from the cancellation end.
+`donationHolderIsReplyTarget` from the cancellation end — a fact WS-HP HP5.3
+re-keyed onto the frame as `donatedContextIsOwnerFrameHead`, since the reclaim now
+reads the stack too.
 
 Stated on the **pre-state**, like `hDonationReturned` on the bundle composite
 beside it and unlike `hStackValid`: `replyStackOuterCallerValid`'s subject is a

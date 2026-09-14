@@ -394,8 +394,8 @@ holder's, resolved from **`st`** rather than from a supplied TCB.
 
 Every other resolver in this family takes the victim's `TCB`, because the victim
 is the operation's argument.  The holder is not: it is *resolved* by
-`cancelledCallerDonation?` out of the victim's recorded reply target, so its
-footprint members have to be read out of the state too.  That asymmetry is real
+`cancelledCallerDonation?` — since WS-HP HP5.1, out of the context the victim's own
+reply frame heads — so its footprint members have to be read out of the state too.  That asymmetry is real
 and is why this pair takes `Option ThreadId` — `none` on every arm but a reply
 arm whose caller had donated.
 
@@ -1573,11 +1573,14 @@ the frame the reclaim's pop clears (`storeDonationHeadPop` →
 own resolver for *which* context is handed back, through the same
 `replyStackHead?` every push and pop footprint reads the head with.
 
-On every reachable state it is the cancelled caller's own reply object — the
-frame its `Call` pushed — so it merges with `cancelConsumedReply?` by key.  It is
-declared on its own because the pop writes whatever the context's `scReply`
-names, and a footprint is the union over all argument values, not over the
-states an invariant admits. -/
+It **is** the cancelled caller's own reply object — the frame its `Call` pushed —
+so it merges with `cancelConsumedReply?` by key.  Until WS-HP HP5.1 that was a
+claim about reachable states; the head-driven trigger makes it a theorem
+(`cancelReclaimHead?_eq_replyObject`), because the resolver reaches the context
+*through* that frame and `replyFrameHeadContext?` validates the context's `scReply`
+against it.  The member is still declared on its own, because the pop writes
+whatever the context's `scReply` names and a footprint is the union over all
+argument values, not over the states an invariant admits. -/
 def cancelReclaimHead? (st : SystemState) (victimTid : SeLe4n.ThreadId) (tcb : TCB) :
     Option SeLe4n.ReplyId :=
   ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.fst).bind
@@ -1603,6 +1606,42 @@ theorem cancelReclaimHead?_of_donation (st : SystemState)
   rw [h]
   rfl
 
+/-- **WS-HP HP5.4: the head the reclaim's pop clears is the cancelled caller's own
+reply object** — a theorem of the head-driven trigger, where it used to be a
+sentence about the states `ipcInvariantFull` admits.
+
+This is `replyStackHeadIsAnsweredReply`'s content seen from the cancellation end,
+and it holds for the same reason HP2.4's reply-side twin does: the resolver reaches
+the context *through* the victim's frame, and `replyFrameHeadContext?` accepts the
+`.head` link only when the context's own `scReply` names that frame back.  So the
+two footprint members `cancelReclaimHead?` and `cancelConsumedReply?` provably
+carry the same key, rather than doing so on every state somebody has checked.
+
+The binding-driven reclaim could not state this at all: it reached the context out
+of the holder's stored binding, which says nothing about any reply object. -/
+theorem cancelReclaimHead?_eq_replyObject (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+    (holder : SeLe4n.ThreadId)
+    (h : Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb = some (scId, holder)) :
+    cancelReclaimHead? st victimTid tcb = tcb.replyObject := by
+  rw [cancelReclaimHead?_of_donation st victimTid tcb scId holder h]
+  -- Unfolded here rather than through `cancelledCallerDonation?_some`, which lives
+  -- in a module downstream of this one; the two extract the same three facts.
+  unfold Lifecycle.Suspend.cancelledCallerDonation? at h
+  cases hIpc : tcb.ipcState with
+  | blockedOnReply ep rt =>
+    rw [hIpc] at h
+    cases hRO : tcb.replyObject with
+    | none => rw [hRO] at h; cases h
+    | some rid =>
+      rw [hRO] at h
+      obtain ⟨hHead, _⟩ := replyFrameHeadHolder?_eq_some h
+      obtain ⟨_, sc, _, _, hSc, hRec⟩ := replyFrameHeadContext?_eq_some hHead
+      unfold replyStackHead?
+      rw [hSc]
+      simpa using hRec
+  | _ => rw [hIpc] at h; cases h
+
 /-- **WS-OD (`v0.35.4`)**: the **frame above the cancelled caller's own** — the
 Reply `detachFrameAboveThreadReply` rewrites (`prev := none`) when the caller is a
 *middle* caller of its stack, so that the frame above becomes the bottom of the
@@ -1611,10 +1650,11 @@ is consumed.  Keyed on the reply arm, since only that arm detaches, and resolved
 through `replyFrameAbove?` — the same two fields the detach reads
 (`replyFrameAbove?_of_detach_store` ties the member to the store).
 
-`none` for a head frame (`next = .head _`): a head is popped by the reclaim,
-never detached, so on every reachable state this member and `cancelReclaimHead?`
-are never both `some`.  The footprint declares them independently because it
-does not get to assume that. -/
+`none` for a head frame (`next = .head _`): a head is popped by the reclaim, never
+detached, so this member and `cancelReclaimHead?` are never both `some` — since
+WS-HP HP5.4 a theorem (`cancelDetachedFrameAbove?_of_donation`) rather than an
+observation about reachable states.  The footprint declares them independently
+because it does not get to assume that. -/
 def cancelDetachedFrameAbove? (st : SystemState) (tcb : TCB) : Option SeLe4n.ReplyId :=
   match tcb.ipcState with
   | .blockedOnReply _ _ => tcb.replyObject.bind (replyFrameAbove? st)
@@ -1634,6 +1674,66 @@ def cancelSplicedFrameBelow? (st : SystemState) (tcb : TCB) : Option SeLe4n.Repl
   match tcb.ipcState with
   | .blockedOnReply _ _ => tcb.replyObject.bind (replyFrameBelow? st)
   | _ => none
+
+/-- **WS-HP HP5.4: a reclaim and a removal are structurally exclusive** — the pop
+clears a head, the detach rewrites a frame above one, and no frame is both.
+
+Under the head-driven trigger this is a theorem rather than a sentence about the
+states the invariants admit.  The reclaim resolves a context only through the
+victim's own frame's `.head` link, and a frame that heads a context has no frame
+above it (`replyFrameAbove?_of_headContext`, HP1.2's "a frame with a frame above it
+heads nothing" read the other way) — so on any state where the reclaim fires, both
+removal members are `none`, and the *reachable* cancellation footprint stays below
+the ceiling the members raise between them.
+
+The binding-driven reclaim could not state this: it reached the context out of the
+holder's stored binding, which relates to no reply frame at all, so "never both
+`some`" was an observation about the fixtures.  The footprint still declares the
+members independently, because it is the union over all argument values rather than
+over the states a theorem covers. -/
+theorem cancelDetachedFrameAbove?_of_donation (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+    (holder : SeLe4n.ThreadId)
+    (h : Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb = some (scId, holder)) :
+    cancelDetachedFrameAbove? st tcb = none := by
+  unfold cancelDetachedFrameAbove?
+  unfold Lifecycle.Suspend.cancelledCallerDonation? at h
+  cases hIpc : tcb.ipcState with
+  | blockedOnReply ep rt =>
+    rw [hIpc] at h
+    cases hRO : tcb.replyObject with
+    | none => rw [hRO] at h; cases h
+    | some rid =>
+      rw [hRO] at h
+      obtain ⟨hHead, _⟩ := replyFrameHeadHolder?_eq_some h
+      simpa using replyFrameAbove?_of_headContext st rid scId hHead
+  -- Every other arm returns `none` outright, so the member agrees with no appeal
+  -- to the resolved donation.
+  | _ => rfl
+
+/-- **WS-HP HP5.4**: and so is the splice's frame below, which composes the same
+`replyFrameAbove?` (`replyFrameBelow?_of_headContext`).  Stated beside its sibling
+rather than derived from it, because the two members read different fields and a
+consumer of one should not have to unfold the other. -/
+theorem cancelSplicedFrameBelow?_of_donation (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+    (holder : SeLe4n.ThreadId)
+    (h : Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb = some (scId, holder)) :
+    cancelSplicedFrameBelow? st tcb = none := by
+  unfold cancelSplicedFrameBelow?
+  unfold Lifecycle.Suspend.cancelledCallerDonation? at h
+  cases hIpc : tcb.ipcState with
+  | blockedOnReply ep rt =>
+    rw [hIpc] at h
+    cases hRO : tcb.replyObject with
+    | none => rw [hRO] at h; cases h
+    | some rid =>
+      rw [hRO] at h
+      obtain ⟨hHead, _⟩ := replyFrameHeadHolder?_eq_some h
+      simpa using replyFrameBelow?_of_headContext st rid scId hHead
+  -- Every other arm returns `none` outright, so the member agrees with no appeal
+  -- to the resolved donation.
+  | _ => rfl
 
 /-- WS-HP HP3.1: the endpoint arms splice nothing. -/
 @[simp] theorem cancelSplicedFrameBelow?_of_blockedEndpoint (st : SystemState) (tcb : TCB)

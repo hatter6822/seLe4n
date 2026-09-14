@@ -324,6 +324,20 @@ theorem abortHolderPendingIpc_preserves_objectIndexSetComplete (st : SystemState
           hInv hObjSetInv hComplete h
     · exact hComplete
 
+/-- **WS-HP HP5.2**: a holder the pre-state cannot resolve is a holder the abort
+leaves alone -- `abortHolderPendingIpc` matches on this very lookup, so the claim
+is the first arm of its own definition.
+
+Worth a name because the head-driven trigger makes the case reachable: it reports
+a scheduling context's `boundThread`, which no invariant ties to a stored TCB, so
+the reclaim can name a holder that resolves to nothing.  What rules that state out
+is the pop declining (`returnDonatedSchedContext_ok_server_not_reserved` and its
+own server lookup), and a consumer needs this frame to say so. -/
+@[simp] theorem abortHolderPendingIpc_eq_self_of_lookup_none (st : SystemState)
+    (holder : SeLe4n.ThreadId) (h : lookupTcb st holder = none) :
+    abortHolderPendingIpc st holder = st := by
+  unfold abortHolderPendingIpc; rw [h]
+
 /-- **WS-OD OD1.4**: the holder abort is the identity unless the holder is
 blocked sending or calling.
 

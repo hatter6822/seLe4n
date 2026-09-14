@@ -2195,9 +2195,16 @@ private def pushStoreShaped (donorBinding : SchedContextBinding)
         (.tcb { mkTcb 91 40 none with
                   schedContextBinding := donorBinding, replyObject := donorReply? })
     |>.withObject pushServer.toObjId (.tcb (mkTcb 92 30 none))
+    -- **WS-HP HP5 (fixture correction)**: the outer caller names the reply object it
+    -- is blocked on.  `pushOuterReply.caller` has always named it back, so the store
+    -- was one `replyCallerLinkage` forbids; and since HP5.1 the cancellation
+    -- reclaim's trigger reads exactly this field, so the omission made the OD5.2
+    -- checks below pass for the wrong reason.  Two local re-spellings of this TCB
+    -- collapse onto `pushOuterBlockedTcb` with it.
     |>.withObject pushOuter.toObjId
         (.tcb { mkTcb 93 50 none with
-                  ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor) })
+                  ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
+                  replyObject := some pushOuterReply })
     |>.build)
 
 /-- The donor's own reply object, fresh: linked to the donor, on no stack —
@@ -2208,6 +2215,18 @@ private def pushFreshHead : Reply :=
 /-- The well-formed depth-2 pre-state. -/
 private def pushStore : SystemState :=
   pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply) pushFreshHead
+
+/-- The outer caller's TCB exactly as `pushStoreShaped` holds it: reply-blocked on
+the donor and naming the reply object that blocking is about.
+
+One definition, because three checks below need it and two of them used to spell it
+again locally — and one of those spellings carried a note saying no assertion read
+the `replyObject`, which WS-HP HP5.1 made false by keying the cancellation reclaim's
+trigger on that very field. -/
+private def pushOuterBlockedTcb : TCB :=
+  { mkTcb 93 50 none with
+      ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
+      replyObject := some pushOuterReply }
 
 private def pushBindingOf (st : SystemState) (tid : SeLe4n.ThreadId) :
     Option SchedContextBinding :=
@@ -2380,17 +2399,21 @@ private def runDonationPushChecks : IO Unit := do
   -- OD5.2: the middle-caller policy, from the cancellation end.  The reclaim
   -- fires for the immediate donor and declines below the cut; both are the
   -- chosen `severAtCut` policy rather than an omission.
-  assertBool "OD5.2: the reclaim fires for the caller the holder names as owner"
-    (Lifecycle.Suspend.cancelledCallerDonation? pushStore pushOuter
-       { mkTcb 93 50 none with
-           ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor) }
+  -- **WS-HP HP5.3**: both restated on the STACK, which is what the trigger reads
+  -- since HP5.1.  The first fires because the victim's own frame heads the context;
+  -- the second declines because a frame sits above it — and that state is now the
+  -- one the **live push** produces, rather than a hand-shaped `.unbound` donor.
+  -- Before this correction both passed for the same wrong reason: the TCB they
+  -- passed carried no `replyObject` at all, so the trigger declined on the first
+  -- too and the pair discriminated nothing.
+  assertBool "OD5.2: the reclaim fires when the victim's own frame heads the context"
+    (Lifecycle.Suspend.cancelledCallerDonation? pushStore pushOuter pushOuterBlockedTcb
        == some (pushSc, pushDonor))
-  assertBool "OD5.2: the reclaim declines below the cut (the holder donated onward)"
-    (Lifecycle.Suspend.cancelledCallerDonation?
-       (pushStoreShaped .unbound (some pushDonorReply) pushFreshHead) pushOuter
-       { mkTcb 93 50 none with
-           ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor) }
-       == none)
+  assertBool "OD5.2: the reclaim declines below the cut (a frame sits above the victim's)"
+    (match donateSchedContext pushStore pushDonor pushServer pushSc with
+     | .ok pushed =>
+         Lifecycle.Suspend.cancelledCallerDonation? pushed pushOuter pushOuterBlockedTcb == none
+     | .error _ => false)
   assertBool "OD5.2: the policy this kernel implements is `severAtCut`"
     (cancelledMiddleCallerPolicy == CancelledMiddleCallerPolicy.severAtCut)
   -- OD4.7: the `.call` footprint already declares every object the push writes.
@@ -2418,13 +2441,9 @@ private def runMiddleCallerDetachChecks : IO Unit := do
   | .error e =>
     assertBool s!"the detach witness needs a depth-2 push (got {reprStr e})" false
   | .ok pushed =>
-    -- The outer caller, carrying the reply object it is blocked on.  Built here
-    -- rather than in `pushStoreShaped`, whose `pushOuter` is shared with every
-    -- assertion above and whose `replyObject` none of them reads.
-    let outerTcb : TCB :=
-      { mkTcb 93 50 none with
-          ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
-          replyObject := some pushOuterReply }
+    -- The outer caller, exactly as the store holds it (WS-HP HP5: one definition,
+    -- since the reclaim's trigger now reads its `replyObject`).
+    let outerTcb : TCB := pushOuterBlockedTcb
     -- Step one: the detach's WRITING arm.  Every `detachReplyFrameAbove` result
     -- proved elsewhere is discharged on a state whose frame has nothing above
     -- it, where the step is the identity; this is the arm that stores.
@@ -2525,10 +2544,7 @@ blocked on.
 `§3.19`'s detach witness builds the same TCB for the *cancellation* path; the
 reply path answers the very same frame, which is the point — one removal step,
 two callers of it. -/
-private def replyRemovalOuterTcb : TCB :=
-  { mkTcb 93 50 none with
-      ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
-      replyObject := some pushOuterReply }
+private def replyRemovalOuterTcb : TCB := pushOuterBlockedTcb
 
 /-- **WS-RM**: a thread holding a *copy* of the outer caller's reply capability,
 homed on core 1 -- a **delegated** replier.

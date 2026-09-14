@@ -1121,7 +1121,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "abortPendingIpcOnEndpoint_preserves_ip
 # the return well defined stated rather than assumed.
 run_check "INVARIANT" rg -n '^def cancelledCallerDonation\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^def returnDonationToCancelledCaller' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def donationHolderIsReplyTarget' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+# WS-HP HP5.2: the coherence fact is re-keyed with the resolver -- the head
+# reading's, not the recorded reply target's -- and the retired one is deleted
+# rather than left beside it, since a stated fact with no consumer is the shape
+# this project retires.
+run_check "INVARIANT" rg -n '^def donatedContextIsOwnerFrameHead' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_negative_check "INVARIANT" rg -n 'donationHolderIsReplyTarget' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean SeLe4n/Kernel/Lifecycle/Suspend.lean tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_no_donation_to_victim' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 # Relation, not presence: the reply arm must call the return, and call it
 # **before** the restore — the return reads the caller's `.blockedOnReply` state,
@@ -2189,8 +2194,12 @@ run_check "INVARIANT" rg -n '^theorem cancelledMiddleCaller_severs_at_cut' SeLe4
 # exhibited the target's new binding would be true of both policies.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelledMiddleCaller_severs_at_cut[^\n]*(\n([ \t][^\n]*)?)*∀ tid, tid ≠ originalOwner → tid ≠ serverTid → st.\.getTcb\? tid = st\.getTcb\? tid" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 # ...and the same policy from the cancellation end, in both directions: the
-# reclaim fires for the immediate donor and declines below the cut.
-run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_some_of_immediate_donee' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+# reclaim fires for the holder of the context the answered caller's frame heads,
+# and declines below the cut.  WS-HP HP5.1 re-keyed the trigger from the victim's
+# recorded reply target onto that frame, so the "fires" half is now
+# `_some_of_frame_head`; HP5's own section pins the hypothesis SHAPE, and this
+# one pins that OD5.2's policy claim still has both directions named.
+run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_some_of_frame_head' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_none_below_the_cut' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_arm_below_the_cut' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 
@@ -12562,8 +12571,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi
 # values; no reachable state supplies them all distinctly, because the returned
 # donation's owner IS the answered caller.  `ipcInvariantFull` does not entail
 # that -- it admits `.blockedOnReply epId rt` for any `rt` and relates `rt` to no
-# donation -- so it is a STATED hypothesis, the reply-side twin of WS-RR RR7.22's
-# `donationHolderIsReplyTarget`, not a derived one.
+# donation -- so it is a STATED hypothesis, not a derived one: the reply-side twin
+# of the cancellation path's, which WS-RR RR7.22 named `donationHolderIsReplyTarget`
+# and WS-HP HP5.3 re-keyed onto the frame as `donatedContextIsOwnerFrameHead`.
 run_check "INVARIANT" rg -n '^def replyDonationOwnerIsAnsweredCaller' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_seventeen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twentytwo_of_owner_eq_target' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
@@ -13199,5 +13209,79 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenApplyReplyDonation
 # NEGATIVE: and the surface must not grow a second validity convention.
 run_negative_check "INVARIANT" rg -n 'toValid\?' SeLe4n/Kernel/FrozenOps/Operations.lean SeLe4n/Kernel/FrozenOps/Core.lean
 run_prose_check "TRACE" rg -n 'the frozen composite refuses it with the same error' tests/FrozenOpsSuite.lean
+
+# ---------------------------------------------------------------------------
+# WS-HP HP5 -- the cancellation path's donation trigger flips
+# ---------------------------------------------------------------------------
+# (1) The reclaim's trigger IS the victim's own reply frame, read through the
+# frame-keyed resolver both reply spines already use.  Relation, not presence: the
+# resolver's body must be `replyFrameHeadHolder?` of `tcb.replyObject`, and the
+# `.blockedOnReply` arm gate must survive (it is the ARM selector, which every
+# exclusivity lemma in the cancellation family reads).
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelledCallerDonation\?[^\n]*(\n([ \t][^\n]*)?)*\| \.blockedOnReply _ _ =>[^\n]*(\n([ \t][^\n]*)?)*\| some rid => replyFrameHeadHolder\? st rid" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# NEGATIVE: the retired binding-driven body -- token-preserving, since it keeps the
+# arm gate and the pair and changes only WHERE the holder comes from.  This is the
+# reading that declines on an orphan head, which is the state HP6's splice creates.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelledCallerDonation\?[^\n]*(\n([ \t][^\n]*)?)*\| \.donated scId owner => if owner == tid then" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# NEGATIVE: and it must not read the frame of the RECORDED REPLY TARGET instead of
+# the victim's own -- the provenance mutation, which keeps `replyFrameHeadHolder?`.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelledCallerDonation\?[^\n]*(\n([ \t][^\n]*)?)*\(st\.getTcb\? holder\)\.bind \(·\.replyObject\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# (2) The victim's id is not consulted, pinned rather than left to an underscore:
+# the binding reading's `owner == tid` check is what the structure replaces.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelledCallerDonation\?_independent_of_victim' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_eq_answeredFrameHeadContext\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# (3) HP5.2: the generalised success lemma takes the context and its bound thread
+# as ARGUMENTS, so the head reading can supply them; the binding-keyed form is its
+# instance rather than a second proof.  Relation, not presence.
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_of_boundAndRecipient' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem returnDonatedSchedContext_ok_under_invariants[^\n]*(\n([ \t][^\n]*)?)*exact returnDonatedSchedContext_ok_of_boundAndRecipient" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# (4) HP5.2: what a successful pop says about its server id, and the frame that
+# lets a consumer act on it.  The head reading names a `boundThread` no invariant
+# ties to a stored TCB, so the pop declining is what rules the case out.
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_server_not_reserved' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem abortHolderPendingIpc_eq_self_of_lookup_none' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+# (5) HP5.3: below the cut the reclaim declines on the STACK -- a frame with a
+# frame above it heads nothing -- so the restatement carries no binding hypothesis.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelledCallerDonation\?_none_below_the_cut[^\n]*(\n([ \t][^\n]*)?)*hDonatedOnward : replyFrameAbove\? st rid = some above" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_some_of_frame_head' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+# NEGATIVE: the binding-keyed premise of either, which is what HP5.3 retires.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelledCallerDonation\?_none_below_the_cut[^\n]*(\n([ \t][^\n]*)?)*hDonatedOnward : holderTcb\.schedContextBinding = \.unbound" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+# (6) HP5.4: two claims the flip turns from fixture observations into theorems --
+# the head the pop clears IS the victim's own reply object, and a reclaim excludes
+# both removal members.  Relation, not presence: each must be stated over the
+# RESOLVED donation rather than over a supplied pair.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelReclaimHead\?_eq_replyObject[^\n]*(\n([ \t][^\n]*)?)*cancelReclaimHead\? st victimTid tcb = tcb\.replyObject" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDetachedFrameAbove\?_of_donation[^\n]*(\n([ \t][^\n]*)?)*cancelDetachedFrameAbove\? st tcb = none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelSplicedFrameBelow\?_of_donation[^\n]*(\n([ \t][^\n]*)?)*cancelSplicedFrameBelow\? st tcb = none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# (7) And the witness FIRES the reclaim, which nothing in the tree did before: the
+# agreeing shape plus the orphan-head shape on which the two readings differ, with
+# both answers computed side by side so the assertions are known to discriminate.
+run_prose_check "TRACE" rg -n 'the head-driven cancellation reclaim' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^private def stOrphanHeadReclaim' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def runFrameHeadReclaimChecks[^\n]*(\n([ \t][^\n]*)?)*the RETIRED binding-driven reading declines here" tests/SmpCancellationSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def runFrameHeadReclaimChecks[^\n]*(\n([ \t][^\n]*)?)*the head-driven trigger resolves the real holder" tests/SmpCancellationSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def runSmpCancellationChecks[^\n]*(\n([ \t][^\n]*)?)*runFrameHeadReclaimChecks" tests/SmpCancellationSuite.lean'
+# (8) And the two fixtures that CLAIMED to exercise the reclaim, corrected rather
+# than re-blessed.  Both were found by the flip, not by the sweep the plan
+# prescribed -- a sweep over a named list of files is a recognised set standing in
+# for a derived one, and `MainTraceHarness.lean` was not on the list.
+# The golden-trace scenarios now carry the stack a live `Call` builds, so the
+# reclaim fires and `main_trace_smoke.expected` stays byte-identical.
+run_check "INVARIANT" bash -lc 'rg -U -n "let victimReply : SeLe4n\.Kernel\.Reply := \{[^\n]*(\n([ \t][^\n]*)?)*next := some \(\.head scH\)" SeLe4n/Testing/MainTraceHarness.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "let holderSc : SeLe4n\.Kernel\.SchedContext := \{[^\n]*(\n([ \t][^\n]*)?)*scReply := some rH" SeLe4n/Testing/MainTraceHarness.lean'
+# NEGATIVE: and the victim must name the frame, or the trigger reads nothing --
+# token-preserving, since the binding and the context survive the mutation.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "ipcState := \.blockedOnReply epH \(some hTid\),\n    schedContextBinding := \.unbound \}" SeLe4n/Testing/MainTraceHarness.lean'
+# The push store's outer caller names the reply object it is blocked on, which
+# `replyCallerLinkage` always required and which the OD5.2 checks now read -- so the
+# TCB is ONE definition rather than the store's plus two local re-spellings.
+run_check "INVARIANT" bash -lc 'rg -U -n "\|>\.withObject pushOuter\.toObjId[^\n]*(\n([ \t][^\n]*)?)*replyObject := some pushOuterReply" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" rg -n '^private def pushOuterBlockedTcb' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def replyRemovalOuterTcb : TCB := pushOuterBlockedTcb' tests/SmpIpcSuite.lean
+# ...and the declining half runs on the state the LIVE push produces, not on a
+# hand-shaped `.unbound` donor: the mutation that made the pair vacuous was passing
+# a TCB with no reply object to both halves.
+run_check "INVARIANT" bash -lc 'rg -U -n "the reclaim declines below the cut[^\n]*(\n([ \t][^\n]*)?)*donateSchedContext pushStore pushDonor pushServer pushSc" tests/SmpIpcSuite.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "the reclaim declines below the cut[^\n]*(\n([ \t][^\n]*)?)*pushStoreShaped \.unbound" tests/SmpIpcSuite.lean'
 
 finalize_report

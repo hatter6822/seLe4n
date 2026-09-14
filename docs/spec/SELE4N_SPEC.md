@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.38` (`lakefile.toml`) |
+| **Package version** | `0.35.39` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 379,856 across 330 Lean files |
-| **Test LoC** | 76,925 across 70 Lean test suites |
-| **Proved declarations** | 12,693 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 380,359 across 330 Lean files |
+| **Test LoC** | 77,138 across 70 Lean test suites |
+| **Proved declarations** | 12,704 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4654,6 +4654,89 @@ Seven properties of the surface this leaves.
    that surface asks "is this id usable" through `frozenLookupTcb`, whose
    predicate *is* `isReserved` and is exactly `= sentinel`, so it gains no second
    convention.  `FO-042`'s third and fourth halves are their witnesses.
+
+#### 8.12.10 The cancellation reclaim is head-driven too — WS-HP HP5 (`v0.35.39`)
+
+`cancelIpcBlocking`'s reply arm hands a cancelled caller's donated scheduling
+context back (WS-RR RR7.22's remediation, seL4-MCS's `reply_remove`), and since
+HP5.1 it finds that donation the same way the reply path does: through the
+victim's **own reply frame's `.head` link**, not through the victim's recorded
+reply target.  `cancelledCallerDonation? st _tid tcb` is `replyFrameHeadHolder?
+st rid` at `tcb.replyObject`, under the `.blockedOnReply` arm gate that every
+exclusivity lemma in the cancellation family reads.
+
+It is **forced** by HP6 rather than merely symmetric with HP4: after the splice a
+frame becomes the head whose recorded reply target is gone and `.unbound`, so a
+binding-driven reclaim declines there and leaves `.donated scId victim` live
+across a cancellation that has made the victim `.ready` — which is exactly the
+`donationOwnerValid` break RR7.22 was written to close, reappearing at the one
+state that reading cannot see.
+
+Six properties of the surface this leaves.
+
+1. **The victim's id is not consulted.**  The binding reading's `owner == tid`
+   check is what the structure replaces — the frame the reclaim reads *is* the
+   victim's own — so nothing reads the parameter, and
+   `cancelledCallerDonation?_independent_of_victim` pins that rather than leaving
+   a reader to infer it from an underscore.  What keeps the *write* safe is
+   HP4.6's `donationRecipientAcceptable`, which refuses a recipient already
+   holding a binding.
+
+2. **`donationHolderIsReplyTarget` is retired**, not kept beside the new reading:
+   it stated a fact about a recorded reply target nothing now reads.  Its
+   successor is `donatedContextIsOwnerFrameHead` — the donation the victim owns is
+   the one its own frame heads, and the trigger finds it at the same
+   `(context, holder)` pair.  It runs **binding → head**, the opposite direction
+   from the reply path's `answeredHeadContextIsServerDonation` (§8.12.9), because
+   here the consumers quantify over bindings while the trigger reads frames.
+   `…_of_donationOwnerValid` is the builder and measures the cost: all but two
+   clauses come out of `donationOwnerValid`, leaving the frame-head link and the
+   holder's promotability as what no invariant entails.
+
+3. **A resolved holder may resolve to no TCB.**  `SchedContext.boundThread` is
+   tied to no stored TCB by any invariant, unlike a thread read out of a stored
+   binding.  What rules the case out is the pop **declining**
+   (`returnDonatedSchedContext_ok_server_not_reserved`), with
+   `abortHolderPendingIpc_eq_self_of_lookup_none` the frame a consumer needs to
+   act on that.
+
+4. **`returnDonatedSchedContext_ok_under_invariants` became an instance.**  The
+   general form `_ok_of_boundAndRecipient` takes the context, its bound thread and
+   the recipient's `.unbound` as arguments — the head reading supplies the first
+   two off the trigger and has no binding to read the third from — with the
+   binding-keyed form derived from it.  One success argument, two keyings.
+
+5. **Two footprint claims became theorems.**  `cancelReclaimHead?_eq_replyObject`
+   (the head the pop clears **is** the victim's own reply object —
+   `replyStackHeadIsAnsweredReply`'s content from the cancellation end) and
+   `cancelDetachedFrameAbove?_of_donation` / `cancelSplicedFrameBelow?_of_donation`
+   (a reclaim excludes both removal members).  Both were sentences about every
+   reachable state in footprint docstrings, and the binding reading could not have
+   stated either.  The wake and both below-head members needed **no**
+   re-resolution, because they are derived from the trigger.
+
+6. **Below the cut the reclaim declines on the stack.**
+   `cancelledCallerDonation?_none_below_the_cut` and
+   `cancelledCallerDonation?_some_of_frame_head` are stated over `replyFrameAbove?`
+   and `replyFrameHeadContext?` with no binding hypothesis: a frame with a frame
+   above it heads nothing, so the pop's trigger and the splice's are exclusive by
+   construction.  That is `severAtCut` seen from the cancellation end, and the
+   fact HP6 consumes.
+
+The reclaim is exercised for the first time at HP5.5
+(`tests/SmpCancellationSuite.lean` §3.20): before it, every `.blockedOnReply`
+fixture in the tree held a Reply whose `next` was unset, so the arm declined under
+both readings and the flip would have landed untested.  The witness fires it on the
+agreeing seL4-MCS shape and on the **orphan head** where the two readings differ,
+computing both answers side by side so the assertions are known to discriminate.
+
+Two fixtures that *claimed* to exercise it were corrected in the same cut rather than
+re-blessed, and both were found by the flip rather than by the sweep the plan
+prescribed: the golden trace's `SCO-020b/c/d` built a `.donated` binding with no Reply
+object at all, and `tests/SmpIpcSuite.lean`'s OD5.2 pair handed the resolver a TCB with
+no `replyObject`, so its "fires" and "declines below the cut" halves declined for the
+same reason.  `main_trace_smoke.expected` is byte-identical afterwards — the correction
+is to the state, not to the expectation.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

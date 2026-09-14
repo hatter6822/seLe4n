@@ -6546,14 +6546,22 @@ theorem severAtCut_pop_leaves_no_head {st st' : SystemState}
 
     All four `storeObject` calls are unconditional `.ok` (see
     `Model/State.lean`). -/
-theorem returnDonatedSchedContext_ok_under_invariants
+theorem returnDonatedSchedContext_ok_of_boundAndRecipient
     (st : SystemState) (receiver : SeLe4n.ThreadId)
     (recvTcb : TCB) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (sc : SeLe4n.Kernel.SchedContext) (ownerTcb : TCB)
     (hObjInv : st.objects.invExt)
-    (hDOV : donationOwnerValid st)
     (hHeadRes : donationHeadResolves st scId)
     (hLk : lookupTcb st receiver = some recvTcb)
-    (hBind : recvTcb.schedContextBinding = .donated scId owner)
+    -- The context this pop hands back, and the thread it is bound to.  Under the
+    -- HEAD-driven trigger both fall straight out of `replyFrameHeadHolder?`; under
+    -- the binding-driven one they come from `donationOwnerValid`.
+    (hScObj : st.objects[scId.toObjId]? = some (.schedContext sc))
+    (hScBound : sc.boundThread = some receiver)
+    -- The recipient, and the fact HP4.6's guard asks of it.
+    (hOwnerObj : st.objects[owner.toObjId]? = some (.tcb ownerTcb))
+    (hOwnerUnbound : ownerTcb.schedContextBinding = .unbound)
+    (hOwnerNeRecv : owner ≠ receiver)
     (hRecvNotRes : ¬receiver.isReserved = true)
     (hOwnerNotRes : ¬owner.isReserved = true)
     (newOwner? : Option SeLe4n.ThreadId)
@@ -6564,20 +6572,13 @@ theorem returnDonatedSchedContext_ok_under_invariants
     -- the pre-state rather than the four-clause obligation consumers used to carry.
     (hOuterOk : outerCallerAcceptable st receiver owner newOwner? = true) :
     ∃ st', returnDonatedSchedContext st receiver scId owner newOwner? = .ok st' := by
-  -- Recover hypotheses from donationOwnerValid.
   have hRecvObj : st.objects[receiver.toObjId]? = some (.tcb recvTcb) :=
     lookupTcb_some_objects st receiver recvTcb hLk
-  obtain ⟨⟨sc, hScObj, hScBound⟩, ownerTcb, hOwnerObj, hOwnerUnbound, _⟩ :=
-    hDOV receiver recvTcb scId owner hRecvObj hBind
   -- Type-disjointness of SchedContext vs TCB objIds.
   have hScNeOwner : scId.toObjId ≠ owner.toObjId :=
     schedContext_ne_tcb_at_objId st scId owner sc ownerTcb hScObj hOwnerObj
   have hScNeRecv : scId.toObjId ≠ receiver.toObjId :=
     schedContext_ne_tcb_at_objId st scId receiver sc recvTcb hScObj hRecvObj
-  -- owner ≠ receiver (self-donation excluded).
-  have hOwnerNeRecv : owner ≠ receiver :=
-    donationOwnerValid_excludes_self_donation st receiver recvTcb scId owner
-      hDOV hRecvObj hBind
   have hOwnerObjIdNeRecv : owner.toObjId ≠ receiver.toObjId := by
     intro heq; exact hOwnerNeRecv (SeLe4n.ThreadId.toObjId_injective _ _ heq)
   -- WS-OD OD3.2: the pop's head validation, and the Reply it resolved.
@@ -6677,6 +6678,48 @@ theorem returnDonatedSchedContext_ok_under_invariants
       | .ok pair4, hS4 =>
         simp only []
         exact ⟨_, rfl⟩
+
+/-- **The pop succeeds, from a `.donated` binding** — the instance of
+`returnDonatedSchedContext_ok_of_boundAndRecipient` at the BINDING-driven reading.
+
+Every fact the general form takes is a consequence of `donationOwnerValid` applied
+to the binding: the context is bound to the thread holding the donation, the
+recorded owner is a stored `.unbound` TCB, and the two are distinct because a
+thread cannot donate to itself
+(`donationOwnerValid_excludes_self_donation`).
+
+**WS-HP HP5.2 split this from the general form rather than adding a second proof.**
+The cancellation reclaim's trigger is head-driven since HP5.1, so it holds
+`sc.boundThread = some holder` directly and no binding at all — and the binding is
+what this shape derives the same four facts *from*.  Deriving them twice would be
+one question with two answers; deriving them once and instantiating twice is what
+lets the head-driven caller supply the two facts it has from the trigger and the
+recipient's `.unbound` from wherever it can — which for
+`returnDonationToCancelledCaller_no_donation_to_victim` is the residual binding the
+refused branch puts in its hands, so no hypothesis beyond the re-keyed coherence fact
+is needed at all. -/
+theorem returnDonatedSchedContext_ok_under_invariants
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (recvTcb : TCB) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hDOV : donationOwnerValid st)
+    (hHeadRes : donationHeadResolves st scId)
+    (hLk : lookupTcb st receiver = some recvTcb)
+    (hBind : recvTcb.schedContextBinding = .donated scId owner)
+    (hRecvNotRes : ¬receiver.isReserved = true)
+    (hOwnerNotRes : ¬owner.isReserved = true)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hOuterOk : outerCallerAcceptable st receiver owner newOwner? = true) :
+    ∃ st', returnDonatedSchedContext st receiver scId owner newOwner? = .ok st' := by
+  have hRecvObj : st.objects[receiver.toObjId]? = some (.tcb recvTcb) :=
+    lookupTcb_some_objects st receiver recvTcb hLk
+  obtain ⟨⟨sc, hScObj, hScBound⟩, ownerTcb, hOwnerObj, hOwnerUnbound, _⟩ :=
+    hDOV receiver recvTcb scId owner hRecvObj hBind
+  exact returnDonatedSchedContext_ok_of_boundAndRecipient st receiver recvTcb scId owner
+    sc ownerTcb hObjInv hHeadRes hLk hScObj hScBound hOwnerObj hOwnerUnbound
+    (donationOwnerValid_excludes_self_donation st receiver recvTcb scId owner
+      hDOV hRecvObj hBind)
+    hRecvNotRes hOwnerNotRes newOwner? hOuterOk
 
 /-- AK1-A (I-H01): `cleanupPreReceiveDonationChecked` never errors under
     `ipcInvariantFull` combined with non-reservation of the participant

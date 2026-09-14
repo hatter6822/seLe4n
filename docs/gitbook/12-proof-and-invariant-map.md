@@ -247,10 +247,20 @@ frame below a cut stays reachable from the head — and it is pinned by
 structurally cannot show it, because a two-frame stack's lower frame is its bottom
 and both policies then write the same value there.  Recovering the accounting is
 **WS-HP**, whose HP4 (`v0.35.38`) has already moved the pop's trigger to the
-answered frame's head-ness on both the live and the frozen reply surfaces; HP6
-turns the sever into the splice.  See
-[`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.8 for the canonical text and
-§8.12.9 for the head-driven pop.
+answered frame's head-ness on both the live and the frozen reply surfaces and whose
+HP5 (`v0.35.39`) has done the same for the **cancellation** reclaim — forced rather
+than symmetric, because after the splice a frame becomes the head whose recorded
+reply target is gone, and a binding-driven reclaim declines there and leaves a
+`.donated` binding naming a `.ready` owner.  HP5 retires WS-RR RR7.22's
+`donationHolderIsReplyTarget` for the head-keyed `donatedContextIsOwnerFrameHead`,
+turns two footprint docstring claims into theorems the binding reading could not
+have stated (the head the pop clears **is** the victim's own reply object; a
+reclaim excludes both removal members), and gives the reclaim its **first** runtime
+witness — before it, every `.blockedOnReply` fixture in the tree held a Reply whose
+`next` was unset, so the arm declined under both readings.  HP6 turns the sever
+into the splice.  See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.8 for the
+canonical text, §8.12.9 for the head-driven reply pop and §8.12.10 for the
+cancellation reclaim.
 
 **A donation moves budget, period and deadline — not priority or domain**
 (`v0.35.3`).  Closing WS-OD surfaced an authority crossing in both directions:

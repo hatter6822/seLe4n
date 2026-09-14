@@ -4,7 +4,7 @@
 > **Predecessor finding**: [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
 > table C, registered `v0.35.14` — the removal does not preserve the donation
 > accounting at reply-stack depth ≥ 3.
-> **Sub-task count**: 42 across 9 phases (HP1..HP9), each phase numbered in the
+> **Sub-task count**: 43 across 9 phases (HP1..HP9), each phase numbered in the
 > order it is to be implemented.
 
 ## Context — why this exists
@@ -604,7 +604,7 @@ difference.
 | HP2 | The equivalence and the derivable coherence facts, inert | 4 |
 | HP3 | The footprint member and the ceiling, declared ahead of the code | 5 |
 | HP4 | The reply path's trigger flips (one cut) | 7 |
-| HP5 | The cancellation path's trigger flips (one cut) | 4 |
+| HP5 | The cancellation path's trigger flips (one cut) | 5 |
 | HP6 | The splice replaces the sever (one cut) | 8 |
 | HP7 | The three stated hypotheses retire | 4 |
 | HP8 | The frozen mirror | 3 |
@@ -703,7 +703,7 @@ is byte-identical — the measurement that the flip is behaviour-preserving. A f
 that builds and changes a dispatch outcome is the failure §3.8.6's ordering
 exists to catch, and only the trace can see it.
 
-### HP5 — The cancellation path's trigger flips (4 sub-tasks)
+### HP5 — The cancellation path's trigger flips (5 sub-tasks)
 
 Forced by §4: after HP6 a frame becomes the head whose recorded reply target is
 gone, and a binding-driven reclaim would leave a `.donated` binding naming a
@@ -711,10 +711,11 @@ gone, and a binding-driven reclaim would leave a `.donated` binding naming a
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| HP5.1 | `cancelledCallerDonation?` reads the victim's own frame's `.head` link and that context's `boundThread`, derived from `answeredFrameHeadContext?` rather than spelled a second time | `SeLe4n/Kernel/Lifecycle/Suspend.lean` | M |
-| HP5.2 | `returnDonationToCancelledCaller` and the abort prefix `abortHolderPendingIpc` re-proved over the new resolver — `_eq_self_of_getTcb?_none`, the binding frames, `abortHolderPendingIpc_preserves_donationOwnerValid`. Consumes HP5.1 | `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | L |
-| HP5.3 | `cancelIpcBlocking_reply_no_donation_to_victim`, `passiveServerIdle` preservation on all arms, and `cancelledCallerDonation?_none_below_the_cut` restated — below the cut the reclaim still declines, now because the victim's frame is not a head. Consumes HP5.2 | `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean`, `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | L |
-| HP5.4 | The wake and the scheduler footprint — `cancelAbortedHolderWake?`, `enqueueAbortedHolderOnCore`, `cancelIpcBlockingOnCoreSchedLockSet` — re-resolved from the new holder. Consumes HP5.3 | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | M |
+| HP5.1 | `cancelledCallerDonation?` reads the victim's own frame's `.head` link and that context's `boundThread`, derived from `replyFrameHeadHolder?` — the frame-keyed resolver both reply spines read since HP4.1 — rather than spelled a second time. `_independent_of_victim` pins that the victim's id is no longer consulted (the binding reading's `owner == tid` check is what the structure replaces) and `_eq_answeredFrameHeadContext?` ties it to the reply path's own resolver | `SeLe4n/Kernel/Lifecycle/Suspend.lean` | M |
+| HP5.2 | `returnDonationToCancelledCaller` re-proved over the new resolver. Two things the head reading forces, neither foreseen: **`returnDonatedSchedContext_ok_under_invariants` generalises** into `_ok_of_boundAndRecipient`, which takes the context, its bound thread and the recipient's `.unbound` as *arguments* (the head reading supplies the first two and has no binding to read the third from), with the binding-keyed form as its instance — "derive both answers from one" rather than a second success proof; and the payoff's case split moves onto **the pop's own result**, because the recipient fact is available only in the refused branch, where `hTcb` *is* a pre-state binding and `donationOwnerValid` reads the victim's `.unbound` off it. Plus `returnDonatedSchedContext_ok_server_not_reserved` and `abortHolderPendingIpc_eq_self_of_lookup_none`: the head reading names a `boundThread` no invariant ties to a stored TCB, so what rules that out is the pop declining. Consumes HP5.1 | `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`, `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | L |
+| HP5.3 | The coherence fact **re-keyed with the resolver**: `donatedContextIsOwnerFrameHead` replaces WS-RR RR7.22's `donationHolderIsReplyTarget`, which is deleted rather than left beside it — the resolver no longer reads a recorded reply target, so the old fact would have no consumer. `cancelIpcBlocking_reply_no_donation_to_victim` and `passiveServerIdle` preservation carry across unchanged in *statement*; `cancelledCallerDonation?_none_below_the_cut` and `…_some_of_immediate_donee` restate on the **stack** (a frame with a frame above it heads nothing), which drops their binding hypotheses altogether — the second is renamed `…_some_of_frame_head` for what it now says. Consumes HP5.2 | `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | L |
+| HP5.4 | The wake and the scheduler footprint. **They needed no re-resolution**: `cancelAbortedHolderWake?`, `cancelAbortedHolderWakeCore?`, `cancelBelowHeadReads?` and `cancelReclaimHead?` are all *derived from* `cancelledCallerDonation?`, so HP5.1 flows through them — which is the payoff of the derivation discipline, measured rather than assumed. What the row does own is the two claims the flip turns from fixture observations into **theorems**: `cancelReclaimHead?_eq_replyObject` (the head the pop clears **is** the victim's own reply object — `replyStackHeadIsAnsweredReply`'s content seen from the cancellation end) and `cancelDetachedFrameAbove?_of_donation` / `cancelSplicedFrameBelow?_of_donation` (a reclaim excludes both removal members, so the reachable footprint stays below the ceiling they raise). Both were sentences about reachable states that the binding reading could not have stated at all. Consumes HP5.3 | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | M |
+| HP5.5 | **The runtime witness**, which the tree did not have: nothing exercised the reply-arm reclaim at all, so the flip would have landed untested. `tests/SmpCancellationSuite.lean` §3.20 fires it on two shapes — the seL4-MCS one where both readings agree, and the **orphan head** where they differ, with both answers computed side by side (the retired reading spelled in the suite, nowhere else) so the assertions are known to discriminate. The second is the state HP6's splice creates and the reason HP5 precedes it: the binding-driven reclaim declines there and leaves `.donated scId victim` live across a cancellation that made the victim `.ready`, which is exactly the `donationOwnerValid` break RR7.22 was written to close. Consumes HP5.4 | `tests/SmpCancellationSuite.lean`, `scripts/test_tier3_invariant_surface.sh` | M |
 
 **Acceptance**: `smp_cancellation_suite` passes unchanged, and
 `cancelIpcBlocking` preserves `donationOwnerValid` and `passiveServerIdle` on
@@ -729,18 +730,54 @@ is fail-closed on the donor's `replyObject`) and a donor left `.bound` on the
 context it had donated away (which HP4.6's recipient guard refuses). So the tree
 was swept for every remaining one, and exactly one is this phase's:
 
-- `tests/SmpCancellationSuite.lean`'s `stDonated` (Scenario F, the donated
-  cancellation arm) — **needs the stack and an `.unbound` donor at HP5.1**, since
-  that is the cut that makes the reclaim read the frame.
-- `tests/SuspendResumeSuite.lean`'s `sr023` and `tests/NegativeStateSuite.lean`'s
-  `.donated ⟨8888⟩ ⟨9999⟩` need **nothing**: both are arm-selection negatives that
-  never reach a pop, so no trigger reads their stack. Recorded so the next sweep
-  does not re-derive it.
+**And the note above was itself the defect it warns about.** It named three files,
+and a sweep over a named list is *a recognised set standing in for a derived one* —
+this project's own rule, in the paragraph that exists to prevent this class. Running
+the named three found nothing to correct; the **golden trace** then failed, because
+`SeLe4n/Testing/MainTraceHarness.lean` is not one of the three. The derived set is
+every tracked test or harness file mentioning `.donated` — thirteen of them — and it
+found **two** live fixture defects:
 
-Each corrected fixture takes a pre-state assertion that the trigger resolves, as
-`sd052b_pre_donation_frame_heads_the_context` does — without one, a frame heading
-nothing makes the pop the identity and every downstream check measures the fixture
-instead of the arm.
+- `SeLe4n/Testing/MainTraceHarness.lean`'s `SCO-020b/c/d` (the WS-OD OD1.4/OD1.5/OD1.7
+  reclaim scenarios) built a `.donated` binding with **no Reply object at all**: no
+  victim `replyObject`, no `scReply` on the context. The reclaim became the identity
+  and all three lines flipped to `false`. **Corrected** by giving the fixture the
+  stack a live `Call` builds, which keeps `main_trace_smoke.expected`
+  byte-identical — the strongest available statement that behaviour is restored
+  exactly, and the measurement that those three lines *discriminate*: a reclaim that
+  stops firing is visible in every field.
+- `tests/SmpIpcSuite.lean`'s OD5.2 pair was passing **vacuously**. Its store's
+  `pushOuter` carried no `replyObject` though `pushOuterReply.caller` named it back —
+  a state `replyCallerLinkage` forbids — and both assertions handed the resolver a
+  TCB without the field, so "the reclaim fires" and "the reclaim declines below the
+  cut" declined for the *same* reason and the pair discriminated nothing. Corrected
+  at the store (one `pushOuterBlockedTcb`, retiring two local re-spellings, one of
+  which carried a note asserting no check read that field) and both assertions
+  restated on the stack, the declining one on the state the **live push** produces.
+
+- `tests/SmpCancellationSuite.lean`'s `stDonated` (Scenario F) needed **nothing**, and
+  the prediction that it would was wrong about which resolver it drives:
+  `cancelDonationOnCore` reads the *victim's own* binding (`cancelBindingSc?` /
+  `cancelDonatedOwner?` — "this thread holds a donated context, give it back"), a
+  different question HP5 does not re-key.
+- `tests/SuspendResumeSuite.lean`'s `sr023`, `tests/NegativeStateSuite.lean`'s
+  `.donated ⟨8888⟩ ⟨9999⟩`, `tests/LockSetSuite.lean`'s two `cancelDonation` size
+  assertions, `tests/PriorityManagementSuite.lean`'s seven binding-classification
+  checks and `SeLe4n/Testing/InvariantChecks.lean`'s binding walk need **nothing**:
+  arm-selection negatives, footprint arity over explicit `Option` arguments, and
+  reads of `ownScId?` / `scId?` — none reaches a pop.
+
+Two things to carry forward. **A suite's assertions can pass vacuously; an exact
+golden trace cannot** — which is why the trace found what the suites hid, and why a
+flip's sweep should run the trace early rather than last. And the real gap the sweep
+surfaced is HP5.5: before it, **nothing in the tree fired the reply-arm reclaim with
+the head reading available** — the cancellation suite's `.blockedOnReply` fixtures
+hold Replies whose `next` is unset, so the arm declined under both readings. A sweep
+for fixtures that would *break* is not a sweep for fixtures that would *exercise*,
+and only the second measures a flip. Each new fixture takes a pre-state assertion
+that the trigger resolves, as `sd052b_pre_donation_frame_heads_the_context` does —
+without one, a frame heading nothing makes the pop the identity and every downstream
+check measures the fixture instead of the arm.
 
 ### HP6 — The splice replaces the sever (8 sub-tasks)
 

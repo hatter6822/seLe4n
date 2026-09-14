@@ -4960,6 +4960,29 @@ theorem returnDonatedSchedContext_ok_recipient_unbound
   -- through a `LawfulBEq` instance the type does not carry.
   revert hOk; cases tcb.schedContextBinding <;> simp [BEq.beq]
 
+/-- **WS-HP HP5.2: a successful pop's server id is not reserved.**
+
+`returnDonatedSchedContext` resolves the thread it unbinds through `lookupTcb`,
+which refuses a reserved id -- so the refusal is a *consequence* of the pop
+succeeding rather than a hypothesis its callers carry.
+
+It is the head-driven trigger that makes this worth stating.  The binding-driven
+resolvers read a thread out of a stored `schedContextBinding`, so the thread they
+name is a thread the store holds by construction; `replyFrameHeadHolder?` reads a
+scheduling context's `boundThread`, which no invariant in this tree ties to a
+stored TCB at all.  So the cancellation reclaim can now name a holder that
+resolves to nothing, or to a reserved id, and what rules those out is the pop
+declining -- which is exactly what a consumer reads back here. -/
+theorem returnDonatedSchedContext_ok_server_not_reserved
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    ¬ serverTid.isReserved := by
+  obtain ⟨_, _, _, serverTcb, _, _, s3, _, _, _, _, _, _, _, _, _, hL2, _⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  exact lookupTcb_some_not_reserved s3 serverTid serverTcb hL2
+
 /-- **WS-HP HP4.6 (the refusal): the pop declines a recipient that already holds a
 binding**, committing nothing.  The direction that says the guard fires, stated
 so a mutation which deletes it is visible: without the guard this state reaches

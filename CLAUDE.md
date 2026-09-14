@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.38.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.39.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,18 +203,18 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~65170 lines)
+- `CHANGELOG.md` (~65304 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23254 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~7540 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6775 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~6470 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6815 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~6493 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6122 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~5938 lines)
 - `SeLe4n/Platform/Boot.lean` (~5867 lines)
-- `docs/spec/SELE4N_SPEC.md` (~5593 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5253 lines)
+- `docs/spec/SELE4N_SPEC.md` (~5668 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5353 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5067 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5033 lines)
 - `SeLe4n/Model/State.lean` (~4959 lines)
@@ -264,21 +264,23 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2294 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2281 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2280 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2244 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2239 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2099 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
+- `tests/SmpCancellationSuite.lean` (~2067 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2050 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2045 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2044 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~2017 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
@@ -294,14 +296,12 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1890 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
-- `tests/SmpCancellationSuite.lean` (~1879 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
 - `tests/SyscallDispatchSuite.lean` (~1847 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~1800 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1795 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
@@ -320,6 +320,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1439 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1428 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1424 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1418 lines)
@@ -331,7 +332,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1375 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1359 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
@@ -390,8 +390,8 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
+- `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~920 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
-- `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~910 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `tests/SmpTimerSuite.lean` (~904 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
@@ -3198,7 +3198,8 @@ new code must respect.  (1) **The equality is a stated hypothesis**
 (`replyDonationOwnerIsAnsweredCaller`), not a consequence of the bundle:
 `donationOwnerValid` says only that the owner is `.unbound` and `.blockedOnReply
 epId rt` for *some* `rt`, and relates `rt` to no donation — the gap WS-RR RR7.22
-met from the cancellation end and closed with `donationHolderIsReplyTarget`.  (2)
+met from the cancellation end and closed with `donationHolderIsReplyTarget`, which
+WS-HP HP5.3 re-keyed onto the frame as `donatedContextIsOwnerFrameHead`.  (2)
 **One member is the whole of the sharpening**: the recorded server merges with
 the invoking thread only on a *non-delegated* reply, a case split rather than an
 invariant, and the delegated case is the one OD3.5 exists to declare.  (3) **The
@@ -3688,7 +3689,7 @@ eight cuts.
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38)
+### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -3715,7 +3716,7 @@ HP2.3 makes that ordering a machine-checked fact rather than a note.
 | HP2 | LANDED | v0.35.36 | The two triggers are equivalent on every coherent state, and the splice breaks it |
 | HP3 | LANDED | v0.35.37 | The removal's below-frame footprint member; `maxLockSetSize` 22 → 23 |
 | HP4 | LANDED | v0.35.38 | **The reply path's trigger flips** — both spines, the recipient guard, the payoff's packs, and the frozen mirror (HP4.7) |
-| HP5 | PENDING | — | The cancellation path's trigger flips |
+| HP5 | LANDED | v0.35.39 | **The cancellation path's trigger flips** — the resolver, the coherence fact re-keyed, two sentences turned into theorems, and the first witness that fires the reclaim (HP5.5) |
 | HP6 | PENDING | — | The splice replaces the sever; the two reply footprints repoint (HP6.8) |
 | HP7 | PENDING | — | The three stated coherence hypotheses retire |
 | HP8 | PENDING | — | The frozen mirror's **splice** follows (its trigger landed as HP4.7) |
@@ -3799,6 +3800,95 @@ uses `toValid?` nowhere and `frozenLookupTcb` (which *is* `isReserved`, exactly
 `toValid?` out of both frozen modules so the convention stays one.  HP8 now owns
 the **splice** half alone.
 
+**What new code must respect since HP5 (`v0.35.39`).**  Six things.
+
+(1) **The cancellation reclaim reads the victim's own reply FRAME.**
+`cancelledCallerDonation? st _tid tcb` is `replyFrameHeadHolder? st rid` at
+`tcb.replyObject` under the `.blockedOnReply` arm gate — the same frame-keyed
+resolver both reply spines read since HP4.1, not a second spelling
+(`cancelledCallerDonation?_eq_answeredFrameHeadContext?` ties it to the reply
+path's own form).  The victim's id is **not consulted**: the binding reading's
+`owner == tid` check is what the structure replaces, and
+`cancelledCallerDonation?_independent_of_victim` pins that rather than leaving a
+reader to infer it from an underscore.  The arm gate stays, because it is the
+*arm selector* every exclusivity lemma in the cancellation family reads.
+
+(2) **`donationHolderIsReplyTarget` is GONE** — WS-RR RR7.22's fact about a
+cancelled caller's recorded reply target, which nothing reads any more.  Its
+head-keyed successor is `donatedContextIsOwnerFrameHead`: the donation the victim
+owns is the one its own frame heads, and the reclaim's trigger finds it.  It runs
+binding → head, the opposite direction from the reply path's
+`answeredHeadContextIsServerDonation`, because here the *consumers* quantify over
+bindings while the trigger reads frames.  `…_of_donationOwnerValid` is the builder
+and it measures what the fact costs: everything but two clauses comes out of
+`donationOwnerValid`, and what is left — the frame-head link and the holder's
+promotability — is what no invariant in this tree entails.
+
+(3) **A holder the head reading names may resolve to nothing.**  The
+binding-driven resolvers read a thread out of a stored binding, so the store held
+it by construction; `SchedContext.boundThread` is tied to no stored TCB by any
+invariant.  What rules the case out is the **pop declining**
+(`returnDonatedSchedContext_ok_server_not_reserved`), with
+`abortHolderPendingIpc_eq_self_of_lookup_none` the frame that lets a consumer act
+on it.  New code must not read a resolved `(scId, holder)` as evidence that
+`holder` is a live thread.
+
+(4) **`returnDonatedSchedContext_ok_under_invariants` is now an instance.**  The
+general form is `_ok_of_boundAndRecipient`, which takes the context, its bound
+thread and the recipient's `.unbound` as *arguments* — the head reading supplies
+the first two off the trigger and has no binding to read the third from — with
+the binding-keyed form derived from it.  A new success argument reaches for
+whichever form it can discharge, never for a second proof.
+
+(5) **Two claims are theorems now, and were not stateable before.**
+`cancelReclaimHead?_eq_replyObject` — the head the pop clears **is** the victim's
+own reply object, which is `replyStackHeadIsAnsweredReply`'s content seen from the
+cancellation end — and `cancelDetachedFrameAbove?_of_donation` /
+`cancelSplicedFrameBelow?_of_donation`, a reclaim excludes both removal members.
+Both were sentences about "every reachable state" in footprint docstrings; the
+binding reading could not have stated either, since it reached the context through
+a binding that relates to no reply frame.  Cite the theorems.
+
+(6) **Below the cut the reclaim declines on the STACK.**
+`cancelledCallerDonation?_none_below_the_cut` and
+`cancelledCallerDonation?_some_of_frame_head` (renamed from
+`…_some_of_immediate_donee` for what it now says) are stated over
+`replyFrameAbove?` and `replyFrameHeadContext?` and carry **no** binding
+hypothesis — a frame with a frame above it heads nothing, so the pop's trigger and
+the splice's are exclusive by construction.  That is strictly cheaper than what it
+replaces, and it is the fact HP6 consumes.
+
+One thing HP5 measured rather than predicted, and one it got wrong first.  The wake
+and both below-head footprint members needed **no** re-resolution, because
+`cancelAbortedHolderWake?`, `cancelAbortedHolderWakeCore?`, `cancelBelowHeadReads?`
+and `cancelReclaimHead?` are all *derived from* the trigger — the derivation
+discipline paying off where an enumeration would have needed five edits.
+
+The fixture sweep is the one it got wrong, and the shape is this file's own: the plan
+named three files, **a sweep over a named list is a recognised set standing in for a
+derived one**, and the three came back clean while the *golden trace* then failed —
+`SeLe4n/Testing/MainTraceHarness.lean` was not among them.  The derived set is every
+tracked test or harness file mentioning `.donated`, thirteen of them, and it holds two
+live defects.  `SCO-020b/c/d` built a `.donated` binding with **no Reply object at
+all**, so the reclaim became the identity and all three lines flipped to `false`; they
+carry the stack a live `Call` builds now, which keeps `main_trace_smoke.expected`
+byte-identical.  And `tests/SmpIpcSuite.lean`'s OD5.2 pair was passing **vacuously** —
+its store's `pushOuter` named no reply object though `pushOuterReply.caller` named it
+back, and both assertions handed the resolver a TCB without the field, so "fires" and
+"declines below the cut" declined for the same reason.  **A suite's assertions can pass
+vacuously; an exact golden trace cannot** — which is why the trace found what the suites
+hid, and the reason to run it early in a flip rather than last.
+
+The gap the sweep did surface is HP5.5: **nothing in the tree fired the reply-arm
+reclaim with the head reading available**, so the flip would have landed untested.  A
+sweep for fixtures that would *break* is not a sweep for fixtures that would
+*exercise*, and only the second measures a flip.  HP5.5 is that witness:
+`tests/SmpCancellationSuite.lean` §3.20 fires the reclaim on the agreeing shape and on
+the orphan head, computing **both** readings side by side (the retired one spelled in
+the suite and nowhere else) so the assertions are known to discriminate.  A behavioural
+revert never reaches them — it fails four theorems in `Lifecycle/Suspend.lean` first,
+because HP5 *states* the head reading rather than merely computing it.
+
 Three things a reader should take from the plan rather than infer.  (1) **The
 payoff is larger than the accounting**: under the head-driven trigger the three
 *stated* pre-state coherence hypotheses the reply path carries
@@ -3808,10 +3898,11 @@ no invariant in this tree entails them today, and HP4 already retired the third
 from the chain composite, replacing it with the strictly weaker
 `replyFrameHeadIsBound`.  (2) **The cost is stated**: `maxLockSetSize` 22 → 23 and
 the RPi5 per-lock cost 15 → 14 µs, because the splice writes the frame below and
-no footprint named it (HP3.5).  (3) **HP5 is not optional**, and its reason is
-derived: after the splice a frame becomes the head whose recorded reply target is
-gone, so a *cancellation* there would leave a `.donated` binding naming a `.ready`
-owner.
+no footprint named it (HP3.5).  (3) **HP5 was not optional**, and its reason was
+derived rather than assumed: after the splice a frame becomes the head whose
+recorded reply target is gone, so a *cancellation* there would leave a `.donated`
+binding naming a `.ready` owner.  It landed at `v0.35.39`; the paragraphs above say
+what it changed.
 
 Registered in
 [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C with closure target
@@ -4222,12 +4313,14 @@ code may assume:
   `donationOwnerValid` forbids and which permanently transferred the caller's CBS
   reservation.  Four things new code must respect.  (1) **The return runs before
   the restore**, because it reads the `.blockedOnReply` state the restore clears;
-  a Tier 3 negative refuses the old order.  (2) **The holder is the caller's
-  recorded reply target** (`cancelledCallerDonation?`), and that
-  `ipcInvariantFull` does not entail — it admits `.blockedOnReply epId rt` for any
-  `rt` and relates `rt` to no donation — so `donationHolderIsReplyTarget` states
-  it; the *behaviour* needs no hypothesis, only the payoff
-  `cancelIpcBlocking_reply_no_donation_to_victim` does.  (3) **The SM5.H
+  a Tier 3 negative refuses the old order.  (2) **The holder is the thread the
+  caller's own reply frame's head context is bound to** (`cancelledCallerDonation?`;
+  it was the caller's *recorded reply target* until WS-HP HP5.1 re-keyed the
+  resolver), and that no invariant entails — `donationOwnerValid` relates a donation
+  to no reply object and `donationChainWellFormed` carries no binding clause — so
+  `donatedContextIsOwnerFrameHead` states it, having replaced
+  `donationHolderIsReplyTarget` at HP5.3; the *behaviour* needs no hypothesis, only
+  the payoff `cancelIpcBlocking_reply_no_donation_to_victim` does.  (3) **The SM5.H
   replenishment migration is at the cross-core layer** (`cancelIpcBlockingMigrated`),
   where this tree resolves home cores for every donation-carrying path, which is
   what keeps `cancelIpcBlocking` an objects-only write; that it *establishes*

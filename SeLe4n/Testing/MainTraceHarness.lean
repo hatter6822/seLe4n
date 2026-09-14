@@ -2587,14 +2587,30 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- conjunct.  Executed rather than asserted: the theorem
   -- (`cancelIpcBlocking_preserves_passiveServerIdle`) says it holds, this says
   -- the live operation does it.
+  --
+  -- **WS-HP HP5 (fixture correction).**  The three scenarios below carry a
+  -- `.donated` binding, and until HP5 that was the whole of what the reclaim's
+  -- trigger read.  Since HP5.1 it reads the victim's own reply **frame**, so the
+  -- fixture has to carry the reply stack the live `Call` builds: the victim's
+  -- `replyObject`, a Reply heading `scH`, and `scH.scReply` naming that frame
+  -- back.  Without them the state is one no operation in this tree reaches
+  -- (`donateSchedContext` is a *push* onto the donor's own `replyObject` and is
+  -- fail-closed when there is none), the trigger declines, the reclaim is the
+  -- identity, and all three lines below read `false` -- which is exactly what the
+  -- golden trace reported when the flip landed, and why this correction keeps
+  -- `main_trace_smoke.expected` byte-identical rather than updating it.  That
+  -- failure is also the measurement that these three lines *discriminate*: a
+  -- reclaim that stops firing is visible here, in every field.
   let epH : SeLe4n.ObjId := ⟨6010⟩
   let scH : SeLe4n.SchedContextId := ⟨6011⟩
   let vTid : SeLe4n.ThreadId := ⟨6012⟩
   let hTid : SeLe4n.ThreadId := ⟨6013⟩
+  let rH : SeLe4n.ReplyId := ⟨6014⟩
   let victimTcb : TCB := {
     tid := vTid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     ipcState := .blockedOnReply epH (some hTid),
+    replyObject := some rH,
     schedContextBinding := .unbound }
   let holderTcb : TCB := {
     tid := hTid, priority := ⟨50⟩, domain := ⟨0⟩,
@@ -2602,14 +2618,21 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     ipcState := .blockedOnCall epH,
     schedContextBinding := .donated scH vTid,
     queuePrev := none, queueNext := none, queuePPrev := some .endpointHead }
+  -- The frame the victim's `Call` pushed: it heads `scH`, and `scH` names it back
+  -- (`replyFrameHeadContext?` validates both directions).  `prev := none` makes it
+  -- the bottom of the stack, so the pop's outer-caller resolution answers `none`
+  -- and the reclaim rebinds the victim `.bound scH`.
+  let victimReply : SeLe4n.Kernel.Reply := {
+    replyId := rH, caller := some vTid, next := some (.head scH) }
   let holderSc : SeLe4n.Kernel.SchedContext := {
     scId := scH, budget := ⟨1000⟩, period := ⟨1000⟩, priority := ⟨50⟩,
     deadline := ⟨1000⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
-    boundThread := some hTid }
+    boundThread := some hTid, scReply := some rH }
   let epObj : Endpoint := { sendQ := { head := some hTid, tail := some hTid }, receiveQ := {} }
   let stR := { st1 with
     objects := (st1.objects.insert epH (.endpoint epObj))
       |>.insert scH.toObjId (.schedContext holderSc)
+      |>.insert rH.toObjId (.reply victimReply)
       |>.insert vTid.toObjId (.tcb victimTcb)
       |>.insert hTid.toObjId (.tcb holderTcb) }
   let stAfter := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking stR vTid victimTcb

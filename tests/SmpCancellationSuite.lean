@@ -354,7 +354,12 @@ open SeLe4n.Testing
 #check @Lifecycle.Suspend.cancelledCallerDonation?
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller
 #check @cancelledCallerDonation?_some
-#check @donationHolderIsReplyTarget
+-- WS-HP HP5.2: the coherence fact re-keyed onto the head-driven trigger, with
+-- both vacuous discharges and the builder that measures what it costs.
+#check @donatedContextIsOwnerFrameHead
+#check @donatedContextIsOwnerFrameHead_of_no_owner
+#check @donatedContextIsOwnerFrameHead_of_no_donation
+#check @donatedContextIsOwnerFrameHead_of_donationOwnerValid
 #check @returnDonationToCancelledCaller_no_donation_to_victim
 #check @cancelIpcBlocking_reply_no_donation_to_victim
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_scheduler_eq
@@ -647,7 +652,7 @@ example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
     (hBlocked : tcb.ipcState = .blockedOnReply ep rt)
     (hOwner : donationOwnerValid st)
     (hChain : donationChainWellFormed st)
-    (hHolder : donationHolderIsReplyTarget st victim)
+    (hHolder : donatedContextIsOwnerFrameHead st victim)
     -- **WS-OD OD4.4**: the reclaim resolves its new owner off the holder's reply
     -- stack at the post-abort state, so the arm carries that obligation in the
     -- cancellation's own shape (`cancelDonationStackValid`, vacuous wherever the
@@ -1850,6 +1855,197 @@ private def runDonationDoublePopFootprintChecks : IO Unit := do
     (decide (((suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 core1).filter
       (fun p => p.1 matches SchedLockId.replenishQueue _)).length = 3))
 
+-- ----------------------------------------------------------------------------
+-- Scenario P (WS-HP HP5): the head-driven reclaim, and the state on which the
+-- two candidate triggers disagree.
+-- ----------------------------------------------------------------------------
+
+/-- **WS-HP HP5**: the *superseded* binding-driven trigger, spelled here and
+nowhere else.
+
+A second production spelling of "which donation does this cancellation reclaim"
+would be the duplication this project retires — but a witness that cannot name what
+it replaced cannot show that the replacement changed anything, which is the whole
+point of the pair below.  So the retired reading lives in the test that refutes it,
+exactly as `FrozenOpsSuite`'s `FO-042` keeps the retired reply-side trigger. -/
+private def bindingDrivenCancelledCallerDonation? (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match tcb.ipcState with
+  | .blockedOnReply _ (some holder) =>
+    match lookupTcb st holder with
+    | some holderTcb =>
+      match holderTcb.schedContextBinding with
+      | .donated scId owner => if owner == tid then some (scId, holder) else none
+      | _ => none
+    | none => none
+  | _ => none
+
+/-- A scheduling context bound to `bound`, heading the reply stack at `head?`. -/
+private def mkStackedSc (bound : Option SeLe4n.ThreadId)
+    (head? : Option SeLe4n.ReplyId) : SchedContext :=
+  { mkSc bound true with scReply := head? }
+
+/-- **The seL4-MCS shape both triggers agree on**: the victim Called a passive
+server, donating its reservation, so its own reply object heads the context and the
+server holds `.donated scId victim`.  Home cores differ (victim core 1, server
+core 2) so the replenishment migration is observable, and the server is `.ready`
+so OD1.4's abort prefix is inert and the reclaim's own writes are what the
+assertions see. -/
+private def stFrameHeadReclaim : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject rId.toObjId (.reply
+          { replyId := rId, caller := some victimTid, next := some (.head scId) })
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
+          ipcState := .blockedOnReply epId (some serverTid),
+          replyObject := some rId,
+          schedContextBinding := .unbound })
+      |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
+          schedContextBinding := .donated scId victimTid })
+      |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
+      |>.build)
+  let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
+  { base with scheduler := base.scheduler.setReplenishQueueOnCore core2 rq2 }
+
+/-- **The shape on which the two triggers disagree** — and the reason HP5 has to
+land before HP6.
+
+Everything is as above except *who* holds the donation: the victim's recorded reply
+target (`serverTid`) has given its own binding up, and the context is bound to a
+third thread (`runnerTid`) which holds `.donated scId victim`.  Every conjunct of
+`donationOwnerValid` holds — the context is bound to its holder, and the owner is an
+`.unbound`, reply-blocked thread — and so does `donatedContextIsOwnerFrameHead`: the
+victim's frame still heads the context.
+
+The binding-driven reclaim reads the *recorded reply target*, finds no donation
+there and declines, leaving `.donated scId victim` live across a cancellation that
+made the victim `.ready` — which is exactly the `donationOwnerValid` break WS-RR
+RR7.22 was written to close, reappearing at the one place that reading cannot see.
+The head-driven reclaim follows the frame and reclaims it.
+
+**Not a live defect, and the fixture is hand-built for that reason.**  The proved
+half is `severAtCut_pop_leaves_no_head` (HP2.3): under the current removal policy a
+*pop* leaves no orphan head, which is why the two readings agree everywhere the
+reply path can put the state and why HP4 and HP5 both preserve behaviour (the golden
+trace is byte-identical across each).  HP6's splice is what makes this shape
+reachable — it re-heads the frame below a cut, whose recorded reply server is by
+then `.unbound` — and HP5 landing first is what stops it arriving together with a
+reclaim that cannot see it. -/
+private def stOrphanHeadReclaim : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject rId.toObjId (.reply
+          { replyId := rId, caller := some victimTid, next := some (.head scId) })
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
+          ipcState := .blockedOnReply epId (some serverTid),
+          replyObject := some rId,
+          schedContextBinding := .unbound })
+      |>.withObject serverTid.toObjId (.tcb (mkTcb 716 50 (some core2)))
+      |>.withObject runnerTid.toObjId (.tcb { mkTcb 715 40 (some core2) with
+          schedContextBinding := .donated scId victimTid })
+      |>.withObject scId.toObjId (.schedContext (mkStackedSc (some runnerTid) (some rId)))
+      |>.build)
+  let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
+  { base with scheduler := base.scheduler.setReplenishQueueOnCore core2 rq2 }
+
+/-- **WS-HP HP5: the reclaim's trigger, measured on both shapes.**
+
+The decisive half is (iv): a state on which the two readings *differ*, with both
+answers computed here — the head-driven one from production, the binding-driven one
+from the local copy above — so the assertions are known to discriminate rather than
+assumed to.
+
+**On the mutation discipline.**  Reverting `cancelledCallerDonation?` to the binding
+reading does not reach these assertions: it fails to elaborate four theorems in
+`Lifecycle/Suspend.lean` first (`_independent_of_victim`,
+`_eq_answeredFrameHeadContext?` and the two `rfl`s inside it), because HP5 states the
+head reading rather than merely computing it.  That is the stronger outcome — a
+behavioural revert is refused by the proof surface before any test runs — and it is
+why the discrimination is exhibited *inside* the witness instead of by mutating
+production. -/
+private def runFrameHeadReclaimChecks : IO Unit := do
+  IO.println "--- §3.20 WS-HP HP5 the head-driven cancellation reclaim ---"
+  -- (i) The agreeing shape: the trigger fires, and it fires on the same pair the
+  -- retired reading would have found.  That is the measurement that the flip is
+  -- behaviour-preserving on every state `severAtCut` can produce.
+  let tcb := victimTcb stFrameHeadReclaim
+  assertBool "setup: the victim's reply frame heads the context, bound to the server"
+    (decide (replyFrameHeadContext? stFrameHeadReclaim rId = some scId
+      ∧ replyFrameHeadHolder? stFrameHeadReclaim rId = some (scId, serverTid)))
+  assertBool "the head-driven trigger resolves (context, holder)"
+    (decide (Lifecycle.Suspend.cancelledCallerDonation? stFrameHeadReclaim victimTid tcb
+      = some (scId, serverTid)))
+  assertBool "...and the RETIRED binding-driven reading agrees on this shape"
+    (decide (bindingDrivenCancelledCallerDonation? stFrameHeadReclaim victimTid tcb
+      = some (scId, serverTid)))
+  -- (ii) HP5.4: the head the pop clears IS the victim's own reply object, and the
+  -- two removal members are `none` — both theorems now, not fixture observations.
+  assertBool "the head the pop clears is the victim's own reply object"
+    (decide (cancelReclaimHead? stFrameHeadReclaim victimTid tcb = some rId
+      ∧ cancelReclaimHead? stFrameHeadReclaim victimTid tcb = tcb.replyObject))
+  assertBool "a reclaim excludes both removal members (no detach, no splice)"
+    (decide (cancelDetachedFrameAbove? stFrameHeadReclaim tcb = none
+      ∧ cancelSplicedFrameBelow? stFrameHeadReclaim tcb = none))
+  -- (iii) The reclaim runs: the reservation comes back to the victim, the server
+  -- is unbound, the stack head is popped and the replenishment migrates home.
+  let (st', sgi) := cancelIpcBlockingOnCore victimTid tcb bootCoreId stFrameHeadReclaim
+  assertBool "cancelling the donating caller surfaces no SGI (it was not current)"
+    (decide (sgi = none))
+  assertBool "the reservation comes back to the victim, .bound at the stack bottom"
+    (match st'.getTcb? victimTid with
+     | some t => decide (t.schedContextBinding = .bound scId ∧ t.ipcState = .ready)
+     | none => false)
+  assertBool "the server is left holding nothing"
+    (match st'.getTcb? serverTid with
+     | some t => decide (t.schedContextBinding = .unbound)
+     | none => false)
+  assertBool "the context is bound to the victim and heads nothing"
+    (match st'.getSchedContext? scId with
+     | some sc => decide (sc.boundThread = some victimTid ∧ sc.scReply = none)
+     | none => false)
+  assertBool "the popped frame keeps neither its stack link nor its caller"
+    (match st'.getReply? rId with
+     | some r => decide (r.next = none ∧ r.caller = none)
+     | none => false)
+  assertBool "the replenishment migrates off the server's home core"
+    (!(st'.scheduler.replenishQueueOnCore core2).entries.any (fun e => e.1 == scId))
+  assertBool "...and lands on the victim's home core at its original time"
+    ((st'.scheduler.replenishQueueOnCore core1).entries.any
+      (fun e => e.1 == scId && e.2 == 42))
+  -- (iv) **The decisive case**: on the orphan-head shape the two triggers answer
+  -- differently, and only the head-driven one reclaims.  The mutation keeps every
+  -- object in the state and moves the donation off the recorded reply target.
+  let orphanTcb := victimTcb stOrphanHeadReclaim
+  assertBool "setup: the recorded reply target holds no donation"
+    (match stOrphanHeadReclaim.getTcb? serverTid with
+     | some t => decide (t.schedContextBinding = .unbound)
+     | none => false)
+  assertBool "setup: the frame still heads the context, bound to a third thread"
+    (decide (replyFrameHeadHolder? stOrphanHeadReclaim rId = some (scId, runnerTid)))
+  assertBool "the RETIRED binding-driven reading declines here"
+    (decide (bindingDrivenCancelledCallerDonation? stOrphanHeadReclaim victimTid orphanTcb
+      = none))
+  assertBool "the head-driven trigger resolves the real holder"
+    (decide (Lifecycle.Suspend.cancelledCallerDonation? stOrphanHeadReclaim victimTid orphanTcb
+      = some (scId, runnerTid)))
+  let (stOrphan', _) :=
+    cancelIpcBlockingOnCore victimTid orphanTcb bootCoreId stOrphanHeadReclaim
+  assertBool "the reclaim reaches the real holder and unbinds it"
+    (match stOrphan'.getTcb? runnerTid with
+     | some t => decide (t.schedContextBinding = .unbound)
+     | none => false)
+  assertBool "PAYOFF: no thread is left holding a context donated by the victim"
+    ([victimTid, serverTid, runnerTid, ownerTid].all (fun t =>
+      match stOrphan'.getTcb? t with
+      | some tcbT => !(tcbT.schedContextBinding == .donated scId victimTid)
+      | none => true))
+  assertBool "...and the reservation is the victim's again"
+    (match stOrphan'.getTcb? victimTid with
+     | some t => decide (t.schedContextBinding = .bound scId)
+     | none => false)
+
 def runSmpCancellationChecks : IO Unit := do
   IO.println "=== SmpCancellationSuite (WS-SM SM6.E cancellation across cores) ==="
   runEndpointCancelChecks
@@ -1871,6 +2067,7 @@ def runSmpCancellationChecks : IO Unit := do
   runDiffSeamEdfChecks
   runUnblockFrameStagingChecks
   runDonationDoublePopFootprintChecks
+  runFrameHeadReclaimChecks
   IO.println "SmpCancellationSuite: all checks passed."
 
 end SeLe4n.Testing.SmpCancellation

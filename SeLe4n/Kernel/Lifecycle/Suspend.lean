@@ -624,23 +624,83 @@ theorem consumeReplyLink_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId)
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation a cancelled caller is
 owed back, resolved from the pre-state.
 
-`some (scId, holder)` exactly when the caller's recorded reply target holds a
-SchedContext donated *by this caller*.  Named and resolved separately from the
-step that returns it for the reason every cross-core footprint in this tree is
-resolved separately: the `withLockSet` bracket must declare the SchedContext and
-the holder's TCB — and, at the `OnCore` layer, the two replenish-queue locks the
-migration writes — **before** the transition runs. -/
-def cancelledCallerDonation? (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+`some (scId, holder)` exactly when the cancelled caller's own reply **frame heads**
+a scheduling context, with `holder` the thread that context is bound to — the
+thread the reclaim unbinds.  Named and resolved separately from the step that
+returns it for the reason every cross-core footprint in this tree is resolved
+separately: the `withLockSet` bracket must declare the SchedContext and the
+holder's TCB — and, at the `OnCore` layer, the two replenish-queue locks the
+migration writes — **before** the transition runs.
+
+**WS-HP HP5.1: head-driven, through the shared resolver.**  This read the
+*recorded reply target's* `.donated` binding and required its recorded owner to be
+this very caller.  Those are the two triggers HP2 relates
+(`answeredFrameHeadContext?_implies_serverDonation`), and they agree on every
+state `severAtCut` can produce — which is why the flip is behaviour-preserving
+today and why it must happen before HP6, whose splice can leave a frame heading a
+context whose recorded server is gone and `.unbound`.  A binding-driven reclaim
+there would decline, leaving a `.donated` binding naming a `.ready` owner.
+
+Three things about the shape.  The second half **is** `replyFrameHeadHolder?`, the
+frame-keyed resolver both reply spines read since HP4, rather than a second
+spelling of it — `answeredFrameHeadContext?` is that same composition one lookup
+earlier, and `cancelledCallerDonation?_eq_answeredFrameHeadContext?` states the
+relation for a caller holding the victim's TCB.  Both components keep the roles
+they had: `holder` is still the thread that **loses** the context and `tid` the
+thread it is owed to, so HP4's component-swap hazard has no instance here.  And
+the `.blockedOnReply` gate stays, because it is the **arm** selector — every
+exclusivity lemma below reads only it, which is why they transfer verbatim.
+
+**`tid` is deliberately unused.**  The victim's identity was the binding reading's
+check (`owner == tid`); under the head reading the structure says it — the frame
+this reclaim reads *is* the victim's own — so nothing consults the id, and
+`cancelledCallerDonation?_independent_of_victim` pins that rather than leaving a
+reader to infer it from an underscore.  What keeps the *write* safe is HP4.6's
+`donationRecipientAcceptable`, which refuses a recipient already holding a
+binding. -/
+def cancelledCallerDonation? (st : SystemState) (_tid : SeLe4n.ThreadId) (tcb : TCB) :
     Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
   match tcb.ipcState with
-  | .blockedOnReply _ (some holder) =>
-    match lookupTcb st holder with
-    | some holderTcb =>
-      match holderTcb.schedContextBinding with
-      | .donated scId owner => if owner == tid then some (scId, holder) else none
-      | _ => none
+  | .blockedOnReply _ _ =>
+    match tcb.replyObject with
+    | some rid => replyFrameHeadHolder? st rid
     | none => none
   | _ => none
+
+/-- **WS-HP HP5.1**: the reclaim's trigger does not read the victim's id.
+
+The binding reading's `owner == tid` check is what the head reading replaces with
+structure, so the parameter survives only to keep 93 call sites and every
+statement's arity unchanged.  Pinned rather than left to an underscore, for the
+reason `endpointReplyCrossCoreDispatch_independent_of_replier` is: a reader cannot
+tell from a name whether an argument is consulted, and a later cut that starts
+reading it would silently reintroduce the identity check this flip removed. -/
+@[simp] theorem cancelledCallerDonation?_independent_of_victim
+    (st : SystemState) (t₁ t₂ : SeLe4n.ThreadId) (tcb : TCB) :
+    cancelledCallerDonation? st t₁ tcb = cancelledCallerDonation? st t₂ tcb := rfl
+
+/-- **WS-HP HP5.1**: the reclaim's trigger is the reply path's, one lookup later.
+
+`answeredFrameHeadContext?` resolves the answered caller's frame from the *state*
+(`answeredReplyObject?`); this resolver is handed the TCB the arm already looked
+up, so it reads the frame off that record directly.  Given the two agree about
+which TCB the victim has, they answer the same question — which is what makes
+"one resolver" true rather than merely claimed, and what a consumer holding either
+form uses to reach the other.
+
+Conditioned on the `.blockedOnReply` arm gate, because `answeredFrameHeadContext?`
+has none: it is the reply path's resolver and its callers have already established
+that the target is being replied to. -/
+theorem cancelledCallerDonation?_eq_answeredFrameHeadContext?
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hLk : lookupTcb st tid = some tcb)
+    (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
+    (hIp : tcb.ipcState = .blockedOnReply ep rt) :
+    cancelledCallerDonation? st tid tcb = answeredFrameHeadContext? st tid := by
+  unfold cancelledCallerDonation? answeredFrameHeadContext? answeredReplyObject?
+  rw [hIp, getTcb?_of_lookupTcb st tid tcb hLk]
+  simp only [Option.bind_some]
+  cases hRO : tcb.replyObject <;> rfl
 
 /-- **WS-OD OD1.4**: the holder's outstanding send or call, ended.
 
@@ -688,25 +748,34 @@ owner is a live, `.unbound`, reply-blocked thread — is **false** of the result
 operationally the caller's CBS reservation is transferred to the server
 permanently, and the caller can never be scheduled again after a resume.
 
-**How the holder is found.**  Through the caller's own recorded reply target: the
-`.blockedOnReply` state carries the server that is authorised to answer it (WS-H1
-/ M-02), and every operational write of that state in this tree names the
-receiver the `Call` donated to.  `ipcInvariantFull` does not *say* so — it admits
-`.blockedOnReply epId rt` for any `rt`, and no conjunct relates `rt` to the
-holder of a donation — so `donationHolderIsReplyTarget`
-(`Lifecycle/Invariant/CancellationReplyShape.lean`) states it, and the proof that
-the arm establishes `donationOwnerValid` consumes it.  The *behaviour* needs no
-hypothesis: a donation found at the reply target is always returned, which is an
-improvement on every state and a regression on none.
+**How the holder is found** (WS-HP HP5.1).  Through the cancelled caller's own
+reply **frame**: `cancelledCallerDonation?` reads the frame's `.head` link and then
+that context's `boundThread`, which is the thread holding the donation.  Until
+HP5.1 it read the caller's *recorded reply target* instead and asked whether that
+thread's binding was a donation naming this caller — the two agree on every state
+`severAtCut` can produce (`answeredFrameHeadContext?_implies_serverDonation`), and
+they stop agreeing at HP6, where a splice can leave a frame heading a context whose
+recorded server is gone.
+
+`ipcInvariantFull` does not relate the two: `donationOwnerValid` relates a donation
+to no reply object and `donationChainWellFormed` carries no binding clause, so
+`donatedContextIsOwnerFrameHead`
+(`Lifecycle/Invariant/CancellationReplyShape.lean`) states the fact the *payoff*
+needs — that the only donation the victim owns is the one this frame heads — and it
+is the head-keyed successor of WS-RR RR7.22's `donationHolderIsReplyTarget`.  The
+*behaviour* needs no hypothesis: a donation found at the frame head is always
+returned, which is an improvement on every state and a regression on none.
 
 **Why it is a no-op unless there is something to return.**  Three of the four
-arms below decline: no recorded reply target, no server TCB, or a server whose
-binding is not a donation naming this caller.  Each is the correct answer when
+arms below decline: the caller is not reply-blocked, it holds no reply object, or
+its frame heads no context (it has a frame above it — the depth-≥ 3 case,
+`cancelledCallerDonation?_none_below_the_cut`).  Each is the correct answer when
 the caller donated nothing — the common case for a `Call` on a bound
-SchedContext.  The `.error` arm is unreachable under the bundle
-(`returnDonatedSchedContext` refuses only when the SchedContext is not bound to
-the server, which `donationOwnerValid`'s first clause rules out) and declines
-rather than diverging, since `cancelIpcBlocking` is total.
+SchedContext.  The `.error` arm declines rather than diverging, since
+`cancelIpcBlocking` is total; since HP5.1 it is also *reachable in principle*
+rather than provably dead, because the head reading names a `boundThread` no
+invariant ties to a stored TCB, and what rules that out is the pop's own server
+lookup (`returnDonatedSchedContext_ok_server_not_reserved`).
 
 **The replenishment migration is not here**, and that is the tree's existing
 division rather than an omission: `applyCallDonation` rebinds and

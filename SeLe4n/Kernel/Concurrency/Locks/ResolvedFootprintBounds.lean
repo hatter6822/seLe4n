@@ -123,8 +123,10 @@ The donation a reply returns is owned by the thread the reply answers —
 `ipcInvariantFull` does **not** entail it: `donationOwnerValid` says only that the
 owner is `.unbound` and `.blockedOnReply epId rt` for *some* `rt`, and relates
 `rt` to no donation.  WS-RR RR7.22 met the same gap from the cancellation end and
-closed it by stating `donationHolderIsReplyTarget`; this is its reply-side twin,
-and it is stated rather than derived for exactly that reason.
+closed it by stating `donationHolderIsReplyTarget` (which WS-HP HP5.3 re-keyed onto
+the reply frame as `donatedContextIsOwnerFrameHead` when the reclaim's trigger
+flipped); this is its reply-side twin, and it is stated rather than derived for
+exactly that reason.
 
 Kept as a predicate on `(st, target)` rather than folded into a bundle: it is a
 *local* coherence fact about one reply, and the resolved bound below is the only
