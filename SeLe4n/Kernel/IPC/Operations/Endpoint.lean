@@ -1640,7 +1640,29 @@ cannot see is what this guard removes.
 
 A recipient that does not resolve passes: the operation's own later lookup
 reports `.objectNotFound` there, and shadowing that with `.invalidArgument` would
-change an error code rather than refuse a write. -/
+change an error code rather than refuse a write.
+
+**WS-HP HP9.4: this guard is upstream's, in upstream's own words** — read at
+seL4 `master`, `13.0.0`, `12.1.0`, `12.0.0` and `11.0.0` (every release that has
+the function), and recorded here rather than only in a plan, because a claim about
+an external artefact belongs beside the code it justifies.  `reply_pop` donates
+only under `if (tcb->tcbSchedContext == NULL)`, commented *"only give the SC back
+if our SC is NULL"*.  Two further facts that reading established, both landed:
+
+* the pop's **trigger** is `call_stack_get_isHead(reply->replyNext)` — head-ness,
+  not the recorded server's binding — which is WS-HP HP4 and HP5;
+* `reply_remove`'s non-head branch writes
+  `REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)`, under the comment
+  *"not the head, remove from middle - break the chain"*.  It writes **zero**, so
+  upstream **severs**, and this kernel's splice (HP6.8) is an *improvement on*
+  upstream rather than parity with it.
+
+That last point is a **retraction's retraction** and the reason the revision is
+named rather than the repository: `v0.35.14` asserted that upstream splices and
+quoted a line — `REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev
+= reply->replyPrev` — that exists in **no release**, then swept that error across
+nine prose sites and three docstrings that had been right.  Cite the tag you read
+at, so the next reader can re-run the check instead of re-trusting the quotation. -/
 def donationRecipientAcceptable (st : SystemState) (originalOwner : SeLe4n.ThreadId) : Bool :=
   match lookupTcb st originalOwner with
   | none => true

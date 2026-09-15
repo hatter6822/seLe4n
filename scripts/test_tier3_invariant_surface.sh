@@ -1470,10 +1470,11 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # checks are RUN, not merely defined — the relation a presence check on any
 # section's name would miss.  Stated as the contiguous run so a section deleted
 # from the middle of the sequence is caught, which is how OD3.1's insertion was
-# caught in the first place, and how OD4.1's was.  Anchored between the two
+# caught in the first place, how OD4.1's was, and how WS-HP HP9.1's was.  Anchored
+# between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runReceivePriorityHandoffChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runReceivePriorityHandoffChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -2238,6 +2239,21 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelledMiddleCaller_splices
 run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_splices_reciprocally' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
 run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_getSchedContext\?_eq' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
 run_check "INVARIANT" rg -n '^theorem donationAccountingPreserved_atCallDepthThree' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+# **WS-HP HP9.1**: and the DEPTH-FOUR witness, which measures what depth three
+# structurally cannot.  The splice writes `above.prev := some below` and leaves
+# `below`'s own `prev` alone; at depth 3 the frame below a cut IS the bottom, so
+# "the stack reconnects" and "the frame beneath the reconnection survives" are one
+# statement.  Four frames is the shallowest stack with TWO below a cut, which makes
+# the transitivity measurable -- and the reservation then reaches its owner through
+# THREE pops, where §3.22 needs two.
+run_check "INVARIANT" rg -n '^private def runMiddleRemovalDepthFourChecks' tests/SmpIpcSuite.lean
+run_check "INVARIANT" bash -lc 'rg -n "PAYOFF: \.\.\.while the frame BELOW it is untouched" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -n "PAYOFF: pop three delivers it HOME .[.]bound. to its owner" tests/SmpIpcSuite.lean'
+# ...and it RUNS -- a witness defined and never called is the tautology this project
+# retires one artefact over.  That relation is carried by the contiguous-run anchor
+# in the WS-OD block above, which names every runner of this group in order, so no
+# standalone presence check is added here: a second anchor asking the same question
+# is the duplication this file exists to avoid.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthThree[^\n]*(\n([ \t][^\n]*)?)*schedContextBinding := \.donated scId outer" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 # NEGATIVE: `severAtCut_pop_leaves_no_head` was HP2.3's pin that the policy flip
 # may not precede the trigger flip.  HP6.8 is the flip, and its first conjunct was

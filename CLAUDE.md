@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.47.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.48.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3891,7 +3891,7 @@ a licence to delete the reclaim — deleting it reaches a state
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47)
+### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -3947,7 +3947,7 @@ banner in `IPC/Invariant/Defs.lean` records what replaced it.
 | HP6 | LANDED | v0.35.41 → v0.35.45 | **The splice replaces the sever** — the family renamed (HP6.1), the two reply footprints repointed (HP6.2), then the primitives, the algebra, the policy flip and the depth-three payoff as one cut (HP6.3–HP6.9) |
 | HP7 | LANDED | v0.35.46 | **The three stated coherence hypotheses retire** — nine declarations deleted with the binding-driven resolver, HP7.1 already done at HP4.4, HP7.4 vacuous, and the fourth stated fact found LIVE |
 | HP8 | LANDED | v0.35.47 | **The frozen mirror splices** — the sever's family deleted, the census's three mirrors, and `FO-043`: the depth-3 witness every shallower scenario structurally could not be |
-| HP9 | PENDING | — | Witnesses, anchors, documentation, closure |
+| HP9 | LANDED | v0.35.48 | **Witnesses, anchors, documentation, closure** — the depth-4 witness (§3.23), the upstream facts recorded at the code, and acceptance box 10 struck as wrong rather than ticked |
 | HP10 | PENDING | — | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach |
 
 **What new code must respect since HP4 (`v0.35.38`).**  Seven things.
@@ -4393,6 +4393,73 @@ because it performs the writes with none of the removal's resolution or validati
 so the store step's chain terminates in a stating entry two hops out, through the
 live `.halfStep`.  The census reports **24** write sites, six of them frozen
 mirrors.
+
+**What new code must respect since HP9 (`v0.35.48`).**  Five things, and three of
+them are about what the phase did *not* do.
+
+(1) **The depth-4 witness measures the splice's COMPOSITION, not its stores.**
+`tests/SmpIpcSuite.lean` §3.23 cuts the third frame of a four-frame stack, so
+**two** frames sit below the cut — the shallowest shape on which the splice's
+transitivity is a proposition at all, since at depth 3 "the stack reconnects" and
+"the frame beneath the reconnection survives" are one statement.  Three successive
+pops then carry the reservation home, where §3.22 needs two.  What it deliberately
+does **not** catch is a change to the three stores: `spliceReplyFrameStores_cases`
+states them exactly, so both candidate mutations — the full sever, and a
+reconnection that clobbers the frame below's own downward link — fail to
+*elaborate* rather than failing a test.  A new reply-stack scenario that asserts a
+store shape is duplicating a theorem; one that asserts a *walk* or a *pop chain* is
+measuring something no theorem states.  And a pop chain **follows** the resolver's
+answer rather than supplying it: `returnDonatedSchedContextResolved` reads
+`replyStackOuterCaller?` of its own state, so each row asserts where the kernel says
+the reservation is still owed and the next row pops at that same thread.  A chain
+whose recipients are chosen by the fixture measures the fixture.
+
+(2) **The upstream facts live beside the code they justify.**
+`donationRecipientAcceptable`'s docstring carries all three — `reply_pop` donates
+only under `if (tcb->tcbSchedContext == NULL)`, the trigger is
+`call_stack_get_isHead(reply->replyNext)`, and `reply_remove`'s non-head branch
+writes **zero** into the frame above — each naming the revisions read.  A claim
+about an external artefact belongs at the code it justifies, and it names a **tag**
+rather than a repository, because `v0.35.14` asserted the opposite, quoted a line
+that exists in no release, and swept that error across nine prose sites and three
+docstrings that had been right.
+
+(3) **The anchors are where their cuts put them, not in a closing sweep.**  HP9.2
+asked for positives and negatives over the splice, the trigger and the recipient
+guard; every one of them had already landed with HP6.5, HP7 or HP8, mutation-tested
+in both directions at the time.  So HP9 added only the depth-4 witness's own,
+and **retired one it had first written**: a standalone check that the scenario is
+*called* duplicated the WS-OD contiguous-run anchor, which already names every
+runner of that group **in order** — and which is what caught the insertion, exactly
+as its own comment says it caught OD3.1's and OD4.1's.  A new scenario in that
+group therefore extends that anchor rather than adding a sibling; adding parallel
+anchors to satisfy a row would have been the duplication this file spends its
+length retiring.
+
+(4) **The donation-accounting register row is still OPEN, and HP9's acceptance box
+saying otherwise is struck through rather than ticked.**  That box was written
+before `v0.35.42` found the depth-**2** loss, where the removal takes the client's
+frame off the *bottom* of its stack and both policies write `none` into the frame
+above — so the splice provably cannot reach it.  What WS-HP earned is the depth-≥ 3
+half.  Closing the row would corrupt the artefact RR8.4's hand-off check reads, so
+v1.0.0 must still not claim that completing a call chain returns a client's
+reservation *unconditionally*: that is HP10's.
+
+(5) **An acceptance box is a present-tense claim, so a later phase that deletes its
+artefacts must sweep it.**  HP9's closure read the plan's acceptance list against the
+tree and found box 3 — *the two triggers are proved equivalent … and the theorem that
+the splice breaks that equivalence exists* — citing two declarations that survive only
+as tombstones: HP6.8 deleted `severAtCut_pop_leaves_no_head` because its first
+conjunct was the policy constant at the old value, and HP7 deleted HP2.1's equivalence
+with the binding-driven resolver it was stated over.  Both deletions were right, and
+both were cuts whose own citation sweeps missed this box, because a criterion reads as
+*history* while being written as a live claim.  It is corrected by recording the
+lifecycle rather than by weakening the criterion: an **ordering pin** exists to make a
+sequence machine-checked *while the ordering is still ahead*, and once the ordering is
+taken its subject is gone — so the box says it is not re-verifiable by grep, names the
+cut that earned it, and names what replaced each artefact.  A box whose artefacts a
+later phase consumed, left in the present tense, reads exactly like a box nobody
+checked.
 
 **And the splice is not the whole remedy — depth 2 needs HP10** (registered
 `v0.35.42`).  The register scoped this defect to reply-stack depth ≥ 3 and that

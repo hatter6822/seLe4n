@@ -288,9 +288,29 @@ pass byte-identically across the flip is the measurement that the change is conf
 to depth ≥ 3; closing it needs the reservation's *origin* on the `SchedContext`
 rather than stack reachability, which is HP10.
 
+**HP9 (`v0.35.48`) showed the splice COMPOSES**, which depth 3 cannot.  The splice
+writes the frame below's `next` and leaves its own `prev` untouched, so on a
+three-frame stack “the frame above reconnects” and “the frames below survive” are
+the same statement; depth **4** is the shallowest stack with *two* frames below a
+cut, and `tests/SmpIpcSuite.lean` §3.23 builds one, cuts its third frame, asserts
+the frame below the cut untouched, and runs **three** successive
+`returnDonatedSchedContextResolved` pops that end with the reservation `.bound` on
+the original owner — the transitive form of
+`donationAccountingPreserved_atCallDepthThree`.  What the cut *measured* changes what
+§3.23 is evidence for: a token-preserving mutation of the splice's **store shape**
+does not fail the suite, it **fails to elaborate**, because
+`spliceReplyFrameStores_cases` pins the three stores as a theorem.  So the shape needs
+no witness and §3.23's subject is the composition; the witness says so rather than
+implying a mutation-verification that is not available.  HP9 also moved the three
+upstream facts this workstream rests on — the non-head branch's write, the pop's
+trigger, and `reply_pop`'s `tcbSchedContext == NULL` guard — to
+`donationRecipientAcceptable`'s own docstring, each with the revisions it was read at,
+which is what `v0.35.40`'s retraction-of-a-retraction cost.  **Depth 2 remains
+HP10's**, and the register row stays open on it.
+
 See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.8 for the canonical text,
-§8.12.9 for the head-driven reply pop, §8.12.10 for the cancellation reclaim and
-§8.12.11 for the splice.
+§8.12.9 for the head-driven reply pop, §8.12.10 for the cancellation reclaim,
+§8.12.11 for the splice and §8.12.14 for its composition at depth 4.
 
 **A donation moves budget, period and deadline — not priority or domain**
 (`v0.35.3`).  Closing WS-OD surfaced an authority crossing in both directions:

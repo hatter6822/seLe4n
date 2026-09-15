@@ -649,7 +649,7 @@ difference.
 | HP6 | The splice replaces the sever — **COMPLETE** (HP6.1 `v0.35.41`, HP6.2 `v0.35.44`, HP6.3–HP6.9 one cut at `v0.35.45`) | 9 |
 | HP7 | The three stated hypotheses retire — **COMPLETE** (`v0.35.46`; HP7.1 verified already done at HP4.4, HP7.4 measured out vacuous) | 4 |
 | HP8 | The frozen mirror — **COMPLETE** (`v0.35.47`; HP8.4 added while implementing: the depth-3 witness the phase turns on) | 4 |
-| HP9 | Witnesses, anchors, documentation, closure | 5 |
+| HP9 | Witnesses, anchors, documentation, closure — **COMPLETE** (`v0.35.48`; HP9.2 largely verification, HP9.3's own premise corrected, acceptance box 10 struck as wrong) | 5 |
 | HP10 | The reservation's origin, so the return does not depend on chain connectivity | 9 |
 
 ## 6. Sub-tasks
@@ -990,13 +990,14 @@ agreement between the frozen reply and the live one") was met by the suite
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| HP9.1 | A **depth-4** witness — the shallowest stack on which two frames sit below a cut — so the splice's transitivity is measured rather than inferred from depth 3 | `tests/SmpIpcSuite.lean` | M |
-| HP9.2 | Tier 3 anchors: positives for the splice's two writes and the head-driven trigger; negatives refusing the sever spelling, the binding-driven trigger on the reply path, and an unguarded recipient. Each mutation-tested in **both** directions — silent on a clean tree, firing on a token-preserving mutation that keeps the name and moves the relation | `scripts/test_tier3_invariant_surface.sh` | M |
-| HP9.3 | The canonical documentation: `CLAUDE.md` + `AGENTS.md` (the WS-RM and WS-OD sections, whose text states the accounting cost this workstream closes — the *upstream-divergence* half of it was withdrawn at `v0.35.40`), `docs/spec/SELE4N_SPEC.md` §7, `docs/REGISTERED_DEBT.md` (table C row closed, and its closing paragraph restored now that the exception is gone), `docs/CLAIM_EVIDENCE_INDEX.md`, the GitBook mirrors | as listed | M |
-| HP9.4 | **Answered at `v0.35.40`, so this row records rather than asks**: `reply_pop` *does* guard its donate with `if (tcb->tcbSchedContext == NULL)`, under the comment "only give the SC back if our SC is NULL" — HP4.6's reason in upstream's own words. Record it beside the recipient guard, together with the other two upstream facts that cut established: the pop's trigger is `call_stack_get_isHead(reply->replyNext)`, and `reply_remove`'s non-head branch *breaks the chain* (so this workstream's removal is an improvement on upstream, not parity with it) | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | S |
-| HP9.5 | Closure: `check_workstream_plan.py`, `check_claim_evidence_citations.py`, the version bump and `CHANGELOG.md` entry, `test_docs_sync.sh`. Consumes HP9.1–HP9.4 | `scripts/`, `CHANGELOG.md` | S |
+| HP9.1 | **LANDED v0.35.48**: `tests/SmpIpcSuite.lean` §3.23, a four-frame stack built by a third live `donateSchedContext`, with the cut at the **third** frame from the bottom — cutting the second would leave one frame below and measure §3.22 again.  Three things it establishes.  (1) **The transitive half**: the splice writes `above.prev := some below` and leaves `below`'s *own* `prev` alone, so at depth 3 "the stack reconnects" and "the frame beneath the reconnection survives" are one statement and §3.22 cannot separate them; at depth 4 the untouched bottom frame is a proposition of its own.  (2) **Three pops**, where §3.22 needs two: the reservation travels holder → second frame's caller → bottom frame's caller → `.bound` on its owner, with every intermediate caller left unbound.  (3) **What the witness does NOT catch, measured rather than claimed**: a code mutation of the splice's *stores* never reaches it, because `spliceReplyFrameStores_cases` states the three stores exactly and both candidate mutations — the full sever, and a reconnection that clobbers the frame below's own downward link — fail to **elaborate** (four errors each).  So the store shape is pinned by a theorem and this scenario's subject is the composition, which no theorem states; the docstring says so, rather than letting a reader infer a mutation story the cut does not have | `tests/SmpIpcSuite.lean` | M |
+| HP9.2 | **LANDED v0.35.48, and mostly as verification** — the anchors this row asks for went in with the cuts they belong to rather than being deferred here, which is the right place for them: HP6.5 pinned all three splice stores positively, the policy constant in **both** directions, `removeCallerReplyFrame_splices_reciprocally` and the depth-3 payoff; HP7 replaced the binding-driven trigger's per-definition negatives with one tree-wide over `SeLe4n/`, since the resolver is deleted; HP8 added the frozen family's, including a negative refusing the sever's names tree-wide; and the recipient guard already carried a positive *and* a token-preserving negative (`serverTid` substituted for `originalOwner`).  Adding parallel anchors here would be the duplication this project retires, so what this row contributes is the depth-4 witness's own anchors — and one it **retired after writing it**: a standalone check that the scenario is *called* duplicated the WS-OD contiguous-run anchor, which names every runner of that group **in order** and which is what caught this insertion, exactly as its own comment says it caught OD3.1's and OD4.1's.  A witness defined and never run is the tautological pin one artefact over, and that relation was already owned; a new scenario in the group extends that anchor rather than adding a sibling.  The cut also repaired an anchor of its own that never matched: `HOME .bound. to` reads the backtick with its `.` and then needs a literal `bound`, so the assertion it names begins `.bound` and the pattern was a **broken** anchor, not a passing one — found by running it rather than by reading it | `scripts/test_tier3_invariant_surface.sh` | M |
+| HP9.3 | **LANDED v0.35.48, with this row's own premise corrected.**  It said "table C row closed, and its closing paragraph restored now that the exception is gone" — written before `v0.35.42` found the **depth-2** loss, so it is false: the row cannot close while the defect it names is live, and closing it would corrupt exactly the artefact RR8.4's hand-off check reads.  The row stays **open** with HP10 as owner and its depth-≥ 3 half recorded as earned.  The rest of the documentation landed incrementally with HP6, HP7 and HP8 rather than in one sweep at the end — each cut swept its own citations, which is what kept the dead-citation classes from accumulating — so what this row does is verify that and add HP9's own: §3.23 in the spec, the acceptance boxes marked MET, and box 10 struck through rather than deleted, because a reader arriving from the old text needs to find out why | as listed | M |
+| HP9.4 | **LANDED v0.35.48**: the three verified upstream facts are recorded **beside the code they justify** (`donationRecipientAcceptable`'s docstring) rather than only in a plan — `reply_pop` donates only under `if (tcb->tcbSchedContext == NULL)`, the pop's trigger is `call_stack_get_isHead(reply->replyNext)`, and `reply_remove`'s non-head branch writes **zero** into the frame above, so upstream severs and this kernel's splice is an *improvement on* it.  Each names the revisions read (`master`, `13.0.0`, `12.1.0`, `12.0.0`, `11.0.0`), because `v0.35.14` asserted the opposite, quoted a line that exists in no release, and swept that error across nine prose sites and three docstrings that had been right | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | S |
+| HP9.5 | **LANDED v0.35.48**: `check_workstream_plan.py`, `check_claim_evidence_citations.py`, `check_lock_ceiling_figures.py`, the version bump, the `CHANGELOG.md` entry and `test_docs_sync.sh`.  Consumes HP9.1–HP9.4 | `scripts/`, `CHANGELOG.md` | S |
 
-**Acceptance**: see §8.
+**Acceptance**: see §8 — where **box 10 is struck through as wrong** rather than
+ticked, for the reason HP9.3 records.
 
 ### HP10 — The reservation's origin, so the return does not depend on chain connectivity (9 sub-tasks)
 
@@ -1122,14 +1123,30 @@ a document existing.
 
 1. The reply path's pop fires on **head-ness of the answered frame**, and a
    Tier 3 negative refuses the binding-driven spelling in either spine (HP4.1,
-   HP9.2).
+   HP9.2).  **MET** at `v0.35.38`, and strengthened at `v0.35.46`: HP7 deleted
+   `endpointReplyServerDonation?` outright, so the negative is tree-wide over
+   `SeLe4n/` rather than per definition — there is no binding-driven spelling left
+   to refuse in one spine and miss in the other.
 2. `spliceReplyFrameOut_eq_sever_of_no_frame_below` holds definitionally, so
    every depth-≤ 2 result is the pre-HP proof verbatim (HP6.3).  **MET** at
    `v0.35.45`; the row number was HP6.2, which is the footprint repoint.
 3. The two triggers are proved equivalent on every state satisfying the chain
    invariant, and the theorem that the splice breaks that equivalence exists —
    so HP6's position after HP4 is machine-checked rather than asserted
-   (HP2.1, HP2.3).
+   (HP2.1, HP2.3).  **MET** at `v0.35.36`, and **its artefacts are now gone —
+   deliberately.**  Read at `v0.35.48`, every name this box cites survives only as a
+   tombstone comment: HP6.8 deleted `severAtCut_pop_leaves_no_head` because its first
+   conjunct was the policy constant at the old value, and HP7 deleted HP2.1's
+   equivalence with the binding-driven resolver it was stated over.  That is the
+   intended lifecycle of an **ordering pin**: it existed to make the sequence HP4 →
+   HP6 a machine-checked fact *while the ordering was still ahead*, and once the
+   ordering was taken its subject no longer exists — a theorem whose conclusion has
+   become false, and an equivalence over a deleted definition, can only be retired.
+   So this box is not re-verifiable by grep at HEAD, and saying so is the point: the
+   evidence is the two cuts at `v0.35.36`, and the tombstones name what replaced each
+   (the HP2.4 derivation family, and the splice's own `…_cases`).  A box whose
+   artefacts a later phase consumes must record that, or it reads exactly like a box
+   nobody checked.
 4. **`donationAccountingPreserved_atCallDepthThree`**: on the depth-3 witness a
    middle removal leaves the reservation owed outward and the later pop
    delivers it to its owner (HP6.9 — the row number was HP6.7, which is the
@@ -1137,22 +1154,58 @@ a document existing.
    **MET** at `v0.35.45`, with §3.22 inverted from COST to PAYOFF, the second
    pop measured, and the golden trace byte-identical.
 5. A depth-4 executed run shows the splice composing — two frames below a cut,
-   both still reachable from the head (HP9.1).
+   both still reachable from the head (HP9.1).  **MET** at `v0.35.48`
+   (`tests/SmpIpcSuite.lean` §3.23), and the run measures more than reachability:
+   **three** successive pops carry the reservation from the innermost holder to its
+   owner, where §3.22 needs two.  One thing the cut established rather than
+   assumed — a code mutation of the splice's *stores* never reaches this witness,
+   because `spliceReplyFrameStores_cases` states the three stores exactly and both
+   candidate mutations (the full sever; a reconnection that clobbers the frame
+   below's own downward link) fail to **elaborate**.  So the store shape is pinned
+   by a theorem and this witness's subject is the *composition*, which no theorem
+   states.
 6. All three stated coherence hypotheses are **gone**, not merely unused: no
-   consumer names them and the definitions are deleted (HP7.3).
+   consumer names them and the definitions are deleted (HP7.3).  **MET** at
+   `v0.35.46` — nine declarations, with the binding-driven resolver among them, and
+   a **fourth** stated fact found live (`replyFrameHeadHolderDonation`, which the
+   trigger does not witness) rather than deleted with them.
 7. No footprint exceeds `maxLockSetSize`, the ceiling and every figure derived
    from it are consistent under `check_lock_ceiling_figures.py`, and the cost
    (22 → 23; 15 → 14 µs) is stated in the canonical sentence rather than
-   described (HP3.5).
+   described (HP3.5).  **MET** at `v0.35.37` and re-checked at every cut since,
+   including HP6.3's third splice store — which is **free**, the cut frame's lock
+   being a declared write member on both removal paths already — and HP6.2's
+   footprint repoint, which retired the sharper reachable seventeen rather than
+   moving the ceiling.
 8. `cancelIpcBlocking` preserves `donationOwnerValid` and `passiveServerIdle`
-   on every arm with no hypothesis it did not carry before (HP5.3).
+   on every arm with no hypothesis it did not carry before (HP5.3).  **MET** at
+   `v0.35.39`, and the precise reading is *one stated fact swapped for one*, not
+   *none added*: WS-RR RR7.22's `donationHolderIsReplyTarget` is deleted and
+   `donatedContextIsOwnerFrameHead` takes its place, keyed on the frame the reclaim
+   now reads.  Its builder `…_of_donationOwnerValid` measures what that costs — every
+   clause but the frame-head link and the holder's promotability comes out of
+   `donationOwnerValid` — so the arm carries no *additional* obligation and the two
+   payoffs (`cancelIpcBlocking_preserves_passiveServerIdle`,
+   `cancelIpcBlocking_reply_no_donation_to_victim`) are live at HEAD.
 9. The frozen mirror runs the same removal and the same trigger, reconciled in
-   both directions by the Tier 1 census (HP8.3).
-10. `docs/REGISTERED_DEBT.md` table C's donation-accounting row is closed, and
-    that table's closing claim — which `v0.35.14` had to qualify for this row —
-    is restored (HP9.3). The *upstream-parity* half of that qualification was
-    withdrawn at `v0.35.40`, since `severAtCut` is what upstream writes; what
-    HP9.3 closes is the accounting claim.
+   both directions by the Tier 1 census (HP8.3).  **MET** at `v0.35.47` (trigger
+   at `v0.35.38`, HP4.7).  The census reports 24 write sites with six frozen
+   mirrors; `FO-043` is the depth-3 witness the flip needed, because every
+   scenario that surface carried sits at depth ≤ 2 and passed byte-identically
+   when the splice landed.
+10. ~~`docs/REGISTERED_DEBT.md` table C's donation-accounting row is closed~~ —
+    **this box is WRONG and is corrected at `v0.35.48` rather than acted on.**  It
+    was written before `v0.35.42` found the **depth-2** loss, and the row cannot
+    close at HP9: at depth 2 the removal takes the client's frame off the *bottom*
+    of its stack, both policies write `none` into the frame above a bottom frame,
+    and the splice therefore **provably cannot** reach it.  What HP9 closes is the
+    depth-≥ 3 half, which HP6 earned; the row stays open with HP10 as its owner,
+    and v1.0.0 must still not claim that completing a call chain returns a
+    client's reservation *unconditionally*.  Closing a register row while the
+    defect it names is live would be the worst available outcome here, because the
+    row is what RR8.4's hand-off check reads.  The *upstream-parity* half of
+    `v0.35.14`'s qualification was separately withdrawn at `v0.35.40`, since
+    `severAtCut` is what upstream writes.
 
 ## 9. What this plan deliberately does not do
 

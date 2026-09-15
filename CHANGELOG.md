@@ -1,3 +1,92 @@
+## v0.35.48 — WS-HP HP9: the splice composes, and the witness says what it is evidence for
+
+HP6 stated the payoff at reply-stack depth 3 —
+`donationAccountingPreserved_atCallDepthThree`, the reservation leaving a cut owed
+outward and the pop that answers the bottom frame delivering it home.  Depth 3
+cannot say whether that is *transitive*.  The splice writes the frame above's
+`prev` and the frame below's `next` and leaves the frame below's own `prev`
+untouched, so on a three-frame stack "the stack reconnects" and "the frame beneath
+the reconnection survives" are the **same** proposition: there is one frame below
+the cut and it is the bottom.  Depth **4** is the shallowest stack with two frames
+below a cut, and that is what this cut measures.
+
+`tests/SmpIpcSuite.lean` §3.23 builds a four-frame stack with a third live
+`donateSchedContext` and cuts its **third** frame from the bottom — cutting the
+second would leave one frame below and measure §3.22 again.  Nineteen rows: the
+four pre-state links, the cut, the frame above reconnecting to the frame below,
+the frame below's own downward link asserted **untouched** (the transitive half,
+which is a proposition of its own only at this depth), a negative spelling the
+retired sever's value so the assertions are known to discriminate, and **three**
+successive `returnDonatedSchedContextResolved` pops where §3.22 needs two — the
+reservation travelling holder → second frame's caller → bottom frame's caller,
+ending `.bound` on its owner with every intermediate caller left unbound.
+
+**What the witness does not catch is measured rather than claimed.**  A
+token-preserving mutation of the splice's *store shape* — reverting to the full
+sever, or reconnecting while clobbering the frame below's own downward link — does
+not fail the suite: it **fails to elaborate**, four errors each, because
+`spliceReplyFrameStores_cases` states the three stores exactly.  So the store shape
+is pinned by a theorem and needs no witness, and §3.23's subject is the
+**composition**, which no theorem states.  The scenario's docstring says so, rather
+than leaving a reader to infer a mutation-verification story the cut does not have.
+
+**The three upstream facts this workstream rests on now sit beside the code they
+justify** (`donationRecipientAcceptable`'s docstring, HP9.4), each naming the
+revisions it was read at — `master`, `13.0.0`, `12.1.0`, `12.0.0`, `11.0.0`:
+`reply_pop` donates only under `if (tcb->tcbSchedContext == NULL)`, the pop's
+trigger is `call_stack_get_isHead(reply->replyNext)`, and `reply_remove`'s non-head
+branch writes **zero** into the frame above, so upstream severs and this kernel's
+splice is an *improvement on* it rather than parity with it.  `v0.35.14` asserted
+the reverse, quoted a line that exists in no release, and swept that error across
+nine prose sites and three docstrings that had been right; a claim about an
+external artefact belongs next to the code it licenses, with its revision named.
+
+**HP9.3's own premise was false and is corrected rather than acted on.**  The
+plan's row said the donation-accounting register row closes here and its withdrawn
+closing paragraph is restored — written before `v0.35.42` found the **depth-2**
+loss.  The row cannot close while the defect it names is live, and closing it would
+corrupt precisely the artefact RR8.4's hand-off check reads.  It stays **open** with
+**HP10** as owner, its depth-≥ 3 half recorded as earned, and acceptance box 10 is
+struck through rather than deleted so a reader arriving from the old text finds out
+why.  HP9.2 is largely verification for the same reason: the anchors it asked for
+went in with the cuts they belong to — HP6.5's three splice stores and the policy
+constant in both directions, HP7's tree-wide negatives over the deleted trigger,
+HP8's frozen family — and adding parallel ones here would be the duplication this
+project retires.  What HP9 contributes is §3.23's own anchors — and one it
+**retired after writing**: a standalone check that the scenario is *called*
+duplicated the WS-OD contiguous-run anchor, which names every runner of that group
+**in order** and which is what caught this insertion, exactly as its own comment
+says it caught OD3.1's and OD4.1's.  The relation was already owned; a new scenario
+in that group extends that anchor rather than adding a sibling.  Two anchor defects
+were found by *running* them rather than reading them: that one, and a pattern whose
+`HOME .bound. to` spends its `.` on the backtick and then requires a literal `bound`
+where the assertion says `` `.bound` `` — so it had never matched.  A **broken**
+anchor and a **duplicate** anchor fail in opposite directions and are both invisible
+to a reader.
+
+**And reading the acceptance list against the tree found a stale box.**  Box 3 —
+*the two triggers are proved equivalent … and the theorem that the splice breaks that
+equivalence exists* — cites two declarations that survive only as tombstones:
+HP6.8 deleted `severAtCut_pop_leaves_no_head` (its first conjunct was the policy
+constant at the old value) and HP7 deleted HP2.1's equivalence with the
+binding-driven resolver it was stated over.  Both deletions were right; both cuts'
+citation sweeps missed this box, because a criterion reads as *history* while being
+written as a live claim.  It is corrected by recording the lifecycle rather than by
+weakening the criterion: an **ordering pin** exists to make a sequence
+machine-checked while the ordering is still ahead, and once the ordering is taken its
+subject is gone.  The box now says it is not re-verifiable by grep at HEAD, names the
+cut that earned it, and names what replaced each artefact.  Boxes 7 and 8 gained
+their `MET` markers in the same pass, box 8 with the precise reading — HP5.3 swapped
+*one* stated fact for one (`donationHolderIsReplyTarget` →
+`donatedContextIsOwnerFrameHead`), which is not the same as adding none.
+
+Documentation: `SELE4N_SPEC.md` §8.12.14, GitBook 12, the claim index's composition
+row, `CLAUDE.md` / `AGENTS.md`, and the register's WS-HP narrative.  **Depth 2
+remains HP10's**, and until it closes v1.0.0 must not claim that completing a call
+chain returns a client's reservation unconditionally.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md HP9.1–HP9.5
+
 ## v0.35.47 — WS-HP HP8: the frozen mirror splices, and the suite that could not tell
 
 `FrozenOps` holds the **live** `SeLe4n.Kernel.Reply` — `Model.freeze` copies a live

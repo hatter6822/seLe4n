@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.47` (`lakefile.toml`) |
+| **Package version** | `0.35.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 381,958 across 330 Lean files |
-| **Test LoC** | 77,524 across 70 Lean test suites |
+| **Production LoC** | 381,980 across 330 Lean files |
+| **Test LoC** | 77,688 across 70 Lean test suites |
 | **Proved declarations** | 12,734 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -4986,6 +4986,49 @@ Four things this section fixes for a reader.
    a site.  Each is a `mirrors` entry naming the live counterpart of the *same
    shape*, which makes the store step's chain terminate in a stating entry two hops
    out rather than one, through the live half-step.
+
+#### 8.12.14 The splice composes — WS-HP HP9 (`v0.35.48`)
+
+The splice writes `above.prev := some below`, where `below` is the cut frame's own
+downward link — and `below`'s own downward link is **not touched**.  At reply-stack
+depth 3 the frame below a cut *is* the bottom, so "the stack reconnects" and "the
+frame beneath the reconnection survives" are one statement and §3.22 cannot
+separate them.  Four frames is the shallowest stack with **two** below a cut, which
+is what makes the splice's transitivity a proposition: `tests/SmpIpcSuite.lean`
+§3.23 cuts the third frame of a four-frame stack, shows the untouched bottom frame,
+and drives **three** successive pops — holder → second frame's caller → bottom
+frame's caller → `.bound` on its owner — where §3.22 needs two.  Each pop is taken
+at the thread the **previous** pop's `replyStackOuterCaller?` resolved, so the chain
+follows the kernel's own answer rather than supplying it; a chain whose recipients
+the fixture chooses would measure the fixture.
+
+Two things that scenario establishes about its own reach, recorded because a reader
+would otherwise infer the wrong one.  A code mutation of the splice's *stores*
+never reaches it: `spliceReplyFrameStores_cases` states the three stores exactly,
+so the full sever and a reconnection that clobbers the frame below's own downward
+link both fail to **elaborate**.  The store shape is therefore pinned by a theorem,
+and the witness's subject is the composition, which no theorem states.  And it is
+non-vacuous by construction, since every pop assertion reads a refusal as `false`.
+
+**The upstream facts this workstream rests on are recorded beside the code they
+justify** — `donationRecipientAcceptable`'s docstring — rather than only in a plan,
+each naming the revisions read.  `reply_pop` donates only under
+`if (tcb->tcbSchedContext == NULL)`; the pop's trigger is
+`call_stack_get_isHead(reply->replyNext)`; and `reply_remove`'s non-head branch
+writes **zero** into the frame above, so upstream severs and this kernel's splice
+is an improvement on it rather than parity with it.  Naming the tag rather than the
+repository is the remedy for `v0.35.14`, which asserted the opposite, quoted a line
+that exists in no release, and propagated it to nine prose sites and three
+docstrings that had been right.
+
+**What WS-HP does not close.**  The donation-accounting register row remains
+**open**: at depth 2 the removal takes the client's frame off the *bottom* of its
+stack, both removal policies write `none` into the frame above a bottom frame, and
+the splice therefore provably cannot reach that loss.  What the workstream earned
+is the depth-≥ 3 half.  v1.0.0 must still not claim that completing a call chain
+returns a client's reservation *unconditionally*; that is WS-HP HP10's, and it
+needs the reservation's **origin** recorded on the `SchedContext` rather than
+derived from stack reachability.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority
