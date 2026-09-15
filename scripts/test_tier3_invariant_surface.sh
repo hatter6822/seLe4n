@@ -2372,6 +2372,33 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "applyReplyDonationOnCore st1 
 run_check "INVARIANT" rg -n 'PAYOFF: \.\.\.and the pop.s recipient is that origin, NOT the answered caller' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n "PAYOFF: the migration's destination home is the ORIGIN's core" tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n 'CONTROL: \.\.\.while the recipient guard ALONE admits it' tests/SmpIpcSuite.lean
+# --- WS-HP HP10.8: the frozen arm flips -------------------------------------
+# The mirror had to land within one cut of HP10.7: `frozenBranchOperationChecked
+# .endpointReplyToBlockedCaller = true` is a machine-checked claim that the two
+# programs are run beside each other, so a window in which the live arm redirects
+# and the mirror does not makes that claim an OVER-CLAIM rather than a red test.
+run_check "INVARIANT" rg -n '^def frozenReplyDonationRecipient ' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenDonationOriginRecipient\? ' SeLe4n/Kernel/FrozenOps/Core.lean
+# Both guards are mirrored.  A mirror carrying the recipient guard alone would
+# redirect on states the kernel refuses, which is the direction that matters on a
+# differential surface.
+run_check "INVARIANT" rg -n '^def frozenDonationOriginRebindable ' SeLe4n/Kernel/FrozenOps/Core.lean
+# The frozen composite reads the redirect, not the answered caller.
+run_check "INVARIANT" bash -lc 'rg -U -n "frozenApplyReplyDonation st. holder scId\n\s*\(frozenReplyDonationRecipient st scId targetId\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# NEGATIVE: and the bare answered caller must not come back in that position.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "frozenApplyReplyDonation st. holder scId targetId with" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# **HP10.4's origin clear, on the frozen surface.**  It was live-only until FO-044
+# gave the frozen side its first state with a recorded origin and the differential
+# reported the divergence -- a field added to a SHARED record is a sweep of both
+# surfaces, not of the one whose transition motivated it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*donationOrigin :=\n\s*if newOwner\?\.isNone then none else sc\.donationOrigin" SeLe4n/Kernel/FrozenOps/Core.lean'
+# ...and the witness, whose second half is decisive because the resolver DECLINES
+# a reply-blocked origin and the fallback lands on the same thread -- so a selector
+# firing unconditionally passes every outcome assertion and fails that one.
+run_check "INVARIANT" rg -n 'FO-044: the live pop binds the context to the ORIGIN' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'FO-044 half two: the resolver DECLINES a reply-blocked origin' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'differentialEndpointReplyRedirectsToOrigin\) \]' tests/FrozenOpsSuite.lean
+
 
 
 # NEGATIVE: `severAtCut_pop_leaves_no_head` was HP2.3's pin that the policy flip
@@ -13061,7 +13088,7 @@ run_check "INVARIANT" bash -lc 'rg -n "FO-043 NEGATIVE: the frozen removal does 
 # frame's links anyway, so a composite-only assertion about them tests `consumed`
 # rather than the splice -- an inert witness reading as coverage.
 run_check "INVARIANT" bash -lc 'rg -n "FO-043: the frozen PRIMITIVE writes all three links, the cut frame.s own included" tests/FrozenOpsSuite.lean'
-run_check "INVARIANT" bash -lc 'rg -n "^    \(\.endpointReplyToBlockedCaller,     differentialEndpointReplyMiddleFrameSplices\) \]" tests/FrozenOpsSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -n "^    \(\.endpointReplyToBlockedCaller,     differentialEndpointReplyRedirectsToOrigin\) \]" tests/FrozenOpsSuite.lean'
 # The frozen reply removes before it consumes, in the order the live one does.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*let st. := frozenSpliceReplyFrameOutOrSelf st.. replyId[^\n]*(\n([ \t][^\n]*)?)*\(\.reply r\.consumed\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # NEGATIVE, token-preserving -- it keeps both steps and swaps them.
@@ -13509,9 +13536,13 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReplyFrameHeadContext\?[^\n
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReplyFrameHeadContext\?[^\n]*(\n([ \t][^\n]*)?)*\| some \(\.head scId\) => some scId" SeLe4n/Kernel/FrozenOps/Core.lean'
 
 # (14) The frozen composite's trigger IS the frame, read on the pre-state, and
-# the pop's subject is the frame's holder with the answered caller as recipient.
+# the pop's subject is the frame's holder.  **WS-HP HP10.8**: the recipient is the
+# REDIRECT of the answered caller -- the recorded origin at the bottom of the
+# stack -- so this pins the redirect where it used to pin the bare argument, as
+# the live-side anchors do since HP10.7.  The holder's position is unchanged,
+# which is the half HP4.3 exists to pin.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReplyWithDonationReturn[^\n]*(\n([ \t][^\n]*)?)*let headHolder\? := frozenReplyFrameHeadHolder\? st replyId" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReplyWithDonationReturn[^\n]*(\n([ \t][^\n]*)?)*frozenApplyReplyDonation st. holder scId targetId" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReplyWithDonationReturn[^\n]*(\n([ \t][^\n]*)?)*frozenApplyReplyDonation st. holder scId\n\s*\(frozenReplyDonationRecipient st scId targetId\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # NEGATIVE: the swap, exactly as on the live side -- same call, components
 # exchanged, so the reservation would go to the thread that already lost it.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReplyWithDonationReturn[^\n]*(\n([ \t][^\n]*)?)*frozenApplyReplyDonation st. targetId scId holder" SeLe4n/Kernel/FrozenOps/Operations.lean'

@@ -1,3 +1,68 @@
+## v0.35.52 — WS-HP HP10.8: the frozen arm flips, and the differential found two defects
+
+`frozenReplyDonationRecipient` mirrors HP10.7's redirect clause for clause, over
+`frozenDonationOriginRecipient?` and `frozenDonationOriginRebindable`.  The frozen
+store carries the **live** `SchedContext` record, so there was no field to add —
+this row is a resolver and a call site.
+
+**The plan's *same cut* requirement was missed and then honoured.**  HP10.7 landed
+alone at `v0.35.51`, which opened exactly the window HP10.8's row names:
+`frozenBranchOperationChecked .endpointReplyToBlockedCaller = true` is a
+machine-checked claim that the live and frozen `.reply` operations are run beside
+each other, and for one cut they disagreed on precisely the states WS-HP HP10
+exists for.  That failed as an **over-claim**, not as a red test — every existing
+scenario kept passing, because none of them recorded an origin differing from the
+answered caller.  Closing the window was the first thing this cut did.
+
+### Defect one: the frozen return never cleared the origin
+
+HP10.4 landed `donationOrigin`'s clears on the live side only.  `FrozenOps`
+mirrors the live record, so the field was present and unswept, and a frozen state
+left with a stale origin is the thread-id-reuse hazard the field's own docstring
+names — one surface over.  Nothing could see it until a frozen scenario recorded
+an origin at all, which `FO-044` is the first to do.  **A field added to a shared
+record is a sweep of both surfaces**, not of the one whose transition motivated
+it.
+
+What caught it is worth stating: FO-044's eleven preceding assertions all passed —
+both surfaces bound the reservation to the origin, both left the answered caller
+unbound — and `frozenRunAgrees` still failed, on a field no per-object assertion
+mentioned.  A scenario asserting only what it set out to measure would have
+reported the flip as clean.
+
+### Defect two: HP10.6's "the member is live at depth 1" is retracted
+
+The footprint resolves `donationOriginRecipient?` on the syscall's **pre-state**,
+where the answered caller is `.blockedOnReply` — it is waiting on this very reply
+— so HP10.7's rebindability guard refuses it and the member is `none` there.
+HP10.6 claimed the opposite, and the claim was written before HP10.7's second
+guard existed.
+
+The behaviour is sound: where the two states disagree the transition redirects to
+the answered caller, whose TCB the footprint declares unconditionally as
+`replyTargetTid`, so no write is undeclared; and for any other origin the reply
+leg changes nothing the guards read, since it wakes only the answered caller.
+What that soundness rests on is a case analysis in prose rather than the
+structural agreement every other member of this family has — HP4.1 resolves the
+*trigger* on the pre-state and passes it in precisely so the footprint and the
+transition cannot name different frames.  The recipient does not yet get that
+treatment, and the asymmetry is registered in `docs/REGISTERED_DEBT.md` with its
+remedy rather than assumed away.  The `insertOrMerge` collapse asserted in
+`tests/DeadlockFreedomSuite.lean` is corrected to what it actually is: a statement
+about the argument value, not about a reachable resolution.
+
+### FO-044
+
+Two halves, as the plan specified.  The first records an origin that differs from
+the answered caller and requires both surfaces to bind the reservation to it, with
+negatives that the answered caller is left unbound on each.  The second fixes the
+origin *at* the answered caller — where the resolver **declines** it, because it is
+reply-blocked, and the fallback lands on the same thread.  That is what makes the
+pair decisive: a selector firing unconditionally passes every outcome assertion in
+both halves and fails the resolver assertion in the second.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md §HP10
+
 ## v0.35.51 — WS-HP HP10.7: the arm flips, and the redirect needed a second guard
 
 The reply path's bottom-of-stack pop hands the reservation to the scheduling

@@ -1738,6 +1738,137 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
           | none   => false)
      | none => false)
 
+/-- FO-044 (**WS-HP HP10.8**): **the pop's recipient is the recorded ORIGIN**, on
+a state where that is not the answered caller.
+
+HP10.7 flipped the live arm and this scenario is why the frozen arm had to flip
+with it: `frozenBranchOperationChecked .endpointReplyToBlockedCaller = true` is a
+machine-checked claim that the two programs are run beside each other, and a
+window in which the live one redirects and the mirror does not makes that claim an
+over-claim rather than a failing test — every existing scenario keeps passing,
+because none of them records an origin that differs from the answered caller.
+
+**Two halves, and the second is what makes the first decisive.**  A selector that
+fired unconditionally — handing the reservation to whatever the origin field says
+regardless of the guards — would pass a half that only checks "the origin gets
+it", so the second half fixes the origin *at* the answered caller and requires the
+identity.  That is the shape §3.9b was built against, one surface over.
+
+The stack is a single frame, which is the bottom of its own stack: the redirect
+fires exactly there (`donationOriginRecipient?` answers only at
+`replyStackOuterCaller? = .ok none`), and it is the depth-2 residue's shape after
+the client's frame has been removed. -/
+private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
+  let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofNat 71
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  -- The answered caller: reply-blocked on the recorded server, holding nothing.
+  let caller : TCB := { diffTcb 62 with
+    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid,
+    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+  -- The recorded server, holding the donation.
+  let server : TCB := { diffTcb 63 with
+    schedContextBinding := .donated diffScId diffA }
+  -- **The origin**: a thread whose own frame left the stack, so it is awake, holds
+  -- nothing, and is on no stack.  Both guards admit it — which is the state the
+  -- depth-2 defect leaves behind.
+  let origin : TCB := { diffTcb 65 with
+    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+  -- ### Half one: the origin DIFFERS from the answered caller.
+  let redirected := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server) origin)
+    rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
+    diffScId { diffDonatedSc (some rid) with donationOrigin := some diffDelegate }
+  expect "FO-044 control: the answered frame heads the donated context"
+    (SeLe4n.Kernel.replyFrameHeadHolder? redirected.state rid == some (diffScId, diffB))
+  expect "FO-044 control: ...and it is the BOTTOM of its stack, where the redirect fires"
+    (match SeLe4n.Kernel.replyStackOuterCaller? redirected.state diffScId with
+     | .ok none => true
+     | _        => false)
+  expect "FO-044 control: the recorded origin is NOT the answered caller"
+    (!(diffDelegate == diffA))
+  -- **The live arm redirects** (HP10.7), asserted here so the agreement below is
+  -- agreement with a redirect rather than between two unredirected pops.
+  expect "FO-044: the live resolver answers the recorded origin"
+    (SeLe4n.Kernel.donationOriginRecipient? redirected.state diffScId == some diffDelegate)
+  expect "FO-044: ...and so does the frozen one"
+    (frozenDonationOriginRecipient? (freeze redirected) diffScId == some diffDelegate)
+  expect "FO-044 control: the live operation succeeds"
+    (liveReplySpine diffB diffA msg redirected.state).toOption.isSome
+  expect "FO-044 control: and so does the frozen composite"
+    (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze redirected)).toOption.isSome
+  -- **PAYOFF**: the reservation settles on the ORIGIN, on both surfaces — not on
+  -- the answered caller, which is what stack reachability alone would name.
+  expect "FO-044: the live pop binds the context to the ORIGIN"
+    (match (liveReplySpine diffB diffA msg redirected.state).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffDelegate with
+          | some t => t.schedContextBinding == .bound diffScId
+          | none   => false)
+     | none => false)
+  expect "FO-044: ...and the frozen pop binds it to the same thread"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
+              (freeze redirected)).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffDelegate with
+          | some t => t.schedContextBinding == .bound diffScId
+          | none   => false)
+     | none => false)
+  -- NEGATIVE: and the answered caller does NOT receive it, on either surface.  A
+  -- mirror that ignored the origin would bind `diffA` and pass every control above.
+  expect "FO-044 NEGATIVE: the answered caller is left unbound (live)"
+    (match (liveReplySpine diffB diffA msg redirected.state).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffA with
+          | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+          | none   => false)
+     | none => false)
+  expect "FO-044 NEGATIVE: ...and unbound on the frozen surface too"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
+              (freeze redirected)).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffA with
+          | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+          | none   => false)
+     | none => false)
+  expect "FO-044: and the whole frozen OPERATION agrees with the live one"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze redirected))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) redirected.state))
+  -- ### Half two: the origin IS the answered caller, so the redirect is the
+  -- identity.  A selector that fired unconditionally passes half one and breaks
+  -- this, which is what makes the pair decisive rather than merely green.
+  let sameOrigin := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server) origin)
+    rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
+    diffScId { diffDonatedSc (some rid) with donationOrigin := some diffA }
+  -- **The resolver DECLINES here, and that is the point.**  The answered caller is
+  -- `.blockedOnReply` at the state the resolver reads — it is waiting on this very
+  -- reply — so `donationOriginRebindable` refuses it and the recipient comes from
+  -- the FALLBACK rather than from the origin field.  The outcome is the same
+  -- thread by a different route, which is exactly what makes this half
+  -- discriminating: a selector that fired unconditionally would answer
+  -- `some diffA`, pass every outcome assertion, and fail this one.
+  expect "FO-044 half two: the resolver DECLINES a reply-blocked origin"
+    (frozenDonationOriginRecipient? (freeze sameOrigin) diffScId == none
+      && SeLe4n.Kernel.donationOriginRecipient? sameOrigin.state diffScId == none)
+  expect "FO-044 half two: ...so the recipient is the answered caller by FALLBACK, on both surfaces"
+    (SeLe4n.Kernel.replyDonationRecipient sameOrigin.state diffScId diffA == diffA
+      && frozenReplyDonationRecipient (freeze sameOrigin) diffScId diffA == diffA)
+  expect "FO-044 half two: the answered caller receives the reservation (frozen)"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
+              (freeze sameOrigin)).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffA with
+          | some t => t.schedContextBinding == .bound diffScId
+          | none   => false)
+     | none => false)
+  expect "FO-044 half two: and the operations still agree"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze sameOrigin))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) sameOrigin.state))
+
 /-- FO-035: **a receive that dequeues a `.blockedOnCall` caller** (PR #873
 round 17).
 
@@ -1991,7 +2122,8 @@ private def operationDifferentialScenarios :
     List (SeLe4n.Kernel.FrozenOps.FrozenOpBranch × IO Unit) :=
   [ (.endpointReplyToBlockedCaller,     differentialEndpointReplyOperationAgrees),
     (.endpointReplyToBlockedCaller,     differentialEndpointReplyDonationAgrees),
-    (.endpointReplyToBlockedCaller,     differentialEndpointReplyMiddleFrameSplices) ]
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyMiddleFrameSplices),
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyRedirectsToOrigin) ]
 
 /-- The claim and the scenarios name the same syscalls, in both directions: a
 scenario for a syscall the table does not claim, or a claim with no scenario,

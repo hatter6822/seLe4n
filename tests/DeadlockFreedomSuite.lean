@@ -869,13 +869,19 @@ private def runNewlyBoundedFootprintChecks : IO Unit := do
       (some ⟨11⟩) none).size = 12))
   assertBool "the redirect's origin is declared WRITE (the pop rebinds that TCB)"
     (decide ((tcbLock (ThreadId.ofNat 12), AccessMode.write) ∈ replyWithObj.pairs))
-  -- **And at call depth 1 the member is LIVE and costs nothing.**  HP10.4 records
-  -- an origin on every first push, so a depth-1 donating reply resolves this
-  -- member to `some` -- and there the recorded origin *is* the answered caller, so
+  -- **And where the origin IS the answered caller the member costs nothing.**
   -- `insertOrMerge` collapses the two into one key and the declaration is the one
-  -- it was before HP10.6.  That is the honest form of "inert": not that the member
-  -- is absent, but that it names a key the footprint already declares.  Asserted
-  -- as an equality against the origin-free shape, at the same operands.
+  -- it was before HP10.6.  Asserted as an equality against the origin-free shape,
+  -- at the same operands.
+  --
+  -- **WS-HP HP10.8 correction.**  HP10.6 gave the reason as "HP10.4 records an
+  -- origin on every first push, so a depth-1 donating reply resolves this member
+  -- to `some`", and HP10.7's second guard made that false: the footprint resolves
+  -- on the syscall's PRE-state, where the answered caller is `.blockedOnReply` --
+  -- it is waiting on this very reply -- so `donationOriginRebindable` refuses it
+  -- and the member is `none` there.  The equality below is therefore a statement
+  -- about the ARGUMENT value, not about a reachable resolution, and it is still
+  -- the one the arithmetic needs.
   assertBool "…and at depth 1 the origin IS the answered caller, so it merges"
     (decide ((lockSet_endpointReply (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
       (ThreadId.ofNat 3) (some ⟨4⟩) (some (ThreadId.ofNat 5)) (some ⟨6⟩)

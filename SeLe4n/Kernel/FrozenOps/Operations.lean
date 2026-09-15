@@ -1086,7 +1086,17 @@ def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
     | .ok ((), st') =>
       match headHolder?, server? with
       | some (scId, holder), some server =>
-          match frozenApplyReplyDonation st' holder scId targetId with
+          -- **WS-HP HP10.8**: the recipient at the BOTTOM of the stack is the
+          -- reservation's recorded origin, exactly as the live arm has read it
+          -- since HP10.7.  The resolver is read on the PRE-state `st`, because
+          -- `frozenEndpointReply` has already consumed the answered caller's
+          -- reply link by the time `st'` exists -- the same reason the live
+          -- trigger takes its frame as an argument.  A window in which the live
+          -- arm redirects and this one does not makes
+          -- `frozenBranchOperationChecked .endpointReplyToBlockedCaller = true`
+          -- an over-claim, which is HP4.7's situation verbatim.
+          match frozenApplyReplyDonation st' holder scId
+                  (frozenReplyDonationRecipient st scId targetId) with
           | .error e => .error e
           | .ok st'' => .ok ((), frozenRevertPriorityInheritance st'' server)
       | _, some server => .ok ((), frozenRevertPriorityInheritance st' server)

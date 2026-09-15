@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.51.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.52.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~66465 lines)
+- `CHANGELOG.md` (~66530 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23481 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -270,10 +270,10 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~2247 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2244 lines)
+- `tests/FrozenOpsSuite.lean` (~2239 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2115 lines)
-- `tests/FrozenOpsSuite.lean` (~2107 lines)
 - `tests/SmpCancellationSuite.lean` (~2080 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
@@ -311,8 +311,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1720 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1668 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1658 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1616 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
@@ -352,6 +352,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1191 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1176 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1175 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
@@ -362,7 +363,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `tests/SmpIdleSuite.lean` (~1105 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
-- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1093 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1092 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
@@ -371,7 +371,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `tests/PriorityManagementSuite.lean` (~1035 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
-- `tests/DeadlockFreedomSuite.lean` (~1001 lines)
+- `tests/DeadlockFreedomSuite.lean` (~1007 lines)
 - `tests/SmpCbsSuite.lean` (~1001 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1000 lines)
@@ -3899,7 +3899,7 @@ a licence to delete the reclaim — deleting it reaches a state
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10.1–HP10.7 v0.35.49 → v0.35.51)
+### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10.1–HP10.8 v0.35.49 → v0.35.52)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -3956,7 +3956,7 @@ banner in `IPC/Invariant/Defs.lean` records what replaced it.
 | HP7 | LANDED | v0.35.46 | **The three stated coherence hypotheses retire** — nine declarations deleted with the binding-driven resolver, HP7.1 already done at HP4.4, HP7.4 vacuous, and the fourth stated fact found LIVE |
 | HP8 | LANDED | v0.35.47 | **The frozen mirror splices** — the sever's family deleted, the census's three mirrors, and `FO-043`: the depth-3 witness every shallower scenario structurally could not be |
 | HP9 | LANDED | v0.35.48 | **Witnesses, anchors, documentation, closure** — the depth-4 witness (§3.23), the upstream facts recorded at the code, and acceptance box 10 struck as wrong rather than ticked |
-| HP10 | IN FLIGHT | HP10.1–HP10.5 v0.35.49, HP10.6 v0.35.50, HP10.7 v0.35.51 | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach; the field and its footprint member are in, and **the reply path's pop now redirects to the origin** |
+| HP10 | IN FLIGHT | HP10.1–HP10.5 v0.35.49, HP10.6 v0.35.50, HP10.7 v0.35.51, HP10.8 v0.35.52 | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach; the field and its footprint member are in, and **the reply path's pop now redirects to the origin** |
 
 **What new code must respect since HP4 (`v0.35.38`).**  Seven things.
 
@@ -4479,12 +4479,22 @@ will read.**  It answers `some o` only where all three of the pop's own conditio
 hold: `replyStackOuterCaller?` says bottom of stack (which *is*
 `returnDonatedSchedContextResolved`'s `newOwner? = none`, so the member is declared
 on exactly the states the pop writes it), the context records an origin, and that
-thread passes HP4.6's recipient guard.  **It is live, not absent**: HP10.4 records
-an origin on every first push, so a depth-1 donating reply resolves it to `some` —
-and there the recorded origin *is* the answered caller, so `insertOrMerge` collapses
-it and the declaration is unchanged.  It is a *distinct* key exactly on the
-out-of-order removal this phase exists for, which is the state HP10.7's pop writes a
-different TCB on.  `donationOriginRecipient?_eq_some_iff` is
+thread passes HP4.6's recipient guard — and, since HP10.7, `donationOriginRebindable`.
+It is a *distinct* key exactly on the out-of-order removal this phase exists for,
+which is the state HP10.7's pop writes a different TCB on.
+
+**HP10.6 claimed this member is live at depth 1, and HP10.8 measured that it is
+not.**  The footprint resolves on the syscall's **pre-state**, where the answered
+caller is `.blockedOnReply` — it is waiting on this very reply — so HP10.7's
+rebindability guard refuses it and the member is `none` there.  The *transition*
+resolves after the reply leg, which wakes that caller, so it may answer `some
+answeredCaller`; the pop then writes `replyTargetTid`, which the footprint declares
+unconditionally, so nothing is undeclared.  Two consequences a reader must not
+lose.  The `insertOrMerge` collapse asserted in `tests/DeadlockFreedomSuite.lean`
+is a statement about the **argument value**, not about a reachable resolution.  And
+the footprint and the transition read the resolver at **different states**, which
+every other member of this family avoids by construction — the asymmetry is
+registered rather than assumed away (`docs/REGISTERED_DEBT.md`, WS-HP).  `donationOriginRecipient?_eq_some_iff` is
 the one characterisation the three consumers read — a second case analysis over the
 same four-way match is the duplication this file spends its length retiring.
 
@@ -4613,6 +4623,50 @@ redirect does not reach the witness: it fails to elaborate, because
 `replyDonationRecipient_eq_origin` and its siblings pin the definition
 structurally.  A new scenario in that group **extends** the contiguous-run anchor
 rather than adding a sibling.
+
+**What new code must respect since HP10.8 (`v0.35.52`).**  The frozen mirror
+redirects too, and running it beside the live arm found two defects.  Five things.
+
+(1) **`frozenReplyDonationRecipient` is the mirror, and it had to land within one
+cut of HP10.7.**  `frozenBranchOperationChecked .endpointReplyToBlockedCaller =
+true` is a machine-checked claim that the two programs are run beside each other,
+so a window in which the live arm redirects and the mirror does not makes that
+claim an **over-claim** rather than a failing test — every existing scenario keeps
+passing, because none of them recorded an origin that differs from the answered
+caller.  That is HP4.7's situation verbatim, and this is why the plan's HP10.8 row
+says *same cut*: HP10.7 landed alone at `v0.35.51`, and closing the window was the
+first thing `v0.35.52` did.
+
+(2) **The frozen return clears the origin on the bottom arm — it did not before,
+and FO-044 is what found it.**  HP10.4 landed the field's clears on the live side
+only; `FrozenOps` carries the **live** `SchedContext` record, so the field was
+there and unswept.  A frozen state left with a stale origin is the thread-id-reuse
+hazard the field's own docstring names, one surface over, and nothing could see it
+until a frozen scenario recorded an origin at all.  **A field added to a shared
+record is a sweep of both surfaces**, not of the one whose transition motivated
+it.
+
+(3) **The differential is what catches a mirror that agrees on the headline and
+diverges underneath.**  FO-044's eleven earlier assertions all passed — both
+surfaces bound the reservation to the origin, both left the answered caller
+unbound — and `frozenRunAgrees` still failed, on the `donationOrigin` field no
+per-object assertion mentioned.  A scenario that asserts only what it set out to
+measure would have reported the flip as clean.
+
+(4) **The answered caller is `.blockedOnReply` at the state the resolver reads, so
+the redirect DECLINES it and the recipient comes from the fallback.**  Same
+thread, different route — and it is what makes FO-044's second half
+discriminating, since a selector that fired unconditionally passes every outcome
+assertion and fails the resolver one.  It also retires HP10.6's claim that this
+member is live at depth 1: see the correction in that block, and the registered
+asymmetry between the state the **footprint** resolves at and the state the
+**transition** resolves at.
+
+(5) **Both guards are mirrored, and mirroring one would be worse than mirroring
+neither.**  `frozenDonationOriginRebindable` is `donationOriginRebindable`'s
+counterpart because the frozen surface models the same bindings; a mirror carrying
+the recipient guard alone would redirect on states the kernel refuses, which is
+the direction that matters on a differential surface.
 
 **And the splice is not the whole remedy — depth 2 needs HP10** (registered
 `v0.35.42`).  The register scoped this defect to reply-stack depth ≥ 3 and that

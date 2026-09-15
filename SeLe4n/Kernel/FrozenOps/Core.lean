@@ -787,8 +787,18 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
       match frozenDonationHeadOf? st scId sc with
       | .error e => .error e
       | .ok head? =>
+        -- **WS-HP HP10.4/HP10.8: the loan ends on the BOTTOM arm, so the origin
+        -- clears there** -- the live clause, which this mirror did not carry
+        -- until FO-044 gave the frozen surface its first state with a recorded
+        -- origin and the differential reported the divergence.  HP10.4 landed
+        -- the field's clears on the live side only; leaving the mirror without
+        -- them is the thread-id-reuse hazard the field's own docstring names,
+        -- one surface over.  On the `some` arm the loan is still travelling
+        -- outward, so the origin is preserved.
         let sc' := { sc with boundThread := some originalOwner,
-                             scReply := head?.bind (fun p => p.2.prev) }
+                             scReply := head?.bind (fun p => p.2.prev),
+                             donationOrigin :=
+                               if newOwner?.isNone then none else sc.donationOrigin }
         match st.objects.set scId.toObjId (.schedContext sc') with
         | none => .error .objectNotFound
         | some rebound =>
@@ -813,6 +823,78 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
                             schedContextBinding := .unbound }) with
                   | none => .error .objectNotFound
                   | some released => .ok { st3 with objects := released }
+
+/-- **WS-HP HP10.7/HP10.8, frozen mirror**: the origin may be rebound without
+invalidating a live donation.
+
+`donationOriginRebindable`'s counterpart, clause for clause, and it is here for
+the same reason it is live: `frozenDonationRecipientAcceptable` asks that the
+recipient hold no binding of its *own*, which a thread another binding names as
+its owner can satisfy — and `donationOwnerValid` requires such an owner to be
+`.unbound` **and** `.blockedOnReply`, so rebinding a reply-blocked thread
+falsifies the clause that binding depends on.  A thread that is not reply-blocked
+is named by none, which is the contrapositive this decides in O(1). -/
+def frozenDonationOriginRebindable (st : FrozenSystemState)
+    (origin : SeLe4n.ThreadId) : Bool :=
+  match frozenLookupTcb st origin with
+  | none => true
+  | some tcb =>
+    match tcb.ipcState with
+    | .blockedOnReply _ _ => false
+    | _ => true
+
+/-- **WS-HP HP10.8, frozen mirror**: the reservation's recorded origin, where the
+pop is at the bottom of its stack and that thread passes both guards.
+
+`donationOriginRecipient?`'s counterpart.  The frozen store holds the **live**
+`SchedContext` record, so `donationOrigin` is already there and there is no field
+to add — which is why this row is a resolver and a call site rather than a schema
+change.  Both guards are applied to the **candidate**, so a stale origin falls
+back to the reachability answer rather than refusing the pop. -/
+def frozenDonationOriginRecipient? (st : FrozenSystemState)
+    (scId : SeLe4n.SchedContextId) : Option SeLe4n.ThreadId :=
+  match frozenReplyStackOuterCaller? st scId with
+  | .ok none =>
+    match (st.getSchedContext? scId).bind (·.donationOrigin) with
+    | none => none
+    | some origin =>
+      if frozenDonationRecipientAcceptable st origin
+          && frozenDonationOriginRebindable st origin then
+        some origin
+      else none
+  | _ => none
+
+/-- **WS-HP HP10.8, frozen mirror**: which thread a reply's pop hands the
+reservation to.
+
+`replyDonationRecipient`'s counterpart.  The live arm flipped at HP10.7, and a
+window in which the live arm redirects and this one does not is a window in which
+`frozenBranchOperationChecked .endpointReplyToBlockedCaller = true` is an
+over-claim — the two programs would disagree on precisely the states WS-HP HP10
+exists for, under a machine-checked claim that they are run beside each other.
+That is HP4.7's situation verbatim and it gets HP4.7's answer.
+
+It is the identity wherever the resolver is silent
+(`frozenReplyDonationRecipient_eq_of_no_origin`), which is every frozen state this
+surface reached before the origin field carried anything. -/
+def frozenReplyDonationRecipient (st : FrozenSystemState)
+    (scId : SeLe4n.SchedContextId) (answeredCaller : SeLe4n.ThreadId) :
+    SeLe4n.ThreadId :=
+  (frozenDonationOriginRecipient? st scId).getD answeredCaller
+
+/-- WS-HP HP10.8: the identity wherever no origin is recorded or usable. -/
+@[simp] theorem frozenReplyDonationRecipient_eq_of_no_origin (st : FrozenSystemState)
+    (scId : SeLe4n.SchedContextId) (answeredCaller : SeLe4n.ThreadId)
+    (h : frozenDonationOriginRecipient? st scId = none) :
+    frozenReplyDonationRecipient st scId answeredCaller = answeredCaller := by
+  unfold frozenReplyDonationRecipient; rw [h]; rfl
+
+/-- WS-HP HP10.8: and the recorded origin where there is one. -/
+@[simp] theorem frozenReplyDonationRecipient_eq_origin (st : FrozenSystemState)
+    {scId : SeLe4n.SchedContextId} {answeredCaller o : SeLe4n.ThreadId}
+    (h : frozenDonationOriginRecipient? st scId = some o) :
+    frozenReplyDonationRecipient st scId answeredCaller = o := by
+  unfold frozenReplyDonationRecipient; rw [h]; rfl
 
 /-- **WS-RM, frozen mirror**: the return with its outer caller resolved.
 
