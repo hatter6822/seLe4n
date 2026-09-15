@@ -1,3 +1,120 @@
+## v0.35.50 — WS-HP HP10.6: the footprint member and the ceiling, ahead of the arm
+
+The declaration half of the depth-2 remedy.  HP10.7 will make the pop's
+bottom-of-stack recipient the recorded origin rather than the thread stack
+reachability names, which changes **which TCB the pop writes** — so the member
+lands first, because a footprint that omits a written object is false and this
+project rates that worse than a wide one.
+
+### The resolver, and why the guard sits where it does
+
+`donationOriginRecipient? st scId` answers `some o` only where all three of the
+pop's own conditions hold: `replyStackOuterCaller?` says bottom of stack — which
+**is** `returnDonatedSchedContextResolved`'s `newOwner? = none`, so the member is
+declared on exactly the states the pop writes it and on no others — the context
+records an origin, and that thread passes HP4.6's recipient guard.
+
+The guard is applied to the **candidate**, not to the operation's argument, and
+that is the whole difference between a recovery and a regression: a stale origin
+makes the resolver answer `none` and the pop falls back to the reachability
+recipient, where applying the guard after the choice would *refuse* the pop.
+`donationOriginRecipient?_eq_some_iff` is the one characterisation its three
+consumers read; a second case analysis over the same four-way match would be the
+duplication this project spends its length retiring.
+
+### The member is live, and "inert" means something else here
+
+HP10.4 records an origin on every **first** push, so a depth-1 donating reply
+resolves this member to `some` — and there the recorded origin *is* the answered
+caller, so `insertOrMerge` collapses it into `replyTargetTid` and the declaration
+is the one it was before this cut.  That is the honest form of "inert": not that
+the member is absent, but that it names a key the footprint already declares.
+Where it is a **distinct** key is the out-of-order removal this phase exists for —
+the client's own frame came off the *bottom* of the stack, so reachability names
+the intermediate caller and the recorded origin does not — which is precisely the
+state HP10.7's pop will write a different TCB on.  This cut's own first draft of
+the footprint comment claimed the member was `none` on every reachable state; it
+is corrected here rather than left, and `tests/DeadlockFreedomSuite.lean` asserts
+the depth-1 equality with a negative beside it saying the merge is a property of
+that coincidence and not of the member.
+
+### Declaring is not proving the transition writes it
+
+`lockSet_endpointReply_originRecipient_write_mem` and its `.replyRecv` twin state
+the membership at full arity, and
+`lockSet_endpointReply{,Recv}OnCore_covers_originRecipient` state it of the
+*resolved* footprint under the trigger's own answer.  The Tier 3 anchor over each
+definition asks only that the resolver occur there, which is the presence check
+those theorems replace; both anchors and the write-mode negative are
+mutation-verified in both directions.
+
+### The ceiling moved and the reachable figures did not — by theorem
+
+`maxLockSetSize` **23 → 24**, so `admissibleCriticalSection_rpi5Tick` falls to
+**13 µs** and the uniform 60 µs envelope is **4320 µs**; the canonical sentence
+moved at all five pinned sites and `check_lock_ceiling_figures.py` derived every
+figure from the Lean sources.
+
+What did **not** move is the reachable bound, and that is proved rather than
+hoped: the origin member is live only at the bottom of a stack, and there the two
+below-head members are both absent (`replyStackBelowHead?_of_originRecipient`,
+over the new `replyStackBelowHead?_of_outer_none`), so a reachable footprint
+trades **two** members for one.  `lockSet_endpointReplyRecvOnCore_size_le_twenty`
+and `…_size_le_eighteen` are unchanged, now by a case split on the redirect, and
+`tests/LockSetSuite.lean` exhibits the redirecting shape at **seventeen** — one
+*narrower* than the popping shape it is measured against at the same operands,
+with a negative asserting it declares no frame below its head.
+
+### Seven dead sharp bounds, deleted
+
+Running the reference count that the member's arity change forced found that
+HP6.2 had retired the resolved `…_size_le_seventeen` and left **seven**
+parametric feeders orphaned: the five `_of_owner_eq_target` bounds — whose merge
+HP6.2 established is *false* on every state the arm reaches, since the pair's
+second component is the thread the pop unbinds while the answered caller is
+`.blockedOnReply` — and the two `_of_no_donation` corners of the same figure.
+None had a consumer in the tree.
+
+A sharp figure resting on a refuted hypothesis is worse than no figure, so they
+are deleted with a tombstone naming what replaced them, and Tier 3's positive
+anchor on `_size_le_twentytwo_of_owner_eq_target` is now a tree-wide negative:
+the symbol must not come back.  The four live sharp bounds carry `_of_no_origin`
+in their names because they are stated at the origin's absence, and three
+`_of_no_belowHead` bounds beside them are the branches on which the redirect
+fires.
+
+### Tests
+
+`test_full.sh` clean, `test_aarch64_cross_build.sh` clean, the golden trace
+byte-identical.  The ceiling witnesses moved with the constant in
+`tests/DeadlockFreedomSuite.lean`, `tests/LockSetSuite.lean`,
+`tests/SmpWcrtSuite.lean` and `tests/SmpSchedulerSuite.lean`, each keeping its
+negative so a revert of the constant fails the suite rather than passing it.
+
+**And the deletion's own sweep found three dead citations nobody had swept.**
+Deleting the seven bounds forced a reference count over the `lockSet_*` family,
+and running it across `CLAUDE.md` rather than only over the deleted names found
+**3 of 31 cited identifiers dead** — `lockSet_replyRecv_size_le_thirteen_of_owner_eq_target`
+(retired at `v0.35.4`), `lockSet_endpointReplyRecvOnCore_size_le_thirteen` and
+`lockSet_cancelIpcBlockingOnCore_size_le_ten` (both re-based since) — at six
+sites in each of `CLAUDE.md` and `AGENTS.md`, every one a **live claim citing a
+theorem as evidence** rather than a retirement notice.  None was introduced by
+this cut; all three predate it, and they are corrected the way HP9 item (5)
+prescribes for the same shape — by recording each lifecycle, naming the cut that
+earned the old spelling and the declaration that carries the property now, so the
+narrative figure stays accurate while the citation stops pointing at nothing.
+
+The mechanism half is registered rather than bolted on.  `check_claim_evidence_citations.py`
+scans `docs/CLAIM_EVIDENCE_INDEX.md` **and nothing else**, so a dead *theorem*
+name — snake_case, squarely inside its CITATION pattern — passes anywhere else,
+including the two files this project's own deletion rule names as part of a
+deletion's blast radius.  That is the same fail-open the register already carries
+one axis over (a Lean `def` name is outside the pattern), so it extends that row
+rather than adding a second: one question, one row.  Until it lands, a cut that
+deletes a declaration sweeps `CLAUDE.md` / `AGENTS.md` by hand, as this one did.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md §HP10
+
 ## v0.35.49 — WS-HP HP10.1–HP10.5: the reservation's origin, recorded and inert
 
 WS-HP HP6 recovered the donation accounting at reply-stack depth ≥ 3 and provably

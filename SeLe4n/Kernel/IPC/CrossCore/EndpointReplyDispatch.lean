@@ -523,8 +523,9 @@ state-level one was written by the operation and named by no lock.
 
 **WS-OD OD3.7**: the reply object and the two below-head reads are pinned at
 `none` on *both* sides, and explicitly rather than by a default.  **WS-OD
-(`v0.35.4`) / WS-RM (`v0.35.6`)**: so are the head the pop clears and the frame
-above the answered reply, for the same reason.  This equation
+(`v0.35.4`) / WS-RM (`v0.35.6`) / WS-HP HP10.6**: so are the head the pop clears,
+the frame above the answered reply and the origin a bottom-of-stack pop redirects
+to, for the same reason.  This equation
 characterises what the *donation* adds, and `lockSetExtendOpt` is an insertion —
 it does not commute — so the donation's two members cannot be lifted over
 members added after them.  Stating it on the chain-free, reply-object-free shape
@@ -534,12 +535,12 @@ theorem lockSet_endpointReply_donation_extension
     (replier : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) :
     lockSet_endpointReply replier cnRoot target (some scId) (some originalOwner)
-        none none none none none none
+        none none none none none none none
       = lockSetExtendOpt
           (lockSetExtendOpt
             (lockSetExtendOpt
               (lockSet_endpointReply replier cnRoot target none none none none none none none
-                none)
+                none none)
               (some (schedContextLock scId, .write)))
             (some (tcbLock originalOwner, .write)))
           (some (stateLevelLock, .write)) := by

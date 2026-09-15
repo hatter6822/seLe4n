@@ -2168,6 +2168,56 @@ theorem replyStackBelowHead?_snd_eq_outerCaller (st : SystemState)
               | none => intro h; cases h
               | some outer' => intro h; exact Except.ok.inj h
 
+/-- **WS-HP HP10.6: the bottom of the stack reads and writes nothing below its
+head — the exclusion the origin member rests on.**
+
+`replyStackOuterCaller?` answers `.ok none` in exactly two shapes: a context that
+heads no stack at all, and one whose head has no `prev`.  In both the pop stops at
+the head, so *both* components of `replyStackBelowHead?` are absent.
+
+That is what keeps HP10.6's raise parametric.  The origin member is `some` only
+where the pop is at the bottom of its stack (`donationOriginRecipient?` reads this
+resolver), so it is live on exactly the states where the two below-head members
+are not: a reachable footprint trades two members for one, and the reachable
+`.replyRecv` figures do not move even though the declared ceiling does.  The two
+sharper facts beside it — `_of_no_stack` and `_of_bottom_head` — each cover one of
+the two shapes; this one is stated over the resolver so a caller that knows only
+"the pop is at the bottom" has it without re-deriving which shape it is in. -/
+theorem replyStackBelowHead?_of_outer_none (st : SystemState)
+    (scId : SeLe4n.SchedContextId)
+    (h : replyStackOuterCaller? st scId = .ok none) :
+    replyStackBelowHead? st scId = (none, none) := by
+  unfold replyStackBelowHead?
+  unfold replyStackOuterCaller? at h
+  revert h
+  cases hSc : st.getSchedContext? scId with
+  | none => intro hc; cases hc
+  | some sc =>
+    simp only []
+    cases hHead : donationHeadOf? st scId sc with
+    | error e => intro hc; cases hc
+    | ok head? =>
+      cases head? with
+      | none => intro _; rfl
+      | some pair =>
+        obtain ⟨rid, head⟩ := pair
+        simp only []
+        cases hPrev : head.prev with
+        | none => intro _; rfl
+        | some below =>
+          simp only []
+          cases hBelow : st.getReply? below with
+          | none => intro hc; cases hc
+          | some b =>
+            simp only []
+            cases hLink : (b.next != some (.frame rid)) with
+            | true => simp only [if_true]; intro hc; cases hc
+            | false =>
+              simp only [Bool.false_eq_true, if_false]
+              cases hCaller : b.caller with
+              | none => intro hc; cases hc
+              | some outer' => intro hc; cases hc
+
 /-- WS-OD (`v0.35.4`): **the frame a context heads**, read through the typed
 accessor -- `none` for a context that heads no stack or does not resolve.
 
@@ -5270,6 +5320,197 @@ def returnDonatedSchedContext
                       scId originalOwner) }
   | none => .error .objectNotFound
 
+
+/-- **WS-HP HP10.6: the thread a bottom-of-stack pop hands the reservation to on
+the strength of the recorded origin.**
+
+`none` wherever stack reachability already names the right recipient, which is
+every state this tree reaches today: a pop that is *not* at the bottom of its
+stack, a context recording no origin, and an origin the pop may not write.  `some
+o` exactly where all three fail — and that is the depth-2 gap this phase exists
+for, where a delegate answered the client out of order, the removal took the
+client's frame off the **bottom** of the stack, and the frame above it became the
+bottom, so reachability now names the intermediate caller rather than the client
+whose reservation it is.
+
+Four things it is deliberately not.
+
+It is **not** a second reading of the stack.  Its `.ok none` arm *is*
+`returnDonatedSchedContextResolved`'s own `newOwner? = none`, so the redirect fires
+on exactly the argument value the pop's bottom arm branches on
+(`donationOriginRecipient?_of_outer_some` is the theorem that it is silent
+everywhere else).  That is also what makes the footprint member honest: it is
+declared on the states the pop writes it and on no others, which is what keeps
+HP10.6's raise parametric rather than a widening of every reachable footprint
+(`replyStackBelowHead?_of_originRecipient`).
+
+It is **not** an invariant.  `SchedContext.donationOrigin` is history the kernel
+validates, for the reason its own docstring records: *the origin is the bottom
+frame's thread, **or** a thread whose frame was removed* has an unstateable second
+disjunct, so no `donationChainWellFormed` clause can carry it.  What makes reading
+it safe is that the guard is applied **here**: a stale origin falls back to the
+reachability answer rather than refusing the pop, which is the difference between
+a recovery and a regression — and `donationRecipientAcceptable` is the same guard
+HP4.6 put inside the operation, asked of the candidate before it is chosen rather
+than after.
+
+It is **not** keyed on the answered caller.  A `some` answer is the recorded
+origin whether or not it coincides with the thread the reply answers, and at
+depth 1 it always does: the first push records the client, and the depth-1 pop
+hands the context back to that same client, so the redirect is the identity and
+`insertOrMerge` collapses the footprint member into `replyTargetTid`.  Stating it
+the other way — `some` only when the two differ — would make the resolver's answer
+depend on an argument the footprint does not have.
+
+It is **not** a claim that the origin is a live thread.  `SchedContext.boundThread`
+is tied to no stored TCB by any invariant and neither is this field; a recorded
+origin that resolves to nothing passes `donationRecipientAcceptable` (HP4.6's own
+`_of_none`), and what refuses it is the pop's later lookup, with its own error
+code.  So a `some` answer here is a *candidate*, and a caller must not read it as
+evidence that the thread exists. -/
+def donationOriginRecipient? (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    Option SeLe4n.ThreadId :=
+  match replyStackOuterCaller? st scId with
+  | .ok none =>
+    match (st.getSchedContext? scId).bind (·.donationOrigin) with
+    | none => none
+    | some origin =>
+      if donationRecipientAcceptable st origin then some origin else none
+  | _ => none
+
+/-- WS-HP HP10.6: **silent wherever the loan is still travelling outward.**  The
+`some outer` arm of the pop hands the context to the answered caller and records
+`outer` as the thread it is still owed to, so the chain's own structure names the
+recipient and the recorded origin is further out still. -/
+@[simp] theorem donationOriginRecipient?_of_outer_some (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (outer : SeLe4n.ThreadId)
+    (h : replyStackOuterCaller? st scId = .ok (some outer)) :
+    donationOriginRecipient? st scId = none := by
+  unfold donationOriginRecipient?; rw [h]
+
+/-- WS-HP HP10.6: **and wherever the stack walk refuses.**  A refused resolution
+refuses the pop (`returnDonatedSchedContextResolved`), so there is no recipient to
+redirect. -/
+@[simp] theorem donationOriginRecipient?_of_outer_error (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (e : KernelError)
+    (h : replyStackOuterCaller? st scId = .error e) :
+    donationOriginRecipient? st scId = none := by
+  unfold donationOriginRecipient?; rw [h]
+
+/-- WS-HP HP10.6: **silent on a context that records no origin**, which is every
+context in a tree with no donation, and every one whose loan has ended — the pop's
+bottom arm, both `schedContextBind`/`Unbind` spellings and both
+`cancelBoundDonation` spellings all clear the field (HP10.4). -/
+@[simp] theorem donationOriginRecipient?_of_no_origin (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext)
+    (hSc : st.getSchedContext? scId = some sc) (hNone : sc.donationOrigin = none) :
+    donationOriginRecipient? st scId = none := by
+  unfold donationOriginRecipient?
+  cases hOuter : replyStackOuterCaller? st scId with
+  | error e => rfl
+  | ok outer? =>
+    cases outer? with
+    | some outer => rfl
+    | none => simp only [hSc, Option.bind_some, hNone]
+
+/-- WS-HP HP10.6: **and on a context that does not resolve at all** — reached
+through the walk, which refuses such a context outright. -/
+@[simp] theorem donationOriginRecipient?_of_no_sc (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (hSc : st.getSchedContext? scId = none) :
+    donationOriginRecipient? st scId = none :=
+  donationOriginRecipient?_of_outer_error st scId .objectNotFound
+    (by unfold replyStackOuterCaller?; rw [hSc])
+
+/-- **WS-HP HP10.6: what a `some` answer means, once.**
+
+The three facts every consumer needs — the pop is at the bottom of its stack, the
+context records this thread as the reservation's origin, and that thread already
+passes the guard the pop will apply — stated as one characterisation rather than as
+three case analyses over the same four-way match.  The footprint reads the second
+(the member is the recorded origin, not a thread that merely passes a guard), the
+flip reads the third (a redirected recipient never trips HP4.6's check), and the
+size bound reads the first through `replyStackBelowHead?_of_originRecipient`. -/
+theorem donationOriginRecipient?_eq_some_iff (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (o : SeLe4n.ThreadId) :
+    donationOriginRecipient? st scId = some o
+      ↔ (replyStackOuterCaller? st scId = .ok none
+          ∧ (∃ sc, st.getSchedContext? scId = some sc ∧ sc.donationOrigin = some o)
+          ∧ donationRecipientAcceptable st o = true) := by
+  unfold donationOriginRecipient?
+  constructor
+  · intro h
+    revert h
+    cases hOuter : replyStackOuterCaller? st scId with
+    | error e => intro hc; cases hc
+    | ok outer? =>
+      cases outer? with
+      | some outer => intro hc; cases hc
+      | none =>
+        simp only []
+        cases hSc : st.getSchedContext? scId with
+        | none => simp only [Option.bind_none]; intro hc; cases hc
+        | some sc =>
+          simp only [Option.bind_some]
+          cases hOrigin : sc.donationOrigin with
+          | none => intro hc; cases hc
+          | some origin =>
+            dsimp only
+            by_cases hOk : donationRecipientAcceptable st origin = true
+            · rw [if_pos hOk]
+              intro hEq
+              have hoe : origin = o := Option.some.inj hEq
+              subst hoe
+              -- `cases` generalised both scrutinees, so the characterisation's
+              -- first two components are already discharged in the goal.
+              exact ⟨trivial, ⟨sc, rfl, hOrigin⟩, hOk⟩
+            · rw [if_neg hOk]; intro hc; cases hc
+  · intro ⟨hOuter, ⟨sc, hSc, hOrigin⟩, hOk⟩
+    rw [hOuter]
+    dsimp only
+    simp only [hSc, Option.bind_some, hOrigin]
+    exact if_pos hOk
+
+/-- WS-HP HP10.6: **a `some` answer is the field's own value.**  The footprint
+declares a lock on the thread the pop will write, not on one that merely passes a
+guard, and this is what ties the two. -/
+theorem donationOriginRecipient?_eq_donationOrigin (st : SystemState)
+    {scId : SeLe4n.SchedContextId} {o : SeLe4n.ThreadId}
+    (h : donationOriginRecipient? st scId = some o) :
+    ∃ sc, st.getSchedContext? scId = some sc ∧ sc.donationOrigin = some o :=
+  ((donationOriginRecipient?_eq_some_iff st scId o).mp h).2.1
+
+/-- WS-HP HP10.6: **and it has already passed the pop's own recipient guard.**
+HP4.6's check is applied to the *candidate* here rather than to the operation's
+argument, so the redirect can fall back instead of refusing; this is the half the
+flip consumes — a redirected recipient never trips the guard it is about to face. -/
+theorem donationOriginRecipient?_acceptable (st : SystemState)
+    {scId : SeLe4n.SchedContextId} {o : SeLe4n.ThreadId}
+    (h : donationOriginRecipient? st scId = some o) :
+    donationRecipientAcceptable st o = true :=
+  ((donationOriginRecipient?_eq_some_iff st scId o).mp h).2.2
+
+/-- WS-HP HP10.6: **and the pop it redirects is at the bottom of its stack.**  The
+first component of the characterisation, named because it is the one the footprint
+arithmetic consumes. -/
+theorem donationOriginRecipient?_outer_none (st : SystemState)
+    {scId : SeLe4n.SchedContextId} {o : SeLe4n.ThreadId}
+    (h : donationOriginRecipient? st scId = some o) :
+    replyStackOuterCaller? st scId = .ok none :=
+  ((donationOriginRecipient?_eq_some_iff st scId o).mp h).1
+
+/-- **WS-HP HP10.6: the origin member and the two below-head members are mutually
+exclusive**, so the ceiling's raise costs the *reachable* footprint nothing.
+
+The origin member is live only at the bottom of a stack, and at the bottom there is
+no frame below the head to re-head and no outer caller to validate.  This is the
+same shape HP3.1 used for the splice's member — declared ceiling `+1`, reachable
+bounds unmoved — and it is what
+`lockSet_endpointReplyRecvOnCore_size_le_eighteen` consumes. -/
+theorem replyStackBelowHead?_of_originRecipient (st : SystemState)
+    {scId : SeLe4n.SchedContextId} {o : SeLe4n.ThreadId}
+    (h : donationOriginRecipient? st scId = some o) :
+    replyStackBelowHead? st scId = (none, none) :=
+  replyStackBelowHead?_of_outer_none st scId (donationOriginRecipient?_outer_none st h)
 
 /-- WS-OD OD4.4: **the donation return with its new owner resolved from the state
 it runs on.**

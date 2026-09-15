@@ -93,7 +93,7 @@ theorem lockSet_endpointReplyOnCore_size_le (st : SystemState)
     (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).size
       ≤ maxLockSetSize := by
   unfold lockSet_endpointReplyOnCore
-  exact lockSet_endpointReply_size_le _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_endpointReply_size_le _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- The `replyRecv` resolved footprint — the widest IPC footprint the kernel
 declares.  **Twenty-one** members over all argument values on the widest path: a
@@ -111,7 +111,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le (st : SystemState)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
       ≤ maxLockSetSize :=
-  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD OD1.5: `none` extends nothing. -/
 private theorem extendOpt_none (S : LockSet) : lockSetExtendOpt S none = S := rfl
@@ -193,23 +193,65 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twenty (st : SystemState)
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
       ≤ 20 := by
   unfold lockSet_endpointReplyRecvOnCore
-  cases hS : receiveRendezvousSender? st endpointObjId with
-  | some sender =>
-      -- A rendezvous: the invoker does not block, so its pre-receive return does
-      -- not run and the five members it would contribute are absent.
-      rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
-        receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
-      simp only [Option.map_none]
-      exact Nat.le_trans
-        (lockSet_replyRecv_size_le_eighteen_of_no_preReturn _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-        (by decide : (18 : Nat) ≤ 20)
+  -- **WS-HP HP10.6**: split on the pop's trigger first, so the origin member and
+  -- the two below-head members are decided by one answer.  A frame that heads no
+  -- context contributes neither; one that does contributes the origin exactly when
+  -- the pop is at the bottom of its stack, and there the below-head pair is absent
+  -- (`replyStackBelowHead?_of_originRecipient`).
+  cases hHead : answeredFrameHeadContext? st target with
   | none =>
-      -- A blocking receive: nothing is dequeued, so the new sender, the
-      -- re-donated context and the frame its push would rewrite are all absent.
-      rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
-      simp only [Option.bind_none]
-      exact lockSet_replyRecv_size_le_twenty_of_no_sender
-        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      simp only [Option.map_none, Option.bind_none]
+      cases hS : receiveRendezvousSender? st endpointObjId with
+      | some sender =>
+          rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
+            receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
+          simp only [Option.map_none]
+          exact Nat.le_trans
+            (lockSet_replyRecv_size_le_eighteen_of_no_preReturn_of_no_origin
+              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+            (by decide : (18 : Nat) ≤ 20)
+      | none =>
+          rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+          simp only [Option.bind_none]
+          exact lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_origin
+            _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  | some pr =>
+      obtain ⟨scId, holder⟩ := pr
+      simp only [Option.map_some, Option.bind_some]
+      cases hOrigin : donationOriginRecipient? st scId with
+      | none =>
+          cases hS : receiveRendezvousSender? st endpointObjId with
+          | some sender =>
+              rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
+                receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
+              simp only [Option.map_none]
+              exact Nat.le_trans
+                (lockSet_replyRecv_size_le_eighteen_of_no_preReturn_of_no_origin
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (by decide : (18 : Nat) ≤ 20)
+          | none =>
+              rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+              simp only [Option.bind_none]
+              exact lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_origin
+                _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      | some origin =>
+          rw [replyStackBelowHead?_of_originRecipient st hOrigin]
+          cases hS : receiveRendezvousSender? st endpointObjId with
+          | some sender =>
+              rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
+                receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
+              simp only [Option.map_none]
+              exact Nat.le_trans
+                (lockSet_replyRecv_size_le_seventeen_of_no_preReturn_of_no_belowHead
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (by decide : (17 : Nat) ≤ 20)
+          | none =>
+              rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+              simp only [Option.bind_none]
+              exact Nat.le_trans
+                (lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_belowHead
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (by decide : (19 : Nat) ≤ 20)
 
 /-- **WS-RM (`v0.35.6`): eighteen — and since WS-HP HP6.2 (`v0.35.44`) with **no
 hypothesis at all**.**
@@ -238,36 +280,70 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
       ≤ 18 := by
   unfold lockSet_endpointReplyRecvOnCore
-  cases hS : receiveRendezvousSender? st endpointObjId with
-  | some sender =>
-      rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
-        receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
-      simp only [Option.map_none]
-      exact lockSet_replyRecv_size_le_eighteen_of_no_preReturn
-        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  cases hHead : answeredFrameHeadContext? st target with
   | none =>
-      rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
-      simp only [Option.bind_none]
-      cases hHead : answeredFrameHeadContext? st target with
+      -- The pop contributes nothing -- no context, no holder, no head, no
+      -- below-head pair and (WS-HP HP10.6) no origin, since the origin member is
+      -- `bind`ed on this very answer.
+      simp only [Option.map_none, Option.bind_none]
+      cases hS : receiveRendezvousSender? st endpointObjId with
+      | some sender =>
+          rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
+            receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
+          simp only [Option.map_none]
+          exact lockSet_replyRecv_size_le_eighteen_of_no_preReturn_of_no_origin
+            _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       | none =>
-          -- The pop contributes nothing, so only the removal's two members can be
-          -- live and thirteen bounds what is left.
-          simp only [Option.map_none, Option.bind_none]
+          rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+          simp only [Option.bind_none]
           exact Nat.le_trans
-            (lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head
+            (lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head_of_no_origin
               _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
             (by decide : (17 : Nat) ≤ 18)
-      | some pr =>
-          obtain ⟨scId, holder⟩ := pr
-          -- **WS-HP HP6.2**: the exclusion is structural under this trigger.  A
-          -- frame that heads a context has no frame above it and none below it,
-          -- so the removal's two members are absent on exactly the states the
-          -- pop's three are present -- no coherence fact required.
-          rw [answeredReplyFrameAbove?_none_of_headContext st target scId holder hHead,
-            answeredReplyFrameBelow?_none_of_headContext st target scId holder hHead]
-          simp only [Option.map_some]
-          exact lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove
-            _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  | some pr =>
+      obtain ⟨scId, holder⟩ := pr
+      -- **WS-HP HP6.2**: the exclusion is structural under this trigger.  A
+      -- frame that heads a context has no frame above it and none below it,
+      -- so the removal's two members are absent on exactly the states the
+      -- pop's three are present -- no coherence fact required.
+      rw [answeredReplyFrameAbove?_none_of_headContext st target scId holder hHead,
+        answeredReplyFrameBelow?_none_of_headContext st target scId holder hHead]
+      simp only [Option.map_some, Option.bind_some]
+      cases hOrigin : donationOriginRecipient? st scId with
+      | none =>
+          cases hS : receiveRendezvousSender? st endpointObjId with
+          | some sender =>
+              rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
+                receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
+              simp only [Option.map_none]
+              exact lockSet_replyRecv_size_le_eighteen_of_no_preReturn_of_no_origin
+                _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+          | none =>
+              rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+              simp only [Option.bind_none]
+              exact lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove_of_no_origin
+                _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      | some origin =>
+          -- **WS-HP HP10.6**: the redirect fires, so the pop is at the bottom of
+          -- its stack and the two below-head members are absent -- two members
+          -- traded for one, which is why the reachable figure does not move.
+          rw [replyStackBelowHead?_of_originRecipient st hOrigin]
+          cases hS : receiveRendezvousSender? st endpointObjId with
+          | some sender =>
+              rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
+                receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
+              simp only [Option.map_none]
+              exact Nat.le_trans
+                (lockSet_replyRecv_size_le_seventeen_of_no_preReturn_of_no_belowHead
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (by decide : (17 : Nat) ≤ 18)
+          | none =>
+              rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+              simp only [Option.bind_none]
+              exact Nat.le_trans
+                (lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_frameAbove_of_no_belowHead
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (by decide : (17 : Nat) ≤ 18)
 
 /-! **WS-HP HP6.2 (`v0.35.44`): `lockSet_endpointReplyRecvOnCore_size_le_seventeen`
 is retired, and the reason is the whole of what the repoint costs.**

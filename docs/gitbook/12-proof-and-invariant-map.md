@@ -569,7 +569,15 @@ platform rather than with the lock.
 > (`v0.35.44`) retired the sharper seventeen and made this one unconditional; the
 > canonical account is `SELE4N_SPEC.md` §8.12.6.
 >
-> At HEAD, the declared lock-set ceiling is **23**, the RPi5 tick admits **14 µs** per lock, and the uniform 60 µs envelope is **4140 µs** —
+> WS-HP HP10.6 (`v0.35.50`) moved the ceiling 23 → 24 for the TCB a
+> bottom-of-stack pop will redirect a reservation to, and that eighteen **did not
+> move**: the origin member is live only where the pop is at the bottom of its
+> stack, and there the two below-head members are both absent
+> (`replyStackBelowHead?_of_originRecipient`), so a reachable footprint trades two
+> members for one.  `tests/LockSetSuite.lean` exhibits the redirecting shape at
+> seventeen, one *narrower* than the popping shape measured at the same operands.
+>
+> At HEAD, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs** —
 > the canonical spelling `scripts/check_lock_ceiling_figures.py` (Tier 0, WS-OD
 > OD3.15) holds to the Lean sources, so this chapter cannot go stale behind the
 > constant the way it did between OD3.7 and OD3.14. See

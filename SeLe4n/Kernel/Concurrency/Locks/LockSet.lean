@@ -936,7 +936,7 @@ per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at elev
 (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
-At the value above, the declared lock-set ceiling is **23**, the RPi5 tick admits **14 µs** per lock, and the uniform 60 µs envelope is **4140 µs** —
+At the value above, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs** —
 the canonical spelling `scripts/check_lock_ceiling_figures.py` holds to the Lean
 sources, so a raise that leaves a copy of any of the three behind is a build
 failure on the cut that makes it stale rather than on the cut that notices.  The figure is *derived* from this constant and must be
@@ -1064,6 +1064,6 @@ are unmoved at eighteen and seventeen; what absorbs it is the unconditional
 `lockSet_endpointReplyRecvOnCore_size_le_twenty`.  This raise *does* cost the
 admissible section: `1000 / (23 · 3) = 14` µs, and the uniform 60 µs envelope
 moves 3960 → 4140 µs. -/
-def maxLockSetSize : Nat := 23
+def maxLockSetSize : Nat := 24
 
 end SeLe4n.Kernel.Concurrency

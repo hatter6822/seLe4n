@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.49` (`lakefile.toml`) |
+| **Package version** | `0.35.50` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 382,430 across 330 Lean files |
-| **Test LoC** | 77,749 across 70 Lean test suites |
-| **Proved declarations** | 12,742 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 382,916 across 330 Lean files |
+| **Test LoC** | 77,855 across 70 Lean test suites |
+| **Proved declarations** | 12,754 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2982,7 +2982,7 @@ alongside the latent inventory (closing SMP-H3).
    them with no consumer (§8.12.12), so a sharper reachable bound cannot
    be rebuilt on either.
 
-   **At HEAD, the declared lock-set ceiling is **23**, the RPi5 tick admits **14 µs** per lock, and the uniform 60 µs envelope is **4140 µs**.**
+   **At HEAD, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs**.**
    All three are *derived* — from `maxLockSetSize`, `numCores` and
    `rpi5TickBudgetMicros`, through `admissibleCriticalSection`'s own
    formula — and since WS-OD OD3.15 (v0.34.142)
@@ -4817,7 +4817,9 @@ where the sever stated its result outright.  With it the invariant is preserved
 (`spliceReplyFrameOut_preserves_donationChainWellFormed`,
 `removeCallerReplyFrame_preserves_donationChainWellFormed`), and it costs nothing:
 the cut frame's lock is already a declared write member on both removal paths, so
-`maxLockSetSize` stays at HP3.5's **23**.
+`maxLockSetSize` was unmoved by it, at HP3.5's twenty-three (HP10.6 has since
+taken it to twenty-four, for a member of its own — the TCB a bottom-of-stack pop
+redirects the reservation to).
 
 **The below side degenerates rather than refusing.**  `spliceFrameBelow?` answers
 `Option`: a `prev` that does not resolve, one naming the frame above, and a frame
