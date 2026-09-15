@@ -74,7 +74,8 @@ theorem applyReplyDonationOnCore_preserves_donationChainWellFormed_of_except
   · rw [hEq]; exact hChainNoReturn hNone
   · have hChain' : donationChainWellFormed st' :=
       returnDonatedSchedContext_preserves_donationChainWellFormed_of_except st st'
-        holderVtid.val scId targetVtid.val n hObjInv (hChainNone scId holderVtid.val · hHead)
+        holderVtid.val scId (replyDonationRecipient st scId targetVtid.val) n hObjInv
+        (hChainNone scId holderVtid.val · hHead)
         (hChainHead scId holderVtid.val · · · hHead) hRet
     rw [hEq]
     refine donationChainWellFormed_of_frame ?_ hChain'
@@ -211,18 +212,48 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
       hHolderDonation scId holderVtid.val hHead
     have hIdle : ∀ tcb, st.getTcb? holderVtid.val = some tcb →
         passiveServerIdleAllowed tcb.ipcState := hHolderIdleAllowed scId holderVtid.val hHead
-    have hFull' : ipcInvariantFull st' :=
-      returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId targetVtid.val
-        hObjInv hInv hRet hIdle n
-        (donationReturnOuterValid_of_stackValid
-          (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
-    obtain ⟨pTcb, hPPre, _, _, _, hNe⟩ :=
-      replyDonationReturn?_some_char st holderVtid.val scId targetVtid.val
-        (donationOwnerValidExcept_of_donationOwnerValid targetVtid.val hInv.donationOwnerValid)
-        hRet
+    obtain ⟨pTcb, hLk, hPB⟩ :=
+      replyDonationReturn?_some_lookup st holderVtid.val scId targetVtid.val hRet
+    have hPPre : st.getTcb? holderVtid.val = some pTcb :=
+      getTcb?_of_lookupTcb st holderVtid.val pTcb hLk
+    have hNe : replyDonationRecipient st scId targetVtid.val ≠ holderVtid.val := by
+      intro hEqq
+      have hUnb := returnDonatedSchedContext_ok_recipient_unbound st st' holderVtid.val scId
+        (replyDonationRecipient st scId targetVtid.val) n hR pTcb (hEqq ▸ hLk)
+      rw [hPB] at hUnb; cases hUnb
+    -- **WS-HP HP10.7**: three cases, as in the single-core spine.
+    have hFull' : ipcInvariantFull st' := by
+      by_cases hNoOrigin : donationOriginRecipient? st scId = none
+      · rw [replyDonationRecipient_eq_of_no_origin st scId targetVtid.val hNoOrigin] at hR
+        exact returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId
+          targetVtid.val hObjInv hInv hRet hIdle n
+          (donationReturnOuterValid_of_stackValid
+            (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
+      · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st scId = some o := by
+          cases hc : donationOriginRecipient? st scId with
+          | none => exact absurd hc hNoOrigin
+          | some o => exact ⟨o, rfl⟩
+        have hRecipEq : replyDonationRecipient st scId targetVtid.val = o :=
+          replyDonationRecipient_eq_origin st hOrigin
+        by_cases hSame : o = targetVtid.val
+        · rw [hRecipEq, hSame] at hR
+          exact returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId
+            targetVtid.val hObjInv hInv hRet hIdle n
+            (donationReturnOuterValid_of_stackValid
+              (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
+        · rw [hRecipEq] at hR
+          exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
+            st st' holderVtid scId targetVtid.val o hObjInv
+            (ipcInvariantFullExceptDonationOwner_of_full targetVtid.val hInv) hRet
+            (donationOriginRebindable_no_owner
+              (donationOwnerValidExcept_of_donationOwnerValid targetVtid.val
+                hInv.donationOwnerValid)
+              hSame (donationOriginRecipient?_rebindable st hOrigin))
+            hIdle n
+            (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
     obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-      returnDonatedSchedContext_getTcb?_char st st' holderVtid.val scId targetVtid.val hObjInv
-        hNe n hR
+      returnDonatedSchedContext_getTcb?_char st st' holderVtid.val scId
+        (replyDonationRecipient st scId targetVtid.val) hObjInv hNe n hR
     have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
     rw [hPEq] at hPPost
     -- The migration writes only per-core replenish queues.
@@ -299,17 +330,44 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
       subst hWoken
       have hIdle : ∀ tcb, st.getTcb? holderVtid.val = some tcb →
           passiveServerIdleAllowed tcb.ipcState := hHolderIdleAllowed scId holderVtid.val hHead
-      have hFull' : ipcInvariantFull st' :=
-        returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' holderVtid scId
-          targetVtid.val hObjInv hInv hRet hIdle n
-          (donationReturnOuterValid_of_stackValid
-            (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
-      obtain ⟨pTcb, hPPre, _, _, _, hNe⟩ :=
-        replyDonationReturn?_some_char st holderVtid.val scId targetVtid.val
-          hInv.donationOwnerValidExcept hRet
+      obtain ⟨pTcb, hLk, hPB⟩ :=
+        replyDonationReturn?_some_lookup st holderVtid.val scId targetVtid.val hRet
+      have hPPre : st.getTcb? holderVtid.val = some pTcb :=
+        getTcb?_of_lookupTcb st holderVtid.val pTcb hLk
+      have hNe : replyDonationRecipient st scId targetVtid.val ≠ holderVtid.val := by
+        intro hEqq
+        have hUnb := returnDonatedSchedContext_ok_recipient_unbound st st' holderVtid.val scId
+          (replyDonationRecipient st scId targetVtid.val) n hR pTcb (hEqq ▸ hLk)
+        rw [hPB] at hUnb; cases hUnb
+      have hFull' : ipcInvariantFull st' := by
+        by_cases hNoOrigin : donationOriginRecipient? st scId = none
+        · rw [replyDonationRecipient_eq_of_no_origin st scId targetVtid.val hNoOrigin] at hR
+          exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' holderVtid
+            scId targetVtid.val hObjInv hInv hRet hIdle n
+            (donationReturnOuterValid_of_stackValid
+              (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
+        · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st scId = some o := by
+            cases hc : donationOriginRecipient? st scId with
+            | none => exact absurd hc hNoOrigin
+            | some o => exact ⟨o, rfl⟩
+          have hRecipEq : replyDonationRecipient st scId targetVtid.val = o :=
+            replyDonationRecipient_eq_origin st hOrigin
+          by_cases hSame : o = targetVtid.val
+          · rw [hRecipEq, hSame] at hR
+            exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st'
+              holderVtid scId targetVtid.val hObjInv hInv hRet hIdle n
+              (donationReturnOuterValid_of_stackValid
+                (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
+          · rw [hRecipEq] at hR
+            exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
+              st st' holderVtid scId targetVtid.val o hObjInv hInv hRet
+              (donationOriginRebindable_no_owner hInv.donationOwnerValidExcept hSame
+                (donationOriginRecipient?_rebindable st hOrigin))
+              hIdle n
+              (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
       obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-        returnDonatedSchedContext_getTcb?_char st st' holderVtid.val scId targetVtid.val hObjInv
-          hNe n hR
+        returnDonatedSchedContext_getTcb?_char st st' holderVtid.val scId
+          (replyDonationRecipient st scId targetVtid.val) hObjInv hNe n hR
       have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
       rw [hPEq] at hPPost
       let stM : SystemState := migrateSchedContextReplenishment st' scId holderHome ownerHome
@@ -351,7 +409,7 @@ theorem applyReplyDonationOnCore_preserves_objects_invExt
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome h with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, st', _, _, hR, hEq⟩
   · rw [hEq]; exact hObjInv
   · have hInv' := returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
-      targetVtid.val hObjInv n hR
+      (replyDonationRecipient st scId targetVtid.val) hObjInv n hR
     rw [hEq, descheduleAtPlacement_preserves_objects, migrateSchedContextReplenishment_objects]
     exact hInv'
 
@@ -459,7 +517,7 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
               have hTEq : targetV.val = target :=
                 SeLe4n.ThreadId.toValid?_some_val_eq target targetV hTV
               cases hDon : applyReplyDonationOnCore st1 rid targetV
-                  (replyDonationHolderHome st1 rid target) (determineTargetCore st1 target) with
+                  (replyDonationHolderHome st1 rid target) (replyDonationRecipientHome st1 rid target) with
               | error e => simp only; exact hInv
               | ok st2 =>
                 simp only
@@ -770,7 +828,7 @@ theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
                   exact Or.inr ⟨scId, sc, hExc, hScGet, hScReply,
                     replyFrameHeadContext?_of_head st1 rid r1 scId sc hR1 hN1 hScGet hScReply⟩
               cases hApply : applyReplyDonationOnCore st1 rid targetV
-                  (replyDonationHolderHome st1 rid target) (determineTargetCore st1 target) with
+                  (replyDonationHolderHome st1 rid target) (replyDonationRecipientHome st1 rid target) with
               | error e => simp only; exact hChain
               | ok st2 =>
                 simp only

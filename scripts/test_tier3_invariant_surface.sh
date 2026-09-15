@@ -1477,7 +1477,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runReceivePriorityHandoffChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -2324,10 +2324,55 @@ run_check "INVARIANT" rg -n '^theorem replyStackBelowHead\?_of_originRecipient' 
 # popping one, which is two members out and one in.
 run_check "INVARIANT" rg -n 'the widest reachable blocking .replyRecv that REDIRECTS has 17 locks' tests/LockSetSuite.lean
 run_check "INVARIANT" rg -n 'the redirect costs the reachable footprint nothing: two out, one in' tests/LockSetSuite.lean
-# NEGATIVE: the guard is applied to the CANDIDATE, so a stale origin falls back to
-# the reachability answer rather than refusing the pop.  A resolver that answered
+# The guard is applied to the CANDIDATE, so a stale origin falls back to the
+# reachability answer rather than refusing the pop.  A resolver that answered
 # `some` unconditionally would pass every positive above and break the fallback.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def donationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*if donationRecipientAcceptable st origin then some origin else none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+#
+# WS-HP HP10.7 strengthened the guard to a CONJUNCTION, and the second conjunct is
+# not defence in depth: a thread can be `.unbound` -- so pass
+# `donationRecipientAcceptable` -- while another thread's `.donated` binding names
+# it as the owner it is waiting on, and binding it `.bound scId` falsifies that
+# binding's owner clause.  Dropping either conjunct is a soundness regression, so
+# both are pinned in the resolver's own body.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def donationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*if donationRecipientAcceptable st origin && donationOriginRebindable st origin then" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# NEGATIVE: and the single-guard spelling must not come back.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def donationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*if donationRecipientAcceptable st origin then some origin else none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# --- WS-HP HP10.7: the arm flips -------------------------------------------
+# The redirect is ONE definition read by all three reply-path pops, because
+# "which thread receives the reservation" is one question and two spellings of it
+# are free to drift -- and these two DISAGREE on exactly the states the phase
+# exists for, which is the worst case for a duplicate.
+run_check "INVARIANT" rg -n '^def replyDonationRecipient ' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem replyDonationRecipient_eq_of_no_origin|^@\[simp\] theorem replyDonationRecipient_eq_of_no_origin' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The no-regression fact the phase owes: the redirect never introduces a refusal,
+# which is WHY HP10.6 applied the guard to the candidate rather than the argument.
+run_check "INVARIANT" rg -n '^theorem replyDonationRecipient_acceptable' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The second guard, and the theorem that says what it buys.  A thread can be
+# `.unbound` -- so pass `donationRecipientAcceptable` -- while another thread's
+# `.donated` binding names it as the owner it waits on; binding it `.bound scId`
+# falsifies that binding's owner clause, so this is soundness, not depth.
+run_check "INVARIANT" rg -n '^def donationOriginRebindable ' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem donationOriginRebindable_no_owner' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The bundle generalisation the redirect needs: the recipient split from the
+# binding's recorded owner, with `hNoOwner` the load-bearing new hypothesis.
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_establishes_donationOwnerValid_of_except_redirected' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+# The migration's DESTINATION follows the redirect.  Redirecting the reservation
+# without redirecting the replenish queue leaves
+# `replenishQueueAffinityConsistentOnCore` false from the instant it commits --
+# the standing constraint every SchedContext hand-off in this tree is held to.
+run_check "INVARIANT" rg -n '^def replyDonationRecipientHome ' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+run_check "INVARIANT" rg -n '^theorem replyDonationRecipientHome_of_head' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+# NEGATIVE: and the live dispatch must not pass the ANSWERED CALLER's home there.
+# Token-preserving: `determineTargetCore` stays in the tree and stays the source
+# resolver's own body -- what it may no longer be is the dispatch's destination.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "applyReplyDonationOnCore st1 rid targetV[^\n]*(\n([ \t][^\n]*)?)*\(determineTargetCore st1 target\) with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+# ...measured rather than described: the redirect names a DIFFERENT thread and a
+# DIFFERENT core, with a control per guard so each decline is attributable.
+run_check "INVARIANT" rg -n 'PAYOFF: \.\.\.and the pop.s recipient is that origin, NOT the answered caller' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n "PAYOFF: the migration's destination home is the ORIGIN's core" tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'CONTROL: \.\.\.while the recipient guard ALONE admits it' tests/SmpIpcSuite.lean
+
 
 # NEGATIVE: `severAtCut_pop_leaves_no_head` was HP2.3's pin that the policy flip
 # may not precede the trigger flip.  HP6.8 is the flip, and its first conjunct was
@@ -13332,8 +13377,17 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCore
 
 # (2) The pair's components reach the arguments they mean: the holder is the
 # return's `serverTid` and the operation's own argument is its `originalOwner`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st holderVtid\.val scId target" SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st holderVtid\.val scId target" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+# WS-HP HP10.7: the `originalOwner` position is the REDIRECT of the argument --
+# the recorded origin at the bottom of the stack, the argument everywhere else --
+# so the anchors pin the redirect where they used to pin the bare argument.  The
+# holder's position is unchanged, which is the half HP4.3 exists to pin.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st holderVtid\.val scId\n\s*\(replyDonationRecipient st scId target\)" SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st holderVtid\.val scId\n\s*\(replyDonationRecipient st scId target\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+# NEGATIVE: and the bare argument must not come back in that position -- a pop that
+# hands the reservation to the thread stack reachability names is the depth-2
+# defect this phase exists to close.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st holderVtid\.val scId target with" SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st holderVtid\.val scId target with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
 # NEGATIVE: the swap.  This is the substitution the plan warns about, and it is
 # exactly token-preserving -- same resolver, same call, components exchanged.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st target scId holder" SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'

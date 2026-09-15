@@ -229,7 +229,17 @@ def applyReplyDonation (st : SystemState) (rid : SeLe4n.ReplyId)
           -- context settles on the thread that is still owed it instead of on
           -- the intermediate donor — which would otherwise acquire another
           -- domain's reservation permanently (plan §3.2).
-          match returnDonatedSchedContextResolved st holderVtid.val scId target with
+          -- **WS-HP HP10.7**: and the recipient at the BOTTOM of the stack is the
+          -- reservation's recorded origin rather than the thread reachability
+          -- names.  `replyDonationRecipient` is the identity wherever no origin
+          -- is recorded or usable and on every `some`-arm pop, so this is the
+          -- pre-HP10.7 body verbatim on every state before HP10.4 recorded one
+          -- (`applyReplyDonation_eq_legacy_of_no_origin`); where it differs is
+          -- the out-of-order removal of plan §3.2, in which the client's own
+          -- frame left the stack and the surviving bottom frame names the
+          -- intermediate caller.
+          match returnDonatedSchedContextResolved st holderVtid.val scId
+                  (replyDonationRecipient st scId target) with
           | .error e => .error e
           | .ok st' => .ok (removeRunnable st' holder)
       | none => .error .invalidArgument
@@ -520,14 +530,15 @@ theorem applyReplyDonation_machine_eq
         -- WS-OD OD4.4: the split is on the *resolved* return, which is the
         -- operation the arm now runs; the frame is lifted through its own
         -- decomposition rather than restated at a fixed `newOwner?`.
+        -- **WS-HP HP10.7**: the recipient is the redirect, not the argument.
         cases hReturn : returnDonatedSchedContextResolved st holder scId
-            targetVtid.val with
+            (replyDonationRecipient st scId targetVtid.val) with
         | error _ => simp only [hReturn] at h; cases h
         | ok st'' =>
           simp only [hReturn] at h; cases h
           obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
           have hMach := returnDonatedSchedContext_machine_eq st st'' holder scId
-            targetVtid.val n hPop
+            (replyDonationRecipient st scId targetVtid.val) n hPop
           have hRem := removeRunnable_machine_eq st'' holder
           exact hRem.trans hMach
 

@@ -829,11 +829,22 @@ def replyRecvPopDonation (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) :
     | some (oldScId, holder) =>
         match holder.toValid?, target.toValid? with
         | some holderV, some targetV =>
-            match returnDonatedSchedContextResolved st holderV.val oldScId targetV.val with
+            -- **WS-HP HP10.7**: the recipient at the bottom of the stack is the
+            -- reservation's recorded origin, and the migration's DESTINATION is
+            -- that thread's home core rather than the answered caller's.  Both
+            -- read `replyDonationRecipient`, which is the identity wherever no
+            -- origin is recorded -- so this is the pre-HP10.7 body verbatim on
+            -- every state before HP10.4 recorded one.  `oldScId` is in scope
+            -- here, so these are the same expressions the live `.reply` spine
+            -- resolves through `replyDonationRecipientHome`
+            -- (`replyDonationRecipientHome_of_head` is the tie).
+            match returnDonatedSchedContextResolved st holderV.val oldScId
+                    (replyDonationRecipient st oldScId targetV.val) with
             | .error e => .error e
             | .ok st1' =>
                 .ok (some oldScId, migrateSchedContextReplenishment st1' oldScId
-                  (determineTargetCore st holder) (determineTargetCore st target))
+                  (determineTargetCore st holder)
+                  (determineTargetCore st (replyDonationRecipient st oldScId target)))
         | _, _ => .error .invalidArgument
     | none => .ok (none, st)
 
@@ -966,13 +977,15 @@ theorem replyRecvPopDonation_preserves_objects_invExt (rid : SeLe4n.ReplyId)
       | some targetV =>
         rw [hHV, hTV] at hStep
         simp only [] at hStep
-        cases hRet : returnDonatedSchedContextResolved st holderV.val oldScId targetV.val with
+        cases hRet : returnDonatedSchedContextResolved st holderV.val oldScId
+              (replyDonationRecipient st oldScId targetV.val) with
         | error e => rw [hRet] at hStep; simp only [] at hStep; cases hStep
         | ok st1' =>
           rw [hRet] at hStep
           obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
           have hEq : migrateSchedContextReplenishment st1' oldScId
-              (determineTargetCore st holder) (determineTargetCore st target) = st' :=
+              (determineTargetCore st holder)
+                (determineTargetCore st (replyDonationRecipient st oldScId target)) = st' :=
             (by simpa using hStep : some oldScId = returned? ∧ _).2
           rw [← hEq, migrateSchedContextReplenishment_objects]
           exact returnDonatedSchedContext_preserves_objects_invExt st st1' _ _ _ hObjInv n hPopN
@@ -1014,25 +1027,32 @@ theorem replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
           SeLe4n.ThreadId.toValid?_some_val_eq holder holderV hHV
         have hTEq : targetV.val = target :=
           SeLe4n.ThreadId.toValid?_some_val_eq target targetV hTV
-        cases hRet : returnDonatedSchedContextResolved st holder oldScId target with
+        cases hRet : returnDonatedSchedContextResolved st holder oldScId
+            (replyDonationRecipient st oldScId target) with
         | error e =>
-            rw [show returnDonatedSchedContextResolved st holderV.val oldScId targetV.val
-                  = returnDonatedSchedContextResolved st holder oldScId target by
+            rw [show returnDonatedSchedContextResolved st holderV.val oldScId
+              (replyDonationRecipient st oldScId targetV.val)
+                  = returnDonatedSchedContextResolved st holder oldScId
+                      (replyDonationRecipient st oldScId target) by
                 simp only [hHEq, hTEq], hRet] at h
             simp only [] at h
             cases h
         | ok st1' =>
-            rw [show returnDonatedSchedContextResolved st holderV.val oldScId targetV.val
-                  = returnDonatedSchedContextResolved st holder oldScId target by
+            rw [show returnDonatedSchedContextResolved st holderV.val oldScId
+              (replyDonationRecipient st oldScId targetV.val)
+                  = returnDonatedSchedContextResolved st holder oldScId
+                      (replyDonationRecipient st oldScId target) by
                 simp only [hHEq, hTEq], hRet] at h
             simp only [] at h
             obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
             have hEq : migrateSchedContextReplenishment st1' oldScId
-                (determineTargetCore st holder) (determineTargetCore st target) = st' :=
+                (determineTargetCore st holder)
+                (determineTargetCore st (replyDonationRecipient st oldScId target)) = st' :=
               (by simpa using h : some oldScId = returned? ∧ _).2
             rw [← hEq]
             exact returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
-              st st1' holder oldScId target _ _ hObjInv hCons rfl rfl n hPopN
+              st st1' holder oldScId (replyDonationRecipient st oldScId target) _ _
+              hObjInv hCons rfl rfl n hPopN
 
 /-- **WS-RR RR2.20 / WS-RM (`v0.35.6`): the post-receive half restores it too.**
 Its re-donation is the third live hand-off, and it migrates its own
@@ -1149,7 +1169,12 @@ inductive PerCoreDonationStep (st st' : SystemState) : Prop
       (holderHome ownerHome : Concurrency.CoreId)
       (hHolderHome : ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
           determineTargetCore st holder = holderHome)
-      (hOwnerHome : determineTargetCore st targetVtid.val = ownerHome)
+      -- **WS-HP HP10.7**: the destination is the REDIRECTED recipient, so this is
+      -- quantified over the trigger's answer exactly as `hHolderHome` is.  HP4.3
+      -- made the two swap conditionality; the redirect makes both conditional,
+      -- because the thread that gains the reservation is no longer the argument.
+      (hOwnerHome : ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
+          determineTargetCore st (replyDonationRecipient st scId targetVtid.val) = ownerHome)
       (hStep : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome
           = .ok st')
   /-- `.replyRecv` returns the answered client's context before its receive leg.
@@ -1268,45 +1293,82 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
           SeLe4n.ThreadId.toValid?_some_val_eq holder holderV hHV
         have hTEq : targetV.val = target :=
           SeLe4n.ThreadId.toValid?_some_val_eq target targetV hTV
-        cases hRet : returnDonatedSchedContextResolved st holder oldScId target with
+        cases hRet : returnDonatedSchedContextResolved st holder oldScId
+            (replyDonationRecipient st oldScId target) with
         | error e =>
-            rw [show returnDonatedSchedContextResolved st holderV.val oldScId targetV.val
-                  = returnDonatedSchedContextResolved st holder oldScId target by
+            rw [show returnDonatedSchedContextResolved st holderV.val oldScId
+              (replyDonationRecipient st oldScId targetV.val)
+                  = returnDonatedSchedContextResolved st holder oldScId
+                      (replyDonationRecipient st oldScId target) by
                 simp only [hHEq, hTEq], hRet] at h
             simp only [] at h
             cases h
         | ok st1' =>
-            rw [show returnDonatedSchedContextResolved st holderV.val oldScId targetV.val
-                  = returnDonatedSchedContextResolved st holder oldScId target by
+            rw [show returnDonatedSchedContextResolved st holderV.val oldScId
+              (replyDonationRecipient st oldScId targetV.val)
+                  = returnDonatedSchedContextResolved st holder oldScId
+                      (replyDonationRecipient st oldScId target) by
                 simp only [hHEq, hTEq], hRet] at h
             simp only [Except.ok.injEq, Prod.mk.injEq] at h
             obtain ⟨n, hResN, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
             have hRetW : replyDonationReturn? st holder = some (oldScId, target) :=
               hHolderDonation oldScId holder hHead
-            have hRetV : returnDonatedSchedContext st holderV.val oldScId target n = .ok st1' := by
+            have hRetV : returnDonatedSchedContext st holderV.val oldScId
+                (replyDonationRecipient st oldScId target) n = .ok st1' := by
               rw [hHEq]; exact hPopN
             have hRetWV : replyDonationReturn? st holderV.val = some (oldScId, target) := by
               rw [hHEq]; exact hRetW
-            have hOuterValid : donationReturnOuterValid st holderV.val target n :=
-              donationReturnOuterValid_of_stackValid (hStackValid oldScId holderV.val target) hResN
-            have hInv1' : ipcInvariantFull st1' :=
-              returnDonatedSchedContext_preserves_ipcInvariantFull st st1' holderV oldScId target
-                hObjInv hInv hRetWV
-                (by
-                  intro tcb hTcb
-                  rw [hHEq] at hTcb
-                  exact hHolderIdleAllowed oldScId holder hHead tcb hTcb)
-                n hOuterValid hRetV
+            have hIdleV : ∀ tcb, st.getTcb? holderV.val = some tcb →
+                passiveServerIdleAllowed tcb.ipcState := by
+              intro tcb hTcb
+              rw [hHEq] at hTcb
+              exact hHolderIdleAllowed oldScId holder hHead tcb hTcb
+            -- **WS-HP HP10.7**: three cases, as in the `.reply` spine — no origin,
+            -- an origin that *is* the answered caller, and a distinct origin, the
+            -- last taking the generalised bundle under the redirect's own guard.
+            have hInv1' : ipcInvariantFull st1' := by
+              by_cases hNoOrigin : donationOriginRecipient? st oldScId = none
+              · rw [replyDonationRecipient_eq_of_no_origin st oldScId target hNoOrigin] at hRetV
+                exact returnDonatedSchedContext_preserves_ipcInvariantFull st st1' holderV oldScId
+                  target hObjInv hInv hRetWV hIdleV n
+                  (donationReturnOuterValid_of_stackValid
+                    (hStackValid oldScId holderV.val target) hResN) hRetV
+              · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st oldScId = some o := by
+                  cases hc : donationOriginRecipient? st oldScId with
+                  | none => exact absurd hc hNoOrigin
+                  | some o => exact ⟨o, rfl⟩
+                have hRecipEq : replyDonationRecipient st oldScId target = o :=
+                  replyDonationRecipient_eq_origin st hOrigin
+                by_cases hSame : o = target
+                · rw [hRecipEq, hSame] at hRetV
+                  exact returnDonatedSchedContext_preserves_ipcInvariantFull st st1' holderV oldScId
+                    target hObjInv hInv hRetWV hIdleV n
+                    (donationReturnOuterValid_of_stackValid
+                      (hStackValid oldScId holderV.val target) hResN) hRetV
+                · rw [hRecipEq] at hRetV
+                  exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
+                    st st1' holderV oldScId target o hObjInv
+                    (ipcInvariantFullExceptDonationOwner_of_full target hInv) hRetWV
+                    (donationOriginRebindable_no_owner
+                      (donationOwnerValidExcept_of_donationOwnerValid target
+                        hInv.donationOwnerValid)
+                      hSame (donationOriginRecipient?_rebindable st hOrigin))
+                    hIdleV n
+                    (donationReturnOuterValid_of_stackValid
+                      (hStackValid oldScId holderV.val o) hResN) hRetV
             -- The migration is invisible to every bundle reading.
             have hObjsM : (migrateSchedContextReplenishment st1' oldScId
                 (determineTargetCore st holder)
-                (determineTargetCore st target)).objects = st1'.objects :=
+                (determineTargetCore st (replyDonationRecipient st oldScId target))).objects
+                  = st1'.objects :=
               migrateSchedContextReplenishment_objects st1' oldScId _ _
             have hRqM := migrateSchedContextReplenishment_runQueue_current_eq st1' oldScId
-              (determineTargetCore st holder) (determineTargetCore st target)
+              (determineTargetCore st holder)
+                (determineTargetCore st (replyDonationRecipient st oldScId target))
               Concurrency.bootCoreId
             have hInvM : ipcInvariantFull (migrateSchedContextReplenishment st1' oldScId
-                (determineTargetCore st holder) (determineTargetCore st target)) :=
+                (determineTargetCore st holder)
+                (determineTargetCore st (replyDonationRecipient st oldScId target))) :=
               ipcInvariantFull_of_descheduleFrame st1' _ hInv1' hObjsM
                 (passiveServerIdleFrame.of_objects_scheduler_eq hObjsM hRqM.1 hRqM.2)
             exact h.2 ▸ hInvM

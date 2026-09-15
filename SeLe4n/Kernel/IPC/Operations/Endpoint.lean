@@ -1676,6 +1676,68 @@ def outerCallerAcceptable (st : SystemState) (serverTid originalOwner : SeLe4n.T
     (serverTid originalOwner : SeLe4n.ThreadId) :
     outerCallerAcceptable st serverTid originalOwner none = true := rfl
 
+/-- **WS-HP HP10.7: the origin may be rebound without invalidating a live
+donation.**
+
+`donationRecipientAcceptable` asks that the recipient hold no binding of its own,
+which is what the pop is about to overwrite.  That is sufficient for the
+*reachability* recipient and **not** for the redirected one, and the gap is a
+soundness hole rather than a tightening:
+
+`donationOwnerValid` requires the `owner` of every live `.donated scId' owner`
+binding to be `.unbound` **and** `.blockedOnReply`.  A thread can be both
+`.unbound` and named as such an owner — that is exactly what a donor awaiting its
+reservation back looks like — so a recorded origin can pass
+`donationRecipientAcceptable` while some other thread's binding names it.  The
+redirect would then write `.bound scId` there, and that binding's owner clause
+becomes false: `donationOwnerValid` broken by a successful reply.
+
+It is reachable with ordinary syscalls, not a representability artefact.  A
+client whose frame was answered out of order is woken `.ready` and `.unbound`;
+nothing stops it binding a *second* reservation, Calling with it, and so becoming
+the owner of a fresh `.donated` binding — all while the first reservation is
+still parked on a server whose stack records it as the origin.  The server's
+reply then fires the redirect at a thread another binding is counting on.
+
+**The contrapositive is the guard, and it is O(1).**  Any live binding naming a
+thread as owner forces that thread `.blockedOnReply`; so a thread that is *not*
+reply-blocked is named by none, and rebinding it can falsify nothing
+(`donationOriginRebindable_no_owner`).  A recorded origin that *is* still
+reply-blocked is a thread whose own reservation is still travelling, and
+declining the redirect there is both sound and the conservative reading — the pop
+falls back to the reachability recipient exactly as it did before HP10.7.
+
+A thread that does not resolve passes, as it does in every sibling guard: the
+pop's own `lookupTcb` refuses it with `.objectNotFound` and commits nothing. -/
+def donationOriginRebindable (st : SystemState) (origin : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? origin with
+  | none => true
+  | some tcb =>
+    match tcb.ipcState with
+    | .blockedOnReply _ _ => false
+    | _ => true
+
+/-- An origin that does not resolve is rebindable; the pop refuses it later. -/
+@[simp] theorem donationOriginRebindable_of_none (st : SystemState)
+    (origin : SeLe4n.ThreadId) (h : st.getTcb? origin = none) :
+    donationOriginRebindable st origin = true := by
+  unfold donationOriginRebindable; rw [h]
+
+/-- WS-HP HP10.7: **a rebindable origin is reply-blocked nowhere**, which is the
+half `donationOwnerValid` reads. -/
+theorem donationOriginRebindable_not_blockedOnReply (st : SystemState)
+    {origin : SeLe4n.ThreadId} {tcb : TCB}
+    (hTcb : st.getTcb? origin = some tcb)
+    (h : donationOriginRebindable st origin = true) :
+    ∀ epId replyTarget, tcb.ipcState ≠ .blockedOnReply epId replyTarget := by
+  intro epId replyTarget hEq
+  unfold donationOriginRebindable at h
+  rw [hTcb] at h
+  dsimp only at h
+  rw [hEq] at h
+  exact absurd h (by simp)
+
+
 /-- **WS-HP HP4.6: the thread the pop hands the context TO holds none of its
 own.**
 
@@ -5375,7 +5437,15 @@ def donationOriginRecipient? (st : SystemState) (scId : SeLe4n.SchedContextId) :
     match (st.getSchedContext? scId).bind (·.donationOrigin) with
     | none => none
     | some origin =>
-      if donationRecipientAcceptable st origin then some origin else none
+      -- **WS-HP HP10.7**: both guards, and the second is not defence in depth.
+      -- `donationRecipientAcceptable` asks that the origin hold no binding of its
+      -- own; `donationOriginRebindable` asks that no *other* thread's binding
+      -- names it as owner, which the first cannot see and which a redirect would
+      -- otherwise falsify.  See `donationOriginRebindable` for the reachable
+      -- sequence that needs it.
+      if donationRecipientAcceptable st origin && donationOriginRebindable st origin then
+        some origin
+      else none
   | _ => none
 
 /-- WS-HP HP10.6: **silent wherever the loan is still travelling outward.**  The
@@ -5435,7 +5505,8 @@ theorem donationOriginRecipient?_eq_some_iff (st : SystemState)
     donationOriginRecipient? st scId = some o
       ↔ (replyStackOuterCaller? st scId = .ok none
           ∧ (∃ sc, st.getSchedContext? scId = some sc ∧ sc.donationOrigin = some o)
-          ∧ donationRecipientAcceptable st o = true) := by
+          ∧ donationRecipientAcceptable st o = true
+          ∧ donationOriginRebindable st o = true) := by
   unfold donationOriginRecipient?
   constructor
   · intro h
@@ -5456,19 +5527,23 @@ theorem donationOriginRecipient?_eq_some_iff (st : SystemState)
           | some origin =>
             dsimp only
             by_cases hOk : donationRecipientAcceptable st origin = true
-            · rw [if_pos hOk]
+                ∧ donationOriginRebindable st origin = true
+            · rw [if_pos (by simp [hOk.1, hOk.2])]
               intro hEq
               have hoe : origin = o := Option.some.inj hEq
               subst hoe
               -- `cases` generalised both scrutinees, so the characterisation's
               -- first two components are already discharged in the goal.
-              exact ⟨trivial, ⟨sc, rfl, hOrigin⟩, hOk⟩
-            · rw [if_neg hOk]; intro hc; cases hc
-  · intro ⟨hOuter, ⟨sc, hSc, hOrigin⟩, hOk⟩
+              exact ⟨trivial, ⟨sc, rfl, hOrigin⟩, hOk.1, hOk.2⟩
+            · rw [if_neg (by
+                simp only [Bool.and_eq_true, not_and] at hOk ⊢
+                intro h1; exact hOk h1)]
+              intro hc; cases hc
+  · intro ⟨hOuter, ⟨sc, hSc, hOrigin⟩, hOk, hReb⟩
     rw [hOuter]
     dsimp only
     simp only [hSc, Option.bind_some, hOrigin]
-    exact if_pos hOk
+    exact if_pos (by simp [hOk, hReb])
 
 /-- WS-HP HP10.6: **a `some` answer is the field's own value.**  The footprint
 declares a lock on the thread the pop will write, not on one that merely passes a
@@ -5487,7 +5562,16 @@ theorem donationOriginRecipient?_acceptable (st : SystemState)
     {scId : SeLe4n.SchedContextId} {o : SeLe4n.ThreadId}
     (h : donationOriginRecipient? st scId = some o) :
     donationRecipientAcceptable st o = true :=
-  ((donationOriginRecipient?_eq_some_iff st scId o).mp h).2.2
+  ((donationOriginRecipient?_eq_some_iff st scId o).mp h).2.2.1
+
+/-- WS-HP HP10.7: **and it may be rebound without invalidating a live donation.**
+The second half of the redirect's guard — see `donationOriginRebindable` for the
+reachable sequence in which the first half alone is not enough. -/
+theorem donationOriginRecipient?_rebindable (st : SystemState)
+    {scId : SeLe4n.SchedContextId} {o : SeLe4n.ThreadId}
+    (h : donationOriginRecipient? st scId = some o) :
+    donationOriginRebindable st o = true :=
+  ((donationOriginRecipient?_eq_some_iff st scId o).mp h).2.2.2
 
 /-- WS-HP HP10.6: **and the pop it redirects is at the bottom of its stack.**  The
 first component of the characterisation, named because it is the one the footprint
@@ -5511,6 +5595,105 @@ theorem replyStackBelowHead?_of_originRecipient (st : SystemState)
     (h : donationOriginRecipient? st scId = some o) :
     replyStackBelowHead? st scId = (none, none) :=
   replyStackBelowHead?_of_outer_none st scId (donationOriginRecipient?_outer_none st h)
+
+/-! ## WS-HP HP10.7: the reply path's bottom-of-stack recipient -/
+
+/-- **WS-HP HP10.7: which thread a reply's pop hands the reservation to.**
+
+The recorded origin where HP10.6's resolver answers one, and the answered caller
+otherwise.  This is the whole of the depth-2 remedy: at the bottom of a reply
+stack the pre-HP10.7 kernel handed the reservation to the thread *stack
+reachability* names, and after an out-of-order removal that is the intermediate
+caller rather than the client whose reservation it is.
+
+**One definition, three call sites.**  `applyReplyDonation`,
+`applyReplyDonationOnCore` and `replyRecvPopDonation` all read this, because
+"which thread receives the context" is one question and two spellings of it are
+free to drift — and these two *disagree* on exactly the states the phase exists
+for, which is the worst case for a duplicate.
+
+**Its scope is the reply path, and the declaration is what fixes that.**  All six
+operational pops thread `returnDonatedSchedContextResolved`, and only the two
+reply footprints declare an origin member (HP10.6), so putting the redirect in
+that shared resolver would make `lockSet_endpointReceive`, `lockSet_replyRecv`'s
+pre-return group, `lockSet_cancelIpcBlocking`, `lockSet_cancelDonation` and
+`lockSet_tcbSuspendOnCore` **false** of their own transitions — a footprint that
+omits a written object is false, and this project rates that worse than a wide
+one.  It is also the right scope on the merits: the registered defect is the
+reply path's, and the cancellation reclaim resolves its recipient off the
+victim's own frame head (`cancelledCallerDonation?`), which is a different
+question.  Widening the redirect is a cut that declares first.
+
+**It is the identity wherever the resolver is silent**
+(`replyDonationRecipient_eq_of_no_origin`), which is every state reachable before
+HP10.4 recorded an origin and every `some`-arm pop after it — the loan is still
+travelling outward there, so the surviving stack names the recipient and the
+origin is further out still.  That definitional equality is what carries every
+pre-HP10.7 result across as a case split whose `none` branch is the old proof
+verbatim. -/
+def replyDonationRecipient (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (answeredCaller : SeLe4n.ThreadId) : SeLe4n.ThreadId :=
+  (donationOriginRecipient? st scId).getD answeredCaller
+
+/-- WS-HP HP10.7: **the identity wherever no origin is recorded or usable.**  The
+definitional equality every pre-HP10.7 result crosses. -/
+@[simp] theorem replyDonationRecipient_eq_of_no_origin (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (answeredCaller : SeLe4n.ThreadId)
+    (h : donationOriginRecipient? st scId = none) :
+    replyDonationRecipient st scId answeredCaller = answeredCaller := by
+  unfold replyDonationRecipient; rw [h]; rfl
+
+/-- WS-HP HP10.7: **and the recorded origin where there is one.** -/
+@[simp] theorem replyDonationRecipient_eq_origin (st : SystemState)
+    {scId : SeLe4n.SchedContextId} {answeredCaller o : SeLe4n.ThreadId}
+    (h : donationOriginRecipient? st scId = some o) :
+    replyDonationRecipient st scId answeredCaller = o := by
+  unfold replyDonationRecipient; rw [h]; rfl
+
+/-- WS-HP HP10.7: **the redirect is the identity on every `some`-arm pop.**
+
+`donationOriginRecipient?` answers only at `replyStackOuterCaller? = .ok none`, so
+a pop whose surviving stack still names an outer caller is untouched — which is
+what confines this phase's behavioural change to the bottom of a stack. -/
+theorem replyDonationRecipient_eq_of_outer_some (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (answeredCaller outer : SeLe4n.ThreadId)
+    (h : replyStackOuterCaller? st scId = .ok (some outer)) :
+    replyDonationRecipient st scId answeredCaller = answeredCaller :=
+  replyDonationRecipient_eq_of_no_origin st scId answeredCaller
+    (donationOriginRecipient?_of_outer_some st scId outer h)
+
+/-- **WS-HP HP10.7: the redirect never introduces a refusal.**
+
+The no-regression fact this phase owes: every reply that succeeded before the flip
+still succeeds.  `returnDonatedSchedContext` refuses a recipient that fails
+HP4.6's `donationRecipientAcceptable`, so a redirect that could hand it a thread
+failing the guard would turn a working reply into `.invalidArgument` — and that is
+precisely why HP10.6 applied the guard to the **candidate** rather than to the
+operation's argument.  Either the redirect is the identity, and the hypothesis is
+the conclusion, or it is the recorded origin, which
+`donationOriginRecipient?_acceptable` has already checked. -/
+theorem replyDonationRecipient_acceptable (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (answeredCaller : SeLe4n.ThreadId)
+    (h : donationRecipientAcceptable st answeredCaller = true) :
+    donationRecipientAcceptable st (replyDonationRecipient st scId answeredCaller) = true := by
+  unfold replyDonationRecipient
+  cases hOrigin : donationOriginRecipient? st scId with
+  | none => simpa using h
+  | some o =>
+    simp only [Option.getD_some]
+    exact donationOriginRecipient?_acceptable st hOrigin
+
+/-- WS-HP HP10.7: **the redirected recipient is declared.**  HP10.6's footprint
+member is `donationOriginRecipient? st scId`, and this says the thread the pop
+actually writes is that one whenever the resolver answers — so the declaration and
+the transition name the same TCB rather than merely both being present. -/
+theorem replyDonationRecipient_mem_originRecipient (st : SystemState)
+    {scId : SeLe4n.SchedContextId} {answeredCaller o : SeLe4n.ThreadId}
+    (h : donationOriginRecipient? st scId = some o) :
+    replyDonationRecipient st scId answeredCaller = o
+      ∧ donationOriginRecipient? st scId = some (replyDonationRecipient st scId answeredCaller) := by
+  have hEq := replyDonationRecipient_eq_origin st (answeredCaller := answeredCaller) h
+  exact ⟨hEq, by rw [hEq]; exact h⟩
 
 /-- WS-OD OD4.4: **the donation return with its new owner resolved from the state
 it runs on.**

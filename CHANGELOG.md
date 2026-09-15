@@ -1,3 +1,97 @@
+## v0.35.51 — WS-HP HP10.7: the arm flips, and the redirect needed a second guard
+
+The reply path's bottom-of-stack pop hands the reservation to the scheduling
+context's recorded **origin** rather than to the thread stack reachability names.
+That closes the depth-2 half of the donation-accounting defect: a delegate that
+answers a client out of order takes the client's frame off the *bottom* of the
+stack, and the later in-order pop used to bind the reservation to the
+**intermediate** caller — a thread that never owned it.
+
+**One definition, three call sites.**  `replyDonationRecipient st scId
+answeredCaller` is the recorded origin where HP10.6's resolver answers one and the
+answered caller otherwise, and `applyReplyDonation`, `applyReplyDonationOnCore`
+and `replyRecvPopDonation` all read it.  "Which thread receives the reservation"
+is one question, and these two answers *disagree* on exactly the states the phase
+exists for — the worst case for a duplicate.  It is the identity wherever the
+resolver is silent (`replyDonationRecipient_eq_of_no_origin`), which is every
+state before HP10.4 recorded an origin and every `some`-arm pop after it, so every
+pre-HP10.7 result carries across as a case split whose `none` branch is the old
+proof verbatim.
+
+**Its scope is the reply path, and the declaration is what fixes that.**  All six
+operational pops thread `returnDonatedSchedContextResolved` and only the two reply
+footprints declare an origin member (HP10.6), so putting the redirect in that
+shared resolver would make `lockSet_endpointReceive`, `lockSet_replyRecv`'s
+pre-return group, `lockSet_cancelIpcBlocking`, `lockSet_cancelDonation` and
+`lockSet_tcbSuspendOnCore` **false** of their own transitions.
+
+### The guard was not sufficient, and that is this cut's substantive finding
+
+`donationRecipientAcceptable` asks that the recipient hold no binding of its own.
+That is enough for the reachability recipient and **not** for the redirected one:
+`donationOwnerValid` requires the `owner` of every live `.donated scId' owner`
+binding to be `.unbound` **and** `.blockedOnReply`, so a thread can be `.unbound`
+— passing the guard — while another thread's binding names it as the owner it is
+waiting on.  Writing `.bound scId` there falsifies that binding's owner clause:
+`donationOwnerValid` broken by a successful reply.
+
+It is reachable with ordinary syscalls.  A client answered out of order is woken
+`.ready` and `.unbound`; nothing stops it binding a second reservation, Calling
+with it, and so becoming the owner of a fresh `.donated` binding — all while the
+first reservation is still parked on a server whose stack records it as the
+origin.  The server's reply then fires the redirect at a thread another binding is
+counting on.
+
+`donationOriginRebindable` is the contrapositive and is O(1): any live binding
+naming a thread as owner forces that thread `.blockedOnReply`, so a thread that is
+**not** reply-blocked is named by none (`donationOriginRebindable_no_owner`).  A
+recorded origin that *is* still reply-blocked is one whose own reservation is
+still travelling, and declining the redirect there falls back to the reachability
+recipient rather than refusing the pop — the difference between a recovery and a
+regression, and the reason HP10.6 put the guard on the **candidate**.
+
+### The bundle needed the recipient split from the binding's owner
+
+One thread used to play three roles at once: the operation's `originalOwner`
+argument, the binding's recorded owner, and the relaxation point of
+`ipcInvariantFullExceptDonationOwner`.  The redirect separates the first from the
+other two.  Only **one** of the six conjunct arguments cared —
+`donationOwnerUnique`, `donationBudgetTransfer`, `passiveServerIdle`, the
+scheduler frame and the read agreement all take the recipient purely as the
+operation's argument and are unchanged.  `donationOwnerValid` is the one that read
+the server's binding *and* the argument as the same thread, and
+`…_of_except_redirected` is where the two new hypotheses land — with `hNoOwner`
+supplied by the rebindability guard, which is the measurement that the guard is
+the right one rather than a patch.
+
+### And the migration's destination moved with the recipient
+
+`applyReplyDonationOnCore`'s `ownerHome` is the **destination** of the CBS
+replenishment migration, and the live dispatch passed `determineTargetCore st1
+target` — the answered caller's home.  Redirecting the reservation without
+redirecting the queue would leave `replenishQueueAffinityConsistentOnCore` false
+from the instant it committed, which is the standing constraint every SchedContext
+hand-off in this tree is held to.  `replyDonationRecipientHome` mirrors HP4.3's
+source resolver clause for clause, and the three readers that must agree — the
+dispatch, the affinity proof and the SM8.B per-core write set — all read it.
+`hOwnerHome` is quantified over the trigger's answer now, exactly as `hHolderHome`
+is: HP4.3 recorded that the two swapped conditionality, and the redirect makes
+both conditional.
+
+### Measurement
+
+`tests/SmpIpcSuite.lean` §3.25 is the witness, and it is decisive rather than
+merely green: the redirect resolves to a **different thread** on a **different
+core**, and each guard's negative is paired with a **control** showing the *other*
+guard admits that state — so a decline is attributable to the guard it is about,
+and not to both.  Reverting the redirect does not reach the witness at all: it
+fails to elaborate, because `replyDonationRecipient_eq_origin` and its siblings pin
+the definition structurally.  The golden trace is byte-identical (239/239), since
+the shape that separates the two readings is the out-of-order removal HP10.9 will
+exhibit end to end.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md §HP10
+
 ## v0.35.50 — WS-HP HP10.6: the footprint member and the ceiling, ahead of the arm
 
 The declaration half of the depth-2 remedy.  HP10.7 will make the pop's

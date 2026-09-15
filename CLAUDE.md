@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.50.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.51.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,15 +203,15 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~66333 lines)
+- `CHANGELOG.md` (~66465 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23481 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/API.lean` (~7544 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7524 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6921 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6307 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6123 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7707 lines)
+- `SeLe4n/Kernel/API.lean` (~7606 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7056 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6309 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6129 lines)
 - `docs/spec/SELE4N_SPEC.md` (~5970 lines)
 - `SeLe4n/Platform/Boot.lean` (~5881 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5382 lines)
@@ -228,11 +228,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3925 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3803 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3684 lines)
 - `SeLe4n/Platform/FFI.lean` (~3592 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3517 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
+- `tests/SmpIpcSuite.lean` (~3512 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3470 lines)
-- `tests/SmpIpcSuite.lean` (~3419 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
@@ -246,7 +246,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2714 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2648 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2658 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
@@ -281,7 +281,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2045 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2044 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2021 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2023 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
@@ -335,8 +335,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1316 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1312 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1295 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
@@ -346,8 +346,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
+- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1239 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1236 lines)
-- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1233 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1191 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
@@ -371,17 +371,17 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `tests/PriorityManagementSuite.lean` (~1035 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
+- `tests/DeadlockFreedomSuite.lean` (~1001 lines)
 - `tests/SmpCbsSuite.lean` (~1001 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
-- `tests/DeadlockFreedomSuite.lean` (~983 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
+- `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~962 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~960 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
-- `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~951 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~949 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~947 lines)
 - `tests/SmpCrossCoreNotificationSuite.lean` (~937 lines)
@@ -396,7 +396,9 @@ To find files that need pagination today, run:
 - `tests/SmpTimerSuite.lean` (~904 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (~885 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~880 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
@@ -407,7 +409,6 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~833 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~822 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
@@ -3898,7 +3899,7 @@ a licence to delete the reclaim — deleting it reaches a state
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10.1–HP10.6 v0.35.49 → v0.35.50)
+### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10.1–HP10.7 v0.35.49 → v0.35.51)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -3955,7 +3956,7 @@ banner in `IPC/Invariant/Defs.lean` records what replaced it.
 | HP7 | LANDED | v0.35.46 | **The three stated coherence hypotheses retire** — nine declarations deleted with the binding-driven resolver, HP7.1 already done at HP4.4, HP7.4 vacuous, and the fourth stated fact found LIVE |
 | HP8 | LANDED | v0.35.47 | **The frozen mirror splices** — the sever's family deleted, the census's three mirrors, and `FO-043`: the depth-3 witness every shallower scenario structurally could not be |
 | HP9 | LANDED | v0.35.48 | **Witnesses, anchors, documentation, closure** — the depth-4 witness (§3.23), the upstream facts recorded at the code, and acceptance box 10 struck as wrong rather than ticked |
-| HP10 | IN FLIGHT | HP10.1–HP10.5 v0.35.49, HP10.6 v0.35.50 | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach; the field, its write, its clears, its id-reuse closure and its footprint member are in and **inert** |
+| HP10 | IN FLIGHT | HP10.1–HP10.5 v0.35.49, HP10.6 v0.35.50, HP10.7 v0.35.51 | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach; the field and its footprint member are in, and **the reply path's pop now redirects to the origin** |
 
 **What new code must respect since HP4 (`v0.35.38`).**  Seven things.
 
@@ -4544,6 +4545,75 @@ must not come back.  The four live sharp bounds carry `_of_no_origin` in their n
 because they are stated at the origin's absence; the three
 `_of_no_belowHead` bounds beside them are the branches on which the redirect fires.
 
+**What new code must respect since HP10.7 (`v0.35.51`).**  The reply path's
+bottom-of-stack pop hands the reservation to the recorded **origin**.  Six things.
+
+(1) **`replyDonationRecipient` is the one answer, and all three reply-path pops
+read it.**  `applyReplyDonation`, `applyReplyDonationOnCore` and
+`replyRecvPopDonation` take it; a second spelling of "which thread receives the
+reservation" is the duplication this project spends its length retiring, and these
+two readings *disagree* on exactly the states the phase exists for.  It is the
+identity wherever HP10.6's resolver is silent
+(`replyDonationRecipient_eq_of_no_origin`) and on every `some`-arm pop
+(`_eq_of_outer_some`), so every pre-HP10.7 result is a case split whose `none`
+branch is the old proof verbatim.
+
+(2) **The scope is the reply path, and the declaration fixes it.**  All six
+operational pops thread `returnDonatedSchedContextResolved` and only the two reply
+footprints declare an origin member, so a redirect placed in that shared resolver
+would make `lockSet_endpointReceive`, `lockSet_replyRecv`'s pre-return group,
+`lockSet_cancelIpcBlocking`, `lockSet_cancelDonation` and
+`lockSet_tcbSuspendOnCore` **false** of their own transitions.  Widening it is a
+cut that declares first.
+
+(3) **The guard is a CONJUNCTION, and the second half is soundness rather than
+depth.**  `donationRecipientAcceptable` asks that the recipient hold no binding of
+its own; `donationOriginRebindable` asks that no *other* thread's binding name it
+as owner.  `donationOwnerValid` requires that owner to be `.unbound` **and**
+`.blockedOnReply`, so a thread can pass the first while a live binding is counting
+on it — and `.bound scId` there falsifies that binding's clause.  Reachable with
+ordinary syscalls: a client answered out of order is woken `.ready` and `.unbound`,
+and may bind a second reservation and Call with it while the first is still parked
+on a server whose stack records it as the origin.  The contrapositive is O(1) and
+is `donationOriginRebindable_no_owner`.  A still-reply-blocked origin **falls
+back** to the reachability recipient rather than refusing the pop, which is the
+difference between a recovery and a regression and the reason HP10.6 applied the
+guard to the candidate.
+
+(4) **The bundle splits the recipient from the binding's recorded owner.**  One
+thread used to play three roles — the operation's argument, the binding's owner,
+and the relaxation point of `ipcInvariantFullExceptDonationOwner` — and exactly
+**one** conjunct argument cared: `donationOwnerUnique`, `donationBudgetTransfer`,
+`passiveServerIdle`, the scheduler frame and the read agreement all take the
+recipient purely as the operation's argument.  `donationOwnerValid` is the
+exception, and `returnDonatedSchedContext_establishes_{donationOwnerValid,
+ipcInvariantFull}_of_except_redirected` are where `hNoOwner` lands.  A new
+argument reaches for the conflated form when the recipient *is* the binding's
+owner and for the redirected one otherwise; the conflated form is the instance,
+not a weaker statement.
+
+(5) **The replenishment migration's DESTINATION follows the redirect.**
+`ownerHome` was `determineTargetCore st1 target` — the answered caller's home —
+and a redirect that moves the reservation without moving the queue leaves
+`replenishQueueAffinityConsistentOnCore` false from the instant it commits, which
+is the standing constraint every SchedContext hand-off in this tree is held to.
+`replyDonationRecipientHome` mirrors HP4.3's source resolver clause for clause and
+the three readers that must agree all take it: the live dispatch, the affinity
+proof, and the SM8.B per-core write set that mirrors the dispatch's control flow.
+`hOwnerHome` is quantified over the trigger's answer now — HP4.3 recorded that the
+two home hypotheses swapped conditionality, and the redirect makes **both**
+conditional.  A Tier 3 negative refuses the answered caller's home in that
+position.
+
+(6) **The witness is decisive, not merely green.**  `tests/SmpIpcSuite.lean` §3.25
+resolves the redirect to a *different thread* on a *different core*, and each
+guard's negative is paired with a **control** asserting the other guard admits
+that state — so a decline is attributable to the guard it is about.  Reverting the
+redirect does not reach the witness: it fails to elaborate, because
+`replyDonationRecipient_eq_origin` and its siblings pin the definition
+structurally.  A new scenario in that group **extends** the contiguous-run anchor
+rather than adding a sibling.
+
 **And the splice is not the whole remedy — depth 2 needs HP10** (registered
 `v0.35.42`).  The register scoped this defect to reply-stack depth ≥ 3 and that
 was its own error: at depth **2** the delegate answers the client out of order,
@@ -4931,7 +5001,7 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **177**
+  reports **zero** conjuncts bound on a post-state across all **178**
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements, measured over the comment-free code view with the conjunct set,
   the bundle family and each bundle's own pre-state all *derived* rather than

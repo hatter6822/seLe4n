@@ -133,7 +133,17 @@ def applyReplyDonationOnCore (st : SystemState) (rid : SeLe4n.ReplyId)
           -- `holder` and the one that gains it is the argument, so the deschedule
           -- and the migration's source both name `holder` — where before they
           -- named the argument, because the argument *was* the server.
-          match returnDonatedSchedContextResolved st holderVtid.val scId target with
+          -- **WS-HP HP10.7**: the recipient at the bottom of the stack is the
+          -- reservation's recorded origin rather than the thread reachability
+          -- names.  `ownerHome` must therefore be the *recipient's* home core and
+          -- not the answered caller's, or the replenishment migration moves the
+          -- queue to a core the reservation does not live on and
+          -- `replenishQueueAffinityConsistentOnCore` is false from the instant it
+          -- commits -- `replyDonationRecipientHome` is what the live dispatch
+          -- passes, and `applyReplyDonationOnCore_ownerHome_is_recipient_home`
+          -- is the tie.
+          match returnDonatedSchedContextResolved st holderVtid.val scId
+                  (replyDonationRecipient st scId target) with
           | .error e => .error e
           | .ok st' =>
               .ok (descheduleAtPlacement
@@ -173,6 +183,63 @@ theorem replyDonationHolderHome_of_head (st : SystemState) (rid : SeLe4n.ReplyId
     replyDonationHolderHome st rid target = determineTargetCore st holder := by
   unfold replyDonationHolderHome; rw [h]
 
+/-- **WS-HP HP10.7: the DESTINATION core of the reply path's replenishment
+migration** — the home of the thread the pop actually hands the reservation to.
+
+HP4.3's `replyDonationHolderHome` resolves the migration's *source*, and its
+docstring recorded that the destination needed no resolver because "the
+destination is the answered caller, which every caller already holds".  HP10.7 is
+what makes that sentence false: at the bottom of a reply stack the recipient is
+the reservation's recorded **origin**, and the origin's home core is not the
+answered caller's in general.
+
+**This is not cosmetic.**  The CBS replenishments of a scheduling context live on
+its bound thread's home core (`replenishQueueAffinityConsistentOnCore`, SM5.H), so
+a hand-off that migrates them to the wrong core makes that invariant false from
+the instant it commits — the standing constraint every SchedContext hand-off in
+this tree is held to.  Redirecting the recipient without redirecting this is
+exactly the shape the project calls *a proxy is not the fact*: the answered caller
+is a cheap stand-in for the recipient that stops being one precisely on the states
+this phase exists for.
+
+**It mirrors the source resolver clause for clause**, and for the same reason: the
+live dispatch does not destructure the trigger — `applyReplyDonationOnCore` does
+that internally — so the destination has to be resolved from `rid`, and three
+readers must agree on it (the dispatch that passes it, the affinity proof that
+states it, and the per-core write set that mirrors the dispatch).
+
+**It is definitionally the pre-HP10.7 expression wherever the redirect is the
+identity** (`replyDonationRecipientHome_eq_target_of_no_origin`), which is every
+state before HP10.4 recorded an origin and every pop whose surviving stack still
+names an outer caller. -/
+def replyDonationRecipientHome (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) : CoreId :=
+  match replyFrameHeadHolder? st rid with
+  | some (scId, _) => determineTargetCore st (replyDonationRecipient st scId target)
+  | none           => determineTargetCore st target
+
+/-- The destination resolver on the popping arm: the redirected recipient's home. -/
+theorem replyDonationRecipientHome_of_head (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (h : replyFrameHeadHolder? st rid = some (scId, holder)) :
+    replyDonationRecipientHome st rid target
+      = determineTargetCore st (replyDonationRecipient st scId target) := by
+  unfold replyDonationRecipientHome; rw [h]
+
+/-- WS-HP HP10.7: **the pre-HP10.7 destination wherever no origin is recorded.**
+The definitional equality that carries every pre-flip affinity result across. -/
+theorem replyDonationRecipientHome_eq_target_of_no_origin (st : SystemState)
+    (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+    (h : ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
+        donationOriginRecipient? st scId = none) :
+    replyDonationRecipientHome st rid target = determineTargetCore st target := by
+  unfold replyDonationRecipientHome
+  cases hTrig : replyFrameHeadHolder? st rid with
+  | none => rfl
+  | some pair =>
+    obtain ⟨scId, holder⟩ := pair
+    simp only [replyDonationRecipient_eq_of_no_origin st scId target (h scId holder hTrig)]
+
 /-- WS-RR RR2.8 (characterisation): the cross-core donation return *is* the
 `replyDonationReturn?` case split — the return, the migration and the
 deschedule on the returning arm, the identity otherwise. -/
@@ -188,9 +255,11 @@ theorem applyReplyDonationOnCore_characterisation
                  -- reply-stack resolver.  **WS-HP HP4.3**: and onto the
                  -- head-driven trigger, whose pair names the thread that LOSES
                  -- the context — so the deschedule and the migration source are
-                 -- `holder`, never the argument.
+                 -- `holder`, never the argument.  **WS-HP HP10.7**: and onto
+                 -- the redirect, so the recipient at the bottom of the stack is
+                 -- the reservation's recorded origin.
                  (match returnDonatedSchedContextResolved st holderVtid.val scId
-                     targetVtid.val with
+                     (replyDonationRecipient st scId targetVtid.val) with
                   | .error e => .error e
                   | .ok st' =>
                       .ok (descheduleAtPlacement
@@ -259,7 +328,10 @@ theorem applyReplyDonationOnCore_eq_single_of_placed_at_bootCore (st : SystemSta
     | none => rfl
     | some holderVtid =>
       simp only []
-      cases hRet : returnDonatedSchedContextResolved st holderVtid.val scId targetVtid.val with
+      -- **WS-HP HP10.7**: both spellings run the same redirect, so the bridge is
+      -- unaffected -- the split just has to name it.
+      cases hRet : returnDonatedSchedContextResolved st holderVtid.val scId
+          (replyDonationRecipient st scId targetVtid.val) with
       | error e => rfl
       | ok st' =>
         obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
@@ -290,7 +362,13 @@ theorem applyReplyDonationOnCore_ok_decompose
         replyStackOuterCaller? st scId = .ok newOwner? ∧
         -- **WS-HP HP4.3**: the return's `serverTid` is the trigger's `holder` and
         -- its `originalOwner` is the argument — the two that swapped places.
-        returnDonatedSchedContext st holderVtid.val scId targetVtid.val newOwner? = .ok st' ∧
+        -- **WS-HP HP10.7**: and the `originalOwner` is the *redirect* of that
+        -- argument, which at the bottom of the stack is the reservation's
+        -- recorded origin.  A consumer that wants the pre-HP10.7 reading takes
+        -- `replyDonationRecipient_eq_of_no_origin` and gets its old statement
+        -- back definitionally.
+        returnDonatedSchedContext st holderVtid.val scId
+          (replyDonationRecipient st scId targetVtid.val) newOwner? = .ok st' ∧
         st'' = descheduleAtPlacement
           (migrateSchedContextReplenishment st' scId holderHome ownerHome)
           holderVtid.val := by
@@ -309,7 +387,8 @@ theorem applyReplyDonationOnCore_ok_decompose
         SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hHV
       subst hHEq
       simp only [] at h
-      cases hR : returnDonatedSchedContextResolved st holderVtid.val scId targetVtid.val with
+      cases hR : returnDonatedSchedContextResolved st holderVtid.val scId
+          (replyDonationRecipient st scId targetVtid.val) with
       | error e => rw [hR] at h; cases h
       | ok st' =>
         rw [hR] at h
@@ -334,7 +413,8 @@ theorem applyReplyDonationOnCore_machine_eq
   · rw [hEq]
     show (descheduleAtPlacement _ _).machine = _
     simp only [descheduleAtPlacement_machine_eq, migrateSchedContextReplenishment_machine]
-    exact returnDonatedSchedContext_machine_eq st st' holderVtid.val scId targetVtid.val n hRet
+    exact returnDonatedSchedContext_machine_eq st st' holderVtid.val scId
+      (replyDonationRecipient st scId targetVtid.val) n hRet
 
 /-- WS-RR RR2.9 (frame): the cross-core donation return commits exactly the
 single-core return's object store — neither the migration nor the deschedule
@@ -351,7 +431,8 @@ theorem applyReplyDonationOnCore_objects_eq
     (replyFrameHeadHolder? st rid = none ∧ st''.objects = st.objects)
     ∨ ∃ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
         (newOwner? : Option SeLe4n.ThreadId) (st' : SystemState),
-        returnDonatedSchedContext st holder scId targetVtid.val newOwner? = .ok st' ∧
+        returnDonatedSchedContext st holder scId
+          (replyDonationRecipient st scId targetVtid.val) newOwner? = .ok st' ∧
         st''.objects = st'.objects := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome h with ⟨hNone, hEq⟩ | ⟨scId, holderVtid, n, st', _, _, hRet, hEq⟩
   · exact Or.inl ⟨hNone, by rw [hEq]⟩
@@ -487,7 +568,17 @@ theorem applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     (hHolderHome : ∀ scId holder,
         replyFrameHeadHolder? st rid = some (scId, holder) →
         determineTargetCore st holder = holderHome)
-    (hOwnerHome : determineTargetCore st targetVtid.val = ownerHome)
+    -- **WS-HP HP10.7**: the destination is the REDIRECTED recipient, so this
+    -- hypothesis is quantified over the trigger's answer exactly as `hHolderHome`
+    -- is.  HP4.3 recorded that the two swapped conditionality; the redirect makes
+    -- both conditional, because the thread that gains the reservation is no longer
+    -- the operation's own argument.  Stating it at `targetVtid.val` would still
+    -- typecheck and would migrate the replenishments to the answered caller's core
+    -- while the reservation settled on the origin's -- the wrong direction, which
+    -- is the hazard this docstring already warns about one argument over.
+    (hOwnerHome : ∀ scId holder,
+        replyFrameHeadHolder? st rid = some (scId, holder) →
+        determineTargetCore st (replyDonationRecipient st scId targetVtid.val) = ownerHome)
     (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'') :
     replenishQueueAffinityConsistent_smp st'' := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome h with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, st', hRes, _, hRet, hEq⟩
@@ -499,8 +590,9 @@ theorem applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
         (descheduleAtPlacement_replenishQueueOnCore _ _ _)
         (descheduleAtPlacement_preserves_objects _ _)).mpr
       (returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
-        st st' holderVtid.val scId targetVtid.val holderHome ownerHome hObjInv hCons
-        (hHolderHome scId holderVtid.val hRes) hOwnerHome n hRet c)
+        st st' holderVtid.val scId (replyDonationRecipient st scId targetVtid.val)
+        holderHome ownerHome hObjInv hCons
+        (hHolderHome scId holderVtid.val hRes) (hOwnerHome scId holderVtid.val hRes) n hRet c)
 
 -- ============================================================================
 -- §2  SM6.C.3 — Donation-chain lock-set extension
@@ -656,9 +748,14 @@ def endpointReplyCrossCoreDispatch
                 match SeLe4n.ThreadId.toValid? target with
                 | none => (st, .error .invalidArgument)
                 | some targetV =>
+                  -- **WS-HP HP10.7**: the migration's DESTINATION is the
+                  -- redirected recipient's home, not the answered caller's --
+                  -- they differ exactly on the out-of-order removal this phase
+                  -- exists for, and passing the caller's there would move the
+                  -- replenish queue to a core the reservation does not live on.
                   match applyReplyDonationOnCore st1 rid targetV
                       (replyDonationHolderHome st1 rid target)
-                      (determineTargetCore st1 target) with
+                      (replyDonationRecipientHome st1 rid target) with
                   | .error e => (st, .error e)
                   | .ok st2 =>
                       ((PriorityInheritance.propagatePipChainCrossCore st2 expected executingCore).1, .ok replySgi?)

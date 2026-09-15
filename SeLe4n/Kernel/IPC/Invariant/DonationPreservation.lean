@@ -1489,7 +1489,12 @@ theorem applyReplyDonation_ok_decompose
       -- every consumer sees which thread the context settled on and can state
       -- the outer-caller obligation about it.
       replyStackOuterCaller? st scId = .ok newOwner? ∧
-      returnDonatedSchedContext st holderVtid.val scId targetVtid.val newOwner? = .ok st' ∧
+      -- **WS-HP HP10.7**: the recipient is the redirect of the argument, which at
+      -- the bottom of the stack is the reservation's recorded origin.  A consumer
+      -- wanting the pre-HP10.7 reading rewrites with
+      -- `replyDonationRecipient_eq_of_no_origin`.
+      returnDonatedSchedContext st holderVtid.val scId
+        (replyDonationRecipient st scId targetVtid.val) newOwner? = .ok st' ∧
       st'' = removeRunnable st' holderVtid.val := by
   rw [applyReplyDonation_characterisation] at h
   cases hRet : replyFrameHeadHolder? st rid with
@@ -1506,7 +1511,8 @@ theorem applyReplyDonation_ok_decompose
       have hHolderEq : holderVtid.val = holder :=
         SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hV
       subst hHolderEq
-      cases hR : returnDonatedSchedContextResolved st holderVtid.val scId targetVtid.val with
+      cases hR : returnDonatedSchedContextResolved st holderVtid.val scId
+          (replyDonationRecipient st scId targetVtid.val) with
       | error e => rw [hR] at h; simp only [] at h; cases h
       | ok st' =>
         rw [hR] at h
@@ -1643,6 +1649,101 @@ theorem returnDonatedSchedContext_establishes_ipcInvariantFull_of_except
   exact ipcInvariantFull_of_donationReadAgreement_of_except st st' owner hInv hAgree
     (donationOwnerValid_implies_donationChainAcyclic st' hDOV') hDOV' hPSI' hDBT' hDOU'
 
+
+/-- **WS-HP HP10.7: the whole bundle, with the RECIPIENT split from the binding's
+recorded owner.**
+
+The reply path's redirect hands the reservation to the scheduling context's
+recorded **origin** at the bottom of a stack, where every pop before HP10.7 handed
+it to the thread the holder's own `.donated scId owner` binding named.  One thread
+used to play three roles — the operation's argument, the binding's owner, and the
+relaxation point of `ipcInvariantFullExceptDonationOwner` — and the redirect
+separates the first from the other two.
+
+Only **one** of the six conjunct arguments cared.  `donationOwnerUnique`,
+`donationBudgetTransfer`, `passiveServerIdle`, the scheduler frame and the read
+agreement all take the recipient purely as the operation's argument and are
+unchanged; `donationOwnerValid` is the one that read the server's binding *and*
+the argument as the same thread, and its generalisation
+(`…_of_except_redirected`) is where the two new hypotheses land.
+
+`hNoOwner` is the load-bearing one and is not defence in depth: a thread can be
+`.unbound` — so pass `donationRecipientAcceptable` — while another thread's
+`.donated` binding names it as the owner it is waiting on, and writing `.bound
+scId` there falsifies that binding's clause.  `donationOriginRebindable_no_owner`
+is what supplies it, from the redirect's own O(1) guard.
+
+The conflated form is the instance `recipient = bindingOwner`. -/
+theorem returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
+    (st st' : SystemState) (replierVtid : SeLe4n.ValidThreadId)
+    (scId : SeLe4n.SchedContextId) (bindingOwner recipient : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFullExceptDonationOwner st bindingOwner)
+    (hRet : replyDonationReturn? st replierVtid.val = some (scId, bindingOwner))
+    (hNoOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId' : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId' recipient)
+    (hReplierIdleAllowed : ∀ tcb, st.getTcb? replierVtid.val = some tcb →
+        passiveServerIdleAllowed tcb.ipcState)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hOuter : donationReturnOuterValid st replierVtid.val recipient newOwner?)
+    (h : returnDonatedSchedContext st replierVtid.val scId recipient newOwner? = .ok st') :
+    ipcInvariantFull st' := by
+  obtain ⟨pTcb, hLk, hPB⟩ :=
+    replyDonationReturn?_some_lookup st replierVtid.val scId bindingOwner hRet
+  have hPPre : st.getTcb? replierVtid.val = some pTcb :=
+    getTcb?_of_lookupTcb st replierVtid.val pTcb hLk
+  have hPObj := (getTcb?_eq_some_iff st replierVtid.val pTcb).mp hPPre
+  -- **The recipient and the replier differ**, and the operation's own guard is
+  -- what says so: a successful pop witnesses `donationRecipientAcceptable` of
+  -- whatever it was handed, so were the recipient the replier its binding would
+  -- read `.unbound` — and the replier's is a donation.  Deriving it here rather
+  -- than taking it means no caller can supply the wrong thread.
+  have hNe : recipient ≠ replierVtid.val := by
+    intro hEq
+    have hUnb := returnDonatedSchedContext_ok_recipient_unbound st st' replierVtid.val scId
+      recipient newOwner? h pTcb (hEq ▸ hLk)
+    rw [hPB] at hUnb; cases hUnb
+  obtain ⟨⟨rTcb, hOPre0, hOPost⟩, ⟨pTcb0, hPPre0, hPPost⟩, hOther⟩ :=
+    returnDonatedSchedContext_getTcb?_char st st' replierVtid.val scId recipient hObjInv hNe
+      newOwner? h
+  have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
+  rw [hPEq] at hPPost
+  have hSched := returnDonatedSchedContext_scheduler_eq st st' replierVtid.val scId recipient
+    newOwner? h
+  have hAgree := returnDonatedSchedContext_donationReadAgreement st st' replierVtid.val scId
+    recipient hObjInv newOwner? h
+  have hTri := returnDonatedSchedContext_binding_trichotomy st st' replierVtid.val recipient scId
+    newOwner? pTcb rTcb hOPost hPPost hOther
+  have hDOV' : donationOwnerValid st' :=
+    returnDonatedSchedContext_establishes_donationOwnerValid_of_except_redirected st st'
+      replierVtid.val scId bindingOwner recipient hObjInv pTcb hPObj hPB
+      hInv.donationOwnerUnique hInv.donationOwnerValidExcept
+      ⟨rTcb, (getTcb?_eq_some_iff st recipient rTcb).mp hOPre0⟩ hNoOwner newOwner? hOuter h
+  have hDOU' : donationOwnerUnique st' :=
+    returnDonatedSchedContext_preserves_donationOwnerUnique st st' replierVtid.val scId recipient
+      hObjInv hInv.donationOwnerUnique newOwner? hOuter h
+  have hDBT' : donationBudgetTransfer st' :=
+    returnDonatedSchedContext_preserves_donationBudgetTransfer st st' replierVtid.val scId
+      recipient hObjInv pTcb hPObj (by rw [hPB]; rfl) hInv.donationBudgetTransfer newOwner? h
+  have hAllowed : passiveServerIdleAllowed pTcb.ipcState := hReplierIdleAllowed pTcb hPPre
+  have hPSI' : passiveServerIdle st' := by
+    intro tid tcb' hTcb' hUnbound hNotInQ hNotCur
+    rcases hTri tid tcb' ((getTcb?_eq_some_iff st' tid tcb').mpr hTcb') with
+      ⟨_, hBnd⟩ | ⟨hP, hBnd⟩ | ⟨_, _, hPre⟩
+    · rw [hBnd] at hUnbound
+      exact absurd hUnbound (donationReturnBinding_ne_unbound scId newOwner?)
+    · rw [hP] at hTcb'
+      have hEq : { pTcb with schedContextBinding := .unbound } = tcb' :=
+        Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb').mpr hTcb'))
+      rw [← hEq]
+      exact hAllowed
+    · rw [hSched] at hNotInQ hNotCur
+      exact hInv.passiveServerIdle tid tcb' ((getTcb?_eq_some_iff st tid tcb').mp hPre)
+        hUnbound hNotInQ hNotCur
+  exact ipcInvariantFull_of_donationReadAgreement_of_except st st' bindingOwner hInv hAgree
+    (donationOwnerValid_implies_donationChainAcyclic st' hDOV') hDOV' hPSI' hDBT' hDOU'
+
 /-- WS-RR RR2.5: the unrelaxed instance — `returnDonatedSchedContext` preserves the
 whole bundle when the pre-state already satisfies it outright. -/
 theorem returnDonatedSchedContext_preserves_ipcInvariantFull
@@ -1727,18 +1828,55 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
       hHolderDonation scId holderVtid.val hHead
     have hIdle : ∀ tcb, st.getTcb? holderVtid.val = some tcb →
         passiveServerIdleAllowed tcb.ipcState := hHolderIdleAllowed scId holderVtid.val hHead
-    have hFull' : ipcInvariantFull st' :=
-      returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId targetVtid.val
-        hObjInv hInv hRet hIdle newOwner?
-        (donationReturnOuterValid_of_stackValid
-          (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
-    obtain ⟨pTcb, hPPre, hPB, _, _, hNe⟩ :=
-      replyDonationReturn?_some_char st holderVtid.val scId targetVtid.val
-        (donationOwnerValidExcept_of_donationOwnerValid targetVtid.val hInv.donationOwnerValid)
-        hRet
+    obtain ⟨pTcb, hLk, hPB⟩ :=
+      replyDonationReturn?_some_lookup st holderVtid.val scId targetVtid.val hRet
+    have hPPre : st.getTcb? holderVtid.val = some pTcb :=
+      getTcb?_of_lookupTcb st holderVtid.val pTcb hLk
+    -- **WS-HP HP10.7**: the recipient is the redirect, and it is not the holder --
+    -- a successful pop witnesses `donationRecipientAcceptable` of whatever it was
+    -- handed, and the holder's binding is a donation.
+    have hNe : replyDonationRecipient st scId targetVtid.val ≠ holderVtid.val := by
+      intro hEqq
+      have hUnb := returnDonatedSchedContext_ok_recipient_unbound st st' holderVtid.val scId
+        (replyDonationRecipient st scId targetVtid.val) newOwner? hR pTcb (hEqq ▸ hLk)
+      rw [hPB] at hUnb; cases hUnb
+    -- **WS-HP HP10.7: three cases, and only the third is new.**  No origin
+    -- recorded, or one that *is* the answered caller, both reduce the redirect to
+    -- the identity and run the pre-HP10.7 argument verbatim; a distinct origin
+    -- takes the generalised bundle, whose extra hypothesis is exactly what the
+    -- redirect's own `donationOriginRebindable` guard supplies.
+    have hFull' : ipcInvariantFull st' := by
+      by_cases hNoOrigin : donationOriginRecipient? st scId = none
+      · rw [replyDonationRecipient_eq_of_no_origin st scId targetVtid.val hNoOrigin] at hR
+        exact returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId
+          targetVtid.val hObjInv hInv hRet hIdle newOwner?
+          (donationReturnOuterValid_of_stackValid
+            (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
+      · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st scId = some o := by
+          cases hc : donationOriginRecipient? st scId with
+          | none => exact absurd hc hNoOrigin
+          | some o => exact ⟨o, rfl⟩
+        have hRecipEq : replyDonationRecipient st scId targetVtid.val = o :=
+          replyDonationRecipient_eq_origin st hOrigin
+        by_cases hSame : o = targetVtid.val
+        · rw [hRecipEq, hSame] at hR
+          exact returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId
+            targetVtid.val hObjInv hInv hRet hIdle newOwner?
+            (donationReturnOuterValid_of_stackValid
+              (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
+        · rw [hRecipEq] at hR
+          exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
+            st st' holderVtid scId targetVtid.val o hObjInv
+            (ipcInvariantFullExceptDonationOwner_of_full targetVtid.val hInv) hRet
+            (donationOriginRebindable_no_owner
+              (donationOwnerValidExcept_of_donationOwnerValid targetVtid.val
+                hInv.donationOwnerValid)
+              hSame (donationOriginRecipient?_rebindable st hOrigin))
+            hIdle newOwner?
+            (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
     obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-      returnDonatedSchedContext_getTcb?_char st st' holderVtid.val scId targetVtid.val hObjInv
-        hNe newOwner? hR
+      returnDonatedSchedContext_getTcb?_char st st' holderVtid.val scId
+        (replyDonationRecipient st scId targetVtid.val) hObjInv hNe newOwner? hR
     have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
     rw [hPEq] at hPPost
     rw [hEq]
@@ -1829,17 +1967,46 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
       subst hWoken
       have hIdle : ∀ tcb, st.getTcb? holderVtid.val = some tcb →
           passiveServerIdleAllowed tcb.ipcState := hHolderIdleAllowed scId holderVtid.val hHead
-      obtain ⟨pTcb, hPPre, hPB, _, _, hNe⟩ :=
-        replyDonationReturn?_some_char st holderVtid.val scId targetVtid.val
-          hInv.donationOwnerValidExcept hRet
-      have hFull' : ipcInvariantFull st' :=
-        returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' holderVtid
-          scId targetVtid.val hObjInv hInv hRet hIdle newOwner?
-          (donationReturnOuterValid_of_stackValid
-            (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
+      obtain ⟨pTcb, hLk, hPB⟩ :=
+        replyDonationReturn?_some_lookup st holderVtid.val scId targetVtid.val hRet
+      have hPPre : st.getTcb? holderVtid.val = some pTcb :=
+        getTcb?_of_lookupTcb st holderVtid.val pTcb hLk
+      -- **WS-HP HP10.7**: as in the unrelaxed twin above — the recipient is the
+      -- redirect and is not the holder, witnessed by the pop's own guard.
+      have hNe : replyDonationRecipient st scId targetVtid.val ≠ holderVtid.val := by
+        intro hEqq
+        have hUnb := returnDonatedSchedContext_ok_recipient_unbound st st' holderVtid.val scId
+          (replyDonationRecipient st scId targetVtid.val) newOwner? hR pTcb (hEqq ▸ hLk)
+        rw [hPB] at hUnb; cases hUnb
+      have hFull' : ipcInvariantFull st' := by
+        by_cases hNoOrigin : donationOriginRecipient? st scId = none
+        · rw [replyDonationRecipient_eq_of_no_origin st scId targetVtid.val hNoOrigin] at hR
+          exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' holderVtid
+            scId targetVtid.val hObjInv hInv hRet hIdle newOwner?
+            (donationReturnOuterValid_of_stackValid
+              (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
+        · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st scId = some o := by
+            cases hc : donationOriginRecipient? st scId with
+            | none => exact absurd hc hNoOrigin
+            | some o => exact ⟨o, rfl⟩
+          have hRecipEq : replyDonationRecipient st scId targetVtid.val = o :=
+            replyDonationRecipient_eq_origin st hOrigin
+          by_cases hSame : o = targetVtid.val
+          · rw [hRecipEq, hSame] at hR
+            exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st'
+              holderVtid scId targetVtid.val hObjInv hInv hRet hIdle newOwner?
+              (donationReturnOuterValid_of_stackValid
+                (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
+          · rw [hRecipEq] at hR
+            exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
+              st st' holderVtid scId targetVtid.val o hObjInv hInv hRet
+              (donationOriginRebindable_no_owner hInv.donationOwnerValidExcept hSame
+                (donationOriginRecipient?_rebindable st hOrigin))
+              hIdle newOwner?
+              (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
       obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-        returnDonatedSchedContext_getTcb?_char st st' holderVtid.val scId targetVtid.val hObjInv
-          hNe newOwner? hR
+        returnDonatedSchedContext_getTcb?_char st st' holderVtid.val scId
+          (replyDonationRecipient st scId targetVtid.val) hObjInv hNe newOwner? hR
       have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
       rw [hPEq] at hPPost
       rw [hEq]
@@ -1870,7 +2037,7 @@ theorem applyReplyDonation_preserves_objects_invExt
   · rw [hEq, show (removeRunnable st' holderVtid.val).objects = st'.objects from
       removeRunnable_preserves_objects st' holderVtid.val]
     exact returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
-      targetVtid.val hObjInv newOwner? hR
+      (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hR
 
 
 -- ============================================================================

@@ -1968,9 +1968,13 @@ def endpointReplyDispatchWriteSet (replier target : SeLe4n.ThreadId) (msg : IpcM
                 match SeLe4n.ThreadId.toValid? target with
                 | none => []
                 | some targetV =>
+                  -- **WS-HP HP10.7**: the destination home is the redirected
+                  -- recipient's, as the live dispatch passes it -- the write set
+                  -- mirrors the dispatch's control flow, so it has to mirror the
+                  -- same resolver or the two name different cores.
                   match applyReplyDonationOnCore st1 rid targetV
                       (replyDonationHolderHome st1 rid target)
-                      (determineTargetCore st1 target) with
+                      (replyDonationRecipientHome st1 rid target) with
                   | .error _ => []
                   | .ok st2 =>
                       -- `v0.35.37`: the donation return's leg is the descheduled
@@ -2037,7 +2041,7 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
               simp only []
               cases hDon : applyReplyDonationOnCore st1 rid targetV
                   (replyDonationHolderHome st1 rid target)
-                  (determineTargetCore st1 target) with
+                  (replyDonationRecipientHome st1 rid target) with
               | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
               | ok st2 =>
                 simp only []
@@ -2045,7 +2049,7 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
                   (observableSlotsConfinedToCores_trans hReply
                     (applyReplyDonationOnCore_confinedToCores st1 st2 rid targetV
                       (replyDonationHolderHome st1 rid target)
-                      (determineTargetCore st1 target) hDon))
+                      (replyDonationRecipientHome st1 rid target) hDon))
                   (propagatePipChainCrossCore_confinedToCores executingCore
                     st2.objectIndex.length st2 expected)
 
@@ -2142,7 +2146,8 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
       | some targetV =>
         rw [hHV, hTV] at hStep
         simp only [] at hStep
-        cases hRet : returnDonatedSchedContextResolved st holderV.val oldScId targetV.val with
+        cases hRet : returnDonatedSchedContextResolved st holderV.val oldScId
+            (replyDonationRecipient st oldScId targetV.val) with
         | error e => rw [hRet] at hStep; simp only [] at hStep; cases hStep
         | ok st1' =>
           rw [hRet] at hStep
@@ -2152,7 +2157,8 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
               (returnDonatedSchedContext_scheduler_eq st st1' _ _ _ n hPopN)
               (returnDonatedSchedContext_machine_eq st st1' _ _ _ n hPopN)
           have hEq : migrateSchedContextReplenishment st1' oldScId
-              (determineTargetCore st holder) (determineTargetCore st target) = st' :=
+              (determineTargetCore st holder)
+                (determineTargetCore st (replyDonationRecipient st oldScId target)) = st' :=
             (by simpa using hStep : some oldScId = returned? ∧ _).2
           rw [← hEq]
           simpa using observableSlotsConfinedToCores_trans hReturn

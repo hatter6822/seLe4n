@@ -3277,6 +3277,98 @@ private def runDonationOriginIdReuseChecks : IO Unit := do
   assertBool "the scrub is the identity when nothing records an origin"
     (originOf (clearDonationOriginReferences pushStore pushOuter) == some none)
 
+/-- **WS-HP HP10.7: the redirect computes a DIFFERENT recipient, and both guards
+decline.**
+
+The measurement this phase owes.  Every state the tree reached before HP10.7
+either records no origin or records one that *is* the answered caller, so on all
+of them the redirect is the identity and a suite that only exercised those would
+pass with the whole flip reverted.  The shape that separates them is the
+out-of-order removal of plan §3.2: a client answered by a delegate is woken
+`.ready`, its frame leaves the stack, and the surviving bottom frame names the
+*intermediate* caller — so reachability says one thread and the recorded origin
+says another.
+
+Four assertions, and the last two are why the guard is a conjunction.  A thread
+that is still `.blockedOnReply` is a thread whose own reservation is travelling,
+and rebinding it would falsify the owner clause of whatever binding is waiting on
+it (`donationOriginRebindable`); a thread that already holds a binding is the case
+`donationRecipientAcceptable` has always covered.  Both decline to the
+reachability answer rather than refusing the pop, which is the difference between
+a recovery and a regression. -/
+private def runDonationOriginRedirectChecks : IO Unit := do
+  IO.println "--- §3.25 WS-HP HP10.7: the reply pop's recipient is the recorded origin ---"
+  -- The context sits at the BOTTOM of its stack (`pushOuterReply.prev = none`),
+  -- held by `pushServer`, and records `pushOuter` as the reservation's origin.
+  let withOrigin (outerTcb : TCB) : SystemState :=
+    { pushStore with
+        objects := (pushStore.objects.insert pushSc.toObjId
+          (.schedContext { SchedContext.empty pushSc with
+                             boundThread := some pushServer,
+                             scReply := some pushOuterReply,
+                             donationOrigin := some pushOuter })).insert
+            pushOuter.toObjId (.tcb outerTcb) }
+  -- **The depth-2 shape**: the origin was answered out of order, so it is awake,
+  -- holds nothing, and is on no stack.  Homed on core 1, where `pushServer` is not.
+  let stRedirect : SystemState := withOrigin (mkTcb 93 50 (some c1))
+  assertBool "pre: the pop is at the BOTTOM of the stack (nothing further out)"
+    (match replyStackOuterCaller? stRedirect pushSc with
+     | .ok none => true
+     | _ => false)
+  assertBool "pre: ...and the context records `pushOuter` as the origin"
+    ((stRedirect.getSchedContext? pushSc).bind (·.donationOrigin) == some pushOuter)
+  -- **PAYOFF**: reachability names `pushServer`; the origin names `pushOuter`, and
+  -- the redirect follows the origin.  This is the assertion a revert of the flip
+  -- fails.
+  assertBool "PAYOFF: the resolver answers the recorded origin"
+    (donationOriginRecipient? stRedirect pushSc == some pushOuter)
+  assertBool "PAYOFF: ...and the pop's recipient is that origin, NOT the answered caller"
+    (replyDonationRecipient stRedirect pushSc pushServer == pushOuter)
+  assertBool "PAYOFF: ...which is a DIFFERENT thread, so the redirect is not vacuous"
+    (!(pushOuter == pushServer))
+  -- **PAYOFF**: and the replenishment migration's DESTINATION follows it too.  A
+  -- redirect that moved the reservation without moving the queue would leave
+  -- `replenishQueueAffinityConsistentOnCore` false from the instant it committed.
+  assertBool "PAYOFF: the migration's destination home is the ORIGIN's core"
+    (replyDonationRecipientHome stRedirect pushOuterReply pushServer
+      == determineTargetCore stRedirect pushOuter)
+  assertBool "PAYOFF: ...and that is core 1, not the answered caller's"
+    (replyDonationRecipientHome stRedirect pushOuterReply pushServer == c1)
+  -- NEGATIVE: a still-reply-blocked origin is one whose own reservation is still
+  -- owed, and some other binding may name it as owner; the redirect declines.
+  let stBlockedOrigin : SystemState := withOrigin pushOuterBlockedTcb
+  assertBool "NEGATIVE: a reply-blocked origin fails the rebindability guard"
+    (donationOriginRebindable stBlockedOrigin pushOuter == false)
+  -- CONTROL: the *recipient* guard admits it, so the decline above is attributable
+  -- to rebindability alone.  Without this the negative would pass under a resolver
+  -- that declined for the other reason, and the guard would read as load-bearing
+  -- while asserting nothing.
+  assertBool "CONTROL: ...while the recipient guard ALONE admits it"
+    (donationRecipientAcceptable stBlockedOrigin pushOuter == true)
+  assertBool "NEGATIVE: ...so the resolver declines it"
+    (donationOriginRecipient? stBlockedOrigin pushSc == none)
+  assertBool "NEGATIVE: ...and the pop FALLS BACK to the answered caller, never refuses"
+    (replyDonationRecipient stBlockedOrigin pushSc pushServer == pushServer)
+  -- NEGATIVE: an origin that already holds a reservation of its own is the case
+  -- `donationRecipientAcceptable` has always covered.
+  let stBoundOrigin : SystemState :=
+    withOrigin { mkTcb 93 50 none with schedContextBinding := .bound pushSc }
+  assertBool "NEGATIVE: a bound origin fails the recipient guard"
+    (donationRecipientAcceptable stBoundOrigin pushOuter == false)
+  -- CONTROL: and rebindability admits *it*, so the two guards are known to be
+  -- independent rather than two spellings of one test.
+  assertBool "CONTROL: ...while the rebindability guard ALONE admits it"
+    (donationOriginRebindable stBoundOrigin pushOuter == true)
+  assertBool "NEGATIVE: ...so the resolver declines that too"
+    (donationOriginRecipient? stBoundOrigin pushSc == none)
+  -- NEGATIVE: and with NO origin recorded the redirect is the identity, which is
+  -- every state this tree reached before HP10.4.
+  assertBool "NEGATIVE: no origin recorded — the recipient is the answered caller"
+    (replyDonationRecipient pushStore pushSc pushServer == pushServer)
+  assertBool "NEGATIVE: ...and the destination home is the answered caller's"
+    (replyDonationRecipientHome pushStore pushOuterReply pushServer
+      == determineTargetCore pushStore pushServer)
+
 private def runMiddleRemovalDepthFourChecks : IO Unit := do
   IO.println "--- §3.23 WS-HP HP9.1: a middle removal at stack depth four ---"
   match depth4Chain with
@@ -3408,6 +3500,7 @@ def runSmpIpcChecks : IO Unit := do
   runMiddleRemovalDepthThreeChecks
   runMiddleRemovalDepthFourChecks
   runDonationOriginIdReuseChecks
+  runDonationOriginRedirectChecks
   runReceivePriorityHandoffChecks
   runTraceFixtureCheck
   IO.println "===================================="

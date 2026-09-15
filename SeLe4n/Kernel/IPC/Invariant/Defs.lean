@@ -4381,6 +4381,34 @@ theorem donationOwnerValidExcept_of_donationOwnerValid
   obtain ⟨hSc, ownerTcb, hOwner, hUnbound, hReply⟩ := h tid tcb scId owner hTcb hBind
   exact ⟨hSc, ownerTcb, hOwner, hUnbound, Or.inr hReply⟩
 
+/-- **WS-HP HP10.7: a rebindable origin is named as owner by no live donation.**
+
+The fact the reply path's redirect rests on, and the reason
+`donationOriginRebindable` exists beside `donationRecipientAcceptable` rather than
+being folded into it.  The recipient guard asks that the origin hold no binding of
+its **own**; this asks that no *other* thread's binding be counting on it — two
+different questions, and the redirect would falsify `donationOwnerValid` without
+the second (see `donationOriginRebindable` for the reachable sequence).
+
+Stated against the **relaxed** invariant because that is what the reply path has:
+`donationOwnerValidExcept st relaxed` drops the reply-blocked clause at one thread,
+so an origin distinct from that thread still gets the full reading — and where the
+two coincide the redirect is the identity, so nothing is owed. -/
+theorem donationOriginRebindable_no_owner
+    {st : SystemState} {origin relaxed : SeLe4n.ThreadId}
+    (hDOV : donationOwnerValidExcept st relaxed)
+    (hNe : origin ≠ relaxed)
+    (h : donationOriginRebindable st origin = true) :
+    ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId' : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId' origin := by
+  intro tid tcb scId' hObj hBind
+  obtain ⟨_, ownerTcb, hOwnerObj, _, hCase⟩ := hDOV tid tcb scId' origin hObj hBind
+  rcases hCase with hEq | ⟨epId, replyTarget, hIpc⟩
+  · exact hNe hEq
+  · exact donationOriginRebindable_not_blockedOnReply st
+      ((SystemState.getTcb?_eq_some_iff st origin ownerTcb).mpr hOwnerObj) h epId replyTarget hIpc
+
 /-- WS-RR RR3.12: the relaxed form is the full one once nothing is donated **by**
 the relaxed thread — the state the donation return leaves behind, and the state a
 reply that carried no donation was in all along. -/
@@ -5916,6 +5944,113 @@ theorem returnDonatedSchedContext_establishes_donationOwnerValid_of_except
       scId'.toObjId hScIdNe hScNeO hScNeS
       (fun r hr => by rw [hSc'] at hr; cases hr)]; exact hSc'
   · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId originalOwner hObjInv newOwner? h
+      owner'.toObjId hOwnerNSc hOwnerNO hOwnerNS
+      (fun r hr => by rw [hOwner0] at hr; cases hr)]; exact hOwner0
+
+
+/-- **WS-HP HP10.7: `donationOwnerValid`, with the RECIPIENT split from the
+binding's recorded owner.**
+
+The generalisation the reply path's redirect needs.  Every pop before HP10.7
+handed the reservation to the thread the holder's own `.donated scId owner`
+binding named, so one thread played three roles at once — the operation's
+`originalOwner` argument, the binding's recorded owner, and the relaxation point
+of `donationOwnerValidExcept`.  At the bottom of a reply stack the redirect makes
+the first of those the reservation's recorded **origin**, and the three come
+apart.
+
+Two hypotheses replace what the conflation used to supply for free, and each
+names the fact it stands for rather than a thread:
+
+* `hRecipientStored` — the recipient resolves to a TCB.  The pop's own
+  `lookupTcb` witnesses this on success; it is a hypothesis here so the lemma
+  says what it needs instead of re-deriving it.
+* `hNoOwner` — **no live binding names the recipient as its owner**.  This is the
+  load-bearing one, and it is exactly what `donationOriginRebindable_no_owner`
+  delivers.  Without it the redirect is unsound rather than merely unproved: a
+  thread that is `.unbound` (so it passes `donationRecipientAcceptable`) may
+  still be the owner some other thread's `.donated` binding is counting on, and
+  writing `.bound scId` there falsifies that binding's owner clause.  The
+  conflated form got this from `donationOwnerUnique` for free, because the
+  recipient *was* the server's own recorded owner.
+
+`hUnique` still does the other half of the old argument — that a surviving
+donation's owner is not the **binding's** owner — because the relaxed invariant's
+escape disjunct is keyed there, not at the recipient.
+
+The conflated form is the instance `recipient = bindingOwner`
+(`returnDonatedSchedContext_establishes_donationOwnerValid_of_except`), which is
+every pop this tree performed before HP10.7 and every one where the redirect is
+the identity. -/
+theorem returnDonatedSchedContext_establishes_donationOwnerValid_of_except_redirected
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (bindingOwner recipient : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (stcb : TCB)
+    (hServerObj : st.objects[serverTid.toObjId]? = some (.tcb stcb))
+    (hServerBind : stcb.schedContextBinding = .donated scId bindingOwner)
+    (hUnique : donationOwnerUnique st)
+    (hInv : donationOwnerValidExcept st bindingOwner)
+    (hRecipientStored : ∃ rTcb, st.objects[recipient.toObjId]? = some (.tcb rTcb))
+    (hNoOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId' : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId' recipient)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hOuter : donationReturnOuterValid st serverTid recipient newOwner?)
+    (h : returnDonatedSchedContext st serverTid scId recipient newOwner? = .ok st') :
+    donationOwnerValid st' := by
+  intro tid tcb scId' owner' hTcb hBinding
+  have hBack := returnDonatedSchedContext_tcb_schedContextBinding_backward st st' serverTid scId
+    recipient hObjInv newOwner? h tid.toObjId tcb hTcb
+  have hTidNS : tid.toObjId ≠ serverTid.toObjId := by
+    intro hEq; rw [hBack.1 hEq] at hBinding; cases hBinding
+  by_cases hTidO : tid.toObjId = recipient.toObjId
+  · exact returnDonatedSchedContext_donationOwnerValid_at_target st st' serverTid scId
+      recipient hObjInv newOwner? hOuter h tid tcb scId' owner' hTcb
+      (hBack.2.1 hTidNS hTidO) hBinding hTidO
+  have hTidNO : tid.toObjId ≠ recipient.toObjId := hTidO
+  obtain ⟨tcb0, hTcb0, hBind0⟩ := hBack.2.2 hTidNS hTidNO
+  have hBind0' : tcb0.schedContextBinding = .donated scId' owner' := hBind0.trans hBinding
+  obtain ⟨⟨sc', hSc', hBound'⟩, ⟨ownerTcb, hOwner0, hUnbound0, hCase0⟩⟩ :=
+    hInv tid tcb0 scId' owner' hTcb0 hBind0'
+  obtain ⟨⟨scS, hScS, hBoundS⟩, _⟩ :=
+    hInv serverTid stcb scId bindingOwner hServerObj hServerBind
+  obtain ⟨rTcb, hRecipObj⟩ := hRecipientStored
+  have hScIdNe : scId'.toObjId ≠ scId.toObjId := by
+    intro hEq; rw [hEq, hScS] at hSc'
+    obtain rfl := KernelObject.schedContext.inj (Option.some.inj hSc')
+    rw [hBoundS] at hBound'
+    exact hTidNS (by rw [(Option.some.inj hBound').symm])
+  -- The recipient is a TCB slot, so `tid`'s SchedContext is not it.
+  have hScNeO : scId'.toObjId ≠ recipient.toObjId := by
+    intro hEq; rw [hEq, hRecipObj] at hSc'; cases hSc'
+  have hScNeS : scId'.toObjId ≠ serverTid.toObjId := by
+    intro hEq; rw [hEq, hServerObj] at hSc'; cases hSc'
+  have hOwnerNS : owner'.toObjId ≠ serverTid.toObjId := by
+    intro hEq; rw [hEq, hServerObj] at hOwner0
+    obtain rfl := KernelObject.tcb.inj (Option.some.inj hOwner0)
+    rw [hServerBind] at hUnbound0; cases hUnbound0
+  -- **The redirect's own hypothesis**: no surviving donation names the recipient.
+  have hOwnerNO : owner'.toObjId ≠ recipient.toObjId := by
+    intro hEq
+    have hOwnerEq : owner' = recipient := ThreadId.toObjId_injective owner' recipient hEq
+    exact hNoOwner tid tcb0 scId' hTcb0 (hOwnerEq ▸ hBind0')
+  -- And the relaxed disjunct is keyed at the BINDING's owner, which uniqueness excludes.
+  have hOwnerNB : owner' ≠ bindingOwner := by
+    intro hOwnerEq
+    have := hUnique tid serverTid tcb0 stcb scId' scId bindingOwner hTcb0 hServerObj
+      (hOwnerEq ▸ hBind0') hServerBind
+    exact hTidNS (by rw [this])
+  have hOwnerNSc : owner'.toObjId ≠ scId.toObjId := by
+    intro hEq; rw [hEq, hScS] at hOwner0; cases hOwner0
+  obtain ⟨ep, rt, hReply0⟩ : ∃ epId replyTarget,
+      ownerTcb.ipcState = .blockedOnReply epId replyTarget :=
+    hCase0.resolve_left hOwnerNB
+  refine ⟨⟨sc', ?_, hBound'⟩, ⟨ownerTcb, ?_, hUnbound0, ep, rt, hReply0⟩⟩
+  · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId recipient hObjInv newOwner? h
+      scId'.toObjId hScIdNe hScNeO hScNeS
+      (fun r hr => by rw [hSc'] at hr; cases hr)]; exact hSc'
+  · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId recipient hObjInv newOwner? h
       owner'.toObjId hOwnerNSc hOwnerNO hOwnerNS
       (fun r hr => by rw [hOwner0] at hr; cases hr)]; exact hOwner0
 
