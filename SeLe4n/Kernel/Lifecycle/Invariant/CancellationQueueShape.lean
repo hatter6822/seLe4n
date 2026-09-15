@@ -668,6 +668,36 @@ theorem intrusiveQueueWellFormed_transfer_off_boundary
         rw [htl]; exact congrArg some (SeLe4n.ThreadId.toObjId_injective _ _ hEq)))]
       exact ht, hn⟩
 
+/-- **WS-RR RR8.3**: the swept-and-restored composite preserves the
+`queuePPrev`/`queuePrev` pairing.
+
+Two branches and no case analysis of its own.  Away from the swept thread the
+composite's TCB view **is** the splice's (§4), so the splice's own preservation
+carries it — which is where the two link fields are shown to travel together, in
+`queueUnlinkSuccessor` (WS-OD OD1.1 and OD3.9 each found a removal writing
+`queuePrev` alone).  At the swept thread it is vacuous: `restoredTcb` clears all
+three link fields, and a `queuePPrev` of `none` constrains nothing. -/
+theorem sweptAndRestored_queuePPrevAgreesWithPrev
+    (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
+    (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
+    (hPP : queuePPrevAgreesWithPrev st) :
+    queuePPrevAgreesWithPrev (sweptAndRestored st v frame) := by
+  intro a t hT
+  have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) :=
+    lookupTcb_some_objects st v tcbV hLookup
+  by_cases hav : a = v
+  · rw [hav, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hT
+    have hEq : restoredTcb tcbV frame = t := by injection hT with hObj; injection hObj
+    subst hEq
+    exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev tcbV frame)
+  · -- Away from the swept thread the composite's TCB view is the splice's.
+    have hNeObj : a.toObjId ≠ v.toObjId :=
+      fun hEq => hav (SeLe4n.ThreadId.toObjId_injective _ _ hEq)
+    exact spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev st v hInv hPP a t
+      ((sweptAndRestored_tcb_iff st v frame hInv a.toObjId t hNeObj).mp hT)
+
 /-- **WS-RR RR7.22 (residual)**: the composite preserves the whole dual-queue
 system invariant.
 
@@ -685,7 +715,7 @@ theorem sweptAndRestored_dualQueueSystemInvariant
     (hLookup : lookupTcb st v = some tcbV)
     (hCoh : sweptThreadBoundaryCoherent st v) :
     dualQueueSystemInvariant (sweptAndRestored st v frame) := by
-  obtain ⟨hEps, hLink, hAcyc⟩ := hDual
+  obtain ⟨hEps, hLink, hAcyc, hPPair⟩ := hDual
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   have hExt1 : (spliceOutMidQueueNode st v).objects.invExt :=
     spliceOutMidQueueNode_preserves_objects_invExt st v hInv
@@ -719,7 +749,8 @@ theorem sweptAndRestored_dualQueueSystemInvariant
       (sweptAndRestored st v frame).objects[k]? = (removeFromAllEndpointQueues st v).objects[k]? :=
     fun k hk => restoreToReadyStaging_objects_ne _ v frame k hExt2 hk
   refine ⟨?_, sweptAndRestored_tcbQueueLinkIntegrity st v frame tcbV hInv hLink hAcyc hLookup,
-    sweptAndRestored_tcbQueueChainAcyclic st v frame tcbV hInv hLink hAcyc hLookup⟩
+    sweptAndRestored_tcbQueueChainAcyclic st v frame tcbV hInv hLink hAcyc hLookup,
+    sweptAndRestored_queuePPrevAgreesWithPrev st v frame tcbV hInv hLink hAcyc hLookup hPPair⟩
   intro epId ep hEp
   -- The endpoint key is not the swept thread's.
   have hEpNe : epId ≠ v.toObjId := by
@@ -1058,7 +1089,6 @@ theorem sweptAndRestored_endpoint_queues
     ?_, ?_⟩
   · rw [hS]; exact removeThreadFromQueue_tcb_present _ ep0.sendQ v tcbV hVSplice
   · rw [hR]; exact removeThreadFromQueue_tcb_present _ ep0.receiveQ v tcbV hVSplice
-
 
 -- ============================================================================
 -- §10  The sharp pointwise reading, and the transports the conjuncts consume
@@ -1889,7 +1919,7 @@ theorem sweptAndRestored_preserves_ipcInvariantFull
     hDonAcyc, hDonOwner, hPassive, hDonBudget, hBlkReply, hReplyLink, hStash,
     hDonUnique, hTailBlk, hTgt⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
-  have hAcyc : tcbQueueChainAcyclic st := hDual.2.2
+  have hAcyc : tcbQueueChainAcyclic st := hDual.chainAcyclic
   have hBind := sweptAndRestored_sameSchedContextBindings st v frame tcbV hInv hLink hAcyc hLookup
   refine ⟨sweptAndRestored_ipcInvariant st v frame tcbV hInv hLink hAcyc hLookup hIpc,
     sweptAndRestored_dualQueueSystemInvariant st v frame tcbV hInv hDual hLookup hCoh.boundary,

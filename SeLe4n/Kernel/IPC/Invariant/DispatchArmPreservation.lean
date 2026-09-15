@@ -2638,10 +2638,19 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_ipcInvariantFul
 /-- The retype replacement object is pristine: every field an `ipcInvariantFull`
 conjunct reads is at its inert value.  `objectOfKernelType` — the only
 replacement builder the live `.lifecycleRetype` dispatch uses — satisfies this
-by construction (`objectOfKernelType_replacementFresh`). -/
+by construction (`objectOfKernelType_replacementFresh`).
+
+**WS-RR RR8.3**: `queuePPrev` joined the list when `queuePPrevAgreesWithPrev`
+became `dualQueueSystemInvariant`'s fourth conjunct, and it is not derivable from
+`queuePrev = none` beside it: a replacement carrying `.tcbNext p` with no
+`queuePrev` *refutes* the pairing rather than satisfying it vacuously.  It sits
+next to `queuePrev` because the two are one back-pointer, which is the whole
+lesson of WS-OD OD1.1 and OD3.9 — each found a removal writing one of them
+alone. -/
 def retypeReplacementFresh : KernelObject → Prop
   | .tcb t => t.ipcState = .ready ∧ t.pendingMessage = none ∧ t.queueNext = none ∧
-      t.queuePrev = none ∧ t.schedContextBinding = .unbound ∧ t.replyObject = none ∧
+      t.queuePrev = none ∧ t.queuePPrev = none ∧
+      t.schedContextBinding = .unbound ∧ t.replyObject = none ∧
       t.pendingReceiveReply = none ∧ t.timeoutBudget = none
   | .endpoint ep => ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
       ep.receiveQ.head = none ∧ ep.receiveQ.tail = none
@@ -2828,7 +2837,7 @@ private theorem retypeWrite_blockedThreadTimeoutConsistent
   by_cases hK : tid.toObjId = target
   · rw [hK] at hT
     obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
-    obtain ⟨-, -, -, -, -, -, -, hTBn⟩ := hFresh
+    obtain ⟨-, -, -, -, -, -, -, -, hTBn⟩ := hFresh
     rw [hTBn] at hTB
     cases hTB
   · rw [hNe _ hK] at hT
@@ -2849,13 +2858,13 @@ private theorem retypeWrite_donationChainAcyclic
   by_cases hK1 : tid1.toObjId = target
   · rw [hK1] at h1
     obtain rfl : newObj = .tcb tcb1 := retypeWrite_at_target hAt h1
-    obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+    obtain ⟨-, -, -, -, -, hSB, -⟩ := hFresh
     rw [hSB] at hB1
     cases hB1
   · by_cases hK2 : tid2.toObjId = target
     · rw [hK2] at h2
       obtain rfl : newObj = .tcb tcb2 := retypeWrite_at_target hAt h2
-      obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+      obtain ⟨-, -, -, -, -, hSB, -⟩ := hFresh
       rw [hSB] at hB2
       cases hB2
     · rw [hNe _ hK1] at h1
@@ -2873,13 +2882,13 @@ private theorem retypeWrite_donationOwnerUnique
   by_cases hK1 : tid1.toObjId = target
   · rw [hK1] at h1
     obtain rfl : newObj = .tcb tcb1 := retypeWrite_at_target hAt h1
-    obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+    obtain ⟨-, -, -, -, -, hSB, -⟩ := hFresh
     rw [hSB] at hB1
     cases hB1
   · by_cases hK2 : tid2.toObjId = target
     · rw [hK2] at h2
       obtain rfl : newObj = .tcb tcb2 := retypeWrite_at_target hAt h2
-      obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+      obtain ⟨-, -, -, -, -, hSB, -⟩ := hFresh
       rw [hSB] at hB2
       cases hB2
     · rw [hNe _ hK1] at h1
@@ -2897,13 +2906,13 @@ private theorem retypeWrite_donationBudgetTransfer
   by_cases hK1 : tid1.toObjId = target
   · rw [hK1] at h1
     obtain rfl : newObj = .tcb tcb1 := retypeWrite_at_target hAt h1
-    obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+    obtain ⟨-, -, -, -, -, hSB, -⟩ := hFresh
     rw [hSB] at hS1
     simp [SchedContextBinding.scId?] at hS1
   · by_cases hK2 : tid2.toObjId = target
     · rw [hK2] at h2
       obtain rfl : newObj = .tcb tcb2 := retypeWrite_at_target hAt h2
-      obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+      obtain ⟨-, -, -, -, -, hSB, -⟩ := hFresh
       rw [hSB] at hS2
       simp [SchedContextBinding.scId?] at hS2
     · rw [hNe _ hK1] at h1
@@ -3081,7 +3090,7 @@ private theorem retypeWrite_donationOwnerValid
   by_cases hK : tid.toObjId = target
   · rw [hK] at hT
     obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
-    obtain ⟨-, -, -, -, hSB, -⟩ := hFresh
+    obtain ⟨-, -, -, -, -, hSB, -⟩ := hFresh
     rw [hSB] at hB
     cases hB
   · rw [hNe _ hK] at hT
@@ -3200,7 +3209,7 @@ private theorem retypeWrite_replyCallerLinkageReciprocal
     by_cases hK : tid.toObjId = target
     · rw [hK] at hT
       obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
-      obtain ⟨-, -, -, -, -, hRO0, -⟩ := hFresh
+      obtain ⟨-, -, -, -, -, -, hRO0, -⟩ := hFresh
       rw [hRO0] at hRO
       cases hRO
     · rw [hNe _ hK] at hT
@@ -3235,7 +3244,7 @@ private theorem retypeWrite_pendingReceiveReplyWellFormed
     by_cases hK : tid.toObjId = target
     · rw [hK] at hTobj
       obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hTobj
-      obtain ⟨-, -, -, -, -, -, hPRR0, -⟩ := hFresh
+      obtain ⟨-, -, -, -, -, -, -, hPRR0, -⟩ := hFresh
       rw [hPRR0] at hPRR
       cases hPRR
     · rw [hNe _ hK] at hTobj
@@ -3252,13 +3261,13 @@ private theorem retypeWrite_pendingReceiveReplyWellFormed
     by_cases hK1 : tid1.toObjId = target
     · rw [hK1] at hT1obj
       obtain rfl : newObj = .tcb tcb1 := retypeWrite_at_target hAt hT1obj
-      obtain ⟨-, -, -, -, -, -, hPRR0, -⟩ := hFresh
+      obtain ⟨-, -, -, -, -, -, -, hPRR0, -⟩ := hFresh
       rw [hPRR0] at hP1
       cases hP1
     · by_cases hK2 : tid2.toObjId = target
       · rw [hK2] at hT2obj
         obtain rfl : newObj = .tcb tcb2 := retypeWrite_at_target hAt hT2obj
-        obtain ⟨-, -, -, -, -, -, hPRR0, -⟩ := hFresh
+        obtain ⟨-, -, -, -, -, -, -, hPRR0, -⟩ := hFresh
         rw [hPRR0] at hP2
         cases hP2
       · rw [hNe _ hK1] at hT1obj
@@ -3293,7 +3302,7 @@ private theorem retypeWrite_dualQueueSystemInvariant
     (hDet : retypeTargetDetached st target)
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
-  obtain ⟨hEpWF, ⟨hFwd, hRev⟩, hAcyclic⟩ := hInv
+  obtain ⟨hEpWF, ⟨hFwd, hRev⟩, hAcyclic, hPPair⟩ := hInv
   have hIQtrans : ∀ (q : IntrusiveQueue),
       intrusiveQueueWellFormed q st →
       (∀ hd, q.head = some hd → hd.toObjId ≠ target) →
@@ -3307,7 +3316,7 @@ private theorem retypeWrite_dualQueueSystemInvariant
     · intro tl hT
       obtain ⟨tcbT, hTT, hNnone⟩ := hP3 tl hT
       exact ⟨tcbT, by rw [hNe _ (hTl tl hT)]; exact hTT, hNnone⟩
-  refine ⟨?_, ⟨?_, ?_⟩, ?_⟩
+  refine ⟨?_, ⟨?_, ?_⟩, ?_, ?_⟩
   · -- per-endpoint dual-queue well-formedness
     intro epId ep hEp
     unfold dualQueueEndpointWellFormed
@@ -3381,6 +3390,17 @@ private theorem retypeWrite_dualQueueSystemInvariant
             exact .cons a mid c tcb hObj hNext ih
     intro tid hPathTid
     exact hAcyclic tid (hPath _ _ hPathTid)
+  · -- WS-RR RR8.3: the `queuePPrev`/`queuePrev` pairing.  The replacement is
+    -- pristine (`queuePPrev = none`, which constrains nothing) and every other
+    -- key reads the pre-state.
+    intro tid tcb hTcb
+    by_cases hKt : tid.toObjId = target
+    · rw [hKt] at hTcb
+      obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hTcb
+      obtain ⟨-, -, -, -, hQPP, -⟩ := hFresh
+      exact TCB.queuePPrevAgreesWithPrev_of_pprev_none hQPP
+    · rw [hNe _ hKt] at hTcb
+      exact hPPair tid tcb hTcb
 
 /-- The retype write — one arbitrary-kind object replaced by a pristine one at
 a fully detached slot — preserves the whole `ipcInvariantFull` bundle.  This is

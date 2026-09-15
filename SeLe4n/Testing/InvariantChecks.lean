@@ -139,6 +139,35 @@ want to assert it of a state directly. -/
 def threadInactiveFlagConsistentBool (st : SystemState) : Bool :=
   (threadInactiveFlagConsistentChecks st.objectIndex st).all (·.2)
 
+/-- **WS-RR RR8.3**: `queuePPrevAgreesWithPrev`, the fourth conjunct of
+`dualQueueSystemInvariant`, as a runtime check.
+
+`queuePPrev` carries exactly one bit beyond `queuePrev` — whether the node is
+linked into a queue at all — and every other bit of it must agree with
+`queuePrev`.  Nothing checked that before RR8.3, and *that* is why WS-OD OD1.1
+and OD3.9 each found a removal writing `queuePrev` without its partner: no
+`ipcInvariantFull` conjunct read the field, so a stranded successor was invisible
+to both the proofs and the harness. -/
+def queuePPrevAgreesWithPrevChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    match st.getTcb? ⟨oid.toNat⟩ with
+    | some tcb =>
+        let ok : Bool :=
+          match tcb.queuePPrev with
+          | none => true
+          | some .endpointHead => tcb.queuePrev.isNone
+          | some (.tcbNext p) => tcb.queuePrev == some p
+        (s!"queuePPrev agrees with queuePrev: oid={oid} prev={reprStr tcb.queuePrev} \
+pprev={reprStr tcb.queuePPrev}", ok) :: acc
+    | none => acc) []
+
+/-- **WS-RR RR8.3**: the same relation as a single boolean, for suites that assert
+it of a state directly — and for the witnesses that show a corrupted back-pointer
+fails it. -/
+def queuePPrevAgreesWithPrevBool (st : SystemState) : Bool :=
+  (queuePPrevAgreesWithPrevChecks st.objectIndex st).all (·.2)
+
 /-- M-11 CSpace coherency: every CNode slot whose capability targets an object has that
 object present in the object store — and, where the capability names the object's
 *kind*, an object of that kind.
@@ -463,6 +492,10 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     -- earns its place because `stateInvariantChecksFor` is also the surface
     -- `assertStateInvariantsWithoutSync` runs, where the two differ.
     ++ threadInactiveFlagConsistentChecks objectIds st
+    -- WS-RR RR8.3: the fourth `dualQueueSystemInvariant` conjunct.  It is what
+    -- `endpointQueueRemoveDual`'s guard asks for, and until RR8.3 no conjunct and
+    -- no runtime check read `queuePPrev` at all.
+    ++ queuePPrevAgreesWithPrevChecks objectIds st
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.

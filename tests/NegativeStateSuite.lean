@@ -1203,6 +1203,100 @@ private def runUntypedF2NegativeChecks : IO Unit := do
   IO.println "untyped memory negative checks passed (incl. S5-G alignment)"
 
 
+-- WS-RR RR8.3: the surface the pairing invariant exists for.  The two removal
+-- guards are elaborated here because `runDualQueuePPrevPairingChecks` below can
+-- exercise the guard's *value* but not the theorem that discharges it, and a
+-- discharge nothing elaborates is indistinguishable from one that is wrong.  The
+-- bundle form is the shape `endpointQueueRemoveDual`'s callers actually hold, and
+-- is what WS-RR RR8.4's collapse of the two removals consumes.
+#check @SeLe4n.Kernel.dualQueueRemovalGuardHolds
+#check @SeLe4n.Kernel.dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant
+#check @SeLe4n.Kernel.dualQueueRemovalGuard_eq_position_and_pair
+#check @SeLe4n.Kernel.spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev
+#check @SeLe4n.Kernel.sweptAndRestored_queuePPrevAgreesWithPrev
+#check @SeLe4n.Kernel.QueueNextPath.lastEdge
+
+/-- **WS-RR RR8.3**: the `queuePPrev`/`queuePrev` pairing invariant, and the split
+that makes `endpointQueueRemoveDual`'s guard discharge from it.
+
+Three assertions the tree could not make before this cut.
+
+1. A queue the **live** operations built satisfies the pairing, and
+   `dualQueueRemovalGuard` is `true` at both the head and an interior node — so
+   `dualQueueRemovalGuardHolds` is not vacuous.
+2. Corrupting a back-pointer to disagree with `queuePrev` makes
+   `queuePPrevAgreesWithPrevBool` **false** while every queue and every
+   `queueNext` chain stays exactly as it was.  That is the mutation that decides:
+   before RR8.3 no conjunct and no runtime check read `queuePPrev`, so these two
+   states were indistinguishable from the good one, which is how two removals
+   came to write `queuePrev` without its partner (WS-OD OD1.1, OD3.9).
+3. A **detached** thread carrying `(none, .endpointHead, none)` *satisfies* the
+   pairing and still fails the guard, on the position half.  That is the honest
+   measurement of what the invariant does **not** buy: membership is a separate
+   hypothesis, which is why `dualQueueRemovalGuardHolds` takes one. -/
+private def runDualQueuePPrevPairingChecks : IO Unit := do
+  let (_, stPair1) ← expectOkSt "pprev pairing enqueue sender 7"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
+  let (_, stPair2) ← expectOkSt "pprev pairing enqueue sender 8"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) .empty stPair1)
+  let (_, stPair3) ← expectOkSt "pprev pairing enqueue sender 9"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) .empty stPair2)
+
+  -- (1) the live queue satisfies the invariant, and the guard holds on it.
+  let sendQOf (st : SystemState) : IO IntrusiveQueue :=
+    match st.getEndpoint? endpointId with
+    | some ep => pure ep.sendQ
+    | none => throw <| IO.userError "pprev pairing: endpoint missing"
+  let tcbOf (st : SystemState) (tid : SeLe4n.ThreadId) : IO TCB :=
+    match st.getTcb? tid with
+    | some tcb => pure tcb
+    | none => throw <| IO.userError s!"pprev pairing: TCB {tid.toNat} missing"
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+
+  let q3 ← sendQOf stPair3
+  let tcb7 ← tcbOf stPair3 (SeLe4n.ThreadId.ofNat 7)
+  let tcb8 ← tcbOf stPair3 (SeLe4n.ThreadId.ofNat 8)
+  expectBool "pprev pairing holds on the live three-member queue"
+    (queuePPrevAgreesWithPrevBool stPair3) true
+  expectBool "removal guard holds at the head (endpointHead arm)"
+    (SeLe4n.Kernel.dualQueueRemovalGuard q3 (SeLe4n.ThreadId.ofNat 7) tcb7 .endpointHead) true
+  expectBool "removal guard holds at an interior node (tcbNext arm)"
+    (SeLe4n.Kernel.dualQueueRemovalGuard q3 (SeLe4n.ThreadId.ofNat 8) tcb8
+      (.tcbNext (SeLe4n.ThreadId.ofNat 7))) true
+
+  -- (2) breaking the pairing alone: every queue and every `queueNext` unchanged.
+  let stHeadPPrev ← expectOkVal "pprev pairing corrupt the head's back-pointer"
+    (corruptThreadQueueLinks stPair3 (SeLe4n.ThreadId.ofNat 7) none
+      (some (.tcbNext (SeLe4n.ThreadId.ofNat 8))) (some (SeLe4n.ThreadId.ofNat 8)))
+  expectBool "a head whose back-pointer names a predecessor fails the pairing"
+    (queuePPrevAgreesWithPrevBool stHeadPPrev) false
+  expectErr "...and the removal refuses it"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stHeadPPrev)
+    .illegalState
+
+  let stStalePrev ← expectOkVal "pprev pairing corrupt an interior node's back-pointer"
+    (corruptThreadQueueLinks stPair3 (SeLe4n.ThreadId.ofNat 8) (some (SeLe4n.ThreadId.ofNat 7))
+      (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 9)))
+  expectBool "an interior node claiming to be the head fails the pairing"
+    (queuePPrevAgreesWithPrevBool stStalePrev) false
+
+  -- (3) the position half is genuinely separate: a detached thread satisfies the
+  -- pairing and still fails the guard.
+  let stDetached ← expectOkVal "pprev pairing detached thread marked as queued"
+    (corruptThreadQueueLinks baseState (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) none)
+  expectBool "a detached thread carrying (none, endpointHead, none) SATISFIES the pairing"
+    (queuePPrevAgreesWithPrevBool stDetached) true
+  let qEmpty ← sendQOf stDetached
+  let tcbDet ← tcbOf stDetached (SeLe4n.ThreadId.ofNat 7)
+  expectBool "...and still fails the guard, on the position half"
+    (SeLe4n.Kernel.dualQueueRemovalGuard qEmpty (SeLe4n.ThreadId.ofNat 7) tcbDet .endpointHead)
+    false
+  expectBool "...which is exactly the position factor"
+    (SeLe4n.Kernel.queuePPrevHeadPositionAgrees qEmpty (SeLe4n.ThreadId.ofNat 7) .endpointHead)
+    false
+
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]
   runCspaceMutationAndRevokeNegativeChecks              -- [was 263-461; sections 2+3 combined for strictSeed/strictRootSlot reuse]
@@ -1210,6 +1304,7 @@ private def runNegativeChecks : IO Unit := do
   runBadgeTruncationNegativeChecks                      -- [was 567-607]
   runIpcPayloadBoundsNegativeChecks                     -- [was 608-700]
   runDualQueueEndpointFifoNegativeChecks                -- [was 702-1034]
+  runDualQueuePPrevPairingChecks                        -- WS-RR RR8.3
 
   -- ==========================================================================
   -- WS-D4 F-12: Double-wait prevention in notificationWait (was 1036-1043).

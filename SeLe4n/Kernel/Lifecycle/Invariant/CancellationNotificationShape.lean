@@ -332,7 +332,7 @@ theorem purgedAndRestored_dualQueueSystemInvariant
     (hOff : sweptThreadOffQueueChains st v)
     (hDual : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant (purgedAndRestored st v frame) := by
-  obtain ⟨hEps, hLink, hAcyc⟩ := hDual
+  obtain ⟨hEps, hLink, hAcyc, hPPair⟩ := hDual
   have hEpIff : ∀ (k : SeLe4n.ObjId) (ep : Endpoint),
       ((purgedAndRestored st v frame).objects[k]? = some (.endpoint ep)) ↔
         (st.objects[k]? = some (.endpoint ep)) :=
@@ -352,7 +352,7 @@ theorem purgedAndRestored_dualQueueSystemInvariant
       obtain ⟨tA, hA, _, hnA⟩ :=
         purgedAndRestored_tcb_links_forward st v frame tcbV hInv hLookup hOff tl.toObjId t0 h0
       exact ⟨tA, hA, by rw [hnA]; exact hn⟩
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · intro epId ep hEp
     have hEp0 : st.objects[epId]? = some (.endpoint ep) := (hEpIff epId ep).mp hEp
     have h0 := hEps epId ep hEp0
@@ -377,6 +377,14 @@ theorem purgedAndRestored_dualQueueSystemInvariant
       exact ⟨tA, hA, by rw [hnAA]; exact hnA⟩
   · exact fun x hPath => hAcyc x
       (purgedAndRestored_path_transport st v frame tcbV hInv hLookup hOff hPath)
+  · -- WS-RR RR8.3: the pairing.  The pullback is exact here -- away from the
+    -- swept thread the record is the pre-state's verbatim, and the swept thread's
+    -- own `queuePPrev` is cleared by the restore.
+    intro tid tcb hTcb
+    rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb hTcb with
+      ⟨_, h0⟩ | ⟨_, rfl⟩
+    · exact hPPair tid tcb h0
+    · exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev tcbV frame)
 
 -- ============================================================================
 -- §5  The reusable frames

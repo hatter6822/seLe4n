@@ -466,7 +466,7 @@ private theorem default_capabilityInvariantBundle :
 
 private theorem default_dualQueueSystemInvariant :
     dualQueueSystemInvariant (default : SystemState) := by
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · intro epId ep hObj; exact default_objects_absurd hObj
   · constructor
     · intro a tcbA hObj; exact default_objects_absurd hObj
@@ -475,6 +475,7 @@ private theorem default_dualQueueSystemInvariant :
     exact match hp with
     | .single _ _ tcb hObj _ => by exact default_objects_absurd hObj
     | .cons _ _ _ tcb hObj _ _ => by exact default_objects_absurd hObj
+  · intro tid tcb hObj; exact default_objects_absurd hObj
 
 private theorem default_allPendingMessagesBounded :
     allPendingMessagesBounded (default : SystemState) := by
@@ -852,11 +853,12 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
     intro x; exact congrArg (·.get? x) hObjs
   refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- dualQueueSystemInvariant
-  · obtain ⟨hEp, hLink, hAcyc⟩ := h2
+  · obtain ⟨hEp, hLink, hAcyc, hPPair⟩ := h2
     refine ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
            ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp fun tcbB ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩,
             fun b tcbB hB a hP => (hLink.2 b tcbB (hObjs ▸ hB) a hP).imp fun tcbA ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩⟩,
-           fun tid hp => hAcyc tid (transportPath hObjs hp)⟩
+           fun tid hp => hAcyc tid (transportPath hObjs hp),
+           queuePPrevAgreesWithPrev_of_objects_eq hObjs hPPair⟩
   -- blockedThreadsPendingMessageConsistent
   · intro tid tcb hObj; exact h5 tid tcb (hObjs ▸ hObj)
   -- endpointQueueNoDup
@@ -1354,13 +1356,14 @@ private theorem writeRegisterState_preserves_ipcInvariantFull
   -- WS-RC R4.C.7: ipcInvariantFull bundle dropped uniqueWaiters (15 conjuncts now).
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h16, h17, h18, h19, h20, h21⟩ := hIpc
   refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · obtain ⟨hEp, hLink, hAcyc⟩ := h2
+  · obtain ⟨hEp, hLink, hAcyc, hPPair⟩ := h2
     exact ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
            ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp
               fun tcbB ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩,
             fun b tcbB hB a hP => (hLink.2 b tcbB (hObjs ▸ hB) a hP).imp
               fun tcbA ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩⟩,
-           fun tid hp => hAcyc tid (writeRegState_transportPath hObjs hp)⟩
+           fun tid hp => hAcyc tid (writeRegState_transportPath hObjs hp),
+           queuePPrevAgreesWithPrev_of_objects_eq hObjs hPPair⟩
   · intro tid tcb hObj; exact h5 tid tcb (hObjs ▸ hObj)
   · intro oid ep hObj; rw [hLk] at hObj; exact h6 oid ep hObj
   · exact ipcStateQueueMembershipConsistent_of_objects_eq st _ hLk h7
@@ -1495,13 +1498,14 @@ private theorem contextSwitchState_preserves_ipcInvariantFull
   -- WS-RC R4.C.7: ipcInvariantFull bundle dropped uniqueWaiters (15 conjuncts now).
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h16, h17, h18, h19, h20, h21⟩ := hIpc
   refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · obtain ⟨hEp, hLink, hAcyc⟩ := h2
+  · obtain ⟨hEp, hLink, hAcyc, hPPair⟩ := h2
     exact ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
            ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp
               fun tcbB ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩,
             fun b tcbB hB a hP => (hLink.2 b tcbB (hObjs ▸ hB) a hP).imp
               fun tcbA ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩⟩,
-           fun tid hp => hAcyc tid (ctxSwitch_transportPath hObjs hp)⟩
+           fun tid hp => hAcyc tid (ctxSwitch_transportPath hObjs hp),
+           queuePPrevAgreesWithPrev_of_objects_eq hObjs hPPair⟩
   · intro tid tcb hObj; exact h5 tid tcb (hObjs ▸ hObj)
   · intro oid ep hObj; rw [hLk] at hObj; exact h6 oid ep hObj
   · exact ipcStateQueueMembershipConsistent_of_objects_eq st _ hLk h7

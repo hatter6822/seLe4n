@@ -556,7 +556,7 @@ theorem endpointQueueEnqueue_preserves_endpointQueueNoDup
   intro oid ep' hEp'
   constructor
   · -- K-1: no self-loops from tcbQueueChainAcyclic
-    exact fun tid' tcb hTcb => tcbQueueChainAcyclic_no_self_loop hDQSI'.2.2 tid' tcb hTcb
+    exact fun tid' tcb hTcb => tcbQueueChainAcyclic_no_self_loop hDQSI'.chainAcyclic tid' tcb hTcb
   · -- K-2: head disjointness
     by_cases hEq : oid = endpointId
     · -- Target endpoint: opposite queue head is none
@@ -647,7 +647,7 @@ theorem endpointQueuePopHead_preserves_endpointQueueNoDup
   intro oid ep' hEp'
   constructor
   · -- K-1: no self-loops
-    exact fun tid' tcb hTcb => tcbQueueChainAcyclic_no_self_loop hDQSI'.2.2 tid' tcb hTcb
+    exact fun tid' tcb hTcb => tcbQueueChainAcyclic_no_self_loop hDQSI'.chainAcyclic tid' tcb hTcb
   · -- K-2: head disjointness
     by_cases hEq : oid = endpointId
     · -- Target endpoint: unfold PopHead with revert pattern to track stored endpoint

@@ -188,6 +188,16 @@ def tcbQueueChainAcyclic_perCore (st : SystemState) (c : CoreId) : Prop :=
     st.getTcb? tid = some tcb → threadHomeCore tcb = c →
     ¬ QueueNextPath st tid tid
 
+/-- **WS-RR RR8.3**: per-core form of `queuePPrevAgreesWithPrev`.  The pairing is
+a property of one TCB's own two fields and carries no core dimension of its own,
+so the lift restricts the quantifier exactly as its two siblings do and the
+∀-core aggregate recovers the global form with no side condition — every thread
+is homed on *some* core. -/
+def queuePPrevAgreesWithPrev_perCore (st : SystemState) (c : CoreId) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.getTcb? tid = some tcb → threadHomeCore tcb = c →
+    tcb.queuePPrevAgreesWithPrev
+
 /-- SM6.D: per-core form of `dualQueueSystemInvariant` (WS-H5).  The
 per-endpoint dual-queue well-formedness clause asserts head/tail TCB
 *existence* on a shared object and is carried whole; the two system-wide
@@ -197,7 +207,8 @@ def dualQueueSystemInvariant_perCore (st : SystemState) (c : CoreId) : Prop :=
     st.objects[epId]? = some (.endpoint ep) →
     dualQueueEndpointWellFormed epId st) ∧
   tcbQueueLinkIntegrity_perCore st c ∧
-  tcbQueueChainAcyclic_perCore st c
+  tcbQueueChainAcyclic_perCore st c ∧
+  queuePPrevAgreesWithPrev_perCore st c
 
 /-- SM6.D: per-core form of `allPendingMessagesBounded` (WS-H12d/A-09). -/
 def allPendingMessagesBounded_perCore (st : SystemState) (c : CoreId) : Prop :=
@@ -427,8 +438,9 @@ theorem tcbQueueChainAcyclic_perCore_of_global {st : SystemState}
 theorem dualQueueSystemInvariant_perCore_of_global {st : SystemState}
     (h : dualQueueSystemInvariant st) (c : CoreId) :
     dualQueueSystemInvariant_perCore st c :=
-  ⟨h.1, tcbQueueLinkIntegrity_perCore_of_global h.2.1 c,
-   tcbQueueChainAcyclic_perCore_of_global h.2.2 c⟩
+  ⟨h.endpointsWellFormed, tcbQueueLinkIntegrity_perCore_of_global h.linkIntegrity c,
+   tcbQueueChainAcyclic_perCore_of_global h.chainAcyclic c,
+   fun tid tcb hTcb _ => h.pprevAgrees tid tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb)⟩
 
 theorem allPendingMessagesBounded_perCore_of_global {st : SystemState}
     (h : allPendingMessagesBounded st) (c : CoreId) :
@@ -601,7 +613,9 @@ theorem dualQueueSystemInvariant_of_forall_perCore {st : SystemState}
     dualQueueSystemInvariant st :=
   ⟨(h bootCoreId).1,
    tcbQueueLinkIntegrity_of_forall_perCore (fun c => (h c).2.1),
-   tcbQueueChainAcyclic_of_forall_perCore (fun c => (h c).2.2)⟩
+   tcbQueueChainAcyclic_of_forall_perCore (fun c => (h c).2.2.1),
+   fun tid tcb hRaw =>
+     (h (threadHomeCore tcb)).2.2.2 tid tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hRaw) rfl⟩
 
 theorem allPendingMessagesBounded_of_forall_perCore {st : SystemState}
     (h : ∀ c, allPendingMessagesBounded_perCore st c) :
@@ -905,7 +919,9 @@ theorem default_ipcInvariantFull_perCore (c : CoreId) :
     ⟨fun epId ep h => (by rw [default_objects_getElem_none'] at h; cases h),
      ⟨fun a tcbA hA _ b _ => absurd hA default_no_tcb,
       fun b tcbB hB _ a _ => absurd hB default_no_tcb⟩,
-     fun tid tcb hTcb _ _ => default_no_tcb hTcb⟩
+     fun tid tcb hTcb _ _ => default_no_tcb hTcb,
+     -- **WS-RR RR8.3**: vacuous on the boot state, which holds no TCB at all.
+     fun tid tcb hTcb _ => absurd hTcb default_no_tcb⟩
   allPendingMessagesBounded := fun tid tcb msg hTcb _ _ => absurd hTcb default_no_tcb
   badgeWellFormed :=
     ⟨fun oid ntfn badge h _ => (by rw [default_objects_getElem_none'] at h; cases h),

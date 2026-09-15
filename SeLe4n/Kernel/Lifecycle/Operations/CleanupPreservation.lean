@@ -1783,6 +1783,81 @@ theorem queueNeighbourPatch_backward (objs : RHTable SeLe4n.ObjId KernelObject)
         exact ⟨t', hPost', tcbQueueLinkRewrite.refl t'⟩
     · exact ⟨t', hPost, tcbQueueLinkRewrite.refl t'⟩
 
+/-- **WS-RR RR8.3**: a neighbour patch preserves the `queuePPrev`/`queuePrev`
+pairing whenever its update does.
+
+Stated over the update rather than over the operation, because that is where the
+obligation lives: `queueUnlinkPredecessor` writes only `queueNext` and
+`queueUnlinkSuccessor` writes the removed thread's *own* pair, so both keep the
+two fields together — which is the whole of WS-OD OD1.1 and OD3.9, each of which
+found a removal writing `queuePrev` alone. -/
+theorem queueNeighbourPatch_preserves_queuePPrevAgreesWithPrev
+    (objs : RHTable SeLe4n.ObjId KernelObject)
+    (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB)
+    (hUpd : ∀ t, t.queuePPrevAgreesWithPrev → (upd t).queuePPrevAgreesWithPrev)
+    (hInv : objs.invExt)
+    (hPre : ∀ (k : SeLe4n.ObjId) (t : TCB), objs[k]? = some (.tcb t) →
+      t.queuePPrevAgreesWithPrev)
+    (k : SeLe4n.ObjId) (t' : TCB)
+    (hPost : (queueNeighbourPatch objs nid? upd)[k]? = some (.tcb t')) :
+    t'.queuePPrevAgreesWithPrev := by
+  unfold queueNeighbourPatch at hPost
+  split at hPost
+  · exact hPre k t' hPost
+  · rename_i nid
+    split at hPost
+    · rename_i t hRead
+      by_cases hK : nid.toObjId = k
+      · subst hK
+        have hPost' : (objs.insert nid.toObjId (KernelObject.tcb (upd t))).get? nid.toObjId
+            = some (KernelObject.tcb t') := hPost
+        rw [RHTable.getElem?_insert_self objs nid.toObjId (.tcb (upd t)) hInv] at hPost'
+        obtain rfl : upd t = t' := KernelObject.tcb.inj (Option.some.inj hPost')
+        exact hUpd t (hPre _ t hRead)
+      · have hPost' : (objs.insert nid.toObjId (KernelObject.tcb (upd t))).get? k
+            = some (KernelObject.tcb t') := hPost
+        rw [RHTable.getElem?_insert_ne objs nid.toObjId k (.tcb (upd t))
+          (fun hbeq => hK (eq_of_beq hbeq)) hInv] at hPost'
+        exact hPre k t' hPost'
+    · exact hPre k t' hPost
+
+/-- **WS-RR RR8.3**: the mid-queue splice preserves the pairing — the third
+endpoint-queue removal's own statement, composed from the two patches.
+
+`spliceOutMidQueueNode` is run by `.tcbSuspend` and by thread destruction, so it
+needs this on its own and not only through the cancellation composite that wraps
+it.  The successor patch's obligation is the *removed* thread's pairing, which the
+pre-state supplies; the predecessor's is the predecessor's own. -/
+theorem spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt)
+    (hPre : queuePPrevAgreesWithPrev st) :
+    queuePPrevAgreesWithPrev (spliceOutMidQueueNode st tid) := by
+  have hPreAt : ∀ (a : SeLe4n.ObjId) (t : TCB), st.objects[a]? = some (.tcb t) →
+      t.queuePPrevAgreesWithPrev := fun a t hA => hPre ⟨a.toNat⟩ t (by simpa using hA)
+  intro k t' hPost
+  rw [spliceOutMidQueueNode_eq_patches] at hPost
+  revert hPost
+  split
+  · intro hPost; exact hPre k t' hPost
+  · rename_i tcb hLk
+    intro hPost
+    have hRemoved : tcb.queuePPrevAgreesWithPrev :=
+      hPre tid tcb (lookupTcb_some_objects st tid tcb hLk)
+    -- The predecessor patch first: it writes only `queueNext`, so the
+    -- predecessor keeps its own pair.
+    have hMid : ∀ (a : SeLe4n.ObjId) (t : TCB),
+        (queueNeighbourPatch st.objects tcb.queuePrev (queueUnlinkPredecessor tcb))[a]?
+          = some (.tcb t) → t.queuePPrevAgreesWithPrev :=
+      queueNeighbourPatch_preserves_queuePPrevAgreesWithPrev st.objects
+        tcb.queuePrev (queueUnlinkPredecessor tcb)
+        (fun _ h => TCB.queuePPrevAgreesWithPrev_queueUnlinkPredecessor h) hInv hPreAt
+    -- ...then the successor patch, whose obligation is the *removed* thread's pair.
+    exact queueNeighbourPatch_preserves_queuePPrevAgreesWithPrev _ tcb.queueNext
+      (queueUnlinkSuccessor tcb)
+      (fun _ _ => TCB.queuePPrevAgreesWithPrev_queueUnlinkSuccessor hRemoved)
+      (queueNeighbourPatch_invExt _ _ _ hInv) hMid k.toObjId t' hPost
+
 /-- **WS-RR RR7.22 (residual)**: the mid-queue splice rewrites **only** intrusive
 queue links — every TCB it leaves is a link rewrite of the one it found, and
 every non-TCB object is untouched.

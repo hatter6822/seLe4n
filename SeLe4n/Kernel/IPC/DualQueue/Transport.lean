@@ -1101,10 +1101,12 @@ def endpointQueueRemoveDual
                 if q.head.isNone || q.tail.isNone then
                   .error .illegalState
                 else
-                  let pprevConsistent : Bool :=
-                    match pprev with
-                    | .endpointHead => q.head = some tid && tcb.queuePrev.isNone
-                    | .tcbNext prevTid => q.head ≠ some tid && tcb.queuePrev = some prevTid
+                  -- WS-RR RR8.3: the check is `dualQueueRemovalGuard`, a named
+                  -- definition, so `dualQueueRemovalGuardHolds` discharges *this*
+                  -- condition rather than a second spelling of it.  It was an
+                  -- anonymous `let` here, which is why no caller could state that
+                  -- it had established the precondition.
+                  let pprevConsistent : Bool := dualQueueRemovalGuard q tid tcb pprev
                   if !pprevConsistent then
                     .error .illegalState
                   else
@@ -1169,7 +1171,7 @@ theorem endpointQueueRemoveDual_scheduler_eq
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1300,7 +1302,7 @@ theorem endpointQueueRemoveDual_frame {α : Type} (f : SystemState → α)
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     f st' = f st := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1440,7 +1442,7 @@ theorem endpointQueueRemoveDual_tcb_forward
     (hStep : endpointQueueRemoveDual endpointId isSendQ tid st = .ok ((), st'))
     (hTcb : st.objects[oid]? = some (.tcb tcb)) :
     ∃ tcb', st'.objects[oid]? = some (.tcb tcb') := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1580,7 +1582,7 @@ theorem endpointQueueRemoveDual_endpoint_backward_ne
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hEp : st'.objects[oid]? = some (.endpoint ep)) :
     st.objects[oid]? = some (.endpoint ep) := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1715,7 +1717,7 @@ theorem endpointQueueRemoveDual_notification_backward
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
     st.objects[oid]? = some (.notification ntfn) := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1861,7 +1863,7 @@ theorem endpointQueueRemoveDual_tcb_ipcState_backward
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -2013,7 +2015,7 @@ theorem endpointQueueRemoveDual_tcb_cpuAffinity_backward
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.cpuAffinity = tcb'.cpuAffinity := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -2731,7 +2733,7 @@ theorem endpointQueueRemoveDual_preserves_tail_of_nonTail
     ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧
       (if isReceiveQ then ep'.receiveQ.tail else ep'.sendQ.tail) =
       (if isReceiveQ then ep.receiveQ.tail else ep.sendQ.tail) := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   rw [hObj]; simp only []
   rw [hTcb]; simp only []
   cases hPPrev : tcbR.queuePPrev with
@@ -2832,7 +2834,7 @@ theorem endpointQueueRemoveDual_tail_update
       | some .endpointHead => none
       | some (.tcbNext prevTid) => some prevTid
       | none => none := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   rw [hObj]; simp only []
   rw [hTcb]; simp only []
   cases hPPrev : tcbR.queuePPrev with

@@ -1030,6 +1030,67 @@ run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_next_queuePPrev' SeL
 # one again.  Mutating by *removing* a patch would be caught by the positives
 # above; this keeps the patch and breaks the relation.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "with queuePrev := (tcb|tcbV|removed)\.queuePrev \}" SeLe4n/Model/Object/Types.lean SeLe4n/Kernel/IPC/DualQueue/Core.lean SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+
+# WS-RR RR8.3: ...and the agreement between the two link fields is now an
+# *invariant*, not a per-site obligation.  No `ipcInvariantFull` conjunct read
+# `queuePPrev` before this cut, which is why OD1.1's and OD3.9's stranded
+# successors were invisible to the proofs and to the harness alike: the field
+# carries exactly one bit beyond `queuePrev` -- whether the node is linked -- and
+# every other bit of it must agree.
+run_check "INVARIANT" rg -n '^def TCB\.queuePPrevAgreesWithPrev' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def queuePPrevAgreesWithPrev' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# A relation, not a presence: it is the FOURTH conjunct of the dual-queue bundle,
+# so every transition in the tree must carry it.  The gap is line-bounded, so it
+# cannot leave the declaration it started in.
+run_check "INVARIANT" bash -lc 'rg -U -n "def dualQueueSystemInvariant[^\n]*(\n([ \t][^\n]*)?)*queuePPrevAgreesWithPrev st" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The named accessors, so the next conjunct does not shift every projection path.
+# A pin on a DEFINITION is a presence check, so the accessor is pinned at its
+# READ: the bundle form of the discharge is what consumes it, and that form is the
+# shape `endpointQueueRemoveDual`'s callers hold.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant[^\n]*(\n([ \t][^\n]*)?)*hDual\.pprevAgrees" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The dual removal's precondition is a NAMED definition the transition reads, so
+# the theorem that discharges it cannot describe a different condition.  It was
+# an anonymous `let` until RR8.3, which is why no caller could state it.
+run_check "INVARIANT" rg -n '^def dualQueueRemovalGuard' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointQueueRemoveDual[^\n]*(\n([ \t][^\n]*)?)*dualQueueRemovalGuard q tid tcb pprev" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
+# NEGATIVE: the inline spelling must not come back beside the named one -- a
+# second copy of the guard is a second answer to the question the invariant
+# exists to settle.  Mutating by deleting the `let` would be caught by the
+# positive above; this keeps the `let` and inlines the match again.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "let pprevConsistent[^\n]*(\n([ \t][^\n]*)?)*q\.head = some tid && tcb\.queuePrev\.isNone" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
+# The guard factors into a position question and the pairing, and the pairing half
+# is what the invariant discharges system-wide.  This equality is what makes the
+# factorisation immutable: mutating either arm of `dualQueueRemovalGuard` or of
+# `queuePPrevHeadPositionAgrees` fails to elaborate.
+run_check "INVARIANT" rg -n '^theorem dualQueueRemovalGuard_eq_position_and_pair' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^def queuePPrevHeadPositionAgrees' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem dualQueueRemovalGuardHolds' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The two unlink updates keep the pair together, and the third removal composes
+# them -- which is the machine-checked form of the OD1.1/OD3.9 finding.  Pinned at
+# the read, not at the definition: the composite consumes the splice's result, and
+# the splice consumes both update lemmas.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev[^\n]*(\n([ \t][^\n]*)?)*TCB\.queuePPrevAgreesWithPrev_queueUnlinkSuccessor" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev[^\n]*(\n([ \t][^\n]*)?)*TCB\.queuePPrevAgreesWithPrev_queueUnlinkPredecessor" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_queuePPrevAgreesWithPrev[^\n]*(\n([ \t][^\n]*)?)*spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+# Membership is a SEPARATE hypothesis and stays one: a detached thread carrying
+# `(none, .endpointHead, none)` satisfies the pairing and fails the guard, so the
+# invariant alone does not discharge it.  `QueueNextPath.lastEdge` is what turns
+# "reachable from the head" into "has a predecessor" -- `firstEdge`'s sibling,
+# missing until RR8.3 because the inductive is written forwards.
+run_check "INVARIANT" rg -n '^theorem QueueNextPath\.lastEdge' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem dualQueueRemovalGuardHolds[^\n]*(\n([ \t][^\n]*)?)*QueueNextPath st hd tid" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The runtime half: the conjunct is checked on every harness state, not only
+# proved.  Its witness is decisive in both directions -- the live queue satisfies
+# it, and a corrupted back-pointer fails it with every queue and every `queueNext`
+# chain unmoved (`tests/NegativeStateSuite.lean`).
+run_check "INVARIANT" rg -n '^def queuePPrevAgreesWithPrevChecks' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def stateInvariantChecksFor[^\n]*(\n([ \t][^\n]*)?)*queuePPrevAgreesWithPrevChecks objectIds st" SeLe4n/Testing/InvariantChecks.lean'
+run_check "INVARIANT" rg -n '^private def runDualQueuePPrevPairingChecks' tests/NegativeStateSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "private def runNegativeChecks[^\n]*(\n([ \t][^\n]*)?)*runDualQueuePPrevPairingChecks" tests/NegativeStateSuite.lean'
+# The retype replacement is pristine in `queuePPrev` too, and that is not
+# derivable from `queuePrev = none` beside it: a replacement carrying `.tcbNext p`
+# with no `queuePrev` REFUTES the pairing rather than satisfying it vacuously.
+run_check "INVARIANT" bash -lc 'rg -U -n "def retypeReplacementFresh[^\n]*(\n([ \t][^\n]*)?)*t\.queuePrev = none . t\.queuePPrev = none" SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean'
 # WS-OD OD1.2: the timeout's object-only prefix.  `abortPendingIpcOnEndpoint`
 # is the splice-and-clear half of `timeoutThread` with the two scheduler
 # writes (the wake and the priority-inheritance revert) left to the caller,

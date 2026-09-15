@@ -1114,6 +1114,78 @@ makes a fourth removal impossible to get wrong. -/
 def queueUnlinkSuccessor (removed : TCB) : TCB → TCB :=
   fun n => { n with queuePrev := removed.queuePrev, queuePPrev := removed.queuePPrev }
 
+/-- **WS-RR RR8.3**: `queuePPrev` agrees with `queuePrev` — the relation the
+dual-queue removal's `pprevConsistent` guard checks, stated pointwise at the
+record whose two fields it relates.
+
+`queuePPrev` carries one bit beyond `queuePrev`: whether the thread is linked
+into an endpoint queue at all.  Everything else about it is redundant, and the
+three values say so — `none` is off every queue, `.endpointHead` is on a queue
+with no predecessor, and `.tcbNext p` is on a queue behind `p`.  So the two
+fields agree exactly when
+
+* `.endpointHead` occurs with `queuePrev = none`, and
+* `.tcbNext p` occurs with `queuePrev = some p`,
+
+and a `queuePPrev` of `none` constrains nothing: a detached thread's
+`queuePrev` is cleared by the same writes, but this predicate is about the
+*pairing* and `tcbQueueLinkIntegrity` is what forbids a dangling `queuePrev`.
+
+**Why pointwise.**  Every operational writer of the pair writes both fields in
+one store (`tcbWithQueueLinks`) or inherits them together
+(`queueUnlinkSuccessor`), so the obligation each site discharges is about the
+record it stores and never about the rest of the object table.  That is what
+makes the store-level lift (`queuePPrevAgreesWithPrev`, the fourth conjunct of
+`dualQueueSystemInvariant`) cheap to preserve: a transition that leaves both
+fields alone discharges it by `rfl` through
+`TCB.queuePPrevAgreesWithPrev_of_pairEq`.
+
+**Why it is an invariant rather than a guard's private business.**  Nothing in
+`ipcInvariantFull` read `queuePPrev` before this, which is why WS-OD OD1.1 and
+OD3.9 each found a removal writing `queuePrev` alone and stranding the
+successor — twice, eight cuts apart, in code whose own comments described the
+pairing.  A field two operations must agree about, with no invariant relating
+them, is the *maintained only by convention* shape. -/
+def TCB.queuePPrevAgreesWithPrev (tcb : TCB) : Prop :=
+  match tcb.queuePPrev with
+  | none => True
+  | some .endpointHead => tcb.queuePrev = none
+  | some (.tcbNext p) => tcb.queuePrev = some p
+
+/-- A TCB carrying no `queuePPrev` agrees vacuously — the detached shape every
+clear writes. -/
+theorem TCB.queuePPrevAgreesWithPrev_of_pprev_none {tcb : TCB}
+    (h : tcb.queuePPrev = none) : tcb.queuePPrevAgreesWithPrev := by
+  unfold TCB.queuePPrevAgreesWithPrev; rw [h]; trivial
+
+/-- The workhorse: a TCB that agrees on **both** link fields with one that
+satisfies the pairing satisfies it too.  Stated on the pair rather than on the
+record, because that is the shape a `{ tcb with … }` store presents and the
+reason the store-level conjunct costs a `rfl` at a site that writes neither
+field. -/
+theorem TCB.queuePPrevAgreesWithPrev_of_pairEq {tcb tcb' : TCB}
+    (hPrev : tcb'.queuePrev = tcb.queuePrev)
+    (hPPrev : tcb'.queuePPrev = tcb.queuePPrev)
+    (h : tcb.queuePPrevAgreesWithPrev) : tcb'.queuePPrevAgreesWithPrev := by
+  unfold TCB.queuePPrevAgreesWithPrev at h ⊢
+  rw [hPPrev, hPrev]; exact h
+
+/-- `queueUnlinkSuccessor` transports the pairing from the removed thread to the
+successor that inherits it — which is *why* it writes both fields.  WS-OD OD1.1
+and OD3.9 each found a removal writing `queuePrev` alone; this is that fix
+stated as a property rather than left to the reader of three call sites. -/
+theorem TCB.queuePPrevAgreesWithPrev_queueUnlinkSuccessor {removed n : TCB}
+    (h : removed.queuePPrevAgreesWithPrev) :
+    (queueUnlinkSuccessor removed n).queuePPrevAgreesWithPrev :=
+  TCB.queuePPrevAgreesWithPrev_of_pairEq rfl rfl h
+
+/-- `queueUnlinkPredecessor` writes only `queueNext`, so the predecessor keeps
+whatever pairing it had. -/
+theorem TCB.queuePPrevAgreesWithPrev_queueUnlinkPredecessor {removed p : TCB}
+    (h : p.queuePPrevAgreesWithPrev) :
+    (queueUnlinkPredecessor removed p).queuePPrevAgreesWithPrev :=
+  TCB.queuePPrevAgreesWithPrev_of_pairEq rfl rfl h
+
 /-- **WS-OD OD3.10**: the two TCBs a splice of `removed` relinks — the ones
 `queueUnlinkPredecessor` and `queueUnlinkSuccessor` above are applied to.
 

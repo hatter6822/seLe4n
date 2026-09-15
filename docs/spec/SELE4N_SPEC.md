@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.56` (`lakefile.toml`) |
+| **Package version** | `0.35.57` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 383,951 across 330 Lean files |
-| **Test LoC** | 78,257 across 70 Lean test suites |
-| **Proved declarations** | 12,771 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 384,812 across 330 Lean files |
+| **Test LoC** | 78,352 across 70 Lean test suites |
+| **Proved declarations** | 12,802 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -85,7 +85,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 |------|------|-------------------|
 | **Service registry** *(seLe4n extension)* | No kernel-level service concept | Service registry with dependency graphs, acyclic policy enforcement, isolation edges (novel seLe4n extension — not present in seL4). WS-Q1 simplified to stateless registry model: no `ServiceStatus`/`ServiceConfig`/lifecycle ops. R4: cross-subsystem invariants — endpoint cleanup on TCB retype, service registration authority check (Write right + endpoint type verification), dependency graph cleanup on revocation, `crossSubsystemInvariant` bundle (12 predicates: Z9 5→8, AE5-C +registryInterfaceValid, AF1-B3 +blockingAcyclic, AM4 +lifecycleObjectTypeLockstep, AK8-A +untypedRegionsDisjoint) in `proofLayerInvariantBundle` |
 | **CDT representation** | Mutable doubly-linked list | Node-stable CDT with O(1) slot transfer via pointer/backpointer fixup |
-| **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal; `blockedOnCall` state for call/reply semantics; reply-target scoping for confused-deputy prevention; formal `dualQueueSystemInvariant` with doubly-linked integrity (WS-H5) |
+| **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal; `blockedOnCall` state for call/reply semantics; reply-target scoping for confused-deputy prevention; formal `dualQueueSystemInvariant` with doubly-linked integrity (WS-H5) and back-pointer agreement — `queuePPrev` against `queuePrev`, which is what makes the O(1) removal's own precondition discharged rather than assumed (`dualQueueRemovalGuardHolds`, WS-RR RR8.3) |
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
 | **Scheduling** | Priority-based round-robin | Priority + EDF scheduling with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, and domain-aware partitioning |
 | **Revocation** | Silent error swallowing | Strict variant (`cspaceRevokeCdtStrict`) reporting first failure with context; CDT node preserved on slot deletion failure (AH3-A) |

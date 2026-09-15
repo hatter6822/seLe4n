@@ -132,6 +132,46 @@ def tcbQueueLinkIntegrity (st : SystemState) : Prop :=
     ∀ (a : SeLe4n.ThreadId), tcbB.queuePrev = some a →
       ∃ tcbA, st.objects[a.toObjId]? = some (.tcb tcbA) ∧ tcbA.queueNext = some b)
 
+/-- **WS-RR RR8.3**: system-wide agreement between `queuePPrev` and `queuePrev`
+— the fourth conjunct of `dualQueueSystemInvariant`.
+
+`queuePPrev` carries exactly **one bit** beyond `queuePrev`: whether the node is
+linked into a queue at all.  Everything else it says must agree —
+`.endpointHead` iff there is no predecessor, `.tcbNext p` iff the predecessor is
+`p`.  Nothing stated that before RR8.3, which is why WS-OD OD1.1 and OD3.9 each
+found a removal patching `queuePrev` and leaving `queuePPrev` naming the removed
+thread: no `ipcInvariantFull` conjunct read the field, so a stranded successor —
+which can never leave its endpoint queue again — was invisible to the proofs and
+to the harness alike.
+
+What this conjunct is *for* is `endpointQueueRemoveDual`'s own precondition.  That
+guard asks two things of a node: that its back-pointer agree with `queuePrev`, and
+that it name the endpoint's head field exactly when the node **is** the head.  The
+first half is this conjunct, discharged system-wide and for free; the second is a
+fact about where in the queue the node sits, which no invariant can supply (a
+thread on *no* queue also has `queuePrev = none`).  The split is stated in
+`dualQueueRemovalGuard_eq_position_and_pair` and consumed by
+`dualQueueRemovalGuardHolds`. -/
+def queuePPrevAgreesWithPrev (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.queuePPrevAgreesWithPrev
+
+/-- **WS-RR RR8.3**: the frame that carries the pairing across a transition whose
+every surviving TCB keeps its two link fields — which is most of them, since the
+pair is written only by `tcbWithQueueLinks` and the two unlink updates.
+
+Stated over the *post*-state's TCBs so a transition that removes a thread
+discharges it without an extra hypothesis: what is gone cannot violate anything. -/
+theorem queuePPrevAgreesWithPrev_of_frame {st st' : SystemState}
+    (hFrame : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb'.queuePrev = tcb.queuePrev ∧ tcb'.queuePPrev = tcb.queuePPrev)
+    (h : queuePPrevAgreesWithPrev st) : queuePPrevAgreesWithPrev st' := by
+  intro tid tcb' hTcb'
+  obtain ⟨tcb, hTcb, hPrev, hPPrev⟩ := hFrame tid tcb' hTcb'
+  exact TCB.queuePPrevAgreesWithPrev_of_pairEq hPrev hPPrev (h tid tcb hTcb)
+
 /-- Transitive closure of the queueNext relation: a path a →⁺ b exists in the
 system state when there is a chain of TCBs whose queueNext fields connect a to b. -/
 inductive QueueNextPath (st : SystemState) : SeLe4n.ThreadId → SeLe4n.ThreadId → Prop
@@ -178,6 +218,92 @@ theorem QueueNextPath.firstEdge {st : SystemState} {a b : SeLe4n.ThreadId}
   cases h with
   | single _ _ tcb hObj hNext => exact ⟨_, tcb, hObj, hNext⟩
   | cons _ _ _ tcb hObj hNext _ => exact ⟨_, tcb, hObj, hNext⟩
+
+/-- **WS-RR RR8.3**: ...and every `QueueNextPath` *ends* with a `queueNext` edge
+**into** the target — `firstEdge`'s missing sibling.
+
+Reaching it takes an induction where `firstEdge` takes a `cases`, because the
+inductive is written forwards; that asymmetry is why only one of the two existed.
+It is what turns "reachable from the head" into "has a predecessor", which with
+forward link integrity is what says a non-head queue member's `queuePrev` is
+`some _` — the head-position half of `dualQueueRemovalGuardHolds`. -/
+theorem QueueNextPath.lastEdge {st : SystemState} {a b : SeLe4n.ThreadId}
+    (h : QueueNextPath st a b) :
+    ∃ (p : SeLe4n.ThreadId) (tcb : TCB),
+      st.objects[p.toObjId]? = some (.tcb tcb) ∧ tcb.queueNext = some b := by
+  induction h with
+  | single src _ tcb hObj hNext => exact ⟨src, tcb, hObj, hNext⟩
+  | cons _ _ _ _ _ _ _ ih => exact ih
+
+/-- **WS-RR RR8.3**: a queue member's back-pointer *is* consistent — the head
+position half.  A member other than the head has a predecessor
+(`QueueNextPath.lastEdge`), and forward link integrity then gives it a
+`queuePrev`, which the pairing says is `.tcbNext`; conversely a member whose
+back-pointer names a predecessor cannot be the head, because a well-formed queue's
+head has no `queuePrev`.
+
+Membership is spelled the way this tree already spells it
+(`splicePredecessorBlocked_of_path`): the head itself, or reachable from the head.
+Nothing weaker will do — a thread on *no* queue also has `queuePrev = none`, so
+`queuePPrev = .endpointHead` alone cannot say which queue's head it is. -/
+theorem queuePPrevHeadPositionAgrees_of_member {st : SystemState}
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB} {pprev : QueuePPrev}
+    (hWF : intrusiveQueueWellFormed q st)
+    (hLink : tcbQueueLinkIntegrity st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPPrev : tcb.queuePPrev = some pprev)
+    (hPair : tcb.queuePPrevAgreesWithPrev)
+    (hMem : q.head = some tid ∨ ∃ hd, q.head = some hd ∧ QueueNextPath st hd tid) :
+    queuePPrevHeadPositionAgrees q tid pprev = true := by
+  have hPairAt := dualQueueRemovalGuard_pair_half hPPrev hPair
+  unfold queuePPrevHeadPositionAgrees
+  cases pprev with
+  | endpointHead =>
+      -- `queuePrev = none`, so `tid` has no predecessor; a member with no
+      -- predecessor is the head.
+      have hPrevNone : tcb.queuePrev = none := by
+        simpa [queueLinkPairAgrees] using hPairAt
+      rcases hMem with hHead | ⟨hd, hHead, hPath⟩
+      · simp [hHead]
+      · obtain ⟨pr, prTcb, hPr, hPrNext⟩ := hPath.lastEdge
+        obtain ⟨tcb', hTcb', hPrev⟩ := hLink.1 pr prTcb hPr tid hPrNext
+        rw [hTcb] at hTcb'
+        obtain rfl : tcb = tcb' := KernelObject.tcb.inj (Option.some.inj hTcb')
+        rw [hPrevNone] at hPrev
+        exact absurd hPrev (by simp)
+  | tcbNext prevTid =>
+      -- `queuePrev = some prevTid`, and a well-formed queue's head has none.
+      have hPrevSome : tcb.queuePrev = some prevTid := by
+        simpa [queueLinkPairAgrees] using hPairAt
+      simp only [decide_eq_true_eq, ne_eq]
+      intro hHead
+      obtain ⟨hdTcb, hHdObj, hHdPrev⟩ := hWF.2.1 tid hHead
+      rw [hTcb] at hHdObj
+      obtain rfl : tcb = hdTcb := KernelObject.tcb.inj (Option.some.inj hHdObj)
+      rw [hPrevSome] at hHdPrev
+      exact absurd hHdPrev (by simp)
+
+/-- **WS-RR RR8.3**: `endpointQueueRemoveDual`'s own precondition, discharged.
+
+This is what the fourth `dualQueueSystemInvariant` conjunct is *for*: the pairing
+half comes from the invariant, system-wide and for free, so a caller that knows
+where in the queue the thread sits knows the removal will not refuse with
+`.illegalState`.  Before RR8.3 the check was an anonymous `let`, there was no
+invariant relating `queuePPrev` to `queuePrev`, and so the precondition could only
+be assumed. -/
+theorem dualQueueRemovalGuardHolds {st : SystemState}
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB} {pprev : QueuePPrev}
+    (hWF : intrusiveQueueWellFormed q st)
+    (hLink : tcbQueueLinkIntegrity st)
+    (hPP : queuePPrevAgreesWithPrev st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPPrev : tcb.queuePPrev = some pprev)
+    (hMem : q.head = some tid ∨ ∃ hd, q.head = some hd ∧ QueueNextPath st hd tid) :
+    dualQueueRemovalGuard q tid tcb pprev = true := by
+  have hPair : tcb.queuePPrevAgreesWithPrev := hPP tid tcb hTcb
+  rw [dualQueueRemovalGuard_eq_position_and_pair,
+    queuePPrevHeadPositionAgrees_of_member hWF hLink hTcb hPPrev hPair hMem,
+    decide_eq_true (dualQueueRemovalGuard_pair_half hPPrev hPair), Bool.and_self]
 
 /-- V4-A: If no TCB has a non-none queueNext, then tcbQueueChainAcyclic holds. -/
 theorem tcbQueueChainAcyclic_of_allNextNone {st : SystemState}
@@ -230,7 +356,63 @@ def dualQueueSystemInvariant (st : SystemState) : Prop :=
     st.objects[epId]? = some (.endpoint ep) →
     dualQueueEndpointWellFormed epId st) ∧
   tcbQueueLinkIntegrity st ∧
-  tcbQueueChainAcyclic st
+  tcbQueueChainAcyclic st ∧
+  queuePPrevAgreesWithPrev st
+
+/-- **WS-RR RR8.3**: named accessors for the four conjuncts, so a consumer names
+the fact it wants rather than a projection path.
+
+A positional `⟨hEp, hLink, hAcyclic⟩` is a claim about the conjunction's
+*nesting*, and adding this bundle's fourth conjunct broke ten such sites.  The
+project has paid for that shape twice already at `PlatformConfig.wellFormed`
+(PR #889 review rounds 19 and 22), where the remedy was accessors that depend on
+no nesting; these are that remedy applied here before a fifth conjunct arrives. -/
+theorem dualQueueSystemInvariant.endpointsWellFormed {st : SystemState}
+    (h : dualQueueSystemInvariant st) :
+    ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) → dualQueueEndpointWellFormed epId st := by
+  unfold dualQueueSystemInvariant at h; exact h.1
+
+theorem dualQueueSystemInvariant.linkIntegrity {st : SystemState}
+    (h : dualQueueSystemInvariant st) : tcbQueueLinkIntegrity st := by
+  unfold dualQueueSystemInvariant at h; exact h.2.1
+
+theorem dualQueueSystemInvariant.chainAcyclic {st : SystemState}
+    (h : dualQueueSystemInvariant st) : tcbQueueChainAcyclic st := by
+  unfold dualQueueSystemInvariant at h; exact h.2.2.1
+
+theorem dualQueueSystemInvariant.pprevAgrees {st : SystemState}
+    (h : dualQueueSystemInvariant st) : queuePPrevAgreesWithPrev st := by
+  unfold dualQueueSystemInvariant at h; exact h.2.2.2
+
+/-- **WS-RR RR8.3**: the same, from the bundle a caller actually holds.
+
+`endpointQueueRemoveDual`'s callers have `dualQueueSystemInvariant` and an
+endpoint, not three separate facts, and the queue they are unlinking from is one
+of that endpoint's two — so the well-formedness comes out of
+`endpointsWellFormed` at that key rather than being supplied.  Membership stays a
+hypothesis, because no conjunct of the bundle entails it: a thread on **no** queue
+also has `queuePrev = none`, so the invariant cannot say which queue's head a
+`.endpointHead` back-pointer names. -/
+theorem dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant {st : SystemState}
+    {epId : SeLe4n.ObjId} {ep : Endpoint} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {pprev : QueuePPrev}
+    (hDual : dualQueueSystemInvariant st)
+    (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPPrev : tcb.queuePPrev = some pprev)
+    (hMem : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some tid ∨
+      ∃ hd, (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some hd ∧
+        QueueNextPath st hd tid) :
+    dualQueueRemovalGuard (if isReceiveQ then ep.receiveQ else ep.sendQ) tid tcb pprev = true := by
+  have hEpWF := hDual.endpointsWellFormed epId ep hEp
+  unfold dualQueueEndpointWellFormed at hEpWF
+  rw [hEp] at hEpWF
+  have hWF : intrusiveQueueWellFormed (if isReceiveQ then ep.receiveQ else ep.sendQ) st := by
+    cases isReceiveQ with
+    | false => simpa using hEpWF.1
+    | true => simpa using hEpWF.2
+  exact dualQueueRemovalGuardHolds hWF hDual.linkIntegrity hDual.pprevAgrees hTcb hPPrev hMem
 
 /-- WS-H12c: IPC invariant — all notifications satisfy notification queue
 well-formedness. The former `endpointInvariant` conjunct (vacuous `True`
@@ -4639,6 +4821,13 @@ def objectStoreAgrees (st st' : SystemState) : Prop :=
 theorem objectStoreAgrees.refl (st : SystemState) : objectStoreAgrees st st :=
   fun _ => rfl
 
+/-- A transition that leaves the object store pointwise alone preserves it. -/
+theorem queuePPrevAgreesWithPrev_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : queuePPrevAgreesWithPrev st) :
+    queuePPrevAgreesWithPrev st' :=
+  queuePPrevAgreesWithPrev_of_frame
+    (fun tid tcb' hTcb' => ⟨tcb', by rw [← hA]; exact hTcb', rfl, rfl⟩) h
+
 theorem objectStoreAgrees.symm {st st' : SystemState}
     (h : objectStoreAgrees st st') : objectStoreAgrees st' st :=
   fun k => (h k).symm
@@ -4703,9 +4892,10 @@ theorem tcbQueueChainAcyclic_of_storeAgrees {st st' : SystemState}
 theorem dualQueueSystemInvariant_of_storeAgrees {st st' : SystemState}
     (hA : objectStoreAgrees st st') (h : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
-  obtain ⟨hEp, hLinks, hAcyc⟩ := h
+  obtain ⟨hEp, hLinks, hAcyc, hPP⟩ := h
   refine ⟨?_, tcbQueueLinkIntegrity_of_storeAgrees hA hLinks,
-    tcbQueueChainAcyclic_of_storeAgrees hA hAcyc⟩
+    tcbQueueChainAcyclic_of_storeAgrees hA hAcyc,
+    queuePPrevAgreesWithPrev_of_storeAgrees hA hPP⟩
   intro epId ep hLk
   have hLk0 : st.objects[epId]? = some (.endpoint ep) := by rw [← hA]; exact hLk
   have := hEp epId ep hLk0
@@ -6489,8 +6679,8 @@ theorem cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant
     dualQueueSystemInvariant (cleanupPreReceiveDonation st receiver) := by
   exact cleanupPreReceiveDonation_frame_helper st receiver hInv
     fun scId originalOwner newOwner? st' hRet => by
-      obtain ⟨hDQWF, hLink, hAcyc⟩ := hInv
-      refine ⟨?_, ?_, ?_⟩
+      obtain ⟨hDQWF, hLink, hAcyc, hPP⟩ := hInv
+      refine ⟨?_, ?_, ?_, ?_⟩
       · -- dualQueueEndpointWellFormed for all endpoints in st'
         intro epId ep hEp'
         have hEpPre := returnDonatedSchedContext_endpoint_backward st st' receiver scId originalOwner hObjInv newOwner? hRet epId ep hEp'
@@ -6545,6 +6735,20 @@ theorem cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant
         intro tid hPath'
         exact hAcyc tid
           (QueueNextPath_backward_of_returnDonatedSchedContext st st' receiver scId originalOwner hObjInv newOwner? hRet tid tid hPath')
+      · -- WS-RR RR8.3: `queuePPrevAgreesWithPrev` in st'.  The donation return's
+        -- three stores rewrite a `SchedContext`'s `boundThread` and two TCBs'
+        -- `schedContextBinding`; the link pair is untouched, so the shared
+        -- binding rewrite discharges the frame with two `rfl`s.  It reads that
+        -- rewrite directly rather than the four-field
+        -- `returnDonatedSchedContext_tcb_queue_backward` beside it, because that
+        -- lemma enumerates `queueNext`/`queuePrev`/`ipcState`/`pendingMessage`
+        -- and omits `queuePPrev` — the very field-enumeration gap this conjunct
+        -- exists to close, one level down.
+        refine queuePPrevAgreesWithPrev_of_frame (fun tid tcb' hTcb' => ?_) hPP
+        obtain ⟨tcb, hPre, sb, rfl⟩ :=
+          returnDonatedSchedContext_tcb_rewrite_backward st st' receiver scId originalOwner
+            newOwner? hObjInv hRet tid.toObjId tcb' hTcb'
+        exact ⟨tcb, hPre, rfl, rfl⟩
 
 /-- AI4-A: cleanupPreReceiveDonation preserves endpointQueueNoDup. -/
 theorem cleanupPreReceiveDonation_preserves_endpointQueueNoDup

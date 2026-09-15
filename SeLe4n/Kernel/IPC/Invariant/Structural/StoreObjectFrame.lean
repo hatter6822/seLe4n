@@ -95,7 +95,7 @@ theorem linkCallerReply_preserves_dualQueueSystemInvariant
         have hTcbPre : st1.objects[caller.toObjId]? = some (.tcb tcb) :=
           (SystemState.getTcb?_eq_some_iff st1 caller tcb).mp hT
         exact storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
-          st1 st' caller.toObjId tcb { tcb with replyObject := some rid } rfl rfl
+          st1 st' caller.toObjId tcb { tcb with replyObject := some rid } rfl rfl rfl
           hTcbPre hObjInv1 hStep hInv1
       · simp at hStep
 
@@ -232,7 +232,7 @@ theorem linkServerStashedReply_preserves_dualQueueSystemInvariant
         have hTcbPre : st1.objects[server.toObjId]? = some (.tcb sTcb) :=
           (SystemState.getTcb?_eq_some_iff st1 server sTcb).mp hT
         exact storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
-          st1 st' server.toObjId sTcb { sTcb with pendingReceiveReply := none } rfl rfl
+          st1 st' server.toObjId sTcb { sTcb with pendingReceiveReply := none } rfl rfl rfl
           hTcbPre hObjInv1 hStep hInv1
 
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `badgeWellFormed`.
@@ -572,7 +572,7 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
                   exact removeRunnable_preserves_dualQueueSystemInvariant _ _
                     (storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
                       st2 stStashed receiver.toObjId rTcb
-                      { rTcb with pendingReceiveReply := replyId } rfl rfl
+                      { rTcb with pendingReceiveReply := replyId } rfl rfl rfl
                       hTcbPre hObjInv2 hStash hInv2)
 
 /-- WS-H12a: endpointReplyRecv preserves dualQueueSystemInvariant.

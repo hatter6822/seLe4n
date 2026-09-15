@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.56.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.57.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3149,6 +3149,71 @@ every other kernel path uses" was false when OD1.1 wrote it** -- this is that
 finding's third copy, and it survived eight cuts because the fix was applied to
 the copy the finding named.  A removal added later is a fourth: sweep, do not
 patch.
+**...and the agreement between the two link fields is an INVARIANT, not a
+per-site obligation** (WS-RR RR8.3, `v0.35.57`).  `queuePPrev` carries exactly
+**one bit** beyond `queuePrev` — whether the node is linked into a queue at all —
+and every other bit of it must agree: `.endpointHead` iff there is no
+predecessor, `.tcbNext p` iff the predecessor is `p`.  Nothing stated that, and
+that is *why* OD1.1 and OD3.9 each found a removal writing `queuePrev` alone: no
+`ipcInvariantFull` conjunct read the field, so a stranded successor — one that can
+never leave its endpoint queue again — was invisible to the proofs and to the
+harness alike.  Six things new code must respect.
+
+(1) **`queuePPrevAgreesWithPrev` is `dualQueueSystemInvariant`'s fourth
+conjunct**, so `ipcInvariantFull` still has twenty and the 178-bundle family is
+untouched — but every transition in the tree now carries it, and a new one must.
+The cheap route is `queuePPrevAgreesWithPrev_of_frame` (every surviving TCB keeps
+its two link fields) or, for a queue writer, the per-primitive siblings
+`storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev` and
+`storeObject_tcb_preserves_queuePPrevAgreesWithPrev`.  The bundle has **named
+accessors** (`.endpointsWellFormed` / `.linkIntegrity` / `.chainAcyclic` /
+`.pprevAgrees`) so a fifth conjunct does not shift every projection path, and a
+positional `.2.2` into it is now a statement about a pair.
+
+(2) **The dual removal's precondition is a named definition the transition
+reads.**  `dualQueueRemovalGuard` *is* `endpointQueueRemoveDual`'s
+`pprevConsistent`, which was an anonymous `let` — which is why no caller could
+state that it had established it.  A Tier 3 negative refuses the inlined spelling
+coming back beside the named one, and eight proofs `unfold` the name, so deleting
+it is a build failure rather than a silent pass.
+
+(3) **The guard factors, and only one factor is the invariant's.**
+`dualQueueRemovalGuard_eq_position_and_pair` splits it into
+`queuePPrevHeadPositionAgrees` and `queueLinkPairAgrees`;
+`dualQueueRemovalGuardHolds` discharges the second from the conjunct and the first
+from **membership**, which stays a hypothesis because no invariant entails it — a
+thread on *no* queue also has `queuePrev = none`, so `.endpointHead` alone cannot
+say which queue's head it names.  Measured rather than asserted: a detached thread
+carrying `(none, .endpointHead, none)` satisfies the pairing and fails the guard
+(`tests/NegativeStateSuite.lean`).  Membership is spelled the way this tree
+already spells it — the head itself, or reachable from it — and
+`QueueNextPath.lastEdge` is what turns reachability into a predecessor, the
+sibling `firstEdge` had lacked because the inductive is written forwards.
+`dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant` is the same discharge in
+the shape callers hold, taking the endpoint rather than the queue.
+
+(4) **The retype replacement is pristine in `queuePPrev` too, and that is not
+derivable from `queuePrev = none` beside it**: a replacement carrying `.tcbNext p`
+with no `queuePrev` *refutes* the pairing rather than satisfying it vacuously.  It
+sits next to `queuePrev` in `retypeReplacementFresh`, because the two are one
+back-pointer, at the cost of shifting twelve positional destructurings — which is
+the price of keeping the pair together and was paid deliberately.
+
+(5) **The unlink updates are where the pair is shown to travel together.**
+`TCB.queuePPrevAgreesWithPrev_queueUnlinkSuccessor` (the successor inherits the
+*removed* thread's own pair) and `…_queueUnlinkPredecessor` (only `queueNext`
+moves) are the machine-checked form of the OD1.1/OD3.9 finding, composed by
+`queueNeighbourPatch_preserves_queuePPrevAgreesWithPrev` into
+`spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev` — the third removal's
+own statement, which the cancellation composite then consumes rather than
+re-deriving.
+
+(6) **The conjunct is checked at runtime, not only proved.**
+`queuePPrevAgreesWithPrevChecks` is part of `stateInvariantChecksFor`, so every
+harness state asserts it; the golden trace's `[PIP-005]` count moved 27 → 28,
+which is the measurement that it runs.  Its witness is decisive in both
+directions, and the mutation that decides **keeps every queue and every
+`queueNext` chain and corrupts one back-pointer**.
 
 **The cancellation footprint is arm-selected, and `.replyRecv` declares the
 hand-off it was hiding** (OD3.5, `v0.34.128`).  Two changes with one cause: a

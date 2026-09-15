@@ -1239,7 +1239,7 @@ theorem endpointSendDual_preserves_ipcStateQueueMembershipConsistent
                       intro h
                       have hPrevEq := ThreadId.toObjId_injective prev sender h
                       rw [hPrevEq] at hP
-                      exact absurd hQN (tcbQueueChainAcyclic_no_self_loop hDQSI1.2.2 sender prevTcb hP)
+                      exact absurd hQN (tcbQueueChainAcyclic_no_self_loop hDQSI1.chainAcyclic sender prevTcb hP)
                     rw [storeTcbIpcStateAndMessage_preserves_objects_ne
                       st1 st2 sender (.blockedOnSend endpointId) (some msg)
                       prev.toObjId hNePrev hObjInv1 hMsg]
@@ -1447,7 +1447,7 @@ theorem endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent
                         intro h
                         have hPrevEq := ThreadId.toObjId_injective prev receiver h
                         rw [hPrevEq] at hP
-                        exact absurd hQN (tcbQueueChainAcyclic_no_self_loop hDQSI1.2.2 receiver prevTcb hP)
+                        exact absurd hQN (tcbQueueChainAcyclic_no_self_loop hDQSI1.chainAcyclic receiver prevTcb hP)
                       rw [storeTcbIpcStateAndMessage_preserves_objects_ne
                         st1 st2 receiver (.blockedOnReceive endpointId) none
                         prev.toObjId hNePrev hObjInv1 hIpc]
@@ -1624,7 +1624,7 @@ theorem endpointCall_preserves_ipcStateQueueMembershipConsistent
                       intro h
                       have hPrevEq := ThreadId.toObjId_injective prev caller h
                       rw [hPrevEq] at hP
-                      exact absurd hQN (tcbQueueChainAcyclic_no_self_loop hDQSI1.2.2 caller prevTcb hP)
+                      exact absurd hQN (tcbQueueChainAcyclic_no_self_loop hDQSI1.chainAcyclic caller prevTcb hP)
                     rw [storeTcbIpcStateAndMessage_preserves_objects_ne
                       st1 st2 caller (.blockedOnCall endpointId) (some msg)
                       prev.toObjId hNePrev hObjInv1 hMsg]
@@ -2256,7 +2256,7 @@ theorem endpointQueuePopHead_popped_not_head
     endpointQueuePopHead_post_endpoint_queues endpointId isReceiveQ st st' tid headTcb ep hObjInv hObj hStep
   have hRetHead := endpointQueuePopHead_returns_head endpointId isReceiveQ st ep tid st' hObj hStep
   have hNoSelf : headTcb.queueNext ≠ some tid :=
-    tcbQueueChainAcyclic_no_self_loop hDQ.2.2 tid headTcb hPreTcb
+    tcbQueueChainAcyclic_no_self_loop hDQ.chainAcyclic tid headTcb hPreTcb
   cases hRQ : isReceiveQ with
   | true =>
     subst hRQ
@@ -3812,8 +3812,8 @@ theorem storeObject_reply_preserves_ipcInvariantCore
       (fun rr => by exact KernelObject.noConfusion)).mp hObj)
   -- 2. dualQueueSystemInvariant: per-endpoint well-formedness + link integrity
   -- + chain acyclicity. All lookups are `.endpoint`/`.tcb` (non-reply).
-  · obtain ⟨hEpWF, hLI, hAcyc⟩ := hInv.dualQueueSystemInvariant
-    refine ⟨?_, reply_store_tcbQueueLinkIntegrity_forward hAgree hLI, ?_⟩
+  · obtain ⟨hEpWF, hLI, hAcyc, hPP⟩ := hInv.dualQueueSystemInvariant
+    refine ⟨?_, reply_store_tcbQueueLinkIntegrity_forward hAgree hLI, ?_, ?_⟩
     · intro epId ep hEp
       have hEp' := (hAgree epId (.endpoint ep)
         (fun rr => by exact KernelObject.noConfusion)).mp hEp
@@ -3826,6 +3826,10 @@ theorem storeObject_reply_preserves_ipcInvariantCore
              reply_store_intrusiveQueueWellFormed_forward hAgree hRecv⟩
     · intro tid hPath
       exact hAcyc tid (reply_store_QueueNextPath_backward hAgree hPath)
+    -- **WS-RR RR8.3**: a `.reply` store writes no TCB, so the pairing carries.
+    · intro tid tcb hTcb
+      exact hPP tid tcb ((hAgree tid.toObjId (.tcb tcb)
+        (fun rr => by exact KernelObject.noConfusion)).mp hTcb)
   -- 3. allPendingMessagesBounded: reads `.tcb` only.
   · intro tid tcb msg hObj hMsg
     exact hInv.allPendingMessagesBounded tid tcb msg
@@ -4177,8 +4181,8 @@ theorem ipcInvariantCore_of_nonBindingAgreements
         (fun sc => by exact KernelObject.noConfusion)
         (fun r => by exact KernelObject.noConfusion)).mp hObj)
   -- 2. dualQueueSystemInvariant: endpoints via (a), TCB links via (b).
-  · obtain ⟨hEpWF, hLI, hAcyc⟩ := hInv.dualQueueSystemInvariant
-    refine ⟨?_, tcbQueueLinkIntegrity_forward_of_readAgreement hFwd hBwd hLI, ?_⟩
+  · obtain ⟨hEpWF, hLI, hAcyc, hPP⟩ := hInv.dualQueueSystemInvariant
+    refine ⟨?_, tcbQueueLinkIntegrity_forward_of_readAgreement hFwd hBwd hLI, ?_, ?_⟩
     · intro epId ep hEp
       have hEp' := (hNT epId (.endpoint ep)
         (fun tt => by exact KernelObject.noConfusion)
@@ -4192,6 +4196,13 @@ theorem ipcInvariantCore_of_nonBindingAgreements
              intrusiveQueueWellFormed_forward_of_readAgreement hBwd hRecv⟩
     · intro tid hPath
       exact hAcyc tid (queueNextPath_backward_of_readAgreement hFwd hPath)
+    -- **WS-RR RR8.3**: the read agreement already carries both link fields, so
+    -- the pairing transports — which is the reason it names the *pair* rather
+    -- than `queuePrev` alone (a read agreement omitting `queuePPrev` is the
+    -- field-enumeration gap this conjunct exists to close).
+    · intro tid tcb hTcb
+      obtain ⟨ty, hTy, _, _, _, hPrev, hPPrev, _⟩ := hFwd tid.toObjId tcb hTcb
+      exact TCB.queuePPrevAgreesWithPrev_of_pairEq hPrev hPPrev (hPP tid ty hTy)
   -- 3. allPendingMessagesBounded: reads `tcb.pendingMessage` → (b) forward.
   · intro tid tcb msg hObj hMsg
     obtain ⟨ty, hStObj, _, hPM, _⟩ := hFwd tid.toObjId tcb hObj

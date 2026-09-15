@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.35.56): 383,951 lines of production Lean across 330 files, 78,257 lines across 70 Lean test suites,
-12,771 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.35.57): 384,812 lines of production Lean across 330 files, 78,352 lines across 70 Lean test suites,
+12,802 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -58,7 +58,10 @@ the ticket-FIFO one the Lean spec describes and refined it to that spec before
 the switch, and the forty-one-sub-task medium-severity sweep (v0.34.47 →
 v0.34.92). What remains is **RR8**, the closure phase, which grew from five
 rows to sixteen at v0.35.56 once its gate walk measured that eight register
-rows gate the closure and none of them is bookkeeping.
+rows gate the closure and none of them is bookkeeping.  Three have landed: the
+gate walk itself, the renumber, and — at v0.35.57 — `queuePPrev`/`queuePrev`
+agreement as an invariant, which is what makes the dual queue's O(1) removal
+discharge its own precondition instead of assuming it.
 
 **WS-LC** runs ahead of RR7 and closes the two lock **datatype** residuals
 RR6 re-registered rather than absorbed. LC1 (v0.34.51) added the abstract

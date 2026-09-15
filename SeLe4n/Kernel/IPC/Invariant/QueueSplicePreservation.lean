@@ -188,7 +188,7 @@ theorem endpointQueueRemoveDual_shape
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     SpliceShape endpointId isReceiveQ tid st st' := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep
   revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
@@ -1662,7 +1662,7 @@ theorem endpointQueueNoDup_of_dualQueue_of_headBlocked (st : SystemState)
     (hDual : dualQueueSystemInvariant st) (hHead : queueHeadBlockedConsistent st) :
     endpointQueueNoDup st := by
   intro oid ep hEp
-  refine ⟨fun t tcb hTcb => tcbQueueChainAcyclic_no_self_loop hDual.2.2 t tcb hTcb, ?_⟩
+  refine ⟨fun t tcb hTcb => tcbQueueChainAcyclic_no_self_loop hDual.chainAcyclic t tcb hTcb, ?_⟩
   cases hS : ep.sendQ.head with
   | none => exact Or.inl rfl
   | some hs =>
@@ -2322,7 +2322,7 @@ theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
       hObjInv hStep hInv.dualQueueSystemInvariant hInv.queueHeadBlockedConsistent
       hInv.queueNextTargetBlocked,
     endpointQueueRemoveDual_preserves_ipcStateQueueMembershipConsistent_except st st'
-      endpointId isReceiveQ tid hObjInv hInv.dualQueueSystemInvariant.2.2 hStep
+      endpointId isReceiveQ tid hObjInv hInv.dualQueueSystemInvariant.chainAcyclic hStep
       hInv.ipcStateQueueMembershipConsistent hInv.queueHeadBlockedConsistent
       hInv.queueNextTargetBlocked,
     endpointQueueRemoveDual_preserves_queueNextBlockingConsistent st st' endpointId
@@ -2624,7 +2624,7 @@ theorem endpointQueueRemoveDual_removed_not_boundary
   have noSelf : ∀ (x : SeLe4n.ThreadId) (xt : TCB), st.objects[x.toObjId]? = some (.tcb xt) →
       xt.queueNext ≠ some x := by
     intro x xt hX hSelf
-    exact hDual.2.2 x (.single x x xt hX hSelf)
+    exact hDual.chainAcyclic x (.single x x xt hX hSelf)
   cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
   | headLast ep tcb s1 s2 hEp hTcb _ _ _ _ _ hStore1 hStore2 hClear =>
     have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
@@ -3510,7 +3510,7 @@ theorem endpointQueueRemove_agrees_with_dual
       hPrevTcb
       (queueKey_ne_prev hInv.endpointQueueNoDup hEp hPrevObj hPrevNext)
       (queueKey_ne_next hInv.endpointQueueNoDup hEp hTcbObj hNext)
-      (queueKey_next_ne_prev hInv.dualQueueSystemInvariant.2.2 hTcbObj hPrevObj hNext
+      (queueKey_next_ne_prev hInv.dualQueueSystemInvariant.chainAcyclic hTcbObj hPrevObj hNext
         hPrevNext)
       hRelinkPrev hNextTcb hRelinkNext hStore hClear
 
@@ -3723,7 +3723,7 @@ theorem timeoutStaging_preserves_ipcInvariantFull
   · exact storeObject_preserves_ipcInvariant_of_ne_notification st st' tid.toObjId _
       (fun _ => by simp) h.ipcInvariant hObjInv hStore
   · exact storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree st st' tid.toObjId
-      tcb (timeoutStagedTcb tcb) rfl rfl hRaw hObjInv hStore h.dualQueueSystemInvariant
+      tcb (timeoutStagedTcb tcb) rfl rfl rfl hRaw hObjInv hStore h.dualQueueSystemInvariant
   · intro t tcbT msg hT hMsg
     obtain ⟨t0, h0, _, hM, _, _, _⟩ := hBwd t.toObjId tcbT hT
     exact h.allPendingMessagesBounded t t0 msg h0 (hM ▸ hMsg)

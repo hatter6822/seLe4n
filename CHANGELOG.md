@@ -1,3 +1,112 @@
+## v0.35.57 — WS-RR RR8.3: `queuePPrev` agreement becomes an invariant, and the dual removal's precondition is discharged rather than assumed
+
+The tree has three endpoint-queue removals, and two of them — WS-OD OD1.1's
+`endpointQueueRemove` and OD3.9's `spliceOutMidQueueNode` — were each found
+patching a successor's `queuePrev` while leaving its `queuePPrev` naming the
+removed thread.  A successor in that state fails `endpointQueueRemoveDual`'s
+`pprevConsistent` guard in *every* case it has a successor at all, so it can never
+leave its endpoint queue again; OD3.9's instance was an authority-crossing denial
+of service on a passive server, reachable by suspending the thread merely ahead of
+it.  Both were fixed at the sites the findings named, and **nothing stopped a
+third**: `queuePPrev` was read by zero `ipcInvariantFull` conjuncts and by no
+runtime check, so the field was outside every instrument the project has.
+
+This cut closes that, and it is what RR8.4's collapse of the two removals is
+blocked on.
+
+**The pairing is `dualQueueSystemInvariant`'s fourth conjunct.**
+`TCB.queuePPrevAgreesWithPrev` says what the field is allowed to mean —
+`queuePPrev` carries exactly **one bit** beyond `queuePrev`, whether the node is
+linked into a queue at all, and every other bit of it must agree — and
+`queuePPrevAgreesWithPrev` lifts it over the store.  `ipcInvariantFull` still has
+twenty conjuncts and the 178-bundle family is untouched, because the new conjunct
+went inside the bundle's second one.  Sixteen modules and 147 references carry it —
+what one search found, not a claim about the set:
+`queuePPrevAgreesWithPrev_of_frame` for a transition whose surviving TCBs keep
+their two link fields, and per-primitive siblings
+(`storeTcbQueueLinks_preserves_…`, `storeObject_tcb_preserves_…`,
+`…_of_objects_eq`, `…_of_storeAgrees`, `…_of_getElem_eq`,
+`…_of_readViewAgreement`) for the queue writers.  The bundle gained **named
+accessors** — `.endpointsWellFormed` / `.linkIntegrity` / `.chainAcyclic` /
+`.pprevAgrees` — so a fifth conjunct does not shift every projection path, which
+is the `PlatformConfig.wellFormed` precedent applied before the cascade rather
+than after it.
+
+**The removal's precondition is a named definition the transition reads.**
+`pprevConsistent` was an anonymous `let` inside `endpointQueueRemoveDual`, which
+is precisely why no caller could state that it had established it.  It is
+`dualQueueRemovalGuard` now, and the transition reads that definition — so a
+theorem discharging it cannot describe a different condition.  Eight proofs
+`unfold` the name, so removing it from the transition is a build failure rather
+than a silent pass, and a Tier 3 negative refuses the inlined spelling coming back
+beside the named one.
+
+**And the guard factors, so only one factor is the invariant's.**
+`dualQueueRemovalGuard_eq_position_and_pair` splits it into
+`queuePPrevHeadPositionAgrees` — is the node the queue's head exactly when its
+back-pointer says so — and `queueLinkPairAgrees`, which *is* the new conjunct at
+this node.  `dualQueueRemovalGuardHolds` discharges the second from the invariant,
+system-wide and for free, and the first from **membership**, which stays a
+hypothesis because no invariant entails it: a thread on *no* queue also has
+`queuePrev = none`, so a `.endpointHead` back-pointer alone cannot say which
+queue's head it names.  That is measured rather than asserted — a detached thread
+carrying `(none, .endpointHead, none)` satisfies the pairing and fails the guard,
+which is one of the twelve new witness lines.  Membership is spelled the way this
+tree already spells it (`splicePredecessorBlocked_of_path`): the head itself, or
+reachable from it.  Reaching a predecessor from reachability needed
+`QueueNextPath.lastEdge`, `firstEdge`'s sibling, missing until now because the
+inductive is written forwards and so one takes an induction where the other takes
+a `cases`.  `dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant` is the same
+discharge in the shape callers actually hold, taking the endpoint rather than the
+queue.
+
+**The unlink updates are where the pair is shown to travel together**, which is
+the machine-checked form of the OD1.1/OD3.9 finding:
+`TCB.queuePPrevAgreesWithPrev_queueUnlinkSuccessor` (the successor inherits the
+*removed* thread's own pair) and `…_queueUnlinkPredecessor` (only `queueNext`
+moves), composed by `queueNeighbourPatch_preserves_queuePPrevAgreesWithPrev` into
+`spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev` — the third removal's
+own statement, which the cancellation composite then consumes rather than
+re-deriving.
+
+**The retype replacement is pristine in `queuePPrev` too, and that is not
+derivable from `queuePrev = none` beside it**: a replacement carrying
+`.tcbNext p` with no `queuePrev` *refutes* the pairing rather than satisfying it
+vacuously.  It sits next to `queuePrev` in `retypeReplacementFresh`, at the cost
+of shifting twelve positional destructurings — paid deliberately, because the two
+fields are one back-pointer and separating them in the freshness list is how this
+class of defect starts.
+
+**The conjunct is checked at runtime, not only proved.**
+`queuePPrevAgreesWithPrevChecks` is part of `stateInvariantChecksFor`, so every
+harness state asserts it, and the golden trace's `[PIP-005]` count moved 27 → 28 —
+the measurement that it runs, and the fixture's only changed line.  The witness
+(`tests/NegativeStateSuite.lean`, `runDualQueuePPrevPairingChecks`) is decisive in
+both directions and the mutation that decides **keeps every queue and every
+`queueNext` chain and corrupts one back-pointer**: mutating either arm of the
+runtime checker fails a specific witness line, and mutating either arm of the
+guard or of the position half fails to *elaborate*, because the factorisation
+theorem pins the definition structurally.
+
+One process note.  A scripted deletion of one unused helper matched a non-greedy
+regex from the **first** docstring in the file rather than from the intended one
+and removed ninety lines of `Defs.lean` — `intrusiveQueueWellFormed`,
+`tcbQueueLinkIntegrity` and the `QueueNextPath` inductive among them.  It was
+caught by the build, reconstructed from the git blob, and is recorded here because
+the failure mode is generic: a `[^\0]*?` prefix in a delete-by-regex anchors
+wherever the first match starts, not where the author is looking.  Prefer deleting
+by measured line span.
+
+Two structural notes.  `queuePPrevAgreesWithPrev_of_insert` was written and then
+deleted rather than left beside its siblings, having no consumer — the project's
+rule that retired code is removed, applied to code that was never used rather than
+to code superseded.  And the first draft of the composite's proof needed the sharp
+pointwise reading, which sits two hundred lines below the bundle that would have
+consumed it; the splice-level preservation above made that unnecessary, so a
+116-line section move was reverted and the composite is four lines.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §5 (RR8.3)
+
 ## v0.35.56 — WS-RR RR8.2: RR8 grows from five rows to sixteen, because eight register rows gate a closure its five rows did not carry
 
 RR8.1 measured the gap and this cut answers it.  RR8's five rows were closure

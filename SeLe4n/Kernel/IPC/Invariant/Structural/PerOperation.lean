@@ -270,7 +270,7 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
   -- receiverRoot stays CNode throughout the operation
   have ⟨cn', hCn'⟩ := ipcUnwrapCaps_preserves_cnode_at_root msg receiverRoot
     slotBase grantRight st st' summary cn hCn hObjInv hStep
-  obtain ⟨hEpWf, hLink, hAcyclic⟩ := hInv
+  obtain ⟨hEpWf, hLink, hAcyclic, hPP⟩ := hInv
   -- Helper: transfer TCB preservation from st to st' for any oid
   have tcbTransfer : ∀ (oid : SeLe4n.ObjId) (tcb : TCB),
       st.objects[oid]? = some (KernelObject.tcb tcb) →
@@ -284,7 +284,7 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
       grantRight st st' summary oid hNe hObjInv hStep
   have hLinkFwd := hLink.1
   have hLinkBwd := hLink.2
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   -- Part 1: endpoint well-formedness
   · intro epId ep hEpSt'
     -- ep is the same in st (receiverRoot is CNode, can't be endpoint)
@@ -344,6 +344,13 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
           · rw [objBack _ hNe] at hObj; exact hObj
         exact .cons x y z tcbX hObjPre hNext ih
     intro t hp; exact hAcyclic t (hTransfer t t hp)
+  -- Part 4 (**WS-RR RR8.3**): the pairing.  The transfer writes the receiver's
+  -- CSpace root and no TCB, so every post-state TCB is a pre-state TCB.
+  · intro tid tcb hTcb
+    refine hPP tid tcb ?_
+    by_cases hNe : tid.toObjId = receiverRoot
+    · subst hNe; simp [hCn'] at hTcb
+    · rw [objBack _ hNe] at hTcb; exact hTcb
 
 /-- WS-RR RR2.14: a Reply object present after a capability transfer was present
 before it. The transfer writes the receiver's CSpace root and nothing else
@@ -786,8 +793,8 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
-  obtain ⟨hEpInv, hLink, hAcyclic⟩ := hInv
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep
+  obtain ⟨hEpInv, hLink, hAcyclic, hPP⟩ := hInv
+  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -887,10 +894,18 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                           st pair1.2 endpointId _ (fun _ h => by cases h) hObjInv hStoreEp1 hAcyclic
                         have hAcycEp3 := storeObject_nonTcb_preserves_tcbQueueChainAcyclic
                           pair1.2 pair3.2 endpointId _ (fun _ h => by cases h) hObjInv1 hStoreEp2 hAcycEp1
+                        -- **WS-RR RR8.3**: two endpoint stores touch no TCB and
+                        -- the clear writes `(none, none)`.
+                        have hPPEp1 := storeObject_nonTcb_preserves_queuePPrevAgreesWithPrev
+                          st pair1.2 endpointId _ (fun _ h => by cases h) hObjInv hStoreEp1 hPP
+                        have hPPEp3 := storeObject_nonTcb_preserves_queuePPrevAgreesWithPrev
+                          pair1.2 pair3.2 endpointId _ (fun _ h => by cases h) hObjInv1 hStoreEp2 hPPEp1
                         refine ⟨?_, storeTcbQueueLinks_clearing_preserves_linkInteg
                           pair3.2 st4 tid hObjInv3 hClear hLink2 hNoFwd hNoRev,
                           storeTcbQueueLinks_clearing_preserves_tcbQueueChainAcyclic
-                          pair3.2 st4 tid none none hObjInv3 hClear hAcycEp3⟩
+                          pair3.2 st4 tid none none hObjInv3 hClear hAcycEp3,
+                          storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev
+                          pair3.2 st4 tid none none none (by simp) hObjInv3 hClear hPPEp3⟩
                         intro epId' ep' hObj'
                         have hObj1 := storeTcbQueueLinks_endpoint_backward pair3.2 st4 tid none none none
                           epId' ep' hObjInv3 hClear hObj'
@@ -1091,8 +1106,27 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                               st2 pair3.2 endpointId _ (fun _ h => by cases h) hObjInvSt2 hStoreEp2 hAcycSt2
                             have hAcycSt4 := storeTcbQueueLinks_clearing_preserves_tcbQueueChainAcyclic
                               pair3.2 st4 tid none none hObjInv3 hClear hAcycEp3
+                            -- **WS-RR RR8.3**: the successor is promoted to
+                            -- `(none, .endpointHead)` and the removed thread
+                            -- cleared — both agreeing pairs.
+                            have hPPEp1 := storeObject_nonTcb_preserves_queuePPrevAgreesWithPrev
+                              st pair1.2 endpointId _ (fun _ h => by cases h) hObjInv hStoreEp1 hPP
+                            -- The successor inherits the removed thread's own
+                            -- pair, and `pprevConsistent` is what established
+                            -- that it agrees: on this path the guard gave
+                            -- `hPrevNone`, so the pair written is
+                            -- `(none, .endpointHead)`.  The dual removal
+                            -- maintains the conjunct *because* it validates it.
+                            have hPPSt2 := storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev
+                              pair1.2 st2 nextTid _ _ nextTcb.queueNext
+                              (by rw [hPrevNone]; exact queueLinkPairAgrees_endpointHead)
+                              hObjInv1 hStN hPPEp1
+                            have hPPEp3 := storeObject_nonTcb_preserves_queuePPrevAgreesWithPrev
+                              st2 pair3.2 endpointId _ (fun _ h => by cases h) hObjInvSt2 hStoreEp2 hPPSt2
+                            have hPPSt4 := storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev
+                              pair3.2 st4 tid none none none (by simp) hObjInv3 hClear hPPEp3
                             -- SPLIT
-                            refine ⟨?_, ?_, hAcycSt4⟩
+                            refine ⟨?_, ?_, hAcycSt4, hPPSt4⟩
                             -- PART 1: Endpoint well-formedness
                             · intro epId' ep' hObj'
                               have hObj4 := storeTcbQueueLinks_endpoint_backward pair3.2 st4 tid none none none
@@ -1374,8 +1408,21 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                           have := congrArg ThreadId.toObjId (Option.some.inj hNxt)
                                           exact absurd this.symm hbT
                                         · exact ⟨tcbA, hTransportC a tcbA haT haP hA, hNxt⟩
+                              -- **WS-RR RR8.3**: the predecessor keeps its own
+                              -- pair (`queueLinkPairAgrees_of_tcb`), the endpoint
+                              -- store touches no TCB, and the removed thread is
+                              -- cleared to `(none, none)`.
+                              have hPPSt1 := storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev
+                                st stPrev prevTid prevTcb.queuePrev prevTcb.queuePPrev none
+                                (queueLinkPairAgrees_of_tcb (hPP prevTid prevTcb
+                                  (lookupTcb_some_objects st prevTid prevTcb hLookupP)))
+                                hObjInv hLinkPNone hPP
+                              have hPPEp3 := storeObject_nonTcb_preserves_queuePPrevAgreesWithPrev
+                                stPrev pair3.2 endpointId _ (fun _ h => by cases h) hObjInv1 hStoreEpC hPPSt1
+                              have hPPSt4 := storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev
+                                pair3.2 st4 tid none none none (by simp) hObjInv3 hClearC hPPEp3
                               -- SPLIT
-                              refine ⟨?_, hLinkSt4, hAcycSt4⟩
+                              refine ⟨?_, hLinkSt4, hAcycSt4, hPPSt4⟩
                               -- PART 1: Endpoint well-formedness
                               intro epId' ep' hObj'
                               have hObj4 := storeTcbQueueLinks_endpoint_backward pair3.2 st4 tid none none none
@@ -1801,7 +1848,27 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                       have hWfPre := hEpInv epId' ep' hObjOrig
                                       unfold dualQueueEndpointWellFormed at hWfPre; rw [hObjOrig] at hWfPre
                                       exact ⟨hIqwfD ep'.sendQ hWfPre.1, hIqwfD ep'.receiveQ hWfPre.2⟩
-                                  exact ⟨hEpWfD, hLinkStF, hAcycSF⟩
+                                  -- **WS-RR RR8.3**: the interior removal.  The
+                                  -- predecessor keeps its own pair, the successor
+                                  -- inherits the removed thread's — which on this
+                                  -- arm the `pprevConsistent` guard proved to be
+                                  -- `(some prevTid, .tcbNext prevTid)` (`hPrevSome`)
+                                  -- — the endpoint store touches no TCB, and the
+                                  -- removed thread is cleared.
+                                  have hPPSPrev := storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev
+                                    st stPrev prevTid _ _ _
+                                    (queueLinkPairAgrees_of_tcb (hPP prevTid prevTcb
+                                      (lookupTcb_some_objects st prevTid prevTcb hLookupP)))
+                                    hObjInv hLinkP hPP
+                                  have hPPSN := storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev
+                                    stPrev stNext nextTid _ _ nextTcb.queueNext
+                                    (by rw [hPrevSome]; exact queueLinkPairAgrees_tcbNext prevTid)
+                                    hObjInv1 hStN hPPSPrev
+                                  have hPPEp4 := storeObject_nonTcb_preserves_queuePPrevAgreesWithPrev
+                                    stNext pair4.2 endpointId _ (fun _ h => by cases h) hObjInvSN hStoreEpD hPPSN
+                                  have hPPSF := storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev
+                                    pair4.2 stF tid none none none (by simp) hObjInv4 hClearD hPPEp4
+                                  exact ⟨hEpWfD, hLinkStF, hAcycSF, hPPSF⟩
 
 -- ============================================================================
 -- V3-G6 (M-PRF-5): Primitive preservation for blockedThreadsPendingMessageConsistent

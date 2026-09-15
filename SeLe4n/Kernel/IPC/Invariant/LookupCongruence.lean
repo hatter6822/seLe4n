@@ -120,6 +120,13 @@ theorem tcbQueueChainAcyclic_of_getElem_eq {s1 s2 : SystemState}
     (h : tcbQueueChainAcyclic s1) : tcbQueueChainAcyclic s2 :=
   fun tid hp => h tid (QueueNextPath_of_getElem_eq hEq hp)
 
+/-- **WS-RR RR8.3**: pointwise-lookup transport of the `queuePPrev`/`queuePrev`
+pairing — the `getElem_eq` sibling, for the lookup-congruence family. -/
+theorem queuePPrevAgreesWithPrev_of_getElem_eq {s1 s2 : SystemState}
+    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
+    (h : queuePPrevAgreesWithPrev s1) : queuePPrevAgreesWithPrev s2 :=
+  fun tid tcb hTcb => h tid tcb (by rw [← hEq]; exact hTcb)
+
 /-- Pointwise-lookup transport of doubly-linked TCB-queue link integrity. -/
 theorem tcbQueueLinkIntegrity_of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
@@ -167,10 +174,11 @@ congruences above. -/
 theorem dualQueueSystemInvariant_of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
     (h : dualQueueSystemInvariant s1) : dualQueueSystemInvariant s2 := by
-  obtain ⟨hEp, hLink, hAcyc⟩ := h
+  obtain ⟨hEp, hLink, hAcyc, hPP⟩ := h
   refine ⟨fun epId ep hObj => ?_,
           tcbQueueLinkIntegrity_of_getElem_eq hEq hLink,
-          tcbQueueChainAcyclic_of_getElem_eq hEq hAcyc⟩
+          tcbQueueChainAcyclic_of_getElem_eq hEq hAcyc,
+          queuePPrevAgreesWithPrev_of_getElem_eq hEq hPP⟩
   rw [hEq] at hObj
   exact dualQueueEndpointWellFormed_of_getElem_eq hEq (hEp epId ep hObj)
 
@@ -1072,6 +1080,13 @@ theorem QueueNextPath_of_readViewAgreement {s1 s2 : SystemState}
   | single x y tcbA hObj hNext => exact .single x y tcbA ((hView.tcb _ _).mp hObj) hNext
   | cons x y z tcbA hObj hNext _ ih => exact .cons x y z tcbA ((hView.tcb _ _).mp hObj) hNext ih
 
+/-- **WS-RR RR8.3**: read-view transport of the pairing.  The view's `tcb`
+clause is full-record agreement, so the pair travels with the record. -/
+theorem queuePPrevAgreesWithPrev_of_readViewAgreement {s1 s2 : SystemState}
+    (hView : ipcReadViewAgreement s1 s2) (h : queuePPrevAgreesWithPrev s1) :
+    queuePPrevAgreesWithPrev s2 :=
+  fun tid tcb hTcb => h tid tcb ((hView.tcb tid.toObjId tcb).mp hTcb)
+
 /-- Read-view transport of TCB-queue chain acyclicity. -/
 theorem tcbQueueChainAcyclic_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
@@ -1122,10 +1137,11 @@ theorem dualQueueEndpointWellFormed_of_readViewAgreement {s1 s2 : SystemState}
 theorem dualQueueSystemInvariant_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : dualQueueSystemInvariant s1) : dualQueueSystemInvariant s2 := by
-  obtain ⟨hEp, hLink, hAcyc⟩ := h
+  obtain ⟨hEp, hLink, hAcyc, hPP⟩ := h
   refine ⟨fun epId ep hObj => ?_,
           tcbQueueLinkIntegrity_of_readViewAgreement hView hLink,
-          tcbQueueChainAcyclic_of_readViewAgreement hView hAcyc⟩
+          tcbQueueChainAcyclic_of_readViewAgreement hView hAcyc,
+          queuePPrevAgreesWithPrev_of_readViewAgreement hView hPP⟩
   rw [hView.endpoint] at hObj
   exact dualQueueEndpointWellFormed_of_readViewAgreement hView (hEp epId ep hObj)
 

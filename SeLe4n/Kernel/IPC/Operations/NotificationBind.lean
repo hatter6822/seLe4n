@@ -54,7 +54,7 @@ theorem endpointQueueRemoveDual_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     st'.objects.invExt := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with

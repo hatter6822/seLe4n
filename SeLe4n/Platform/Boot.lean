@@ -5034,7 +5034,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       unfold notificationInvariant notificationQueueWellFormed
       rw [hNtfn.1]; exact ⟨hNtfn.2.1, hNtfn.2.2⟩
     · -- dualQueueSystemInvariant
-      refine ⟨?_, ?_, ?_⟩
+      refine ⟨?_, ?_, ?_, ?_⟩
       · -- all endpoints have well-formed queues
         intro epId ep hObj
         have hEp := (hBS epId _ hObj).1 ep rfl
@@ -5066,6 +5066,12 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       · -- tcbQueueChainAcyclic: all boot TCBs have queueNext = none
         exact tcbQueueChainAcyclic_of_allNextNone (fun tid tcb hObj => by
           exact ((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.2.1)
+      · -- WS-RR RR8.3: the pairing.  `bootSafeObjectCheck` admits a TCB only
+        -- with all three queue links empty, and `queuePPrev = none` constrains
+        -- nothing.
+        intro tid tcb hObj
+        exact TCB.queuePPrevAgreesWithPrev_of_pprev_none
+          ((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.2.2.2.1
     · -- allPendingMessagesBounded
       intro tid tcb msg hObj hPend
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl

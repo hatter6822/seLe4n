@@ -38,6 +38,127 @@ def storeTcbQueueLinks
       | .ok ((), st') => .ok st'
 
 
+/-- **WS-RR RR8.3**: the pairing condition on the *values* a link store writes.
+
+`tcbWithQueueLinks` overwrites all three link fields at once, so whether the
+result satisfies `TCB.queuePPrevAgreesWithPrev` depends on the arguments alone
+and not on the record displaced.  Naming that condition is what lets each
+queue-writing call site state its own obligation — which is the whole content of
+the invariant: `endpointQueueEnqueue` discharges it because it writes
+`(none, .endpointHead)` on an empty queue and `(some t, .tcbNext t)` behind a
+tail, `endpointQueuePopHead` because it promotes the successor to
+`(none, .endpointHead)`, and every clear because `none` constrains nothing. -/
+def queueLinkPairAgrees
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) : Prop :=
+  match pprev with
+  | none => True
+  | some .endpointHead => prev = none
+  | some (.tcbNext p) => prev = some p
+
+@[simp] theorem queueLinkPairAgrees_none (prev : Option SeLe4n.ThreadId) :
+    queueLinkPairAgrees prev none := trivial
+
+@[simp] theorem queueLinkPairAgrees_endpointHead :
+    queueLinkPairAgrees none (some .endpointHead) := rfl
+
+@[simp] theorem queueLinkPairAgrees_tcbNext (p : SeLe4n.ThreadId) :
+    queueLinkPairAgrees (some p) (some (.tcbNext p)) := rfl
+
+/-- The pairing is decidable: each arm is an equality of `Option ThreadId`.  The
+instance is what lets `dualQueueRemovalGuard`'s `Bool` check be stated as the
+conjunction of a position question and *this* proposition, rather than as a second
+spelling of it. -/
+instance queueLinkPairAgrees_decidable
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) :
+    Decidable (queueLinkPairAgrees prev pprev) := by
+  unfold queueLinkPairAgrees
+  cases pprev with
+  | none => exact isTrue trivial
+  | some pp => cases pp with
+    | endpointHead => exact inferInstanceAs (Decidable (prev = none))
+    | tcbNext p => exact inferInstanceAs (Decidable (prev = some p))
+
+/-- **WS-RR RR8.3**: a TCB's *own* pair agrees whenever it satisfies the pairing
+— the shape every `storeTcbQueueLinks st p tcb.queuePrev tcb.queuePPrev _` site
+needs, which is how a removal re-writes a neighbour's `queueNext` without
+disturbing the two fields it must keep together. -/
+theorem queueLinkPairAgrees_of_tcb {tcb : TCB}
+    (h : tcb.queuePPrevAgreesWithPrev) :
+    queueLinkPairAgrees tcb.queuePrev tcb.queuePPrev := by
+  unfold TCB.queuePPrevAgreesWithPrev at h
+  unfold queueLinkPairAgrees
+  cases hpp : tcb.queuePPrev with
+  | none => trivial
+  | some pp =>
+      rw [hpp] at h; cases pp with
+      | endpointHead => exact h
+      | tcbNext p => exact h
+
+/-- The written record satisfies the pairing exactly when the written values do. -/
+theorem tcbWithQueueLinks_queuePPrevAgreesWithPrev
+    {tcb : TCB} {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev}
+    {next : Option SeLe4n.ThreadId} (h : queueLinkPairAgrees prev pprev) :
+    (tcbWithQueueLinks tcb prev pprev next).queuePPrevAgreesWithPrev := by
+  unfold TCB.queuePPrevAgreesWithPrev tcbWithQueueLinks
+  unfold queueLinkPairAgrees at h
+  cases pprev with
+  | none => trivial
+  | some pp => cases pp with
+    | endpointHead => exact h
+    | tcbNext p => exact h
+
+/-- **WS-RR RR8.3**: the head-position half of `endpointQueueRemoveDual`'s
+precondition — a node whose back-pointer names the endpoint's head field *is* the
+head, and one whose back-pointer names a predecessor TCB is not.
+
+Split out from the pairing half because the two are discharged from different
+places: this one from where `tid` sits in `q`, the other from the invariant.  A
+caller that can supply neither is a caller that should not be unlinking. -/
+def queuePPrevHeadPositionAgrees
+    (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (pprev : QueuePPrev) : Bool :=
+  match pprev with
+  | .endpointHead => q.head = some tid
+  | .tcbNext _ => q.head ≠ some tid
+
+/-- **WS-RR RR8.3**: `endpointQueueRemoveDual`'s `pprevConsistent` check, named.
+
+The operation reads *this* definition, so the check and the theorem that
+discharges it (`dualQueueRemovalGuardHolds`) cannot describe different
+conditions.  Before RR8.3 it was an anonymous `let` inside the transition, which
+is why nothing could state that a caller had established it. -/
+def dualQueueRemovalGuard
+    (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (tcb : TCB) (pprev : QueuePPrev) : Bool :=
+  match pprev with
+  | .endpointHead => q.head = some tid && tcb.queuePrev.isNone
+  | .tcbNext prevTid => q.head ≠ some tid && tcb.queuePrev = some prevTid
+
+/-- **WS-RR RR8.3**: the guard factors into a position question and a pairing
+question, and the pairing half is exactly `queueLinkPairAgrees` at `some pprev`.
+
+This is the statement that makes the fourth `dualQueueSystemInvariant` conjunct
+worth having: the invariant discharges the second factor system-wide, leaving the
+caller only the first.  It is stated as an equality of `Bool`s rather than an
+`Iff` so it rewrites inside the transition's own `if`. -/
+theorem dualQueueRemovalGuard_eq_position_and_pair
+    (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (tcb : TCB) (pprev : QueuePPrev) :
+    dualQueueRemovalGuard q tid tcb pprev =
+      (queuePPrevHeadPositionAgrees q tid pprev &&
+        decide (queueLinkPairAgrees tcb.queuePrev (some pprev))) := by
+  unfold dualQueueRemovalGuard queuePPrevHeadPositionAgrees queueLinkPairAgrees
+  cases pprev with
+  | endpointHead => cases tcb.queuePrev <;> simp
+  | tcbNext p => cases tcb.queuePrev <;> simp
+
+/-- **WS-RR RR8.3**: the pairing half of the guard, discharged from the
+`TCB`-level predicate the fourth conjunct lifts. -/
+theorem dualQueueRemovalGuard_pair_half {tcb : TCB} {pprev : QueuePPrev}
+    (hPPrev : tcb.queuePPrev = some pprev) (hPair : tcb.queuePPrevAgreesWithPrev) :
+    queueLinkPairAgrees tcb.queuePrev (some pprev) := by
+  have h := queueLinkPairAgrees_of_tcb hPair
+  rw [hPPrev] at h
+  exact h
+
+
 /-- WS-SM SM8.B.2: `storeTcbQueueLinks` leaves the machine registers untouched,
 so no core's banked `RegisterFile` moves.  Lives beside its subject rather than
 in an information-flow module: the `endpointQueueRemoveDual` machine frame in
