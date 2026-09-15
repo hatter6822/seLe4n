@@ -224,7 +224,11 @@ the frozen mirror
 as well as on the live spines -- `frozenEndpointReplyWithDonationReturn` reads
 `frozenReplyFrameHeadHolder?` and the binding-driven frozen resolver is deleted,
 because the coverage table's `frozenBranchOperationChecked` claims the two are run
-beside each other and two readings of one question is what that claim forbids);
+beside each other and two readings of one question is what that claim forbids --
+and since HP8 (`v0.35.47`) that mirror's *removal* splices too, with the sever's
+`frozenDetach…` names deleted and `FO-043`, a three-frame stack whose middle frame
+the reply answers, as the witness: every shallower scenario agrees under both
+policies, so the suite was green before the flip);
 and `.replyRecv`'s pop moved
 **between** the legs, which is seL4-MCS's own `doReplyTransfer` → `reply_remove`
 → `receiveIPC` order and which the receive leg's re-link requires, since

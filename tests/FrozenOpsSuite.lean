@@ -1564,6 +1564,180 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
         (liveReplySpine diffB diffA msg) sentinelHeld.state))
 
+/-- FO-043 (**WS-HP HP8.2**): **a MIDDLE frame**, which is the only shape on which
+splicing and severing differ.
+
+HP8.2 makes the frozen removal splice, and every scenario above kept passing
+byte-identically when it did — which is the finding, not the reassurance.  A
+two-frame stack's lower frame is its *bottom*, so both policies write the same
+value into the frame above; the whole of FO-031 and FO-041/042 sits on stacks of
+depth ≤ 2, so none of them can tell a spliced removal from a severed one.  Landing
+HP8 on their evidence would have been HP5.5's gap on this surface: *a sweep for
+fixtures that would break is not a sweep for fixtures that would exercise, and
+only the second measures a flip.*
+
+**The shape.**  Three frames, bottom → cut → top, with the *cut* frame the one
+the reply answers:
+
+* `bottomRid` is the bottom: `prev = none`, `next = some (.frame midRid)`.
+* `midRid` is the answered caller's own reply object: `prev = some bottomRid`,
+  `next = some (.frame topRid)`.
+* `topRid` heads the donated context, and the context names it back.
+
+So the removal takes a frame out of the middle.  After a **splice** the top frame
+names the bottom and the bottom names the top back — the stack stays connected and
+the reservation goes on travelling outward.  After a **sever** the top frame's
+`prev` is cleared and the bottom is dropped from the stack for good, which is the
+loss WS-HP exists to close.  The two write different values at two different keys,
+so the assertions below discriminate; the last one is the mutation that decides it,
+since it spells the retired sever's own values.
+
+**No pop fires here, and that is correct.**  The cut frame heads nothing — the
+*top* frame does — so `frozenReplyFrameHeadHolder?` answers `none` and the
+donation stays where it is.  A middle reply removes a frame and moves no
+reservation, which is exactly why the removal's connectivity is the whole content
+of this scenario.
+
+**And the splice's THIRD store is not observable through the composite, which is
+why the last half asserts it on the primitive.**  Measured rather than assumed:
+with `rid.prev := none` deleted the whole suite still passes, because the
+`Reply.consumed` that follows clears the cut frame's links anyway on a frame that
+heads nothing.  So an assertion about the cut frame's `prev` taken from the
+composite's post-state is testing `consumed`, not the splice — an inert witness
+reading as coverage, which is this project's own hazard.  The store is
+load-bearing all the same (it is seL4's `reply_unlink` downward half, and without
+it the cut frame keeps a `prev` nothing names back), and it would become
+*observable* the moment `consumed` changed, so the half below drives
+`frozenSpliceReplyFrameOut` directly with no consume after it. -/
+private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
+  let msg : IpcMessage := { registers := #[⟨17⟩], caps := #[], badge := none }
+  let bottomRid : SeLe4n.ReplyId := ⟨507⟩
+  let midRid    : SeLe4n.ReplyId := ⟨508⟩
+  let topRid    : SeLe4n.ReplyId := ⟨509⟩
+  -- The answered caller holds the MIDDLE frame.
+  let caller : TCB := { diffTcb 62 with
+    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some midRid,
+    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+  -- The recorded server, holding the donation the TOP frame heads.
+  let server : TCB := { diffTcb 63 with
+    schedContextBinding := .donated diffScId diffA }
+  let chain := diffAddSchedContext (diffAddReply (diffAddReply (diffAddReply
+    (diffAddTcb (diffAddTcb (diffAddEndpoint mkEmptyIntermediateState diffEpId {})
+      caller) server)
+    bottomRid { replyId := bottomRid, caller := some diffDelegate,
+                next := some (.frame midRid) })
+    midRid { replyId := midRid, caller := some diffA, prev := some bottomRid,
+             next := some (.frame topRid) })
+    topRid { replyId := topRid, caller := some diffB, prev := some midRid,
+             next := some (.head diffScId) })
+    diffScId { diffDonatedSc (some topRid) with scReply := some topRid }
+  -- The pre-state really is a three-frame stack, on both surfaces.
+  expect "FO-043 control: the cut frame sits between two others (live)"
+    (match chain.state.getReply? midRid with
+     | some r => r.prev == some bottomRid && r.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+     | none   => false)
+  expect "FO-043 control: ...and the frozen copy carries the same links"
+    (match (freeze chain).getReply? midRid with
+     | some r => r.prev == some bottomRid && r.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+     | none   => false)
+  -- The cut frame heads NOTHING: the top frame does, so no pop fires and the
+  -- removal's connectivity is the whole of what this scenario measures.
+  expect "FO-043 control: the cut frame heads no context, so no pop fires"
+    (SeLe4n.Kernel.replyFrameHeadHolder? chain.state midRid == none
+      && frozenReplyFrameHeadHolder? (freeze chain) midRid == none)
+  expect "FO-043 control: the live operation succeeds"
+    (liveReplySpine diffB diffA msg chain.state).toOption.isSome
+  expect "FO-043 control: and so does the frozen composite"
+    (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg (freeze chain)).toOption.isSome
+  -- **The live side really splices.**  Asserted here so the agreement below is
+  -- agreement with a splice rather than between two severs.
+  expect "FO-043: the live removal SPLICES — the top frame names the bottom"
+    (match (liveReplySpine diffB diffA msg chain.state).toOption with
+     | some (_, post) =>
+         (match post.getReply? topRid with
+          | some t => t.prev == some bottomRid
+          | none   => false) &&
+         (match post.getReply? bottomRid with
+          | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | none   => false) &&
+         (match post.getReply? midRid with
+          | some m => m.prev == none
+          | none   => false)
+     | none => false)
+  -- ...and the frozen composite agrees with it, link for link.
+  expect "FO-043: the frozen removal splices the same way"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg
+              (freeze chain)).toOption with
+     | some (_, post) =>
+         (match post.getReply? topRid with
+          | some t => t.prev == some bottomRid
+          | none   => false) &&
+         (match post.getReply? bottomRid with
+          | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | none   => false) &&
+         (match post.getReply? midRid with
+          | some m => m.prev == none
+          | none   => false)
+     | none => false)
+  expect "FO-043: and the whole frozen OPERATION agrees with the live one"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg (freeze chain))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) chain.state))
+  -- **NEGATIVE — the retired sever's own values**, spelled so that a revert of
+  -- HP8.2 fails here rather than passing quietly.  Under the sever the top
+  -- frame's `prev` is cleared and the bottom frame keeps naming the cut frame it
+  -- can no longer reach, which is the state that drops every frame below a cut.
+  expect "FO-043 NEGATIVE: the frozen removal does NOT sever the top frame"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg
+              (freeze chain)).toOption with
+     | some (_, post) =>
+         !(match post.getReply? topRid with
+           | some t => t.prev == none
+           | none   => false)
+     | none => false)
+  expect "FO-043 NEGATIVE: ...nor leaves the bottom frame naming the cut frame"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg
+              (freeze chain)).toOption with
+     | some (_, post) =>
+         !(match post.getReply? bottomRid with
+           | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame midRid)
+           | none   => false)
+     | none => false)
+  -- ### The primitive, with no consume after it.
+  --
+  -- All three stores at once, where the composite can only show two: the cut
+  -- frame's own `prev := none` is the store `Reply.consumed` would mask, so this
+  -- is the only place a deletion of it fails.  The live counterpart is asserted
+  -- beside it, so the two are compared store for store rather than each against
+  -- its own expectation.
+  expect "FO-043: the frozen PRIMITIVE writes all three links, the cut frame's own included"
+    (match (frozenSpliceReplyFrameOut (freeze chain) midRid).toOption with
+     | some post =>
+         (match post.getReply? topRid with
+          | some t => t.prev == some bottomRid
+          | none   => false) &&
+         (match post.getReply? bottomRid with
+          | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | none   => false) &&
+         (match post.getReply? midRid with
+          | some m => m.prev == none && m.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | none   => false)
+     | none => false)
+  expect "FO-043: ...exactly as the live primitive does"
+    (match (SeLe4n.Kernel.spliceReplyFrameOut chain.state midRid).toOption with
+     | some post =>
+         (match post.getReply? topRid with
+          | some t => t.prev == some bottomRid
+          | none   => false) &&
+         (match post.getReply? bottomRid with
+          | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | none   => false) &&
+         (match post.getReply? midRid with
+          | some m => m.prev == none && m.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | none   => false)
+     | none => false)
+
 /-- FO-035: **a receive that dequeues a `.blockedOnCall` caller** (PR #873
 round 17).
 
@@ -1804,16 +1978,20 @@ satisfy an operation claim -- which is exactly the substitution that let
 operation's steps in three consecutive review rounds.
 
 A **relation**, not a map: a branch may carry more than one scenario, and
-`.endpointReplyToBlockedCaller` carries two because they answer different
+`.endpointReplyToBlockedCaller` carries three because they answer different
 questions about the same claim.  FO-041 exercises the operation's shape (the
 revert, the guard, a delegated cap holder) on states carrying no donation; FO-042
 (WS-HP HP8.1) exercises the donation pop itself and the state on which the two
-candidate triggers disagree.  Both reconciliation directions below are set
-containment, so a second row adds coverage and claims nothing extra. -/
+candidate triggers disagree; FO-043 (WS-HP HP8.2) exercises the *removal* on a
+**middle** frame, the only shape on which splicing and severing differ — every
+other scenario here sits on a stack of depth ≤ 2, where both policies write the
+same value and neither can tell them apart.  Both reconciliation directions below
+are set containment, so a further row adds coverage and claims nothing extra. -/
 private def operationDifferentialScenarios :
     List (SeLe4n.Kernel.FrozenOps.FrozenOpBranch × IO Unit) :=
   [ (.endpointReplyToBlockedCaller,     differentialEndpointReplyOperationAgrees),
-    (.endpointReplyToBlockedCaller,     differentialEndpointReplyDonationAgrees) ]
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyDonationAgrees),
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyMiddleFrameSplices) ]
 
 /-- The claim and the scenarios name the same syscalls, in both directions: a
 scenario for a syscall the table does not claim, or a claim with no scenario,

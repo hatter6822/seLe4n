@@ -1,3 +1,69 @@
+## v0.35.47 — WS-HP HP8: the frozen mirror splices, and the suite that could not tell
+
+`FrozenOps` holds the **live** `SeLe4n.Kernel.Reply` — `Model.freeze` copies a live
+state's Reply objects verbatim — so a frozen state taken mid-call-chain carries a
+doubly linked reply stack exactly as the live one does, and a removal that severs
+there loses the frames below a cut exactly as the live sever did.  HP4.7 flipped
+that mirror's *trigger*; this is its *removal*.  `frozenSpliceReplyFrameOut`
+replaces `frozenDetachReplyFrameAbove` clause for clause with the live
+`spliceReplyFrameOut`: the same three stores, the same declining below side, the
+same refusal set.  The sever's names are **deleted** rather than kept beside a
+spliced body — HP6.1 kept them deliberately, because a `frozenDetach…` beside a
+live `splice…` read as the *schedule*, and this is the cut that discharges it.
+
+**The suite was green before the flip, and that is the finding.**  Every scenario
+this surface carried — `FO-031`, `FO-041`, `FO-042` — sits on a reply stack of
+depth ≤ 2, and a two-frame stack's lower frame is its *bottom*, so both removal
+policies write the same value into the frame above.  All of them passed
+**byte-identically** when the splice landed.  That is HP5.5's lesson arriving on
+this surface: *a sweep for fixtures that would break is not a sweep for fixtures
+that would exercise, and only the second measures a flip.*  So HP8 gained a
+fourth sub-task while being implemented.
+
+**`FO-043` is the witness**: three frames, bottom → cut → top, with the answered
+caller holding the **middle** one.  After a splice the top frame names the bottom
+and the bottom names the top back; after a sever the top frame's `prev` is cleared
+and the bottom is dropped from the stack for good.  Mutation-verified in both
+directions — the pre-HP8 sever fails it while every control still passes — and it
+carries two negatives spelling the sever's own values, so a revert fails here
+rather than passing quietly.  No pop fires on a middle frame, correctly: the cut
+frame heads nothing, so a middle reply removes a frame and moves no reservation,
+which is why the removal's connectivity is the whole content of the scenario.
+
+**And the splice's third store is not observable through the composite** —
+measured, not assumed.  With `rid.prev := none` deleted the *whole suite still
+passes*, because the `Reply.consumed` that follows the removal clears the same
+field on a frame heading nothing.  So an assertion about the cut frame's own links
+taken from the composite's post-state is testing `consumed` rather than the splice:
+an inert witness reading as coverage, which is this project's own hazard.  The
+store is load-bearing regardless — it is seL4's `reply_unlink` downward half, and a
+cut frame keeping a `prev` nothing names back is what it exists to prevent — and it
+becomes observable the moment `consumed` changes.  `FO-043`'s last half therefore
+drives `frozenSpliceReplyFrameOut` **directly**, beside the live primitive, which
+is the only place that deletion fails; that half was added after the measurement
+showed the composite could not see it.
+
+**The write census carries three frozen splice entries where the sever had two.**
+The store step is registered on its own, as the live `spliceReplyFrameStores` is,
+because it performs the writes with none of the removal's resolution or validation
+— so a transition reaching for it directly is a site.  Each is a `mirrors` entry
+naming the live counterpart of the *same shape*, which makes the store step's chain
+terminate in a stating entry two hops out rather than one, through the live
+half-step.  The census reports **24** write sites, six of them frozen mirrors.
+
+**The phase's acceptance criterion is corrected.**  It read "passes all
+differential scenarios, including the agreement between the frozen reply and the
+live one" — which the suite satisfied *before* HP8 landed.  It now requires at
+least one scenario at depth ≥ 3, because every shallower shape agrees under both
+policies and a green suite over depth ≤ 2 is evidence about the fixtures.
+
+**Verification.**  `frozen_ops_suite` passes 13 leg + 3 operation differentials;
+`ReplyStackWriteCensus` reports 24 sites with its closure intact; Tier 0 through
+Tier 3 pass, with the sever's names refused tree-wide and `FO-043`'s decisive rows
+anchored; the golden trace is byte-identical, since `FrozenOps` is on no live path.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md HP8.1-HP8.4
+
 ## v0.35.46 — WS-HP HP7: the stated coherence hypotheses retire, and a gate that could not see them
 
 A donation pop keyed on a *binding* had to be told things about the reply stack

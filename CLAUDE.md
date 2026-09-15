@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.46.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.47.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3711,8 +3711,9 @@ frozen state taken mid-call-chain holds a real reply stack.  And the gap was not
 theoretical: `frozenEndpointReply` cleared a caller's Reply **bare**, which is
 WS-RM's own defect surviving on the surface nothing was looking at.  Bringing it
 in cost three things.  The frozen reply now runs a frozen `reply_remove`
-(`frozenDetachReplyFrameAboveOrSelf` then the consume, in that order, since the
-detach reads the link the consume clears).  `frozenLinkCallerReply`'s guard read
+(the removal then the consume, in that order, since the removal reads the link the
+consume clears; **WS-HP HP8.2** made that removal `frozenSpliceReplyFrameOutOrSelf`,
+which splices rather than severing).  `frozenLinkCallerReply`'s guard read
 `caller.isNone` where `Model.linkReply` reads `Reply.isFree` — a fifth guard
 deciding one question differently, so a frame still on a live stack was linkable
 there while the live kernel refuses it; it reads `isFree` now.  And the
@@ -3890,7 +3891,7 @@ a licence to delete the reclaim — deleting it reaches a state
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46)
+### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -3945,7 +3946,7 @@ banner in `IPC/Invariant/Defs.lean` records what replaced it.
 | HP5 | LANDED | v0.35.39 | **The cancellation path's trigger flips** — the resolver, the coherence fact re-keyed, two sentences turned into theorems, and the first witness that fires the reclaim (HP5.5) |
 | HP6 | LANDED | v0.35.41 → v0.35.45 | **The splice replaces the sever** — the family renamed (HP6.1), the two reply footprints repointed (HP6.2), then the primitives, the algebra, the policy flip and the depth-three payoff as one cut (HP6.3–HP6.9) |
 | HP7 | LANDED | v0.35.46 | **The three stated coherence hypotheses retire** — nine declarations deleted with the binding-driven resolver, HP7.1 already done at HP4.4, HP7.4 vacuous, and the fourth stated fact found LIVE |
-| HP8 | PENDING | — | The frozen mirror's **splice** follows (its trigger landed as HP4.7) |
+| HP8 | LANDED | v0.35.47 | **The frozen mirror splices** — the sever's family deleted, the census's three mirrors, and `FO-043`: the depth-3 witness every shallower scenario structurally could not be |
 | HP9 | PENDING | — | Witnesses, anchors, documentation, closure |
 | HP10 | PENDING | — | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach |
 
@@ -4026,8 +4027,8 @@ live step's **ID promotion** missing too — `applyReplyDonation` refuses a hold
 `toValid?` will not promote — added as `holder.isReserved`, because this surface
 uses `toValid?` nowhere and `frozenLookupTcb` (which *is* `isReserved`, exactly
 `= sentinel`) is how it already asks that question; a Tier 3 negative keeps
-`toValid?` out of both frozen modules so the convention stays one.  HP8 now owns
-the **splice** half alone.
+`toValid?` out of both frozen modules so the convention stays one.  HP8 owned
+the **splice** half alone, and landed it at `v0.35.47`.
 
 **What new code must respect since HP5 (`v0.35.39`).**  Six things.
 
@@ -4133,8 +4134,8 @@ was a statement about the *pop* given a severed cut rather than about the remova
 that produces one — the shape this file calls a theorem whose conclusion is one of
 its own hypotheses.  It is `cancelledMiddleCaller_splices_at_cut` now.  (2) **The
 FROZEN family keeps its `frozenDetach…` names**, because it still severs; HP8
-renames it in the cut that makes it splice, so a `frozenDetach…` beside a live
-`splice…` reads as the schedule rather than as a drift.  (3) **The English word
+renamed it in the cut that made it splice (`v0.35.47`), so a `frozenDetach…` beside
+a live `splice…` read as the schedule rather than as a drift.  (3) **The English word
 "detach" in prose describing what the operation does was accurate at that version**
 and was deliberately left alone — prose follows behaviour at HP6.3, where the name
 followed the design here, and that sweep is part of the same cut.  (4) A rename is a
@@ -4344,6 +4345,54 @@ flipped the trigger, which is where a pack field belongs — one stated at a sta
 its own step no longer runs on is a claim about a different state.  So HP7.4 is
 **vacuous**, and the phase's acceptance criterion was corrected to something
 checkable instead of being reported as met.
+
+**What new code must respect since HP8 (`v0.35.47`).**  The frozen execution
+surface's removal **splices**, and the sever's names are gone.  Five things.
+
+(1) **`frozenDetachReplyFrameAbove` and `…OrSelf` do not exist.**  The family is
+`frozenSpliceFrameBelow?`, `frozenSpliceReplyFrameStores`,
+`frozenSpliceReplyFrameOut` and `frozenSpliceReplyFrameOutOrSelf`, each clause for
+clause with its live counterpart, and Tier 3 refuses the retired names tree-wide.
+HP6.1 kept the sever's names deliberately — a `frozenDetach…` beside a live
+`splice…` read as the *schedule*, where a `frozenDetach…` whose body splices would
+read as a drift — and this is the cut that discharges that, because the name and
+the body move together.
+
+(2) **The three stores are the same three, and the third is masked here.**
+`above.prev := some below`, `below.next := some (.frame above)`,
+`rid.prev := none`.  The third is seL4's `reply_unlink` downward half and it is
+*not observable through the frozen reply composite*: the `Reply.consumed` that
+follows clears the cut frame's links anyway on a frame heading nothing, so the
+suite still passes with that store deleted.  It is load-bearing regardless — a cut
+frame keeping a `prev` nothing names back is what the store exists to prevent, and
+it becomes observable the moment `consumed` changes — so `FO-043`'s last half
+drives `frozenSpliceReplyFrameOut` **directly**, beside the live primitive, which
+is the only place its deletion fails.  A new assertion about the cut frame's own
+links taken from the composite's post-state is testing `consumed`, not the splice.
+
+(3) **The below side declines rather than refusing**, for the reason it does live:
+the `…OrSelf` fold turns a *refusal* into the identity, and that is sound only
+because a refusal means nothing links down to the cut frame.  A below-side refusal
+folded to the identity would leave a reciprocating frame above naming a frame whose
+caller has been cleared.  So the refusal set is unchanged from the sever's, and
+`frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below` is the equality that
+makes every pre-HP8 scenario answer as it did.
+
+(4) **Depth ≤ 2 cannot measure this flip, and the suite was green before it.**
+A two-frame stack's lower frame is its bottom, so both policies write the same
+value there; `FO-031` and `FO-041`/`FO-042` all sit on such stacks and passed
+byte-identically when the splice landed.  `FO-043` is the three-frame witness with
+the answered caller holding the **middle** frame, mutation-verified in both
+directions.  A new frozen removal scenario that asserts a connectivity property
+must be at depth ≥ 3 or it is asserting about the fixture.
+
+(5) **The census carries three frozen splice entries where the sever had two.**
+The store step is registered on its own — as the live `spliceReplyFrameStores` is,
+because it performs the writes with none of the removal's resolution or validation
+— and each is a `.mirrors` entry naming the live counterpart of the *same shape*,
+so the store step's chain terminates in a stating entry two hops out, through the
+live `.halfStep`.  The census reports **24** write sites, six of them frozen
+mirrors.
 
 **And the splice is not the whole remedy — depth 2 needs HP10** (registered
 `v0.35.42`).  The register scoped this defect to reply-stack depth ≥ 3 and that

@@ -125,8 +125,13 @@ def chainWritePrimitives : List Name :=
   , `SeLe4n.Kernel.spliceReplyFrameOutOrSelf
     -- ...and the frozen surface's counterparts, which write the same field of
     -- the same `SeLe4n.Kernel.Reply` record in `FrozenSystemState.objects`.
-  , `SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAbove
-  , `SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAboveOrSelf
+    -- **WS-HP HP8.1** renamed these for the operation they became: the frozen
+    -- removal splices rather than severing, so the store step is a third entry
+    -- beside the two it composes, exactly as the live `spliceReplyFrameStores`
+    -- is.
+  , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameStores
+  , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOut
+  , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOutOrSelf
     -- The push: the new head's two links, and the old head's `next`.
   , `SeLe4n.Kernel.storeDonationFramePush
     -- The pop: the head's two links, the frame below re-headed, and the pair.
@@ -640,13 +645,25 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- except one that writes the live `Reply` record.  And the gap was not
     -- theoretical — `frozenEndpointReply` cleared a caller's Reply bare, which
     -- is WS-RM's own defect, surviving on the surface nothing was looking at.
-  , (`SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAbove,
+    --
+    -- **WS-HP HP8**: the three splice entries below are the two the sever had
+    -- plus its store step, and each `mirrors` the live counterpart of the same
+    -- shape.  The store step is registered rather than folded into the removal
+    -- for the reason the live one is: it performs the writes with none of the
+    -- removal's resolution or validation, so a transition reaching for it
+    -- directly is a site.  It mirrors `spliceReplyFrameStores`, which is itself
+    -- a `.halfStep` of the live removal — so the chain from here terminates in a
+    -- stating entry two hops out rather than one, which the registry's own
+    -- closure check follows.
+  , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameStores,
+      .mirrors `SeLe4n.Kernel.spliceReplyFrameStores)
+  , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOut,
       .mirrors `SeLe4n.Kernel.spliceReplyFrameOut)
-  , (`SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAboveOrSelf,
+  , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOutOrSelf,
       .mirrors `SeLe4n.Kernel.spliceReplyFrameOutOrSelf)
-    -- The frozen reply, which now runs the detach before the consume in the
-    -- order the live one does.  `FO-031` is the differential scenario that
-    -- exercises the agreement.
+    -- The frozen reply, which runs the removal before the consume in the order
+    -- the live one does.  `FO-031` is the differential scenario that exercises
+    -- the agreement.
   , (`SeLe4n.Kernel.FrozenOps.frozenEndpointReply,
       .mirrors `SeLe4n.Kernel.removeCallerReplyFrame)
     -- **The frozen donation pop** (PR #895 review round 13).  `Reply.consumed`

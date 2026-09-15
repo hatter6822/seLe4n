@@ -4,7 +4,7 @@
 > **Predecessor finding**: [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
 > table C, registered `v0.35.14` — the removal does not preserve the donation
 > accounting at reply-stack depth ≥ 3.
-> **Sub-task count**: 53 across 10 phases (HP1..HP10), each phase numbered in the
+> **Sub-task count**: 54 across 10 phases (HP1..HP10), each phase numbered in the
 > order it is to be implemented.
 
 ## Context — why this exists
@@ -648,7 +648,7 @@ difference.
 | HP5 | The cancellation path's trigger flips (one cut) | 5 |
 | HP6 | The splice replaces the sever — **COMPLETE** (HP6.1 `v0.35.41`, HP6.2 `v0.35.44`, HP6.3–HP6.9 one cut at `v0.35.45`) | 9 |
 | HP7 | The three stated hypotheses retire — **COMPLETE** (`v0.35.46`; HP7.1 verified already done at HP4.4, HP7.4 measured out vacuous) | 4 |
-| HP8 | The frozen mirror | 3 |
+| HP8 | The frozen mirror — **COMPLETE** (`v0.35.47`; HP8.4 added while implementing: the depth-3 witness the phase turns on) | 4 |
 | HP9 | Witnesses, anchors, documentation, closure | 5 |
 | HP10 | The reservation's origin, so the return does not depend on chain connectivity | 9 |
 
@@ -961,7 +961,7 @@ flipped the trigger, which is where the count fell.  Recording that rather than
 restating the criterion is the point: a criterion nothing can satisfy reads, to
 the next person, exactly like one nobody checked.
 
-### HP8 — The frozen mirror (3 sub-tasks)
+### HP8 — The frozen mirror (4 sub-tasks)
 
 `FrozenOps` is reached by neither library root and must stay in step (PR #895
 review, `v0.35.12`).
@@ -973,12 +973,18 @@ here is the **splice**, whose divergence HP6 creates.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| HP8.1 | `frozenSpliceReplyFrameOut` beside the frozen detach, mirroring HP6.1 | `SeLe4n/Kernel/FrozenOps/Core.lean` | M |
-| HP8.2 | `frozenEndpointReply` runs the frozen **splice**; its pop is already head-driven (HP4.7). Consumes HP8.1, HP6.4 | `SeLe4n/Kernel/FrozenOps/Operations.lean` | M |
-| HP8.3 | `SeLe4n/Testing/ReplyStackWriteCensus.lean`'s registry updated — the new sites recorded, the frozen ones as `mirrors` entries naming their live twins. Consumes HP8.2 | `SeLe4n/Testing/ReplyStackWriteCensus.lean` | M |
+| HP8.1 | **LANDED v0.35.47**, and *replacing* the frozen detach rather than sitting beside it — the row said "beside", which would have been two readings of one question with the answers already known to differ, the shape HP4.7 rejected for the trigger.  `frozenSpliceFrameBelow?`, `frozenSpliceReplyFrameStores` (three stores), `frozenSpliceReplyFrameOut` and `…OrSelf`, each clause for clause with its live counterpart; `frozenDetachReplyFrameAbove{,OrSelf}` are **deleted**, which is HP6.1's rule discharged (the name and the body move together, so a `frozenDetach…` whose body splices reads as a drift where the sever's name read as the schedule).  `frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below` is the definitional equality that makes every pre-HP8 scenario answer as it did | `SeLe4n/Kernel/FrozenOps/Core.lean` | M |
+| HP8.2 | **LANDED v0.35.47**: `frozenEndpointReply` runs `frozenSpliceReplyFrameOutOrSelf`, before the consume, in the order the live spine uses.  Its pop was already head-driven (HP4.7).  Consumes HP8.1, HP6.4 | `SeLe4n/Kernel/FrozenOps/Operations.lean` | M |
+| HP8.3 | **LANDED v0.35.47**: the registry carries **three** frozen splice entries where the sever had two — the store step is registered on its own, as the live `spliceReplyFrameStores` is, because it performs the writes with none of the removal's resolution or validation.  Each is a `.mirrors` entry naming the live counterpart of the same shape, so the store step's chain terminates in a stating entry two hops out (through the live `.halfStep`) rather than one, which the registry's own closure check follows.  The census reports **24** write sites, 6 frozen mirrors.  Consumes HP8.2 | `SeLe4n/Testing/ReplyStackWriteCensus.lean` | M |
+| HP8.4 | **The witness, added while implementing — LANDED v0.35.47.**  Not in the row list, and it is what the phase turns on: every scenario this surface carried passed **byte-identically** when the splice landed, because FO-031 and FO-041/042 all sit on stacks of depth ≤ 2, where a two-frame stack's lower frame is its bottom and both policies write the same value.  That is HP5.5's lesson on this surface — *a sweep for fixtures that would break is not a sweep for fixtures that would exercise* — so HP8 would have landed untested on its own green suite.  `FO-043` is a three-frame stack with the answered caller holding the **middle** frame, and it is mutation-verified in both directions: the pre-HP8 sever fails it while every control still passes.  Two things it measured rather than assumed.  The splice's **third** store (`rid.prev := none`) is **not observable through the composite** — with it deleted the whole suite still passes, because the `Reply.consumed` that follows clears the same field on a frame heading nothing — so a composite assertion about the cut frame's `prev` tests `consumed`, not the splice, and reads as coverage while asserting nothing.  The last half therefore drives `frozenSpliceReplyFrameOut` **directly**, beside the live primitive, which is the only place that store's deletion fails.  And the store stays load-bearing regardless: it is seL4's `reply_unlink` downward half, and it becomes observable the moment `consumed` changes | `tests/FrozenOpsSuite.lean`, `scripts/test_tier3_invariant_surface.sh` | M |
 
-**Acceptance**: `lake exe frozen_ops_suite` passes all differential scenarios,
-including the agreement between the frozen reply and the live one.
+**Acceptance** (corrected at `v0.35.47`): `lake exe frozen_ops_suite` passes all
+differential scenarios — **and at least one of them must be a stack of depth ≥ 3**,
+because every shallower shape agrees under both removal policies, so a green suite
+over depth ≤ 2 is evidence about the fixtures rather than about the flip.  The row
+list's original criterion ("passes all differential scenarios, including the
+agreement between the frozen reply and the live one") was met by the suite
+*before* HP8 landed, which is what makes it the wrong criterion.
 
 ### HP9 — Witnesses, anchors, documentation, closure (5 sub-tasks)
 

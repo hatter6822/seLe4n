@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.46` (`lakefile.toml`) |
+| **Package version** | `0.35.47` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 381,844 across 330 Lean files |
-| **Test LoC** | 77,346 across 70 Lean test suites |
-| **Proved declarations** | 12,733 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 381,958 across 330 Lean files |
+| **Test LoC** | 77,524 across 70 Lean test suites |
+| **Proved declarations** | 12,734 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4692,7 +4692,8 @@ Seven properties of the surface this leaves.
    unless the target's own `replyObject` names it — and hands the context to the
    answered caller rather than to a binding's recorded owner.
    `frozenEndpointReplyServerDonation?` is deleted rather than left beside the
-   new reading.  The flip belongs to this cut because
+   new reading.  The mirror's **removal** followed at HP8 (§8.12.13), which is the
+   cut that makes it splice.  The flip belongs to this cut because
    `frozenBranchOperationChecked .endpointReplyToBlockedCaller = true` is a
    machine-checked claim that the frozen composite is run beside this operation,
    so a binding-driven mirror of a head-driven operation would be one question
@@ -4933,6 +4934,58 @@ The dispatch quiescence packs shed no field here: HP4 re-keyed their reply-stage
 conjuncts onto the head-driven reading in the cut that flipped the trigger, which
 is where a pack field belongs — one stated at a state its own step no longer runs
 on is a claim about a different state.
+
+#### 8.12.13 The frozen mirror splices too — WS-HP HP8 (`v0.35.47`)
+
+`FrozenOps` is reached by neither library root and is in no staged allowlist, so
+its divergences are the ones nothing else catches — and it holds the **live**
+`SeLe4n.Kernel.Reply`, links and all, because `Model.freeze` copies a live state's
+Reply objects verbatim.  A frozen state taken mid-call-chain therefore carries a
+doubly linked reply stack exactly as the live one does, and a removal that severs
+there loses the frames below a cut exactly as the live sever did.
+
+The trigger half of this mirror flipped at HP4.7 (§8.12.9); this is the removal.
+`frozenSpliceReplyFrameOut` replaces `frozenDetachReplyFrameAbove`, clause for
+clause with the live `spliceReplyFrameOut`: the same three stores, the same
+declining below side, the same refusal set.  The sever's names are **deleted**
+rather than kept beside a spliced body — HP6.1 had kept them deliberately, because
+a `frozenDetach…` beside a live `splice…` read as the *schedule*, and this is the
+cut in which that schedule is discharged.
+
+Four things this section fixes for a reader.
+
+1. **The splice's third store is not observable through the composite.**
+   `rid.prev := none` is seL4's `reply_unlink` downward half, and the
+   `Reply.consumed` that follows the removal on the reply path clears the same
+   field on a frame heading nothing — so the whole frozen suite still passes with
+   that store deleted.  Measured, not assumed.  An assertion about the cut frame's
+   own links taken from the composite's post-state therefore tests `consumed`
+   rather than the splice, which is an inert witness reading as coverage; the
+   store is load-bearing regardless, and becomes observable the moment `consumed`
+   changes.  `FO-043`'s last half drives the primitive directly for that reason.
+
+2. **Depth ≤ 2 structurally cannot measure this flip.**  A two-frame stack's lower
+   frame is its *bottom*, so both removal policies write the same value into the
+   frame above — the same sentence that explains why §3.20 cannot measure the live
+   depth-≥ 3 defect.  Every scenario this surface carried before HP8 sits at depth
+   ≤ 2 and passed **byte-identically** when the splice landed, which is the finding
+   rather than the reassurance: the phase would have landed on evidence about its
+   fixtures.  `FO-043` is a three-frame stack with the answered caller holding the
+   **middle** frame, mutation-verified in both directions — the pre-HP8 sever fails
+   it while every control still passes.
+
+3. **No pop fires on a middle frame, and that is correct.**  The cut frame heads
+   nothing; the frame above it does.  So a middle reply removes a frame and moves
+   no reservation, and the removal's connectivity is the whole content of the
+   scenario.
+
+4. **The write census carries three frozen splice entries where the sever had
+   two.**  The store step is registered on its own, as the live
+   `spliceReplyFrameStores` is, because it performs the writes with none of the
+   removal's resolution or validation — so a transition reaching for it directly is
+   a site.  Each is a `mirrors` entry naming the live counterpart of the *same
+   shape*, which makes the store step's chain terminate in a stating entry two hops
+   out rather than one, through the live half-step.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

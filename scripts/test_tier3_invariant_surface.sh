@@ -12870,18 +12870,50 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeCallerReplyFrame[^
 # reached by neither library root and is in no staged allowlist, so the RM5.3
 # census could not see it -- and `frozenEndpointReply` was clearing a caller's
 # Reply bare, this workstream's own defect on the surface nothing watched.
-run_check "INVARIANT" rg -n '^def frozenDetachReplyFrameAbove' SeLe4n/Kernel/FrozenOps/Core.lean
-run_check "INVARIANT" rg -n '^def frozenDetachReplyFrameAboveOrSelf' SeLe4n/Kernel/FrozenOps/Core.lean
-# The reciprocity test is what confines the one store to the genuine frame
+# **WS-HP HP8**: the frozen removal SPLICES, and the family is renamed for it --
+# HP6.1's rule is that the name and the body move together, so the sever's names
+# are refused tree-wide rather than left beside a spliced body.
+run_negative_check "INVARIANT" rg -n 'frozenDetachReplyFrameAbove' SeLe4n/
+run_check "INVARIANT" rg -n '^def frozenSpliceReplyFrameOut' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenSpliceReplyFrameOutOrSelf' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenSpliceFrameBelow\?' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenSpliceReplyFrameStores' SeLe4n/Kernel/FrozenOps/Core.lean
+# The reciprocity test is what confines the stores to the genuine frame
 # above: a target that does not name us back is a refusal, never a write.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenDetachReplyFrameAbove[^\n]*(\n([ \t][^\n]*)?)*if a\.prev != some rid then \.error \.invalidArgument" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSpliceReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*if a\.prev != some rid then \.error \.invalidArgument" SeLe4n/Kernel/FrozenOps/Core.lean'
 # NEGATIVE, token-preserving: it keeps the test and the write and makes a
 # non-reciprocating link a write instead of a refusal.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenDetachReplyFrameAbove[^\n]*(\n([ \t][^\n]*)?)*if a\.prev == some rid then \.error \.invalidArgument" SeLe4n/Kernel/FrozenOps/Core.lean'
-# The frozen reply detaches before it consumes, in the order the live one does.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*let st. := frozenDetachReplyFrameAboveOrSelf st.. replyId[^\n]*(\n([ \t][^\n]*)?)*\(\.reply r\.consumed\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSpliceReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*if a\.prev == some rid then \.error \.invalidArgument" SeLe4n/Kernel/FrozenOps/Core.lean'
+# **The splice is THREE stores on this surface too**, and the third is the one
+# that makes it a splice rather than a two-store repair that leaves the cut
+# frame naming a neighbour nothing names back.  Each store is pinned inside the
+# resolver's `some` branch, so a body that writes only the pair is refused.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSpliceReplyFrameStores[^\n]*(\n([ \t][^\n]*)?)*prev := some below[^\n]*(\n([ \t][^\n]*)?)*next := some \(\.frame above\)[^\n]*(\n([ \t][^\n]*)?)*prev := none" SeLe4n/Kernel/FrozenOps/Core.lean'
+# ...and the below side DECLINES rather than refusing, which is what keeps the
+# `…OrSelf` fold sound: a refusal folded to the identity would leave a
+# reciprocating frame above naming a frame whose caller has been cleared.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSpliceFrameBelow\?[^\n]*(\n([ \t][^\n]*)?)*if below == above then none" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSpliceFrameBelow\?[^\n]*(\n([ \t][^\n]*)?)*\.error \." SeLe4n/Kernel/FrozenOps/Core.lean'
+# ...and where there is nothing below, the splice IS the sever -- the theorem
+# that makes every pre-HP8 frozen scenario answer as it did.
+run_check "INVARIANT" rg -n '^theorem frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below' SeLe4n/Kernel/FrozenOps/Core.lean
+# ...and the WITNESS, because the flip is invisible to every scenario this surface
+# carried before it: a two-frame stack's lower frame is its bottom, so both
+# policies write the same value there and depth <= 2 cannot tell them apart.
+# FO-043 is the middle frame, and it discriminates -- reverting the splice fails
+# it while every control still passes.
+run_check "INVARIANT" bash -lc 'rg -n "FO-043: the frozen removal splices the same way" tests/FrozenOpsSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -n "FO-043 NEGATIVE: the frozen removal does NOT sever the top frame" tests/FrozenOpsSuite.lean'
+# ...and the half that drives the PRIMITIVE, which is the only place the third
+# store is observable: through the composite `Reply.consumed` clears the cut
+# frame's links anyway, so a composite-only assertion about them tests `consumed`
+# rather than the splice -- an inert witness reading as coverage.
+run_check "INVARIANT" bash -lc 'rg -n "FO-043: the frozen PRIMITIVE writes all three links, the cut frame.s own included" tests/FrozenOpsSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -n "^    \(\.endpointReplyToBlockedCaller,     differentialEndpointReplyMiddleFrameSplices\) \]" tests/FrozenOpsSuite.lean'
+# The frozen reply removes before it consumes, in the order the live one does.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*let st. := frozenSpliceReplyFrameOutOrSelf st.. replyId[^\n]*(\n([ \t][^\n]*)?)*\(\.reply r\.consumed\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # NEGATIVE, token-preserving -- it keeps both steps and swaps them.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*\(\.reply r\.consumed\)[^\n]*(\n([ \t][^\n]*)?)*frozenDetachReplyFrameAboveOrSelf" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*\(\.reply r\.consumed\)[^\n]*(\n([ \t][^\n]*)?)*frozenSpliceReplyFrameOutOrSelf" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # `Reply.consumed` is the record stored, not an inline `caller := none`: the
 # live function keeps a frame's links only when it HEADS a context and clears
 # them otherwise, and spelling that question a second time got the case wrong.

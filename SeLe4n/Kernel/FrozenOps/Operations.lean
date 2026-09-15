@@ -902,9 +902,25 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
                         | .ok ((), st'') =>
                             -- **WS-RM, frozen mirror**: the frame above comes off
                             -- the stack BEFORE its caller link is consumed — the
-                            -- detach reads the link the consume clears, so the
+                            -- removal reads the link the consume clears, so the
                             -- order is the content, exactly as it is live.
-                            let st' := frozenDetachReplyFrameAboveOrSelf st'' replyId
+                            --
+                            -- **WS-HP HP8.2**: and it **splices** rather than
+                            -- severing.  The frame above takes the cut frame's
+                            -- own downward link and the frame below links back up
+                            -- at it, so a middle removal leaves the stack
+                            -- connected and the reservation travelling outward.
+                            -- HP6.3 made the live removal do this; leaving the
+                            -- mirror severing would be one question answered in
+                            -- two places with the answers already known to
+                            -- differ, which is what `frozenBranchOperationChecked
+                            -- .endpointReplyToBlockedCaller = true` forbids.
+                            -- Where the cut frame is the *bottom* of its stack
+                            -- the two write the same value
+                            -- (`frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below`),
+                            -- which is why every scenario this surface carried
+                            -- before HP8 answers as it did.
+                            let st' := frozenSpliceReplyFrameOutOrSelf st'' replyId
                             -- ...and the record stored is **`Reply.consumed`**, the
                             -- live function, not an inline caller clear.  It is a
                             -- pure function on a `Reply`, and this surface stores
