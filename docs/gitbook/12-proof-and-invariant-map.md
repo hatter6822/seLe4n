@@ -217,7 +217,10 @@ discharged by the donation pop that follows it in the same transition
 fault reply and the reply *transfer* composing it, under one pre-state local
 coherence fact -- `answeredHeadContextIsServerDonation` until WS-HP HP4
 (`v0.35.38`) made the pop read the very frame the relaxation sits at, which
-retires it for the strictly weaker `replyFrameHeadIsBound`, on the frozen mirror
+retires it for the strictly weaker `replyFrameHeadIsBound` and which HP7
+(`v0.35.46`) followed by **deleting** that predicate and the two other stated
+coherence facts outright, their content having become theorems of the trigger, on
+the frozen mirror
 as well as on the live spines -- `frozenEndpointReplyWithDonationReturn` reads
 `frozenReplyFrameHeadHolder?` and the binding-driven frozen resolver is deleted,
 because the coverage table's `frozenBranchOperationChecked` claims the two are run

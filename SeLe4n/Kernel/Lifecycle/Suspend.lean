@@ -634,12 +634,17 @@ migration writes — **before** the transition runs.
 
 **WS-HP HP5.1: head-driven, through the shared resolver.**  This read the
 *recorded reply target's* `.donated` binding and required its recorded owner to be
-this very caller.  Those are the two triggers HP2 relates
-(`answeredFrameHeadContext?_implies_serverDonation`), and they agree on every
-state `severAtCut` can produce — which is why the flip is behaviour-preserving
-today and why it must happen before HP6, whose splice can leave a frame heading a
-context whose recorded server is gone and `.unbound`.  A binding-driven reclaim
-there would decline, leaving a `.donated` binding naming a `.ready` owner.
+this very caller.  HP2 proved those two triggers equivalent on every state
+`severAtCut` could produce — which is why the flip was behaviour-preserving and
+why it had to happen before HP6, whose splice can leave a frame heading a context
+whose recorded server is gone and `.unbound`.  A binding-driven reclaim there
+would decline, leaving a `.donated` binding naming a `.ready` owner.  That
+equivalence is **deleted** at HP7 (`v0.35.46`) along with the binding-driven
+resolver it related; what carries the evidence now is an *executed* witness rather
+than a theorem whose hypotheses nothing reachable satisfies —
+`tests/SmpCancellationSuite.lean` §3.20 computes the retired reading beside this
+one on the agreeing shape and on the orphan head, with the retired spelling
+private to that suite.
 
 Three things about the shape.  The second half **is** `replyFrameHeadHolder?`, the
 frame-keyed resolver both reply spines read since HP4, rather than a second
@@ -777,9 +782,10 @@ reply **frame**: `cancelledCallerDonation?` reads the frame's `.head` link and t
 that context's `boundThread`, which is the thread holding the donation.  Until
 HP5.1 it read the caller's *recorded reply target* instead and asked whether that
 thread's binding was a donation naming this caller — the two agree on every state
-`severAtCut` can produce (`answeredFrameHeadContext?_implies_serverDonation`), and
-they stop agreeing at HP6, where a splice can leave a frame heading a context whose
-recorded server is gone.
+`severAtCut` can produce, and they stop agreeing under HP6's splice, which can
+leave a frame heading a context whose recorded server is gone.  HP2's theorem to
+that effect is deleted at HP7 (`v0.35.46`) with the resolver it related;
+`tests/SmpCancellationSuite.lean` §3.20 measures both halves instead.
 
 `ipcInvariantFull` does not relate the two: `donationOwnerValid` relates a donation
 to no reply object and `donationChainWellFormed` carries no binding clause, so

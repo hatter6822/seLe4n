@@ -1632,8 +1632,11 @@ O(1) and fail-closed, exactly the posture RR2.8's `boundThread` guard has, and
 inert on every state this tree reaches: `donationOwnerValid` puts the recipient
 `.unbound` on each of the five call sites that resolve it from a binding, and on
 the reply path `replyFrameHeadHolderDonation` does the same -- but that one is a
-*stated* hypothesis until HP7 retires it, and resting a write on a hypothesis the
-operation cannot see is what this guard removes.
+*stated* hypothesis, and stays one: HP7 (`v0.35.46`) retired the binding-driven
+coherence facts, whose content the head-driven trigger witnesses, and this is the
+one it does not (the trigger answers `(context, holder)` off a `.head` link and says
+nothing about `holder`'s binding).  Resting a write on a hypothesis the operation
+cannot see is what this guard removes.
 
 A recipient that does not resolve passes: the operation's own later lookup
 reports `.objectNotFound` there, and shadowing that with `.invalidArgument` would
@@ -4152,9 +4155,11 @@ theorem replyFrameHeadContext?_congr {s1 s2 : SystemState} (rid : SeLe4n.ReplyId
 --
 -- A relocation, never a second spelling: the pair's second component means the
 -- context's *holder* -- the thread the pop unbinds -- while the binding-driven
--- `endpointReplyServerDonation?` it replaces carries the *owner*, the thread the
--- pop binds.  Same type, opposite roles (plan SS3.8.2), so two spellings free to
--- drift would be the worst possible shape for this question.
+-- resolver it replaces carried the *owner*, the thread the pop binds.  Same type,
+-- opposite roles (plan SS3.8.2), so two spellings free to drift would be the worst
+-- possible shape for this question -- which is why WS-HP HP7 (`v0.35.46`) deleted
+-- the binding-driven one (`endpointReplyServerDonation?`) rather than leaving it
+-- beside this one once HP6.2 had repointed the last footprint off it.
 
 /-- **WS-HP HP1.1: the Reply object a reply answers.**
 
@@ -4263,7 +4268,8 @@ thread.**
 The one coherence fact the head-driven pop still needs, and the replacement for
 `answeredHeadContextIsServerDonation` in the chain composite -- strictly weaker
 than it, because it asks only that the head context has *a* holder rather than
-that a particular recorded server holds it.  It is what rules out the arm
+that a particular recorded server holds it.  That predicate was **deleted** at
+WS-HP HP7 (`v0.35.46`); this is what the composite carries instead.  It is what rules out the arm
 `replyFrameHeadHolder?` declines on: a frame that heads a context bound to nobody,
 where the pop would be the identity while the reply leg has already relaxed the
 chain at that frame.

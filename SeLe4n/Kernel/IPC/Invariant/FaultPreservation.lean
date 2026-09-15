@@ -687,9 +687,12 @@ caller whose reply frame *heads* a scheduling context leaves that context
 headless unless the donation pop beneath it re-heads the frame below.
 
 **WS-HP HP4.4**: under the head-driven trigger the pop resolves that context from
-the very frame the relaxation sits at, so the coherence relation
-`answeredHeadContextIsServerDonation` is no longer needed; what remains is
-`replyFrameHeadIsBound`, which rules out a head context bound to nobody. -/
+the very frame the relaxation sits at, so the coherence relation this composite
+used to carry was no longer needed; what remains is `replyFrameHeadIsBound`, which
+rules out a head context bound to nobody.  That relation --
+`answeredHeadContextIsServerDonation` -- was **deleted** at HP7 (`v0.35.46`), once
+HP6.8's splice had also falsified it on reachable states; see the tombstone beside
+the `WS-HP HP7` banner in `IPC/CrossCore/EndpointReplyDispatchInvariant.lean`. -/
 theorem faultReplyOnCore_preserves_donationChainWellFormed
     (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)

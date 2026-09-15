@@ -1696,9 +1696,13 @@ step descheduled was the operation's own argument, so "this thread is in a state
 `passiveServerIdle` admits" was an unconditional fact about it.  The head-driven
 trigger reads that thread off `SchedContext.boundThread`, so the obligation
 attaches to whichever thread the trigger names — and is discharged vacuously on
-every reply that pops nothing.  `hHolderDonation` is the second half and the one
-HP7 retires: see `answeredHeadHolderDonation` for why the trigger fixes the two
-threads without fixing the binding between them. -/
+every reply that pops nothing.  `hHolderDonation` is the second half, and **HP7
+(`v0.35.46`) did not retire it**: see `replyFrameHeadHolderDonation` for why the
+trigger fixes the two threads without fixing the binding between them, which is
+exactly what keeps this hypothesis load-bearing.  HP7 retired the *binding-driven*
+readings, whose content the trigger does witness; this one it does not, so it stays
+stated.  (The docstring here named `answeredHeadHolderDonation`, the name HP4.2
+renamed away.) -/
 theorem applyReplyDonation_preserves_ipcInvariantFull
     (st st'' : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
     (hObjInv : st.objects.invExt)

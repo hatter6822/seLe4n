@@ -437,12 +437,31 @@ surface is stated over that binding -- `donationOwnerValid` constrains a
 `replyDonationReturn?_some_char`.
 
 So this is the binding half, and it names *which* owner: the answered caller.
-It is `replyDonationOwnerIsAnsweredCaller` (`Locks/ResolvedFootprintBounds.lean`)
-re-expressed at the head-driven trigger, and it is a fact a caller discharges,
-exactly as that one is -- `donationChainWellFormed` carries no binding clause, so
-no invariant in this tree entails it.  WS-HP HP7 is what retires it; until then
-it is stated rather than assumed, and stating it here rather than inlining the
-quantifier at each consumer is what gives HP7 a single symbol to delete.
+It is `replyDonationOwnerIsAnsweredCaller` re-expressed at the head-driven
+trigger, and it is a fact a caller discharges, exactly as that one was --
+`donationChainWellFormed` carries no binding clause, so no invariant in this tree
+entails it.
+
+**WS-HP HP7 (`v0.35.46`) did NOT retire this, and the docstring that said it would
+was wrong.**  HP7 deleted the *binding-driven* spelling, which had no consumer
+left; this one has twelve, across `API.lean`, the reply dispatch's invariant
+surface, the dispatch payoff and the donation-preservation module, and it is what
+every consumer of `returnDonatedSchedContext_preserves_ipcInvariantFull` reaches
+the binding through.  So of the three facts HP7 set out to retire, two are
+**eliminated** -- `replyStackHeadIsAnsweredReply` became the derivation
+`answeredFrameHeadContext?_head_is_answered_reply`, and
+`answeredHeadContextIsServerDonation` was replaced in the chain composite by the
+strictly weaker `replyFrameHeadIsBound` -- and the third is **migrated**: deleted
+in its binding-driven spelling and live in this one.  "Migrated" rather than
+"renamed", because this is not a re-spelling of the same proposition: the retired
+one read `endpointReplyServerDonation? st target = some (scId, owner) -> owner =
+target`, which given a donation names its owner, while this one asserts of a frame
+head that the holder's binding **is** a donation and that it is owed to `target`.
+The extra half is exactly what the trigger does not witness -- the trigger answers
+`(context, holder)` off a `.head` link and says nothing about `holder`'s binding --
+which is why the other two facts could be derived away and this one could not.  A
+stated fact with twelve consumers is not dead weight, and deleting it would have
+weakened the surface rather than tidied it.
 
 Vacuous wherever the frame heads no context, which is every reply in a tree with
 no donation (`replyFrameHeadHolderDonation_of_no_head`). -/

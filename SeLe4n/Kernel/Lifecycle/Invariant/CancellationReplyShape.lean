@@ -130,8 +130,11 @@ form -- where it is visible that the only content beyond `ipcInvariantFull` is t
 frame-head link and the holder's promotability.
 
 **Only this direction, and that is not an oversight.**  The reply path's sibling
-`answeredHeadContextIsServerDonation` runs head -> binding, because there the
-*consumers* were binding-keyed and the trigger became head-keyed.  Here it is the
+ran head -> binding, because there the *consumers* were binding-keyed and the
+trigger became head-keyed; that sibling was
+`answeredHeadContextIsServerDonation`, **deleted** at WS-HP HP7 (`v0.35.46`) once
+the head-driven trigger made its content a derivation and HP6.8's splice falsified
+it on reachable states.  Here it is the
 other way round: `returnDonationToCancelledCaller_no_donation_to_victim` quantifies
 over bindings while the trigger is head-keyed, so what it needs is binding -> head.
 The converse is not stated and is not needed -- everything the pop itself must know

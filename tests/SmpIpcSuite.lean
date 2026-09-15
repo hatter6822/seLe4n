@@ -2746,18 +2746,36 @@ private def runReplyRecvLoopCompletionChecks : IO Unit := do
          | some r => r.next == some (.head scClient)
          | none => false)
       -- **The chain payoff's own condition, exhibited on this state.**
-      -- `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` holds
-      -- under `answeredHeadContextIsServerDonation`, a pre-state fact neither
+      -- `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` used to
+      -- hold under `answeredHeadContextIsServerDonation`, a pre-state fact neither
       -- `ipcInvariantFull` nor `donationChainWellFormed` entails (the bundle
       -- relates a caller's recorded reply target to no donation, and the chain
-      -- invariant carries no binding clause at all).  A hypothesis nothing
-      -- exhibits is indistinguishable from one that cannot hold, so here are its
-      -- premises and its conclusion at the only quadruple that satisfies them,
+      -- invariant carries no binding clause at all).  A hypothesis nothing exhibits
+      -- is indistinguishable from one that cannot hold, so the two rows below are
+      -- its premise and its conclusion at the only quadruple that satisfies them,
       -- on a state a real MCS chain reaches through the live operations.
-      assertBool "the chain condition's premise: the answered caller records the server"
+      --
+      -- **WS-HP HP4.4 and HP7 (`v0.35.46`).**  HP4.4 replaced that condition in the
+      -- composite with the strictly weaker `replyFrameHeadIsBound`, and HP7 deleted
+      -- it -- so these two rows now exhibit the **retired** reading, kept because
+      -- they are what shows the retired and live conditions coincide on this shape,
+      -- and the row after them exhibits what the composite actually carries.  Both
+      -- are worth having: a cut that changed only the live condition would leave
+      -- the first two passing, and a cut that changed only the trigger would leave
+      -- the third passing.
+      assertBool "the RETIRED chain condition's premise: the answered caller records the server"
         (recordedReplyServer? stQueued donClient == some donServer)
       assertBool "...and its conclusion: that server holds the context that frame heads"
         (replyDonationReturn? stQueued donServer == some (scClient, donClient))
+      -- ...and the LIVE condition, which is what
+      -- `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` carries:
+      -- the context the answered frame heads is bound to *some* thread.  Weaker by
+      -- construction -- it names no particular server -- and here the holder it
+      -- names is the recorded server, which is the coincidence HP6.8's splice can
+      -- break at an orphan head.
+      assertBool "the LIVE chain condition: the head context is bound, and here to that server"
+        (replyFrameHeadContext? stQueued donReply == some scClient
+         && replyFrameHeadHolder? stQueued donReply == some (scClient, donServer))
       -- Leg one alone: the caller is answered and the Reply is NOT free, because
       -- it still heads the context.  `Reply.isFree` reads both links, so the
       -- receive leg below cannot re-link this object yet.

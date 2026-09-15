@@ -1,3 +1,131 @@
+## v0.35.46 — WS-HP HP7: the stated coherence hypotheses retire, and a gate that could not see them
+
+A donation pop keyed on a *binding* had to be told things about the reply stack
+that no invariant in this kernel entails.  Three such facts were **stated** on the
+reply path — `replyDonationOwnerIsAnsweredCaller`, `replyStackHeadIsAnsweredReply`
+and `answeredHeadContextIsServerDonation` — because `donationOwnerValid` relates a
+caller's recorded reply target to no donation and `donationChainWellFormed` carries
+no binding clause at all.  Under the head-driven trigger they are not weaker
+obligations; they have no subject, and the third is **false on reachable states**
+since the splice went live at `v0.35.45`.  All three are deleted, with the
+scaffolding that consumed them: **nine declarations**, plus the binding-driven
+resolver `endpointReplyServerDonation?` itself.
+
+**What replaced them is the HP2.4 family, and it is anchored.**
+`answeredFrameHeadContext?_head_is_answered_reply`, `…_donationHeadOf` and
+`…_boundThread` are the derivations — the resolver reads the context off the
+answered frame's own `.head` link and validates that context's `scReply` against
+the *same* frame, so what a caller used to supply is a consequence of the trigger
+firing, under no hypothesis.  They carry Tier 3 anchors because a derivation
+nothing consults reads exactly like one nobody checked.
+
+**Three things the phase's own rows got wrong, corrected rather than acted on.**
+HP7.1 had already happened: HP4.4 (`v0.35.38`) took the third fact out of the chain
+composite for the strictly weaker `replyFrameHeadIsBound` in the cut that flipped
+the trigger, so this row's work was done three phases early and verifying that is
+what it delivers.  HP7.3's arithmetic was three declarations, not nine — and one of
+its "three facts" is not retired at all: **`replyFrameHeadHolderDonation` is LIVE**,
+the one binding fact the trigger does not witness, with twelve-plus consumers
+including both reply-stage fields of the dispatch quiescence packs; its own
+docstring claimed HP7 retires it, and that claim is corrected.  So two facts are
+*eliminated* and one is *migrated*.  HP7.4 is **vacuous**: neither pack ever carried
+one of the three as a field, HP4 having re-keyed their reply-stage conjuncts onto
+the head-driven reading in the cut that flipped the trigger, which is where a pack
+field belongs — one stated at a state its own step no longer runs on is a claim
+about a different state.  The phase's acceptance criterion said *the dispatch
+payoff's hypothesis count falls*; it fell at HP4, so the criterion is corrected to
+something checkable instead of being reported as met.
+
+**And five docstrings were wrong about their own subject's fate.**  The claim that
+HP7 retires `replyFrameHeadHolderDonation` was written three phases earlier, in
+`API.lean`, `DispatchPayoff.lean`, `DonationPreservation.lean`, `Endpoint.lean` and
+the plan, and propagated by every later cut that touched those files.  One of them
+also cited `answeredHeadHolderDonation`, the name HP4.2 renamed away.  So a
+deletion sweep resolves what a symbol's *consumers* say rather than what its
+docstring predicts, and it sweeps the forward-looking prose (`until X retires it`)
+as well as the citations: a stale prediction reads exactly like a scheduled
+obligation.
+
+**Four rules the deletions cost, now in `CLAUDE.md`.**  "Unused" is measured over
+the comment-free code view **minus what a gate consults** — a naive sweep over
+reference counts would have deleted eleven *live* `lockSet_*_size_le` bounds, which
+have zero textual consumers and are required by name by the Tier 1
+`LockFootprintBoundCensus` and by Tier 3 anchors.  A positive Tier 3 anchor on a
+deleted symbol becomes a **negative**, because a positive fails outright while a
+`run_negative_check` on a deleted symbol passes forever — the tautological pin this
+project already retires.  And the *retired reading a witness needs* moves into that
+witness as a `private def` and nowhere else: `bindingDrivenReplyServerDonation?` in
+`tests/SmpCrossCoreReplySuite.lean`, computed beside the live resolver on the
+agreeing shape and at an orphan head so the assertions are known to discriminate —
+the pattern `tests/SmpCancellationSuite.lean` §3.20 set at HP5.5 and
+`FrozenOpsSuite`'s `FO-042` set for the frozen surface.  That keeps the *evidence*
+HP2 produced and deletes the *code*.  And the derivations that *replace* a retired
+hypothesis are not themselves retired: HP2.4's three theorems had no consumer
+either, and deleting them would have left the claim "derivable" with nothing behind
+it, so they are anchored in Tier 3 — a derivation nothing consults reads exactly
+like one nobody checked.
+
+**A Tier 0 gate was red at HEAD, and the sweep found it.**
+`scripts/check_workstream_plan.py` had been failing since `v0.35.45` on two of this
+plan's own landing notes, which cite a later sibling narratively (`HP6.5`, `HP6.9`)
+where the gate — correctly, since no scanner can tell a mention from a consumption
+— reads a forward dependency.  Fixed by naming the artefact rather than the row,
+which is this project's own identifier rule one artefact over.
+
+**And a second gate cannot see two-thirds of the tree's names.**
+`check_claim_evidence_citations.py` matches a citation as `` `<ident>_<ident>` ``,
+at least one underscore, for a stated reason (single words collide with English).
+Lean's convention is snake_case for `theorem`s and **lowerCamelCase for `def`s**,
+so every definition name in the tree is outside the gate's domain — fail-**open**:
+a row naming a deleted `def` as evidence reports PASS.  A camelCase-aware scan of
+the index found `donationHeadPush` cited as evidence and declared nowhere (the push
+is `storeDonationFramePush`), invisible since WS-OD OD4.  **Fixed here**; the gate
+is **registered** in `docs/REGISTERED_DEBT.md` §C with its measurement, because of
+14 unresolved camelCase citations **13 are legitimate** — seven retired names the
+claim prose correctly calls deleted, two upstream C functions, two hypothesis
+binders and two record fields — so widening the pattern and exempting thirteen
+names by hand would be the enumeration-standing-in-for-a-derivation shape this
+project retires.  The derivation is a column split (a name must resolve in the
+*Artefact* column), which needs its own mutation-tested witnesses because the file
+holds two tables with different column counts and one row with an embedded pipe.
+
+**Two hygiene omissions from `v0.35.45`, both closed here.**  Besides the plan gate
+above, HP6 did not re-anchor `scripts/store_reader_hygiene_baseline.txt`, so its
+diagnostic site rows had drifted (the `spliceReplyFrameStores_*` family, the two
+new removal lemmas, the deleted `severAtCut_pop_leaves_no_head` row) and
+`GETTCB_ADOPTION` stood at 2483 against a recorded 2479.  That passed, being a
+should-grow metric — and it masked this cut's drop.  **Accounted for exactly rather
+than shrugged at**: over the comment-free code view this cut removes six
+`getTcb?`-bearing lines from `ResolvedFootprintBounds.lean` and two from
+`EndpointReplyDispatchInvariant.lean` and adds one in the witness suite, so 2483 −
+7 = 2476, three below the stale figure.  **No raw-read metric and no zero metric
+moved** — `RAW_MATCH_*` all identical, `RAW_MATCH_TOTAL` 44, `STORE_READ_CODE`,
+`SORRY_COUNT` and `AXIOM_COUNT` all 0 — which is what makes the re-anchor a
+documented refactor rather than a ratchet run backwards: the accessor count falls
+because the code that called the accessor is gone, not because a raw read replaced
+it.
+
+**The published declaration count falls by exactly eight.**
+`docs/codebase_map.json` and the README go 12,741 → 12,733 proved
+theorem/lemma declarations, which is the eight theorems this cut deletes (the
+third predicate's two vacuity discharges, the exclusion lemma, the
+head-heads-a-stack vacuity lemma, HP2.2's converse, HP2.1's equivalence, and
+HP2.3's orphan-head pair); the five deleted `def`s are not in that figure, and
+`summary.declaration_count` carries them (21,530 → 21,518).  Production Lean LoC
+falls 382,025 → 381,844 and test LoC rises 77,280 → 77,346, the latter being the
+witness suite's private retired reading and its new rows.  The map was regenerated
+rather than left stale — `test_docs_sync.sh` is what caught it, which is the
+documentation rule working.
+
+**Verification.**  Production and `Platform.Staged` build green; `ReplyStackWriteCensus`
+reports 23 write sites unchanged; `check_ipc_invariant_dethreading.py` reports zero
+post-state conjuncts over 177 bundles; Tier 3 passes with each retired symbol as a
+tree-wide negative; `smp_cross_core_reply_suite`, `lock_set_suite`, `smp_ipc_suite`
+and `smp_cancellation_suite` pass, and the golden trace is **byte-identical** — this
+cut deletes propositions and changes no transition.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md HP7.1–HP7.4
+
 ## v0.35.45 — WS-HP HP6.3–HP6.9: the removal splices, and the reservation travels outward
 
 `cancelledMiddleCallerPolicy = .spliceOutTheCut`.  Taking a caller out of the

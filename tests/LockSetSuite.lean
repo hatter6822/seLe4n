@@ -1346,8 +1346,10 @@ private def runLubMergeChecks : IO Unit := do
   -- **WS-RM (`v0.35.6`)**: and the blocking shape stays at eighteen even though
   -- the ceiling moved 21 -> 22, because the detach's member and the pop's three
   -- are mutually exclusive: a reply whose frame has a frame above it is not the
-  -- stack head, and under `replyStackHeadIsAnsweredReply` the returned context
-  -- then heads no stack.  Both halves of that exclusion are exercised below.
+  -- stack head, so the returned context heads no stack.  That needed a stated
+  -- coherence fact under the binding-driven trigger; since HP6.2 it is structural
+  -- (`answeredReplyFrameAbove?_none_of_headContext`) and HP7 (`v0.35.46`) deleted
+  -- the fact.  Both halves of the exclusion are exercised below.
   let blockingReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                             (ObjId.ofNat 20) none (some ⟨42⟩) (some ⟨11⟩)
                             (some ⟨60⟩) true (some ⟨9⟩) none
@@ -1394,8 +1396,9 @@ private def runLubMergeChecks : IO Unit := do
   --
   -- **WS-HP HP6.2 (`v0.35.44`)**: it measures the *definition*, and that is all
   -- it ever measured.  It used to stand beside
-  -- `lockSet_endpointReplyRecvOnCore_size_le_seventeen`, whose licence was
-  -- `replyDonationOwnerIsAnsweredCaller` -- and under the head-driven trigger
+  -- `lockSet_endpointReplyRecvOnCore_size_le_seventeen`, whose licence was a
+  -- stated owner/target coherence fact (`replyDonationOwnerIsAnsweredCaller`,
+  -- deleted at HP7) -- and under the head-driven trigger
   -- that slot carries the thread the pop *unbinds*, which is running on the
   -- context while the answered caller is `.blockedOnReply`, so **no reachable
   -- state produces this coincidence at all**.  The bound is retired and the

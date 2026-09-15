@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.45` (`lakefile.toml`) |
+| **Package version** | `0.35.46` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 382,025 across 330 Lean files |
-| **Test LoC** | 77,280 across 70 Lean test suites |
-| **Proved declarations** | 12,741 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 381,844 across 330 Lean files |
+| **Test LoC** | 77,346 across 70 Lean test suites |
+| **Proved declarations** | 12,733 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2977,7 +2977,10 @@ alongside the latent inventory (closing SMP-H3).
    `.blockedOnReply`, so the coincidence occurs on no state this arm
    reaches — the merge is false rather than unproved.  In exchange the
    eighteen lost both of its coherence hypotheses, because a frame that
-   heads a context provably has no frame above it.
+   heads a context provably has no frame above it.  WS-HP HP7
+   (`v0.35.46`) then **deleted** both predicates, the repoint having left
+   them with no consumer (§8.12.12), so a sharper reachable bound cannot
+   be rebuilt on either.
 
    **At HEAD, the declared lock-set ceiling is **23**, the RPi5 tick admits **14 µs** per lock, and the uniform 60 µs envelope is **4140 µs**.**
    All three are *derived* — from `maxLockSetSize`, `numCores` and
@@ -4525,7 +4528,10 @@ respect.
    third local coherence fact about a single reply, beside
    `replyDonationOwnerIsAnsweredCaller` and `replyStackHeadIsAnsweredReply`,
    stated rather than derived for the reason those are and exhibited on a
-   live-operation state by `tests/SmpIpcSuite.lean` §3.21.  **WS-HP HP4**
+   live-operation state by `tests/SmpIpcSuite.lean` §3.21.  All three were
+   **deleted** at WS-HP HP7 (`v0.35.46`) once nothing consumed them and the
+   splice had made the third false on reachable states (§8.12.12); the paragraph
+   below is why this composite stopped needing the third.  **WS-HP HP4**
    (§8.12.9) retired it from this composite: with the pop keyed on the very
    frame the relaxation sits at, the two name one context by construction.  What
    the composite carries instead is `replyFrameHeadIsBound` — strictly weaker,
@@ -4625,14 +4631,18 @@ Both reply spines and `.replyRecv`'s pop decide whether to return a donated
 scheduling context from **whether the answered reply frame heads one**
 (`replyFrameHeadHolder?`), not from whether the recorded reply server holds a
 `.donated` binding.  The two triggers agreed on every state the sever could
-produce — `answeredFrameHeadContext?_implies_serverDonation` under the coherence
-facts, and HP2.3's `severAtCut_pop_leaves_no_head` ruled out the state where they
-differ — so the flip preserved behaviour and the golden trace was byte-identical.
-Its purpose was HP6: the orphan head a splice can leave is exactly what a
-binding-driven trigger cannot see, and since HP6.8 (`v0.35.45`) that state is
-**reachable**.  The pin itself was deleted with the policy flip, because its first
-conjunct was the policy constant at the old value; a tombstone comment beside the
-`WS-HP HP2.3` banner in `IPC/Invariant/Defs.lean` records what replaced it.
+produce — HP2.1 proved it under the coherence facts, and HP2.3's
+`severAtCut_pop_leaves_no_head` ruled out the state where they differ — so the flip
+preserved behaviour and the golden trace was byte-identical.  Its purpose was HP6:
+the orphan head a splice can leave is exactly what a binding-driven trigger cannot
+see, and since HP6.8 (`v0.35.45`) that state is **reachable**.  Both scaffolding
+theorems are now gone: HP2.3's pin was deleted with the policy flip, because its
+first conjunct was the policy constant at the old value (a tombstone comment beside
+the `WS-HP HP2.3` banner in `IPC/Invariant/Defs.lean` records what replaced it), and
+HP2.1's equivalence was deleted at HP7 (`v0.35.46`) with the binding-driven resolver
+it related.  What carries the evidence instead is an *executed* witness —
+`tests/SmpCrossCoreReplySuite.lean` computes the retired reading beside the live one
+on the agreeing shape and at an orphan head (§8.12.12).
 
 Seven properties of the surface this leaves.
 
@@ -4730,8 +4740,11 @@ Six properties of the surface this leaves.
    successor is `donatedContextIsOwnerFrameHead` — the donation the victim owns is
    the one its own frame heads, and the trigger finds it at the same
    `(context, holder)` pair.  It runs **binding → head**, the opposite direction
-   from the reply path's `answeredHeadContextIsServerDonation` (§8.12.9), because
-   here the consumers quantify over bindings while the trigger reads frames.
+   from the reply path's `answeredHeadContextIsServerDonation` (§8.12.9) — a
+   predicate HP7 (`v0.35.46`) then deleted, since on the reply side the trigger
+   witnesses what it asserted (§8.12.12) — because here the consumers quantify over
+   bindings while the trigger reads frames.  `donatedContextIsOwnerFrameHead`
+   survives for exactly that reason: its direction is the one no trigger supplies.
    `…_of_donationOwnerValid` is the builder and measures the cost: all but two
    clauses come out of `donationOwnerValid`, leaving the frame-head link and the
    holder's promotability as what no invariant entails.
@@ -4750,8 +4763,10 @@ Six properties of the surface this leaves.
    binding-keyed form derived from it.  One success argument, two keyings.
 
 5. **Two footprint claims became theorems.**  `cancelReclaimHead?_eq_replyObject`
-   (the head the pop clears **is** the victim's own reply object —
-   `replyStackHeadIsAnsweredReply`'s content from the cancellation end) and
+   (the head the pop clears **is** the victim's own reply object — what the
+   reply path stated as `replyStackHeadIsAnsweredReply`, seen from the cancellation
+   end and *proved* rather than assumed, which is why HP7 could delete that
+   predicate) and
    `cancelSplicedFrameAbove?_of_donation` / `cancelSplicedFrameBelow?_of_donation`
    (a reclaim excludes both removal members).  Both were sentences about every
    reachable state in footprint docstrings, and the binding reading could not have
@@ -4834,10 +4849,12 @@ object pinning `v0.35.4` closed.  The trigger therefore moved first, for the rep
 path at `v0.35.38` (§8.12.9) and for the cancellation path at `v0.35.39`
 (§8.12.10), and only then the policy.  `severAtCut_pop_leaves_no_head` was the pin
 on that ordering and is **deleted** with the flip, because its first conjunct was
-the policy constant at the old value; its negative twin
-`answeredHeadContextIsServerDonation_false_of_orphan_head` is **kept**, having
-changed from a prohibition into a fact about reachable states, which is the warrant
-HP7 deletes the coherence predicate on.
+the policy constant at the old value.  Its negative twin
+`answeredHeadContextIsServerDonation_false_of_orphan_head` was kept in this cut,
+having changed from a prohibition into a fact about reachable states — which is the
+warrant HP7 (`v0.35.46`) then spent, deleting the coherence predicate and this
+refutation with it, a refutation having no subject once the thing it refutes is
+gone (§8.12.12).
 
 **Improvement on upstream, not parity.**  `reply_remove`'s non-head branch writes
 zero into the frame above — re-verified at `v0.35.40` against upstream source at
@@ -4859,6 +4876,63 @@ with a closure target before v1.0.0.  §3.22 inverted from a COST witness to a
 PAYOFF witness in the same cut, keeping the in-order half — restated as an
 **agreement**, since the two now coincide — and gaining two negatives that spell
 the retired sever's values so the assertions are known to discriminate.
+
+#### 8.12.12 The stated coherence facts retire — WS-HP HP7 (`v0.35.46`)
+
+A donation pop keyed on a *binding* had to be told things about the reply stack
+that no invariant in this kernel entails.  Three such facts were **stated** on the
+reply path — that the returned donation's owner is the thread the reply answers
+(`replyDonationOwnerIsAnsweredCaller`), that the returned context's stack is headed
+by that caller's own reply object (`replyStackHeadIsAnsweredReply`), and that the
+context the answered frame heads is the one the recorded reply server holds
+(`answeredHeadContextIsServerDonation`) — because `donationOwnerValid` relates a
+caller's recorded reply target to no donation and `donationChainWellFormed` carries
+no binding clause at all.
+
+Under the head-driven trigger (§8.12.9) they are not weaker obligations; they have
+no subject.  The resolver reads the context off the answered frame's own `.head`
+link and validates that context's `scReply` against the *same* frame, so what a
+caller used to supply is a consequence of the trigger firing:
+`answeredFrameHeadContext?_head_is_answered_reply`, `…_donationHeadOf` and
+`…_boundThread` are the derivations, and they take no hypothesis.  All three stated
+facts, both vacuity discharges of the third, the scaffolding that consumed them,
+HP2's equivalence and refutation, and the binding-driven resolver
+`endpointReplyServerDonation?` itself are **deleted** — nine declarations.
+
+Four things this section fixes for a reader.
+
+1. **The third fact is not merely unused; it is false.**  Since the splice went
+   live (§8.12.11) a removal re-heads a frame whose recorded reply server is gone
+   and `.unbound` — the *orphan head* — and
+   `answeredHeadContextIsServerDonation` fails there outright.  A proof asking for
+   it would be asking for a premise this kernel refutes.
+
+2. **A fourth stated fact survives, and is the one to reach for.**
+   `replyFrameHeadHolderDonation` says the holder's binding *is* a donation of the
+   context its frame heads, which the trigger does **not** witness, and it has
+   twelve-plus consumers including both reply-stage fields of the dispatch
+   quiescence packs.  Its own docstring claimed this phase retires it; the claim
+   was corrected rather than acted on.  Of the three facts, two are *eliminated*
+   and one is *migrated*.
+
+3. **`recordedReplyServer?` is not retired with the resolver built over it.**  The
+   priority-inheritance chain walk reads it, because that walk keys on waiters
+   rather than on donations, and on a delegated reply the recorded server is not
+   the holder.
+
+4. **The evidence HP2 produced is kept as an executed witness rather than as a
+   theorem.**  `tests/SmpCrossCoreReplySuite.lean` computes the retired
+   binding-driven reading beside the live one on the agreeing shape and on the
+   orphan head, with the retired spelling private to that suite — so "the two
+   triggers agree here and disagree there" is *measured* rather than asserted
+   under hypotheses nothing reachable satisfies.  That is the pattern
+   `tests/SmpCancellationSuite.lean` §3.20 set for the cancellation side and
+   `FrozenOpsSuite`'s `FO-042` for the frozen surface.
+
+The dispatch quiescence packs shed no field here: HP4 re-keyed their reply-stage
+conjuncts onto the head-driven reading in the cut that flipped the trigger, which
+is where a pack field belongs — one stated at a state its own step no longer runs
+on is a claim about a different state.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

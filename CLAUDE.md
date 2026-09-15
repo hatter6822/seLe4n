@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.45.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.46.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,19 +203,19 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~65471 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23254 lines)
+- `CHANGELOG.md` (~65957 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23481 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~7540 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6827 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~6525 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7156 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6915 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6122 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~5938 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6030 lines)
+- `docs/spec/SELE4N_SPEC.md` (~5872 lines)
 - `SeLe4n/Platform/Boot.lean` (~5867 lines)
-- `docs/spec/SELE4N_SPEC.md` (~5683 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5353 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5067 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5379 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5078 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5033 lines)
 - `SeLe4n/Model/State.lean` (~4959 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4842 lines)
@@ -230,16 +230,16 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
 - `SeLe4n/Platform/FFI.lean` (~3592 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3480 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3470 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3367 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3260 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3257 lines)
+- `tests/SmpIpcSuite.lean` (~3178 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
-- `tests/SmpIpcSuite.lean` (~3122 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3118 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3067 lines)
@@ -250,6 +250,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2567 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2535 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2515 lines)
@@ -257,7 +258,6 @@ To find files that need pagination today, run:
 - `tests/ModelIntegritySuite.lean` (~2487 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2437 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2381 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2356 lines)
@@ -268,18 +268,18 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2281 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~2247 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2244 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2240 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2099 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2115 lines)
+- `tests/SmpCancellationSuite.lean` (~2080 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
-- `tests/SmpCancellationSuite.lean` (~2078 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2050 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2045 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2044 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~2030 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
@@ -290,9 +290,9 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1909 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
+- `tests/LockSetSuite.lean` (~1903 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `tests/InformationFlowSuite.lean` (~1895 lines)
-- `tests/LockSetSuite.lean` (~1892 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1890 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
@@ -316,21 +316,21 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1642 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1616 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1481 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1458 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1464 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1439 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1424 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1418 lines)
+- `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1414 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1410 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
-- `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1375 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
@@ -346,15 +346,16 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1236 lines)
-- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1214 lines)
+- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1226 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
+- `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1182 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
+- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1165 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
-- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1150 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1139 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
@@ -364,9 +365,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/FrozenState.lean` (~1092 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1066 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1069 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
-- `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1174 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `tests/PriorityManagementSuite.lean` (~1035 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
@@ -378,7 +378,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~960 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~958 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~949 lines)
@@ -393,10 +392,9 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~906 lines)
 - `tests/SmpTimerSuite.lean` (~904 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~897 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean` (~896 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
@@ -409,6 +407,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~833 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~820 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
@@ -2494,6 +2493,87 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   mutation-tested in both directions — silent on the clean tree, firing on a
   mutation that keeps the token and moves it into the target declaration.
 
+- **Retired code is removed, not left to pollute the tree.**  When a cut
+  supersedes a definition, a theorem, a resolver or a policy, the superseded
+  thing is **deleted in the same workstream**, not kept beside its replacement.
+  Two readings of one question is the duplication hazard this file spends most
+  of its length on; a *retired* reading kept "for reference" is that hazard with
+  a note attached, and it reads in a bundle, a footprint or a search result
+  exactly like the live one.  The rule is unconditional — a superseded
+  declaration has no grace period, and "it might be useful later" is what
+  version control is for.
+
+  Six things the WS-HP HP7 sweep (`v0.35.46`) established about doing this
+  safely, each of which cost a measurement:
+
+  1. **"Unused" is measured over the code view, and textual reference is not the
+     only kind of use.**  A `lockSet_*_size_le` bound has *zero* textual
+     consumers and is required **by name** by a Tier 1 census
+     (`LockFootprintBoundCensus`, which derives the obligation from each
+     footprint's own telescope and decides it by `isDefEq`); Tier 3 anchors
+     consume symbols the same way.  A sweep that counted references and deleted
+     the zeroes would have removed eleven live bounds.  So: count references over
+     `scripts/lean_code_view.py --overlay`, then subtract what a **gate**
+     consults — and where a declaration is genuinely consumed by nothing at all,
+     anchor it rather than orphan it (next item) or delete it.
+  2. **The derivations that replace a retired hypothesis are not retired.**
+     HP7's whole content is that three *stated* coherence facts became
+     consequences of the head-driven trigger; the theorems that say so
+     (`answeredFrameHeadContext?_head_is_answered_reply`, `_donationHeadOf`,
+     `_boundThread`) had no consumer either, and deleting them would have left
+     the claim "derivable" with nothing behind it.  They are **anchored in Tier
+     3** instead, because a derivation nothing consults reads exactly like one
+     nobody checked.
+  3. **A retired reading a witness needs moves into the witness, private, and
+     nowhere else.**  A test that cannot name what it replaced cannot show that
+     the replacement changed anything.  So the superseded spelling lives as a
+     `private def` in the suite that refutes it —
+     `bindingDrivenReplyServerDonation?` in `tests/SmpCrossCoreReplySuite.lean`,
+     `bindingDrivenCancelledCallerDonation?` in `tests/SmpCancellationSuite.lean`,
+     and `FrozenOpsSuite`'s `FO-042` for the frozen surface — computed beside the
+     live one so the assertions are known to discriminate rather than merely to
+     pass.  That keeps the *evidence* and deletes the *code*.
+  4. **A positive anchor on a deleted symbol becomes a negative.**  `run_check`
+     on a name a cut removed fails outright; worse, a `run_negative_check` on one
+     silently passes forever, which is the tautological pin this file already
+     retires.  Convert each positive to a negative that refuses the symbol
+     tree-wide (*it must not come back*), and add a positive on whatever now
+     carries the property.
+  5. **Deleting a symbol means sweeping every citation of it.**  Prose naming a
+     declaration that no longer exists reads exactly like prose naming one that
+     does, and the deletion's blast radius includes docstrings, `CLAUDE.md` /
+     `AGENTS.md`, the spec, the claim index, GitBook, the debt register, the plan
+     and the `CITATION_EXEMPTIONS` table in
+     `scripts/check_claim_evidence_citations.py`.  Leave a **tombstone** where
+     the symbol was, naming what replaced it: a reader arriving from a citation
+     you missed needs somewhere to land, and the tombstone is what makes the
+     miss recoverable instead of mystifying.
+  6. **A declaration's own docstring is not authority on its fate — and check
+     that the gates which would catch the miss are running.**  Two things this
+     sweep found, and neither was in the deletion's plan.  The predicate WS-HP
+     HP7 was scheduled to retire turned out to be **live**, with twelve
+     consumers, while **five** docstrings across `API.lean`,
+     `DispatchPayoff.lean`, `DonationPreservation.lean`, `Endpoint.lean` and the
+     plan itself said the phase retires it — a forward-looking claim written
+     three phases earlier, propagated by every later cut that touched those
+     files, and false.  So a sweep resolves what a symbol's *consumers* say, not
+     what its docstring predicts, and it sweeps the **forward-looking** prose
+     (`until X retires it`, `X is what retires this`) as well as the citations:
+     a stale prediction reads exactly like a scheduled obligation.  And the
+     sweep's own instruments need checking, because both of this tree's citation
+     gates failed here in opposite directions: `check_workstream_plan.py` was
+     **red at HEAD** and had been since the previous cut, on landing notes that
+     cite a later sibling narratively where the gate — correctly, no scanner
+     being able to tell a mention from a consumption — reads a forward
+     dependency; and `check_claim_evidence_citations.py` matches a citation as
+     `` `<ident>_<ident>` ``, at least one underscore, so **every Lean `def`**
+     (lowerCamelCase) is outside its domain and a deleted one cited as evidence
+     reports PASS.  That is fail-open, it is registered in
+     `docs/REGISTERED_DEBT.md` §C with its measurement, and until it closes a cut
+     that deletes a `def` sweeps the index by hand.  *A green gate you did not
+     run, and a gate whose domain excludes what you deleted, are the same
+     silence.*
+
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.
@@ -3810,7 +3890,7 @@ a licence to delete the reclaim — deleting it reaches a state
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45)
+### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -3864,7 +3944,7 @@ banner in `IPC/Invariant/Defs.lean` records what replaced it.
 | HP4 | LANDED | v0.35.38 | **The reply path's trigger flips** — both spines, the recipient guard, the payoff's packs, and the frozen mirror (HP4.7) |
 | HP5 | LANDED | v0.35.39 | **The cancellation path's trigger flips** — the resolver, the coherence fact re-keyed, two sentences turned into theorems, and the first witness that fires the reclaim (HP5.5) |
 | HP6 | LANDED | v0.35.41 → v0.35.45 | **The splice replaces the sever** — the family renamed (HP6.1), the two reply footprints repointed (HP6.2), then the primitives, the algebra, the policy flip and the depth-three payoff as one cut (HP6.3–HP6.9) |
-| HP7 | PENDING | — | The three stated coherence hypotheses retire |
+| HP7 | LANDED | v0.35.46 | **The three stated coherence hypotheses retire** — nine declarations deleted with the binding-driven resolver, HP7.1 already done at HP4.4, HP7.4 vacuous, and the fourth stated fact found LIVE |
 | HP8 | PENDING | — | The frozen mirror's **splice** follows (its trigger landed as HP4.7) |
 | HP9 | PENDING | — | Witnesses, anchors, documentation, closure |
 | HP10 | PENDING | — | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach |
@@ -4117,9 +4197,10 @@ the merge is false, not unproved.  The available substitute is *holder = recorde
 server*, which is `answeredHeadContextIsServerDonation`'s content and exactly what
 the splice falsifies, so a seventeen resting on it would stop holding in the cut
 after next.  One unit of slack traded for two hypotheses and a figure that
-survives HP6; if HP7 derives the holder/server fact a sharper reachable bound
-belongs there.  Both coherence facts now have **no consumer at all**, which is the
-verification HP7.2's row asks for.
+survives HP6.  Both coherence facts had **no consumer at all** after this row,
+which is the verification HP7.2 asked for and HP7 (`v0.35.46`) then ran — and
+having run it, HP7 **deleted** both, so a sharper reachable bound cannot be built
+on *holder = recorded server*: the splice falsifies it on reachable states.
 
 **What new code must respect since HP6.3–HP6.9 (`v0.35.45`).**  The removal is
 seL4's `reply_remove` with the middle case **spliced** rather than severed, and the
@@ -4201,10 +4282,68 @@ still has.
 
 (8) **The orphan head is reachable now.**  A frame heading a context whose recorded
 reply server is gone and `.unbound` is what the splice produces, so
-`answeredHeadContextIsServerDonation_false_of_orphan_head` has changed from a
+`answeredHeadContextIsServerDonation_false_of_orphan_head` changed from a
 *prohibition* into a *fact about reachable states* — and that, with both coherence
-facts having no consumer since HP6.2, is the warrant HP7 deletes the predicate on.
-It is kept rather than retired for exactly that reason.
+facts having no consumer since HP6.2, is the warrant HP7 spent: HP7 (`v0.35.46`)
+**deleted the predicate and this theorem with it**, a refutation having no subject
+once the thing it refutes is gone.  What carries the evidence instead is an
+*executed* witness — `tests/SmpCrossCoreReplySuite.lean` computes the retired
+binding-driven reading beside the live one at an orphan head.
+
+**What new code must respect since HP7 (`v0.35.46`).**  The three *stated*
+coherence facts the binding-driven pop needed are **deleted**, together with the
+resolver and the scaffolding that consumed them — nine declarations, not three.
+Six things.
+
+(1) **Do not restate a retired fact as a hypothesis.**
+`replyDonationOwnerIsAnsweredCaller`, `replyStackHeadIsAnsweredReply` and
+`answeredHeadContextIsServerDonation` are gone, and Tier 3 refuses each of them
+tree-wide.  The last is not merely unused but **false on reachable states** since
+HP6.8: the splice re-heads a frame whose recorded reply server is gone and
+`.unbound`, which is the orphan head.  A proof that wants one of these is a proof
+asking for a premise the kernel refutes.
+
+(2) **What replaced them is the HP2.4 family, and it is where to reach.**
+`answeredFrameHeadContext?_head_is_answered_reply`, `…_donationHeadOf` and
+`…_boundThread` are the *derivations*: under the head-driven trigger the resolver
+reads the context off the answered frame's own `.head` link and validates that
+context's `scReply` against the same frame, so each retired hypothesis is a
+consequence of the trigger firing — no hypothesis at all.  They are anchored in
+Tier 3 because a derivation nothing consults reads exactly like one nobody
+checked.
+
+(3) **The fourth stated fact is LIVE, and its docstring used to say otherwise.**
+`replyFrameHeadHolderDonation` (HP4.2's rename of `answeredHeadHolderDonation`) is
+the one binding fact the trigger does **not** witness — that the holder's binding
+*is* a donation of the context its frame heads — and it has twelve-plus consumers,
+the dispatch packs' two reply-stage fields among them.  Its own docstring claimed
+HP7 retires it; that claim is corrected rather than acted on.  Of the row's three
+facts, two are *eliminated* and one is *migrated*.
+
+(4) **`endpointReplyServerDonation?` does not exist.**  The reply path's
+binding-driven trigger was deleted, not kept beside the live one: two readings of
+one question free to drift is this project's worst shape, and these two *disagree*
+on reachable states.  `recordedReplyServer?` beside it is **not** retired — the
+priority-inheritance chain walk reads it, because that walk keys on waiters rather
+than on donations, and on a delegated reply the recorded server is not the holder.
+
+(5) **The retired reading lives in the witness that refutes it, and nowhere
+else.**  `tests/SmpCrossCoreReplySuite.lean`'s `private def
+bindingDrivenReplyServerDonation?` computes it beside the live resolver on the
+agreeing shape and on the orphan head, so the assertions are known to
+discriminate rather than merely to pass — the pattern
+`tests/SmpCancellationSuite.lean` §3.20 set at HP5.5 and `FrozenOpsSuite`'s
+`FO-042` set for the frozen surface.  That keeps the *evidence* HP2 produced and
+deletes the *code*.
+
+(6) **The dispatch packs shed nothing here, and that is recorded rather than
+claimed closed.**  `syscallDispatchQuiescence`'s eleven fields and
+`checkedSyscallDispatchQuiescence`'s two never carried one of the three; HP4
+re-keyed the reply-stage conjuncts onto the head-driven reading in the cut that
+flipped the trigger, which is where a pack field belongs — one stated at a state
+its own step no longer runs on is a claim about a different state.  So HP7.4 is
+**vacuous**, and the phase's acceptance criterion was corrected to something
+checkable instead of being reported as met.
 
 **And the splice is not the whole remedy — depth 2 needs HP10** (registered
 `v0.35.42`).  The register scoped this defect to reply-stack depth ≥ 3 and that
@@ -4240,12 +4379,12 @@ the field.
 
 Three things a reader should take from the plan rather than infer.  (1) **The
 payoff is larger than the accounting**: under the head-driven trigger the three
-*stated* pre-state coherence hypotheses the reply path carries
+*stated* pre-state coherence hypotheses the reply path used to carry
 (`replyStackHeadIsAnsweredReply`, `replyDonationOwnerIsAnsweredCaller`,
-`answeredHeadContextIsServerDonation`) become derivable and are deleted (HP7) —
-no invariant in this tree entails them today, HP4 already retired the third
-from the chain composite, replacing it with the strictly weaker
-`replyFrameHeadIsBound`, and since HP6.2 none of the three has a consumer.
+`answeredHeadContextIsServerDonation`) became derivable and are **deleted** at HP7
+(`v0.35.46`) — no invariant in this tree entailed them, HP4 had already retired the
+third from the chain composite for the strictly weaker `replyFrameHeadIsBound`, and
+HP6.2 left none of the three with a consumer.
 (2) **The cost is stated**: `maxLockSetSize` 22 → 23 and the RPi5 per-lock cost
 15 → 14 µs, because the splice writes the frame below and no footprint named it
 (HP3.5).  The splice's *third* store, added at HP6.3, costs nothing further — the

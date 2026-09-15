@@ -1610,8 +1610,11 @@ theorem cancelReclaimHead?_of_donation (st : SystemState)
 reply object** — a theorem of the head-driven trigger, where it used to be a
 sentence about the states `ipcInvariantFull` admits.
 
-This is `replyStackHeadIsAnsweredReply`'s content seen from the cancellation end,
-and it holds for the same reason HP2.4's reply-side twin does: the resolver reaches
+This is the content of the retired `replyStackHeadIsAnsweredReply` seen from the
+cancellation end — that predicate was **deleted** at WS-HP HP7 (`v0.35.46`), having
+become a *theorem* on both paths rather than a hypothesis — and it holds for the
+same reason HP2.4's reply-side twin
+(`answeredFrameHeadContext?_head_is_answered_reply`) does: the resolver reaches
 the context *through* the victim's frame, and `replyFrameHeadContext?` accepts the
 `.head` link only when the context's own `scReply` names that frame back.  So the
 two footprint members `cancelReclaimHead?` and `cancelConsumedReply?` provably

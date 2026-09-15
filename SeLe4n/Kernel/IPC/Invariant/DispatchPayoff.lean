@@ -167,7 +167,11 @@ theorem replyRecvBody_preserves_ipcInvariantFull
     -- its new owner off the context's own reply stack.
     -- **WS-HP HP4.5**: both are quantified over the head-driven trigger, because
     -- the thread the pop unbinds is read off `SchedContext.boundThread` rather
-    -- than supplied; `hHolderDonation1` is the binding half HP7 retires.
+    -- than supplied.  `hHolderDonation1` is the binding half, and HP7 (`v0.35.46`)
+    -- did NOT retire it: the trigger answers `(context, holder)` off a `.head` link
+    -- and says nothing about `holder`'s binding, so this is the one stated fact the
+    -- head-driven reading still needs.  HP7 retired the binding-driven readings,
+    -- whose content the trigger does witness.
     (hHolderDonation1 : replyFrameHeadHolderDonation
       (endpointReplyOnCore tid prevCaller msg ec st).1 rid prevCaller)
     (hHolderIdle1 : ∀ scId holder,

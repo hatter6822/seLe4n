@@ -12624,13 +12624,15 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi
 
 # WS-OD OD3.7 (the sharp bound): how much of the ceiling is slack, stated rather
 # than left for a reader to re-derive.  Thirteen is the union over ALL argument
-# values; no reachable state supplies them all distinctly, because the returned
-# donation's owner IS the answered caller.  `ipcInvariantFull` does not entail
-# that -- it admits `.blockedOnReply epId rt` for any `rt` and relates `rt` to no
-# donation -- so it is a STATED hypothesis, not a derived one: the reply-side twin
-# of the cancellation path's, which WS-RR RR7.22 named `donationHolderIsReplyTarget`
-# and WS-HP HP5.3 re-keyed onto the frame as `donatedContextIsOwnerFrameHead`.
-run_check "INVARIANT" rg -n '^def replyDonationOwnerIsAnsweredCaller' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+# values.
+# WS-HP HP7 (`v0.35.46`): the STATED coherence fact this block pinned --
+# `replyDonationOwnerIsAnsweredCaller`, the reply-side twin of what WS-RR RR7.22
+# named `donationHolderIsReplyTarget` -- is DELETED.  HP6.2 retired its only
+# consumer (the seventeen bound, whose owner/target merge occurs on no state the
+# head-driven trigger reaches), so it was a stated fact nothing consumed.  The
+# positive is replaced by a NEGATIVE: a fact this workstream retired must not come
+# back, and a positive pin on a deleted symbol reports PASS over nothing.
+run_negative_check "INVARIANT" rg -n '^def replyDonationOwnerIsAnsweredCaller' SeLe4n/
 # WS-HP HP6.2 (`v0.35.44`): the seventeen bound that consumed the fact above is
 # RETIRED, so its two anchors are gone rather than repointed -- a pin on a symbol
 # a cut deleted reports PASS over nothing.  Its licence was the owner/target
@@ -12638,8 +12640,13 @@ run_check "INVARIANT" rg -n '^def replyDonationOwnerIsAnsweredCaller' SeLe4n/Ker
 # UNBINDS, which is running on the context while the answered caller is blocked:
 # no reachable state produces the coincidence, so the merge is false rather than
 # unproved.  The reachable figure is eighteen and is now UNCONDITIONAL, which the
-# anchor below pins.  The predicate itself stays until HP7.2 retires it.
-run_prose_check "INVARIANT" rg -n 'this predicate now has NO consumer' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+# anchor below pins.  **WS-HP HP7 (`v0.35.46`) retired the predicate**, so the
+# prose check that pinned HP6.2's "this predicate now has NO consumer" note went
+# with the docstring that carried it -- a prose anchor on text a cut deleted is the
+# dead-citation tautology one artefact over.  What stands in its place is the
+# tombstone the deletion left, which a reader arriving from any surviving citation
+# needs in order to find out what replaced the symbol.
+run_prose_check "INVARIANT" rg -n 'the retired binding-driven trigger.s scaffolding' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twentytwo_of_owner_eq_target' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # PR #894 review: and the UNCONDITIONAL reachable bound, which needs no
 # invariant at all -- the re-donation members are live exactly when the endpoint
@@ -12650,15 +12657,20 @@ run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twentytwo_of_own
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_twenty' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_eighteen_of_no_preReturn' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twenty_of_no_sender' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-# WS-RM (`v0.35.6`): and the *reachable* figure is unmoved at eighteen, under the
-# local coherence fact that makes the two groups mutually exclusive -- the head
-# of the returned context's stack is the answered caller's own reply object, so a
-# frame that has a frame above it is not that head and the context heads no
-# stack.  The predicate, the exclusion and both branch bounds are each pinned:
-# a bound restated at the new arity with the exclusion unproved would leave the
-# "costs nothing" claim asserted rather than derived.
-run_check "INVARIANT" rg -n '^def replyStackHeadIsAnsweredReply' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem replyStackHead\?_none_of_answeredFrameAbove' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+# WS-RM (`v0.35.6`): and the *reachable* figure is unmoved at eighteen.  It used to
+# rest on a *local coherence fact* -- the head of the returned context's stack is
+# the answered caller's own reply object -- with `replyStackHeadIsAnsweredReply` and
+# `replyStackHead?_none_of_answeredFrameAbove` pinned beside it.
+# WS-HP HP7 (`v0.35.46`): both are **DELETED**.  HP6.2 made the eighteen bound
+# unconditional, because under the head-driven trigger a frame that heads a context
+# provably has no frame above it -- so the exclusion is structural
+# (`answeredReplyFrameAbove?_none_of_headContext`) and the stated fact had no
+# subject.  NEGATIVES in their place: neither may come back, since a fact restated
+# beside a structural derivation is the duplication this project retires.
+run_negative_check "INVARIANT" rg -n '^def replyStackHeadIsAnsweredReply' SeLe4n/
+run_negative_check "INVARIANT" rg -n '^theorem replyStackHead\?_none_of_answeredFrameAbove' SeLe4n/
+# ...and what carries the exclusion instead is pinned positively.
+run_check "INVARIANT" rg -n '^theorem answeredReplyFrameAbove\?_none_of_headContext' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
@@ -12677,7 +12689,7 @@ run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_seventeen_of_no_
 # NEGATIVE: and the UNCONDITIONAL one must not acquire them -- a nineteen stated
 # under the same hypotheses would be the conditional bound wearing the
 # unconditional one's name, and every anchor above would still match.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReplyRecvOnCore_size_le_twenty[^\n]*(\n([ \t][^\n]*)?)*replyStackHeadIsAnsweredReply" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReplyRecvOnCore_size_le_twenty[^\n]*(\n([ \t][^\n]*)?)*donationChainWellFormed" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
 # The mechanism: a key already present costs nothing, which is what lets a
 # RESOLVED footprint be sharper than the parametric bound it is measured by.
 run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_containsKey' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
@@ -12693,12 +12705,17 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "lockSet_endpointReplyRecvOnCo
 # head-driven trigger a frame that heads a context has no frame above and none
 # below, so the exclusion the two coherence facts used to buy is structural.
 # NEGATIVE, token-preserving: it keeps the theorem and re-adds a hypothesis.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen[^\n]*(\n([ \t][^\n]*)?)*(donationChainWellFormed|replyStackHeadIsAnsweredReply|replyDonationOwnerIsAnsweredCaller)" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen[^\n]*(\n([ \t][^\n]*)?)*donationChainWellFormed" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
 # WS-HP HP6.2: both reply footprints resolve their donation members through the
-# POP's own trigger.  A member resolved from `endpointReplyServerDonation?` in
-# either definition is a footprint for a transition the kernel does not perform.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*endpointReplyServerDonation\?" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*endpointReplyServerDonation\?" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# POP's own trigger.  WS-HP HP7 (`v0.35.46`) then **deleted** the binding-driven
+# resolver `endpointReplyServerDonation?` outright, so a footprint cannot name it
+# and the two per-definition negatives that used to say so became pins on a symbol
+# nothing declares.  One tree-wide negative replaces them: the resolver must not be
+# reintroduced in the kernel at all.  The retired reading survives as
+# `bindingDrivenReplyServerDonation?`, private to
+# `tests/SmpCrossCoreReplySuite.lean`, which is the witness that refutes it.
+run_negative_check "INVARIANT" rg -n 'endpointReplyServerDonation\?' SeLe4n/
+run_check "INVARIANT" rg -n '^private def bindingDrivenReplyServerDonation\?' tests/SmpCrossCoreReplySuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*answeredFrameHeadContext\?" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*answeredFrameHeadContext\?" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 # WS-HP HP6.2: and the coverage is stated on BOTH arms -- the stand-in it replaces
@@ -12926,17 +12943,27 @@ run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_preserves_donationC
 run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
 run_check "INVARIANT" rg -n '^theorem faultReplyOnCore_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
 run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
-# The condition that ties the payoff's two halves is a PRE-state fact, like the
-# bundle composite's `hDonationReturned` beside it: a `schedContextBinding` is
-# something the reply leg provably does not write, so the transport belongs
-# inside the proof rather than on every caller.
-run_check "INVARIANT" rg -n '^def answeredHeadContextIsServerDonation' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def answeredHeadContextIsServerDonation[^\n]*(\n([ \t][^\n]*)?)*replyDonationReturn\? st expected" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
-# NEGATIVE, token-preserving -- it keeps every token of the condition and reads
-# the server's binding at the state the reply leg committed instead.  That shape
-# is what made the reply *transfer* carry the same fact twice, in two spellings
-# differing only in a message the question never reads.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def answeredHeadContextIsServerDonation[^\n]*(\n([ \t][^\n]*)?)*endpointReplyOnCore" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
+# The condition that tied the payoff's two halves was a PRE-state fact,
+# `answeredHeadContextIsServerDonation`.
+# WS-HP HP7 (`v0.35.46`): it is **DELETED**, and this is the anchor block that
+# pinned it.  HP4.4 took it out of the chain composite for the strictly weaker
+# `replyFrameHeadIsBound`, HP6.2 deleted the footprint stand-in that was its last
+# consumer, and HP6.8 **falsified it on reachable states** -- a spliced cut
+# re-heads a frame whose recorded reply server is gone and `.unbound`.  A stated
+# fact that nothing consumes and the live kernel refutes is not a weaker
+# obligation; it is a false one.  NEGATIVE in its place: it must not come back.
+run_negative_check "INVARIANT" rg -n 'answeredHeadContextIsServerDonation' SeLe4n/
+# ...and what the composite carries instead is pinned positively, so "strictly
+# weaker" is checkable rather than asserted.
+run_check "INVARIANT" rg -n '^def replyFrameHeadIsBound' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# ...and it is EXHIBITED on a state the live operations reach, beside the retired
+# condition it replaced, so "strictly weaker" and "they coincide on this shape" are
+# both measured.  A hypothesis nothing exhibits is indistinguishable from one that
+# cannot hold -- which is why §3.21 keeps both rows rather than swapping one for
+# the other: a cut that changed only the live condition would leave the retired
+# rows passing, and one that changed only the trigger would leave this row passing.
+run_check "INVARIANT" bash -lc 'rg -n "the LIVE chain condition: the head context is bound, and here to that server" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -n "the RETIRED chain condition.s premise: the answered caller records the server" tests/SmpIpcSuite.lean'
 
 # (5) `.replyRecv`'s donation pop runs BETWEEN the legs -- seL4-MCS's own
 # `doReplyTransfer` -> `reply_remove` -> `receiveIPC` order.  With the pop last,
@@ -13015,9 +13042,37 @@ run_check "INVARIANT" rg -n '^def replyFrameHeadContext\?' SeLe4n/Kernel/IPC/Ope
 run_check "INVARIANT" rg -n '^def answeredFrameHeadContext\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^def replyFrameHeadHolder\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def answeredFrameHeadContext\?[^\n]*(\n([ \t][^\n]*)?)*some rid => replyFrameHeadHolder\? st rid" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
-run_check "INVARIANT" rg -n '^theorem answeredFrameHeadContext\?_implies_serverDonation' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
-run_check "INVARIANT" rg -n '^theorem donationPopTriggers_disagree_at_orphan_head' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
-run_check "INVARIANT" rg -n '^theorem answeredHeadContextIsServerDonation_false_of_orphan_head' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+# WS-HP HP7 (`v0.35.46`): HP2.1's equivalence and HP2.3's orphan-head pair are
+# **DELETED** -- the equivalence because its subject was the retired
+# `endpointReplyServerDonation?` and it took the retired predicate as a hypothesis,
+# and the pair because the first cannot outlive the predicate it negates and the
+# second named that resolver.  Their job was done: they made the HP4-before-HP6
+# ordering machine-checked, and the ordering was respected.
+run_negative_check "INVARIANT" rg -n 'answeredFrameHeadContext\?_implies_serverDonation' SeLe4n/
+run_negative_check "INVARIANT" rg -n 'donationPopTriggers_disagree_at_orphan_head' SeLe4n/
+# ...and the evidence is an EXECUTED witness rather than a theorem whose
+# hypotheses nothing reachable satisfies: the suite computes the retired reading
+# beside the live one on the agreeing shape and on the orphan head, so "the two
+# triggers disagree there" is measured.  That is the HP5.5 pattern.
+run_check "INVARIANT" bash -lc 'rg -n "the two resolvers name DIFFERENT threads at an orphan head" tests/SmpCrossCoreReplySuite.lean'
+run_check "INVARIANT" bash -lc 'rg -n "the RETIRED binding-driven reading resolves the recorded server.s donation" tests/SmpCrossCoreReplySuite.lean'
+# ...and the AGREEING half, which is what makes the orphan-head row a witness for
+# the flip rather than for the fixture: on the non-delegated shape the live
+# trigger's holder IS the recorded server, so the coincidence the orphan head
+# breaks is measured rather than asserted.  Anchored separately because the two
+# resolvers' PAIRS never coincide -- the retired reading's second component is the
+# donation's owner and the live one's is its holder (HP4's component-swap hazard),
+# so a row claiming they are equal would be claiming something false.
+run_check "INVARIANT" bash -lc 'rg -n "the LIVE trigger.s holder IS the recorded server on this shape" tests/SmpCrossCoreReplySuite.lean'
+# ...and the HP2.4 derivations that REPLACED the stated facts, which is what makes
+# the retirement sound rather than merely tidy: under the head-driven trigger the
+# resolver reads the context off the frame's own `.head` link and validates the
+# context's `scReply` against that same frame, so each retired hypothesis is a
+# consequence of the trigger firing.  Anchored because a derivation nothing
+# consults reads exactly like one nobody checked.
+run_check "INVARIANT" rg -n '^theorem answeredFrameHeadContext\?_head_is_answered_reply' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+run_check "INVARIANT" rg -n '^theorem answeredFrameHeadContext\?_donationHeadOf' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+run_check "INVARIANT" rg -n '^theorem answeredFrameHeadContext\?_boundThread' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
 
 # (3) HP3: both reply footprints declare the frame the splice re-links, and the
 # declaration is tied to the RESOLVER rather than to a name -- the coverage
@@ -13046,12 +13101,17 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelIpcBlockin
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_twenty' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_thirteen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspendOnCore_size_le_seventeen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-# ...and the fourth local coherence fact HP2.2's converse needs, which
-# `donationChainWellFormed` does not entail: it carries no binding clause at all,
-# so "this server's donated context heads a stack" has to be stated.  HP4 deletes
-# it -- it is scaffolding for the interval in which both triggers exist.
-run_check "INVARIANT" rg -n '^def donatedContextHeadsStack' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem serverDonation_implies_answeredFrameHeadContext\?' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+# ...and the fourth local coherence fact HP2.2's converse needed,
+# `donatedContextHeadsStack`, which `donationChainWellFormed` does not entail.
+# WS-HP HP7 (`v0.35.46`): it and HP2.2's converse are **DELETED** -- both were
+# scaffolding for the interval in which both triggers existed, and that interval
+# closed when HP6.2 repointed the last footprint off the binding-driven resolver.
+# Its own docstring said "it does not survive HP4", which is the row that removed
+# the question it answered: once the trigger IS head-ness, "does this donated
+# context head a stack" stops being asked, because a context that heads no stack
+# simply does not pop.
+run_negative_check "INVARIANT" rg -n 'donatedContextHeadsStack' SeLe4n/
+run_negative_check "INVARIANT" rg -n 'serverDonation_implies_answeredFrameHeadContext\?' SeLe4n/
 
 # ============================================================================
 # v0.35.37 -- the reply path's donation return deschedules at the server's

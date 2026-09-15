@@ -106,11 +106,17 @@ open SeLe4n.Testing
 #check @placedCoreOf?_congr_of_scheduler_eq
 #check @descheduleAtPlacement_passiveServerIdleFrame
 #check @lockSet_endpointReply_donation_extension
--- WS-SM SM6.D (PR #822 review): the reply donation return is keyed on the RECORDED
+-- WS-SM SM6.D (PR #822 review): the reply donation return was keyed on the RECORDED
 -- SERVER (the caller's `blockedOnReply` server, who holds the donated SC), not the
--- possibly-delegated cap holder.
+-- possibly-delegated cap holder.  **WS-HP HP4 moved the trigger onto the answered
+-- reply FRAME and HP7 (`v0.35.46`) deleted the binding-driven resolver**, whose only
+-- remaining consumer was the witness that refutes it; the retired reading is
+-- `bindingDrivenReplyServerDonation?` below, private to this suite.
+-- `recordedReplyServer?` survives: the reply path still reads it for the
+-- priority-inheritance chain walk, which keys on waiters rather than on donations.
 #check @recordedReplyServer?
-#check @endpointReplyServerDonation?
+#check @answeredFrameHeadContext?
+#check @replyFrameHeadHolder?
 -- WS-SM SM6.D: the per-object reply WRITE lock is in the reply footprint once the
 -- reply object is resolved (the 2PL coverage of the single-use `reply.caller`
 -- consume — PR #822 review 6J90-5).
@@ -200,6 +206,34 @@ private def core1 : CoreId := ⟨1, by decide⟩
 /-- `v0.35.37`: a core that is neither the boot core nor the caller's home, so a
 deschedule landing on it can only have come from the server's own placement. -/
 private def core2 : CoreId := ⟨2, by decide⟩
+
+/-- **WS-HP HP7 (`v0.35.46`)**: the *superseded* binding-driven donation-pop
+trigger, spelled here and nowhere else.
+
+`endpointReplyServerDonation?` was the reply path's trigger until HP4 (`v0.35.38`)
+moved both spines onto the answered reply frame's own `.head` link, and HP6.2
+(`v0.35.44`) repointed the last footprints off it.  A second production spelling of
+"which donation does this reply return" would be the duplication this project
+retires -- but a witness that cannot name what it replaced cannot show that the
+replacement changed anything, which is the whole point of the orphan-head pair
+below.  So the retired reading lives in the test that refutes it, exactly as
+`SmpCancellationSuite`'s `bindingDrivenCancelledCallerDonation?` does for the
+cancellation side and `FrozenOpsSuite`'s `FO-042` for the frozen surface.
+
+Spelled as the composition the deleted definition was — `recordedReplyServer?`
+then that server's own `.donated` binding — so a reader can see it is the retired
+reading verbatim rather than a paraphrase of it. -/
+private def bindingDrivenReplyServerDonation? (st : SystemState)
+    (target : SeLe4n.ThreadId) : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match recordedReplyServer? st target with
+  | some server =>
+    match st.getTcb? server with
+    | some sTcb =>
+      match sTcb.schedContextBinding with
+      | .donated scId owner => some (scId, owner)
+      | _ => none
+    | none => none
+  | none => none
 
 private def epId : SeLe4n.ObjId := ⟨600⟩
 private def cnRoot : SeLe4n.ObjId := ⟨300⟩
@@ -562,8 +596,19 @@ private def runDonationChecks : IO Unit := do
     (decide (recordedReplyServer? stDonated clientLocalTid = some serverTid))
   -- The key finding: the resolved donation is the RECORDED SERVER's, regardless of
   -- which thread holds the reply cap (the delegate `wrongTid` holds none).
-  assertBool "endpointReplyServerDonation? resolves the recorded server's donation (not the replier's)"
-    (decide (endpointReplyServerDonation? stDonated clientLocalTid = some (scId, clientLocalTid)))
+  assertBool "the RETIRED binding-driven reading resolves the recorded server's donation"
+    (decide (bindingDrivenReplyServerDonation? stDonated clientLocalTid
+               = some (scId, clientLocalTid)))
+  -- ...and on this shape the LIVE head-driven trigger's holder **is** the recorded
+  -- server -- the thread whose binding the retired reading reads.  Not the same
+  -- *pair*: the retired reading's second component is the donation's OWNER and the
+  -- live one's is its HOLDER, which is HP4's component-swap hazard and is why they
+  -- are asserted separately rather than compared.  What coincides here is the
+  -- thread the pop unbinds, and that coincidence is exactly what the orphan head
+  -- below breaks, so these rows are a witness for the flip and not for the fixture.
+  assertBool "...and the LIVE trigger's holder IS the recorded server on this shape"
+    (decide (answeredFrameHeadContext? stDonated clientLocalTid
+               = some (scId, serverTid)))
   -- The state-resolved reply lock-set therefore covers the returned SC write lock
   -- AND the recorded server's TCB write lock, even on a delegated reply where the
   -- cap holder (`wrongTid`) is not the server.
@@ -611,7 +656,7 @@ private def runDonationChecks : IO Unit := do
   assertBool "the two resolvers name DIFFERENT threads at an orphan head"
     (decide (answeredFrameHeadContext? stOrphanHead clientLocalTid
                = some (scId, orphanHolderTid)
-             ∧ endpointReplyServerDonation? stOrphanHead clientLocalTid
+             ∧ bindingDrivenReplyServerDonation? stOrphanHead clientLocalTid
                = some (scId, clientLocalTid)))
   assertBool "…and the repointed footprint declares the thread the POP unbinds"
     (decide ((tcbLock orphanHolderTid, AccessMode.write)

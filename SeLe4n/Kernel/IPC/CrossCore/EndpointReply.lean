@@ -510,19 +510,33 @@ def recordedReplyServer? (st : SystemState) (target : SeLe4n.ThreadId) :
       | _                                 => none
   | none => none
 
-/-- WS-SM SM6.D (PR #822 review): the SchedContext returned on this reply — the
-**recorded server's** donated SC (resolved via `recordedReplyServer?` from the
-caller `target`'s `blockedOnReply` link), paired with its original owner.  This is
-the donation the passive server received from the caller at `Call` time; on a
-*delegated* reply the cap holder `replier` is not that server, so the return is
-keyed on the recorded server.  In the non-delegated case (`replier = expected`,
-the server holding `.donated scId owner`) this is exactly the legacy
-`endpointReplyDonation? st replier`. -/
-def endpointReplyServerDonation? (st : SystemState) (target : SeLe4n.ThreadId) :
-    Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
-  match recordedReplyServer? st target with
-  | some server => endpointReplyDonation? st server
-  | none        => none
+-- ----------------------------------------------------------------------------
+-- WS-HP HP7 (`v0.35.46`): the retired binding-driven pop trigger
+-- ----------------------------------------------------------------------------
+--
+-- `endpointReplyServerDonation?` stood here from WS-SM SM6.D: the SchedContext a
+-- reply returned, resolved from the **recorded server's** `.donated` binding
+-- through `recordedReplyServer?`.  It was the reply path's donation-pop trigger
+-- until WS-HP HP4 (`v0.35.38`) moved both spines onto the answered reply frame's
+-- own `.head` link (`replyFrameHeadHolder?` / `answeredFrameHeadContext?`), and
+-- HP6.2 (`v0.35.44`) repointed the last two footprints off it.  After that no
+-- transition, footprint or invariant read it, and HP6.8 (`v0.35.45`) made the
+-- splice live, which puts the two readings in disagreement on reachable states --
+-- at an orphan head, a frame heading a context whose recorded reply server is
+-- gone and `.unbound`.
+--
+-- **It is deleted rather than kept as the legacy reading.**  Its one remaining
+-- consumer was the witness that refutes it, and the retired spelling now lives
+-- there and nowhere else: `tests/SmpCrossCoreReplySuite.lean`'s
+-- `bindingDrivenReplyServerDonation?`, private to that suite, computed beside the
+-- live resolver on the agreeing shape and on the orphan head so the assertions are
+-- known to discriminate.  That is the pattern `tests/SmpCancellationSuite.lean`
+-- §3.20 set for the cancellation side at HP5.5 (`bindingDrivenCancelledCallerDonation?`)
+-- and `FrozenOpsSuite`'s `FO-042` set for the frozen surface.
+--
+-- `recordedReplyServer?` above is **not** retired with it: the reply path still
+-- reads it for the priority-inheritance chain walk, which keys on waiters rather
+-- than on donations (see `propagatePipChainCrossCore`'s call site).
 
 /-- **WS-RM (`v0.35.6`): the frame *above* the answered caller's reply object** —
 the one Reply the removal's detach rewrites, and the member both reply footprints
@@ -740,8 +754,9 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
     -- the pop clears -- resolved on the same context the members above are.
     -- **WS-HP HP6.2**: under the head-driven trigger this is *provably* the
     -- answered caller's own reply object (`answeredFrameHeadContext?_head_is_answered_reply`,
-    -- no hypothesis), where the binding reading needed
-    -- `replyStackHeadIsAnsweredReply` to say so.
+    -- no hypothesis), where the binding reading needed a stated coherence fact to
+    -- say so -- one HP7 (`v0.35.46`) deleted, its content having become that
+    -- theorem.
     (((answeredFrameHeadContext? st target).map (·.1)).bind (replyStackHead? st))
     -- **WS-RM (`v0.35.6`)**: and the frame above the answered one, which the
     -- removal detaches before it consumes the caller link.
@@ -1842,9 +1857,9 @@ hypothesis.**
 This replaces HP4.4's `lockSet_endpointReplyOnCore_covers_headDrivenPop`, which
 had to bridge two resolvers: the footprint read the *recorded server's* binding
 while the pop read the answered frame, so coverage held only under
-`donationOwnerValid` and `answeredHeadContextIsServerDonation`, and it reached the
-holder's TCB by proving the holder **is** the recorded server — the very equation
-the splice breaks.  With the footprint repointed onto
+`donationOwnerValid` and a stated coherence fact (`answeredHeadContextIsServerDonation`,
+deleted at HP7), and it reached the holder's TCB by proving the holder **is** the
+recorded server — the very equation the splice breaks.  With the footprint repointed onto
 `answeredFrameHeadContext?`, the members *are* the trigger's answer and the
 relation is definitional.
 
@@ -2069,8 +2084,10 @@ coincidence delegation breaks.
 
 The five members are resolved off `replier`, and the recorded server's members
 cannot stand in for them: two threads cannot be bound to one scheduling context,
-so `receivePreReturn?`'s context is provably never
-`endpointReplyServerDonation?`'s. -/
+so `receivePreReturn?`'s context is provably never the one the *recorded server's*
+binding names.  (That binding-driven resolver was deleted at HP7 (`v0.35.46`); the
+argument is unchanged, since it is about the two contexts and not about how either
+is spelled.) -/
 theorem lockSet_endpointReplyRecvOnCore_covers_preReturn
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)

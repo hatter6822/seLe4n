@@ -538,113 +538,45 @@ theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull
 -- §6  WS-RM (`v0.35.6`) — the composite payoff: the chain across the dispatch
 -- ============================================================================
 
-/-- **WS-RM (`v0.35.6`): the context the answered caller's reply frame heads is
-the one the recorded reply server holds.**
-
-The third of this tree's *local coherence facts* about one reply, beside
-`replyDonationOwnerIsAnsweredCaller` (the returned donation is owned by the thread
-the reply answers) and `replyStackHeadIsAnsweredReply` (the returned context's
-stack head is that thread's own reply object).  It is this one's converse: the
-other two start from a server that holds a donation, this one starts from a frame
-that heads a context and names its holder.
-
-True on the seL4-MCS path, because `applyCallDonation` mints the `.donated`
-binding at the very server the caller later replies through and pushes the
-caller's own `replyObject` as that context's stack head — the two writes of one
-step.  **Not entailed by `ipcInvariantFull`**: `donationOwnerValid` relates a
-caller's recorded reply target to no donation, and `donationChainWellFormed`
-carries no binding clause at all (see its docstring's *what is deliberately
-absent*).  So it is stated, for exactly the reason WS-RR RR7.22 stated
-`donationHolderIsReplyTarget` from the cancellation end — a fact WS-HP HP5.3
-re-keyed onto the frame as `donatedContextIsOwnerFrameHead`, since the reclaim now
-reads the stack too.
-
-Stated on the **pre-state**, like `hDonationReturned` on the bundle composite
-beside it and unlike `hStackValid`: `replyStackOuterCallerValid`'s subject is a
-state the pop runs on, whereas a `schedContextBinding` is something the reply leg
-provably does not write (`endpointReplyOnCore_donationOwnerFrameExcept`), so the
-transport belongs inside the proof rather than on every caller.  That also makes
-the fault reply's two occurrences one fact rather than two spellings differing
-only in a message the question never reads. -/
-def answeredHeadContextIsServerDonation (st : SystemState) (target : SeLe4n.ThreadId) : Prop :=
-  ∀ (tcb : TCB) (rid : SeLe4n.ReplyId) (r : Reply) (scId : SeLe4n.SchedContextId),
-    lookupTcb st target = some tcb → tcb.replyObject = some rid →
-    st.getReply? rid = some r → r.next = some (.head scId) →
-    ∀ expected, recordedReplyServer? st target = some expected →
-      ∃ owner, replyDonationReturn? st expected = some (scId, owner)
-
-/-- A reply that answers no resolvable caller heads nothing, so the fact is
-vacuous — the discharge every reply outside the donating path takes. -/
-theorem answeredHeadContextIsServerDonation_of_no_caller (st : SystemState)
-    (target : SeLe4n.ThreadId) (h : lookupTcb st target = none) :
-    answeredHeadContextIsServerDonation st target := by
-  intro _ _ _ _ hLk
-  rw [h] at hLk
-  cases hLk
-
-/-- And so is a reply by a caller holding no reply object. -/
-theorem answeredHeadContextIsServerDonation_of_no_reply (st : SystemState)
-    (target : SeLe4n.ThreadId) (tcb : TCB)
-    (hLk : lookupTcb st target = some tcb) (hRO : tcb.replyObject = none) :
-    answeredHeadContextIsServerDonation st target := by
-  intro tcb' _ _ _ hLk' hRO'
-  rw [hLk] at hLk'
-  obtain rfl : tcb' = tcb := Option.some.inj hLk'.symm
-  rw [hRO] at hRO'
-  cases hRO'
-
--- ============================================================================
--- WS-HP HP2: the two donation-pop triggers agree on every coherent state
--- ============================================================================
-
-/-- **WS-HP HP2.1: the head-driven trigger implies the binding-driven one.**
-
-The safety net that makes HP4 a *refactor* rather than a semantic change: on every
-state satisfying `donationOwnerValid` and the coherence fact
-`answeredHeadContextIsServerDonation`, a reply whose answered frame heads a
-context is exactly a reply whose recorded server holds that context's donation --
-and the holder the head-driven resolver reports **is** that recorded server.
-
-The second conjunct is the load-bearing half and it is not cosmetic: the
-binding-driven trigger takes its `serverTid` from `recordedReplyServer?` while the
-head-driven one takes it from `SchedContext.boundThread`, and
-`donationOwnerValid`'s first clause -- a `.donated scId _` holder is what `scId`
-is bound to -- is what identifies them.  Without it the flip could point
-`returnDonatedSchedContext` at a different thread, which is precisely what its own
-`boundThread` guard exists to refuse.
-
-Stated with `lookupTcb` rather than `getTcb?` at the answered caller because
-`answeredHeadContextIsServerDonation` is: the two differ on a reserved id, and a
-reserved thread is not a caller this path can reach. -/
-theorem answeredFrameHeadContext?_implies_serverDonation (st : SystemState)
-    (target : SeLe4n.ThreadId) (tcb : TCB)
-    (scId : SeLe4n.SchedContextId) (holder expected : SeLe4n.ThreadId)
-    (hOwnerValid : donationOwnerValid st)
-    (hHeadReturned : answeredHeadContextIsServerDonation st target)
-    (hLk : lookupTcb st target = some tcb)
-    (hExp : recordedReplyServer? st target = some expected)
-    (h : answeredFrameHeadContext? st target = some (scId, holder)) :
-    holder = expected ∧
-      ∃ owner, endpointReplyServerDonation? st target = some (scId, owner) := by
-  obtain ⟨rid, hRid, hHead, hBt⟩ := answeredFrameHeadContext?_eq_some h
-  obtain ⟨r, sc, hR, hN, hSc, _⟩ := replyFrameHeadContext?_eq_some hHead
-  have hGet : st.getTcb? target = some tcb := getTcb?_of_lookupTcb st target tcb hLk
-  have hRO : tcb.replyObject = some rid := by
-    unfold answeredReplyObject? at hRid; rw [hGet] at hRid; exact hRid
-  have hBound : sc.boundThread = some holder := by rw [hSc] at hBt; exact hBt
-  obtain ⟨owner, hRet⟩ := hHeadReturned tcb rid r scId hLk hRO hR hN expected hExp
-  obtain ⟨eTcb, hLkE, hB⟩ := replyDonationReturn?_some_lookup st expected scId owner hRet
-  have hGetE : st.getTcb? expected = some eTcb := getTcb?_of_lookupTcb st expected eTcb hLkE
-  obtain ⟨⟨sc', hSc'Obj, hSc'Bound⟩, _⟩ :=
-    hOwnerValid expected eTcb scId owner ((getTcb?_eq_some_iff st expected eTcb).mp hGetE) hB
-  have hSame : sc' = sc :=
-    KernelObject.schedContext.inj (Option.some.inj
-      (hSc'Obj.symm.trans ((getSchedContext?_eq_some_iff st scId sc).mp hSc)))
-  refine ⟨?_, owner, ?_⟩
-  · rw [hSame] at hSc'Bound
-    exact Option.some.inj (hBound.symm.trans hSc'Bound)
-  · unfold endpointReplyServerDonation? endpointReplyDonation?
-    simp only [hExp, hGetE, hB]
+-- ----------------------------------------------------------------------------
+-- WS-HP HP7 (`v0.35.46`): the retired coherence fact and HP2.1's equivalence
+-- ----------------------------------------------------------------------------
+--
+-- `answeredHeadContextIsServerDonation` lived here from WS-RM (`v0.35.6`) with
+-- its two vacuity discharges, and HP2.1's `answeredFrameHeadContext?_implies_serverDonation`
+-- beside them.  All four are **deleted**.
+--
+-- The predicate was a *stated* pre-state fact -- the context the answered
+-- caller's reply frame heads is the one the recorded reply server holds -- which
+-- no invariant in this tree entails: `donationOwnerValid` relates a caller's
+-- recorded reply target to no donation, and `donationChainWellFormed` carries no
+-- binding clause at all.  HP4.4 (`v0.35.38`) took it out of the chain composite
+-- for the strictly weaker `replyFrameHeadIsBound`, HP6.2 (`v0.35.44`) deleted the
+-- footprint stand-in that was its last consumer, and HP6.8 (`v0.35.45`)
+-- **falsified it on reachable states**: a spliced cut re-heads a frame whose
+-- recorded reply server is gone and `.unbound`.  A stated fact that nothing
+-- consumes and that the live kernel refutes is not a weaker obligation, it is a
+-- false one.
+--
+-- HP2.1's equivalence went with it because its subject did: it related the live
+-- head-driven trigger to `endpointReplyServerDonation?`, the binding-driven
+-- resolver HP6.2 repointed the last footprint off, and it took the predicate as
+-- a hypothesis.
+--
+-- **What replaced it is the HP2.4 family below** -- `answeredFrameHeadContext?_head_is_answered_reply`,
+-- `_donationHeadOf` and `_boundThread`.  Those are the *derivations*: under the
+-- head-driven trigger the resolver reads the context off the frame's own `.head`
+-- link and validates the context's `scReply` against that same frame, so what the
+-- retired predicates asked a caller to supply is now a consequence of the trigger
+-- firing.  They are anchored in Tier 3 rather than left unread, because a
+-- derivation nothing consults reads exactly like one nobody checked.
+--
+-- **And the equivalence's evidence is an executed witness.**
+-- `tests/SmpCrossCoreReplySuite.lean` computes the retired binding-driven reading
+-- beside the live one on the agreeing shape and on the orphan head, with the
+-- retired spelling private to that suite -- the pattern
+-- `tests/SmpCancellationSuite.lean` §3.20 set at HP5.5 and `FrozenOpsSuite`'s
+-- `FO-042` set for the frozen surface.
 
 /-! **WS-HP HP6.2 (`v0.35.44`): the coverage stand-in is gone.**
 
@@ -670,7 +602,9 @@ head-driven resolver rather than a hypothesis a caller supplies.
 Under this trigger it is immediate: the resolver reads the context off the frame's
 own `.head` link and validates the context's `scReply` against that same frame, so
 the head and the answered reply object are the one `rid` the resolver matched.
-HP7 is what retires the stated predicate; this is the theorem that lets it. -/
+HP7 (`v0.35.46`) **deleted** the stated predicate; this is the theorem that let it,
+and it is anchored in Tier 3 for that reason -- a derivation nothing consults reads
+exactly like one nobody checked. -/
 theorem answeredFrameHeadContext?_head_is_answered_reply (st : SystemState)
     (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
     (h : answeredFrameHeadContext? st target = some (scId, holder)) :
@@ -718,72 +652,25 @@ theorem answeredFrameHeadContext?_boundThread (st : SystemState)
   obtain ⟨_, sc, _, _, hSc, _⟩ := replyFrameHeadContext?_eq_some hHead
   exact ⟨sc, hSc, by rw [hSc] at hBt; exact hBt⟩
 
-/-- **WS-HP HP2.3's negative twin: the state the splice creates, named exactly —
-and since HP6.8 a state the kernel reaches.**
-
-A frame that *heads* a context while the thread its caller recorded as its reply
-server holds no donation of that context falsifies
-`answeredHeadContextIsServerDonation` outright.  That is the **orphan head**: the
-splice's pop re-heads the frame below a cut, whose caller recorded a server that
-the removal took out of the chain.
-
-Written at HP2.3 as the checkable form of "the splice breaks the equivalence a
-binding-driven pop stands on", which is why HP6 could not precede HP4.  The
-ordering was respected — HP4 (`v0.35.38`) and HP5 (`v0.35.39`) moved both triggers
-onto the answered frame's own `.head` link, and HP6.8 (`v0.35.45`) then wrote
-`cancelledMiddleCallerPolicy := .spliceOutTheCut` — so what this theorem says has
-changed from a *prohibition* into a *fact about reachable states*: the coherence
-predicate is false on states the live removal now produces.  That, together with
-the predicate having no consumer left (HP6.2), is the warrant HP7 deletes it on.
-
-A reader arriving here from the retired `severAtCut_pop_leaves_no_head` will find
-that name's tombstone beside the `WS-HP HP2.3` banner in `IPC/Invariant/Defs.lean`;
-it was deleted with the policy flip because its first conjunct was the old policy
-value. -/
-theorem answeredHeadContextIsServerDonation_false_of_orphan_head (st : SystemState)
-    (target : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId) (r : Reply)
-    (scId : SeLe4n.SchedContextId) (expected : SeLe4n.ThreadId)
-    (hLk : lookupTcb st target = some tcb) (hRO : tcb.replyObject = some rid)
-    (hR : st.getReply? rid = some r) (hN : r.next = some (.head scId))
-    (hExp : recordedReplyServer? st target = some expected)
-    (hNoDon : ∀ owner, replyDonationReturn? st expected ≠ some (scId, owner)) :
-    ¬ answeredHeadContextIsServerDonation st target := by
-  intro hFact
-  obtain ⟨owner, hRet⟩ := hFact tcb rid r scId hLk hRO hR hN expected hExp
-  exact hNoDon owner hRet
-
-/-- **WS-HP HP2.3: and at such a state the two triggers demonstrably disagree.**
-
-The head-driven resolver fires -- the frame heads the context, the context names
-it back, and it is bound to a holder -- while the binding-driven one answers
-`none`, because the recorded server holds nothing.  So a `spliceOutTheCut` cut
-landing before HP4 would have left the live reply path popping on a fact that is
-false of exactly the states the splice makes reachable; landing *after* HP4, which
-is what happened, it is the intended behaviour -- the head-driven pop returns the
-context to the caller the surviving stack names.
-
-This is the sharp statement of plan §4's second forced ordering, and the reason it
-is a theorem rather than a note.  Since HP6.8 it is also the measurement that the
-ordering mattered: `endpointReplyServerDonation?` is no longer read by any live
-footprint or transition, and this theorem is what says the states where it would
-have differed are now reachable rather than hypothetical. -/
-theorem donationPopTriggers_disagree_at_orphan_head (st : SystemState)
-    (target : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (r : Reply)
-    (scId : SeLe4n.SchedContextId) (sc : SchedContext)
-    (holder expected : SeLe4n.ThreadId)
-    (hRid : answeredReplyObject? st target = some rid)
-    (hR : st.getReply? rid = some r) (hN : r.next = some (.head scId))
-    (hSc : st.getSchedContext? scId = some sc) (hScReply : sc.scReply = some rid)
-    (hBound : sc.boundThread = some holder)
-    (hExp : recordedReplyServer? st target = some expected)
-    (hNoDon : endpointReplyDonation? st expected = none) :
-    answeredFrameHeadContext? st target = some (scId, holder) ∧
-      endpointReplyServerDonation? st target = none := by
-  refine ⟨answeredFrameHeadContext?_of_head st target rid scId holder hRid
-    (replyFrameHeadContext?_of_head st rid r scId sc hR hN hSc hScReply) ?_, ?_⟩
-  · rw [hSc]; exact hBound
-  · unfold endpointReplyServerDonation?
-    rw [hExp]; exact hNoDon
+-- ----------------------------------------------------------------------------
+-- WS-HP HP7 (`v0.35.46`): HP2.3's orphan-head pair
+-- ----------------------------------------------------------------------------
+--
+-- `answeredHeadContextIsServerDonation_false_of_orphan_head` and
+-- `donationPopTriggers_disagree_at_orphan_head` stood here from HP2.3 as the
+-- checkable form of "the splice breaks the equivalence a binding-driven pop
+-- stands on", which is why HP6 could not precede HP4.  The ordering was
+-- respected -- HP4 (`v0.35.38`) and HP5 (`v0.35.39`) moved both triggers onto the
+-- answered frame's own `.head` link, and HP6.8 (`v0.35.45`) then made the splice
+-- live -- and with that the pair's job was done: the first was HP7's warrant for
+-- deleting `answeredHeadContextIsServerDonation`, so it cannot outlive the
+-- predicate it negates, and the second named `endpointReplyServerDonation?`,
+-- which no footprint or transition reads any more.
+--
+-- The orphan head itself is not gone, it is **reachable**, and the evidence moved
+-- from a theorem to an executed run: `tests/SmpCrossCoreReplySuite.lean` builds
+-- that state and computes both readings on it, so what these two asserted is now
+-- measured rather than stated.
 
 /-- **WS-RM (`v0.35.6`): the live cross-core `.reply` dispatch preserves the
 donation chain — the theorem the workstream exists for.**

@@ -2109,9 +2109,12 @@ than inherited.
    (`replyFrameHeadHolder?`), so a frame that heads no context simply does not pop
    and an orphan head — a head whose recorded reply server is gone and `.unbound` —
    is popped on the strength of the link rather than of a binding nobody holds.
-   `answeredHeadContextIsServerDonation_false_of_orphan_head` names that state, and
-   it is reachable from this cut onward; that it has no consumer left is what lets
-   HP7 delete the predicate.
+   That orphan head is **reachable from this cut onward**, which is what let HP7
+   (`v0.35.46`) delete the coherence predicate the binding-driven pop stood on: a
+   stated fact the live kernel refutes is not a weaker obligation but a false one.
+   The theorem that named the state went with it, and the evidence is now an
+   executed witness — `tests/SmpCrossCoreReplySuite.lean` builds the orphan head
+   and computes both readings on it.
 
 **What this buys, measured.**  At reply-stack depth three
 (`tests/SmpIpcSuite.lean` §3.22) the reservation of a client whose reply
@@ -6601,12 +6604,15 @@ theorem schedContext_ne_tcb_at_objId
 -- `cancelledMiddleCallerPolicy := .spliceOutTheCut`.  What survives, and is now
 -- reachable rather than hypothetical, is the pair that names the state the
 -- splice creates and the old trigger could not serve:
--- `answeredHeadContextIsServerDonation_false_of_orphan_head` and
--- `donationPopTriggers_disagree_at_orphan_head`
--- (`IPC/CrossCore/EndpointReplyDispatchInvariant.lean`).  Those are what let HP7
--- delete the coherence predicate, and the reason this comment is here rather
--- than the deletion being silent: a reader arriving at a citation of the retired
--- name needs to find out what replaced it.
+-- the orphan-head pair in `IPC/CrossCore/EndpointReplyDispatchInvariant.lean`.
+-- Those are what let **HP7** (`v0.35.46`) delete the coherence predicate, and HP7
+-- then deleted them too: the first negated the predicate and so could not outlive
+-- it, and the second named the binding-driven resolver no footprint reads any
+-- more.  Their content is an executed witness now —
+-- `tests/SmpCrossCoreReplySuite.lean` builds the orphan head and computes both
+-- readings on it.  This comment stays rather than the deletions being silent: a
+-- reader arriving at a citation of a retired name needs to find out what replaced
+-- it.
 
 /-- AK1-A (I-H01): `returnDonatedSchedContext` succeeds under
     `donationOwnerValid` combined with non-reservation of the participant

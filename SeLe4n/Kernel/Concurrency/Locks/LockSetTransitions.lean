@@ -816,10 +816,13 @@ the thread that **receives** it.  `donatedScId` is the first and
 because the head-driven pop hands the context to the answered caller and that is
 `replyTargetTid`.
 
-Before HP4 the pair was resolved from the recorded server's **binding**
-(`endpointReplyServerDonation?`), whose second component is the thread that
-*gains* the context — so this parameter was `donatedOriginalOwnerTid` and merged
-with `replyTargetTid` under a coherence fact.  Since HP6.2 the resolved
+Before HP4 the pair was resolved from the recorded server's **binding**, through a
+resolver whose second component is the thread that *gains* the context — so this
+parameter was `donatedOriginalOwnerTid` and merged with `replyTargetTid` under a
+coherence fact.  That resolver and that fact were both **deleted** at WS-HP HP7
+(`v0.35.46`); the retired reading survives only as
+`bindingDrivenReplyServerDonation?`, private to
+`tests/SmpCrossCoreReplySuite.lean`, which is the witness that refutes it.  Since HP6.2 the resolved
 footprints read `answeredFrameHeadContext?`, whose second component is
 `sc.boundThread`: the same type, the opposite role.  A resolved footprint that
 passes the *recipient* here is declaring a lock for a write the pop does not

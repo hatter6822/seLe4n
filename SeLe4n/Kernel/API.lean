@@ -1226,7 +1226,11 @@ SM5.H replenishment migration:
 trigger, exactly as the `.reply` arm's are -- the thread the pop unbinds is read
 off `SchedContext.boundThread` rather than supplied, so an unconditional fact
 about the operation's argument would be a fact about the wrong thread.
-`hHolderDonation` is the binding half HP7 retires. -/
+`hHolderDonation` is the binding half, and HP7 (`v0.35.46`) did **not** retire it:
+the trigger answers `(context, holder)` off a `.head` link and says nothing about
+`holder`'s binding, so this is the one stated fact the head-driven reading still
+needs.  What HP7 retired were the binding-driven readings, whose content the trigger
+does witness. -/
 theorem replyRecvPopDonation_preserves_ipcInvariantFull
     (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) (st st' : SystemState)
     (returned? : Option SeLe4n.SchedContextId)
