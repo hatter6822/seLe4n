@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.48.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.49.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3891,7 +3891,7 @@ a licence to delete the reclaim — deleting it reaches a state
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48)
+### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10.1–HP10.5 v0.35.49)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -3948,7 +3948,7 @@ banner in `IPC/Invariant/Defs.lean` records what replaced it.
 | HP7 | LANDED | v0.35.46 | **The three stated coherence hypotheses retire** — nine declarations deleted with the binding-driven resolver, HP7.1 already done at HP4.4, HP7.4 vacuous, and the fourth stated fact found LIVE |
 | HP8 | LANDED | v0.35.47 | **The frozen mirror splices** — the sever's family deleted, the census's three mirrors, and `FO-043`: the depth-3 witness every shallower scenario structurally could not be |
 | HP9 | LANDED | v0.35.48 | **Witnesses, anchors, documentation, closure** — the depth-4 witness (§3.23), the upstream facts recorded at the code, and acceptance box 10 struck as wrong rather than ticked |
-| HP10 | PENDING | — | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach |
+| HP10 | IN FLIGHT | HP10.1–HP10.5 v0.35.49 | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach; the field, its write, its clears and its id-reuse closure are in and **inert** |
 
 **What new code must respect since HP4 (`v0.35.38`).**  Seven things.
 

@@ -1,3 +1,103 @@
+## v0.35.49 — WS-HP HP10.1–HP10.5: the reservation's origin, recorded and inert
+
+WS-HP HP6 recovered the donation accounting at reply-stack depth ≥ 3 and provably
+cannot reach depth 2: both removal policies write `none` into the frame above a
+*bottom* frame, so a delegate answering the client out of order still leaves the
+client's frame gone and the later in-order pop settles the reservation on the
+**intermediate** caller.  The cause is not seL4-MCS and not the removal policy — it
+is that the recipient is derived from **stack reachability**, so removing a frame
+changes who the kernel believes owns the context.  `reply_pop` donates to the
+answered frame's own `replyTCB`, so upstream has the same loss and no remedy.
+
+`SchedContext.donationOrigin : Option ThreadId` records the thread that owned the
+reservation when it first left.  This cut lands the field, its write, its clears and
+its id-reuse closure; **nothing reads it yet**, and the golden trace is
+byte-identical.
+
+**HP10.1 — the measurement, which re-cut the phase.**  Over the code view OD2's
+`scReply` precedent is 198 occurrences across 27 modules, not the *264 across 34*
+the row was registered with, which matches neither figure at either scale — so the
+precedent is re-stated rather than cited.  A new `SchedContext` field touches six
+surfaces and **two refuse it structurally**: `bootSafeSchedContextCheck` and
+`schedContextReferencesReservedIdleSlot` both destructure the constructor, so they
+failed to elaborate until it was classified, which is the PR #889 round-8 pin
+working as intended.  The freeze half is **vacuous** — `freezeObject` on
+`.schedContext` is a pass-through by `rfl`.  And the measurement found a row the
+phase did not have: the frozen reply composite passes the answered caller as the
+pop's recipient exactly as the live one does, and
+`frozenBranchOperationChecked .endpointReplyToBlockedCaller = true` is a
+machine-checked claim that the two are run beside each other — so flipping only the
+live arm would make that claim false.  That is HP4.7's situation verbatim and gets
+HP4.7's answer: a new row, landing in the **same cut** as the live flip.  Sub-task
+count 54 → 55.
+
+**HP10.2 — also overtaken.**  The row said §3.20 *gains* the accounting halves it
+lacks; measured at HEAD it already had both, added when the depth-2 loss was found
+at `v0.35.42`.  What it did find is a **labelling** defect: the assertion that the
+pop settles the context on a thread strictly *inside* the chain was labelled
+`PAYOFF` alone — true as WS-RM's payoff (the pop succeeds where the pre-`v0.35.6`
+path wedged), incomplete as HP10's cost (the *thread it names* is the loss).  One
+expression, two facts; relabelled `PAYOFF/COST` with both roles stated rather than
+duplicated under a second label.
+
+**HP10.3 — the field, inert.**  Erased by `projectKernelObject` in the same cut
+(`…_donationOrigin_invariant`), refused on a boot SchedContext, and carried by
+`BEq SchedContext` so a record or clear is visible to every `==`, the frozen
+differential included.  The origin is **history the kernel validates, not an
+invariant**: no `donationChainWellFormed` clause can relate it to the store, because
+"the origin is the bottom frame's thread, **or** a thread whose frame was removed"
+has an unstateable second disjunct and a clause carrying only the first would be
+false on exactly the states the field exists for.  A Tier 3 negative refuses one.
+
+**HP10.4 — the write, the clears, and two loan-enders the row did not name.**
+`donateSchedContext` records the origin on a **first** push only, through the named
+`donationFirstPush` rather than an inline test, because the operation branches on it
+and `_ok_storeChain` — the only description of that operation — must name the same
+question.  An onward push leaves the field, which is what makes it the *origin*
+rather than the immediate donor (already recoverable from `.donated scId owner`).
+The row named three loan-enders and the tree has **five**: the pop's bottom arm,
+`schedContextBind`, `schedContextUnbind`, and `cancelBoundDonation` /
+`cancelBoundDonationOnCore` — the suspend path's unbind, asking the identical
+question and otherwise diverging from `schedContextUnbind` by a field.
+
+Three mechanical consequences, each a rule applied rather than a patch.  The push's
+and the pop's projection hops are **one** three-field lemma
+(`…_donationWrite_invariant` widened, not a `…PushWrite…` sibling added).  The
+chain-preservation lemmas take the origin as a **parameter**, in the same position
+and for the same reason as `serverTid` / `originalOwner`, since those proofs read
+`scReply` and nothing else.  And `returnDonatedSchedContext_eq_legacy_of_none` gains
+`hNoOrigin` as a *hypothesis* rather than growing its right-hand side — the
+precedent HP4.6 set in that theorem's own docstring, since an equation whose
+right-hand side grows a field every time the operation does stops being a statement
+about the legacy shape.
+
+**HP10.5 — the id-reuse closure, and it cost a pack clause.**  A `ThreadId` is an
+index, so destroying the origin thread and allocating at its id would leave a later
+pop handing a reservation to an unrelated thread, with `donationRecipientAcceptable`
+satisfied — that guard asks whether the *recipient* may take a context, never
+whether the recorded origin is still the lender.  `clearDonationOriginReferences` is
+`cleanupTcbReferences`'s fourth sweep rather than a step beside the donation return:
+a stale origin *is* a dangling reference to a destroyed thread, and unlike the
+return it needs no error channel.  §3.24 measures it with **two** negatives —
+scrubbing a different thread must leave the origin standing, because a sweep that
+cleared unconditionally would satisfy every payoff and destroy the field's purpose.
+
+What the row did not predict is the obligation.  `cleanupTcbReferences` is claimed
+to be an **identity** under `retypeTargetDetached`, and that claim is false unless
+the pack says no context records the target as an origin — which its other clauses
+do not imply, and must not: a thread that lent its reservation and had its frame
+removed is still the recorded origin while it is suspended and destroyed, which is
+the state the sweep exists for.  `tcbNotDonationOrigin` joins the pack in the class
+of `notSc` and `tcbNotDonated`, and the runtime sweep is what makes a *violation*
+safe rather than what makes the clause redundant.
+
+Four pre-existing Tier 3 anchors watched shapes this field changed — two
+constructor destructurings and two record spellings — and were repointed rather
+than deleted; a fix's blast radius includes the artefacts that watch what it
+changed, and those fail silently by reporting PASS.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md HP10.1–HP10.5
+
 ## v0.35.48 — WS-HP HP9: the splice composes, and the witness says what it is evidence for
 
 HP6 stated the payoff at reply-stack depth 3 —

@@ -2247,7 +2247,7 @@ theorem cancelBoundDonation_preserves_ipcInvariant
       · exact ipcInvariant_of_objects_eq rfl hIpc
     | some sc =>
       have hInv1 : (st.objects.insert scId.toObjId
-          (.schedContext { sc with boundThread := none, isActive := false })).invExt :=
+          (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none })).invExt :=
         RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
       split
       · intro oid ntfn hL

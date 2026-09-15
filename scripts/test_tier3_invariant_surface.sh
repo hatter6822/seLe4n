@@ -1348,8 +1348,8 @@ run_check "INVARIANT" rg -n '^  scReply : Option SeLe4n\.ReplyId := none$' SeLe4
 run_check "INVARIANT" rg -n 'a\.scReply == b\.scReply &&' SeLe4n/Kernel/SchedContext/Types.lean
 # The two exhaustive positional patterns keep their arity pin: a field added to
 # `SchedContext` fails these definitions rather than defaulting to "unread".
-run_check "INVARIANT" bash -lc 'rg -U -n "_replenishments, boundThread, scReply, _isActive, _lock⟩" SeLe4n/Platform/Boot.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "_replenishments, _boundThread, _scReply, _isActive, _lock⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_replenishments, boundThread, scReply, donationOrigin, _isActive, _lock⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_replenishments, _boundThread, _scReply, _donationOrigin, _isActive, _lock⟩" SeLe4n/Platform/Boot.lean'
 # A boot SchedContext heads no reply stack: every admissible boot Reply is inert
 # (`bootSafeReplyCheck` refuses a linked one), so a config-supplied head could
 # only dangle — a `donationChainWellFormed` violation installed before the first
@@ -1470,11 +1470,12 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # checks are RUN, not merely defined — the relation a presence check on any
 # section's name would miss.  Stated as the contiguous run so a section deleted
 # from the middle of the sequence is caught, which is how OD3.1's insertion was
-# caught in the first place, how OD4.1's was, and how WS-HP HP9.1's was.  Anchored
+# caught in the first place, how OD4.1's was, how WS-HP HP9.1's was, and how
+# HP10.5's was.  Anchored
 # between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runReceivePriorityHandoffChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runReceivePriorityHandoffChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -1503,7 +1504,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "if r\.next != some \(\.head scId\) the
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "if r\.next != some \(\.head scId\) then \.ok none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The pop writes the rebind and the stack head as ONE SchedContext store: a frame
 # stated over either half alone would be false of the operation.
-run_check "INVARIANT" bash -lc 'rg -U -n "let sc. := \{ sc with boundThread := some originalOwner,\n                           scReply := head\?\.bind \(fun p => p\.2\.prev\) \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "let sc. := \{ sc with boundThread := some originalOwner,\n                           scReply := head\?\.bind \(fun p => p\.2\.prev\),\n                           donationOrigin :=" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The head clear is its own step with its own frames, so a downstream frame
 # extends by one rewrite rather than by a second arm through the whole proof.
 run_check "INVARIANT" rg -n '^def storeDonationHeadClear' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
@@ -2058,7 +2059,7 @@ run_check "INVARIANT" rg -n '^theorem donationPushFrame\?_ok' SeLe4n/Kernel/IPC/
 # The push writes the head and the frame, and the frame's `prev` is the OLD head
 # -- read out of the same SchedContext object the store rewrites.  Relation, not
 # presence: the mutation keeps both stores and drops the link.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def donateSchedContext[^\n]*(\n([ \t][^\n]*)?)*scReply := some pushRid \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def donateSchedContext[^\n]*(\n([ \t][^\n]*)?)*scReply := some pushRid," SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def donateSchedContext[^\n]*(\n([ \t][^\n]*)?)*storeDonationFramePush clientScId pushRid pushReply sc\.scReply st1" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def storeDonationFramePush[^\n]*(\n([ \t][^\n]*)?)*prev := oldHead\?, next := some \(\.head scId\) \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # ...and the FIFTH store: the old head stops heading the context and links up to
@@ -2255,6 +2256,36 @@ run_check "INVARIANT" bash -lc 'rg -n "PAYOFF: pop three delivers it HOME .[.]bo
 # standalone presence check is added here: a second anchor asking the same question
 # is the duplication this file exists to avoid.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthThree[^\n]*(\n([ \t][^\n]*)?)*schedContextBinding := \.donated scId outer" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# **WS-HP HP10.3/HP10.4/HP10.5**: the reservation's ORIGIN.  The field is *history
+# the kernel validates*, not an invariant -- no `donationChainWellFormed` clause can
+# relate it to the store, because "the origin is the bottom frame's thread, OR a
+# thread whose frame was removed" has an unstateable second disjunct and a clause
+# carrying only the first would be false on exactly the states the field exists for.
+run_check "INVARIANT" rg -n '^  donationOrigin : Option SeLe4n.ThreadId := none' SeLe4n/Kernel/SchedContext/Types.lean
+# It is ERASED by the projection, in the cut that added it -- a `ThreadId` naming a
+# possibly-high caller is the linkage `boundThread` and `Reply.caller` are erased for.
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_donationOrigin_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" bash -lc 'rg -n "donationOrigin := none," SeLe4n/Kernel/InformationFlow/Projection.lean'
+# ...and REFUSED on a boot SchedContext: a boot state has made no loan.
+run_check "INVARIANT" bash -lc 'rg -n "sc.donationOrigin.isNone" SeLe4n/Platform/Boot.lean'
+# The write asks its question ONCE, through a named definition, because the operation
+# branches on it and `_ok_storeChain` -- the only description of that operation --
+# must name the same question.
+run_check "INVARIANT" rg -n '^@\[inline\] def donationFirstPush' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# NEGATIVE: and no chain conjunct is stated over the origin.  The field is validated
+# at the pop, never asserted by the invariant; a conjunct would be false on the
+# removal states this phase exists for.
+run_negative_check "INVARIANT" bash -lc 'rg -n "donationOrigin" SeLe4n/Kernel/IPC/Invariant/Defs.lean | rg -n "donationChainWellFormed|prevLinkReciprocal|headTerminates"'
+# The id-reuse closure, and that it runs on the destroy path rather than beside the
+# donation return: a stale origin is a dangling reference to a destroyed thread,
+# which is what the reference scrub is for.
+run_check "INVARIANT" rg -n '^def clearDonationOriginReferences' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupTcbReferences[^\n]*(\n([ \t][^\n]*)?)*clearDonationOriginReferences st tid" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# ...and the detachment pack carries the obligation the scrub makes safe.  NOT
+# implied by its neighbours: a thread that lent its reservation and had its frame
+# removed is still the recorded origin while it is suspended and destroyed.
+run_check "INVARIANT" bash -lc 'rg -n "tcbNotDonationOrigin :" SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean'
+
 # NEGATIVE: `severAtCut_pop_leaves_no_head` was HP2.3's pin that the policy flip
 # may not precede the trigger flip.  HP6.8 is the flip, and its first conjunct was
 # the policy constant at the OLD value, so it is deleted rather than restated -- a

@@ -154,7 +154,9 @@ theorem returnDonatedSchedContext_getTcb?_char
     intro t; rw [hEq]; rfl
   have hSc1 : s1.getSchedContext? scId =
       some { sc with boundThread := some originalOwner,
-                     scReply := head?.bind (fun p => p.2.prev) } := by
+                     scReply := head?.bind (fun p => p.2.prev),
+                     donationOrigin :=
+                       if newOwner?.isNone then none else sc.donationOrigin } := by
     unfold SystemState.getSchedContext?
     rw [storeObject_objects_eq st s1 _ _ hObjInv hS1]
   have hOwner2 : s2.getTcb? originalOwner = some ownerTcb :=
@@ -2185,6 +2187,12 @@ and both are proved against the same store surface
 theorem donationHeadPop_preserves_donationChainWellFormed_of_except
     {st s1 s2 : SystemState} {scId : SeLe4n.SchedContextId} {sc : SchedContext}
     {originalOwner : SeLe4n.ThreadId} {head? : Option (SeLe4n.ReplyId × Reply)}
+    -- **WS-HP HP10.4**: the recorded reservation origin is a **parameter**, in the
+    -- same position and for the same reason as `originalOwner`: this proof reads the
+    -- stored context's `scReply` and nothing else, so a field it does not read is
+    -- quantified rather than fixed, and the lemma stays true of whatever the pop's
+    -- bottom arm writes there.
+    {origin? : Option SeLe4n.ThreadId}
     (hObjInv : st.objects.invExt)
     (hChainNone : head? = none → donationChainWellFormed st)
     (hChainHead : ∀ rid r, head? = some (rid, r) → donationChainWellFormedExcept st rid)
@@ -2192,7 +2200,8 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
     (hHead : donationHeadOf? st scId sc = .ok head?)
     (hS1 : storeObject scId.toObjId
       (.schedContext { sc with boundThread := some originalOwner,
-                               scReply := head?.bind (fun p => p.2.prev) }) st = .ok ((), s1))
+                               scReply := head?.bind (fun p => p.2.prev),
+                               donationOrigin := origin? }) st = .ok ((), s1))
     (hPop : storeDonationHeadPop scId head? s1 = .ok s2) :
     donationChainWellFormed s2 := by
   -- Two views of one read.  The typed accessor is what the operation and the
@@ -2235,7 +2244,8 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
     have hS1Ne : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → s1.objects[k]? = st.objects[k]? :=
       fun k hk => SeLe4n.Model.storeObject_objects_ne st s1 _ k _ hk hObjInv hS1
     have hS1Sc : s1.objects[scId.toObjId]?
-        = some (.schedContext { sc with boundThread := some originalOwner, scReply := r.prev }) := by
+        = some (.schedContext { sc with boundThread := some originalOwner, scReply := r.prev,
+                                        donationOrigin := origin? }) := by
       simpa using SeLe4n.Model.storeObject_objects_eq st s1 _ _ hObjInv hS1
     -- §6.2  The pop's two stores: the unlink at `rid`, the re-head at `r.prev`.
     rcases storeDonationHeadPop_cases hPop with ⟨hAbs, _⟩ | ⟨rid', r', s1', hEq, hClear, hReHead⟩
@@ -2263,7 +2273,8 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
         simpa using hReHead
       subst hs2
       have hSc2 : s1'.objects[scId.toObjId]?
-          = some (.schedContext { sc with boundThread := some originalOwner, scReply := none }) := by
+          = some (.schedContext { sc with boundThread := some originalOwner, scReply := none,
+                                          donationOrigin := origin? }) := by
         rw [hS1'Ne scId.toObjId (Ne.symm hKeyNe), hS1Sc, hPrev]
       have hOther : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → k ≠ rid.toObjId →
           s1'.objects[k]? = st.objects[k]? :=
@@ -2283,7 +2294,8 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
           exact ⟨fun hx => hqRid (by rw [hx]), by rw [← hOther q.toObjId hqSc hqRid]; exact hq⟩
       have hScCases : ∀ (c : SeLe4n.SchedContextId) (sc' : SchedContext),
           s1'.objects[c.toObjId]? = some (.schedContext sc') →
-          (c = scId ∧ sc' = { sc with boundThread := some originalOwner, scReply := none }) ∨
+          (c = scId ∧ sc' = { sc with boundThread := some originalOwner, scReply := none,
+                                      donationOrigin := origin? }) ∨
           (c ≠ scId ∧ st.objects[c.toObjId]? = some (.schedContext sc')) := by
         intro c sc' hc
         by_cases hcSc : c.toObjId = scId.toObjId
@@ -2397,7 +2409,8 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
         rw [hS2Ne rid.toObjId (Ne.symm hBelowKeyNeRid)]; exact hS1'Rid
       have hS2Sc : s2.objects[scId.toObjId]?
           = some (.schedContext { sc with boundThread := some originalOwner,
-                                          scReply := some below }) := by
+                                          scReply := some below,
+                                          donationOrigin := origin? }) := by
         rw [hS2Ne scId.toObjId (Ne.symm hBelowNeSc), hS1'Ne scId.toObjId (Ne.symm hKeyNe), hS1Sc,
           hPrev]
       have hOther : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → k ≠ rid.toObjId → k ≠ below.toObjId →
@@ -2425,7 +2438,8 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
             rw [← hOther q.toObjId hqSc hqRid hqBelow]; exact hq
       have hScCases : ∀ (c : SeLe4n.SchedContextId) (sc' : SchedContext),
           s2.objects[c.toObjId]? = some (.schedContext sc') →
-          (c = scId ∧ sc' = { sc with boundThread := some originalOwner, scReply := some below }) ∨
+          (c = scId ∧ sc' = { sc with boundThread := some originalOwner, scReply := some below,
+                                      donationOrigin := origin? }) ∨
           (c ≠ scId ∧ st.objects[c.toObjId]? = some (.schedContext sc')) := by
         intro c sc' hc
         by_cases hcSc : c.toObjId = scId.toObjId
@@ -2607,13 +2621,20 @@ that does not run a reply leg first consumes. -/
 theorem donationHeadPop_preserves_donationChainWellFormed
     {st s1 s2 : SystemState} {scId : SeLe4n.SchedContextId} {sc : SchedContext}
     {originalOwner : SeLe4n.ThreadId} {head? : Option (SeLe4n.ReplyId × Reply)}
+    -- **WS-HP HP10.4**: the recorded reservation origin is a **parameter**, in the
+    -- same position and for the same reason as `originalOwner`: this proof reads the
+    -- stored context's `scReply` and nothing else, so a field it does not read is
+    -- quantified rather than fixed, and the lemma stays true of whatever the pop's
+    -- bottom arm writes there.
+    {origin? : Option SeLe4n.ThreadId}
     (hObjInv : st.objects.invExt)
     (hChain : donationChainWellFormed st)
     (hSc : st.getSchedContext? scId = some sc)
     (hHead : donationHeadOf? st scId sc = .ok head?)
     (hS1 : storeObject scId.toObjId
       (.schedContext { sc with boundThread := some originalOwner,
-                               scReply := head?.bind (fun p => p.2.prev) }) st = .ok ((), s1))
+                               scReply := head?.bind (fun p => p.2.prev),
+                               donationOrigin := origin? }) st = .ok ((), s1))
     (hPop : storeDonationHeadPop scId head? s1 = .ok s2) :
     donationChainWellFormed s2 :=
   donationHeadPop_preserves_donationChainWellFormed_of_except hObjInv (fun _ => hChain)
@@ -2754,6 +2775,12 @@ Three things this proof turns on.
 theorem donationHeadPush_preserves_donationChainWellFormed
     {st s1 s2 : SystemState} {scId : SeLe4n.SchedContextId} {sc : SchedContext}
     {serverTid : SeLe4n.ThreadId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
+    -- **WS-HP HP10.4**: the recorded reservation origin is a **parameter**, in the
+    -- same position and for the same reason as `serverTid`: this proof reads the
+    -- stored context's `scReply` and nothing else, so a field it does not read is
+    -- quantified rather than fixed.  That is what keeps the lemma true of whatever
+    -- the push writes there, this cut's origin included.
+    {origin? : Option SeLe4n.ThreadId}
     (hObjInv : st.objects.invExt)
     (hChain : donationChainWellFormed st)
     (hSc : st.getSchedContext? scId = some sc)
@@ -2761,7 +2788,8 @@ theorem donationHeadPush_preserves_donationChainWellFormed
     (hFreshNext : pushReply.next = none)
     (hCaller : pushReply.caller ≠ none)
     (hS1 : storeObject scId.toObjId
-      (.schedContext { sc with boundThread := some serverTid, scReply := some pushRid }) st
+      (.schedContext { sc with boundThread := some serverTid, scReply := some pushRid,
+                               donationOrigin := origin? }) st
         = .ok ((), s1))
     (hS2 : storeDonationFramePush scId pushRid pushReply sc.scReply s1 = .ok s2) :
     donationChainWellFormed s2 := by
@@ -2774,7 +2802,8 @@ theorem donationHeadPush_preserves_donationChainWellFormed
   have hS1Ne : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → s1.objects[k]? = st.objects[k]? :=
     fun k hk => SeLe4n.Model.storeObject_objects_ne st s1 _ k _ hk hObjInv hS1
   have hS1Sc : s1.objects[scId.toObjId]?
-      = some (.schedContext { sc with boundThread := some serverTid, scReply := some pushRid }) :=
+      = some (.schedContext { sc with boundThread := some serverTid, scReply := some pushRid,
+                                      donationOrigin := origin? }) :=
     SeLe4n.Model.storeObject_objects_eq st s1 _ _ hObjInv hS1
   obtain ⟨hNotSelf, s1', hSPush, hRest⟩ := storeDonationFramePush_cases hS2
   have hInv1' := SeLe4n.Model.storeObject_preserves_objects_invExt s1 s1' _ _ hInv1 hSPush
@@ -2794,7 +2823,8 @@ theorem donationHeadPush_preserves_donationChainWellFormed
         s1'.objects[k]? = st.objects[k]? :=
       fun k h1 h2 => by rw [hS1'Ne k h2, hS1Ne k h1]
     have hSc2 : s1'.objects[scId.toObjId]?
-        = some (.schedContext { sc with boundThread := some serverTid, scReply := some pushRid }) := by
+        = some (.schedContext { sc with boundThread := some serverTid, scReply := some pushRid,
+                                        donationOrigin := origin? }) := by
       rw [hS1'Ne scId.toObjId (Ne.symm hKeyNe)]; exact hS1Sc
     have hRid2 : s1'.objects[pushRid.toObjId]?
         = some (.reply { pushReply with prev := none, next := some (.head scId) }) := by
@@ -2814,7 +2844,8 @@ theorem donationHeadPush_preserves_donationChainWellFormed
         exact ⟨fun hx => hqRid (by rw [hx]), by rw [← hOther q.toObjId hqSc hqRid]; exact hq⟩
     have hScCases : ∀ (c : SeLe4n.SchedContextId) (sc' : SchedContext),
         s1'.objects[c.toObjId]? = some (.schedContext sc') →
-        (c = scId ∧ sc' = { sc with boundThread := some serverTid, scReply := some pushRid }) ∨
+        (c = scId ∧ sc' = { sc with boundThread := some serverTid, scReply := some pushRid,
+                                    donationOrigin := origin? }) ∨
         (c ≠ scId ∧ st.objects[c.toObjId]? = some (.schedContext sc')) := by
       intro c sc' hc
       by_cases hcSc : c.toObjId = scId.toObjId
@@ -2924,7 +2955,8 @@ theorem donationHeadPush_preserves_donationChainWellFormed
         = some (.reply { pushReply with prev := some old, next := some (.head scId) }) := by
       rw [hS2Ne pushRid.toObjId (Ne.symm hOldKeyNe), hS1'Rid, hOldEq]
     have hSc2 : s2.objects[scId.toObjId]?
-        = some (.schedContext { sc with boundThread := some serverTid, scReply := some pushRid }) := by
+        = some (.schedContext { sc with boundThread := some serverTid, scReply := some pushRid,
+                                        donationOrigin := origin? }) := by
       rw [hS2Ne scId.toObjId (Ne.symm hOldNeSc), hS1'Ne scId.toObjId (Ne.symm hKeyNe)]
       exact hS1Sc
     have hOther : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → k ≠ pushRid.toObjId → k ≠ old.toObjId →
@@ -2952,7 +2984,8 @@ theorem donationHeadPush_preserves_donationChainWellFormed
           rw [← hOther q.toObjId hqSc hqRid hqOld]; exact hq
     have hScCases : ∀ (c : SeLe4n.SchedContextId) (sc' : SchedContext),
         s2.objects[c.toObjId]? = some (.schedContext sc') →
-        (c = scId ∧ sc' = { sc with boundThread := some serverTid, scReply := some pushRid }) ∨
+        (c = scId ∧ sc' = { sc with boundThread := some serverTid, scReply := some pushRid,
+                                    donationOrigin := origin? }) ∨
         (c ≠ scId ∧ st.objects[c.toObjId]? = some (.schedContext sc')) := by
       intro c sc' hc
       by_cases hcSc : c.toObjId = scId.toObjId

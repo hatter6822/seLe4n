@@ -722,7 +722,7 @@ theorem returnDonationToCancelledCaller_preserves_projection
         hSet2 hC2 hS3
       have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
         scId.toObjId _ (.schedContext sc) hSc
-        (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _)
+        (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
         (hIdxCompleteA scId.toObjId (by rw [hSc]; intro hx; cases hx))
         hObjInvA hS1
       have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear

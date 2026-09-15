@@ -936,7 +936,13 @@ def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
     let st1 : SystemState := match st.getSchedContext? scId with
       | some sc =>
-        let sc' := { sc with boundThread := none, isActive := false }
+        -- **WS-HP HP10.4**: and the recorded reservation origin, because this is
+        -- the same question `schedContextUnbind` answers — "this context stops
+        -- being owned" — and two spellings of one loan-ender are free to diverge.
+        -- The suspend path reaches it for a `.bound` victim, so a context whose
+        -- origin survived a suspend would carry it into whatever binds it next.
+        let sc' := { sc with boundThread := none, isActive := false,
+                             donationOrigin := none }
         { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
       | none => st
     -- AE3-C/SC-07: Remove SchedContext from replenish queue (consistent with schedContextUnbind)

@@ -3645,7 +3645,8 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
             rw [Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨-, hs⟩ := hStep
             subst hs
-            let sc1 : SchedContext := { sc with boundThread := some vThreadId.val }
+            let sc1 : SchedContext := { sc with boundThread := some vThreadId.val,
+                                                donationOrigin := none }
             let scObj : KernelObject := .schedContext sc1
             let st1 : SystemState := { st with objects := st.objects.insert vScId.val scObj }
             let tcb1 : TCB :=

@@ -335,7 +335,8 @@ private theorem schedContextUnbind_ok_char
     ∃ tid, sc.boundThread = some tid ∧
     ((∃ tcb, st.getTcb? tid = some tcb ∧
         st'.objects = (st.objects.insert vScId.val
-            (.schedContext { sc with boundThread := none, isActive := false })).insert
+            (.schedContext { sc with boundThread := none, isActive := false,
+                                     donationOrigin := none })).insert
             tid.toObjId (.tcb { tcb with schedContextBinding := SchedContextBinding.unbound }) ∧
         (∀ c, st'.scheduler.replenishQueueOnCore c
           = if determineTargetCore st tid = c
@@ -344,7 +345,8 @@ private theorem schedContextUnbind_ok_char
             else st.scheduler.replenishQueueOnCore c))
      ∨ (st.getTcb? tid = none ∧
         st'.objects = st.objects.insert vScId.val
-            (.schedContext { sc with boundThread := none, isActive := false }) ∧
+            (.schedContext { sc with boundThread := none, isActive := false,
+                                     donationOrigin := none }) ∧
         (∀ c, st'.scheduler.replenishQueueOnCore c
           = ReplenishQueue.remove (st.scheduler.replenishQueueOnCore c)
               ⟨vScId.val.toNat⟩))) := by
@@ -393,7 +395,8 @@ private theorem schedContextUnbind_ok_char
         subst hSt'
         refine Or.inr ⟨by first | exact hTcb | exact rfl, ?_, ?_⟩
         · exact purgeReplenishmentFromAllCores_objects
-            ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext { sc with boundThread := none, isActive := false }) })
+            ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
+                { sc with boundThread := none, isActive := false, donationOrigin := none }) })
             ⟨vScId.val.toNat⟩
         · intro c
           exact purgeReplenishmentFromAllCores_replenishQueueOnCore
@@ -507,7 +510,8 @@ private theorem schedContextBind_ok_char
       sc.boundThread = none ∧
     ∃ tcb, st.getTcb? vThreadId.val = some tcb ∧
       st'.objects = (st.objects.insert vScId.val
-          (.schedContext { sc with boundThread := some vThreadId.val })).insert
+          (.schedContext { sc with boundThread := some vThreadId.val,
+                                   donationOrigin := none })).insert
           vThreadId.val.toObjId
           (.tcb { tcb with
             schedContextBinding := SchedContextBinding.bound ⟨vScId.val.toNat⟩,
@@ -586,8 +590,10 @@ private theorem schedContextBind_read_frame
   have hTcbRaw : st.objects.get? vThreadId.val.toObjId = some (KernelObject.tcb tcb) :=
     (getTcb?_eq_some_iff st _ tcb).mp hTcb
   obtain ⟨hOff, _, hTgt⟩ := double_insert_read_frame st
-    ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext { sc with boundThread := some vThreadId.val }) })
-    st' (SchedContextId.ofObjId vScId.val) sc { sc with boundThread := some vThreadId.val }
+    ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
+        { sc with boundThread := some vThreadId.val, donationOrigin := none }) })
+    st' (SchedContextId.ofObjId vScId.val) sc
+    { sc with boundThread := some vThreadId.val, donationOrigin := none }
     vThreadId.val tcb
     { tcb with schedContextBinding := SchedContextBinding.bound ⟨vScId.val.toNat⟩,
                priority := sc.priority }
@@ -691,8 +697,10 @@ theorem schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp
     have hTcbRaw : st.objects.get? tid.toObjId = some (KernelObject.tcb tcb) :=
       (getTcb?_eq_some_iff st _ tcb).mp hTcb
     obtain ⟨hOff, hSelf, hTgt⟩ := double_insert_read_frame st
-      ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext { sc with boundThread := none, isActive := false }) })
-      st' (SchedContextId.ofObjId vScId.val) sc { sc with boundThread := none, isActive := false }
+      ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
+          { sc with boundThread := none, isActive := false, donationOrigin := none }) })
+      st' (SchedContextId.ofObjId vScId.val) sc
+      { sc with boundThread := none, isActive := false, donationOrigin := none }
       tid tcb { tcb with schedContextBinding := SchedContextBinding.unbound }
       hObjInv hScRaw hTcbRaw rfl rfl hObjEq
     intro c scId₀ t hMem sc₀ hSc₀ tid₀ hTid₀
@@ -711,7 +719,8 @@ theorem schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp
       exact hCons c scId₀ t hMemPre sc₀ (by rw [← hOff scId₀ hEqK]; exact hSc₀) tid₀ hTid₀
   · -- sweep arm: single insert + all-cores purge.
     obtain ⟨hOff, hSelf, hTgt⟩ := sc_insert_read_frame st st'
-      (SchedContextId.ofObjId vScId.val) sc { sc with boundThread := none, isActive := false }
+      (SchedContextId.ofObjId vScId.val) sc
+      { sc with boundThread := none, isActive := false, donationOrigin := none }
       hObjInv hScRaw hObjEq
     intro c scId₀ t hMem sc₀ hSc₀ tid₀ hTid₀
     rw [hQEq c] at hMem
@@ -741,8 +750,10 @@ theorem schedContextUnbind_preserves_replenishQueueEntriesBound_smp
     have hTcbRaw : st.objects.get? tid.toObjId = some (KernelObject.tcb tcb) :=
       (getTcb?_eq_some_iff st _ tcb).mp hTcb
     obtain ⟨hOff, _, _⟩ := double_insert_read_frame st
-      ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext { sc with boundThread := none, isActive := false }) })
-      st' (SchedContextId.ofObjId vScId.val) sc { sc with boundThread := none, isActive := false }
+      ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
+          { sc with boundThread := none, isActive := false, donationOrigin := none }) })
+      st' (SchedContextId.ofObjId vScId.val) sc
+      { sc with boundThread := none, isActive := false, donationOrigin := none }
       tid tcb { tcb with schedContextBinding := SchedContextBinding.unbound }
       hObjInv hScRaw hTcbRaw rfl rfl hObjEq
     intro c scId₀ t hMem
@@ -763,7 +774,8 @@ theorem schedContextUnbind_preserves_replenishQueueEntriesBound_smp
         exact ⟨sc₀, by rw [hOff scId₀ hEqK]; exact hSc₀, tid₀, hTid₀⟩
   · -- sweep arm: every core purged, so every survivor is off-key.
     obtain ⟨hOff, _, _⟩ := sc_insert_read_frame st st'
-      (SchedContextId.ofObjId vScId.val) sc { sc with boundThread := none, isActive := false }
+      (SchedContextId.ofObjId vScId.val) sc
+      { sc with boundThread := none, isActive := false, donationOrigin := none }
       hObjInv hScRaw hObjEq
     intro c scId₀ t hMem
     rw [hQEq c] at hMem

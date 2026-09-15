@@ -534,7 +534,17 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
             -- Matches seL4 MCS where bind transfers scheduling authority from
             -- the TCB to its bound SchedContext.
             let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
-            let updatedSc := { sc with boundThread := some vThreadId.val }
+            -- **WS-HP HP10.4: a bind ends any loan, so the origin clears.**  The
+            -- thread now *owns* this reservation, which is the state the origin
+            -- records a departure from — so a recorded origin here is residue, and
+            -- leaving it would let a later pop hand the reservation to a thread
+            -- this bind has nothing to do with.  Defense in depth rather than a
+            -- reachable repair: the guard above already refuses a context that
+            -- heads a reply stack, and the pop's bottom arm clears the field when
+            -- a chain unwinds — but "no state reaches this" is an argument about
+            -- every path into the operation, and clearing costs one field write.
+            let updatedSc := { sc with boundThread := some vThreadId.val,
+                                       donationOrigin := none }
             let updatedTcb := { tcb with
               schedContextBinding := SchedContextBinding.bound scIdTyped,
               priority := sc.priority }
@@ -680,7 +690,11 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
               { st0 with scheduler := st0.scheduler.setRunQueueOnCore unbindHome rebucketed }
             else st0
           -- Z5-H2 cont: Clear both sides of the binding
-          let updatedSc := { sc with boundThread := none, isActive := false }
+          -- **WS-HP HP10.4**: and the origin, for the bind's reason in the other
+          -- direction — the reservation stops being owned at all, so a recorded
+          -- departure from ownership has no subject.
+          let updatedSc := { sc with boundThread := none, isActive := false,
+                                     donationOrigin := none }
           let st2 := { st1 with objects := st1.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
           let st3 := { st2 with objects := st2.objects.insert tid.toObjId (KernelObject.tcb updatedTcb) }
           -- Z5-H3: Remove SchedContext from replenish queue.
@@ -697,7 +711,11 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           .ok ((), st5)
         -- Bound thread's TCB not found — clear SC side anyway
         | none =>
-          let updatedSc := { sc with boundThread := none, isActive := false }
+          -- **WS-HP HP10.4**: and the origin, for the bind's reason in the other
+          -- direction — the reservation stops being owned at all, so a recorded
+          -- departure from ownership has no subject.
+          let updatedSc := { sc with boundThread := none, isActive := false,
+                                     donationOrigin := none }
           let st1 := { st with objects := st.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
           -- WS-SM SM8.B (PR #861 review round 17): this arm is reached when the
           -- bound TCB is **already gone from the store**, so there is no

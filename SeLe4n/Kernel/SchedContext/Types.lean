@@ -189,6 +189,47 @@ structure SchedContext where
       (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`) and erased by
       `projectKernelObject`, in the same class as `boundThread`. -/
   scReply : Option SeLe4n.ReplyId := none
+  /-- **WS-HP HP10.3: the reservation's ORIGIN** — the thread that owned this
+      scheduling context when it first left, recorded so that the donation return
+      does not have to derive its recipient from reply-stack *reachability*.
+
+      **Why the stack is not enough.**  The pop's bottom-of-stack arm binds the
+      thread the surviving stack names as outermost, and a removal takes frames
+      *off* that stack — so at reply-stack depth 2 a delegate answering the client
+      out of order leaves the client's frame gone and the later in-order pop
+      settles the reservation on the **intermediate** caller, with the owner
+      `.unbound` for good (`tests/SmpIpcSuite.lean` §3.20, the `PAYOFF/COST`
+      row and the `COST` row beside it).  Both removal policies write `none` into
+      the frame above a *bottom* frame, so WS-HP HP6's splice provably cannot
+      reach that case; seL4-MCS derives the recipient the same way
+      (`reply_pop` donates to the answered frame's own `replyTCB`, read at master,
+      13.0.0, 12.1.0, 12.0.0 and 11.0.0), so it has the same loss and no remedy.
+
+      **This field is HISTORY the kernel validates, not an invariant.**  No
+      `donationChainWellFormed` clause relates it to the stack, and none can: the
+      property is "the origin is the bottom frame's thread, **or** a thread whose
+      frame was removed", whose second disjunct is not stateable from the store,
+      and a clause carrying only the first would be *false* on exactly the states
+      this field exists for.  What makes acting on it safe is the pop's own guard
+      (`donationRecipientAcceptable`) — so it is a hint that is checked, never a
+      fact that is trusted, and a Tier 3 negative refuses a chain conjunct over
+      it.
+
+      **Thread-id reuse is the one hazard, and it is closed structurally.**  The
+      kernel writes the origin from the donor's own identity, so it can never
+      name a thread that did not own the reservation — unless that thread is
+      destroyed and its id reused.  `lifecyclePreRetypeCleanup` therefore clears
+      the origin of any context naming the retyped thread, exactly as it already
+      refuses a context that still heads a stack.
+
+      `none` means "no reservation is on loan from a recorded owner", which is
+      every state before the first donation and every state after the loan ends.
+      Erased by `projectKernelObject` in the same cut that adds it — a *ThreadId*
+      naming a possibly-high caller is the same cross-domain linkage `boundThread`
+      and `scReply` are erased for — and refused on a boot SchedContext by
+      `bootSafeSchedContextCheck`, since a config-supplied origin could only name
+      a loan no boot state has made. -/
+  donationOrigin : Option SeLe4n.ThreadId := none
   isActive : Bool := false
   /-- WS-SM SM3.A.6: per-SchedContext reader-writer lock state.  Default
       `RwLockState.unheld` means a freshly-allocated SchedContext starts
@@ -417,6 +458,10 @@ instance : BEq SchedContext where
     -- WS-OD OD2.1: the reply-stack head participates in structural equality, so
     -- a push or a pop is visible to every caller that compares with `==`.
     a.scReply == b.scReply &&
+    -- WS-HP HP10.3: and so does the recorded origin, for the same reason — a
+    -- write that records or clears the loan's owner is visible to every caller
+    -- that compares with `==`, including the frozen surface's differential.
+    a.donationOrigin == b.donationOrigin &&
     a.isActive == b.isActive &&
     -- WS-SM SM3.A audit-pass-7: per-SchedContext lock state participates
     -- in structural equality so lock-state regressions are not masked.

@@ -203,13 +203,66 @@ theorem removeFromAllNotificationWaitLists_tlbShootdown_eq
     rfl
     (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
 
+/-- **WS-HP HP10.5**: the reservation-origin scrub touches `objects` and nothing
+else — the frames `cleanupTcbReferences`'s own proofs rewrite through.
+
+One `fold_preserves` per component, in the shape
+`removeFromAllNotificationWaitLists_preserves` uses, because the sweep is the same
+kind of fold: it rewrites only the SchedContexts whose origin names the victim and
+returns the accumulator untouched everywhere else. -/
+theorem clearDonationOriginReferences_preserves
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearDonationOriginReferences st tid).scheduler = st.scheduler ∧
+    (clearDonationOriginReferences st tid).lifecycle = st.lifecycle ∧
+    (clearDonationOriginReferences st tid).serviceRegistry = st.serviceRegistry := by
+  unfold clearDonationOriginReferences
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.scheduler = st.scheduler ∧ acc.lifecycle = st.lifecycle ∧
+      acc.serviceRegistry = st.serviceRegistry)
+    ⟨rfl, rfl, rfl⟩
+    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+
+theorem clearDonationOriginReferences_scheduler_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearDonationOriginReferences st tid).scheduler = st.scheduler :=
+  (clearDonationOriginReferences_preserves st tid).1
+
+theorem clearDonationOriginReferences_lifecycle_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearDonationOriginReferences st tid).lifecycle = st.lifecycle :=
+  (clearDonationOriginReferences_preserves st tid).2.1
+
+theorem clearDonationOriginReferences_serviceRegistry_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearDonationOriginReferences st tid).serviceRegistry = st.serviceRegistry :=
+  (clearDonationOriginReferences_preserves st tid).2.2
+
+theorem clearDonationOriginReferences_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearDonationOriginReferences st tid).machine = st.machine := by
+  unfold clearDonationOriginReferences
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.machine = st.machine)
+    rfl
+    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+
+theorem clearDonationOriginReferences_tlbShootdown_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearDonationOriginReferences st tid).tlbShootdown = st.tlbShootdown := by
+  unfold clearDonationOriginReferences
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.tlbShootdown = st.tlbShootdown)
+    rfl
+    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+
 /-- WS-SM SM7.B: the composed TCB reference scrub only modifies scheduler
 and `objects` — the TLB-shootdown state is framed. -/
 theorem cleanupTcbReferences_tlbShootdown_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (cleanupTcbReferences st tid).tlbShootdown = st.tlbShootdown := by
   unfold cleanupTcbReferences
-  rw [removeFromAllNotificationWaitLists_tlbShootdown_eq,
+  rw [clearDonationOriginReferences_tlbShootdown_eq,
+      removeFromAllNotificationWaitLists_tlbShootdown_eq,
       removeFromAllEndpointQueues_tlbShootdown_eq]
   -- Via the sweep's own frame.  Reducing through `removeRunnableFromAllCores`
   -- here would have to whnf the per-core guard at every core.
@@ -892,7 +945,8 @@ theorem cleanupTcbReferences_removes_from_runnable
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     ¬(tid ∈ ((cleanupTcbReferences st tid).scheduler.runQueueOnCore bootCoreId)) := by
   unfold cleanupTcbReferences
-  rw [removeFromAllNotificationWaitLists_scheduler_eq]
+  rw [clearDonationOriginReferences_scheduler_eq,
+      removeFromAllNotificationWaitLists_scheduler_eq]
   rw [removeFromAllEndpointQueues_scheduler_eq]
   exact removeRunnableFromAllCores_not_mem st tid bootCoreId
 
@@ -901,7 +955,8 @@ theorem cleanupTcbReferences_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (cleanupTcbReferences st tid).lifecycle = st.lifecycle := by
   unfold cleanupTcbReferences
-  rw [removeFromAllNotificationWaitLists_lifecycle_eq,
+  rw [clearDonationOriginReferences_lifecycle_eq,
+      removeFromAllNotificationWaitLists_lifecycle_eq,
     removeFromAllEndpointQueues_lifecycle_eq (removeRunnableFromAllCores st tid) tid]
   exact removeRunnableFromAllCores_lifecycle st tid
 
@@ -1178,7 +1233,8 @@ theorem cleanupTcbReferences_flat_subset
     (h : x ∈ ((cleanupTcbReferences st tid).scheduler.runQueueOnCore bootCoreId).flat) :
     x ∈ (st.scheduler.runQueueOnCore bootCoreId).flat := by
   unfold cleanupTcbReferences at h
-  rw [removeFromAllNotificationWaitLists_scheduler_eq] at h
+  rw [clearDonationOriginReferences_scheduler_eq,
+      removeFromAllNotificationWaitLists_scheduler_eq] at h
   rw [removeFromAllEndpointQueues_scheduler_eq] at h
   exact removeRunnableFromAllCores_flat_subset st tid x bootCoreId h
 
@@ -1227,7 +1283,8 @@ theorem cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores
     (cleanupTcbReferences st tid).scheduler
       = (removeRunnableFromAllCores st tid).scheduler := by
   unfold cleanupTcbReferences
-  rw [removeFromAllNotificationWaitLists_scheduler_eq]
+  rw [clearDonationOriginReferences_scheduler_eq,
+      removeFromAllNotificationWaitLists_scheduler_eq]
   exact removeFromAllEndpointQueues_scheduler_eq (removeRunnableFromAllCores st tid) tid
 
 /-- **WS-SM SM8.B (PR #861 review round 40): the destroyed-remote-current case
@@ -1264,7 +1321,8 @@ theorem cleanupTcbReferences_machine_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (cleanupTcbReferences st tid).machine = st.machine := by
   unfold cleanupTcbReferences
-  rw [removeFromAllNotificationWaitLists_machine_eq,
+  rw [clearDonationOriginReferences_machine_eq,
+      removeFromAllNotificationWaitLists_machine_eq,
       removeFromAllEndpointQueues_machine_eq, removeRunnableFromAllCores_machine]
 
 /-- Pre-retype cleanup flat list subset: any element in the post-cleanup flat

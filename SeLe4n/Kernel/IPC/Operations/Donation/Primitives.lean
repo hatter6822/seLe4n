@@ -809,8 +809,16 @@ theorem donateSchedContext_post_boundThread
     getTcb?_of_lookupTcb s2 clientTid clientTcb hLC
   have hRaw2 : s3.getTcb? serverTid = some serverTcb :=
     getTcb?_of_lookupTcb s3 serverTid serverTcb hL
+  -- **WS-HP HP10.4**: the stored record carries the origin write too.  This
+  -- theorem's *conclusion* is about `boundThread` alone, so the origin is carried
+  -- through the rewrite and discharged by the `rfl` on the projection rather than
+  -- being abstracted away — the record named here is the one the store actually
+  -- wrote, which is what keeps `_ok_storeChain` the single description.
   have e1 : s1.getSchedContext? clientScId
-      = some { sc with boundThread := some serverTid, scReply := some pushRid } := by
+      = some { sc with boundThread := some serverTid, scReply := some pushRid,
+                       donationOrigin :=
+                         if donationFirstPush donorTcb clientScId then some clientTid
+                         else sc.donationOrigin } := by
     rw [SystemState.getSchedContext?_eq_some_iff,
       storeObject_objects_eq st s1 clientScId.toObjId _ hObjInv hS1]
   have e2 := storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2 clientScId
@@ -819,7 +827,10 @@ theorem donateSchedContext_post_boundThread
   have e4 := storeObject_tcbAt_getSchedContext?_eq s3 s4 serverTid serverTcb
     { serverTcb with schedContextBinding := .donated clientScId clientTid }
     hRaw2 hInv3 hS4 clientScId
-  refine ⟨{ sc with boundThread := some serverTid, scReply := some pushRid }, ?_, rfl⟩
+  refine ⟨{ sc with boundThread := some serverTid, scReply := some pushRid,
+                    donationOrigin :=
+                      if donationFirstPush donorTcb clientScId then some clientTid
+                      else sc.donationOrigin }, ?_, rfl⟩
   rw [hEq]
   show s4.getSchedContext? clientScId = _
   rw [e4, e3, e2, e1]

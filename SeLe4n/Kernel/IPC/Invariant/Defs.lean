@@ -6707,7 +6707,13 @@ theorem returnDonatedSchedContext_ok_of_boundAndRecipient
   simp only []
   generalize hS1 : storeObject scId.toObjId
       (.schedContext { sc with boundThread := some owner,
-                               scReply := head?.bind (fun p => p.2.prev) }) st = result1
+                               scReply := head?.bind (fun p => p.2.prev),
+                               -- **WS-HP HP10.4**: and the origin clear on the
+                               -- bottom arm, which is part of the record the store
+                               -- receives whatever `newOwner?` is.
+                               donationOrigin :=
+                                 if newOwner?.isNone then none
+                                 else sc.donationOrigin }) st = result1
   match result1, hS1 with
   | .ok pair1, hS1 =>
     have hInv1 : pair1.2.objects.invExt :=

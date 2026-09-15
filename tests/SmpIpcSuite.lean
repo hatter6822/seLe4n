@@ -2629,7 +2629,15 @@ private def runReplyFrameRemovalChecks : IO Unit := do
     assertBool "PAYOFF: the pop resolves the remaining stack to its bottom"
       (match replyStackOuterCaller? postOoO pushSc with
        | .ok none => true | _ => false)
-    assertBool "PAYOFF: ...so the donation return succeeds and settles the context"
+    -- **This row is BOTH halves at once**, and the label says so because a reader
+    -- who takes it for the payoff alone has read half of what it measures.  As
+    -- WS-RM's payoff: the pop succeeds where the pre-`v0.35.6` reply path wedged
+    -- it.  As WS-HP HP10's cost: `.bound` is *ownership*, and it has settled on
+    -- `pushDonor` -- a thread strictly inside the chain -- rather than on
+    -- `pushOuter`, which owned the reservation before it left.  The two facts
+    -- share one expression, so this is one assertion rather than two; what HP10
+    -- inverts is the thread named here, not whether the pop succeeds.
+    assertBool "PAYOFF/COST: the donation return succeeds, and settles the context on the INTERMEDIATE caller"
       (match returnDonatedSchedContextResolved postOoO pushServer pushSc pushDonor with
        | .ok st' => pushBindingOf st' pushDonor == some (.bound pushSc)
        | .error _ => false)
@@ -3217,6 +3225,58 @@ private def depth4Chain : Except KernelError SystemState :=
                           replyObject := some depth4Reply }) }
       donateSchedContext stReady depth3Server depth4Server pushSc
 
+/-- **WS-HP HP10.5: the reservation origin cannot outlive the thread it names.**
+
+`SchedContext.donationOrigin` is history the kernel validates rather than an
+invariant, and that is sound only while the `ThreadId` it holds still means the
+thread that lent the reservation.  A `ThreadId` is an index, so destroying the
+origin thread and allocating at its id would leave a later pop handing a
+reservation to an unrelated thread — with `donationRecipientAcceptable` satisfied,
+because that guard asks whether the *recipient* may take a context, never whether
+the recorded origin is still the lender.
+
+So the destroy path scrubs it (`clearDonationOriginReferences`, reached from
+`cleanupTcbReferences` and thence `lifecyclePreRetypeCleanup`), and this witness is
+the measurement: a context recording `pushOuter` as its origin, after a reference
+scrub of `pushOuter`, records nothing.  The **negative** beside it is the same
+scrub of a *different* thread, which must leave the origin alone — a sweep that
+cleared unconditionally would pass the first assertion and destroy the field's
+whole purpose. -/
+private def runDonationOriginIdReuseChecks : IO Unit := do
+  IO.println "--- §3.24 WS-HP HP10.5: a recorded origin does not outlive its thread ---"
+  let stOrigin : SystemState :=
+    { pushStore with
+        objects := pushStore.objects.insert pushSc.toObjId
+          (.schedContext { SchedContext.empty pushSc with
+                             boundThread := some pushServer,
+                             scReply := some pushOuterReply,
+                             donationOrigin := some pushOuter }) }
+  let originOf (st : SystemState) : Option (Option SeLe4n.ThreadId) :=
+    (st.getSchedContext? pushSc).map (·.donationOrigin)
+  assertBool "pre: the context records `pushOuter` as the reservation's origin"
+    (originOf stOrigin == some (some pushOuter))
+  -- **THE SCRUB.**  `cleanupTcbReferences` is what `lifecyclePreRetypeCleanup` runs
+  -- before a TCB is destroyed; the origin clear is its fourth sweep.
+  assertBool "PAYOFF: a reference scrub of that thread clears the origin"
+    (originOf (cleanupTcbReferences stOrigin pushOuter) == some none)
+  -- ...and the primitive on its own, so the sweep is known to be what does it
+  -- rather than one of the three sweeps beside it.
+  assertBool "PAYOFF: ...and the primitive alone is what does it"
+    (originOf (clearDonationOriginReferences stOrigin pushOuter) == some none)
+  -- NEGATIVE: scrubbing a DIFFERENT thread must leave the origin standing.  A
+  -- sweep that cleared unconditionally would satisfy both payoffs above and
+  -- silently destroy the only thing the field is for.
+  assertBool "NEGATIVE: scrubbing a different thread leaves the origin recorded"
+    (originOf (clearDonationOriginReferences stOrigin pushServer)
+      == some (some pushOuter))
+  assertBool "NEGATIVE: ...and so does the composed scrub of a different thread"
+    (originOf (cleanupTcbReferences stOrigin pushServer)
+      == some (some pushOuter))
+  -- ...and the scrub is the identity on a context recording no origin at all,
+  -- which is every state before a first donation.
+  assertBool "the scrub is the identity when nothing records an origin"
+    (originOf (clearDonationOriginReferences pushStore pushOuter) == some none)
+
 private def runMiddleRemovalDepthFourChecks : IO Unit := do
   IO.println "--- §3.23 WS-HP HP9.1: a middle removal at stack depth four ---"
   match depth4Chain with
@@ -3347,6 +3407,7 @@ def runSmpIpcChecks : IO Unit := do
   runReplyRecvLoopCompletionChecks
   runMiddleRemovalDepthThreeChecks
   runMiddleRemovalDepthFourChecks
+  runDonationOriginIdReuseChecks
   runReceivePriorityHandoffChecks
   runTraceFixtureCheck
   IO.println "===================================="

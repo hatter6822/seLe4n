@@ -853,10 +853,15 @@ def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
 def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
   match sc with
   | ⟨scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
-     _replenishments, boundThread, scReply, _isActive, _lock⟩ =>
+     _replenishments, boundThread, scReply, donationOrigin, _isActive, _lock⟩ =>
     SeLe4n.Kernel.isIdleObjId scId.toObjId ||
     boundThread.any SeLe4n.Kernel.isIdleThreadId ||
-    scReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId)
+    scReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
+    -- **WS-HP HP10.3**: and the recorded reservation origin, which is a
+    -- `ThreadId` and so can name a reserved idle thread exactly as `boundThread`
+    -- can.  Classified here because the constructor destructuring above refused
+    -- to elaborate until it was -- the PR #889 round-8 pin doing its job.
+    donationOrigin.any SeLe4n.Kernel.isIdleThreadId
 
 /-- PR #889 review round 8: a boot **Reply**'s own id, its blocked caller and its
     two reply-stack links — `prev` (a reply object id the round-6 arm did not
@@ -1430,7 +1435,7 @@ def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
 def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
   match sc with
   | ⟨_scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
-     _replenishments, _boundThread, _scReply, _isActive, _lock⟩ =>
+     _replenishments, _boundThread, _scReply, _donationOrigin, _isActive, _lock⟩ =>
     sc.period.isPositive &&
     decide (sc.budget.val ≤ sc.period.val) &&
     decide (sc.budgetRemaining.val ≤ sc.budget.val) &&
@@ -1438,7 +1443,12 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     sc.replenishments.all (fun r => decide (r.amount.val > 0)) &&
     sc.replenishments.all (fun r => decide (r.amount.val ≤ sc.budget.val)) &&
     sc.boundThread.isNone &&
-    sc.scReply.isNone
+    sc.scReply.isNone &&
+    -- **WS-HP HP10.3**: and no recorded reservation origin.  The origin names the
+    -- thread a loan came from, and a boot state has made no loan -- every
+    -- admissible boot SchedContext is unbound with an empty reply stack, so a
+    -- config-supplied origin could only name a loan that does not exist.
+    sc.donationOrigin.isNone
 
 @[simp] theorem bootSafeSchedContextCheck_def (sc : SchedContext) :
     bootSafeSchedContextCheck sc =
@@ -1449,7 +1459,8 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
        sc.replenishments.all (fun r => decide (r.amount.val > 0)) &&
        sc.replenishments.all (fun r => decide (r.amount.val ≤ sc.budget.val)) &&
        sc.boundThread.isNone &&
-       sc.scReply.isNone) := rfl
+       sc.scReply.isNone &&
+       sc.donationOrigin.isNone) := rfl
 
 /-- WS-SM SM6.D: a boot **Reply** is inert — no blocked caller, no donated SC,
     no `prev` link.  `replyId` is pinned to the slot by
@@ -1526,7 +1537,9 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
     -- SchedContexts: well-formed, unbound, and (WS-OD OD2.1) with an empty
     -- reply stack
     (∀ sc, obj = .schedContext sc →
-      schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none) ∧
+      schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
+      -- **WS-HP HP10.3**: and no recorded reservation origin.
+      sc.donationOrigin = none) ∧
     -- WS-SM SM6.D / PR #822: a boot Reply is inert — no blocked caller and no
     -- reply-stack link in either direction.
     (∀ r, obj = .reply r →
@@ -1592,14 +1605,15 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
   | schedContext sc =>
     simp only [bootSafeObjectCheck, bootSafeSchedContextCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
-      hUnbound⟩, hNoReplyStack⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
+      hUnbound⟩, hNoReplyStack⟩, hNoOrigin⟩ := h
     refine ⟨fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun s hs => ?_,
             fun _ he => by injection he⟩
     injection hs; subst_vars
-    refine ⟨?_, Option.eq_none_of_isNone hUnbound, Option.eq_none_of_isNone hNoReplyStack⟩
+    refine ⟨?_, Option.eq_none_of_isNone hUnbound, Option.eq_none_of_isNone hNoReplyStack,
+            Option.eq_none_of_isNone hNoOrigin⟩
     unfold schedContextWellFormed
     refine ⟨⟨hPeriod, hBudgetPeriod, hRemaining, hRepLen⟩, ⟨hRemaining, hBudgetPeriod⟩,
             ⟨hRepLen, ?_⟩, ?_⟩

@@ -894,7 +894,10 @@ def cancelBoundDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
   | .bound scId =>
     let st1 : SystemState := match st.getSchedContext? scId with
       | some sc =>
-        let sc' := { sc with boundThread := none, isActive := false }
+        -- **WS-HP HP10.4**: and the origin, as the single-core spelling does — the
+        -- `_bootCoreId` bridge below is `rfl`, so the two cannot differ by a field.
+        let sc' := { sc with boundThread := none, isActive := false,
+                             donationOrigin := none }
         { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
       | none => st
     let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore rqCore) scId) }
@@ -3684,7 +3687,7 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariant
       · exact ipcInvariant_of_objects_eq rfl hIpc
     | some sc =>
       have hInv1 : (st.objects.insert scId.toObjId
-          (.schedContext { sc with boundThread := none, isActive := false })).invExt :=
+          (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none })).invExt :=
         RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
       split
       · intro oid ntfn hL

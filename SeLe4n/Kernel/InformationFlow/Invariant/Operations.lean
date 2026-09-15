@@ -1773,7 +1773,7 @@ private theorem returnDonatedSchedContext_preserves_projection
     hSet2 hC2 hS3
   have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
     scId.toObjId _ (.schedContext sc) hSc
-    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _)
+    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
     (hIdxComplete scId.toObjId (by rw [hSc]; intro hx; cases hx))
     hObjInv hS1
   have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
@@ -3330,7 +3330,8 @@ private theorem donateSchedContext_preserves_projection
     hSet2 hC2 hS3
   have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
     clientScId.toObjId _ (.schedContext sc) hScRaw
-    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _)
+    -- **WS-HP HP10.4**: a donation step writes three SchedContext fields now.
+    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
     (hIdxComplete clientScId.toObjId (by rw [hScRaw]; intro hx; cases hx))
     hObjInv hS1
   -- `v0.35.4`: the push is two Reply writes now (the pushed frame and the old
