@@ -307,7 +307,7 @@ upstream facts this workstream rests on — the non-head branch's write, the pop
 trigger, and `reply_pop`'s `tcbSchedContext == NULL` guard — to
 `donationRecipientAcceptable`'s own docstring, each with the revisions it was read at,
 which is what `v0.35.40`'s retraction-of-a-retraction cost.  **Depth 2 was HP10's**,
-and the register row's own closure is its last step.
+and the register row is closed at `v0.35.54` on both halves being earned.
 
 **HP10.9 (`v0.35.53`) closed depth 2**, which the splice provably could not reach:
 the frame a depth-2 removal takes off the stack *is* the bottom, so nothing sits

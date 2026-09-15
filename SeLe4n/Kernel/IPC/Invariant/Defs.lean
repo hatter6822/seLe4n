@@ -2131,11 +2131,11 @@ so this is an improvement on upstream rather than parity with it.
 below the cut is the stack's bottom, so both policies write `none` into the frame
 above and the splice provably cannot reach the loss: the delegate answers the
 client out of order, the client's frame leaves the stack, and the later in-order
-pop binds the reservation to the *intermediate* caller.  Closing that needs the
+pop binds the reservation to the *intermediate* caller.  Closing that needed the
 reservation's **origin** recorded on the `SchedContext` rather than derived from
-stack reachability, which is WS-HP HP10, registered in
-`docs/REGISTERED_DEBT.md` with a closure target.  Until it lands, v1.0.0 must not
-claim that completing a call chain returns a client's reservation.
+stack reachability, and WS-HP HP10.9 (`v0.35.53`) landed it:
+`donationAccountingPreserved_atCallDepthTwo` is the payoff, so a completed call
+chain returns a client's reservation at every depth.
 
 **And no object is pinned by a cut, at either policy.**  A frame the removal takes
 off a stack carries no `.head` link, so consuming its caller clears it outright

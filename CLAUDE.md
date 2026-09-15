@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.53.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.54.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2924,7 +2924,8 @@ splice is an **improvement on upstream** rather than an adoption of it, measured
 reply-stack depth three in `tests/SmpIpcSuite.lean` §3.22 and stated as
 `donationAccountingPreserved_atCallDepthThree`; what it provably cannot reach is
 the depth-**two** loss, where both policies write `none` into the frame above a
-bottom frame, and that is WS-HP HP10's.
+bottom frame, and that is closed instead by the reservation's recorded origin
+(`donationAccountingPreserved_atCallDepthTwo`, WS-HP HP10.9, `v0.35.53`).
 One consequence for the suspend footprint:
 the teardown can rebind the victim `.donated`, and the arm selector re-reads the
 *post*-teardown binding, so the pipeline pops twice at depth ≥ 2 and
@@ -3901,7 +3902,7 @@ a licence to delete the reclaim — deleting it reaches a state
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10.1–HP10.9 v0.35.49 → v0.35.53)
+### WS-HP The head-driven donation pop — COMPLETE (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10 v0.35.49 → v0.35.54)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -3918,10 +3919,25 @@ frame is its bottom and both policies then write the same value).
 `donationAccountingPreserved_atCallDepthThree` is the statement: at depth ≥ 3 a
 middle removal leaves the reservation **owed outward** and the pop that answers the
 bottom frame delivers it home.  §3.22 inverted from a COST witness to a PAYOFF
-witness in the same cut.  **What is left is depth two**, which the splice provably
+witness in the same cut.  What was left was depth two, which the splice provably
 cannot reach — both policies write `none` into the frame above a bottom frame — and
-which needs the reservation's *origin* on the `SchedContext` rather than stack
-reachability: HP10.
+which needed the reservation's *origin* on the `SchedContext` rather than stack
+reachability.
+
+**HP10 closed that at `v0.35.53`, and the workstream closed at `v0.35.54`.**
+`SchedContext.donationOrigin` records the thread that owned a reservation when it
+first left, written on a **first** push and cleared by every step that ends the
+loan, and `replyDonationRecipient` reads it in place of stack reachability at the
+bottom of a stack.  `donationAccountingPreserved_atCallDepthTwo` is the statement.
+So **a completed call chain returns a client's reservation at every reply-stack
+depth** — a claim seL4-MCS cannot make, since upstream severs at depth ≥ 3 and
+`reply_pop` donates to the answered frame's own `replyTCB` at depth 2 — and
+`docs/REGISTERED_DEBT.md`'s donation-accounting row is closed on both halves being
+*earned* rather than on the deferral being retracted.  Two fragments survive the
+closure, deliberately: the footprint/transition resolution asymmetry HP10.8 found
+keeps its own open register row, and `CancelledMiddleCallerPolicy.severAtCut` is
+**kept** as a constructor, because it names the behaviour upstream still has and an
+improvement is only statable against something.
 
 **The splice is an improvement on seL4-MCS, not an adoption of it** (`v0.35.40`,
 re-verified against upstream source at five revisions).  `reply_remove`'s non-head
@@ -3958,7 +3974,7 @@ banner in `IPC/Invariant/Defs.lean` records what replaced it.
 | HP7 | LANDED | v0.35.46 | **The three stated coherence hypotheses retire** — nine declarations deleted with the binding-driven resolver, HP7.1 already done at HP4.4, HP7.4 vacuous, and the fourth stated fact found LIVE |
 | HP8 | LANDED | v0.35.47 | **The frozen mirror splices** — the sever's family deleted, the census's three mirrors, and `FO-043`: the depth-3 witness every shallower scenario structurally could not be |
 | HP9 | LANDED | v0.35.48 | **Witnesses, anchors, documentation, closure** — the depth-4 witness (§3.23), the upstream facts recorded at the code, and acceptance box 10 struck as wrong rather than ticked |
-| HP10 | IN FLIGHT | HP10.1–HP10.5 v0.35.49, HP10.6 v0.35.50, HP10.7 v0.35.51, HP10.8 v0.35.52, HP10.9 v0.35.53 | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach; the redirect is live on both surfaces and **`donationAccountingPreserved_atCallDepthTwo` is the payoff**, leaving only HP10.10's closure |
+| HP10 | LANDED | HP10.1–HP10.5 v0.35.49, HP10.6 v0.35.50, HP10.7 v0.35.51, HP10.8 v0.35.52, HP10.9 v0.35.53, HP10.10 v0.35.54 | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach; the redirect is live on both surfaces, **`donationAccountingPreserved_atCallDepthTwo` is the payoff**, and the debt row is closed |
 
 **What new code must respect since HP4 (`v0.35.38`).**  Seven things.
 
@@ -4799,10 +4815,12 @@ binding naming a `.ready` owner.  It landed at `v0.35.39`; the paragraphs above 
 what it changed.
 
 Registered in
-[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C with closure target
-**before v1.0.0**; until it closes, v1.0.0 must not claim that completing a call
-chain returns a client's reservation, nor seL4-MCS reply-stack semantics at
-chain depth ≥ 3.
+[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C and **closed there at
+`v0.35.54`**, both halves earned rather than the deferral retracted — so v1.0.0
+**may** claim that completing a call chain returns a client's reservation, at every
+reply-stack depth.  What it must still not claim is *parity* with seL4-MCS on
+reply-stack removal at depth ≥ 3: upstream severs and this kernel splices, so the
+honest claim is an improvement on upstream rather than a match for it.
 
 Plan: [`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md).
 

@@ -3828,8 +3828,9 @@ What the splice buys is therefore a property neither kernel had: a callee that
 delegates its caller's reply capability to a confederate can no longer capture
 that caller's CBS reservation by answering out of order
 (`tests/SmpIpcSuite.lean` §3.22 is the depth-three witness; §3.20's depth-two
-shapes are unchanged, because a two-frame stack's lower frame is its bottom and
-both policies write the same value there — which is the residue WS-HP HP10 owns).
+shapes were unchanged by the policy flip, because a two-frame stack's lower frame
+is its bottom and both policies write the same value there — that residue is closed
+instead by the reservation's recorded origin, `donationAccountingPreserved_atCallDepthTwo`).
 
 Three answers, and each is a decision.  `.ok st` when the frame is a head (a head
 is popped, never removed this way — that is the reclaim's job — so this is not the

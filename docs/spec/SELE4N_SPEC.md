@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.53` (`lakefile.toml`) |
+| **Package version** | `0.35.54` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 383,950 across 330 Lean files |
+| **Production LoC** | 383,951 across 330 Lean files |
 | **Test LoC** | 78,257 across 70 Lean test suites |
 | **Proved declarations** | 12,771 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -4624,10 +4624,10 @@ respect.
    accounting halves.  The defect is therefore
    *reachability-based ownership* rather than the removal policy, which is why
    upstream has it too (`reply_pop` donates to the answered frame's own
-   `replyTCB`).  **WS-HP HP10** closes it with one `SchedContext` field recording
-   the reservation's origin and one arm reading it, with the answered caller as the
-   fallback; that is an improvement on seL4-MCS at every depth, and the claim above
-   is written unscoped for that reason.
+   `replyTCB`).  **WS-HP HP10 closed it at `v0.35.53`** (§8.12.15) with one
+   `SchedContext` field recording the reservation's origin and one arm reading it,
+   the answered caller being the fallback; that is an improvement on seL4-MCS at
+   every depth, and the claim above is written unscoped for that reason.
 
 #### 8.12.9 The donation pop is head-driven — WS-HP HP4 (`v0.35.38`)
 
@@ -4875,11 +4875,11 @@ frame below the cut is the stack's bottom, so both policies write `none` into th
 frame above and the splice provably cannot reach the loss: a delegate answers the
 client out of order, the client's frame leaves the stack, and the later in-order
 pop binds the reservation to the *intermediate* caller.  `tests/SmpIpcSuite.lean`
-§3.20's depth-two halves pass **byte-identically** across this flip, and the golden
-trace is byte-identical, which is exactly that measurement.  Closing it needs the
-reservation's **origin** recorded on the `SchedContext` rather than derived from
-stack reachability, which is WS-HP HP10, registered in `docs/REGISTERED_DEBT.md`
-with a closure target before v1.0.0.  §3.22 inverted from a COST witness to a
+§3.20's depth-two halves passed **byte-identically** across this flip, and the
+golden trace is byte-identical, which was exactly that measurement (HP10.9 then
+inverted those halves — §8.12.15).  Closing depth two needed the reservation's
+**origin** recorded on the `SchedContext` rather than derived from stack
+reachability, and WS-HP HP10.9 landed it at `v0.35.53`.  §3.22 inverted from a COST witness to a
 PAYOFF witness in the same cut, keeping the in-order half — restated as an
 **agreement**, since the two now coincide — and gaining two negatives that spell
 the retired sever's values so the assertions are known to discriminate.

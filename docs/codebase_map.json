@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "b7cb13272e5edf8fcf377548a3c96519c9544e95",
-      "tree_sha": "9d1c6a4baf5ff4a38ce57a2fff5f309aeb09a266",
-      "committed_at_utc": "2026-09-15T11:18:48+00:00"
+      "commit_sha": "e7a395c5277cdffc252788bca9226a6fb4fdc108",
+      "tree_sha": "3a81db16073d164c78919daedea7bd2f608f9f38",
+      "committed_at_utc": "2026-09-15T16:16:09+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d1e7e877e6bdf637d98f3228d48dbbe34068b927afc846a150d408bb24dc2832"
+    "source_digest": "b266f2260aac61908d5ee7f018ae4732c2805881a23f63cde392734b1c3ae46b"
   },
   "summary": {
     "module_count": 400,
     "declaration_count": 21580
   },
   "readme_sync": {
-    "version": "0.35.53",
+    "version": "0.35.54",
     "lean_toolchain": "v4.28.0",
     "production_files": 330,
-    "production_loc": 383950,
+    "production_loc": 383951,
     "test_files": 70,
     "test_loc": 78257,
     "proved_theorem_lemma_decls": 12771,
@@ -134037,7 +134037,7 @@
         {
           "kind": "def",
           "name": "spliceReplyFrameOut",
-          "line": 3845,
+          "line": 3846,
           "called": [
             "KernelError",
             "ReplyId",
@@ -134052,7 +134052,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_cases",
-          "line": 3864,
+          "line": 3865,
           "called": [
             "Reply",
             "ReplyId",
@@ -134070,7 +134070,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_eq_sever_of_no_frame_below",
-          "line": 3899,
+          "line": 3900,
           "called": [
             "Reply",
             "ReplyId",
@@ -134089,7 +134089,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_of_head",
-          "line": 3916,
+          "line": 3917,
           "called": [
             "Reply",
             "ReplyId",
@@ -134104,7 +134104,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_of_no_frame_above",
-          "line": 3923,
+          "line": 3924,
           "called": [
             "Reply",
             "ReplyId",
@@ -134118,7 +134118,7 @@
         {
           "kind": "def",
           "name": "replyFrameAbove",
-          "line": 3933,
+          "line": 3934,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134131,7 +134131,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameAbove",
-          "line": 3945,
+          "line": 3946,
           "called": [
             "Reply",
             "ReplyId",
@@ -134146,7 +134146,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameAbove",
-          "line": 3958,
+          "line": 3959,
           "called": [
             "Reply",
             "ReplyId",
@@ -134161,7 +134161,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameAbove",
-          "line": 3974,
+          "line": 3975,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134173,7 +134173,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameAbove",
-          "line": 3979,
+          "line": 3980,
           "called": [
             "Reply",
             "ReplyId",
@@ -134188,7 +134188,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameAbove",
-          "line": 3985,
+          "line": 3986,
           "called": [
             "Reply",
             "ReplyId",
@@ -134201,7 +134201,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_of_absent",
-          "line": 3990,
+          "line": 3991,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134214,7 +134214,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_objects_rewrite",
-          "line": 3998,
+          "line": 3999,
           "called": [
             "ObjId",
             "ReplyId",
@@ -134230,7 +134230,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_preserves_objects_invExt",
-          "line": 4008,
+          "line": 4009,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134244,7 +134244,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_scheduler_eq",
-          "line": 4015,
+          "line": 4016,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134257,7 +134257,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_machine_eq",
-          "line": 4021,
+          "line": 4022,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134270,7 +134270,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_serviceRegistry_eq",
-          "line": 4027,
+          "line": 4028,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134283,7 +134283,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_notification_backward",
-          "line": 4035,
+          "line": 4036,
           "called": [
             "Notification",
             "ObjId",
@@ -134298,7 +134298,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_getTcb",
-          "line": 4046,
+          "line": 4047,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134314,7 +134314,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_objects_ne",
-          "line": 4061,
+          "line": 4062,
           "called": [
             "ObjId",
             "Reply",
@@ -134333,7 +134333,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_tcb_eq",
-          "line": 4075,
+          "line": 4076,
           "called": [
             "ObjId",
             "ReplyId",
@@ -134348,7 +134348,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_tcb_backward",
-          "line": 4084,
+          "line": 4085,
           "called": [
             "ObjId",
             "ReplyId",
@@ -134363,7 +134363,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_non_reply_eq",
-          "line": 4093,
+          "line": 4094,
           "called": [
             "ObjId",
             "Reply",
@@ -134378,7 +134378,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_reply_rewrite",
-          "line": 4102,
+          "line": 4103,
           "called": [
             "ObjId",
             "Reply",
@@ -134396,7 +134396,7 @@
         {
           "kind": "def",
           "name": "replyFrameBelow",
-          "line": 4132,
+          "line": 4133,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134410,7 +134410,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameBelow",
-          "line": 4138,
+          "line": 4139,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134422,7 +134422,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameBelow",
-          "line": 4143,
+          "line": 4144,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134435,7 +134435,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameBelow",
-          "line": 4148,
+          "line": 4149,
           "called": [
             "Reply",
             "ReplyId",
@@ -134451,7 +134451,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameBelow",
-          "line": 4156,
+          "line": 4157,
           "called": [
             "Reply",
             "ReplyId",
@@ -134466,7 +134466,7 @@
         {
           "kind": "theorem",
           "name": "spliceFrameBelow",
-          "line": 4185,
+          "line": 4186,
           "called": [
             "Reply",
             "ReplyId",
@@ -134480,7 +134480,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameBelow",
-          "line": 4204,
+          "line": 4205,
           "called": [
             "Reply",
             "ReplyId",
@@ -134493,7 +134493,7 @@
         {
           "kind": "def",
           "name": "replyFrameHeadContext",
-          "line": 4235,
+          "line": 4236,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -134509,7 +134509,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameHeadContext",
-          "line": 4251,
+          "line": 4252,
           "called": [
             "Reply",
             "ReplyId",
@@ -134529,7 +134529,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameHeadContext",
-          "line": 4282,
+          "line": 4283,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134541,7 +134541,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameHeadContext",
-          "line": 4289,
+          "line": 4290,
           "called": [
             "Reply",
             "ReplyId",
@@ -134558,7 +134558,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameHeadContext",
-          "line": 4301,
+          "line": 4302,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134570,7 +134570,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameAbove",
-          "line": 4307,
+          "line": 4308,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -134584,7 +134584,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameBelow",
-          "line": 4316,
+          "line": 4317,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -134599,7 +134599,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameHeadContext",
-          "line": 4325,
+          "line": 4326,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -134616,7 +134616,7 @@
         {
           "kind": "def",
           "name": "answeredReplyObject",
-          "line": 4369,
+          "line": 4370,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134629,7 +134629,7 @@
         {
           "kind": "def",
           "name": "replyFrameHeadHolder",
-          "line": 4414,
+          "line": 4415,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -134646,7 +134646,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameHeadHolder",
-          "line": 4424,
+          "line": 4425,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134658,7 +134658,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameHeadHolder",
-          "line": 4430,
+          "line": 4431,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -134674,7 +134674,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameHeadHolder",
-          "line": 4440,
+          "line": 4441,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -134692,7 +134692,7 @@
         {
           "kind": "def",
           "name": "replyFrameHeadIsBound",
-          "line": 4483,
+          "line": 4484,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134705,7 +134705,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameHeadIsBound_of_no_head",
-          "line": 4488,
+          "line": 4489,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134719,7 +134719,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameHeadHolder",
-          "line": 4493,
+          "line": 4494,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -134734,7 +134734,7 @@
         {
           "kind": "theorem",
           "name": "replyFrameHeadHolder",
-          "line": 4504,
+          "line": 4505,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -134749,7 +134749,7 @@
         {
           "kind": "def",
           "name": "answeredFrameHeadContext",
-          "line": 4519,
+          "line": 4520,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -134763,7 +134763,7 @@
         {
           "kind": "theorem",
           "name": "answeredFrameHeadContext",
-          "line": 4526,
+          "line": 4527,
           "called": [
             "SystemState",
             "ThreadId",
@@ -134775,7 +134775,7 @@
         {
           "kind": "theorem",
           "name": "answeredFrameHeadContext",
-          "line": 4532,
+          "line": 4533,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134788,7 +134788,7 @@
         {
           "kind": "theorem",
           "name": "answeredFrameHeadContext",
-          "line": 4539,
+          "line": 4540,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -134806,7 +134806,7 @@
         {
           "kind": "theorem",
           "name": "answeredFrameHeadContext",
-          "line": 4551,
+          "line": 4552,
           "called": [
             "ReplyId",
             "SchedContextId",
@@ -134825,7 +134825,7 @@
         {
           "kind": "def",
           "name": "spliceReplyFrameOutOrSelf",
-          "line": 4580,
+          "line": 4581,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134836,7 +134836,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_cases",
-          "line": 4587,
+          "line": 4588,
           "called": [
             "ReplyId",
             "SystemState",
@@ -134848,7 +134848,7 @@
         {
           "kind": "def",
           "name": "spliceThreadReplyFrameOut",
-          "line": 4612,
+          "line": 4613,
           "called": [
             "SystemState",
             "TCB",
@@ -134860,7 +134860,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_store_cases",
-          "line": 4633,
+          "line": 4634,
           "called": [
             "Reply",
             "ReplyId",
@@ -134886,7 +134886,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_preserves_reply_caller_and_headLink",
-          "line": 4687,
+          "line": 4688,
           "called": [
             "Reply",
             "ReplyId",
@@ -134904,7 +134904,7 @@
         {
           "kind": "theorem",
           "name": "spliceThreadReplyFrameOut_cases",
-          "line": 4706,
+          "line": 4707,
           "called": [
             "SystemState",
             "TCB",
@@ -134917,7 +134917,7 @@
         {
           "kind": "theorem",
           "name": "spliceThreadReplyFrameOut_eq_self_of_no_frame_above",
-          "line": 4721,
+          "line": 4722,
           "called": [
             "Reply",
             "ReplyId",
@@ -134934,7 +134934,7 @@
         {
           "kind": "theorem",
           "name": "spliceThreadReplyFrameOut_scheduler_eq",
-          "line": 4732,
+          "line": 4733,
           "called": [
             "SystemState",
             "TCB",
@@ -134947,7 +134947,7 @@
         {
           "kind": "theorem",
           "name": "spliceThreadReplyFrameOut_machine_eq",
-          "line": 4738,
+          "line": 4739,
           "called": [
             "SystemState",
             "TCB",
@@ -134960,7 +134960,7 @@
         {
           "kind": "theorem",
           "name": "spliceThreadReplyFrameOut_serviceRegistry_eq",
-          "line": 4744,
+          "line": 4745,
           "called": [
             "SystemState",
             "TCB",
@@ -134973,7 +134973,7 @@
         {
           "kind": "theorem",
           "name": "spliceThreadReplyFrameOut_preserves_objects_invExt",
-          "line": 4750,
+          "line": 4751,
           "called": [
             "SystemState",
             "TCB",
@@ -134987,7 +134987,7 @@
         {
           "kind": "theorem",
           "name": "spliceThreadReplyFrameOut_tcb_eq",
-          "line": 4757,
+          "line": 4758,
           "called": [
             "ObjId",
             "SystemState",
@@ -135002,7 +135002,7 @@
         {
           "kind": "theorem",
           "name": "spliceThreadReplyFrameOut_tcb_backward",
-          "line": 4765,
+          "line": 4766,
           "called": [
             "ObjId",
             "SystemState",
@@ -135017,7 +135017,7 @@
         {
           "kind": "theorem",
           "name": "spliceThreadReplyFrameOut_getTcb",
-          "line": 4773,
+          "line": 4774,
           "called": [
             "SystemState",
             "TCB",
@@ -135033,7 +135033,7 @@
         {
           "kind": "def",
           "name": "removeCallerReplyFrame",
-          "line": 4801,
+          "line": 4802,
           "called": [
             "Kernel",
             "ReplyId",
@@ -135046,7 +135046,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_cdt_eq",
-          "line": 4814,
+          "line": 4815,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135059,7 +135059,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOut_cdtNodeSlot_eq",
-          "line": 4820,
+          "line": 4821,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135072,7 +135072,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_eq_self_of_no_frame_above",
-          "line": 4828,
+          "line": 4829,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135092,7 +135092,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_scheduler_eq",
-          "line": 4845,
+          "line": 4846,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135105,7 +135105,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_machine_eq",
-          "line": 4851,
+          "line": 4852,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135118,7 +135118,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_serviceRegistry_eq",
-          "line": 4857,
+          "line": 4858,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135131,7 +135131,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_cdt_eq",
-          "line": 4864,
+          "line": 4865,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135144,7 +135144,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_cdtNodeSlot_eq",
-          "line": 4870,
+          "line": 4871,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135157,7 +135157,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_preserves_objects_invExt",
-          "line": 4876,
+          "line": 4877,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135171,7 +135171,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_objects_rewrite",
-          "line": 4893,
+          "line": 4894,
           "called": [
             "ObjId",
             "ReplyId",
@@ -135187,7 +135187,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_objects_ne",
-          "line": 4906,
+          "line": 4907,
           "called": [
             "ObjId",
             "ReplyId",
@@ -135205,7 +135205,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_tcb_eq",
-          "line": 4920,
+          "line": 4921,
           "called": [
             "ObjId",
             "ReplyId",
@@ -135221,7 +135221,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_tcb_backward",
-          "line": 4928,
+          "line": 4929,
           "called": [
             "ObjId",
             "ReplyId",
@@ -135237,7 +135237,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_getTcb",
-          "line": 4936,
+          "line": 4937,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135253,7 +135253,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_non_reply_eq",
-          "line": 4943,
+          "line": 4944,
           "called": [
             "ObjId",
             "Reply",
@@ -135269,7 +135269,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_non_reply_agree",
-          "line": 4954,
+          "line": 4955,
           "called": [
             "KernelObject",
             "ObjId",
@@ -135285,7 +135285,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_notification_backward",
-          "line": 4964,
+          "line": 4965,
           "called": [
             "Notification",
             "ObjId",
@@ -135301,7 +135301,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_reply_rewrite",
-          "line": 4974,
+          "line": 4975,
           "called": [
             "ObjId",
             "Reply",
@@ -135319,7 +135319,7 @@
         {
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_decision",
-          "line": 4996,
+          "line": 4997,
           "called": [
             "Reply",
             "ReplyId",
@@ -135338,7 +135338,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_eq",
-          "line": 5035,
+          "line": 5036,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135352,7 +135352,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_eq_consume_of_no_frame_above",
-          "line": 5045,
+          "line": 5046,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135369,7 +135369,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_isOk",
-          "line": 5052,
+          "line": 5053,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135383,7 +135383,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_scheduler_eq",
-          "line": 5058,
+          "line": 5059,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135399,7 +135399,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_machine_eq",
-          "line": 5066,
+          "line": 5067,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135415,7 +135415,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_cdt_eq",
-          "line": 5074,
+          "line": 5075,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135431,7 +135431,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_cdtNodeSlot_eq",
-          "line": 5082,
+          "line": 5083,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135447,7 +135447,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_preserves_objects_invExt",
-          "line": 5090,
+          "line": 5091,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135463,7 +135463,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_nonTcbNonReply_agree",
-          "line": 5098,
+          "line": 5099,
           "called": [
             "KernelObject",
             "ObjId",
@@ -135482,7 +135482,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_tcb_forward",
-          "line": 5113,
+          "line": 5114,
           "called": [
             "ObjId",
             "ReplyId",
@@ -135501,7 +135501,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_tcb_backward",
-          "line": 5128,
+          "line": 5129,
           "called": [
             "ObjId",
             "ReplyId",
@@ -135520,7 +135520,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_replyObject_none",
-          "line": 5144,
+          "line": 5145,
           "called": [
             "ReplyId",
             "SystemState",
@@ -135538,7 +135538,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_getReply",
-          "line": 5157,
+          "line": 5158,
           "called": [
             "Reply",
             "ReplyId",
@@ -135558,7 +135558,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_getReply",
-          "line": 5174,
+          "line": 5175,
           "called": [
             "Reply",
             "ReplyId",
@@ -135578,7 +135578,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_head_getReply",
-          "line": 5194,
+          "line": 5195,
           "called": [
             "Reply",
             "ReplyId",
@@ -135602,7 +135602,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_objects_isSome",
-          "line": 5210,
+          "line": 5211,
           "called": [
             "ObjId",
             "ReplyId",
@@ -135624,7 +135624,7 @@
         {
           "kind": "theorem",
           "name": "removeCallerReplyFrame_getReply",
-          "line": 5233,
+          "line": 5234,
           "called": [
             "Reply",
             "ReplyId",
@@ -135644,7 +135644,7 @@
         {
           "kind": "def",
           "name": "returnDonatedSchedContext",
-          "line": 5285,
+          "line": 5286,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -135672,7 +135672,7 @@
         {
           "kind": "def",
           "name": "donationOriginRecipient",
-          "line": 5433,
+          "line": 5434,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135690,7 +135690,7 @@
         {
           "kind": "theorem",
           "name": "donationOriginRecipient",
-          "line": 5455,
+          "line": 5456,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135704,7 +135704,7 @@
         {
           "kind": "theorem",
           "name": "donationOriginRecipient",
-          "line": 5464,
+          "line": 5465,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -135718,7 +135718,7 @@
         {
           "kind": "theorem",
           "name": "donationOriginRecipient",
-          "line": 5474,
+          "line": 5475,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -135733,7 +135733,7 @@
         {
           "kind": "theorem",
           "name": "donationOriginRecipient",
-          "line": 5488,
+          "line": 5489,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135747,7 +135747,7 @@
         {
           "kind": "theorem",
           "name": "donationOriginRecipient",
-          "line": 5503,
+          "line": 5504,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135764,7 +135764,7 @@
         {
           "kind": "theorem",
           "name": "donationOriginRecipient",
-          "line": 5551,
+          "line": 5552,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135777,7 +135777,7 @@
         {
           "kind": "theorem",
           "name": "donationOriginRecipient",
-          "line": 5561,
+          "line": 5562,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135790,7 +135790,7 @@
         {
           "kind": "theorem",
           "name": "donationOriginRecipient",
-          "line": 5570,
+          "line": 5571,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135803,7 +135803,7 @@
         {
           "kind": "theorem",
           "name": "donationOriginRecipient",
-          "line": 5579,
+          "line": 5580,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135817,7 +135817,7 @@
         {
           "kind": "theorem",
           "name": "replyStackBelowHead",
-          "line": 5593,
+          "line": 5594,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135831,7 +135831,7 @@
         {
           "kind": "def",
           "name": "replyDonationRecipient",
-          "line": 5634,
+          "line": 5635,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135844,7 +135844,7 @@
         {
           "kind": "theorem",
           "name": "replyDonationRecipient_eq_of_no_origin",
-          "line": 5640,
+          "line": 5641,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135859,7 +135859,7 @@
         {
           "kind": "theorem",
           "name": "replyDonationRecipient_eq_origin",
-          "line": 5647,
+          "line": 5648,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135873,7 +135873,7 @@
         {
           "kind": "theorem",
           "name": "replyDonationRecipient_eq_of_outer_some",
-          "line": 5658,
+          "line": 5659,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135889,7 +135889,7 @@
         {
           "kind": "theorem",
           "name": "replyDonationRecipient_acceptable",
-          "line": 5675,
+          "line": 5676,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135905,7 +135905,7 @@
         {
           "kind": "theorem",
           "name": "replyDonationRecipient_mem_originRecipient",
-          "line": 5690,
+          "line": 5691,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135920,7 +135920,7 @@
         {
           "kind": "def",
           "name": "returnDonatedSchedContextResolved",
-          "line": 5720,
+          "line": 5721,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -135936,7 +135936,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContextResolved_ok_decompose",
-          "line": 5730,
+          "line": 5731,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135952,7 +135952,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContextResolved_lift",
-          "line": 5748,
+          "line": 5749,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135968,7 +135968,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContextResolved_of_resolved",
-          "line": 5761,
+          "line": 5762,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -135984,7 +135984,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContextResolved_eq_legacy_of_no_stack",
-          "line": 5777,
+          "line": 5778,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -136004,7 +136004,7 @@
         {
           "kind": "def",
           "name": "cleanupActiveDonation",
-          "line": 5792,
+          "line": 5793,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -136019,7 +136019,7 @@
         {
           "kind": "def",
           "name": "donateSchedContextValid",
-          "line": 5826,
+          "line": 5827,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -136032,7 +136032,7 @@
         {
           "kind": "theorem",
           "name": "donateSchedContextValid_eq",
-          "line": 5831,
+          "line": 5832,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136045,7 +136045,7 @@
         {
           "kind": "def",
           "name": "returnDonatedSchedContextValid",
-          "line": 5838,
+          "line": 5839,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -136060,7 +136060,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContextValid_eq",
-          "line": 5845,
+          "line": 5846,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136075,7 +136075,7 @@
         {
           "kind": "def",
           "name": "cleanupPreReceiveDonation",
-          "line": 5871,
+          "line": 5872,
           "called": [
             "SystemState",
             "ThreadId",
@@ -136089,7 +136089,7 @@
         {
           "kind": "def",
           "name": "cleanupPreReceiveDonationChecked",
-          "line": 5905,
+          "line": 5906,
           "called": [
             "KernelError",
             "SystemState",
@@ -136104,7 +136104,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonationChecked_ok_eq_cleanup",
-          "line": 5919,
+          "line": 5920,
           "called": [
             "SystemState",
             "ThreadId",
@@ -136120,7 +136120,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_eq_cleanupChecked_ok",
-          "line": 5953,
+          "line": 5954,
           "called": [
             "SystemState",
             "ThreadId",
@@ -136133,16 +136133,16 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:5964>",
-          "line": 5964,
+          "name": "<anonymous:example:5965>",
+          "line": 5965,
           "called": [
             "cleanupPreReceiveDonation"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:5965>",
-          "line": 5965,
+          "name": "<anonymous:example:5966>",
+          "line": 5966,
           "called": [
             "cleanupPreReceiveDonationChecked"
           ]
@@ -136150,7 +136150,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_scheduler_eq_z7",
-          "line": 5979,
+          "line": 5980,
           "called": [
             "KernelObject",
             "ObjId",
@@ -136162,7 +136162,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_storeChain",
-          "line": 6001,
+          "line": 6002,
           "called": [
             "Reply",
             "ReplyId",
@@ -136192,7 +136192,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_outerAcceptable",
-          "line": 6115,
+          "line": 6116,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136208,7 +136208,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_recipientAcceptable",
-          "line": 6127,
+          "line": 6128,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136224,7 +136224,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_recipient_unbound",
-          "line": 6141,
+          "line": 6142,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136242,7 +136242,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_server_not_reserved",
-          "line": 6169,
+          "line": 6170,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136259,7 +136259,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_rejects_bound_recipient",
-          "line": 6183,
+          "line": 6184,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -136281,7 +136281,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_eq_legacy_of_none",
-          "line": 6226,
+          "line": 6227,
           "called": [
             "Reply",
             "ReplyId",
@@ -136311,7 +136311,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_reply_rewrite",
-          "line": 6293,
+          "line": 6294,
           "called": [
             "ObjId",
             "Reply",
@@ -136337,7 +136337,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_tcb_bindingRewrite",
-          "line": 6327,
+          "line": 6328,
           "called": [
             "KernelObject",
             "ObjId",
@@ -136355,7 +136355,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tcb_rewrite",
-          "line": 6352,
+          "line": 6353,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -136382,7 +136382,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tcb_rewrite_backward",
-          "line": 6395,
+          "line": 6396,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -136412,7 +136412,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_other_tcb_eq",
-          "line": 6462,
+          "line": 6463,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -136436,7 +136436,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tcb_binding_cases",
-          "line": 6505,
+          "line": 6506,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -136463,15 +136463,15 @@
         {
           "kind": "def",
           "name": "donationReturnWritesKind",
-          "line": 6560,
+          "line": 6561,
           "called": [
             "KernelObject"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:6566>",
-          "line": 6566,
+          "name": "<anonymous:instance:6567>",
+          "line": 6567,
           "called": [
             "KernelObject",
             "donationReturnWritesKind"
@@ -136480,7 +136480,7 @@
         {
           "kind": "theorem",
           "name": "donationReturnWritesKind_notification",
-          "line": 6569,
+          "line": 6570,
           "called": [
             "Notification",
             "donationReturnWritesKind"
@@ -136489,7 +136489,7 @@
         {
           "kind": "theorem",
           "name": "donationReturnWritesKind_endpoint",
-          "line": 6572,
+          "line": 6573,
           "called": [
             "Endpoint",
             "donationReturnWritesKind"
@@ -136498,7 +136498,7 @@
         {
           "kind": "theorem",
           "name": "donationReturnWritesKind_cnode",
-          "line": 6575,
+          "line": 6576,
           "called": [
             "CNode",
             "donationReturnWritesKind"
@@ -136507,7 +136507,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_objects_backward_of_kind",
-          "line": 6590,
+          "line": 6591,
           "called": [
             "KernelObject",
             "ObjId",
@@ -136533,7 +136533,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_objects_forward_of_kind",
-          "line": 6633,
+          "line": 6634,
           "called": [
             "KernelObject",
             "ObjId",
@@ -136559,7 +136559,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_preserves_objects_invExt'",
-          "line": 6673,
+          "line": 6674,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136577,7 +136577,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_preserves_objectIndexSet_invExt",
-          "line": 6690,
+          "line": 6691,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136595,7 +136595,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_preserves_objectIndexSetComplete",
-          "line": 6706,
+          "line": 6707,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136621,7 +136621,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_objects_ne_stored",
-          "line": 6736,
+          "line": 6737,
           "called": [
             "ObjId",
             "Reply",
@@ -136651,7 +136651,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_objects_ne_of_not_reply",
-          "line": 6785,
+          "line": 6786,
           "called": [
             "ObjId",
             "Reply",
@@ -136681,7 +136681,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_post_schedContext",
-          "line": 6853,
+          "line": 6854,
           "called": [
             "Reply",
             "ReplyId",
@@ -136711,7 +136711,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_post_getSchedContext",
-          "line": 6907,
+          "line": 6908,
           "called": [
             "Reply",
             "ReplyId",
@@ -136734,7 +136734,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_post_boundThread",
-          "line": 6938,
+          "line": 6939,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136751,7 +136751,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_post_scReply",
-          "line": 6959,
+          "line": 6960,
           "called": [
             "Reply",
             "ReplyId",
@@ -136773,7 +136773,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_serviceRegistry_eq",
-          "line": 6976,
+          "line": 6977,
           "called": [
             "KernelObject",
             "ObjId",
@@ -136785,7 +136785,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_scheduler_eq",
-          "line": 6983,
+          "line": 6984,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136802,7 +136802,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_serviceRegistry_eq",
-          "line": 7003,
+          "line": 7004,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136819,7 +136819,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tlbShootdown_eq",
-          "line": 7022,
+          "line": 7023,
           "called": [
             "KernelObject",
             "ObjId",
@@ -136838,7 +136838,7 @@
         {
           "kind": "def",
           "name": "notificationSignal",
-          "line": 7060,
+          "line": 7061,
           "called": [
             "Badge",
             "IpcMessage",
@@ -136866,7 +136866,7 @@
         {
           "kind": "def",
           "name": "notificationWait",
-          "line": 7132,
+          "line": 7133,
           "called": [
             "Badge",
             "Kernel",
@@ -136891,7 +136891,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_objects_ne",
-          "line": 7214,
+          "line": 7215,
           "called": [
             "ObjId",
             "SystemState",
@@ -136910,7 +136910,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_notification",
-          "line": 7239,
+          "line": 7240,
           "called": [
             "Notification",
             "ObjId",
@@ -136930,7 +136930,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_preserves_objects_ne",
-          "line": 7265,
+          "line": 7266,
           "called": [
             "IpcMessage",
             "ObjId",
@@ -136950,7 +136950,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_preserves_notification",
-          "line": 7286,
+          "line": 7287,
           "called": [
             "IpcMessage",
             "Notification",
@@ -136971,7 +136971,7 @@
         {
           "kind": "theorem",
           "name": "removeRunnable_preserves_objects",
-          "line": 7303,
+          "line": 7304,
           "called": [
             "SystemState",
             "ThreadId",
@@ -136982,7 +136982,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objects",
-          "line": 7310,
+          "line": 7311,
           "called": [
             "SystemState",
             "ThreadId",
@@ -136993,7 +136993,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSet",
-          "line": 7320,
+          "line": 7321,
           "called": [
             "SystemState",
             "ThreadId",
@@ -137004,7 +137004,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSetComplete",
-          "line": 7329,
+          "line": 7330,
           "called": [
             "SystemState",
             "ThreadId",
@@ -137018,7 +137018,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSet_invExt",
-          "line": 7339,
+          "line": 7340,
           "called": [
             "SystemState",
             "ThreadId",
@@ -137031,7 +137031,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_scheduler_eq",
-          "line": 7346,
+          "line": 7347,
           "called": [
             "SystemState",
             "ThreadId",
@@ -137048,7 +137048,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_endpoint",
-          "line": 7367,
+          "line": 7368,
           "called": [
             "Endpoint",
             "ObjId",
@@ -137069,7 +137069,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_cnode",
-          "line": 7387,
+          "line": 7388,
           "called": [
             "CNode",
             "ObjId",
@@ -137090,7 +137090,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_vspaceRoot",
-          "line": 7407,
+          "line": 7408,
           "called": [
             "ObjId",
             "SystemState",
@@ -137110,7 +137110,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_cnode_backward",
-          "line": 7428,
+          "line": 7429,
           "called": [
             "CNode",
             "ObjId",
@@ -137131,7 +137131,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_endpoint_backward",
-          "line": 7455,
+          "line": 7456,
           "called": [
             "Endpoint",
             "ObjId",
@@ -137152,7 +137152,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_notification_backward",
-          "line": 7482,
+          "line": 7483,
           "called": [
             "Notification",
             "ObjId",
@@ -137173,7 +137173,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_error_alreadyWaiting",
-          "line": 7511,
+          "line": 7512,
           "called": [
             "Notification",
             "ObjId",
@@ -137190,7 +137190,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_badge_path_notification",
-          "line": 7531,
+          "line": 7532,
           "called": [
             "Badge",
             "Notification",
@@ -137220,7 +137220,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_wait_path_notification",
-          "line": 7618,
+          "line": 7619,
           "called": [
             "Notification",
             "ObjId",

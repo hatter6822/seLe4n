@@ -1,3 +1,64 @@
+## v0.35.54 — WS-HP HP10.10: the workstream closes, and both halves are earned rather than retracted
+
+`docs/REGISTERED_DEBT.md` table C's donation-accounting row — registered at
+`v0.35.14` and the one row in that table that constrained v1.0.0's **claim set**
+rather than only its polish — is **CLOSED**.  Its depth-≥ 3 half was earned at
+`v0.35.45` by HP6's chain-preserving removal and its depth-2 half at `v0.35.53` by
+HP10.9's recorded origin, so the constraint lifts in full: **v1.0.0 may claim that
+completing a call chain returns a client's reservation, at every reply-stack
+depth**.  That is a claim seL4-MCS cannot make — upstream severs at depth ≥ 3
+(`reply_remove`'s non-head branch writes zero into the frame above, re-verified at
+master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0) and `reply_pop` donates to the answered
+frame's own `replyTCB` at depth 2.
+
+WS-HP is **COMPLETE**: 55 sub-tasks across ten phases, `v0.35.35` → `v0.35.54`.
+What it changed, in one line each: the reply path's and the cancellation path's
+donation-pop triggers read the answered reply **frame** rather than a binding (HP4,
+HP5); the reply-stack removal **splices** rather than severing, so the frames below
+a cut stay on the stack (HP6); the three *stated* pre-state coherence hypotheses
+the binding-driven pop needed became derivable and were **deleted** (HP7); the
+frozen execution surface follows on both counts (HP4.7, HP8); and the reservation's
+**origin** is recorded on the `SchedContext` and read in place of stack
+reachability at the bottom of a stack, which is what closes the depth the splice
+provably cannot reach (HP10).
+
+**Most of this cut's content had already landed.**  HP6, HP7, HP8 and HP10.9 each
+swept their own citations, which is what kept the dead-citation classes from
+accumulating, so what HP10.10 does is verify that and close the artefacts only it
+can.  Three things it records rather than ticks.
+
+**The row is struck through, not deleted.**  The register's own convention keeps a
+closed row for traceability and RR8.4's hand-off check reads that table, so a
+deleted row and a closed one must not look alike.
+
+**Two fragments survive the closure, and both are named.**  The
+footprint/transition resolution asymmetry HP10.8 found — the reply pop's origin
+member is resolved on the syscall's pre-state while the transition resolves after
+the reply leg — keeps its own **open** row, owner WS-HP.  And
+`CancelledMiddleCallerPolicy.severAtCut` is deliberately **kept** as a constructor,
+because it names the behaviour upstream still has and an improvement is only
+statable against something.
+
+**The register's narrative about "the exception row" is rewritten rather than
+deleted.**  What a reader should take from it now is the shape rather than the debt:
+a row whose subject is a claim the project makes needs an owner before it needs a
+remedy, and this one sat in table C with none until `v0.35.16` registered a plan for
+it.
+
+Two present-tense claims this cut swept, both of which nine landed phases had left
+standing.  The plan's own `> **Status**` header still read *PLANNED — no sub-task
+has started*; a status header is a present-tense claim and every cut owes it a
+sweep, which is HP9.5's acceptance-box rule one artefact over.  And four prose
+sites still said the depth-2 residue *is* HP10's — in `Endpoint.lean`,
+`Defs.lean`, the spec and the GitBook mirror — where it is now closed.
+
+Files: `docs/REGISTERED_DEBT.md`, `docs/planning/DONATION_POP_TRIGGER_PLAN.md`,
+`docs/spec/SELE4N_SPEC.md`, `docs/gitbook/12-proof-and-invariant-map.md`,
+`CLAUDE.md`, `AGENTS.md`, `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`,
+`SeLe4n/Kernel/IPC/Invariant/Defs.lean`.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md §6 (HP10.10), §8 (box 11)
+
 ## v0.35.53 — WS-HP HP10.9: the depth-two payoff, and the decisive comparison is not a mutation
 
 `donationAccountingPreserved_atCallDepthTwo` is the theorem WS-HP HP10 exists to
