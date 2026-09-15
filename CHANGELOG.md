@@ -1,3 +1,92 @@
+## v0.35.55 — WS-RR RR8.1: the acceptance gate walked, and two status claims that had gone stale
+
+WS-RR's §8 gate carried seventeen unticked boxes.  RR8.1 walks it and records,
+per box, the version that earned the claim and the sub-task that did — so a
+reader can re-run the evidence instead of re-trusting a tick.  Fifteen are
+ticked on a **re-measurement of the tree at this cut**, not on the landing
+phase's word: the de-threading gate re-run (`[PASS] ipcInvariantFull is
+de-threaded end to end`, 178 bundle statements), the theorem manifest re-checked
+(11 phases, 919 theorems of 1135 entries), the dispatch-payoff and
+donation-migration symbols resolved, the deployed pool's element type read off
+`lock_bridge.rs`, the readiness-gate derivation's pins located, the cross-build
+job's feature flag followed into `scripts/test_aarch64_cross_build.sh`, the
+register's seven `Severity **Medium**` rows partitioned into five with closure
+targets and two marked *Nothing owed*, and Tier 0 green.
+
+Two boxes are left **unticked with their owner named** — RR8.4's re-verification
+of SM10's scope and estimate, RR8.2's register update — because a box a later
+row produces, silently unticked, reads exactly like a box nobody checked.  And
+box 4 records its *confinement* rather than a bare tick: every live SMP dispatch
+arm does carry an `ipcInvariantFull` bundle, but the `.tcbSuspend` arm's is
+`suspendThreadOnCore_preserves_ipcInvariantFull` **under
+`threadIpcFieldsQuiescent`**, whose `ready` clause admits exactly the victims
+the outstanding cancellation arms are not about.  A tick read as unconditional
+claims more than the tree.
+
+**The walk found two stale status claims, both the shape this project keeps
+paying for — a present-tense sentence a later cut made false and did not
+sweep.**  `CLAUDE.md` and `AGENTS.md` named `cancelIpcBlockingOnCore`'s
+*notification* arm as uncovered by any transition-level bundle, **two sentences
+above their own statement that `v0.34.96` covered it** — eighteen cuts of a
+self-contradicting paragraph, because the cut that closed the arm swept its own
+sentence and not the one above it.  The uncovered set is `cancelIpcBlocking`'s
+**reply** arm and the composite lifted to `cancelIpcBlockingOnCore`; the
+paragraph says so now, and says what it used to say, since a correction that
+erases the error erases the evidence for the rule.  In the other direction, the
+register row for that debt said the `.tcbSuspend` cross-core arm carries
+`ipcInvariant` and `objects.invExt` *only*, "so no caller may cite the full
+bundle across it" — which **understates** the tree by ignoring RR3's arm
+theorem.  It is restated at the confinement: the full bundle holds for a
+quiescent victim, and a victim blocked in an IPC queue is what falsifies the
+pack.  One claim was too strong and one too weak, and neither could be found by
+reading either artefact alone; what found them was walking the gate against the
+code.
+
+**And the walk measured what the closure is gated on, which the plan did not
+say.**  RR8's five rows are closure bookkeeping — walk the gate, update the
+register, retire a standing constraint, check the hand-off, record the closure —
+while **eight rows of `docs/REGISTERED_DEBT.md` gate that closure and not one of
+them is bookkeeping**.  §8.1 classifies each by what it still owes, read off its
+own status marker and owner column rather than estimated, and the classification
+is the deliverable: a code sweep (two more deschedule sites still resolving a
+victim's core at `determineTargetCore`, which PR #895 round 10 records as equally
+a proxy), two de-duplications, one congruence proof, two bundle proofs (the
+box-4 residue), and the per-arm resolved wake targets
+`UncoveredLockDomain.syscallSeamSchedulerDomain` needs.
+
+Two findings fell out of doing it by measurement.  **Five rows are RR8's own and
+no RR8 sub-task carries any of them**, so RR8.5 would reach for a closure entry
+and find five register rows saying the closure may not be recorded — a plan
+defect rather than a schedule, and RR8 has not started, which by this project's
+own rule (*renumbering is cheap before work starts and expensive after*) is the
+cheapest moment there will ever be to answer it.  **And three rows are owned by
+WS-OD, which closed at `v0.35.2`**, while their closure target reads "before RR8
+closes": as the register stands nothing will do that work and RR8's closure is
+gated on it anyway.  That is exactly the shape **RR0.10** was written to fix —
+*a circular closure target, the phase that owns it marked LANDED, re-homed to a
+phase that can close it* — recurring three times on a family that closed
+thirteen cuts after RR0 ran.  RR0.10's remedy applies unchanged; which phase
+should inherit them does not follow from it, since re-homing to RR8 grows RR8
+and re-homing to WS-BP or WS-CB puts them behind a phase that must not open
+until RR8 closes.  The walk records the gap rather than choosing for the
+maintainer or leaving RR8.5 to discover it.
+
+An earlier draft of this entry said "two of them proof work", which was a count
+asserted from the two rows the walk had read rather than measured across all
+eight.  Classifying them is what turned up the three orphaned owners.
+
+The plan's status header is swept in the same cut, for the same reason the boxes
+are: it read **RR7 IN FLIGHT** with four sub-tasks named, having gone stale by
+thirty-seven sub-tasks and some fifty patch versions.  All forty-one RR7
+sub-tasks carry landing markers, spanning `v0.34.47` → `v0.34.92`; the header
+says so, and records that the span is **not monotone** in the sub-task number
+(RR7.6 landed early) and that RR7.22 / RR7.33 carry per-finding markers rather
+than one marker per row, so a future reader does not read the range as a
+sequence.  `CLAUDE.md`'s and `AGENTS.md`'s WS-RR index row, which omitted RR7
+entirely, is swept with it.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §8 (RR8.1)
+
 ## v0.35.54 — WS-HP HP10.10: the workstream closes, and both halves are earned rather than retracted
 
 `docs/REGISTERED_DEBT.md` table C's donation-accounting row — registered at

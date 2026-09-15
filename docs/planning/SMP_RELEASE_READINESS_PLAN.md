@@ -5,9 +5,18 @@
 > (all twenty sub-tasks; RR2.18 partial — see its acceptance note);
 > **RR3 LANDED at v0.34.43** (all twenty-six); **RR4 LANDED at v0.34.44** (all
 > twenty-seven); **RR5 LANDED at v0.34.48** (all eighteen);
-> **RR6 LANDED at v0.34.50** (all twenty-seven).  **RR7 IN FLIGHT**:
-> RR7.1–RR7.4 landed at v0.34.57, RR7.26–RR7.27 at v0.34.58 (and RR7.6 at
-> v0.34.47); RR8 not started.
+> **RR6 LANDED at v0.34.50** (all twenty-seven); **RR7 LANDED** (all
+> forty-one, v0.34.47 → v0.34.92 — RR7.6 landed early, so the span is not
+> monotone in the sub-task number, and RR7.22 / RR7.33 carry per-finding
+> markers rather than one marker per row).
+> **RR8 IN FLIGHT**: **RR8.1 LANDED at v0.35.55** — §8's gate walked, fifteen
+> of seventeen boxes ticked on a re-measurement with the version and sub-task
+> that earned each, two left to the rows that own them.  Its measurement
+> (§8.1): **eight register rows gate RR8's closure and none is bookkeeping** —
+> five are RR8's own with no sub-task carrying them, and three are owned by
+> **WS-OD, which closed at v0.35.2**, which is RR0.10's circular-closure-target
+> shape recurring.  §5's RR8 table has to answer that before RR8.5 can record a
+> closure.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) (171 confirmed findings)
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
@@ -1163,7 +1172,7 @@ them to a documentation sweep.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| RR8.1 | Walk the RR0..RR7 acceptance gates and record the closing version for each | (1 file) | S |
+| RR8.1 | Walk the RR0..RR7 acceptance gates and record the closing version for each.  **LANDED v0.35.55**: §8 carries the version and sub-task that earned each of the seventeen boxes, fifteen ticked on a re-measurement of the tree rather than on the landing phase's word, and two left unticked with their owner named (RR8.4's scope re-verification, RR8.2's register update) because a box a later row produces, silently unticked, reads exactly like a box nobody checked.  Box 4 records its *confinement* — `threadIpcFieldsQuiescent` on the `.tcbSuspend` arm — since a tick read as unconditional claims more than the tree.  The walk found and fixed two stale status claims: `CLAUDE.md` named `cancelIpcBlockingOnCore`'s notification arm as uncovered for eighteen cuts after `v0.34.96` covered it, two sentences above its own retraction, and the register's row for that debt said the `.tcbSuspend` arm carries `ipcInvariant` and `objects.invExt` *only*, which ignores RR3's arm theorem.  It also measured what the closure is gated on (§8.1): eight register rows, none of them bookkeeping — five RR8's own with no sub-task carrying them, and three owned by a workstream that closed at `v0.35.2`, RR0.10's circular-closure-target shape recurring | (1 file) | S |
 | RR8.2 | Update `UNFINISHED_SMP_WORK.md`: mark each closed finding with its version, leaving open items visible | `docs/planning/UNFINISHED_SMP_WORK.md` | M |
 | RR8.3 | Retire the RR0.3 standing constraint from `CLAUDE.md` and `AGENTS.md` once RR3 has closed — it says two conjuncts remain threaded and `ipcInvariantFull` is not end-to-end checked, which becomes false at RR3.25 and would otherwise misdirect every later contributor | `CLAUDE.md`, `AGENTS.md` | S |
 | RR8.4 | Hand-off check **before** the closure entry: confirm SM10's §2 dependencies are genuinely met and its §1 scope statement matches the tree. Ordered first deliberately — each row may land as its own PR, so recording closure first would advertise the workstream complete for an intervening release, and an unmet dependency found afterwards would have to be retracted rather than simply fixed | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
@@ -1218,31 +1227,158 @@ PASS — the contract landed at `v0.34.2` and pinned by
 
 ## 8. Acceptance gate
 
-- [ ] Every open workstream has a durable registry entry with a closure target.
+**Walked by RR8.1 at `v0.35.55`.**  Each box carries the version that earned it
+and the sub-task that did, so a reader can re-run the evidence rather than
+re-trust the tick.  Three rules the walk followed, all of them this project's
+own.  A box is ticked only where the tree was *measured*, not where a phase
+that claimed it landed — RR7's own sweep found a register row asserting its
+verification in the sentence that made it false.  A box whose claim holds only
+under a stated hypothesis records the hypothesis, because a tick read as
+unconditional is a stronger claim than the tree makes.  And a box RR8.1 cannot
+decide is left unticked **with its owner named**: a box whose artefacts a later
+row produces, silently unticked, reads exactly like a box nobody checked.
+
+- [x] Every open workstream has a durable registry entry with a closure target.
+      — **v0.34.26** (RR0.1, RR0.9, RR0.10).  Re-measured at the walk: all
+      seven open families (`WS-RR`, `WS-SM`, `WS-BP`, `WS-CB`, `WS-SL`,
+      `WS-IN`, `WS-AP`) hold a row in the workstream registry with a version
+      span and a closure target.  `SM10` needs none of its own — it is a
+      *phase* of WS-SM, covered by that family's row.
 - [ ] `SMP_RELEASE_CLOSURE_PLAN.md` §1 scope and estimate match the tree.
-- [ ] The SM10 theorem tally includes SM9 and is generated, not hand-summed.
-- [ ] Every live SMP dispatch arm carries an `ipcInvariantFull` bundle.
-- [ ] Both cross-core donation paths migrate the CBS replenish queue.
-- [ ] Fault IPC delivers, resumes and restarts; no path returns to a faulting instruction.
-- [ ] The RR3.1 gate reports zero post-state bindings of
+      — established **v0.34.26** (RR0.4, RR1.11), but **re-verification is
+      RR8.4's**, deliberately: sixty-odd patch versions of WS-RR have landed
+      since, so a tick taken from RR0's cut would certify a measurement nobody
+      repeated.  RR8.1 does not tick it.
+- [x] The SM10 theorem tally includes SM9 and is generated, not hand-summed.
+      — **v0.34.26** (RR0.5, RR0.6).  Re-measured:
+      `scripts/generate_smp_theorem_manifest.py --check` reports 11 phases,
+      16 inventories, 1135 entries of which 919 are theorems, 16 more in the
+      assumption ledgers.
+- [x] Every live SMP dispatch arm carries an `ipcInvariantFull` bundle.
+      — transitions at **v0.34.42** (RR2), the two top-level payoffs at
+      **v0.34.43** (RR3).  **Under the stated packs**, which is what the tick
+      means here and not less: `capabilityDispatchQuiescence` for the
+      capability-gated arms, `syscallDispatchQuiescence` for the IPC
+      fall-through, `checkedSyscallDispatchQuiescence` for the flow-checked
+      tier, and — measured at the walk — `threadIpcFieldsQuiescent` for
+      `suspendThreadOnCore_preserves_ipcInvariantFull`, whose `ready` clause
+      confines the `.tcbSuspend` arm to victims not blocked in an IPC queue.
+      The blocked-victim residue is `cancelIpcBlocking`'s reply arm and the
+      composite lifted to `cancelIpcBlockingOnCore`, registered in
+      [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) with owner RR8 — and
+      that row's own "live consequence" sentence, which said the arm carries
+      `ipcInvariant` and `objects.invExt` *only*, was corrected by this walk:
+      it understated the tree by ignoring RR3's arm theorem.
+- [x] Both cross-core donation paths migrate the CBS replenish queue.
+      — **v0.34.42** (RR2).
+      `applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp`
+      and `applyReplyDonationOnCore_…` both resolve at the walk.
+- [x] Fault IPC delivers, resumes and restarts; no path returns to a faulting instruction.
+      — **v0.34.44** (RR4).  `faultDeliverOnCore_not_dispatchable` and its
+      flow-checked twin, `applyFaultRestart`, `retirePendingFaultForResume`,
+      `svcFaultIP`, and the two fail-closed halts
+      (`halt_abort_before_lean_ready`, `halt_syscall_before_lean_ready`) all
+      resolve.
+- [x] The RR3.1 gate reports zero post-state bindings of
       `blockedThreadsPendingMessageConsistent` and `replyCallerLinkageReciprocal`
       across the `_preserves_ipcInvariantFull` family. Not a binder-name grep:
       those two conjuncts have no canonical primed name, so a name-based check
       passes without measuring anything.
-- [ ] Both top-level dispatch payoff theorems exist.
-- [ ] Hardware boot without a production labeling context fails closed.
-- [ ] Idle threads are installed **and enqueued** on the production boot path,
+      — **v0.34.43** (RR3.1).  Re-run at the walk:
+      `[PASS] ipcInvariantFull is de-threaded end to end`, over all 178
+      bundle statements, with the conjunct set, the family and each bundle's
+      pre-state all derived rather than listed.
+- [x] Both top-level dispatch payoff theorems exist.
+      — **v0.34.43** (RR3.15–RR3.26).
+      `dispatchWithCap_preserves_ipcInvariantFull` and
+      `dispatchSyscall_preserves_ipcInvariantFull` (staged, with the call
+      chain's surface), over the production
+      `dispatchCapabilityOnly_preserves_ipcInvariantFull`.
+- [x] Hardware boot without a production labeling context fails closed.
+      — **v0.34.48** (RR5.1–RR5.5).  The `LabelingContext` argument is
+      mandatory, the pre-boot reference is `defaultLabelingContext`, which the
+      entry guard rejects, and `uninstalledSeparationWitnessBootError` refuses
+      a labeling whose declared witnesses are not installed threads.
+- [x] Idle threads are installed **and enqueued** on the production boot path,
       so `idleThreadEnqueuedOnCore` holds of the live boot state rather than
       being assumed by the theorems that consume it.
-- [ ] Every kernel seam consults the readiness gate.
-- [ ] The deployed RwLock is the one the Lean spec describes.
-- [ ] Neither lock refinement theorem assumes its own conclusion.
-- [ ] aarch64 `cargo build` **with `--features hw_target`** runs in CI and
+      — **v0.34.48** (RR5.11–RR5.14).
+      `bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore`.
+- [x] Every kernel seam consults the readiness gate.
+      — **v0.34.48** (RR5.6–RR5.9).  The gated set is *derived* in
+      `rust/sele4n-hal/build.rs` from the Lean tree's `@[export]`s and the
+      HAL's `lean_`-prefixed externs, pinned against `LEAN_READY_GATED_SEAMS`,
+      with the one ungated upcall reconciled in both directions through
+      `LEAN_UPCALLS_OUTSIDE_THE_GATE`.
+- [x] The deployed RwLock is the one the Lean spec describes.
+      — **v0.34.50** (RR6.10).  `STATIC_RW_LOCK_POOL : [QueuedRwLock; 4]`, and
+      `build.rs` pins the element type, so a revert to the CAS-retry `RwLock`
+      fails the build.  Its refinement (`queuedRwLock_refines_rwLockSpec`,
+      `queuedRwLock_admits_in_spec_order`) landed *before* the pool was
+      repointed, so no released version carried an unrefined core lock.
+- [x] Neither lock refinement theorem assumes its own conclusion.
+      — **v0.34.50** (RR6).  The premise-free forms are the `_honest` ones
+      (`rust_rwLock_refines_lean_honest` and siblings), derived from the
+      trace-shape predicate `honestBlock`; the `ListBlockBisim` forms are kept
+      only as the general statements.
+- [x] aarch64 `cargo build` **with `--features hw_target`** runs in CI and
       passes (a build, not a `check`:
       `check` never reaches code generation, so it cannot cover the `asm!` sites).
-- [ ] Every medium finding is closed or has a registered deferral.
-- [ ] Tier 0..3 green at HEAD; Tier 4 honest about what did not run.
+      — **v0.34.41** (RR1.7).  The `aarch64 Cross Build` job runs
+      `scripts/test_aarch64_cross_build.sh`, which builds `sele4n-hal` for
+      `aarch64-unknown-none` in **both** profiles with
+      `CROSS_FEATURES="hw_target"` and lints the cross target with
+      `-D warnings`.  Note for a future walk: the feature reaches the build
+      through the script, so grepping the workflow for `hw_target` finds
+      nothing and proves nothing.
+- [x] Every medium finding is closed or has a registered deferral.
+      — **v0.34.92** (RR7, all forty-one sub-tasks).  Re-measured: seven
+      register rows cite `Severity **Medium**`; five carry a closure target and
+      two are marked **Nothing owed**.
+- [x] Tier 0..3 green at HEAD; Tier 4 honest about what did not run.
+      — measured at the walk (**v0.35.55**), not inherited from a phase.
 - [ ] `UNFINISHED_SMP_WORK.md` updated with closing versions.
+      — **RR8.2's output**; RR8.1 does not tick it.
+
+### 8.1 What the walk found beyond the ticks — what RR8's closure is gated on
+
+RR8's five rows are closure bookkeeping: walk the gate, update the register,
+retire a standing constraint, check the hand-off, record the closure.  **Eight
+rows of [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) gate that closure**, and
+none of them is bookkeeping.  Classified by what each still owes — measured at
+the walk, from each row's own status marker and owner column, not estimated:
+
+| Row's subject | Owner | Owes |
+|---------------|-------|------|
+| A delegated `.reply` does not deschedule a *preempted* recorded server | RR8 | **Code sweep.** The defect is fixed at the two sites PR #895 rounds 10–11 named; `descheduleThread` and `cancelIpcBlockingOnCore` still resolve the victim's core at `determineTargetCore`, which that review records as equally a proxy. |
+| Two spellings of "tear down the caller↔Reply link" | RR8 | **De-duplication** of `SystemState.consumeCallerReply` against `Lifecycle.Suspend.consumeReplyLink`. |
+| A donated SchedContext is never returned when its owner's IPC is cancelled | RR8 | **One congruence proof** — that the migration *establishes* `replenishQueueAffinityConsistent_smp` on the composite, over the two TCB writes the teardown performs between the return and the migration.  Behaviourally closed at `v0.34.104`. |
+| `cancelIpcBlockingOnCore` does not carry `ipcInvariantFull` | RR7.22; RR8 | **Two proofs**: `cancelIpcBlocking`'s reply arm, and the composite over all five arms lifted to `cancelIpcBlockingOnCore`.  The box-4 residue above. |
+| `UncoveredLockDomain.syscallSeamSchedulerDomain` (inside the fine-lock row) | RR8 | **Per-arm resolved wake targets**, so the syscall seam's scheduler writes are covered by a footprint rather than by the free over-approximation.  RR7.39's residual. |
+| The reclaim's holder abort is projection-visible | **WS-OD** | An information-flow discharge of `abortHolderProjectionStable` beyond the inert case. |
+| ...and so is the holder *wake* | **WS-OD** | A second one, of `abortHolderWakeHigh`. |
+| A timed-out thread strands its queue successor | **WS-OD** | **De-duplication** of the two endpoint-queue removals, itself blocked on `queuePPrev` consistency being *stated* as an invariant. |
+
+Two findings, and the second is the sharper one.
+
+**Five rows are RR8's own and no RR8 sub-task carries any of them.**  A row with
+a closure target and no sub-task to carry it is a plan defect rather than a
+schedule: RR8.5 would reach for a closure entry and find five register rows
+saying the closure may not be recorded.  §5's RR8 table is where that has to be
+answered, and RR8 has not started — which by this plan's own numbering rule
+(*renumbering is cheap before work starts and expensive after*) is the cheapest
+moment there will ever be to answer it.
+
+**Three rows are owned by WS-OD, which is COMPLETE.**  Their closure target is
+"before RR8 closes" and the workstream that owns them closed at `v0.35.2`, so as
+the register stands nothing will do the work and RR8's closure is gated on it
+anyway.  That is precisely the shape **RR0.10** exists to fix — *a circular
+closure target, the phase that owns it marked LANDED, re-homed to a phase that
+can close it* — recurring three times on a family that closed thirteen cuts
+after RR0 ran.  RR0.10's remedy applies unchanged; what it does not decide is
+*which* phase, since re-homing them to RR8 grows RR8 and re-homing them to
+WS-BP or WS-CB puts them behind a phase that must not open until RR8 closes.
+
 
 ## 9. Cross-references
 
