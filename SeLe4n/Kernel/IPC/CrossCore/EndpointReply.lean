@@ -602,6 +602,28 @@ grows. -/
     rw [hRid'] at h
     exact replyFrameBelow?_of_no_frame_above st rid h
 
+/-- **WS-HP HP6.6: the reply path's lifting of the containment** -- the frame the
+removal's splice writes below the cut is the one this arm's footprint declares.
+
+The reply footprints resolve their below-frame member through
+`answeredReplyFrameBelow?`, and the operation resolves its own through
+`spliceFrameBelow?` on the answered caller's reply object; `spliceFrameBelow?`'s
+two extra refusals make its answer strictly narrower, which is the direction a
+footprint must satisfy.  Lifted through `answeredReplyObject?` -- the one
+expression the arm's existing reply member also comes from -- so the footprint and
+the transition cannot disagree about *which* frame is answered either. -/
+theorem spliceFrameBelow?_mem_answeredReplyFrameBelow? (st : SystemState)
+    (target : SeLe4n.ThreadId) (rid above below : SeLe4n.ReplyId) (r b : Reply)
+    (hRid : answeredReplyObject? st target = some rid)
+    (hR : st.getReply? rid = some r)
+    (hAbove : answeredReplyFrameAbove? st target = some above)
+    (h : spliceFrameBelow? st rid r above = some (below, b)) :
+    answeredReplyFrameBelow? st target = some below := by
+  rw [answeredReplyFrameBelow?_eq st target rid hRid]
+  refine spliceFrameBelow?_mem_replyFrameBelow? hR ?_ h
+  rw [answeredReplyFrameAbove?_eq_bind, hRid] at hAbove
+  exact hAbove
+
 /-- **WS-HP HP1.2: the pop's trigger and the splice's member are mutually
 exclusive.**  A frame with a frame above it heads nothing, so no reply both pops a
 donation and splices -- the exclusion that keeps the *reachable* footprint bound
@@ -664,13 +686,13 @@ the runtime `withLockSet` bracket (the SM5.I FFI seam) acquires before invoking
 
 **WS-HP HP6.2 (`v0.35.44`): resolved from the trigger, not from a binding.**  The
 donation members came from `endpointReplyServerDonation?` — the *recorded server's*
-binding — while the pop has read the answered frame since HP4.1.  Under
-`severAtCut` the two agree (`severAtCut_pop_leaves_no_head`) and
+binding — while the pop has read the answered frame since HP4.1.  Under the sever
+in force until `v0.35.44` the two agreed, and
 `lockSet_endpointReplyOnCore_covers_headDrivenPop` held the gap closed with the
-two coherence facts as hypotheses; the splice is the change that makes them
-disagree, so the repoint lands *before* it — a transition goes live only after the
-declarations that cover it.  Coverage is now definitional
-(`lockSet_endpointReplyOnCore_covers_pop`), and the stand-in is deleted.
+two coherence facts as hypotheses; the splice (HP6.8, `v0.35.45`) is the change
+that makes them disagree, so the repoint landed *before* it — a transition goes
+live only after the declarations that cover it.  Coverage is now definitional
+(`lockSet_endpointReplyOnCore_covers_donationPop`), and the stand-in is deleted.
 
 Measured against the composite's three write sites rather than reasoned from the
 resolver: `endpointReplyOnCore` writes the answered caller, the Replies and the

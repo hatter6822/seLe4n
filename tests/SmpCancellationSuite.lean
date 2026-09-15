@@ -1926,13 +1926,15 @@ made the victim `.ready` — which is exactly the `donationOwnerValid` break WS-
 RR7.22 was written to close, reappearing at the one place that reading cannot see.
 The head-driven reclaim follows the frame and reclaims it.
 
-**Not a live defect, and the fixture is hand-built for that reason.**  The proved
-half is `severAtCut_pop_leaves_no_head` (HP2.3): under the current removal policy a
-*pop* leaves no orphan head, which is why the two readings agree everywhere the
-reply path can put the state and why HP4 and HP5 both preserve behaviour (the golden
-trace is byte-identical across each).  HP6's splice is what makes this shape
-reachable — it re-heads the frame below a cut, whose recorded reply server is by
-then `.unbound` — and HP5 landing first is what stops it arriving together with a
+**Not a live defect when this fixture was written, which is why it is hand-built.**
+Under the sever in force until `v0.35.44` a *pop* left no orphan head — the proved
+half was `severAtCut_pop_leaves_no_head` (HP2.3), retired with the policy — which
+is why the two readings agreed everywhere the reply path could put the state and
+why HP4 and HP5 both preserved behaviour (the golden trace is byte-identical across
+each).  **HP6.8 (`v0.35.45`) makes this shape reachable**: the splice re-heads the
+frame below a cut, whose recorded reply server is by then `.unbound`.  So the
+fixture now stands for a state the kernel produces rather than one it could only
+be handed, and HP5 landing first is what stopped it arriving together with a
 reclaim that cannot see it. -/
 private def stOrphanHeadReclaim : SystemState :=
   let base :=

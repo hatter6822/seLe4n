@@ -718,19 +718,28 @@ theorem answeredFrameHeadContext?_boundThread (st : SystemState)
   obtain ⟨_, sc, _, _, hSc, _⟩ := replyFrameHeadContext?_eq_some hHead
   exact ⟨sc, hSc, by rw [hSc] at hBt; exact hBt⟩
 
-/-- **WS-HP HP2.3's negative twin: the state `spliceOutTheCut` creates under a
-binding-driven trigger, named exactly.**
+/-- **WS-HP HP2.3's negative twin: the state the splice creates, named exactly —
+and since HP6.8 a state the kernel reaches.**
 
 A frame that *heads* a context while the thread its caller recorded as its reply
 server holds no donation of that context falsifies
-`answeredHeadContextIsServerDonation` outright.  That is the orphan head the
-splice produces and the sever does not
-(`severAtCut_pop_leaves_no_head`, `IPC/Invariant/Defs.lean`): the splice's pop
-re-heads the frame below a cut, whose caller recorded a server that the
-cancellation removed.
+`answeredHeadContextIsServerDonation` outright.  That is the **orphan head**: the
+splice's pop re-heads the frame below a cut, whose caller recorded a server that
+the removal took out of the chain.
 
-So this is the checkable form of "the splice breaks the equivalence HP4 stands
-on", and it is why HP6 may not precede HP4. -/
+Written at HP2.3 as the checkable form of "the splice breaks the equivalence a
+binding-driven pop stands on", which is why HP6 could not precede HP4.  The
+ordering was respected — HP4 (`v0.35.38`) and HP5 (`v0.35.39`) moved both triggers
+onto the answered frame's own `.head` link, and HP6.8 (`v0.35.45`) then wrote
+`cancelledMiddleCallerPolicy := .spliceOutTheCut` — so what this theorem says has
+changed from a *prohibition* into a *fact about reachable states*: the coherence
+predicate is false on states the live removal now produces.  That, together with
+the predicate having no consumer left (HP6.2), is the warrant HP7 deletes it on.
+
+A reader arriving here from the retired `severAtCut_pop_leaves_no_head` will find
+that name's tombstone beside the `WS-HP HP2.3` banner in `IPC/Invariant/Defs.lean`;
+it was deleted with the policy flip because its first conjunct was the old policy
+value. -/
 theorem answeredHeadContextIsServerDonation_false_of_orphan_head (st : SystemState)
     (target : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId) (r : Reply)
     (scId : SeLe4n.SchedContextId) (expected : SeLe4n.ThreadId)
@@ -748,13 +757,16 @@ theorem answeredHeadContextIsServerDonation_false_of_orphan_head (st : SystemSta
 The head-driven resolver fires -- the frame heads the context, the context names
 it back, and it is bound to a holder -- while the binding-driven one answers
 `none`, because the recorded server holds nothing.  So a `spliceOutTheCut` cut
-landing before HP4 would leave the live reply path popping on a fact that is
-false of exactly the states the splice makes reachable; and one landing *after*
-HP4 is the intended behaviour, since the head-driven pop returns the context to
-the caller the surviving stack names.
+landing before HP4 would have left the live reply path popping on a fact that is
+false of exactly the states the splice makes reachable; landing *after* HP4, which
+is what happened, it is the intended behaviour -- the head-driven pop returns the
+context to the caller the surviving stack names.
 
-This is the sharp statement of plan §4's second forced ordering, and the reason
-it is a theorem rather than a note. -/
+This is the sharp statement of plan §4's second forced ordering, and the reason it
+is a theorem rather than a note.  Since HP6.8 it is also the measurement that the
+ordering mattered: `endpointReplyServerDonation?` is no longer read by any live
+footprint or transition, and this theorem is what says the states where it would
+have differed are now reachable rather than hypothetical. -/
 theorem donationPopTriggers_disagree_at_orphan_head (st : SystemState)
     (target : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (r : Reply)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext)

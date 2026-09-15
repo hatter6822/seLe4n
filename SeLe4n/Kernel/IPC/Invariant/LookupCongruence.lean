@@ -718,10 +718,48 @@ theorem consumeReply_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
       exact storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 h1 h2
 
 open SeLe4n.Model.SystemState in
+/-- **WS-HP HP6.4** step congruence for the removal's composed store step: two
+states agreeing off the scheduler take the same branch of `spliceFrameBelow?` —
+it reads `getReply?` and nothing else — and each of the one or three `storeObject`
+writes carries the relation. -/
+theorem spliceReplyFrameStores_offSchedulerAgrees {s1 s2 t1 t2 : SystemState}
+    {rid above : SeLe4n.ReplyId} {r a : Reply}
+    (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
+    (h1 : spliceReplyFrameStores s1 rid above r a = .ok t1)
+    (h2 : spliceReplyFrameStores s2 rid above r a = .ok t2) :
+    OffSchedulerAgrees t1 t2 := by
+  have hGR : ∀ q, s2.getReply? q = s1.getReply? q :=
+    fun q => getReply?_congr_getElem hRel.objects q
+  have hBelow : spliceFrameBelow? s2 rid r above = spliceFrameBelow? s1 rid r above := by
+    unfold spliceFrameBelow?
+    cases hP : r.prev with
+    | none => rfl
+    | some below => simp only []; rw [hGR below]
+  rcases spliceReplyFrameStores_cases h1 with ⟨hB1, hSa1⟩ |
+    ⟨below, b, m1, n1, hB1, hSa1, hSb1, hSc1⟩
+  · rcases spliceReplyFrameStores_cases h2 with ⟨_, hSa2⟩ | ⟨_, _, _, _, hB2, _, _, _⟩
+    · exact storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSa1 hSa2
+    · rw [hBelow, hB1] at hB2; cases hB2
+  · rcases spliceReplyFrameStores_cases h2 with ⟨hB2, _⟩ |
+      ⟨below', b', m2, n2, hB2, hSa2, hSb2, hSc2⟩
+    · rw [hBelow] at hB2; rw [hB1] at hB2; cases hB2
+    · rw [hBelow, hB1, Option.some.injEq, Prod.mk.injEq] at hB2
+      obtain ⟨rfl, rfl⟩ := hB2
+      have hRelA : OffSchedulerAgrees m1 m2 :=
+        storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSa1 hSa2
+      have hInvA1 := SeLe4n.Model.storeObject_preserves_objects_invExt s1 m1 _ _ hInv1 hSa1
+      have hInvA2 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 m2 _ _ hInv2 hSa2
+      exact storeObject_offSchedulerAgrees _ _
+        (storeObject_offSchedulerAgrees _ _ hRelA hInvA1 hInvA2 hSb1 hSb2)
+        (SeLe4n.Model.storeObject_preserves_objects_invExt m1 n1 _ _ hInvA1 hSb1)
+        (SeLe4n.Model.storeObject_preserves_objects_invExt m2 n2 _ _ hInvA2 hSb2) hSc1 hSc2
+
+open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`)** step congruence: the removal's *detach* leg maps
 off-scheduler-agreeing inputs to off-scheduler-agreeing outputs.  Its decision is
 read off `getReply?` alone (`spliceReplyFrameOutOrSelf_decision`), so agreeing
-object stores take the same branch; the one write is a `storeObject`, whose
+object stores take the same branch; its writes are `storeObject`s, whose
 congruence carries every other field. -/
 theorem spliceReplyFrameOutOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
     (rid : SeLe4n.ReplyId)
@@ -731,21 +769,22 @@ theorem spliceReplyFrameOutOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
       (spliceReplyFrameOutOrSelf s2 rid) := by
   have hGR : ∀ q, s2.getReply? q = s1.getReply? q :=
     fun q => getReply?_congr_getElem hRel.objects q
-  have hFA : replyFrameAbove? s2 rid = replyFrameAbove? s1 rid := by
-    unfold replyFrameAbove?; rw [hGR rid]
   rcases spliceReplyFrameOutOrSelf_decision s1 rid with
-    ⟨above, a, hFA1, hA1, hP1, hS1⟩ | ⟨hId1, hNo1⟩
+    ⟨r1, above, a, hR1, hN1, hA1, hP1, hS1⟩ | ⟨hId1, hNo1⟩
   · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
-      ⟨above', a', hFA2, hA2, _hP2, hS2⟩ | ⟨_, hNo2⟩
-    · have hAb : above = above' := Option.some.inj (hFA1.symm.trans (hFA.symm.trans hFA2))
+      ⟨r2, above', a', hR2, hN2, hA2, _hP2, hS2⟩ | ⟨_, hNo2⟩
+    · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
+      subst hRe
+      have hAb : above = above' := ReplyStackLink.frame.inj (Option.some.inj (hN1.symm.trans hN2))
       subst hAb
       have hAe : a' = a := Option.some.inj (hA2.symm.trans ((hGR above).trans hA1))
       subst hAe
-      exact storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hS1 hS2
-    · exact absurd hP1 (hNo2 above a (hFA.trans hFA1) ((hGR above).trans hA1))
+      exact spliceReplyFrameStores_offSchedulerAgrees hRel hInv1 hInv2 hS1 hS2
+    · exact absurd hP1 (hNo2 r1 above a ((hGR rid).trans hR1) hN1 ((hGR above).trans hA1))
   · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
-      ⟨above, a, hFA2, hA2, hP2, _⟩ | ⟨hId2, _⟩
-    · exact absurd hP2 (hNo1 above a (hFA.symm.trans hFA2) ((hGR above).symm.trans hA2))
+      ⟨r2, above, a, hR2, hN2, hA2, hP2, _⟩ | ⟨hId2, _⟩
+    · exact absurd hP2 (hNo1 r2 above a ((hGR rid).symm.trans hR2) hN2
+        ((hGR above).symm.trans hA2))
     · rw [hId1, hId2]; exact hRel
 
 open SeLe4n.Model.SystemState in

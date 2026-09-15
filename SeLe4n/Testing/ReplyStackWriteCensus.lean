@@ -114,7 +114,13 @@ def chainWritePrimitives : List Name :=
     -- a site and has to be registered.
   , `SeLe4n.Model.SystemState.consumeReply
   , `SeLe4n.Model.SystemState.consumeCallerReply
-    -- The detach: the frame above's `prev`, and its total fold.
+    -- The removal: the composed store step (WS-HP HP6.3 -- the frame above's
+    -- `prev`, the frame below's `next`, and the cut frame's own unlink), the
+    -- validated operation over it, and its total fold.  The store step is a
+    -- primitive for the same reason the pop's two component stores are: it
+    -- performs the writes with none of `spliceReplyFrameOut`'s resolution or
+    -- validation, so a transition reaching for it directly is a site.
+  , `SeLe4n.Kernel.spliceReplyFrameStores
   , `SeLe4n.Kernel.spliceReplyFrameOut
   , `SeLe4n.Kernel.spliceReplyFrameOutOrSelf
     -- ...and the frozen surface's counterparts, which write the same field of
@@ -656,6 +662,15 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.returnDonatedSchedContext)
     -- The detach itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
+    -- **WS-HP HP6.3**: the composed store step is a *half-step* of the operation
+    -- that validates it.  It cannot state a chain result of its own: given only
+    -- `above` and the two records, nothing says the frame above the cut is the
+    -- one whose `prev` names `rid`, and the three reciprocal links it writes are
+    -- coherent only under the resolution `spliceReplyFrameOut` performs.  That
+    -- resolution is exactly what the operation adds, and it is where the chain
+    -- result is stated.
+  , (`SeLe4n.Kernel.spliceReplyFrameStores,
+      .halfStep `SeLe4n.Kernel.spliceReplyFrameOut)
   , (`SeLe4n.Kernel.spliceReplyFrameOut,
       .states [`SeLe4n.Kernel.spliceReplyFrameOut_preserves_donationChainWellFormed])
   , (`SeLe4n.Kernel.spliceReplyFrameOutOrSelf,

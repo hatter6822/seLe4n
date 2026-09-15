@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.44` (`lakefile.toml`) |
+| **Package version** | `0.35.45` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 380,540 across 330 Lean files |
-| **Test LoC** | 77,224 across 70 Lean test suites |
-| **Proved declarations** | 12,706 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 382,025 across 330 Lean files |
+| **Test LoC** | 77,280 across 70 Lean test suites |
+| **Proved declarations** | 12,741 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4067,7 +4067,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **176** statements in the family (the
+bound on a post-state across all **177** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to
@@ -4391,24 +4391,27 @@ because each is false without the other.
   cleared by the pop that follows the reply leg in the same transition, which is
   why `Reply.consumed` leaves them in place on a head and clears them everywhere
   else.
-- **A cancelled *middle* caller severs the stack at the cut** (OD5.2).  Both
-  candidate answers are named (`CancelledMiddleCallerPolicy`), one is chosen
-  (`cancelledMiddleCallerPolicy = .severAtCut`) and the choice is proved:
-  `cancelledMiddleCaller_severs_at_cut` binds the innermost live caller
-  `.bound scId` and leaves **every other thread's TCB unchanged**, which is
-  exactly what `reclaimToCancelledThread` would not do.  Chosen because it is what
-  the pop already does (one program rather than two), because it is `O(1)` where
-  the alternative walks a chain a `LockSet` cannot bound, and because it reaches
-  the same owner seL4-MCS's `reply_remove` does — and, since `v0.35.4`, by the
-  same route: `spliceThreadReplyFrameOut` takes the cancelled frame off the middle
-  of the stack in `O(1)` before its caller link is consumed, so no frame is left on
-  a stack with its caller gone.  (*Takes off*, not *splices*: it writes `none` into
-  the frame above, which is upstream's own non-head branch — see §8.12.8's
-  correction at `v0.35.40`.)  Its cost is
-  stated rather than hidden: the original owner's reservation ends up with the
-  innermost live caller, and no later pop carries it below the cut.  From the
-  cancellation end the same policy is two theorems — the reclaim fires for the
-  thread the holder names as owner, and declines below the cut.
+- **A cancelled *middle* caller is spliced out of the stack** (OD5.2, re-decided
+  by WS-HP HP6.8 at `v0.35.45`).  All three candidate answers are named
+  (`CancelledMiddleCallerPolicy`), one is chosen
+  (`cancelledMiddleCallerPolicy = .spliceOutTheCut`) and the choice is proved:
+  `cancelledMiddleCaller_splices_at_cut` binds the innermost live caller
+  `.donated scId outer` — still owed outward — and leaves **every other thread's
+  TCB unchanged**, which is exactly what `reclaimToCancelledThread` would not do.
+  `spliceThreadReplyFrameOut` takes the cancelled frame off the middle of the stack
+  in `O(1)` before its caller link is consumed, so no frame is left on a stack with
+  its caller gone, and since HP6.3 it *repairs* the pair either side of the cut
+  rather than breaking it: the frame above takes the cut frame's own downward link,
+  the frame below links back up at the frame above, and the cut frame's own `prev`
+  is cleared (seL4's `reply_unlink` downward half).  **Up to `v0.35.44` it severed**
+  — `.severAtCut`, which is upstream's own non-head branch (§8.12.8's correction at
+  `v0.35.40`) — and the cost was stated rather than hidden: the original owner's
+  reservation ended up with the innermost live caller and no later pop carried it
+  below the cut.  The splice is therefore an **improvement on** seL4-MCS rather than
+  parity with it; the `severAtCut` constructor is kept because it names the
+  behaviour upstream still has.  From the cancellation end the same policy is two
+  theorems — the reclaim fires for the holder of the context the victim's own frame
+  heads, and declines below the cut.
 - **The suspend pipeline pops twice at depth ≥ 2** (OD5.3).  The G2 teardown's
   reply arm can rebind the victim `.donated scId outer`, and the arm selector
   below it re-reads the binding from the **post-teardown** TCB — so the `.donated`
@@ -4556,28 +4559,37 @@ respect.
    primitive, a registered site, or carry a stated reason for being
    chain-neutral, because `storeObject` takes a whole object and a record update
    can rewrite a stack link without naming any helper.
-7. **The removal does not preserve the donation accounting, and that cost is
-   the `severAtCut` policy's.**  Taking a caller out of the *middle* of a chain
-   is destructive to which thread ends up owning the scheduling context: the
-   removal moves no context, and the later pop donates to whatever the remaining
-   stack says is outermost.  On `owner → middle → server`, a delegate answering
-   `owner` out of order leaves `owner` `.unbound` permanently and the server's
-   in-order reply then settles the context `.bound` on `middle` — where the
-   in-order unwind would have left it `.donated … owner`, still owed outward.  A
-   callee that delegates its caller's reply capability to a confederate can
-   therefore capture that caller's reservation; the authority required is
-   already the authority to unblock the victim.  New code must not read a
-   successful pop as evidence that the context reached its owner.
+7. **The removal did not preserve the donation accounting, and that cost was
+   the `severAtCut` policy's — closed at depth ≥ 3 by WS-HP HP6 (`v0.35.45`).**
+   Taking a caller out of the *middle* of a chain was destructive to which thread
+   ends up owning the scheduling context: the removal moved no context, and the
+   later pop donated to whatever the remaining stack said was outermost.  On
+   `owner → middle → server`, a delegate answering `owner` out of order left
+   `owner` `.unbound` permanently and the server's in-order reply then settled the
+   context `.bound` on `middle` — where the in-order unwind would have left it
+   `.donated … owner`, still owed outward.  A callee that delegates its caller's
+   reply capability to a confederate could therefore capture that caller's
+   reservation; the authority required is already the authority to unblock the
+   victim.
 
-   **It is the policy's, not the chain's, and depth two cannot show that.**  A
-   two-frame stack's lower frame is its bottom, so `severAtCut` and the named
-   alternative `spliceOutTheCut` write the same value into the frame above and
-   the two are indistinguishable.  `tests/SmpIpcSuite.lean` §3.22 is the
-   depth-three witness where they differ: the frames below the cut leave the
-   stack, the reservation settles on a thread strictly *inside* the chain, and
-   its owner is left `.unbound` two hops outside the cut — while the same stack
-   unwound in order delivers it outward still owed.  §3.20 pins the depth-two
-   halves.
+   **The splice closes it, and the payoff is stated.**  Since HP6.8 the removal
+   writes the cut frame's own downward link into the frame above and links the frame
+   below back up at it (`removeCallerReplyFrame_splices_reciprocally`), so the
+   frames below a cut stay on the stack.
+   `donationAccountingPreserved_atCallDepthThree` is the statement: at depth ≥ 3 a
+   middle removal leaves the reservation **owed outward** and the pop that answers
+   the bottom frame delivers it home.  New code must still not read a successful pop
+   at depth **2** as evidence that the context reached its owner.
+
+   **It was the policy's, not the chain's, and depth two cannot show that.**  A
+   two-frame stack's lower frame is its bottom, so `severAtCut` and
+   `spliceOutTheCut` write the same value into the frame above and the two are
+   indistinguishable there.  `tests/SmpIpcSuite.lean` §3.22 is the depth-three
+   witness where they differ; up to `v0.35.44` it measured the sever's cost and
+   since `v0.35.45` it measures the splice's payoff, with two negatives spelling the
+   retired values so the assertions are known to discriminate.  §3.20 pins the
+   depth-two halves, and that they pass **byte-identically** across the policy flip
+   is the measurement that the change is confined to depth ≥ 3.
 
    **It is what seL4-MCS does too** — re-verified at `v0.35.40` against upstream
    source at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0: `reply_remove`'s non-head
@@ -4612,12 +4624,15 @@ respect.
 Both reply spines and `.replyRecv`'s pop decide whether to return a donated
 scheduling context from **whether the answered reply frame heads one**
 (`replyFrameHeadHolder?`), not from whether the recorded reply server holds a
-`.donated` binding.  The two triggers agree on every state `severAtCut` can
+`.donated` binding.  The two triggers agreed on every state the sever could
 produce — `answeredFrameHeadContext?_implies_serverDonation` under the coherence
-facts, and `severAtCut_pop_leaves_no_head` rules out the state where they differ
-— so the flip preserves behaviour and the golden trace is byte-identical.  Its
-purpose is HP6: the orphan head a splice can leave is exactly what a
-binding-driven trigger cannot see.
+facts, and HP2.3's `severAtCut_pop_leaves_no_head` ruled out the state where they
+differ — so the flip preserved behaviour and the golden trace was byte-identical.
+Its purpose was HP6: the orphan head a splice can leave is exactly what a
+binding-driven trigger cannot see, and since HP6.8 (`v0.35.45`) that state is
+**reachable**.  The pin itself was deleted with the policy flip, because its first
+conjunct was the policy constant at the old value; a tombstone comment beside the
+`WS-HP HP2.3` banner in `IPC/Invariant/Defs.lean` records what replaced it.
 
 Seven properties of the surface this leaves.
 
@@ -4748,8 +4763,8 @@ Six properties of the surface this leaves.
    `cancelledCallerDonation?_some_of_frame_head` are stated over `replyFrameAbove?`
    and `replyFrameHeadContext?` with no binding hypothesis: a frame with a frame
    above it heads nothing, so the pop's trigger and the splice's are exclusive by
-   construction.  That is `severAtCut` seen from the cancellation end, and the
-   fact HP6 consumes.
+   construction.  That is the removal policy seen from the cancellation end, and the
+   fact HP6.8 consumed to make the splice live.
 
 The reclaim is exercised for the first time at HP5.5
 (`tests/SmpCancellationSuite.lean` §3.20): before it, every `.blockedOnReply`
@@ -4765,6 +4780,85 @@ object at all, and `tests/SmpIpcSuite.lean`'s OD5.2 pair handed the resolver a T
 no `replyObject`, so its "fires" and "declines below the cut" halves declined for the
 same reason.  `main_trace_smoke.expected` is byte-identical afterwards — the correction
 is to the state, not to the expectation.
+
+#### 8.12.11 The removal splices rather than severs — WS-HP HP6 (`v0.35.45`)
+
+`cancelledMiddleCallerPolicy = .spliceOutTheCut`.  Taking a caller out of the
+*middle* of a reply stack now repairs the two frames either side of the cut
+instead of breaking the chain there, so the frames below a cut stay on the
+context's stack and the reservation goes on travelling outward to the caller that
+owns it.
+
+**The removal is three stores.**  `spliceReplyFrameStores` writes
+`above.prev := some below`, `below.next := some (.frame above)`, and
+`rid.prev := none` — the last being seL4's `reply_unlink` downward half.  The third
+is not optional: without it the cut frame keeps a `prev` that nothing below names
+back, which falsifies `donationChainWellFormed.prevLinkReciprocal` at the cut
+frame, so the bare splice would owe a relaxed predicate and
+`SeLe4n/Testing/ReplyStackWriteCensus.lean` would have had to accept a half-step
+where the sever stated its result outright.  With it the invariant is preserved
+**outright** across the removal
+(`spliceReplyFrameOut_preserves_donationChainWellFormed`,
+`removeCallerReplyFrame_preserves_donationChainWellFormed`), and it costs nothing:
+the cut frame's lock is already a declared write member on both removal paths, so
+`maxLockSetSize` stays at HP3.5's **23**.
+
+**The below side degenerates rather than refusing.**  `spliceFrameBelow?` answers
+`Option`: a `prev` that does not resolve, one naming the frame above, and a frame
+below whose own `next` does not link back are all *not followed*, and the removal
+then writes `above.prev := none`, which is the sever.  So this operation's refusal
+set is **exactly** the pre-WS-HP one — every refusal theorem carries verbatim,
+`spliceReplyFrameOutOrSelf`'s fold soundness included, and
+`spliceReplyFrameOut_eq_sever_of_no_frame_below` is the definitional equality that
+makes every repair a case split whose `none` branch is the pre-HP proof.  One
+consequence: a **stale upward link is still reachable**, so the reciprocity checks
+(`donationChainFrom`, `replyFrameOnLiveStack`) stay and stay load-bearing.
+
+**The two facts the sever could not state.**
+`removeCallerReplyFrame_splices_reciprocally` — after a middle removal the frame
+above names the frame below and the frame below names the frame above — and
+`donationAccountingPreserved_atCallDepthThree`, which is the workstream's payoff:
+at reply-stack depth ≥ 3 a middle removal leaves the reservation **owed outward**
+and the pop that answers the bottom frame delivers it home.  Both are stated with
+no key-distinctness hypothesis, derived instead from the store's contents, because
+`ReplyId.toObjId` and `ThreadId.toObjId` are two wrappers over one `ObjId` and a
+numerical collision is representable.  The first is stated at the *removal* rather
+than at the splice, because the consume that follows clears the cut frame's
+remaining link and a claim about the splice alone would say nothing about whether
+that clear disturbs the pair it just built.
+
+**The ordering that was enforced.**  The splice re-heads a frame whose recorded
+reply server is by then gone and `.unbound`, so under a binding-driven pop trigger
+answering it would run no pop and leave a consumed frame heading a context — the
+object pinning `v0.35.4` closed.  The trigger therefore moved first, for the reply
+path at `v0.35.38` (§8.12.9) and for the cancellation path at `v0.35.39`
+(§8.12.10), and only then the policy.  `severAtCut_pop_leaves_no_head` was the pin
+on that ordering and is **deleted** with the flip, because its first conjunct was
+the policy constant at the old value; its negative twin
+`answeredHeadContextIsServerDonation_false_of_orphan_head` is **kept**, having
+changed from a prohibition into a fact about reachable states, which is the warrant
+HP7 deletes the coherence predicate on.
+
+**Improvement on upstream, not parity.**  `reply_remove`'s non-head branch writes
+zero into the frame above — re-verified at `v0.35.40` against upstream source at
+master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 — so seL4-MCS strands the reservation at
+depth ≥ 3 too.  The `CancelledMiddleCallerPolicy.severAtCut` constructor is kept
+for that reason: it names the behaviour this kernel diverged from and that upstream
+still has.
+
+**What is not closed, and the measurement that says so.**  At depth **two** the
+frame below the cut is the stack's bottom, so both policies write `none` into the
+frame above and the splice provably cannot reach the loss: a delegate answers the
+client out of order, the client's frame leaves the stack, and the later in-order
+pop binds the reservation to the *intermediate* caller.  `tests/SmpIpcSuite.lean`
+§3.20's depth-two halves pass **byte-identically** across this flip, and the golden
+trace is byte-identical, which is exactly that measurement.  Closing it needs the
+reservation's **origin** recorded on the `SchedContext` rather than derived from
+stack reachability, which is WS-HP HP10, registered in `docs/REGISTERED_DEBT.md`
+with a closure target before v1.0.0.  §3.22 inverted from a COST witness to a
+PAYOFF witness in the same cut, keeping the in-order half — restated as an
+**agreement**, since the two now coincide — and gaining two negatives that spell
+the retired sever's values so the assertions are known to discriminate.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

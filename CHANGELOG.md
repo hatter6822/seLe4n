@@ -1,3 +1,134 @@
+## v0.35.45 — WS-HP HP6.3–HP6.9: the removal splices, and the reservation travels outward
+
+`cancelledMiddleCallerPolicy = .spliceOutTheCut`.  Taking a caller out of the
+**middle** of a reply stack now repairs the two frames either side of the cut
+instead of breaking the chain there, so the frames below a cut stay on the
+context's stack and the reservation goes on travelling outward to the caller that
+owns it.  `donationAccountingPreserved_atCallDepthThree` is the payoff and the
+statement this workstream exists for: at reply-stack depth ≥ 3 a middle removal
+leaves the reservation **owed outward** and the pop that answers the bottom frame
+delivers it home, where the sever settled it `.bound` on a thread strictly inside
+the chain and left its owner `.unbound` for good.  So a callee that delegates its
+caller's reply capability to a confederate can no longer capture that caller's CBS
+reservation at depth ≥ 3.
+
+**An improvement on seL4-MCS, not parity with it.**  `reply_remove`'s non-head
+branch writes zero into the frame above — re-verified at `v0.35.40` against
+upstream source at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 — so upstream strands
+the reservation at depth ≥ 3 too.  The `CancelledMiddleCallerPolicy.severAtCut`
+constructor is kept for that reason: it names the behaviour this kernel diverged
+from and that upstream still has.
+
+**The splice is three stores, and the third is not optional.**
+`spliceReplyFrameStores` writes `above.prev := some below`,
+`below.next := some (.frame above)` and `rid.prev := none` — the last being seL4's
+`reply_unlink` downward half.  A two-store splice leaves the cut frame with a
+`prev` that nothing below names back, which falsifies
+`donationChainWellFormed.prevLinkReciprocal` at the cut frame, so the bare splice
+would owe a relaxed predicate and `ReplyStackWriteCensus` would have had to accept
+a half-step where the sever stated its result outright.  With the third store the
+invariant is preserved **outright** across the removal, and it is free: the cut
+frame's lock is already a declared write member on both removal paths, so
+`maxLockSetSize` stays at HP3.5's **23** and every figure derived from it is
+unmoved.
+
+**The below side degenerates rather than refusing.**  `spliceFrameBelow?` answers
+`Option`: a `prev` that does not resolve, one naming the frame above, and a frame
+below whose own `next` does not link back are all *not followed*, and the removal
+then writes `above.prev := none`, which is the sever.  So this operation's refusal
+set is **exactly** the pre-WS-HP one — every refusal theorem carries verbatim,
+`spliceReplyFrameOutOrSelf`'s fold soundness included — and
+`spliceReplyFrameOut_eq_sever_of_no_frame_below` is the definitional equality that
+makes every repair a case split whose `none` branch is the pre-HP proof.  One
+consequence: a stale upward link is still *reachable*, so the reciprocity checks
+(`donationChainFrom`, `replyFrameOnLiveStack`) stay and stay load-bearing.
+
+**The two facts the sever could not state.**
+`removeCallerReplyFrame_splices_reciprocally` — after a middle removal the frame
+above names the frame below and the frame below names the frame above — and the
+accounting payoff above.  Both are stated with **no** key-distinctness hypothesis,
+derived instead from the store's contents (a key at which the post-splice state
+holds a `.reply` is one at which the consume's own TCB lookup fails), because
+`ReplyId.toObjId` and `ThreadId.toObjId` are two wrappers over one `ObjId` and a
+numerical collision is representable.  The reciprocity fact is stated at the
+*removal* rather than at the splice, because the consume that follows clears the cut
+frame's remaining link and a claim about the splice alone would say nothing about
+whether that clear disturbs the pair it just built.
+`removeCallerReplyFrame_getSchedContext?_eq` is the same shape and is what lets the
+post-removal head be resolved against the pre-state context record.
+
+**The ordering was enforced, and its pin is deleted.**  The splice re-heads a frame
+whose recorded reply server is by then gone and `.unbound`, so under a
+binding-driven pop trigger answering it would run no pop and leave a consumed frame
+heading a context — the object pinning `v0.35.4` closed.  The trigger moved first
+(HP4 `v0.35.38`, HP5 `v0.35.39`), and HP2.3's `severAtCut_pop_leaves_no_head` was
+the pin on that.  Its first conjunct was the policy constant at the old value, so
+this cut **deletes** it: a theorem whose conclusion has become false can only be
+retired, and a tombstone comment beside the `WS-HP HP2.3` banner records what
+replaced it, because five prose sites cited the name.  Its negative twin
+`answeredHeadContextIsServerDonation_false_of_orphan_head` is **kept**, having
+changed from a prohibition into a fact about reachable states — which, with both
+coherence facts having had no consumer since HP6.2, is the warrant HP7 deletes the
+predicate on.
+
+**Two over-claims in the plan's own HP6 preamble, retracted.**  It said HP6 closes
+*both* surviving divergences from upstream and that HP6.7 is therefore a
+strengthening.  Measured: the second divergence is about **heads**, which HP6 does
+not touch — `Reply.consumed` keeps a head's links deliberately, because the pop that
+follows validates the head by them — and
+`removeCallerReplyFrame_preserves_donationChainWellFormed` already held on non-heads
+at `v0.35.44`, because `spliceReplyFrameOutOrSelf_unreferenced` discharges exactly
+the precondition `Reply.consumed`'s docstring states.  HP6.7 is a restatement for
+that theorem; what it *adds* is the reciprocity fact.
+
+**Depth two is not closed, and the measurement says so.**  At depth 2 the frame
+below the cut is the stack's bottom, so both policies write `none` into the frame
+above and the splice provably cannot reach the loss.
+`tests/SmpIpcSuite.lean` §3.20's depth-two halves pass **byte-identically** across
+the flip and `main_trace_smoke.expected` is byte-identical, which is exactly that
+measurement.  Closing it needs the reservation's **origin** on the `SchedContext`
+rather than stack reachability: WS-HP HP10, registered with a closure target before
+v1.0.0.  §3.22 inverted from a COST witness to a PAYOFF witness in the same cut,
+keeping the in-order half — restated as an **agreement**, since the two now
+coincide, and that coincidence is the defect's closure — gaining two negatives that
+spell the retired sever's values so the assertions are known to discriminate
+(HP5.5's lesson), and measuring the **second** pop delivering the reservation home,
+which the sever could not reach at all.
+
+**Other things this cut records.**  `spliceReplyFrameStores` is a reply-stack write
+site and is registered `.halfStep spliceReplyFrameOut` and added to
+`chainWritePrimitives`, exactly as the pop's two component stores are half-steps of
+`storeDonationHeadPop`; it cannot state a chain result of its own, because given
+only the frame above and the two records nothing says that frame is the one whose
+`prev` names the cut.  `spliceReplyFrameOutOrSelf_store_cases` is a three-step
+**existential** rather than a named relation, because a `Prop`-valued relation whose
+body mentions `storeObject` is reported by the census's store frontier — the census
+decision HP6.5's row asked for, taken by making it not arise.
+`spliceReplyFrameOutOrSelf_reply_next` could not be restated (the splice moves a
+`next` from one `.frame` link to another, so its conclusion is false) and is renamed
+`spliceReplyFrameOutOrSelf_preserves_reply_caller_and_headLink` with a disjunctive
+conclusion, which is still exactly what its one consumer needs.  The bundle proof
+was **extracted** rather than copied:
+`storeObject_reply_stackLinks_preserves_ipcInvariantFull` states the argument once
+over one store and the splice composes it once or three times, so the removal
+gaining a write costs an iteration and no new argument — the same treatment the
+index-set pair, the dual-queue invariant and the off-scheduler congruence got.  The
+removal's write set is **four** keys now, and `spliceFrameBelow?_mem_replyFrameBelow?`
+with its `answered…` and `cancel…` liftings states the containment the four
+footprint coverage theorems rest on and which nothing said.
+`donationChainWalk_exists_of_splice` is a new simultaneous-induction lemma, because
+the existing one cannot express a *redirect*.
+
+Verification: `lake build` and `lake build SeLe4n.Platform.Staged` green; the
+golden trace byte-identical; `smp_ipc_suite`, `smp_cancellation_suite` and
+`frozen_ops_suite` green; Tier 3 green with the policy anchors repointed, the
+retired spellings as negatives and the removal's three-store order pinned;
+`ReplyStackWriteCensus`, `check_lock_ceiling_figures.py`,
+`check_ipc_invariant_dethreading.py` (the bundle family 176 → 177),
+`check_claim_evidence_citations.py` and `check_workstream_plan.py` green.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md HP6.3–HP6.9
+
 ## v0.35.44 — WS-HP HP6.2: the two reply footprints read the pop's own trigger
 
 `lockSet_endpointReplyOnCore` and `lockSet_endpointReplyRecvOnCore` resolved their

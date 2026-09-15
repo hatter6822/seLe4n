@@ -750,17 +750,23 @@ theorem returnDonationToCancelledCaller_preserves_projection
     · rfl
   · rfl
 
-/-- `v0.35.4`: the cancelled caller's frame detach preserves the projection — the
-identity where there is nothing to detach, one `spliceReplyFrameOut` otherwise. -/
+/-- `v0.35.4`, restated for the splice at **WS-HP HP6.4**: the cancelled caller's
+frame removal preserves the projection — the identity where there is nothing to
+remove, one `spliceReplyFrameOut` otherwise.
+
+The splice writes the frame *below* the cut at the intermediate state, so the index
+set's well-formedness has to reach that state; `hSetInv` is what carries it, and it
+is the one hypothesis this gained when the sever became a splice. -/
 theorem spliceThreadReplyFrameOut_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) (tcb : TCB)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hSetInv : st.objectIndexSet.table.invExt)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (spliceThreadReplyFrameOut st tcb)
       = projectState ctx observer st := by
   rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
   · rw [h]
-  · exact spliceReplyFrameOut_preserves_projection ctx observer hIdxComplete hObjInv h
+  · exact spliceReplyFrameOut_preserves_projection ctx observer hIdxComplete hSetInv hObjInv h
 
 /-- **WS-RR RR2.18: the teardown projection, discharged on the reply arm.**
 
@@ -806,6 +812,8 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
   -- carries forward.
   have hCompR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objectIndexSetComplete
     st victim tcb hObjInv hObjSetInv hIdxComplete
+  have hSetInvR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objectIndexSet_invExt
+    st victim tcb hObjSetInv
   have hInvD : (spliceThreadReplyFrameOut
       (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb).objects.invExt :=
     spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
@@ -824,7 +832,8 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
   exact h1.trans
     ((restoreToReadyCancelled_preserves_projection_high ctx observer _ victim hObjHigh
       hInvD).trans
-      ((spliceThreadReplyFrameOut_preserves_projection ctx observer _ tcb hCompR hInvR).trans
+      ((spliceThreadReplyFrameOut_preserves_projection ctx observer _ tcb hCompR hSetInvR
+        hInvR).trans
         (returnDonationToCancelledCaller_preserves_projection ctx observer st victim tcb hObjInv
           hIdxComplete hObjSetInv hAbortProj)))
 

@@ -173,15 +173,21 @@ to pop.  A frame that is *not* a head and still carries links is the top of a
 part the detach cut off (seL4's "start of call chain"); nothing will ever pop
 it, so its consumption is where it leaves the structure.
 
-The frame **below** a consumed non-head frame keeps an upward link that now
-names an unlinked Reply.  That is deliberate and safe: the stack relation is
-stated **downward** (`donationChainWellFormed.prevLinkReciprocal` — every `prev`
-link is answered by the frame it names), every walk and every pop validator
-follows `prev` and checks the answer, and no reader trusts an upward `.frame`
-link on its own.  The stale link lives only in a cut-off part, which no head
-reaches, and is cleared when that frame's own caller is consumed.  Clearing it
-eagerly would cost a second object write on every reply for a case only a
-cancellation deeper than three creates.
+**The frame below is REPAIRED rather than left stale, since WS-HP HP6.3
+(`v0.35.45`).**  The removal writes `below.next := some (.frame above)` in the same
+step that writes `above.prev := some below`, so the pair either side of the cut
+reciprocates and the frames below stay on the context's stack
+(`removeCallerReplyFrame_splices_reciprocally`).  That is what this record's own
+caller does, not what this function does — see the precondition below.
+
+A stale upward link is still **reachable**, so no reader may trust one: the
+removal's below-side resolution refuses a `prev` that does not resolve, one naming
+the frame above, and a frame below whose own `next` does not link back, and
+degenerates to `severAtCut` there.  The stack relation is therefore still stated
+**downward** (`donationChainWellFormed.prevLinkReciprocal` — every `prev` link is
+answered by the frame it names), every walk and every pop validator follows `prev`
+and checks the answer, and `replyFrameOnLiveStack` asks one-step reciprocity rather
+than presence.
 
 **Precondition, and who discharges it** (WS-RM, `v0.35.6`).  The frame **above**
 is the other direction, and it is *not* safe to ignore: if some frame still
@@ -190,16 +196,27 @@ links **down** to this one (`above.prev = some rid`), clearing this frame's
 walks to it refuses (fail-closed, `.invalidArgument`) rather than returning the
 context.  So a removal path must take the frame above off this one *before*
 consuming.  Which value it writes into that frame's `prev` is the
-`cancelledMiddleCallerPolicy` decision: this kernel writes `none`
-(`severAtCut`), so the frames below the cut leave the stack — which is also what
-seL4-MCS writes there (`REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)`,
-re-verified at `v0.35.40`; `v0.35.14` claimed upstream splices and cited a line
-that is in no release).  Keeping the frames below is `spliceOutTheCut`, an
-improvement neither kernel has taken yet; WS-HP HP6 takes it here.
+`cancelledMiddleCallerPolicy` decision: since WS-HP HP6.8 (`v0.35.45`) this kernel
+writes **this frame's own `prev`** (`spliceOutTheCut`), so the frames below the cut
+stay on the stack and the reservation goes on travelling outward to the caller that
+owns it.  The removal also clears **this** frame's `prev` in the same step — seL4's
+`reply_unlink` downward half — which is why `donationChainWellFormed` survives the
+removal outright rather than transiently.
+
+Up to `v0.35.44` it wrote `none` (`severAtCut`), which is what seL4-MCS writes
+there: `REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)`, re-verified at
+`v0.35.40` against master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 (`v0.35.14` claimed
+upstream splices and cited a line that is in no release).  So the splice is an
+**improvement on upstream** rather than an adoption of it, measured at reply-stack
+depth three in `tests/SmpIpcSuite.lean` §3.22 and stated as
+`donationAccountingPreserved_atCallDepthThree`.  What it provably cannot reach is
+the depth-**two** loss, where the cut frame is its stack's bottom so both policies
+write `none`: that needs the reservation's *origin* on the `SchedContext` rather
+than stack reachability, and is WS-HP HP10.
 
 **Both paths do.**  The cancellation path runs `spliceThreadReplyFrameOut`
 immediately before `consumeReplyLink`, and the reply path runs
-`removeCallerReplyFrame` — the detach and the consume as one step, called by
+`removeCallerReplyFrame` — the splice and the consume as one step, called by
 `endpointReplyOnCore` and by both single-core spines.  Until WS-RM the reply path
 did not: it relied on the answered frame being the head, which every reply of the
 nested Call pattern satisfies but which a *delegated* reply capability answering

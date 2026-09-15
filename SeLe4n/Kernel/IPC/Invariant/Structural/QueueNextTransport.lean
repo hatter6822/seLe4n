@@ -891,17 +891,33 @@ theorem consumeCallerReply_preserves_dualQueueSystemInvariant
         ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hObjInv1 hStep hInv1
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the detach preserves `dualQueueSystemInvariant` — one
-`.reply` store at a key that already holds a Reply, which is exactly the shape
-`storeObject_reply_preserves_dualQueueSystemInvariant` frames. -/
+/-- **WS-RM (`v0.35.6`)**: the removal preserves `dualQueueSystemInvariant` — at
+most three `.reply` stores, each at a key that already holds a Reply, which is
+exactly the shape `storeObject_reply_preserves_dualQueueSystemInvariant` frames.
+Restated for the splice (WS-HP HP6.4) by **iterating** that frame over the two
+intermediate states rather than by a fresh argument about three writes. -/
 theorem spliceReplyFrameOutOrSelf_preserves_dualQueueSystemInvariant
     (st : SystemState) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant (spliceReplyFrameOutOrSelf st rid) := by
-  rcases spliceReplyFrameOutOrSelf_store_cases st rid with h | ⟨above, a, hA, hS⟩
-  · rw [h]; exact hInv
-  · exact storeObject_reply_preserves_dualQueueSystemInvariant st _ above.toObjId
-      { a with prev := none } hObjInv hS (Or.inl ⟨a, hA⟩) hInv
+  obtain ⟨m1, m2, hStep1, hStep2, hStep3⟩ :=
+    spliceReplyFrameOutOrSelf_store_cases st rid hObjInv
+  have hM1 : dualQueueSystemInvariant m1 ∧ m1.objects.invExt := by
+    rcases hStep1 with rfl | ⟨k, o, o', hO, hS⟩
+    · exact ⟨hInv, hObjInv⟩
+    · exact ⟨storeObject_reply_preserves_dualQueueSystemInvariant st m1 k.toObjId o'
+        hObjInv hS (Or.inl ⟨o, hO⟩) hInv,
+        SeLe4n.Model.storeObject_preserves_objects_invExt st m1 _ _ hObjInv hS⟩
+  have hM2 : dualQueueSystemInvariant m2 ∧ m2.objects.invExt := by
+    rcases hStep2 with rfl | ⟨k, o, o', hO, hS⟩
+    · exact hM1
+    · exact ⟨storeObject_reply_preserves_dualQueueSystemInvariant m1 m2 k.toObjId o'
+        hM1.2 hS (Or.inl ⟨o, hO⟩) hM1.1,
+        SeLe4n.Model.storeObject_preserves_objects_invExt m1 m2 _ _ hM1.2 hS⟩
+  rcases hStep3 with hEq | ⟨k, o, o', hO, hS⟩
+  · rw [hEq]; exact hM2.1
+  · exact storeObject_reply_preserves_dualQueueSystemInvariant m2 _ k.toObjId o'
+      hM2.2 hS (Or.inl ⟨o, hO⟩) hM2.1
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`)**: and so does the removal — the detach then the consume. -/

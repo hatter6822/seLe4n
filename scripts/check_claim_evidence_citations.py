@@ -56,6 +56,13 @@ CITATION_EXEMPTIONS: dict[str, str] = {
     "seL4_Fault_tag": "seL4's own ABI field name, cited for fidelity",
     "seL4_ReplyRecv": "seL4's own syscall name, cited for fidelity",
     "reply_remove": "seL4's own kernel function name, cited for fidelity",
+    "reply_unlink": "seL4's own kernel function name, cited for fidelity",
+    "severAtCut_pop_leaves_no_head": (
+        "retired at WS-HP HP6.8 (`v0.35.45`) -- its first conjunct was "
+        "`cancelledMiddleCallerPolicy = .severAtCut`, so the policy flip deleted it "
+        "rather than restating it; the row names it to say it is gone, which is the "
+        "one shape a citation may legitimately not resolve"
+    ),
     "seL4_MsgMaxExtraCaps": "seL4 constant, cited for fidelity",
     "seL4_MsgMaxLength": "seL4 constant, cited for fidelity",
     "native_decide": "a Lean tactic, not a declaration",

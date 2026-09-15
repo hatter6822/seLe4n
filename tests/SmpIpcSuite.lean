@@ -2414,8 +2414,8 @@ private def runDonationPushChecks : IO Unit := do
      | .ok pushed =>
          Lifecycle.Suspend.cancelledCallerDonation? pushed pushOuter pushOuterBlockedTcb == none
      | .error _ => false)
-  assertBool "OD5.2: the policy this kernel implements is `severAtCut`"
-    (cancelledMiddleCallerPolicy == CancelledMiddleCallerPolicy.severAtCut)
+  assertBool "HP6.8: the policy this kernel implements is `spliceOutTheCut`"
+    (cancelledMiddleCallerPolicy == CancelledMiddleCallerPolicy.spliceOutTheCut)
   -- OD4.7: the `.call` footprint already declares every object the push writes.
   assertBool "OD4.7: the resolved `.call` footprint declares the donated context"
     (((lockSet_endpointCallOnCore pushStore (SeLe4n.ObjId.ofNat 97) pushDonor
@@ -2645,7 +2645,12 @@ private def runReplyFrameRemovalChecks : IO Unit := do
     -- This is a TWO-frame stack, where `pushOuterReply` is the bottom, so
     -- `severAtCut` and `spliceOutTheCut` write the same value and the policy is
     -- not what is being measured here.  §3.22 is the depth-three witness where
-    -- they differ and the cost is the policy's.
+    -- they differ; since WS-HP HP6.8 it measures the splice's payoff rather than
+    -- the sever's cost, and **these assertions are deliberately unchanged** --
+    -- that they still pass is the measurement that the policy flip is confined
+    -- to depth >= 3.  Closing this depth-two residue needs the reservation's
+    -- ORIGIN on the `SchedContext` rather than stack reachability, which is
+    -- WS-HP HP10.
     --
     -- Asserted here because the project's standard for this trade is WS-OD's:
     -- "its cost is stated rather than hidden".  A witness that checked only the
@@ -2966,10 +2971,22 @@ nothing below it, so "take the frame above off this frame's stack" and "splice
 this frame out of the list" write the same value -- `none` -- into the frame
 above, and the two readings of a middle removal cannot be told apart there.
 **Three frames is the shallowest stack on which they differ**, and that is what
-makes `cancelledMiddleCallerPolicy`'s stated cost measurable rather than
-described: the frames below the cut leave the context's stack, so the
-reservation settles on the thread *above* the cut instead of travelling on
-outward to the thread that owned it.
+makes `cancelledMiddleCallerPolicy` measurable rather than described.
+
+Up to `v0.35.44` this witness measured the sever's **cost**: the frames below the
+cut left the context's stack, so the reservation settled on the thread *above* the
+cut and its owner was left `.unbound` for good -- a callee that delegated its
+caller's reply capability to a confederate could capture that caller's CBS
+reservation.  Since WS-HP HP6.8 (`v0.35.45`) it measures the splice's **payoff**:
+the frame above the cut is re-pointed at the frame below, so the reservation
+travels outward and the pop that answers the bottom frame delivers it home.  The
+retired sever's values are spelled out in the negatives below, which is what makes
+the assertions known to discriminate rather than merely to pass.
+
+The depth-**two** loss the splice provably cannot reach -- both policies write
+`none` into the frame above a bottom frame -- is WS-HP HP10's, and §3.20 is
+deliberately left asserting the depth-two outcome unchanged: that is the
+measurement that this cut is confined to depth ≥ 3.
 
 Reachable with no more authority than `§3.20` needs -- three nested donating
 `Call`s (which the transitive chain makes ordinary since OD4) and one delegated
@@ -3043,42 +3060,79 @@ private def runMiddleRemovalDepthThreeChecks : IO Unit := do
       (match res with | .ok _ => true | .error _ => false)
     assertBool "the answered frame leaves the structure entirely (`Reply.isFree`)"
       (match post.getReply? pushDonorReply with | some r => r.isFree | none => false)
-    -- **THE COST, MEASURED.**  The head's link down is cleared rather than
-    -- re-pointed at the frame below the cut, so the bottom frame -- whose caller
-    -- `pushOuter` owns the reservation -- is no longer on the context's stack.
-    assertBool "COST: the head's link down is CLEARED, not re-pointed at the frame below the cut"
-      (pushLinksOf post depth3Reply == some (none, some (.head pushSc)))
-    assertBool "COST: ...so the bottom frame is off the stack, holding only a stale upward link"
-      (pushLinksOf post pushOuterReply == some (none, some (.frame pushDonorReply)))
-    assertBool "COST: ...and the pop therefore reads the remaining stack as bottomed out"
-      (match replyStackOuterCaller? post pushSc with | .ok none => true | _ => false)
-    assertBool "COST: ...so the reservation settles `.bound` on the thread ABOVE the cut"
+    -- **THE PAYOFF, MEASURED.**  The head's link down is **re-pointed** at the
+    -- frame below the cut rather than cleared, and that frame links back up at the
+    -- head, so the bottom frame -- whose caller `pushOuter` owns the reservation --
+    -- stays on the context's stack.  Under `severAtCut`, which this kernel
+    -- implemented up to `v0.35.44` and which seL4-MCS still implements, the first
+    -- of these was `(none, some (.head pushSc))` and every assertion below it
+    -- failed the other way.
+    assertBool "PAYOFF: the head's link down is RE-POINTED at the frame below the cut"
+      (pushLinksOf post depth3Reply == some (some pushOuterReply, some (.head pushSc)))
+    assertBool "PAYOFF: ...and the frame below links back up at the head"
+      (pushLinksOf post pushOuterReply == some (none, some (.frame depth3Reply)))
+    -- NEGATIVE, and the reason the two assertions above discriminate: the
+    -- **retired** `severAtCut` values, spelled here and nowhere else.  A revert of
+    -- the splice makes each of these hold and each assertion above fail.
+    assertBool "NEGATIVE: the head does NOT read as a severed cut"
+      (!(pushLinksOf post depth3Reply == some (none, some (.head pushSc))))
+    assertBool "NEGATIVE: ...and the frame below does NOT keep a stale upward link"
+      (!(pushLinksOf post pushOuterReply == some (none, some (.frame pushDonorReply))))
+    -- ...so the pop resolves the remaining stack to the reservation's OWNER,
+    -- where the sever left it reading as bottomed out.
+    assertBool "PAYOFF: the pop resolves the remaining stack to the reservation's owner"
+      (match replyStackOuterCaller? post pushSc with
+       | .ok (some outer) => outer == pushOuter
+       | _ => false)
+    assertBool "PAYOFF: ...so the reservation leaves the cut owed OUTWARD"
       (match returnDonatedSchedContextResolved post depth3Server pushSc pushServer with
-       | .ok st' => pushBindingOf st' pushServer == some (.bound pushSc)
+       | .ok st' => pushBindingOf st' pushServer == some (.donated pushSc pushOuter)
        | .error _ => false)
-    assertBool "COST: ...and its owner is left unbound, two hops outside the cut"
+    assertBool "PAYOFF: ...and its owner is still unbound, waiting rather than abandoned"
       (match returnDonatedSchedContextResolved post depth3Server pushSc pushServer with
        | .ok st' => pushBindingOf st' pushOuter == some .unbound
        | .error _ => false)
-    -- **CONTRAST**: the same three-frame stack unwound IN ORDER keeps the debt
-    -- travelling outward -- the reservation reaches `pushDonor` still owed to
-    -- `pushOuter`.  This is the half that shows the loss is the removal's, not
-    -- the chain's.
-    assertBool "CONTRAST: an IN-ORDER pop on the same stack owes the context outward"
+    -- **AND IT ARRIVES.**  One pop leaves the reservation owed; the pop that
+    -- answers the bottom frame delivers it home.  The sever could not reach this
+    -- state at all -- the bottom frame had left the stack, so no later pop carried
+    -- the context below the cut and `.bound pushSc` on the thread ABOVE the cut was
+    -- terminal.
+    assertBool "PAYOFF: ...and the next pop delivers it home `.bound` to its owner"
+      (match returnDonatedSchedContextResolved post depth3Server pushSc pushServer with
+       | .ok st' =>
+           (match returnDonatedSchedContextResolved st' pushServer pushSc pushOuter with
+            | .ok st'' => pushBindingOf st'' pushOuter == some (.bound pushSc)
+            | .error _ => false)
+       | .error _ => false)
+    assertBool "PAYOFF: ...leaving the intermediate caller unbound, owing nothing"
+      (match returnDonatedSchedContextResolved post depth3Server pushSc pushServer with
+       | .ok st' =>
+           (match returnDonatedSchedContextResolved st' pushServer pushSc pushOuter with
+            | .ok st'' => pushBindingOf st'' pushServer == some .unbound
+            | .error _ => false)
+       | .error _ => false)
+    -- **AGREEMENT**: the same three-frame stack unwound IN ORDER reaches the same
+    -- binding.  Under the sever these two disagreed -- that disagreement was the
+    -- defect -- and the contrast half is kept because a witness that only checked
+    -- the out-of-order path could not say the two now coincide.
+    assertBool "AGREEMENT: an IN-ORDER pop on the same stack owes the context outward too"
       (match returnDonatedSchedContextResolved chain depth3Server pushSc pushServer with
        | .ok st' => pushBindingOf st' pushServer == some (.donated pushSc pushDonor)
        | .error _ => false)
-    -- **WHAT THE POLICY BUYS**, and why it is not merely a loss: a frame cut off
-    -- the stack carries no `.head` link, so consuming its caller clears it
-    -- outright (`Reply.consumed`'s non-head branch).  No object is pinned, and
-    -- no consumed frame is left heading a context -- which is the state
-    -- `replyStackOuterCaller?` refuses and the defect `v0.35.4` closed.
+    -- **NOTHING IS PINNED BY A REMOVAL**, at either policy: a frame whose own
+    -- caller is consumed while it heads no context is cleared outright
+    -- (`Reply.consumed`'s non-head branch), and since HP6.3 the removal clears the
+    -- cut frame's downward link itself -- seL4's `reply_unlink` downward half -- so
+    -- `donationChainWellFormed` survives the removal rather than being transiently
+    -- broken.
+    assertBool "PAYOFF: the cut frame's own downward link is cleared by the removal"
+      (pushLinksOf post pushDonorReply == some (none, none))
     let stBottom : SystemState :=
       { post with
           objects := post.objects.insert pushOuter.toObjId (.tcb replyRemovalOuterTcb) }
     let (postBottom, resBottom) :=
       endpointReplyOnCore replyRemovalDelegate pushOuter IpcMessage.empty bootCoreId stBottom
-    assertBool "PAYOFF: the cut-off frame's own caller can still be answered"
+    assertBool "PAYOFF: the bottom frame's own caller can still be answered"
       (match resBottom with | .ok _ => true | .error _ => false)
     assertBool "PAYOFF: ...and that frees it, so nothing is pinned by the cut"
       (match postBottom.getReply? pushOuterReply with | some r => r.isFree | none => false)

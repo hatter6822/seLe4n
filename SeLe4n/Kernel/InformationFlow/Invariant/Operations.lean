@@ -2460,9 +2460,11 @@ theorem consumeCallerReply_preserves_objectIndexSetComplete_and_invExt
           hObjInv1 hMid.2 hMid.1 hStep,
         storeObject_preserves_objectIndexSet_invExt st1 st' caller.toObjId _ hMid.2 hStep⟩
 
-/-- **WS-RM (`v0.35.6`)**: the *removal* preserves the pair.  Its extra leg is a
-`.reply` store at a key that already held a Reply, so `objectIndexSet.contains`
-is monotone across it for the same reason the consume's two legs are. -/
+/-- **WS-RM (`v0.35.6`)**, restated for the splice at **WS-HP HP6.4**: the
+*removal* preserves the pair.  Its extra leg is at most three `.reply` stores, each
+at a key that already held a Reply, so `objectIndexSet.contains` is monotone across
+every one of them for the same reason the consume's two legs are — the removal
+gaining a write costs this an iteration and no new argument. -/
 theorem removeCallerReplyFrame_preserves_objectIndexSetComplete_and_invExt
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt)
@@ -2475,9 +2477,18 @@ theorem removeCallerReplyFrame_preserves_objectIndexSetComplete_and_invExt
     (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) ?_
     (spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
       hComplete) hStep
-  rcases spliceReplyFrameOutOrSelf_store_cases st rid with h | ⟨above, a, _, hS⟩
-  · rw [h]; exact hObjSetInv
-  · exact storeObject_preserves_objectIndexSet_invExt st _ above.toObjId _ hObjSetInv hS
+  obtain ⟨m1, m2, h1, h2, h3⟩ := spliceReplyFrameOutOrSelf_store_cases st rid hObjInv
+  have hM1 : m1.objectIndexSet.table.invExt := by
+    rcases h1 with rfl | ⟨k, _, _, _, hS⟩
+    · exact hObjSetInv
+    · exact storeObject_preserves_objectIndexSet_invExt st _ k.toObjId _ hObjSetInv hS
+  have hM2 : m2.objectIndexSet.table.invExt := by
+    rcases h2 with rfl | ⟨k, _, _, _, hS⟩
+    · exact hM1
+    · exact storeObject_preserves_objectIndexSet_invExt m1 _ k.toObjId _ hM1 hS
+  rcases h3 with h | ⟨k, _, _, _, hS⟩
+  · rw [h]; exact hM2
+  · exact storeObject_preserves_objectIndexSet_invExt m2 _ k.toObjId _ hM2 hS
 
 /-- U4-C: endpointReplyRecv at non-observable targets preserves projection.
 

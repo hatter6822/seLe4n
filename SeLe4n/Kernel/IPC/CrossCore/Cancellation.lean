@@ -1769,6 +1769,29 @@ invariant: the splice's member is declared only on a *mid-stack* removal. -/
       exact replyFrameBelow?_of_no_frame_above st rid h
   | _ => rfl
 
+/-- **WS-HP HP6.6: the cancellation path's lifting of the containment** -- the
+frame the victim's removal splices below the cut is the one this arm's footprint
+declares.
+
+Lifted through the victim's own `replyObject` under the reply-arm gate, which is
+where `cancelSplicedFrameBelow?` reads it, so the footprint and the operation
+cannot disagree about which frame is cut.  The `.blockedOnReply` gate is the arm
+selector every exclusivity lemma in this family reads; on any other arm the
+declared member is `none` and the removal is the identity, so there is nothing to
+contain. -/
+theorem spliceFrameBelow?_mem_cancelSplicedFrameBelow? (st : SystemState) (tcb : TCB)
+    (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
+    (rid above below : SeLe4n.ReplyId) (r b : Reply)
+    (hIp : tcb.ipcState = .blockedOnReply ep rt)
+    (hRO : tcb.replyObject = some rid)
+    (hR : st.getReply? rid = some r)
+    (hAbove : replyFrameAbove? st rid = some above)
+    (h : spliceFrameBelow? st rid r above = some (below, b)) :
+    cancelSplicedFrameBelow? st tcb = some below := by
+  unfold cancelSplicedFrameBelow?
+  rw [hIp, hRO]
+  exact spliceFrameBelow?_mem_replyFrameBelow? hR hAbove h
+
 /-- WS-OD (`v0.35.4`): the endpoint arms detach nothing. -/
 @[simp] theorem cancelSplicedFrameAbove?_of_blockedEndpoint (st : SystemState) (tcb : TCB)
     (ep : SeLe4n.ObjId) (h : cancelBlockedEndpoint? tcb = some ep) :

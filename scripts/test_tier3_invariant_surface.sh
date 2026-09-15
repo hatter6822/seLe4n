@@ -1142,11 +1142,37 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink \(restoreToR
 # on its stack with its caller consumed — the dead frame this cut removes.  The
 # mutation keeps the reclaim and the restore and drops only the detach.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink\n      \(restoreToReadyCancelled \(returnDonationToCancelledCaller st tid tcb\) tid\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
-# ...and the detach itself is O(1) on the frame ABOVE the cancelled one, which is
+# ...and the removal itself is O(1) on the frame ABOVE the cancelled one, which is
 # what the upward link makes possible: a single-linked stack cannot find it.
 run_check "INVARIANT" rg -n '^def spliceThreadReplyFrameOut' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^def spliceReplyFrameOut' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*storeObject above\.toObjId \(\.reply \{ a with prev := none \}\) st" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# WS-HP HP6.3: the body is the composed store step, and the step is THREE stores
+# in a fixed order -- the frame above takes the frame below, the frame below takes
+# the frame above, and the cut frame loses its own downward link (seL4's
+# `reply_unlink` downward half, which is what makes `donationChainWellFormed`
+# survive the removal outright rather than transiently).  Anchored on the ORDER
+# rather than on the presence of three stores: the detach reads the link the
+# consume clears, so a swap is a different program.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*else spliceReplyFrameStores st rid above r a" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameStores[^\n]*(\n([ \t][^\n]*)?)*storeObject above\.toObjId \(\.reply \{ a with prev := some below \}\) st[^\n]*(\n([ \t][^\n]*)?)*storeObject below\.toObjId \(\.reply \{ b with next := some \(\.frame above\) \}\) s1[^\n]*(\n([ \t][^\n]*)?)*storeObject rid\.toObjId \(\.reply \{ r with prev := none \}\) s2" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# NEGATIVE: ...and the retired SEVER spelling is gone from the step's splice arm.
+# The mutation that matters keeps every store and writes `none` into the frame
+# above, which is the policy this cut replaced; anchored on the arm rather than
+# file-wide, because the DEGENERATE arm legitimately writes `none` there.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameStores[^\n]*(\n([ \t][^\n]*)?)*some \(below, b\) =>[^\n]*(\n([ \t][^\n]*)?)*storeObject above\.toObjId \(\.reply \{ a with prev := none \}\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# ...and the below-side resolution is validated and fail-soft: it refuses a `prev`
+# naming the frame above, and one whose own `next` does not link back, and a
+# refusal degenerates to the sever rather than to an error -- which is what keeps
+# the removal's refusal set exactly the pre-WS-HP one.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceFrameBelow\?[^\n]*(\n([ \t][^\n]*)?)*if below == above then none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceFrameBelow\?[^\n]*(\n([ \t][^\n]*)?)*if b\.next != some \(\.frame rid\) then none else some \(below, b\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOut_eq_sever_of_no_frame_below' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The containment the four footprint coverage theorems rest on: the object the
+# splice writes below the cut is the one the footprint declares, and the
+# declaration is strictly wider because it is unvalidated.
+run_check "INVARIANT" rg -n '^theorem spliceFrameBelow\?_mem_replyFrameBelow\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem spliceFrameBelow\?_mem_answeredReplyFrameBelow\?' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem spliceFrameBelow\?_mem_cancelSplicedFrameBelow\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # Relation, not presence: the detach validates the back-link before it writes —
 # a frame whose `prev` does not name the frame being cut out is a stale upward
 # link, and repairing it would corrupt an unrelated stack.
@@ -2181,18 +2207,45 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def linkReply[^\n]*(\n([ \t]
 # reply leg consumes before the pop reads them (plan section 3.3).
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def consumeReply[^\n]*(\n([ \t][^\n]*)?)*caller := none, donatedSc := none" SeLe4n/Model/State.lean'
 
-# OD5.2: the cancelled MIDDLE caller -- both answers named, one chosen, the
-# choice proved.  A policy nothing reads is a name, so the constant has three
-# consumers and each would have to change if the choice did.
+# OD5.2 / WS-HP HP6.8: the cancelled MIDDLE caller -- all three answers named,
+# one chosen, the choice proved.  A policy nothing reads is a name, so the
+# constant has three consumers and each would have to change if the choice did.
+# `severAtCut` is KEPT as a constructor after HP6.8 rather than deleted: it names
+# the behaviour this kernel diverged from and that seL4-MCS still has.
 run_check "INVARIANT" rg -n '^inductive CancelledMiddleCallerPolicy' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^inductive CancelledMiddleCallerPolicy[^\n]*(\n([ \t][^\n]*)?)*\| severAtCut" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^inductive CancelledMiddleCallerPolicy[^\n]*(\n([ \t][^\n]*)?)*\| spliceOutTheCut" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^inductive CancelledMiddleCallerPolicy[^\n]*(\n([ \t][^\n]*)?)*\| reclaimToCancelledThread" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
-run_check "INVARIANT" bash -lc 'rg -n "^def cancelledMiddleCallerPolicy : CancelledMiddleCallerPolicy := \.severAtCut$" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" bash -lc 'rg -n "^def cancelledMiddleCallerPolicy : CancelledMiddleCallerPolicy := \.spliceOutTheCut$" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# NEGATIVE: ...and the retired choice is not the live one.  Token-preserving: the
+# constructor stays in the datatype and only the constant's right-hand side moves.
+run_negative_check "INVARIANT" bash -lc 'rg -n "^def cancelledMiddleCallerPolicy : CancelledMiddleCallerPolicy := \.severAtCut$" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 run_check "INVARIANT" rg -n '^theorem replyStackOuterCaller\?_follows_policy' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem cancelledMiddleCaller_severs_at_cut' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
-# The decisive clause: no thread BELOW the cut is touched.  A statement that only
-# exhibited the target's new binding would be true of both policies.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelledMiddleCaller_severs_at_cut[^\n]*(\n([ \t][^\n]*)?)*∀ tid, tid ≠ originalOwner → tid ≠ serverTid → st.\.getTcb\? tid = st\.getTcb\? tid" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# The resolver's answer under the live policy is the caller waiting BELOW the cut,
+# not `none`: a policy consumer concluding `.ok none` is the sever's.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyStackOuterCaller\?_follows_policy[^\n]*(\n([ \t][^\n]*)?)*replyStackOuterCaller\? st scId = \.ok \(some outer\)" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" rg -n '^theorem cancelledMiddleCaller_splices_at_cut' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+# The decisive clauses: the reservation leaves the cut owed OUTWARD, and no thread
+# below the cut is touched.  A statement that only exhibited the target's new
+# binding would be true of both policies; one that exhibited `.bound scId` would be
+# the sever's, which is why the binding is anchored too.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelledMiddleCaller_splices_at_cut[^\n]*(\n([ \t][^\n]*)?)*schedContextBinding := \.donated scId outer" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelledMiddleCaller_splices_at_cut[^\n]*(\n([ \t][^\n]*)?)*∀ tid, tid ≠ originalOwner → tid ≠ serverTid → st.\.getTcb\? tid = st\.getTcb\? tid" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# WS-HP HP6.7 / HP6.9: the two facts the splice buys, which the sever could not
+# state -- the removal leaves the stack CONNECTED across the cut, and the pop that
+# follows therefore delivers the reservation to the caller the surviving stack
+# names rather than stopping it inside the chain.
+run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_splices_reciprocally' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_getSchedContext\?_eq' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem donationAccountingPreserved_atCallDepthThree' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthThree[^\n]*(\n([ \t][^\n]*)?)*schedContextBinding := \.donated scId outer" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# NEGATIVE: `severAtCut_pop_leaves_no_head` was HP2.3's pin that the policy flip
+# may not precede the trigger flip.  HP6.8 is the flip, and its first conjunct was
+# the policy constant at the OLD value, so it is deleted rather than restated -- a
+# theorem whose conclusion has become false can only be retired.  A tombstone
+# comment beside the HP2.3 banner says what replaced it.
+run_negative_check "INVARIANT" bash -lc 'rg -n "^theorem severAtCut_pop_leaves_no_head" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -n "^theorem cancelledMiddleCaller_severs_at_cut" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 # ...and the same policy from the cancellation end, in both directions: the
 # reclaim fires for the holder of the context the answered caller's frame heads,
 # and declines below the cut.  WS-HP HP5.1 re-keyed the trigger from the victim's
@@ -12749,13 +12802,18 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationChainWitness_pop_chai
 # ============================================================================
 #
 # (1) The bind guard asks the reply stack's own RECIPROCITY question, not
-# `r.next.isSome`.  `severAtCut` deliberately leaves the frame BELOW the cut with
-# a stale upward link -- on `B -> M -> H`, cancelling `M` detaches `H.prev` and
-# consumes `M`, but `B.next` still reads `some (.frame M)` -- so a presence test
-# refuses to bind a thread that is on no live stack and owed nothing, on a path
-# `schedContextBind` explicitly supports (a blocked thread).  One-step
-# reciprocity is EXACT under `donationChainWellFormed`, so no walk is needed,
-# and a live frame still reads `true`, so the fail-closed direction is kept.
+# `r.next.isSome`.  A stale upward link -- a `next` naming a frame that does not
+# name it back -- is reachable, so a presence test refuses to bind a thread that is
+# on no live stack and owed nothing, on a path `schedContextBind` explicitly
+# supports (a blocked thread).  Under `severAtCut`, in force until `v0.35.44`, the
+# removal PRODUCED one on every mid-stack cut: on `B -> M -> H`, cancelling `M`
+# cleared `H.prev` and consumed `M` while `B.next` still read `some (.frame M)`.
+# WS-HP HP6.3's splice repairs that pair, so the removal no longer creates one --
+# but it can still LEAVE one, because `spliceFrameBelow?` refuses a frame below
+# that does not reciprocate and degenerates to the sever there.  So this guard is
+# unchanged and still load-bearing.  One-step reciprocity is EXACT under
+# `donationChainWellFormed`, so no walk is needed, and a live frame still reads
+# `true`, so the fail-closed direction is kept.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameOnLiveStack[^\n]*(\n([ \t][^\n]*)?)*a\.prev == some rid" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameOnLiveStack[^\n]*(\n([ \t][^\n]*)?)*sc\.scReply == some rid" SeLe4n/Kernel/SchedContext/Operations.lean'
 # NEGATIVE: the presence test must not come back.  Token-preserving -- it keeps
@@ -13178,11 +13236,15 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBody[^\n]*(\n([ \t][^\n]
 #
 # HP4 flipped the live `.reply` operation and the frozen composite mirrors that
 # operation, so leaving the mirror binding-driven would have been the divergence
-# `frozenBranchOperationChecked = true` claims not to exist -- latent today
-# (the two readings coincide on every state `severAtCut` leaves) and reachable the
-# moment HP6's splice lands.  Flipped in the same cut rather than registered,
+# `frozenBranchOperationChecked = true` claims not to exist -- latent when HP4.7
+# landed (the two readings coincide on every state `severAtCut` leaves) and
+# **reachable since HP6.8** (`v0.35.45`), which is the cut that made the splice the
+# live policy.  Flipped in the same cut as the live trigger rather than registered,
 # because this project's rule for an asymmetry between two paths is to make them
-# symmetric, not to document the asymmetry.
+# symmetric, not to document the asymmetry.  The frozen removal itself still
+# severs; HP8 is the row that makes it splice, and the `frozenDetach…` names stay
+# until then so that a `frozenDetach…` beside a live `splice…` reads as the
+# schedule rather than as a drift.
 
 # (13) The frozen resolvers exist and ask the reciprocal question, clause for
 # clause with the live ones: a one-sided link is not a head.

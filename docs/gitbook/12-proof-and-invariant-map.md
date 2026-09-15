@@ -121,7 +121,7 @@ make the theorem assume what it claims to prove.
 `scripts/check_ipc_invariant_dethreading.py` (Tier 0) measures this over the
 comment-free code view, deriving the conjunct set and each bundle's own
 pre-state rather than matching binder names, and reports **zero** conjuncts
-bound on a post-state across all **176** statements in the family, with the
+bound on a post-state across all **177** statements in the family, with the
 conjunct set and the bundle family both derived from the sources.  The figure is
 spelled in the form the gate reads, so a cut that grows the family fails until
 this sentence is corrected — it said 146 while the tree measured 170, unwatched,
@@ -236,10 +236,10 @@ whole object and a record update can rewrite a stack link without naming any
 helper.  The frozen surface joined at `v0.35.12`: it is reached by neither
 library root, so the closure held everywhere except one module that writes the
 live `Reply` record, and the frozen reply was clearing a caller's Reply bare —
-this workstream's own defect, on the surface nothing was looking at.  The cost is stated with the fix:
-removing a caller from the *middle* of a chain does not preserve the donation
-accounting, so a delegate answering an owner out of order leaves that owner
-`.unbound` and the context settles on the intermediate caller.  That is
+this workstream's own defect, on the surface nothing was looking at.  The cost was
+stated with the fix: removing a caller from the *middle* of a chain did not preserve
+the donation accounting, so a delegate answering an owner out of order left that
+owner `.unbound` and the context settled on the intermediate caller.  That was
 **seL4-MCS's cost too, not a divergence from it** — re-verified at `v0.35.40`
 against upstream source at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0, where
 `reply_remove`'s non-head branch writes zero into the frame above under the comment
@@ -248,22 +248,42 @@ reverse and cited a line that is in no release, so the chain-preserving removal 
 an **improvement on** upstream rather than parity with it — and it is pinned by
 `tests/SmpIpcSuite.lean` **§3.22**, the depth-three witness: §3.20's depth-two one
 structurally cannot show it, because a two-frame stack's lower frame is its bottom
-and both policies then write the same value there.  Recovering the accounting is
-**WS-HP**, whose HP4 (`v0.35.38`) has already moved the pop's trigger to the
-answered frame's head-ness on both the live and the frozen reply surfaces and whose
-HP5 (`v0.35.39`) has done the same for the **cancellation** reclaim — forced rather
-than symmetric, because after the splice a frame becomes the head whose recorded
-reply target is gone, and a binding-driven reclaim declines there and leaves a
-`.donated` binding naming a `.ready` owner.  HP5 retires WS-RR RR7.22's
-`donationHolderIsReplyTarget` for the head-keyed `donatedContextIsOwnerFrameHead`,
-turns two footprint docstring claims into theorems the binding reading could not
-have stated (the head the pop clears **is** the victim's own reply object; a
-reclaim excludes both removal members), and gives the reclaim its **first** runtime
-witness — before it, every `.blockedOnReply` fixture in the tree held a Reply whose
-`next` was unset, so the arm declined under both readings.  HP6 turns the sever
-into the splice.  See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.8 for the
-canonical text, §8.12.9 for the head-driven reply pop and §8.12.10 for the
-cancellation reclaim.
+and both policies then write the same value there.
+
+**WS-HP recovered it at depth ≥ 3, and `v0.35.45` is where it landed.**  HP4
+(`v0.35.38`) moved the pop's trigger to the answered frame's head-ness on both the
+live and the frozen reply surfaces, and HP5 (`v0.35.39`) did the same for the
+**cancellation** reclaim — forced rather than symmetric, because after the splice a
+frame becomes the head whose recorded reply target is gone, and a binding-driven
+reclaim declines there and leaves a `.donated` binding naming a `.ready` owner.  HP5
+retired WS-RR RR7.22's `donationHolderIsReplyTarget` for the head-keyed
+`donatedContextIsOwnerFrameHead`, turned two footprint docstring claims into
+theorems the binding reading could not have stated (the head the pop clears **is**
+the victim's own reply object; a reclaim excludes both removal members), and gave
+the reclaim its **first** runtime witness — before it, every `.blockedOnReply`
+fixture in the tree held a Reply whose `next` was unset, so the arm declined under
+both readings.
+
+**HP6 then turned the sever into the splice** (`cancelledMiddleCallerPolicy =
+.spliceOutTheCut`): the frame above a cut takes the cut frame's own downward link,
+the frame below links back up at it, and the cut frame's own `prev` is cleared —
+seL4's `reply_unlink` downward half, and what makes `donationChainWellFormed`
+survive the removal outright rather than transiently.
+`donationAccountingPreserved_atCallDepthThree` is the payoff: at depth ≥ 3 the
+reservation leaves the cut **owed outward** and the pop that answers the bottom
+frame delivers it home.  §3.22 inverted from a COST witness to a PAYOFF witness in
+the same cut and now measures that second pop.  The below side **degenerates** to
+the sever rather than refusing, so the removal's refusal set is exactly the
+pre-WS-HP one, a stale upward link is still reachable, and the reciprocity checks
+stay load-bearing.  **Depth 2 is not closed** — both policies write `none` into the
+frame above a bottom frame — and that §3.20's depth-two halves and the golden trace
+pass byte-identically across the flip is the measurement that the change is confined
+to depth ≥ 3; closing it needs the reservation's *origin* on the `SchedContext`
+rather than stack reachability, which is HP10.
+
+See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.8 for the canonical text,
+§8.12.9 for the head-driven reply pop, §8.12.10 for the cancellation reclaim and
+§8.12.11 for the splice.
 
 **A donation moves budget, period and deadline — not priority or domain**
 (`v0.35.3`).  Closing WS-OD surfaced an authority crossing in both directions:
