@@ -1,3 +1,91 @@
+## v0.35.56 — WS-RR RR8.2: RR8 grows from five rows to sixteen, because eight register rows gate a closure its five rows did not carry
+
+RR8.1 measured the gap and this cut answers it.  RR8's five rows were closure
+bookkeeping — walk the gate, update the register, retire a standing constraint,
+check the hand-off, record the closure — while **eight rows of
+`docs/REGISTERED_DEBT.md` gate that closure and not one of them is
+bookkeeping**.  The eight are now sub-tasks: `RR8.2`–`RR8.12` carry a
+`queuePPrev` invariant, two de-duplications, a deschedule sweep, two
+`ipcInvariantFull` bundle proofs, two information-flow discharges, one
+replenish-migration congruence, and the per-arm resolved wake targets
+`UncoveredLockDomain.syscallSeamSchedulerDomain` needs.  The four bookkeeping
+rows move to `RR8.13`–`RR8.16`.
+
+**Three of the eight were owned by WS-OD, which closed at `v0.35.2`**, while
+their closure target read "before RR8 closes" — so as the register stood nothing
+would do the work and RR8's closure was gated on it anyway.  That is exactly the
+shape **RR0.10** was written to fix: *a circular closure target, the phase that
+owns it marked LANDED, re-homed to a phase that can close it*, recurring three
+times on a family that closed thirteen cuts after RR0 ran.  They are re-homed to
+RR8 and **keep `WS-OD` in their owner cell as provenance**, because a re-home
+that erases where a row came from erases the evidence for the rule.  Re-homing
+to WS-BP or WS-CB was the alternative and is not available: both must not open
+until RR8 closes, so it would have made the gate unsatisfiable rather than
+owned.
+
+The plan half and the register half ship together deliberately — they are one
+question (*who owns these eight items*), and shipping them apart would leave the
+register naming a closed workstream as the owner of work the plan schedules.
+Each of the eight rows now names its carrying sub-task in its own **Closure
+target** cell, so the two artefacts are reconciled in both directions rather
+than merely agreeing today.
+
+**The ordering is derived from what each row changes, not from the register's
+order.**  A proof stated over a function has to come after the last cut that
+changes that function, or it gets restated: so the `queuePPrev` invariant
+precedes the endpoint-queue collapse that is blocked on it, the caller↔Reply
+collapse precedes the reply-arm bundle stated over the surviving definition, and
+the deschedule sweep precedes the five-arm composite lifted over
+`cancelIpcBlockingOnCore`.  Each consuming row states its dependency, per this
+plan's own rule that a constraint belongs where it binds.
+
+**What the renumber cost, recorded because it is the numbering rule's own
+hazard.**  A sub-task ID is effectively frozen once it reaches a commit message
+or a CHANGELOG entry, and `RR8.2`, `RR8.3` and `RR8.4` had each reached live
+prose: **twelve** citations across `CLAUDE.md`, `AGENTS.md`,
+`docs/REGISTERED_DEBT.md` and `docs/planning/DONATION_POP_TRIGGER_PLAN.md` —
+nine of them the hand-off check alone.  `CHANGELOG.md`'s own history records that
+a *previous* RR8 swap left a stale reference which "would have recreated" the
+defect it described, so the sweep was done deliberately rather than
+optimistically — and the first pass found **eight** of the twelve, because it
+swept the citations one grep had *enumerated* rather than a set it derived.  A
+second, differently shaped search found the other four, which is this project's
+*a recognised set is not a derived set* rule failing inside the sweep written to
+obey it; the sweep is now a derived rewrite over every tracked text file outside
+`CHANGELOG.md` and `docs/dev_history/`, and the figures here are counted off the
+diff rather than recalled.
+`scripts/check_workstream_plan.py` **cannot** catch a miss here: after a
+renumber a stale `RR8.4` still *resolves*, just to different work, which is the
+one direction a citation-resolution gate is blind to.  Each of the four
+renumbered rows therefore carries its old ID as a tombstone, so a reader
+arriving from a citation the sweep missed lands on the row that citation meant.
+
+The v0.35.55 entry above is left as written: it is the narrative at that
+version, where `RR8.2` and `RR8.4` meant the register update and the hand-off
+check.  Under this cut's numbering those are `RR8.13` and `RR8.15`.
+
+**And v0.35.55 shipped Tier 0 red, which this cut repairs and records rather
+than quietly fixing.**  Its RR8.1 row cited `RR8.2` and `RR8.4` as the owners of
+the two unticked boxes, and `scripts/check_workstream_plan.py` reads any
+`RR8.N` in a sub-task row as a *dependency* — no scanner can tell a mention from
+a consumption — so those were two forward dependencies and the gate rejects
+them.  Tier 0 was run and reported green before the commit, and it was green:
+**that gate reads the git index**, the edits were unstaged, and it therefore
+measured the *previous* content.  `CLAUDE.md` documents this hazard in as many
+words for `check_identifier_naming.py` — *stage first, then run
+`test_tier0_hygiene.sh`* — and the rule is not per-gate: it holds for every
+index-reading gate, which is the half that was not internalised.  The fix is the
+plan's own rule rather than an exemption: a dependency belongs in the row that
+*consumes* it, so `RR8.1` names neither successor and the two rows that do
+(`RR8.4` consuming `RR8.3`, `RR8.7` consuming `RR8.5`) say so themselves.  Three
+prose sub-task counts went stale with the renumber and the gate named each —
+`README.md`, `docs/gitbook/01-project-overview.md` and
+`docs/planning/UNFINISHED_SMP_WORK.md`, the first two also still claiming
+"RR0–RR6 have landed" — and `CLAUDE.md`'s large-file bullet list is regenerated,
+this plan having grown past its recorded size.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §8.1 (RR8.2)
+
 ## v0.35.55 — WS-RR RR8.1: the acceptance gate walked, and two status claims that had gone stale
 
 WS-RR's §8 gate carried seventeen unticked boxes.  RR8.1 walks it and records,

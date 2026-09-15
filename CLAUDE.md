@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.55.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.56.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,16 +203,16 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~66530 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23481 lines)
+- `CHANGELOG.md` (~66853 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23580 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7707 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7708 lines)
 - `SeLe4n/Kernel/API.lean` (~7606 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7056 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7058 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6309 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6129 lines)
-- `docs/spec/SELE4N_SPEC.md` (~5970 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6032 lines)
 - `SeLe4n/Platform/Boot.lean` (~5881 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5382 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5085 lines)
@@ -227,11 +227,11 @@ To find files that need pagination today, run:
 - `tests/NegativeStateSuite.lean` (~4115 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3925 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3803 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3797 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3684 lines)
+- `tests/SmpIpcSuite.lean` (~3683 lines)
 - `SeLe4n/Platform/FFI.lean` (~3592 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
-- `tests/SmpIpcSuite.lean` (~3512 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3470 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
@@ -268,7 +268,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2294 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~2247 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~2248 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2244 lines)
 - `tests/FrozenOpsSuite.lean` (~2239 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
@@ -319,6 +319,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1481 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1470 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1464 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1439 lines)
@@ -337,12 +338,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1316 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1295 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
+- `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1291 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
-- `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1254 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
@@ -4468,7 +4468,7 @@ saying otherwise is struck through rather than ticked.**  That box was written
 before `v0.35.42` found the depth-**2** loss, where the removal takes the client's
 frame off the *bottom* of its stack and both policies write `none` into the frame
 above — so the splice provably cannot reach it.  What WS-HP earned is the depth-≥ 3
-half.  Closing the row would corrupt the artefact RR8.4's hand-off check reads, so
+half.  Closing the row would corrupt the artefact RR8.15's hand-off check reads, so
 at HP9 v1.0.0 could still not claim that completing a call chain returns a client's
 reservation *unconditionally*: that was HP10's, and **HP10.9 (`v0.35.53`) earned
 it** — `donationAccountingPreserved_atCallDepthTwo`, closed by the reservation's
@@ -4871,7 +4871,7 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9.E | LANDED | v0.33.100 | Tests + closure: acceptance scenarios run live and pinned as golden fixtures; seam boundary coverage of both declassifying syscalls; the epoch exercised with survivors |
 | SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
 | SM5 runtime seams | LANDED | v0.34.1 | The three seams SM5's docstrings promised between the verified per-core scheduler and the hardware IRQ path — IRQ vector redirect, `.reschedule` SGI receiver, secondary bring-up entry — all dormant behind the per-core `lean_ready` gate until SM10.1 |
-| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50; RR7 v0.34.47 → v0.34.92; RR8.1 v0.35.55 | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
+| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50; RR7 v0.34.47 → v0.34.92; RR8.1 v0.35.55, RR8.2 v0.35.56 (RR8 grew 5 → 16 rows) | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
 | SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0); SM10.1's content is **WS-BP** (see above) |
 
 **Plans**: master overview at
@@ -5216,7 +5216,7 @@ code may assume:
   **WS-DT — CLOSED** in
   [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) (plan retired to
   [`docs/dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md`](docs/dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md));
-  RR8.3 retires this bullet.
+  RR8.14 retires this bullet.
 - **A cancelled caller gets its donated SchedContext back** (WS-RR RR7.22
   residual remediation, v0.34.97).  `cancelIpcBlocking`'s `.blockedOnReply` arm
   is `consumeReplyLink (restoreToReadyCancelled (returnDonationToCancelledCaller

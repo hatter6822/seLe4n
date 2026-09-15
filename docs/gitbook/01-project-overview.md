@@ -19,7 +19,7 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.35.55): 383,951 lines of production Lean across 330 files, 78,257 lines across 70 Lean test suites,
+Current state (as of v0.35.56): 383,951 lines of production Lean across 330 files, 78,257 lines across 70 Lean test suites,
 12,771 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
@@ -51,12 +51,14 @@ shootdown and cache maintenance, SMP information flow, and declassification.
 The syscall return ABI is complete.
 
 **SM10 — release closure at v1.0.0 — is blocked on WS-RR**, the pre-1.0
-remediation phase now in flight: 187 sub-tasks across nine phases, of which
-RR0–RR6 have landed — most recently the boot-path fail-open closure (v0.34.48)
-and the verified lock primitives (v0.34.50), which made the deployed
-reader-writer lock the ticket-FIFO one the Lean spec describes and refined it
-to that spec before the switch. The remaining phases sweep the
-medium-severity findings and hand off to SM10.
+remediation phase now in flight: 198 sub-tasks across nine phases, of which
+**RR0–RR7 have landed** — the boot-path fail-open closure (v0.34.48), the
+verified lock primitives (v0.34.50), which made the deployed reader-writer lock
+the ticket-FIFO one the Lean spec describes and refined it to that spec before
+the switch, and the forty-one-sub-task medium-severity sweep (v0.34.47 →
+v0.34.92). What remains is **RR8**, the closure phase, which grew from five
+rows to sixteen at v0.35.56 once its gate walk measured that eight register
+rows gate the closure and none of them is bookkeeping.
 
 **WS-LC** runs ahead of RR7 and closes the two lock **datatype** residuals
 RR6 re-registered rather than absorbed. LC1 (v0.34.51) added the abstract

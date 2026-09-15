@@ -9,20 +9,24 @@
 > forty-one, v0.34.47 → v0.34.92 — RR7.6 landed early, so the span is not
 > monotone in the sub-task number, and RR7.22 / RR7.33 carry per-finding
 > markers rather than one marker per row).
-> **RR8 IN FLIGHT**: **RR8.1 LANDED at v0.35.55** — §8's gate walked, fifteen
+> **RR8 IN FLIGHT**: **RR8.1 LANDED at v0.35.55, RR8.2 at v0.35.56** — §8's gate walked, fifteen
 > of seventeen boxes ticked on a re-measurement with the version and sub-task
 > that earned each, two left to the rows that own them.  Its measurement
 > (§8.1): **eight register rows gate RR8's closure and none is bookkeeping** —
-> five are RR8's own with no sub-task carrying them, and three are owned by
+> five were RR8's own with no sub-task carrying them, and three were owned by
 > **WS-OD, which closed at v0.35.2**, which is RR0.10's circular-closure-target
-> shape recurring.  §5's RR8 table has to answer that before RR8.5 can record a
-> closure.
+> shape recurring.  **RR8 therefore grew from five rows to sixteen at v0.35.56**:
+> the eight gating items are RR8.2–RR8.12 and the four bookkeeping rows that were
+> RR8.2–RR8.5 are now **RR8.13–RR8.16**, each carrying its old ID as a tombstone.
+> A citation written before that cut means the tombstoned row, not the row that
+> now holds the number — see §8.1 for what the renumber cost and why
+> `check_workstream_plan.py` cannot verify the sweep.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) (171 confirmed findings)
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
 > **Audited cut**: `v0.34.3`
 > **Target releases**: v0.35.0 → v0.99.x (SM10 then cuts v1.0.0)
-> **Sub-task count**: 187 across 9 phases (RR0..RR8), each phase numbered in
+> **Sub-task count**: 198 across 9 phases (RR0..RR8), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -166,7 +170,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR5 | Boot-path fail-open closure.  **LANDED v0.34.48** (RR5.1–RR5.18) | 18 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0).  **LANDED v0.34.50** (RR6.1–RR6.27) | 27 | L |
 | RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 41 | M |
-| RR8 | Phase closure and hand-off to SM10 | 5 | S |
+| RR8 | Phase closure and hand-off to SM10 | 16 | L |
 
 ## 5. Sub-tasks
 
@@ -1172,11 +1176,22 @@ them to a documentation sweep.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| RR8.1 | Walk the RR0..RR7 acceptance gates and record the closing version for each.  **LANDED v0.35.55**: §8 carries the version and sub-task that earned each of the seventeen boxes, fifteen ticked on a re-measurement of the tree rather than on the landing phase's word, and two left unticked with their owner named (RR8.4's scope re-verification, RR8.2's register update) because a box a later row produces, silently unticked, reads exactly like a box nobody checked.  Box 4 records its *confinement* — `threadIpcFieldsQuiescent` on the `.tcbSuspend` arm — since a tick read as unconditional claims more than the tree.  The walk found and fixed two stale status claims: `CLAUDE.md` named `cancelIpcBlockingOnCore`'s notification arm as uncovered for eighteen cuts after `v0.34.96` covered it, two sentences above its own retraction, and the register's row for that debt said the `.tcbSuspend` arm carries `ipcInvariant` and `objects.invExt` *only*, which ignores RR3's arm theorem.  It also measured what the closure is gated on (§8.1): eight register rows, none of them bookkeeping — five RR8's own with no sub-task carrying them, and three owned by a workstream that closed at `v0.35.2`, RR0.10's circular-closure-target shape recurring | (1 file) | S |
-| RR8.2 | Update `UNFINISHED_SMP_WORK.md`: mark each closed finding with its version, leaving open items visible | `docs/planning/UNFINISHED_SMP_WORK.md` | M |
-| RR8.3 | Retire the RR0.3 standing constraint from `CLAUDE.md` and `AGENTS.md` once RR3 has closed — it says two conjuncts remain threaded and `ipcInvariantFull` is not end-to-end checked, which becomes false at RR3.25 and would otherwise misdirect every later contributor | `CLAUDE.md`, `AGENTS.md` | S |
-| RR8.4 | Hand-off check **before** the closure entry: confirm SM10's §2 dependencies are genuinely met and its §1 scope statement matches the tree. Ordered first deliberately — each row may land as its own PR, so recording closure first would advertise the workstream complete for an intervening release, and an unmet dependency found afterwards would have to be retracted rather than simply fixed | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
-| RR8.5 | WS-RR closure entry in `docs/REGISTERED_DEBT.md`; update the CLAUDE.md phase table — last, on evidence RR8.4 established | (3 files) | S |
+| RR8.1 | Walk the RR0..RR7 acceptance gates and record the closing version for each.  **LANDED v0.35.55**: §8 carries the version and sub-task that earned each of the seventeen boxes, fifteen ticked on a re-measurement of the tree rather than on the landing phase's word, and two left unticked with the row that owns each named in §8 itself, because a box a later row produces, silently unticked, reads exactly like a box nobody checked.  Box 4 records its *confinement* — `threadIpcFieldsQuiescent` on the `.tcbSuspend` arm — since a tick read as unconditional claims more than the tree.  The walk found and fixed two stale status claims: `CLAUDE.md` named `cancelIpcBlockingOnCore`'s notification arm as uncovered for eighteen cuts after `v0.34.96` covered it, two sentences above its own retraction, and the register's row for that debt said the `.tcbSuspend` arm carries `ipcInvariant` and `objects.invExt` *only*, which ignores RR3's arm theorem.  It also measured what the closure is gated on (§8.1): eight register rows, none of them bookkeeping — five RR8's own with no sub-task carrying them, and three owned by a workstream that closed at `v0.35.2`, RR0.10's circular-closure-target shape recurring | (1 file) | S |
+| RR8.2 | Re-home the three closure targets orphaned on the **closed** WS-OD (RR0.10's remedy, recurring) and give each of the eight gating rows the RR8 sub-task that carries it, reconciled in both directions so neither artefact can name work the other does not schedule.  First, so that while RR8 is in flight the register names an owner that exists.  **LANDED v0.35.56**, in the cut that grew this table — the plan half and the register half are one question (*who owns these eight items*), and shipping them apart would leave the register naming a workstream that closed at `v0.35.2` as the owner of work this table schedules.  Each of the eight rows now names the sub-task that carries it in its own **Closure target**, so the two artefacts are reconciled in both directions rather than merely consistent today; the three re-homed rows keep `WS-OD` in their owner cell as provenance, because a re-home that erases where a row came from erases the evidence for RR0.10's rule | `docs/REGISTERED_DEBT.md` | S |
+| RR8.3 | State `queuePPrev` consistency as an invariant — the prerequisite the next row's collapse is blocked on, the dual removal's precondition needing to be discharged rather than assumed | `SeLe4n/Kernel/IPC/Invariant/`, `SeLe4n/Kernel/IPC/DualQueue/Core.lean` | L |
+| RR8.4 | Collapse the two endpoint-queue removals onto one definition, and restate the endpoint arm's bundle over it.  They write the same fields to the same values today, which is exactly why they can drift; consumes RR8.3 | `SeLe4n/Kernel/IPC/Operations/Timeout.lean`, `SeLe4n/Kernel/IPC/DualQueue/Core.lean`, `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` | M |
+| RR8.5 | Collapse the two spellings of "tear down the caller↔Reply link" — `SystemState.consumeCallerReply` against `Lifecycle.Suspend.consumeReplyLink`.  It precedes the reply-arm bundle below, which is then stated over the surviving definition rather than restated after it | `SeLe4n/Kernel/Lifecycle/Suspend.lean`, `SeLe4n/Model/Object/Reply.lean` | M |
+| RR8.6 | The deschedule sweep: `descheduleThread` and `cancelIpcBlockingOnCore` still resolve the victim's core at `determineTargetCore`, which PR #895 review round 10 records as equally a proxy for placement.  Repoint both onto `placedCoreOf?`, as that review's two closed sites already are | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` | L |
+| RR8.7 | `cancelIpcBlocking`'s **reply** arm carries `ipcInvariantFull` — the first half of the RR7.22 residual, the last of the five arms without a bundle.  Consumes RR8.5 | `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` | L |
+| RR8.8 | Discharge `abortHolderProjectionStable` beyond the inert case, so the reply arm's projection result stops carrying it as an obligation.  Consumes RR8.5 and RR8.6 | `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` | M |
+| RR8.9 | Discharge `abortHolderWakeHigh`, the scheduler twin of RR8.8 — a run-queue insert is filtered by the inserted thread's own observability, and the holder's label is not determined by the victim's.  Consumes RR8.6 | `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean`, `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` | M |
+| RR8.10 | The composite over all five arms lifted to `cancelIpcBlockingOnCore` — the second half of the RR7.22 residual, and what retires box 4's confinement note.  Consumes RR8.4, RR8.6 and RR8.7 | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
+| RR8.11 | The replenish-migration congruence: that `cancelIpcBlockingMigrated` *establishes* `replenishQueueAffinityConsistent_smp` on the composite, over the two TCB writes the teardown performs between the return and the migration.  Consumes RR8.6 and RR8.10 | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | M |
+| RR8.12 | `UncoveredLockDomain.syscallSeamSchedulerDomain`: per-arm resolved wake targets, so the syscall seam's scheduler writes are covered by a footprint rather than by the free over-approximation.  RR7.39's residual, and independent of RR8.3–RR8.11 | `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean`, `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | L |
+| RR8.13 | Update `UNFINISHED_SMP_WORK.md`: mark each closed finding with its version, leaving open items visible  (**Formerly RR8.2** — renumbered at `v0.35.56` when RR8 grew the twelve rows above; a citation naming RR8.2 means *this* row.)  | `docs/planning/UNFINISHED_SMP_WORK.md` | M |
+| RR8.14 | Retire the RR0.3 standing constraint from `CLAUDE.md` and `AGENTS.md` once RR3 has closed — it says two conjuncts remain threaded and `ipcInvariantFull` is not end-to-end checked, which becomes false at RR3.25 and would otherwise misdirect every later contributor  (**Formerly RR8.3** — renumbered at `v0.35.56` when RR8 grew the twelve rows above; a citation naming RR8.3 means *this* row.)  | `CLAUDE.md`, `AGENTS.md` | S |
+| RR8.15 | Hand-off check **before** the closure entry: confirm SM10's §2 dependencies are genuinely met and its §1 scope statement matches the tree. Ordered first deliberately — each row may land as its own PR, so recording closure first would advertise the workstream complete for an intervening release, and an unmet dependency found afterwards would have to be retracted rather than simply fixed  (**Formerly RR8.4** — renumbered at `v0.35.56` when RR8 grew the twelve rows above; a citation naming RR8.4 means *this* row.)  | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
+| RR8.16 | WS-RR closure entry in `docs/REGISTERED_DEBT.md`; update the CLAUDE.md phase table — last, on evidence RR8.15 established  (**Formerly RR8.5** — renumbered at `v0.35.56` when RR8 grew the twelve rows above; a citation naming RR8.5 means *this* row.)  | (3 files) | S |
 
 ## 6. Verification strategy
 
@@ -1246,7 +1261,7 @@ row produces, silently unticked, reads exactly like a box nobody checked.
       *phase* of WS-SM, covered by that family's row.
 - [ ] `SMP_RELEASE_CLOSURE_PLAN.md` §1 scope and estimate match the tree.
       — established **v0.34.26** (RR0.4, RR1.11), but **re-verification is
-      RR8.4's**, deliberately: sixty-odd patch versions of WS-RR have landed
+      RR8.15's**, deliberately: sixty-odd patch versions of WS-RR have landed
       since, so a tick taken from RR0's cut would certify a measurement nobody
       repeated.  RR8.1 does not tick it.
 - [x] The SM10 theorem tally includes SM9 and is generated, not hand-summed.
@@ -1338,7 +1353,7 @@ row produces, silently unticked, reads exactly like a box nobody checked.
 - [x] Tier 0..3 green at HEAD; Tier 4 honest about what did not run.
       — measured at the walk (**v0.35.55**), not inherited from a phase.
 - [ ] `UNFINISHED_SMP_WORK.md` updated with closing versions.
-      — **RR8.2's output**; RR8.1 does not tick it.
+      — **RR8.13's output**; RR8.1 does not tick it.
 
 ### 8.1 What the walk found beyond the ticks — what RR8's closure is gated on
 
@@ -1359,25 +1374,43 @@ the walk, from each row's own status marker and owner column, not estimated:
 | ...and so is the holder *wake* | **WS-OD** | A second one, of `abortHolderWakeHigh`. |
 | A timed-out thread strands its queue successor | **WS-OD** | **De-duplication** of the two endpoint-queue removals, itself blocked on `queuePPrev` consistency being *stated* as an invariant. |
 
-Two findings, and the second is the sharper one.
+Two findings, and the second is the sharper one.  **Both are answered in §5 at
+`v0.35.56`**, which grew RR8 from five rows to sixteen: the eight gating items
+are now RR8.2–RR8.12, and the four bookkeeping rows that used to be RR8.2–RR8.5
+are RR8.13–RR8.16.
 
-**Five rows are RR8's own and no RR8 sub-task carries any of them.**  A row with
-a closure target and no sub-task to carry it is a plan defect rather than a
-schedule: RR8.5 would reach for a closure entry and find five register rows
-saying the closure may not be recorded.  §5's RR8 table is where that has to be
-answered, and RR8 has not started — which by this plan's own numbering rule
-(*renumbering is cheap before work starts and expensive after*) is the cheapest
-moment there will ever be to answer it.
+**Five rows were RR8's own with no RR8 sub-task carrying any of them.**  A row
+with a closure target and no sub-task to carry it is a plan defect rather than a
+schedule: the closure entry would reach for a closure and find five register rows
+saying the closure may not be recorded.  They are RR8.5–RR8.7 and RR8.10–RR8.12
+now.
 
-**Three rows are owned by WS-OD, which is COMPLETE.**  Their closure target is
-"before RR8 closes" and the workstream that owns them closed at `v0.35.2`, so as
-the register stands nothing will do the work and RR8's closure is gated on it
+**Three rows were owned by WS-OD, which is COMPLETE.**  Their closure target read
+"before RR8 closes" while the workstream that owns them closed at `v0.35.2`, so
+as the register stood nothing would do the work and RR8's closure was gated on it
 anyway.  That is precisely the shape **RR0.10** exists to fix — *a circular
 closure target, the phase that owns it marked LANDED, re-homed to a phase that
 can close it* — recurring three times on a family that closed thirteen cuts
-after RR0 ran.  RR0.10's remedy applies unchanged; what it does not decide is
-*which* phase, since re-homing them to RR8 grows RR8 and re-homing them to
-WS-BP or WS-CB puts them behind a phase that must not open until RR8 closes.
+after RR0 ran.  RR0.10's remedy is applied: **RR8.2** re-homes them, and the work
+itself is RR8.4, RR8.8 and RR8.9.  Re-homing to WS-BP or WS-CB was the
+alternative and is not available — both must not open until RR8 closes, so it
+would have made the gate unsatisfiable rather than owned.
+
+**What the renumber cost, recorded because it is the rule's own hazard.**  This
+plan's numbering rule says a sub-task ID is effectively frozen once it appears in
+a commit message or a CHANGELOG entry, and `RR8.2`, `RR8.3` and `RR8.4` had each
+reached live prose — **twelve** citations across `CLAUDE.md`, `AGENTS.md`,
+`../REGISTERED_DEBT.md` and `DONATION_POP_TRIGGER_PLAN.md`, nine of them the
+hand-off check alone.  All twelve were swept in the same cut — the first,
+*enumerated* pass found eight and a derived rewrite found the other four —
+and `CHANGELOG.md`'s own history records that a *previous* RR8 swap left a stale
+reference which "would have recreated" the defect it described — so the sweep was
+done deliberately rather than optimistically.  `scripts/check_workstream_plan.py`
+**cannot** catch a miss here: after a renumber a stale `RR8.4` still *resolves*,
+just to different work, which is the one direction a citation-resolution gate is
+blind to.  Each of the four renumbered rows therefore carries its old ID as a
+tombstone, so a reader arriving from a citation the sweep missed lands on the row
+that citation meant.
 
 
 ## 9. Cross-references
