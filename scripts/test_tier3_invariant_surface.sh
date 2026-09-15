@@ -2398,6 +2398,79 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^
 run_check "INVARIANT" rg -n 'FO-044: the live pop binds the context to the ORIGIN' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n 'FO-044 half two: the resolver DECLINES a reply-blocked origin' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n 'differentialEndpointReplyRedirectsToOrigin\) \]' tests/FrozenOpsSuite.lean
+# --- WS-HP HP10.9: the depth-two payoff -------------------------------------
+# The theorem this workstream exists to make true, and the residue HP6's splice
+# PROVABLY could not reach: at depth two the frame the removal takes off the
+# stack IS the stack's bottom, so nothing sits below it to reconnect and
+# `cancelledMiddleCallerPolicy` writes the same `none` into the frame above
+# whichever value it holds.
+run_check "INVARIANT" rg -n '^theorem donationAccountingPreserved_atCallDepthTwo' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+# ...and its conclusion is `.bound scId` at the recorded ORIGIN, which is the
+# whole content: the reservation reaches the thread that owned it rather than the
+# thread reachability names.  Bounded to the declaration, since the depth-three
+# payoff five hundred lines away concludes `.donated scId outer` and a file-wide
+# anchor could not tell the two apart.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthTwo[^\n]*(\n([ \t][^\n]*)?)*schedContextBinding := \.bound scId" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# The reachability answer the redirect OVERRIDES is derived from the removal
+# rather than hypothesised -- `replyStackOuterCaller? st. scId = .ok none` is a
+# CONCLUSION of this theorem, not a premise of it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthTwo[^\n]*(\n([ \t][^\n]*)?)*replyStackOuterCaller\? st. scId = \.ok none ∧" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# Both guards are HYPOTHESES, and must be: they are facts about the owner's TCB at
+# the post-removal state, and the rebindability one is FALSE before the reply leg's
+# wake -- the owner is `.blockedOnReply` on exactly the reply being answered -- so
+# no statement about the removal alone can supply it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthTwo[^\n]*(\n([ \t][^\n]*)?)*\(hRebindable : donationOriginRebindable st. origin = true\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# NEGATIVE: but the two facts the theorem DERIVES must not join them.  Hypothesising
+# the resolver's answer hands over the redirect, and hypothesising the reachability
+# answer hands over the derivation from the removal -- either turns the payoff into a
+# theorem whose conclusion is one of its own premises.  Token-preserving: both
+# expressions stay in the declaration, as conclusions and as proof steps.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthTwo[^\n]*(\n([ \t][^\n]*)?)*\([A-Za-z_][^ ]* : donationOriginRecipient\? st. scId = some origin\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthTwo[^\n]*(\n([ \t][^\n]*)?)*\([A-Za-z_][^ ]* : replyStackOuterCaller\? st. scId = \.ok none\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# The structural half: removing a BOTTOM frame clears the downward link of the
+# frame above it, so that frame becomes the bottom of what is left.  The
+# sever-direction sibling of `removeCallerReplyFrame_splices_reciprocally`, and
+# the reason the two policies are indistinguishable here.
+run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_clears_prev_of_bottom_frame' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+# ...whose `above ≠ rid` is DERIVED from bottom-ness rather than assumed: a frame
+# that were its own frame above would carry `prev = some rid`, and a bottom frame
+# carries no `prev` at all.  NEGATIVE, because adding it as a hypothesis is the
+# cheap way out and makes every caller reconstruct the argument.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeCallerReplyFrame_clears_prev_of_bottom_frame[^\n]*(\n([ \t][^\n]*)?)*\(hNeAbove : above ≠ rid\)" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+# HP10.4's production write, MEASURED -- and nothing in the tree measured it
+# before: every fixture that carried an origin set the field directly, and a
+# witness whose field is supplied by its fixture asserts nothing about the
+# production write that is supposed to supply it.  Both directions, because
+# "records on a FIRST push" and "leaves an ONWARD push alone" is what
+# distinguishes an origin from a duplicate of `.donated scId owner`.
+run_check "INVARIANT" rg -n "PRE: a FIRST push records the reservation's origin" tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'PRE: an ONWARD push preserves the origin' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def pushOwnerStore ' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def replyRemovalChain ' tests/SmpIpcSuite.lean
+# §3.20's accounting halves INVERT from COST to PAYOFF -- the same inversion HP6.9
+# performs at depth three, on the shape HP6 could not reach.  The payoff is
+# measured through the live `.reply` SPINE rather than through
+# `returnDonatedSchedContextResolved`, which was an accurate proxy for the pop
+# while nothing redirected and is a proxy that omits the redirect now.
+run_check "INVARIANT" rg -n 'PAYOFF: the live reply spine settles the reservation on its OWNER' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def replyRemovalOutcome ' tests/SmpIpcSuite.lean
+# ...and the decisive comparison is a differential WITHIN the suite, because a
+# mutation of the production code fails to ELABORATE rather than failing the
+# suite (the origin write, the resolver and the three pops are each pinned as
+# theorems -- §3.23 recorded the same situation for the splice's store shape).
+# One function, two chains differing in exactly one field, opposite outcomes.
+run_check "INVARIANT" rg -n 'NEGATIVE: with NO origin recorded the same spine settles it on the INTERMEDIATE caller' tests/SmpIpcSuite.lean
+# NEGATIVE: and the retired COST labels must not come back -- this row asserted
+# them up to `v0.35.52` and they are now the values the differential's `noOrigin`
+# half carries.  Token-preserving: `COST` survives elsewhere in the tree.
+run_negative_check "INVARIANT" bash -lc 'rg -n "assertBool \"PAYOFF/COST: the donation return succeeds" tests/SmpIpcSuite.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -n "assertBool \"COST: the original owner is left unbound" tests/SmpIpcSuite.lean'
+# ...and the in-order unwind reads as an AGREEMENT rather than a contrast, since
+# the two routes now agree on where the reservation ends up -- which is the
+# closure of the defect.  Both halves, because "reaches its owner" is measured on
+# both routes rather than asserted for one.
+run_check "INVARIANT" rg -n 'AGREEMENT: an IN-ORDER unwind still leaves it owed outward, not owned' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'AGREEMENT: \.\.\.and the second pop of that unwind delivers it to the owner' tests/SmpIpcSuite.lean
 
 
 

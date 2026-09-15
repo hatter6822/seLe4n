@@ -3607,7 +3607,8 @@ two the frame below the cut *is* the stack's bottom, so `severAtCut` and
 `spliceOutTheCut` write the same value (`none`) into the frame above and no witness
 can tell them apart — which is also why the splice provably does not reach the
 depth-2 loss.  That residue needs the reservation's **origin** recorded on the
-`SchedContext` rather than derived from stack reachability, and is WS-HP HP10.
+`SchedContext` rather than derived from stack reachability, and is closed by WS-HP
+HP10.9's `donationAccountingPreserved_atCallDepthTwo` below.
 
 **What is derived rather than assumed.**  `outer` is read off the *pre-state* frame
 below the cut, so no hypothesis hands the conclusion over; the removal's two
@@ -3680,5 +3681,117 @@ theorem donationAccountingPreserved_atCallDepthThree
                 hCallerBelow).2]
             exact hPop)
       exact ⟨tcb, hPre, by simpa [donationReturnBinding] using hPost⟩⟩
+
+
+-- ============================================================================
+-- WS-HP HP10.9 — the accounting the recorded origin buys, at reply-stack depth two
+-- ============================================================================
+
+/-- **WS-HP HP10.9: an out-of-order removal at reply-stack depth TWO still
+delivers the reservation to the thread that owned it.**
+
+The residue HP6's splice provably could not reach, and the last of the donation
+accounting.  Like HP6.9 — and like OD6.1 — not the preservation of something that
+was already so but the making-true of something that was false.
+
+**Why the splice cannot reach this.**  At depth two the frame the removal takes
+off the stack *is* the stack's bottom, so there is nothing below it to reconnect:
+`spliceFrameBelow?` answers `none`, the splice degenerates to the sever
+(`removeCallerReplyFrame_clears_prev_of_bottom_frame`), and
+`cancelledMiddleCallerPolicy` — whichever value it holds — writes the same `none`
+into the frame above.  The sentence that explains why `tests/SmpIpcSuite.lean`
+§3.20 cannot *measure* the depth-≥ 3 defect is the reason the depth-2 defect
+survived the fix for it.
+
+**What was lost.**  A delegate answers the client out of order, the client's own
+frame leaves the stack, and the in-order pop that follows finds the surviving
+frame at the bottom: reachability then names the *intermediate* caller, which is
+bound `.bound scId` while the client that owned the reservation is left
+`.unbound` for good.  Upstream has the same loss — seL4-MCS's `reply_pop` donates
+to the answered frame's own `replyTCB` — so this is an improvement on seL4-MCS at
+every depth rather than parity with it.
+
+**What recovers it.**  `SchedContext.donationOrigin`, written by the *first* push
+and cleared by every step that ends the loan, so the recipient is the reservation's
+recorded owner rather than a thread derived from stack reachability
+(`replyDonationRecipient`, HP10.7).
+
+**What is derived rather than assumed.**  `replyStackOuterCaller? st' scId = .ok
+none` — the very reachability answer that names the wrong thread — comes from the
+removal rather than from a hypothesis; the context survives it
+(`removeCallerReplyFrame_getSchedContext?_eq`), so the origin read after the
+removal is the one the push recorded before it; and `origin` is the removal's own
+`caller` argument, so the frame leaving the stack is the owner's.
+
+**What is genuinely hypothesised, and why it must be.**  The two guards are facts
+about the owner's TCB at `st'`: it holds no reservation of its own
+(`donationRecipientAcceptable`) and is no longer waiting on a reply
+(`donationOriginRebindable`).  The second is *false* before the reply leg runs —
+the owner is `.blockedOnReply` on exactly the reply being answered — and becomes
+true at the wake `endpointReplyOnCore` performs before the removal, so no
+statement about the removal alone can supply it.  Both decline to the reachability
+answer rather than refusing the pop, which is what makes the redirect a recovery
+and not a regression. -/
+theorem donationAccountingPreserved_atCallDepthTwo
+    (st st' st'' : SystemState)
+    (rid top : SeLe4n.ReplyId) (r t : Reply)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext)
+    (serverTid answeredCaller origin : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hNe : origin ≠ serverTid)
+    -- The two-frame stack, top to bottom: `top` heads the context and `rid` sits
+    -- below it at the BOTTOM, with nothing further out.
+    (hR : st.getReply? rid = some r) (hN : r.next = some (.frame top))
+    (hBottom : r.prev = none)
+    (hT : st.getReply? top = some t) (hTP : t.prev = some rid)
+    (hTHead : t.next = some (.head scId))
+    (hSc : st.getSchedContext? scId = some sc) (hScReply : sc.scReply = some top)
+    -- The reservation's recorded origin.
+    (hOrigin : sc.donationOrigin = some origin)
+    -- The out-of-order removal: the OWNER's own frame leaves the stack.
+    (hRemove : removeCallerReplyFrame origin rid st = .ok ((), st'))
+    -- The owner is awake and holds no reservation of its own.
+    (hAcceptable : donationRecipientAcceptable st' origin = true)
+    (hRebindable : donationOriginRebindable st' origin = true)
+    -- The pop the in-order reply that follows performs, through the reply path's
+    -- own recipient resolution.
+    (hPop : returnDonatedSchedContextResolved st' serverTid scId
+        (replyDonationRecipient st' scId answeredCaller) = .ok st'') :
+    replyStackOuterCaller? st' scId = .ok none ∧
+      replyDonationRecipient st' scId answeredCaller = origin ∧
+      (∃ tcb, st'.getTcb? origin = some tcb ∧
+        st''.getTcb? origin = some { tcb with schedContextBinding := .bound scId }) := by
+  -- The removal severs at the bottom: the frame above loses its downward link
+  -- and becomes the bottom of what is left.
+  have hTopPost : st'.getReply? top = some { t with prev := none } :=
+    removeCallerReplyFrame_clears_prev_of_bottom_frame st st' origin rid top r t hObjInv
+      hR hN hBottom hT hTP hRemove
+  -- The context survives, and still heads `top`.
+  have hSc' : st'.getSchedContext? scId = some sc := by
+    rw [removeCallerReplyFrame_getSchedContext?_eq st st' origin rid hObjInv hRemove scId]
+    exact hSc
+  have hHead' : donationHeadOf? st' scId sc
+      = .ok (some (top, { t with prev := none })) := by
+    unfold donationHeadOf?
+    simp only [hScReply, hTopPost, hTHead, bne_self_eq_false, Bool.false_eq_true, if_false]
+  -- Reachability now bottoms out -- which is exactly the answer that names the
+  -- WRONG thread, and which the redirect overrides.
+  have hOuter' : replyStackOuterCaller? st' scId = .ok none :=
+    replyStackOuterCaller?_of_bottom_head st' scId sc top { t with prev := none }
+      hSc' hHead' rfl
+  -- ...so the resolver answers the recorded origin.
+  have hResolver : donationOriginRecipient? st' scId = some origin :=
+    (donationOriginRecipient?_eq_some_iff st' scId origin).mpr
+      ⟨hOuter', ⟨sc, hSc', hOrigin⟩, hAcceptable, hRebindable⟩
+  have hRecip : replyDonationRecipient st' scId answeredCaller = origin :=
+    replyDonationRecipient_eq_origin st' hResolver
+  refine ⟨hOuter', hRecip, ?_⟩
+  rw [hRecip] at hPop
+  rw [returnDonatedSchedContextResolved_of_resolved hOuter'] at hPop
+  obtain ⟨⟨tcb, hPre, hPost⟩, _, _⟩ :=
+    returnDonatedSchedContext_getTcb?_char st' st'' serverTid scId origin
+      (removeCallerReplyFrame_preserves_objects_invExt st st' origin rid hObjInv hRemove)
+      hNe none hPop
+  exact ⟨tcb, hPre, by simpa [donationReturnBinding] using hPost⟩
 
 end SeLe4n.Kernel

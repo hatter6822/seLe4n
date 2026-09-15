@@ -2558,32 +2558,152 @@ of its own still outstanding, so the frame the delegate answers is *not* the
 head of its stack. -/
 private def replyRemovalDelegate : SeLe4n.ThreadId := ⟨99⟩
 
+/-- **WS-HP HP10.9**: the state a depth-2 donating chain is built *from* — the
+reservation's **owner** still holds it, `.bound`.
+
+`pushStore` is that state's successor with the first push already applied by hand,
+which is why nothing in this tree had ever measured the field HP10 turns on:
+`SchedContext.donationOrigin` is written by `donateSchedContext` on a **first**
+push (`donationFirstPush` — the donor's binding still *owns* the context it is
+lending), and every fixture that carried an origin set it directly.  A witness
+whose field is supplied by its fixture asserts nothing about the production write
+that is supposed to supply it.
+
+So this is `pushStore` with the first push undone: the context is bound to
+`pushOuter` and heads no stack, `pushOuterReply` is free (both links clear, its
+caller set), and `pushOuter` is `.bound pushSc`.  It is `.blockedOnReply` on
+`pushDonor` already, which is not a liberty — `endpointCall` blocks the caller and
+links its reply object *before* `applyCallDonation` runs, so `.bound` **and**
+`.blockedOnReply` is exactly the state the live `.call` hands the donation. -/
+private def pushOwnerStore : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject pushSc.toObjId
+        (.schedContext { SchedContext.empty pushSc with boundThread := some pushOuter })
+    |>.withObject pushOuterReply.toObjId
+        (.reply { replyId := pushOuterReply, caller := some pushOuter })
+    |>.withObject pushDonorReply.toObjId (.reply pushFreshHead)
+    |>.withObject pushDonor.toObjId
+        (.tcb { mkTcb 91 40 none with replyObject := some pushDonorReply })
+    |>.withObject pushServer.toObjId (.tcb (mkTcb 92 30 none))
+    |>.withObject pushOuter.toObjId
+        (.tcb { pushOuterBlockedTcb with schedContextBinding := .bound pushSc })
+    |>.build)
+
+/-- **WS-HP HP10.9**: the depth-2 chain, built by the live push **twice** — so the
+reservation's origin is recorded by production rather than by this fixture.
+
+`pushOuter` lends to `pushDonor` (a **first** push: the donor owns what it lends,
+so the origin is recorded), and `pushDonor` lends on to `pushServer` (an
+**onward** push: the donor holds a `.donated` binding, `ownScId?` is `none`, and
+the field is left alone — which is what makes it the *origin* rather than the
+immediate donor).  The result is `pushStore`'s own post-push shape plus that one
+field, and §3.20 asserts the agreement, so the hand-built fixture is known to be a
+state the kernel reaches rather than assumed to be. -/
+private def replyRemovalChain : Except KernelError SystemState :=
+  match donateSchedContext pushOwnerStore pushOuter pushDonor pushSc with
+  | .error e => .error e
+  | .ok depth1 => donateSchedContext depth1 pushDonor pushServer pushSc
+
+/-- **WS-RM**: the intermediate caller of a live depth-2 chain, blocked on its own
+reply to `pushServer`.
+
+One definition, because the in-order contrast, the in-order reply and the
+depth-two accounting differential all need it and three of them used to spell it
+again locally. -/
+private def replyRemovalInOrderDonorTcb : TCB :=
+  { mkTcb 91 40 none with
+      schedContextBinding := SchedContextBinding.unbound,
+      ipcState := ThreadIpcState.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer),
+      replyObject := some pushDonorReply }
+
+/-- **WS-RM**: the removal witness's state, from a pushed depth-2 chain: the outer
+caller reply-blocked on the intermediate one, plus the **delegate** that holds a
+copy of its reply capability. -/
+private def replyRemovalStateOf (pushed : SystemState) : SystemState :=
+  { pushed with
+      objects := (pushed.objects.insert pushOuter.toObjId (.tcb replyRemovalOuterTcb)).insert
+        replyRemovalDelegate.toObjId (.tcb (mkTcb 99 45 (some c1))) }
+
+/-- **WS-HP HP10.9**: the whole depth-2 sequence, from a pushed chain to the
+bindings the live `.reply` spine leaves — `(pushOuter's, pushDonor's)`.
+
+A delegate answers the owner **out of order**, whose frame is the stack's bottom
+and so leaves the stack; then the intermediate caller's own server replies **in
+order**, through `endpointReplyCrossCoreDispatch` — the live `.reply` arm, leg and
+pop and reversion and migration together, because the pop is inside it and the pop
+is where the redirect lives.
+
+Taking the chain as a *parameter* is what makes this witness decisive without a
+mutation.  A mutation of the production code fails to **elaborate** rather than
+failing this suite — the origin write, the resolver and the three pops are each
+pinned as theorems, which is the situation §3.23 recorded for the splice's store
+shape — so what discriminates is a differential *within* the suite: this function
+applied to a chain whose first push recorded an origin, and to `pushStore`'s,
+which predates HP10.4 and records none.  The two chains differ in exactly one
+field and the reservation ends on a different thread. -/
+private def replyRemovalOutcome (pushed : SystemState) :
+    Option (Option SchedContextBinding × Option SchedContextBinding) :=
+  match endpointReplyOnCore replyRemovalDelegate pushOuter IpcMessage.empty bootCoreId
+      (replyRemovalStateOf pushed) with
+  | (_, .error _) => none
+  | (postOoO, .ok _) =>
+    let stInOrderPre : SystemState :=
+      { postOoO with
+          objects := postOoO.objects.insert pushDonor.toObjId (.tcb replyRemovalInOrderDonorTcb) }
+    match endpointReplyCrossCoreDispatch pushServer pushDonor IpcMessage.empty bootCoreId
+        stInOrderPre with
+    | (_, .error _) => none
+    | (stFinal, .ok _) => some (pushBindingOf stFinal pushOuter, pushBindingOf stFinal pushDonor)
+
 private def runReplyFrameRemovalChecks : IO Unit := do
   IO.println "--- §3.20 WS-RM: the reply path takes the answered frame off its stack ---"
-  match donateSchedContext pushStore pushDonor pushServer pushSc with
+  -- **WS-HP HP10.9**: the first push, measured on its own, because it is the step
+  -- that records the reservation's origin and nothing in the tree had run it.
+  match donateSchedContext pushOwnerStore pushOuter pushDonor pushSc with
+  | .error e =>
+    assertBool s!"the depth-1 push from the OWNER must succeed (got {reprStr e})" false
+  | .ok depth1 =>
+    assertBool "PRE: a FIRST push records the reservation's origin"
+      ((depth1.getSchedContext? pushSc).bind (·.donationOrigin) == some pushOuter)
+    -- ...and it reproduces the hand-built depth-1 fixture exactly, which is what
+    -- makes `pushStore` a state the kernel reaches rather than one this suite
+    -- asserts about.  The origin is the single field that differs, and it differs
+    -- because `pushStore` predates HP10.4.
+    assertBool "...and otherwise reproduces `pushStore`'s stack shape"
+      (pushStackShape depth1 == pushStackShape pushStore)
+    assertBool "...and `pushStore`'s bindings"
+      (pushBindingOf depth1 pushOuter == some .unbound
+        && pushBindingOf depth1 pushDonor == some (.donated pushSc pushOuter)
+        && pushBindingOf depth1 pushServer == pushBindingOf pushStore pushServer)
+    assertBool "...while `pushStore` itself records no origin, being older than HP10.4"
+      ((pushStore.getSchedContext? pushSc).bind (·.donationOrigin) == none)
+  match replyRemovalChain with
   | .error e =>
     assertBool s!"the removal witness needs a depth-2 push (got {reprStr e})" false
   | .ok pushed =>
+    -- **WS-HP HP10.9**: the ONWARD push leaves the origin alone.  A field that
+    -- tracked the immediate donor would read `pushDonor` here, and the immediate
+    -- donor is already recoverable from `.donated scId owner` — so this assertion
+    -- is what distinguishes an *origin* from a duplicate of the binding.
+    assertBool "PRE: an ONWARD push preserves the origin — it is not the immediate donor"
+      ((pushed.getSchedContext? pushSc).bind (·.donationOrigin) == some pushOuter)
+    assertBool "...and the onward push's own donor is recorded in the BINDING, not the field"
+      (pushBindingOf pushed pushServer == some (.donated pushSc pushDonor))
     -- The stack a depth-2 `Call` chain leaves: `pushDonorReply` heads the
-    -- context and links down to `pushOuterReply`, which links back up.
-    let stChain : SystemState :=
-      { pushed with
-          objects := (pushed.objects.insert pushOuter.toObjId (.tcb replyRemovalOuterTcb)).insert
-            replyRemovalDelegate.toObjId (.tcb (mkTcb 99 45 (some c1))) }
+    -- context and links down to `pushOuterReply`, which links back up.  Built
+    -- through the same `replyRemovalStateOf` the accounting differential below
+    -- drives, so the shape the step assertions measure is the shape it measures.
+    let stChain : SystemState := replyRemovalStateOf pushed
     assertBool "pre: the donor's frame heads the context and links down to the outer one"
       (pushLinksOf stChain pushDonorReply == some (some pushOuterReply, some (.head pushSc)))
     assertBool "pre: the outer frame links up to the head, heading nothing"
       (pushLinksOf stChain pushOuterReply == some (none, some (.frame pushDonorReply)))
     -- The in-order contrast's own pre-state: `pushDonor` blocked on its own
     -- reply to `pushServer`, which is what a live depth-2 chain looks like.
-    let inOrderDonorTcb : TCB :=
-      { mkTcb 91 40 none with
-          schedContextBinding := SchedContextBinding.unbound,
-          ipcState := ThreadIpcState.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer),
-          replyObject := some pushDonorReply }
     let stChainInOrder : SystemState :=
       { stChain with
-          objects := stChain.objects.insert pushDonor.toObjId (.tcb inOrderDonorTcb) }
+          objects := stChain.objects.insert pushDonor.toObjId
+            (.tcb replyRemovalInOrderDonorTcb) }
     -- The footprint declares the frame the removal writes, resolved from the
     -- answered thread's own reply object.
     assertBool "the footprint resolves the frame ABOVE the answered one"
@@ -2613,67 +2733,118 @@ private def runReplyFrameRemovalChecks : IO Unit := do
     -- the out-of-order reply left `pushDonorReply.prev` naming a consumed frame,
     -- the walk's reciprocity test refused it, and this call returned
     -- `.invalidArgument` — a wedged call chain reached from an ordinary reply.
+    --
+    -- **WS-HP HP10.9**: this reply is now run through the **live `.reply` spine**
+    -- rather than through `endpointReplyOnCore` alone, because the spine is what
+    -- performs the pop, and the pop is where the redirect lives.  The accounting
+    -- assertions below used to measure `returnDonatedSchedContextResolved`
+    -- directly, which was an accurate proxy for the pop while nothing redirected
+    -- and is a proxy that omits the redirect now — *a proxy is not the fact*.
+    let stInOrderPre : SystemState :=
+      { postOoO with
+          objects := postOoO.objects.insert pushDonor.toObjId
+            (.tcb replyRemovalInOrderDonorTcb) }
+    let (stInOrderLeg, resInOrderLeg) :=
+      endpointReplyOnCore pushServer pushDonor IpcMessage.empty bootCoreId stInOrderPre
     assertBool "PAYOFF: the in-order reply that follows succeeds — the wedge is gone"
-      (match (endpointReplyOnCore pushServer pushDonor IpcMessage.empty bootCoreId
-                { postOoO with
-                    objects := postOoO.objects.insert pushDonor.toObjId
-                      (.tcb { mkTcb 91 40 none with
-                                schedContextBinding := .unbound,
-                                ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97)
-                                  (some pushServer),
-                                replyObject := some pushDonorReply }) }).2 with
-       | .ok _ => true
-       | .error _ => false)
+      (match resInOrderLeg with | .ok _ => true | .error _ => false)
     -- ...and the pop the reply chain runs after it resolves, rather than
-    -- refusing a stale link.
+    -- refusing a stale link.  **This is the answer that names the WRONG thread**:
+    -- the owner's own frame has left the stack, so reachability reports the
+    -- surviving frame as the bottom and the pop's reachability recipient is the
+    -- thread that answered it.  HP10.7's redirect is what overrides it.
     assertBool "PAYOFF: the pop resolves the remaining stack to its bottom"
       (match replyStackOuterCaller? postOoO pushSc with
        | .ok none => true | _ => false)
-    -- **This row is BOTH halves at once**, and the label says so because a reader
-    -- who takes it for the payoff alone has read half of what it measures.  As
-    -- WS-RM's payoff: the pop succeeds where the pre-`v0.35.6` reply path wedged
-    -- it.  As WS-HP HP10's cost: `.bound` is *ownership*, and it has settled on
-    -- `pushDonor` -- a thread strictly inside the chain -- rather than on
-    -- `pushOuter`, which owned the reservation before it left.  The two facts
-    -- share one expression, so this is one assertion rather than two; what HP10
-    -- inverts is the thread named here, not whether the pop succeeds.
-    assertBool "PAYOFF/COST: the donation return succeeds, and settles the context on the INTERMEDIATE caller"
-      (match returnDonatedSchedContextResolved postOoO pushServer pushSc pushDonor with
+    -- **WS-HP HP10.9 — THE PAYOFF, WHERE THIS ROW USED TO CARRY A COST.**
+    --
+    -- Up to `v0.35.52` these three assertions measured the loss: taking a caller
+    -- out of the middle of a chain is destructive to the donation accounting, the
+    -- removal moves no scheduling context, and the later pop donated to whatever
+    -- the remaining stack said was outermost — so the reservation settled `.bound`
+    -- on `pushDonor`, a thread strictly *inside* the chain, and `pushOuter`, which
+    -- owned it, was left `.unbound` for good.  Reachable from an ordinary
+    -- delegated reply.  seL4-MCS has the same loss: `reply_pop` donates to the
+    -- answered frame's own `replyTCB`.
+    --
+    -- **This is a TWO-frame stack, so HP6's splice provably could not reach it**:
+    -- `pushOuterReply` is the bottom, nothing sits below it to reconnect, and
+    -- `severAtCut` and `spliceOutTheCut` write the same `none` into the frame
+    -- above.  The sentence that explains why this witness cannot *measure* the
+    -- depth-≥ 3 defect is the reason the depth-2 defect survived the fix for it.
+    -- What closes it is the reservation's recorded **origin**
+    -- (`SchedContext.donationOrigin`, written by the first push above) read in
+    -- place of stack reachability — `donationAccountingPreserved_atCallDepthTwo`.
+    assertBool "PAYOFF: the live reply spine settles the reservation on its OWNER, not the intermediate caller"
+      (replyRemovalOutcome pushed == some (some (.bound pushSc), some .unbound))
+    -- **NEGATIVE — the decisive differential, and it needs no mutation.**  A
+    -- mutation of the production code here fails to *elaborate* rather than
+    -- failing this suite: the origin write, the resolver and the three reply-path
+    -- pops are each pinned as theorems, which is the situation §3.23 recorded for
+    -- the splice's store shape.  So what makes the payoff above discriminate is
+    -- the same function applied to `pushStore`'s own chain, which predates HP10.4
+    -- and records **no** origin: one field differs, and the reservation ends on a
+    -- different thread.  These are the values this row asserted up to `v0.35.52`,
+    -- and the outcome every state this tree reached before HP10.4 still has.
+    assertBool "NEGATIVE: with NO origin recorded the same spine settles it on the INTERMEDIATE caller"
+      (match donateSchedContext pushStore pushDonor pushServer pushSc with
+       | .ok noOrigin => replyRemovalOutcome noOrigin == some (some .unbound, some (.bound pushSc))
+       | .error _ => false)
+    assertBool "PAYOFF: ...which is a DIFFERENT thread, so the redirect is not vacuous"
+      (!(pushOuter == pushDonor))
+    -- **NEGATIVE — the retired reachability reading, spelled out beside the live
+    -- one.**  `returnDonatedSchedContextResolved` at the answered caller is what
+    -- the pop did before HP10.7, and it is still the identity everywhere the
+    -- redirect declines, so it cannot be deleted; what it must not be is the
+    -- recipient at the bottom of a stack whose owner's frame was removed.  These
+    -- two assertions are the values this row asserted up to `v0.35.52`, so a
+    -- revert of the flip does not merely fail the payoff above — it makes these
+    -- pass, which is what makes the pair known to discriminate rather than merely
+    -- to pass (the lesson HP5.5 and HP7 recorded on this same surface).
+    assertBool "NEGATIVE: the retired reachability recipient would settle it on the INTERMEDIATE caller"
+      (match returnDonatedSchedContextResolved stInOrderLeg pushServer pushSc pushDonor with
        | .ok st' => pushBindingOf st' pushDonor == some (.bound pushSc)
        | .error _ => false)
-    -- **THE COST, PINNED RATHER THAN DESCRIBED.**  Taking a caller out of the
-    -- middle of a chain is destructive to the donation accounting: the removal
-    -- moves no scheduling context, and the later pop donates to whatever the
-    -- remaining stack says is outermost.  So the context settles `.bound` on the
-    -- INTERMEDIATE caller above, and `pushOuter` -- which owned it -- is left
-    -- `.unbound` for good.  The in-order unwind below is the contrast: there the
-    -- intermediate caller receives it `.donated … pushOuter`, still owing it
-    -- outward.
-    --
-    -- This is a TWO-frame stack, where `pushOuterReply` is the bottom, so
-    -- `severAtCut` and `spliceOutTheCut` write the same value and the policy is
-    -- not what is being measured here.  §3.22 is the depth-three witness where
-    -- they differ; since WS-HP HP6.8 it measures the splice's payoff rather than
-    -- the sever's cost, and **these assertions are deliberately unchanged** --
-    -- that they still pass is the measurement that the policy flip is confined
-    -- to depth >= 3.  Closing this depth-two residue needs the reservation's
-    -- ORIGIN on the `SchedContext` rather than stack reachability, which is
-    -- WS-HP HP10.
-    --
-    -- Asserted here because the project's standard for this trade is WS-OD's:
-    -- "its cost is stated rather than hidden".  A witness that checked only the
-    -- payoff would let the cost drift silently.
-    assertBool "COST: the original owner is left unbound, having lost its reservation"
-      (match returnDonatedSchedContextResolved postOoO pushServer pushSc pushDonor with
+    assertBool "NEGATIVE: ...leaving the original owner unbound, having lost its reservation"
+      (match returnDonatedSchedContextResolved stInOrderLeg pushServer pushSc pushDonor with
        | .ok st' => pushBindingOf st' pushOuter == some .unbound
        | .error _ => false)
-    assertBool "COST (contrast): an IN-ORDER unwind leaves it owed outward, not owned"
+    -- ...and the live pop's own recipient is the origin rather than that thread,
+    -- read at the state the pop runs on.  The two readings computed side by side
+    -- is what makes the flip a measurement.
+    assertBool "PAYOFF: the live pop's recipient is the recorded ORIGIN, not the answered caller"
+      (replyDonationRecipient stInOrderLeg pushSc pushDonor == pushOuter)
+    -- **AGREEMENT, where this row used to carry a contrast.**  An IN-ORDER unwind
+    -- never lost the reservation, and HP10.9 leaves it byte for byte: the pop is
+    -- at a `some` arm (the surviving stack still names an outer caller), where
+    -- `donationOriginRecipient?` is silent by construction
+    -- (`replyDonationRecipient_eq_of_outer_some`), so the intermediate caller
+    -- receives it `.donated … pushOuter` — still owed outward — exactly as before.
+    -- That the two routes now *agree* on where the reservation ends up is the
+    -- closure of the defect, which is why this reads as an agreement rather than
+    -- as a contrast.
+    assertBool "AGREEMENT: an IN-ORDER unwind still leaves it owed outward, not owned"
       (match endpointReplyOnCore pushServer pushDonor IpcMessage.empty bootCoreId
                 stChainInOrder with
        | (stIn, .ok _) =>
            (match returnDonatedSchedContextResolved stIn pushServer pushSc pushDonor with
             | .ok st' => pushBindingOf st' pushDonor == some (.donated pushSc pushOuter)
             | .error _ => false)
+       | (_, .error _) => false)
+    -- ...and the SECOND pop of that unwind delivers it home, so "reaches its
+    -- owner" is measured on both routes rather than asserted for one.  The
+    -- redirect is the identity here too: at the bottom of this stack reachability
+    -- and the recorded origin name the same thread, which is what "inert wherever
+    -- it was already right" means operationally.
+    assertBool "AGREEMENT: ...and the second pop of that unwind delivers it to the owner"
+      (match endpointReplyCrossCoreDispatch pushServer pushDonor IpcMessage.empty
+                bootCoreId stChainInOrder with
+       | (stAfterFirst, .ok _) =>
+           (match endpointReplyCrossCoreDispatch pushDonor pushOuter IpcMessage.empty
+                     bootCoreId stAfterFirst with
+            | (stAfterSecond, .ok _) =>
+                pushBindingOf stAfterSecond pushOuter == some (.bound pushSc)
+            | (_, .error _) => false)
        | (_, .error _) => false)
     -- NEGATIVE, and the reason this witness exists: the SAME reply with the
     -- detach omitted.  Every object is present and every field the consume

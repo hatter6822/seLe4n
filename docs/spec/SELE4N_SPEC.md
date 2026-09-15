@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.52` (`lakefile.toml`) |
+| **Package version** | `0.35.53` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 383,733 across 330 Lean files |
-| **Test LoC** | 78,086 across 70 Lean test suites |
-| **Proved declarations** | 12,769 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 383,950 across 330 Lean files |
+| **Test LoC** | 78,257 across 70 Lean test suites |
+| **Proved declarations** | 12,771 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4584,8 +4584,10 @@ respect.
    frames below a cut stay on the stack.
    `donationAccountingPreserved_atCallDepthThree` is the statement: at depth ≥ 3 a
    middle removal leaves the reservation **owed outward** and the pop that answers
-   the bottom frame delivers it home.  New code must still not read a successful pop
-   at depth **2** as evidence that the context reached its owner.
+   the bottom frame delivers it home.  Depth **2** was the residue the splice
+   provably could not reach, and it is closed at `v0.35.53` by the reservation's
+   recorded origin (§8.12.15) — so the interim contract *do not read a successful
+   pop at depth 2 as evidence that the context reached its owner* is retired.
 
    **It was the policy's, not the chain's, and depth two cannot show that.**  A
    two-frame stack's lower frame is its bottom, so `severAtCut` and
@@ -4613,11 +4615,13 @@ respect.
    for the reply path at `v0.35.38` (§8.12.9) and for the cancellation path at
    `v0.35.39` (§8.12.10); the splice is HP6.
 
-   **And the splice does not close depth two** (re-scoped at `v0.35.42`).  The
+   **And the splice does not close depth two** (re-scoped at `v0.35.42`; the depth-2
+   half is closed at `v0.35.53` by §8.12.15, not by a removal policy).  The
    paragraph above says why: a bottom frame's removal writes the same `none` under
-   either policy, so a client answered out of order at depth 2 still loses its
+   either policy, so a client answered out of order at depth 2 still lost its
    reservation to the intermediate caller after HP6, and §3.20 — which exercises
-   that shape — asserts only the structural outcome.  The defect is therefore
+   that shape — asserted only the structural outcome until HP10.9 inverted its
+   accounting halves.  The defect is therefore
    *reachability-based ownership* rather than the removal policy, which is why
    upstream has it too (`reply_pop` donates to the answered frame's own
    `replyTCB`).  **WS-HP HP10** closes it with one `SchedContext` field recording
@@ -5023,14 +5027,72 @@ repository is the remedy for `v0.35.14`, which asserted the opposite, quoted a l
 that exists in no release, and propagated it to nine prose sites and three
 docstrings that had been right.
 
-**What WS-HP does not close.**  The donation-accounting register row remains
-**open**: at depth 2 the removal takes the client's frame off the *bottom* of its
-stack, both removal policies write `none` into the frame above a bottom frame, and
-the splice therefore provably cannot reach that loss.  What the workstream earned
-is the depth-≥ 3 half.  v1.0.0 must still not claim that completing a call chain
-returns a client's reservation *unconditionally*; that is WS-HP HP10's, and it
-needs the reservation's **origin** recorded on the `SchedContext` rather than
-derived from stack reachability.
+**What HP9 does not close.**  At depth 2 the removal takes the client's frame off
+the *bottom* of its stack, both removal policies write `none` into the frame above a
+bottom frame, and the splice therefore provably cannot reach that loss.  What HP9
+earned is the depth-≥ 3 half; the depth-2 half is **closed at `v0.35.53`** by the
+reservation's recorded origin (§8.12.15), with the register row's own closure the
+last step (HP10.10).
+
+#### 8.12.15 The depth-two payoff — WS-HP HP10.9 (`v0.35.53`)
+
+At reply-stack depth 2 the frame a removal takes off the stack **is** the stack's
+bottom, so there is nothing below it to reconnect: `spliceFrameBelow?` answers
+`none`, the splice degenerates to the sever
+(`removeCallerReplyFrame_clears_prev_of_bottom_frame`), and
+`cancelledMiddleCallerPolicy` writes the same `none` into the frame above whichever
+value it holds.  The sentence that explains why §3.20 cannot *measure* the depth-≥ 3
+defect (§8.12.11) is the reason the depth-2 defect survived the fix for it.
+
+`donationAccountingPreserved_atCallDepthTwo` closes it, and the claim now holds at
+**every** depth: with the reservation's origin recorded on the `SchedContext`
+(`SchedContext.donationOrigin`, written by the *first* push and cleared by every
+step that ends the loan) and read in place of stack reachability
+(`replyDonationRecipient`, §8.12.12's successor tier), a delegate answering the
+client out of order no longer costs that client its reservation — the pop hands it
+to the thread that owned it.  Upstream has the same loss at this depth, `reply_pop`
+donating to the answered frame's own `replyTCB`, so this too is an improvement on
+seL4-MCS rather than parity with it.
+
+**What the theorem derives and what it must hypothesise.**
+`replyStackOuterCaller? st' scId = .ok none` — the reachability answer that names
+the *wrong* thread — is a **conclusion**, read off the removal, so no hypothesis
+hands the payoff over.  The two guards are **hypotheses**, and one of them cannot
+be anything else: `donationOriginRebindable` is *false* at the pre-state, the owner
+being `.blockedOnReply` on exactly the reply being answered, and becomes true at the
+wake `endpointReplyOnCore` performs before the removal.  A statement about the
+removal alone therefore cannot supply it.  Tier 3 negatives refuse hypothesising
+either derived fact, because either turns the payoff into a theorem whose conclusion
+is one of its own premises.
+
+**Measured on the live spine, and the decisive comparison is not a mutation.**
+`tests/SmpIpcSuite.lean` §3.20's accounting halves inverted from COST to PAYOFF and
+now drive `endpointReplyCrossCoreDispatch` — leg, pop, priority-inheritance
+reversion and replenishment migration together — where they drove
+`returnDonatedSchedContextResolved` directly, which was an accurate proxy for the
+pop while nothing redirected and is a proxy that *omits* the redirect since HP10.7.
+No mutation of the production code is available: the origin write, the resolver, the
+three reply-path pops and the dispatch's recipient are each pinned as theorems, so a
+mutation fails to **elaborate** rather than failing the suite, exactly as §8.12.14
+records for the splice's stores.  What discriminates is a differential *within* the
+suite — one function applied to a chain whose first push recorded an origin and to
+one that predates the field, a single field apart, opposite outcomes.
+
+**And the production write is measured, which it was not before.**  Every fixture
+that carried an origin set the field by hand, so nothing asserted that
+`donateSchedContext` records one.  §3.20 now runs the live push **twice** from a
+state where the owner still holds the reservation, asserting both directions — a
+*first* push records the origin, an *onward* push leaves it alone, which is what
+distinguishes an origin from a duplicate of `.donated scId owner` — and that the
+first push reproduces the hand-built depth-1 fixture's own shape, so that fixture is
+known to be a state the kernel reaches.
+
+§3.22, §3.23 and the golden trace are **byte-identical**, which is the measurement
+that this cut is confined to the reachability gap rather than changing the chain.
+It is structural rather than lucky: at depth ≥ 3 the pop sits at a `some` arm, where
+`replyDonationRecipient_eq_of_outer_some` makes the redirect the identity by
+theorem.  What remains is documentation closure (HP10.10), after which v1.0.0 may
+claim that completing a call chain returns a client's reservation at every depth.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

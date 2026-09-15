@@ -282,11 +282,12 @@ frame delivers it home.  §3.22 inverted from a COST witness to a PAYOFF witness
 the same cut and now measures that second pop.  The below side **degenerates** to
 the sever rather than refusing, so the removal's refusal set is exactly the
 pre-WS-HP one, a stale upward link is still reachable, and the reciprocity checks
-stay load-bearing.  **Depth 2 is not closed** — both policies write `none` into the
-frame above a bottom frame — and that §3.20's depth-two halves and the golden trace
-pass byte-identically across the flip is the measurement that the change is confined
-to depth ≥ 3; closing it needs the reservation's *origin* on the `SchedContext`
-rather than stack reachability, which is HP10.
+stay load-bearing.  **Depth 2 was not closed by the splice** — both policies write
+`none` into the frame above a bottom frame — and that §3.20's depth-two halves and
+the golden trace passed byte-identically across the flip is the measurement that
+that change was confined to depth ≥ 3.  Closing depth 2 needed the reservation's
+*origin* on the `SchedContext` rather than stack reachability, which is HP10 and
+which landed at `v0.35.53` (below).
 
 **HP9 (`v0.35.48`) showed the splice COMPOSES**, which depth 3 cannot.  The splice
 writes the frame below's `next` and leaves its own `prev` untouched, so on a
@@ -305,12 +306,39 @@ implying a mutation-verification that is not available.  HP9 also moved the thre
 upstream facts this workstream rests on — the non-head branch's write, the pop's
 trigger, and `reply_pop`'s `tcbSchedContext == NULL` guard — to
 `donationRecipientAcceptable`'s own docstring, each with the revisions it was read at,
-which is what `v0.35.40`'s retraction-of-a-retraction cost.  **Depth 2 remains
-HP10's**, and the register row stays open on it.
+which is what `v0.35.40`'s retraction-of-a-retraction cost.  **Depth 2 was HP10's**,
+and the register row's own closure is its last step.
+
+**HP10.9 (`v0.35.53`) closed depth 2**, which the splice provably could not reach:
+the frame a depth-2 removal takes off the stack *is* the bottom, so nothing sits
+below it to reconnect and either policy writes the same `none` above it
+(`removeCallerReplyFrame_clears_prev_of_bottom_frame`).
+`donationAccountingPreserved_atCallDepthTwo` is the payoff — with the reservation's
+origin recorded on the `SchedContext` and read in place of stack reachability, a
+delegate answering the client out of order no longer costs that client its
+reservation.  Upstream has the same loss at this depth (`reply_pop` donates to the
+answered frame's own `replyTCB`), so this is an improvement on seL4-MCS too.  The
+theorem **derives** the reachability answer from the removal and **hypothesises**
+the two guards, one of which cannot be derived at all: the owner is
+`.blockedOnReply` on exactly the reply being answered until the reply leg's wake.
+§3.20's accounting halves inverted from COST to PAYOFF and now drive the live
+`.reply` spine rather than `returnDonatedSchedContextResolved`, which was an
+accurate proxy for the pop while nothing redirected and omits the redirect since
+HP10.7.  **No mutation of the production code is available** — every relevant
+definition is pinned as a theorem, so a mutation fails to *elaborate*, exactly as
+§3.23 records for the splice's stores — so the decisive comparison is a differential
+within the suite: one function applied to a chain that recorded an origin and to one
+that predates the field, a single field apart and opposite outcomes.  The same cut
+gave HP10.4's production write its first measurement, running the live push twice
+and asserting both directions.  §3.22, §3.23 and the golden trace are
+byte-identical, which is *structural* rather than lucky: at depth ≥ 3 the pop sits
+at a `some` arm, where `replyDonationRecipient_eq_of_outer_some` makes the redirect
+the identity by theorem.
 
 See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.8 for the canonical text,
 §8.12.9 for the head-driven reply pop, §8.12.10 for the cancellation reclaim,
-§8.12.11 for the splice and §8.12.14 for its composition at depth 4.
+§8.12.11 for the splice, §8.12.14 for its composition at depth 4 and §8.12.15 for
+the depth-two payoff.
 
 **A donation moves budget, period and deadline — not priority or domain**
 (`v0.35.3`).  Closing WS-OD surfaced an authority crossing in both directions:

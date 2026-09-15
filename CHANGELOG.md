@@ -1,3 +1,108 @@
+## v0.35.53 — WS-HP HP10.9: the depth-two payoff, and the decisive comparison is not a mutation
+
+`donationAccountingPreserved_atCallDepthTwo` is the theorem WS-HP HP10 exists to
+make true, and with it the donation accounting holds at **every** reply-stack
+depth.  At depth 2 the frame a removal takes off the stack **is** the stack's
+bottom, so nothing sits below it to reconnect: `spliceFrameBelow?` answers `none`,
+the splice degenerates to the sever, and `cancelledMiddleCallerPolicy` writes the
+same `none` into the frame above whichever value it holds.  The sentence that
+explains why `tests/SmpIpcSuite.lean` §3.20 cannot *measure* the depth-≥ 3 defect
+is the reason the depth-2 defect survived the fix for it — so what closes it is the
+reservation's recorded **origin** read in place of stack reachability, not a further
+change to the removal.  Upstream has the same loss at this depth (`reply_pop`
+donates to the answered frame's own `replyTCB`), so this is an improvement on
+seL4-MCS rather than parity with it.
+
+**The structural half is a new lemma, and its shape is the point.**
+`removeCallerReplyFrame_clears_prev_of_bottom_frame` is the sever-direction sibling
+of `removeCallerReplyFrame_splices_reciprocally`: removing a bottom frame leaves the
+frame above with `prev = none`, so that frame *becomes* the bottom of what is left.
+Its `above ≠ rid` is **derived** from bottom-ness — a frame that were its own frame
+above would carry `prev = some rid`, and a bottom frame carries no `prev` at all —
+rather than assumed, and a Tier 3 negative refuses the hypothesis.
+
+**What the payoff derives and what it must hypothesise.**
+`replyStackOuterCaller? st' scId = .ok none` — the reachability answer that names
+the *wrong* thread — is a **conclusion**, read off the removal, so no hypothesis
+hands the payoff over.  The two guards are **hypotheses**, and one of them cannot be
+anything else: `donationOriginRebindable` is *false* at the pre-state, the owner
+being `.blockedOnReply` on exactly the reply being answered, and becomes true at the
+wake `endpointReplyOnCore` performs before the removal.  Tier 3 negatives refuse
+hypothesising either derived fact, because either turns the payoff into a theorem
+whose conclusion is one of its own premises.
+
+**§3.20's accounting halves inverted from COST to PAYOFF, and now measure the live
+`.reply` spine.**  They measured `returnDonatedSchedContextResolved` directly, which
+was an accurate proxy for the pop while nothing redirected and is a proxy that
+*omits* the redirect since HP10.7 — *a proxy is not the fact*.  `replyRemovalOutcome`
+drives `endpointReplyCrossCoreDispatch`, so leg, pop, priority-inheritance reversion
+and replenishment migration are all inside the measurement, and the retired
+`PAYOFF/COST` and `COST` labels are refused tree-wide.
+
+**And the decisive comparison is a differential within the suite, because no
+mutation is available.**  Every mutation of the production code here — the origin
+write, the resolver, the three reply-path pops, the dispatch's recipient — fails to
+**elaborate** rather than failing the suite, which is §3.23's situation with the
+splice's store shape.  So `replyRemovalOutcome` takes the chain as a *parameter* and
+is applied twice: to a chain whose first push recorded an origin, and to
+`pushStore`'s, which predates HP10.4 and records none.  One function, two chains
+differing in exactly one field, opposite outcomes.
+
+**HP10.4's production write is measured, and it was not before.**  Every fixture
+that carried an origin set the field by hand, so nothing asserted that
+`donateSchedContext` records one — *a witness whose field is supplied by its fixture
+asserts nothing about the production write that is supposed to supply it*.
+`pushOwnerStore` is `pushStore` with the first push undone and `replyRemovalChain`
+runs the live push **twice**, so §3.20 measures both directions of HP10.4: a
+**first** push records the origin, an **onward** push leaves it alone, which is what
+distinguishes an origin from a duplicate of `.donated scId owner`.  The same
+construction asserts that the first push reproduces `pushStore`'s own shape and
+bindings, so the hand-built fixture is known to be a state the kernel reaches rather
+than assumed to be.
+
+**§3.22, §3.23 and the golden trace are byte-identical**, which is the measurement
+that this cut is confined to the reachability gap rather than changing the chain —
+the same criterion HP6.9 met in the other direction.  It is *structural* rather than
+lucky: at depth ≥ 3 the pop sits at a `some` arm, where
+`replyDonationRecipient_eq_of_outer_some` makes the redirect the identity by theorem.
+
+One mechanical note, and it is this project's own silent-skip rule catching a **gate**
+defect rather than a code one.  A Tier 3 anchor added in this cut lost the closing
+quote of its `bash -lc '…'` argument, so it swallowed the following lines, ran a
+search against the wrong file and **never decided** — `bash -n` passes and the gate
+prints PASS, so only a mutation of its subject reveals the silence.  The mutation
+harness reported it as a negative that would not fire, and
+`scripts/check_anchor_consistency.py` refuses it by name for its own stated reason:
+*"the gate could not read it" and "the gate checked it" must never produce the same
+PASS line*.  All five of this cut's negative anchors are mutation-verified in both
+directions, with the harness reading the gate's **own** commands rather than
+re-spelling them — a harness that writes its own copy of the decision absorbs the
+defect it exists to find.
+
+Three sweeps this cut owed and ran.  The interim contract *at reply-stack depth 2,
+do not read a successful pop as evidence that the context reached its owner* is
+**retired** at its six sites, `SeLe4n/Model/Object/Reply.lean` and the depth-three
+payoff's own docstring included.  HP6.9's acceptance box 4 carried *§3.20's depth-2
+halves are unchanged* as a present-tense claim, which this phase supersedes by
+design; it records the lifecycle and points at box 11 rather than being deleted —
+*an acceptance box is a present-tense claim, so a later phase that supersedes its
+artefacts must sweep it*.  And the claim-set constraint is **earned**: v1.0.0 may
+now say that completing a call chain returns a client's reservation, the register
+row staying open only for HP10.10's own retirement of it.
+
+Files: `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`,
+`SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean`,
+`SeLe4n/Kernel/IPC/Invariant/Defs.lean`,
+`SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean`,
+`SeLe4n/Model/Object/Reply.lean`, `tests/SmpIpcSuite.lean`,
+`scripts/test_tier3_invariant_surface.sh`,
+`scripts/check_claim_evidence_citations.py`, `CLAUDE.md`, `AGENTS.md`,
+`docs/spec/SELE4N_SPEC.md`, `docs/CLAIM_EVIDENCE_INDEX.md`,
+`docs/REGISTERED_DEBT.md`, `docs/gitbook/12-proof-and-invariant-map.md`,
+`docs/planning/DONATION_POP_TRIGGER_PLAN.md`.
+
+Refs: docs/planning/DONATION_POP_TRIGGER_PLAN.md §6 (HP10.9), §8 (box 11)
+
 ## v0.35.52 — WS-HP HP10.8: the frozen arm flips, and the differential found two defects
 
 `frozenReplyDonationRecipient` mirrors HP10.7's redirect clause for clause, over

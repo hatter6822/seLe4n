@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.52.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.53.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3780,8 +3780,10 @@ rather than described: `severAtCut_pop_leaves_no_head` was HP2.3's pin on it, an
 HP6.8 deleted it because its first conjunct was the policy constant at the old
 value.  New code must not read this paragraph as a live reason against the splice —
 the splice is the live policy and the depth-≥ 3 accounting is
-`donationAccountingPreserved_atCallDepthThree`.  What the register still carries is
-the depth-**two** residue, which the splice provably cannot reach: WS-HP HP10.
+`donationAccountingPreserved_atCallDepthThree`.  The depth-**two** residue the splice
+provably cannot reach was WS-HP HP10's, and it is closed at `v0.35.53` by
+`donationAccountingPreserved_atCallDepthTwo`, so the accounting now holds at every
+depth; what the register still carries is HP10.10's documentation closure alone.
 
 **And `severAtCut` IS seL4-MCS's removal — the `v0.35.14` retraction was itself
 wrong, and how it went wrong is the finding** (re-verified at `v0.35.40`).
@@ -3899,7 +3901,7 @@ a licence to delete the reclaim — deleting it reaches a state
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10.1–HP10.8 v0.35.49 → v0.35.52)
+### WS-HP The head-driven donation pop — IN FLIGHT (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10.1–HP10.9 v0.35.49 → v0.35.53)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -3956,7 +3958,7 @@ banner in `IPC/Invariant/Defs.lean` records what replaced it.
 | HP7 | LANDED | v0.35.46 | **The three stated coherence hypotheses retire** — nine declarations deleted with the binding-driven resolver, HP7.1 already done at HP4.4, HP7.4 vacuous, and the fourth stated fact found LIVE |
 | HP8 | LANDED | v0.35.47 | **The frozen mirror splices** — the sever's family deleted, the census's three mirrors, and `FO-043`: the depth-3 witness every shallower scenario structurally could not be |
 | HP9 | LANDED | v0.35.48 | **Witnesses, anchors, documentation, closure** — the depth-4 witness (§3.23), the upstream facts recorded at the code, and acceptance box 10 struck as wrong rather than ticked |
-| HP10 | IN FLIGHT | HP10.1–HP10.5 v0.35.49, HP10.6 v0.35.50, HP10.7 v0.35.51, HP10.8 v0.35.52 | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach; the field and its footprint member are in, and **the reply path's pop now redirects to the origin** |
+| HP10 | IN FLIGHT | HP10.1–HP10.5 v0.35.49, HP10.6 v0.35.50, HP10.7 v0.35.51, HP10.8 v0.35.52, HP10.9 v0.35.53 | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach; the redirect is live on both surfaces and **`donationAccountingPreserved_atCallDepthTwo` is the payoff**, leaving only HP10.10's closure |
 
 **What new code must respect since HP4 (`v0.35.38`).**  Seven things.
 
@@ -4451,8 +4453,11 @@ before `v0.35.42` found the depth-**2** loss, where the removal takes the client
 frame off the *bottom* of its stack and both policies write `none` into the frame
 above — so the splice provably cannot reach it.  What WS-HP earned is the depth-≥ 3
 half.  Closing the row would corrupt the artefact RR8.4's hand-off check reads, so
-v1.0.0 must still not claim that completing a call chain returns a client's
-reservation *unconditionally*: that is HP10's.
+at HP9 v1.0.0 could still not claim that completing a call chain returns a client's
+reservation *unconditionally*: that was HP10's, and **HP10.9 (`v0.35.53`) earned
+it** — `donationAccountingPreserved_atCallDepthTwo`, closed by the reservation's
+recorded origin rather than by any change to the removal.  The row itself retires at
+HP10.10, which is why it is still open at HEAD.
 
 (5) **An acceptance box is a present-tense claim, so a later phase that deletes its
 artefacts must sweep it.**  HP9's closure read the plan's acceptance list against the
@@ -4667,6 +4672,82 @@ neither.**  `frozenDonationOriginRebindable` is `donationOriginRebindable`'s
 counterpart because the frozen surface models the same bindings; a mirror carrying
 the recipient guard alone would redirect on states the kernel refuses, which is
 the direction that matters on a differential surface.
+
+**What new code must respect since HP10.9 (`v0.35.53`).**  The depth-two payoff is
+stated and measured, so the donation accounting holds at **every** reply-stack
+depth.  Six things.
+
+(1) **`donationAccountingPreserved_atCallDepthTwo` derives the reachability answer
+and hypothesises the guards, and the split is not stylistic.**
+`replyStackOuterCaller? st' scId = .ok none` — the very answer that names the wrong
+thread — is a **conclusion**, read off the removal through
+`removeCallerReplyFrame_clears_prev_of_bottom_frame`, so no hypothesis hands the
+payoff over.  The two guards are **hypotheses** because one of them *cannot* be
+derived: `donationOriginRebindable` is **false** at the pre-state, the owner being
+`.blockedOnReply` on exactly the reply being answered, and becomes true at the wake
+`endpointReplyOnCore` performs before the removal.  A cut that "simplifies" the
+statement by hypothesising the resolver's answer or the reachability answer has
+gutted it; Tier 3 negatives refuse both.
+
+(2) **The sever-direction sibling is where the depth-two shape lives.**
+`removeCallerReplyFrame_clears_prev_of_bottom_frame` is
+`removeCallerReplyFrame_splices_reciprocally`'s counterpart: nothing sits below a
+bottom frame, so `spliceFrameBelow?` answers `none`, the splice degenerates to the
+sever, and the frame above is left `prev = none` — *the same value either policy
+writes*, which is the whole reason HP6 could not reach this and HP10 had to.  Its
+`above ≠ rid` is derived from bottom-ness (a frame that were its own frame above
+would carry `prev = some rid`), not assumed; a Tier 3 negative refuses the
+hypothesis.
+
+(3) **The depth-three payoff is byte-identical, and that is the measurement.**
+§3.22 and §3.23 are untouched and the golden trace is byte-identical, so this
+phase is confined to the reachability gap rather than changing the chain — the
+same criterion HP6.9 met in the other direction.  It is *structural* rather than
+lucky: at depth ≥ 3 the pop sits at a `some` arm, where
+`replyDonationRecipient_eq_of_outer_some` makes the redirect the identity by
+theorem.
+
+(4) **§3.20's accounting halves are PAYOFFs now, and they measure the live `.reply`
+SPINE.**  They measured `returnDonatedSchedContextResolved` directly, which was an
+accurate proxy for the pop while nothing redirected and is a proxy that *omits* the
+redirect since HP10.7 — *a proxy is not the fact*.  `replyRemovalOutcome` drives
+`endpointReplyCrossCoreDispatch`, so leg, pop, reversion and migration are all in
+the measurement.  The retired `PAYOFF/COST` and `COST` labels are refused
+tree-wide.
+
+(5) **The decisive comparison is a differential WITHIN the suite, because no
+mutation is available.**  Every mutation of the production code here — the origin
+write, the resolver, the three pops, the dispatch's recipient — fails to
+**elaborate** rather than failing the suite, which is the situation §3.23 recorded
+for the splice's store shape.  So `replyRemovalOutcome` takes the chain as a
+**parameter** and is applied twice: to a chain whose first push recorded an origin,
+and to `pushStore`'s, which predates HP10.4 and records none.  One function, two
+chains differing in exactly one field, opposite outcomes.  A new witness on this
+surface should reach for that shape rather than for a mutation that will not
+compile.
+
+(6) **HP10.4's production write is measured, and it was not before.**  Every
+fixture that carried an origin set the field by hand, so nothing asserted that
+`donateSchedContext` records one — *a witness whose field is supplied by its
+fixture asserts nothing about the production write that is supposed to supply it*.
+`pushOwnerStore` is `pushStore` with the first push undone and `replyRemovalChain`
+runs the live push **twice**, so §3.20 measures both directions of HP10.4: a
+**first** push records the origin, an **onward** push leaves it alone, which is
+what distinguishes an origin from a duplicate of `.donated scId owner`.  The same
+construction asserts that the first push reproduces `pushStore`'s own shape, so
+the hand-built fixture is known to be a state the kernel reaches.
+
+One mechanical note, and it is this project's own silent-skip rule catching a gate
+defect rather than a code one.  A Tier 3 anchor added in this cut lost the closing
+quote of its `bash -lc '…'` argument, so it swallowed the following lines, ran a
+search against the wrong file and **never decided** — `bash -n` passes, the gate
+prints PASS, and only a mutation of its subject reveals the silence.  The mutation
+harness reported it (as a negative that would not fire), and
+`scripts/check_anchor_consistency.py` refuses it by name for exactly the stated
+reason that *"the gate could not read it" and "the gate checked it" must never
+produce the same PASS line*.  **Mutation-test a new negative anchor by breaking the
+relation it forbids** — and read its verdict as a statement about the anchor, not
+only about the tree.
 
 **And the splice is not the whole remedy — depth 2 needs HP10** (registered
 `v0.35.42`).  The register scoped this defect to reply-stack depth ≥ 3 and that

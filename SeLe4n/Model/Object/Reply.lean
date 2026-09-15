@@ -212,7 +212,9 @@ depth three in `tests/SmpIpcSuite.lean` §3.22 and stated as
 `donationAccountingPreserved_atCallDepthThree`.  What it provably cannot reach is
 the depth-**two** loss, where the cut frame is its stack's bottom so both policies
 write `none`: that needs the reservation's *origin* on the `SchedContext` rather
-than stack reachability, and is WS-HP HP10.
+than stack reachability, and is closed at `v0.35.53` by WS-HP HP10.9
+(`donationAccountingPreserved_atCallDepthTwo`), so the accounting holds at every
+depth.
 
 **Both paths do.**  The cancellation path runs `spliceThreadReplyFrameOut`
 immediately before `consumeReplyLink`, and the reply path runs

@@ -1271,7 +1271,8 @@ through `SchedContext.boundThread` and rewrite a binding this theorem says is
 untouched.  What the splice costs, and does not, is stated at
 `cancelledMiddleCallerPolicy`: since HP6.8 the reservation travels outward past the
 cut rather than settling on the innermost live caller, and the depth-2 residue the
-splice provably cannot reach is WS-HP HP10's. -/
+splice provably cannot reach is closed instead by the reservation's recorded origin
+(`donationAccountingPreserved_atCallDepthTwo`, WS-HP HP10.9). -/
 theorem cancelledCallerDonation?_none_below_the_cut
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId) (rid above : SeLe4n.ReplyId)

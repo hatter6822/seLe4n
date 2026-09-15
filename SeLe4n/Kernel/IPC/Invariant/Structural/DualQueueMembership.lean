@@ -4762,6 +4762,105 @@ theorem removeCallerReplyFrame_splices_reciprocally (st st' : SystemState)
         exact hBelow1
 
 open SeLe4n.Model.SystemState in
+/-- **WS-HP HP10.9: removing the BOTTOM frame of a stack clears the downward link
+of the frame above it** — the sever-direction sibling of
+`removeCallerReplyFrame_splices_reciprocally`, and the structural half of the
+depth-two accounting payoff.
+
+Nothing sits below a bottom frame, so `spliceFrameBelow?` answers `none`, the
+splice degenerates to the sever (`spliceReplyFrameOut_eq_sever_of_no_frame_below`),
+and the frame above is left with `prev = none` — it *becomes* the bottom of the
+stack.  That is the same value `severAtCut` wrote, which is precisely why HP6's
+policy flip cannot reach this shape, and why the depth-two residue needs the
+reservation's recorded **origin** rather than a further change to the removal.
+
+Stated at `removeCallerReplyFrame` rather than at the splice, for the reason its
+sibling is: the consume that follows clears the *cut* frame's remaining link, and
+a claim about the splice alone would say nothing about whether that clear
+disturbs the frame it has just written.  It does not, and the argument needs no
+key-distinctness hypothesis — a key at which the post-splice state holds a
+`.reply` is one at which the consume's own TCB lookup fails, so the store it
+would perform there never happens.
+
+`above ≠ rid` is **derived** from `hBottom` rather than assumed: a frame that was
+its own frame above would carry `prev = some rid`, and a bottom frame carries no
+`prev` at all. -/
+theorem removeCallerReplyFrame_clears_prev_of_bottom_frame (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid above : SeLe4n.ReplyId) (r a : Reply)
+    (hObjInv : st.objects.invExt)
+    (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
+    (hBottom : r.prev = none)
+    (hA : st.getReply? above = some a) (hP : a.prev = some rid)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    st'.getReply? above = some { a with prev := none } := by
+  -- Nothing below a bottom frame.
+  have hBelow : spliceFrameBelow? st rid r above = none := by
+    unfold spliceFrameBelow?; rw [hBottom]
+  -- The frame above is not the cut frame itself: it links down to it, and a
+  -- bottom frame links down to nothing.
+  have hNeAR : above ≠ rid := by
+    intro hEq
+    rw [hEq, hR] at hA
+    have hra : r = a := by injection hA
+    rw [← hra, hBottom] at hP
+    exact absurd hP (by simp)
+  -- The splice ran: `rid` resolves, names a frame above, and that frame links back.
+  have hStores : spliceReplyFrameStores st rid above r a
+      = .ok (spliceReplyFrameOutOrSelf st rid) := by
+    obtain ⟨s', hS⟩ := spliceReplyFrameStores_isOk st rid above r a
+    have hOut : spliceReplyFrameOut st rid = .ok s' := by
+      unfold spliceReplyFrameOut
+      rw [hR]
+      simp only [hN, hA, hP, bne_self_eq_false, Bool.false_eq_true, if_false]
+      exact hS
+    have hFold : spliceReplyFrameOutOrSelf st rid = s' := by
+      unfold spliceReplyFrameOutOrSelf; rw [hOut]
+    rw [hFold]; exact hS
+  -- The post-splice value at the frame above: its `prev` is the frame below,
+  -- which there is none of.
+  have hAboveVal := spliceReplyFrameStores_getReply?_above hObjInv hR hN hA hP hStores
+  rw [hBelow] at hAboveVal
+  simp only [Option.map_none] at hAboveVal
+  have hInvSp : (spliceReplyFrameOutOrSelf st rid).objects.invExt :=
+    spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv
+  rw [removeCallerReplyFrame_eq] at hStep
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid (spliceReplyFrameOutOrSelf st rid) with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    -- The consume's first leg writes the cut frame alone.
+    have hFrame1 : ∀ x : SeLe4n.ObjId, x ≠ rid.toObjId →
+        st1.objects[x]? = (spliceReplyFrameOutOrSelf st rid).objects[x]? := by
+      intro x hx
+      unfold consumeReply at hCons
+      cases hGetR : (spliceReplyFrameOutOrSelf st rid).getReply? rid with
+      | none => rw [hGetR] at hCons; cases hCons; rfl
+      | some r0 =>
+        rw [hGetR] at hCons
+        exact storeObject_objects_ne _ st1 rid.toObjId x _ hx hInvSp hCons
+    have hAbove1 : st1.objects[above.toObjId]? = some (.reply { a with prev := none }) := by
+      rw [hFrame1 above.toObjId (fun hx => hNeAR (SeLe4n.ReplyId.toObjId_injective _ _ hx))]
+      exact (getReply?_eq_some_iff _ _ _).mp hAboveVal
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]
+      exact (getReply?_eq_some_iff _ _ _).mpr hAbove1
+    | some tcb =>
+      simp only [hT] at hStep
+      have hT1 : st1.objects[caller.toObjId]? = some (.tcb tcb) :=
+        (getTcb?_eq_some_iff _ _ _).mp hT
+      have hInv1 := consumeReply_preserves_objects_invExt _ st1 rid hInvSp hCons
+      -- A key holding a `.reply` is not the key the TCB store writes.
+      have hNeAC : above.toObjId ≠ caller.toObjId := by
+        intro hx; rw [hx, hT1] at hAbove1; cases hAbove1
+      refine (getReply?_eq_some_iff _ _ _).mpr ?_
+      rw [storeObject_objects_ne st1 st' caller.toObjId above.toObjId _ hNeAC hInv1 hStep]
+      exact hAbove1
+
+open SeLe4n.Model.SystemState in
 /-- **WS-HP HP6.9: the removal moves no scheduling context.**
 
 Every key the removal writes holds an object of the kind it wrote there — the

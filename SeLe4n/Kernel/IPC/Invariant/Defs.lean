@@ -2037,7 +2037,9 @@ inductive CancelledMiddleCallerPolicy where
   chain and its owner is left `.unbound` for good.  At depth two the frame below
   the cut is the bottom of the stack, so this and `spliceOutTheCut` write the same
   value into the frame above and the two cannot be told apart there — which is why
-  the splice provably does not reach the depth-2 loss (WS-HP HP10).
+  the splice provably does not reach the depth-2 loss.  That residue is closed by the
+  reservation's recorded **origin** rather than by a removal policy
+  (`donationAccountingPreserved_atCallDepthTwo`, WS-HP HP10.9).
 
   **This is what seL4-MCS does**, re-verified at `v0.35.40` against upstream
   source at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 — every release that has

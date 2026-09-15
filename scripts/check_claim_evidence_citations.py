@@ -57,6 +57,7 @@ CITATION_EXEMPTIONS: dict[str, str] = {
     "seL4_ReplyRecv": "seL4's own syscall name, cited for fidelity",
     "reply_remove": "seL4's own kernel function name, cited for fidelity",
     "reply_unlink": "seL4's own kernel function name, cited for fidelity",
+    "reply_pop": "seL4's own kernel function name, cited for fidelity",
     "severAtCut_pop_leaves_no_head": (
         "retired at WS-HP HP6.8 (`v0.35.45`) -- its first conjunct was "
         "`cancelledMiddleCallerPolicy = .severAtCut`, so the policy flip deleted it "
