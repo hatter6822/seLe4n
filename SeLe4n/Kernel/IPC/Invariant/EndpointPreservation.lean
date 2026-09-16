@@ -74,7 +74,7 @@ theorem consumeCallerReply_preserves_ipcInvariant
     (fun rr => by exact KernelObject.noConfusion)).mp hObj)
 
 /-- **WS-RM (`v0.35.6`)**: and the removal preserves `schedulerInvariantBundle` —
-the detach it runs first is one more object-store write, so the scheduler is
+the splice it runs first adds only object-store writes, so the scheduler is
 still untouched and the current thread's TCB still survives. -/
 theorem removeCallerReplyFrame_preserves_schedulerInvariantBundle
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)

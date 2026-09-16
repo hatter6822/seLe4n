@@ -806,9 +806,9 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
   -- one — the projection erases the binding fields it touches.
   have hInvR : (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb).objects.invExt :=
     returnDonationToCancelledCaller_preserves_objects_invExt st victim tcb hObjInv
-  -- `v0.35.4`: the arm's fifth write is the frame detach, invisible to every
-  -- observer for the same reason as the return — it writes a Reply's `prev`,
-  -- which the projection strips.  It reads the index completeness the return
+  -- `v0.35.4`: the arm's fifth write is the frame splice, invisible to every
+  -- observer for the same reason as the return — it writes Reply stack links
+  -- only, which the projection strips.  It reads the index completeness the return
   -- carries forward.
   have hCompR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objectIndexSetComplete
     st victim tcb hObjInv hObjSetInv hIdxComplete

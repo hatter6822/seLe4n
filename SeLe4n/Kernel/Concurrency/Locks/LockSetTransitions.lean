@@ -847,8 +847,9 @@ def lockSet_endpointReply (callerTid : ThreadId)
     -- two coincide `insertOrMerge` merges them and the size does not move.
     (donatedHeadReplyId : Option ReplyId := none)
     -- **WS-RM (`v0.35.6`)**: the frame **above** the answered caller's reply
-    -- object, which the removal's detach rewrites (`spliceReplyFrameOut` sets
-    -- its `prev := none`) before the caller link is consumed.  `some` exactly
+    -- object, which the removal's splice rewrites (`spliceReplyFrameOut` points
+    -- its `prev` at the frame below the cut, or clears it at a bottom frame)
+    -- before the caller link is consumed.  `some` exactly
     -- when the answered frame is not a stack head and something still links down
     -- to it -- the shape a *delegated* reply capability answering a middle
     -- caller creates, and the one the pre-`v0.35.6` reply path left wedged.
@@ -932,7 +933,7 @@ def lockSet_endpointReply (callerTid : ThreadId)
   let withState := lockSetExtendOpt withOuter
     (if donatedScId.isSome then some (stateLevelLock, AccessMode.write) else none)
   -- **WS-RM (`v0.35.6`)**: and the frame above the answered one, which the
-  -- removal detaches before consuming.
+  -- removal splices out before consuming.
   let withAbove := lockSetExtendOpt withState
     (answeredFrameAboveReplyId.map (fun rid => (replyLock rid, AccessMode.write)))
   -- **WS-HP HP3.1**: and the frame below it, which the removal's splice
@@ -1034,7 +1035,7 @@ def lockSet_replyRecv (callerTid : ThreadId)
     (preReturnBelowHeadReplyId : Option ReplyId := none)
     (preReturnOuterCallerTid : Option ThreadId := none)
     -- **WS-RM (`v0.35.6`)**: the frame above the answered caller's reply object,
-    -- which the reply leg's removal detaches before consuming the caller link --
+    -- which the reply leg's removal splices out before consuming the caller link --
     -- the same member `lockSet_endpointReply` declares, for the same write, since
     -- this arm's reply leg *is* that transition.  No default: a call site that
     -- omits it must fail to elaborate.
@@ -2093,7 +2094,7 @@ theorem lockSet_endpointReply_caller_tcb_write_mem (callerTid : ThreadId)
     -- **WS-OD (`v0.35.4`)**: at the head arity.
     (donatedHeadReplyId : Option ReplyId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -2236,7 +2237,7 @@ theorem lockSet_endpointReply_belowHead_write_mem (callerTid : ThreadId)
     (replyId : Option ReplyId) (below : ReplyId)
     (outerCallerTid : Option ThreadId) (donatedHeadReplyId : Option ReplyId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -2259,8 +2260,9 @@ theorem lockSet_endpointReply_belowHead_write_mem (callerTid : ThreadId)
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RM (`v0.35.6`)**: and the frame **above** the answered caller's reply
-object, which the removal's detach rewrites (`spliceReplyFrameOut` clears its
-`prev`) before the caller link is consumed.
+object, which the removal's splice rewrites (`spliceReplyFrameOut` points its
+`prev` at the frame below the cut, or clears it at a bottom frame) before the
+caller link is consumed.
 
 The reply-path twin of `lockSet_cancelIpcBlocking_spliced_frame_above_write_mem`,
 which the cancellation path has carried since `v0.35.4`.  Declaring a member and
@@ -2363,7 +2365,7 @@ theorem lockSet_replyRecv_caller_tcb_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -2410,7 +2412,7 @@ theorem lockSet_replyRecv_target_tcb_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -2453,7 +2455,7 @@ theorem lockSet_replyRecv_endpoint_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -2710,7 +2712,7 @@ theorem lockSet_replyRecv_stateLevel_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -2758,7 +2760,7 @@ theorem lockSet_replyRecv_donation_stateLevel_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -2801,7 +2803,7 @@ theorem lockSet_replyRecv_redonation_stateLevel_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -2846,7 +2848,7 @@ theorem lockSet_replyRecv_redonated_sc_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -2891,7 +2893,7 @@ theorem lockSet_replyRecv_donation_server_tcb_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -2935,7 +2937,7 @@ theorem lockSet_replyRecv_redonationOldHead_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -3049,7 +3051,7 @@ theorem lockSet_replyRecv_donatedHead_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -3091,7 +3093,7 @@ theorem lockSet_replyRecv_belowHead_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -3137,7 +3139,7 @@ theorem lockSet_replyRecv_preReturn_sc_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -3176,7 +3178,7 @@ theorem lockSet_replyRecv_preReturn_owner_tcb_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -3215,7 +3217,7 @@ theorem lockSet_replyRecv_preReturn_head_write_mem (callerTid : ThreadId)
     (head : ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -3254,7 +3256,7 @@ theorem lockSet_replyRecv_preReturn_belowHead_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (below : ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -3296,7 +3298,7 @@ theorem lockSet_replyRecv_preReturn_stateLevel_write_mem (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
@@ -3322,7 +3324,7 @@ theorem lockSet_replyRecv_preReturn_stateLevel_write_mem (callerTid : ThreadId)
   iterate 4 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
-/-- **WS-RM (`v0.35.6`)**: and `.replyRecv`'s own detach, which is the `.reply`
+/-- **WS-RM (`v0.35.6`)**: and `.replyRecv`'s own splice, which is the `.reply`
 arm's because it is the same transition — the sibling of
 `lockSet_endpointReply_frameAbove_write_mem` above, for the same reason. -/
 theorem lockSet_replyRecv_frameAbove_write_mem (callerTid : ThreadId)
@@ -5473,7 +5475,7 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
     (preReturnHeadReplyId : Option ReplyId) (preReturnBelowHeadReplyId : Option ReplyId)
     (preReturnOuterCallerTid : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the reply
-    -- path's detach writes.  A bound or membership left at this argument's
+    -- path's splice writes.  A bound or membership left at this argument's
     -- default is a statement about a different footprint.
     (answeredFrameAbove : Option ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the

@@ -165,12 +165,13 @@ over-approximation of it. The donation **pop** writes all three (WS-OD OD3.1,
 `v0.34.126`) and carries its own preservation theorem (OD3.8, `v0.34.132`); the
 donation **push** writes the new frame's two links, the old head's upward link
 and the context's head (OD4.1, `v0.35.2`; five stores since `v0.35.4`) and
-carries `donateSchedContext_preserves_donationChainWellFormed`. The **detach**
-(`v0.35.4`) is the third writer: it cuts a frame out of the *middle* of a stack
-in `O(1)` by clearing the `prev` of the frame above it, which is what the upward
-link exists for and what stops a cancelled middle caller's frame from being left
-on a stack with its caller gone — pinning its Reply and its SchedContext against
-every retype.
+carries `donateSchedContext_preserves_donationChainWellFormed`. The **splice**
+(`v0.35.4`, a sever until WS-HP HP6.3) is the third writer: it takes a frame out
+of the *middle* of a stack in `O(1)` by reconnecting the frames either side of it
+(clearing the frame above's `prev` at a bottom frame, where nothing lies below),
+which is what the upward link exists for and what stops a cancelled middle
+caller's frame from being left on a stack with its caller gone — pinning its Reply
+and its SchedContext against every retype.
 With the push live the predicate is no longer vacuous — a depth-2 Call leaves a
 two-frame stack — which is the order this workstream was numbered for: the
 invariant and its frames landed at OD2, before the transitions that must
@@ -201,7 +202,7 @@ published WCRT or covert-channel figure is recomputed.
 See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.7 for the canonical text.
 
 **The reply path runs `reply_remove` too** (WS-RM, `v0.35.6`).  `v0.35.4` wired
-the detach into the **cancellation** path and left the **reply** path relying on
+the removal into the **cancellation** path and left the **reply** path relying on
 the answered frame being the head — which every reply of the nested Call pattern
 satisfies and a *delegated* reply capability answering out of order does not.
 `removeCallerReplyFrame` is the one removal step, called by

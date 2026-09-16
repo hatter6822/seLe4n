@@ -435,7 +435,7 @@ private def runConsumeChecks : IO Unit := do
 
 /-- **WS-RM (`v0.35.6`)**: `stLinked` with the answered Reply carrying a frame
 **above** it — the shape a delegated reply capability answering out of order
-produces, and the one the detach exists for.
+produces, and the one the splice exists for.
 
 `replyId707` is the answered caller's frame; `replyId708` sits above it, so the
 stack reads `708 -> 707 -> …` and `708.prev = some 707` is the stale reference
@@ -463,9 +463,9 @@ private def stLinkedWithFrameAbove : SystemState :=
     |>.build)
 
 private def runFrameSpliceChecks : IO Unit := do
-  IO.println "--- §3.9 WS-RM: seL4's `reply_remove` — the detach, both directions ---"
+  IO.println "--- §3.9 WS-RM: seL4's `reply_remove` — the splice, both directions ---"
   -- (1) The in-order path: the answered frame has nothing above it, so the
-  -- detach is the identity and the reply is byte-for-byte the pre-WS-RM one.
+  -- splice is the identity and the reply is byte-for-byte the pre-WS-RM one.
   -- A fixture exercising only this path would pass before and after the cut,
   -- which is why the second half below exists.
   assertBool "in-order reply: the answered frame has no frame above it"
@@ -488,7 +488,7 @@ private def runFrameSpliceChecks : IO Unit := do
     (match postDetached.getReply? replyId708 with
      | some r => decide (r.prev = none)
      | none => false)
-  assertBool "...and the detach touches nothing else on that frame"
+  assertBool "...and the splice touches nothing else on that frame"
     (match postDetached.getReply? replyId708, stLinkedWithFrameAbove.getReply? replyId708 with
      | some r, some r0 => r == { r0 with prev := none }
      | _, _ => false)

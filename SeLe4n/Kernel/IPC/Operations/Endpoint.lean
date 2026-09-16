@@ -834,7 +834,7 @@ theorem donationPushFrame?_ok (st : SystemState) (clientTcb : TCB)
 old head`) and becomes the head (`next := .head scId`), and the old head — when
 there is one — now has a frame above it (`next := .frame pushRid`).  The second
 write is what a doubly-linked stack costs at the push and what buys the `O(1)`
-detach: with it, taking a frame out of the middle repairs its two neighbours and
+splice: with it, taking a frame out of the middle repairs its two neighbours and
 nothing else.
 
 Fail-closed on an old head that does not resolve (`.objectNotFound`): under
@@ -1954,9 +1954,9 @@ has, for the same reason.
 linked it was the second `.ok none` state — a cancelled middle caller's frame,
 which nothing could then remove — and the pop bound the target outright with
 that dead frame still heading the context, pinning both objects against every
-retype.  The `severAtCut` policy is unchanged and is now carried out by the
-*detach* at the cancellation (`spliceReplyFrameOut`), so a linked frame always
-has a blocked caller (`Reply.wellFormed`); a frame that validates and has none
+retype.  The removal is carried out by the *splice* at the cancellation
+(`spliceReplyFrameOut` — `severAtCut` until WS-HP HP6.8, `spliceOutTheCut` since
+`v0.35.45`), so a linked frame always has a blocked caller (`Reply.wellFormed`); a frame that validates and has none
 is an invariant violation and is refused on the same fail-closed terms as a link
 that does not validate.
 
@@ -2090,8 +2090,9 @@ middle caller's frame, which nothing then removed from the stack — made the
 resolver answer `none`, and the pop bound the target outright with that dead
 frame still heading the stack: the `severAtCut` policy implemented by *leaving a
 frame behind*, which pinned the frame's Reply object and the context forever
-(neither could be retyped, the Reply could never be linked again).  The policy is
-unchanged and is now implemented by the detach (`spliceReplyFrameOut`), which
+(neither could be retyped, the Reply could never be linked again).  The removal
+is implemented by the splice (`spliceReplyFrameOut`; the policy it carries out was
+`severAtCut` until WS-HP HP6.8 and is `spliceOutTheCut` since `v0.35.45`), which
 takes the cancelled frame off the stack at the cancellation, so a linked frame
 always has a blocked caller (`Reply.wellFormed`).  A frame that validates and has
 none is therefore an invariant violation, and reading it as "bottom of stack"
@@ -3921,14 +3922,14 @@ theorem spliceReplyFrameOut_eq_sever_of_no_frame_below {st st' : SystemState}
     obtain ⟨u, s'⟩ := pr; cases u
     simp
 
-/-- The detach is the identity on a head frame. -/
+/-- The splice is the identity on a head frame. -/
 theorem spliceReplyFrameOut_of_head (st : SystemState) (rid : SeLe4n.ReplyId) (r : Reply)
     (sc : SeLe4n.SchedContextId) (hR : st.getReply? rid = some r)
     (hHead : r.next = some (.head sc)) :
     spliceReplyFrameOut st rid = .ok st := by
   unfold spliceReplyFrameOut; rw [hR]; simp only [hHead]
 
-/-- The detach is the identity on a frame with nothing above it. -/
+/-- The splice is the identity on a frame with nothing above it. -/
 theorem spliceReplyFrameOut_of_no_frame_above (st : SystemState) (rid : SeLe4n.ReplyId)
     (r : Reply) (hR : st.getReply? rid = some r) (hNext : r.next = none) :
     spliceReplyFrameOut st rid = .ok st := by
@@ -3936,8 +3937,8 @@ theorem spliceReplyFrameOut_of_no_frame_above (st : SystemState) (rid : SeLe4n.R
 
 /-- WS-OD (`v0.35.4`): **the frame above `rid`**, if `rid` resolves and its
 `next` names one -- the object `spliceReplyFrameOut` writes.  Resolved from
-the same two fields the detach reads, so the member a cancellation declares for
-the detach (`cancelSplicedFrameAbove?`) and the object the detach stores cannot
+the same two fields the splice reads, so the member a cancellation declares for
+the splice (`cancelSplicedFrameAbove?`) and the object the splice stores cannot
 disagree: `replyFrameAbove?_of_splice_store` is the relation. -/
 def replyFrameAbove? (st : SystemState) (rid : SeLe4n.ReplyId) : Option SeLe4n.ReplyId :=
   match st.getReply? rid with
@@ -4039,8 +4040,8 @@ theorem spliceReplyFrameOut_serviceRegistry_eq {st st' : SystemState} {rid : SeL
   · rfl
   · exact spliceReplyFrameStores_serviceRegistry_eq hS
 
-/-- The detach writes a Reply, so a notification in the post-state was one in the
-pre-state. -/
+/-- The splice writes only Reply objects, so a notification in the post-state was
+one in the pre-state. -/
 theorem spliceReplyFrameOut_notification_backward {st st' : SystemState}
     {rid : SeLe4n.ReplyId} (hObjInv : st.objects.invExt)
     (h : spliceReplyFrameOut st rid = .ok st')
@@ -4051,7 +4052,7 @@ theorem spliceReplyFrameOut_notification_backward {st st' : SystemState}
   · rw [← hEq]; exact hNtfn
   · rw [hNtfn] at hPost; cases hPost
 
-/-- The detach is invisible to every typed TCB read. -/
+/-- The splice is invisible to every typed TCB read. -/
 theorem spliceReplyFrameOut_getTcb?_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (hObjInv : st.objects.invExt)
     (h : spliceReplyFrameOut st rid = .ok st') (tid : SeLe4n.ThreadId) :
@@ -4583,7 +4584,7 @@ theorem answeredFrameHeadContext?_eq_some {st : SystemState} {target : SeLe4n.Th
     intro h
     exact ⟨rid, rfl, (replyFrameHeadHolder?_eq_some h).1, (replyFrameHeadHolder?_eq_some h).2⟩
 
-/-- WS-RM (`v0.35.6`): **the detach folded to the identity on a refusal** — the
+/-- WS-RM (`v0.35.6`): **the splice folded to the identity on a refusal** — the
 one spelling of "take the frame above off this frame's stack, or leave the state
 alone".  Both removal paths need it and neither may fail on it, so it is defined
 once here rather than answered separately at each.
@@ -4718,10 +4719,10 @@ theorem spliceReplyFrameOutOrSelf_preserves_reply_caller_and_headLink
     · exact spliceReplyFrameStores_reply_caller_and_headLink hInv hR hN hA hP hS q rq hq
 
 -- ----------------------------------------------------------------------------
--- WS-RM (`v0.35.6`): the TCB-keyed detach's read/write algebra
+-- WS-RM (`v0.35.6`): the TCB-keyed splice's read/write algebra
 -- ----------------------------------------------------------------------------
 
-/-- `v0.35.4`: the detach, decomposed — the identity (no reply link, no frame
+/-- `v0.35.4`: the splice, decomposed — the identity (no reply link, no frame
 above, or a refused repair), or one `spliceReplyFrameOut` that succeeded. -/
 theorem spliceThreadReplyFrameOut_cases (st : SystemState) (tcb : TCB) :
     spliceThreadReplyFrameOut st tcb = st ∨
@@ -4735,7 +4736,7 @@ theorem spliceThreadReplyFrameOut_cases (st : SystemState) (tcb : TCB) :
     · exact Or.inl h
     · exact Or.inr ⟨rid, hRid, h⟩
 
-/-- `v0.35.4`: the detach is the identity on a frame with nothing above it — the
+/-- `v0.35.4`: the splice is the identity on a frame with nothing above it — the
 shape every cancellation of a head or bottom frame, and every successful reclaim,
 leaves. -/
 theorem spliceThreadReplyFrameOut_eq_self_of_no_frame_above (st : SystemState) (tcb : TCB)
@@ -4773,7 +4774,7 @@ theorem spliceThreadReplyFrameOut_preserves_objects_invExt (st : SystemState) (t
   · rw [h]; exact hInv
   · exact spliceReplyFrameOut_preserves_objects_invExt hInv h
 
-/-- The detach writes at most one Reply, so every stored TCB is where it was. -/
+/-- The splice writes only Reply objects, so every stored TCB is where it was. -/
 theorem spliceThreadReplyFrameOut_tcb_eq (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB)
     (hk : st.objects[k]? = some (.tcb t0)) :
@@ -4818,7 +4819,7 @@ statement outright.  Sequencing leaves every one of those theorems untouched, an
 is also what seL4 does.
 
 On a frame with nothing above it — every head, every bottom frame, and every
-Reply the tree consumed before the stack became doubly linked — the detach is the
+Reply the tree consumed before the stack became doubly linked — the splice is the
 identity and this **is** `consumeCallerReply`, definitionally
 (`removeCallerReplyFrame_eq_consume_of_no_frame_above`). -/
 def removeCallerReplyFrame (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
@@ -4826,14 +4827,14 @@ def removeCallerReplyFrame (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
   fun st => SystemState.consumeCallerReply caller rid (spliceReplyFrameOutOrSelf st rid)
 
 -- ----------------------------------------------------------------------------
--- WS-RM (`v0.35.6`): the folded detach's read/write algebra
+-- WS-RM (`v0.35.6`): the folded splice's read/write algebra
 -- ----------------------------------------------------------------------------
 --
 -- Each entry is the identity on the refusal arm and the corresponding
 -- `spliceReplyFrameOut` fact on the other, so nothing new is argued here: the
 -- fold inherits the primitive's algebra verbatim.
 
-/-- The `cdt` is not an object-store field, so the detach leaves it alone. -/
+/-- The `cdt` is not an object-store field, so the splice leaves it alone. -/
 theorem spliceReplyFrameOut_cdt_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (h : spliceReplyFrameOut st rid = .ok st') : st'.cdt = st.cdt := by
   rcases spliceReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩
@@ -4846,7 +4847,7 @@ theorem spliceReplyFrameOut_cdtNodeSlot_eq {st st' : SystemState} {rid : SeLe4n.
   · rfl
   · exact spliceReplyFrameStores_cdtNodeSlot_eq hS
 
-/-- The detach refuses only where there is a frame above to repair, so a `rid`
+/-- The splice refuses only where there is a frame above to repair, so a `rid`
 with none is the identity on either arm. -/
 theorem spliceReplyFrameOutOrSelf_eq_self_of_no_frame_above (st : SystemState)
     (rid : SeLe4n.ReplyId) (hNone : replyFrameAbove? st rid = none) :
@@ -5054,7 +5055,7 @@ theorem spliceReplyFrameOutOrSelf_decision (st : SystemState) (rid : SeLe4n.Repl
 -- Each entry composes the fold's fact above with `consumeCallerReply`'s, which
 -- is why none of them needs an argument of its own.
 
-/-- The removal is the consume, run at the state the detach left. -/
+/-- The removal is the consume, run at the state the splice left. -/
 theorem removeCallerReplyFrame_eq (st : SystemState) (caller : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) :
     removeCallerReplyFrame caller rid st
@@ -5131,7 +5132,7 @@ theorem removeCallerReplyFrame_nonTcbNonReply_agree (st st' : SystemState)
   exact spliceReplyFrameOutOrSelf_non_reply_agree st rid hObjInv s k hkR
 
 /-- Every stored TCB survives the removal, with only the answered caller's
-`replyObject` cleared: the detach writes no TCB and the consume's TCB rewrite
+`replyObject` cleared: the splice writes no TCB and the consume's TCB rewrite
 preserves every field the IPC surface reads. -/
 theorem removeCallerReplyFrame_tcb_forward (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
@@ -5173,7 +5174,7 @@ theorem removeCallerReplyFrame_replyObject_none (st : SystemState)
   exact SystemState.consumeCallerReply_replyObject_none _ caller rid
     (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) result tcb' hRun hGetT
 
-/-- The consumed Reply reads back as `Reply.consumed` of the record the *detach*
+/-- The consumed Reply reads back as `Reply.consumed` of the record the *splice*
 left — which is the pre-state record whenever the consumed frame is not itself
 the frame above (it never is: a frame is not above itself under
 `prevLinkReciprocal`, and `replyFrameAbove?` names a different key). -/
@@ -5189,11 +5190,12 @@ theorem removeCallerReplyFrame_getReply?_caller_none (st : SystemState)
     (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hGet result hRun
 
 /-- **WS-RM (`v0.35.6`): the removal frees the consumed Reply**, stated on the
-*pre-state's* Reply.  The detach rewrites `rid`'s own frame only in the
-degenerate case where it links to itself, which no state satisfying
-`donationChainWellFormed` has; the existential tolerates that rather than
-assuming it away, and `caller = none` — the only projection the linkage
-conjuncts read here — is the same either way. -/
+*pre-state's* Reply.  The splice rewrites `rid`'s own frame whenever a frame
+below reciprocates (its third store clears the cut frame's `prev`, seL4's
+`reply_unlink` downward half), so the record the consume acts on is the pre-state
+record with at most its stack links moved (`spliceReplyFrameOutOrSelf_reply_rewrite`);
+the existential is stated over that record, and `caller = none` — the only
+projection the linkage conjuncts read here — is the same either way. -/
 theorem removeCallerReplyFrame_getReply?_free (st : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (r : Reply)
     (hObjInv : st.objects.invExt)
@@ -5210,7 +5212,7 @@ theorem removeCallerReplyFrame_getReply?_free (st : SystemState)
 
 /-- **WS-RM (`v0.35.6`): a stack *head* keeps its links across the removal.**
 `Reply.consumed_of_head` is deliberate — the donation pop that follows in the same
-transition validates the head by exactly this link — and the detach is the
+transition validates the head by exactly this link — and the splice is the
 identity on a head (a `.head` names no frame above), so the frame a reply answered
 still heads the same context afterwards.  This is what lets the composite payoff
 locate the relaxed frame as the one the pop is about to clear. -/
@@ -5287,8 +5289,8 @@ leg consumes the target's `replyObject` (`consumeCallerReply`) *before* the
 donation return runs, and `.replyRecv` has the same shape, so by the time this
 operation executes the link that would name the outer caller is gone.  It is
 therefore resolved from the **pre**-state by `replyStackOuterCaller?` and passed
-in — the discipline `recordedReplyServer?` and `replyDonationOwnerHome` already
-follow in the same dispatch.
+in — the discipline `recordedReplyServer?`, `replyDonationHolderHome` and
+`replyDonationRecipientHome` already follow in the same dispatch.
 
 **This phase landed inert** (OD3, before OD4.1's push existed): with no context
 heading a stack, `donationHeadOf?` answers `none`, the head pop is the identity,

@@ -508,8 +508,8 @@ theorem consumeCallerReply_preserves_projectionOnCore (ctx : LabelingContext)
     (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
 
 /-- WS-RM (`v0.35.6`): the per-core form of
-`removeCallerReplyFrame_preserves_projection`.  The detach the removal adds ahead
-of the consume writes one Reply's `prev`, which `projectKernelObject` strips, and
+`removeCallerReplyFrame_preserves_projection`.  The splice the removal adds ahead
+of the consume writes only Reply stack links, which `projectKernelObject` strips, and
 neither leg touches the scheduler or the machine registers, so the per-core
 congruence applies on every core under exactly the consume's own hypotheses. -/
 theorem removeCallerReplyFrame_preserves_projectionOnCore (ctx : LabelingContext)

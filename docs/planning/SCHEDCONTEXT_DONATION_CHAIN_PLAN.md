@@ -33,10 +33,10 @@
 > (`Reply.next : ReplyStackLink` replaces `donatedSc`), which is why rows below
 > that name `donatedSc`, `storeDonationHeadClear` or
 > `not_mem_donationChainFrom_of_not_donating` describe the structure as it stood
-> when they landed rather than as it stands now.  The residual — the **reply**
-> path does not yet detach — is **WS-RM**
-> ([`REPLY_FRAME_REMOVAL_PLAN.md`](REPLY_FRAME_REMOVAL_PLAN.md)).  See
-> `CHANGELOG.md` at `v0.35.4`.
+> when they landed rather than as it stands now.  The residual at that version — the
+> **reply** path did not yet take the answered frame off its stack — was **WS-RM**
+> ([`REPLY_FRAME_REMOVAL_PLAN.md`](REPLY_FRAME_REMOVAL_PLAN.md)), closed at
+> `v0.35.6`.  See `CHANGELOG.md` at `v0.35.4`.
 
 ## 1. Phase goal
 

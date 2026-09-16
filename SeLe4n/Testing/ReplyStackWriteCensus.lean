@@ -643,7 +643,7 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Model.SystemState.consumeCallerReply,
       .states [`SeLe4n.Kernel.consumeCallerReply_preserves_donationChainWellFormed,
                `SeLe4n.Kernel.consumeCallerReply_head_preserves_donationChainWellFormedExcept])
-    -- seL4's `reply_remove`: the detach, then the unlink.  This is the step both
+    -- seL4's `reply_remove`: the splice, then the unlink.  This is the step both
     -- reply spines run, and the one a new reply path must call rather than
     -- reaching for the consume.
   , (`SeLe4n.Kernel.removeCallerReplyFrame,
@@ -690,7 +690,7 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.storeDonationHeadPop)
   , (`SeLe4n.Kernel.FrozenOps.frozenReturnDonatedSchedContext,
       .mirrors `SeLe4n.Kernel.returnDonatedSchedContext)
-    -- The detach itself, its total fold, and the thread-keyed wrapper the
+    -- The splice itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
     -- **WS-HP HP6.3**: the composed store step is a *half-step* of the operation
     -- that validates it.  It cannot state a chain result of its own: given only
@@ -840,7 +840,7 @@ entries are.  The derived half is exercised in place — unlike the export censu
 planting a write site here costs nothing, since a `def` emits no symbol. -/
 
 /-- **The bare consume the plan asks this gate to catch**: a transition that
-clears a caller's Reply link with no detach anywhere in it.  This is WS-RM's own
+clears a caller's Reply link with no splice anywhere in it.  This is WS-RM's own
 defect, in miniature. -/
 private def censusWitnessBareConsume (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
     SeLe4n.Model.Kernel Unit :=

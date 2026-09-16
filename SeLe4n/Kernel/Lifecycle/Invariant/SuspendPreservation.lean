@@ -719,7 +719,7 @@ holder whose binding is not a donation naming this caller. -/
   unfold returnDonationToCancelledCaller
   rw [h]
 
-/-- The detach writes a Reply, never a notification. -/
+/-- The splice writes only Reply objects, never a notification. -/
 theorem spliceThreadReplyFrameOut_preserves_ipcInvariant (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
     ipcInvariant (spliceThreadReplyFrameOut st tcb) := by
@@ -942,8 +942,8 @@ lemma today, which is why the hypotheses cost nothing; a caller that needs the
 unconditional form needs a semantic-equality frame instead.
 
 `v0.35.4` added the second hypothesis for the same reason: the reply arm's frame
-detach is a `storeObject` too, on a caller whose frame has a frame above it, so
-the arm keeps the bookkeeping definitionally only where that detach is inert. -/
+splice is a `storeObject` too, on a caller whose frame has a frame above it, so
+the arm keeps the bookkeeping definitionally only where that splice is inert. -/
 theorem cancelIpcBlocking_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hNoDonation : cancelledCallerDonation? st tid tcb = none)
@@ -1905,7 +1905,7 @@ theorem cancelIpcBlocking_tcb_lookup
     obtain ⟨t₀, hL0, hAff0⟩ :=
       returnDonationToCancelledCaller_tcb_lookup st tid tcb hInv k t0 hPre
     have hInvR := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
-    -- `v0.35.4`: the frame detach writes at most a Reply, so the TCB is untouched.
+    -- `v0.35.4`: the frame splice writes only Reply objects, so the TCB is untouched.
     have hLD := spliceThreadReplyFrameOut_tcb_eq _ tcb hInvR k t₀ hL0
     have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
     obtain ⟨t₁, hL1, hAff1⟩ :=
@@ -2015,7 +2015,7 @@ theorem cancelIpcBlocking_getTcb?_none
         (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
       tid tcb).getTcb? tid = none
     rw [returnDonationToCancelledCaller_eq_self_of_getTcb?_none st tid tcb hT]
-    -- `v0.35.4`: the frame detach writes at most a Reply, so the victim's key
+    -- `v0.35.4`: the frame splice writes only Reply objects, so the victim's key
     -- still holds no TCB after it.
     have hTD : (spliceThreadReplyFrameOut st tcb).getTcb? tid = none := by
       rw [spliceThreadReplyFrameOut_getTcb?_eq st tcb hInv tid]; exact hT

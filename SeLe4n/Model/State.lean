@@ -3412,7 +3412,7 @@ original thread's scheduling context to an unrelated thread, in another domain,
 driven by object reuse.
 
 Since `v0.35.4` the stack is doubly linked (seL4's `replyPrev` / `replyNext`), a
-cancelled caller's frame is taken off its stack in `O(1)` by the detach, and a
+cancelled caller's frame is taken off its stack in `O(1)` by the splice, and a
 consumed frame leaves the structure as it is consumed (`Reply.consumed`) — so
 under `donationChainWellFormed` a Reply with no caller carries no link and this
 barrier reduces to the single-use one.  It stays a conjunction because that is
@@ -3439,8 +3439,8 @@ the dynamic half of single-use.  No-op if the reply is absent.
 cleared, and the stack links cleared too unless the frame heads a stack (the
 donation pop that follows the reply leg in the same transition takes a head
 off).  One store, as before; what changed is the record, so a frame that no pop
-will ever reach — the top of a part the detach cut off — leaves the structure
-here rather than pinning its object forever.  See `Reply.consumed`. -/
+will ever reach — the cut frame the splice has already taken out from between its
+neighbours — leaves the structure here rather than pinning its object forever.  See `Reply.consumed`. -/
 def consumeReply (rid : SeLe4n.ReplyId) : Kernel Unit :=
   fun st =>
     match st.getReply? rid with

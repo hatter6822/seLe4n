@@ -231,7 +231,7 @@ def cancelDonationStackValid (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TC
     Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder) →
     replyStackOuterCallerValid (Lifecycle.Suspend.abortHolderPendingIpc st holder) scId holder v
 
-/-- `v0.35.4`: the cancelled caller's frame detach writes at most one Reply, so
+/-- `v0.35.4`: the cancelled caller's frame splice writes only Reply objects, so
 every binding reads through unchanged. -/
 theorem spliceThreadReplyFrameOut_sameSchedContextBindings (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) :
@@ -581,8 +581,8 @@ theorem consumeReplyLink_passiveServerIdleFrame (st : SystemState)
       (clearReplyObjectCaller_passiveServerIdleFrame _ rid
         (Lifecycle.Suspend.clearTcbReplyObject_preserves_objects_invExt st tid hInv))
 
-/-- `v0.35.4`: the cancelled caller's frame detach frames `passiveServerIdle` —
-its one write lands on a `.reply` value, whose key can never hold a TCB, and it
+/-- `v0.35.4`: the cancelled caller's frame splice frames `passiveServerIdle` —
+its writes all land on `.reply` values, whose keys can never hold a TCB, and it
 touches no scheduler slot. -/
 theorem spliceThreadReplyFrameOut_passiveServerIdleFrame (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) :
@@ -764,7 +764,7 @@ theorem cancelIpcBlocking_passiveServerIdleFrame
     have hF1 := returnDonationToCancelledCaller_passiveServerIdleFrame st v tcbV hInv hMem
     have hI1 := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
-    -- `v0.35.4`: the frame detach writes at most a Reply, which frames the conjunct.
+    -- `v0.35.4`: the frame splice writes only Reply objects, which frames the conjunct.
     have hFD := spliceThreadReplyFrameOut_passiveServerIdleFrame
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hI1
     have hID := spliceThreadReplyFrameOut_preserves_objects_invExt
@@ -924,7 +924,7 @@ theorem cancelIpcBlocking_replyArm_noDonation_tcb_frame (st : SystemState)
     unfold Lifecycle.Suspend.cancelIpcBlocking
     rw [hBlocked, Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hNoDonation]
   rw [hArm]
-  -- `v0.35.4`: the frame detach writes at most a Reply, so every TCB is untouched.
+  -- `v0.35.4`: the frame splice writes only Reply objects, so every TCB is untouched.
   have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt st tcbV hInv
   refine consumeReplyLink_other_tcb_eq _ v tcbV
     (Lifecycle.Suspend.restoreToReadyCancelled_invExt _ v hInvD) k t0 hNe ?_
@@ -1191,9 +1191,9 @@ theorem cancelIpcBlocking_replyArm_tcb_frame (st : SystemState)
   -- writes the victim's TCB and a Reply object.
   have hInvR : (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).objects.invExt :=
     Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt st v tcbV hInv
-  -- `v0.35.4`: the frame detach between the reclaim and the restore writes at
-  -- most a Reply, so the TCB reads through it.
-  have hDetach : (spliceThreadReplyFrameOut
+  -- `v0.35.4`: the frame splice between the reclaim and the restore writes only
+  -- Reply objects, so the TCB reads through it.
+  have hSplice : (spliceThreadReplyFrameOut
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV).objects[k]?
         = some (.tcb t0) :=
     spliceThreadReplyFrameOut_tcb_eq _ tcbV hInvR k t0 hReclaim
@@ -1205,7 +1205,7 @@ theorem cancelIpcBlocking_replyArm_tcb_frame (st : SystemState)
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v _).objects[k]?
       = some (.tcb t0)
   rw [restoreToReadyStaging_objects_ne _ v _ k hInvD hkV]
-  exact hDetach
+  exact hSplice
 
 -- ============================================================================
 -- WS-OD OD5.2 — `.tcbSuspend` of a caller, at every chain depth
@@ -1293,7 +1293,7 @@ theorem cancelledCallerDonation?_none_below_the_cut
 there.**
 
 The payoff for `.tcbSuspend`: below the cut the reply arm is the teardown -- the
-`O(1)` detach of the victim's frame from its stack, the `.ipcCancelled` restore
+`O(1)` splice of the victim's frame out of its stack, the `.ipcCancelled` restore
 and the reply-link consume -- with no donation write at all.  So the depth-≥ 3
 case needs no binding argument at all since HP5.3 (the reclaim declines on the
 *stack*, which the removal is about anyway), which is what makes the removal cheap
@@ -1445,26 +1445,34 @@ theorem clearTcbReplyObject_getReply?_eq (st : SystemState) (tid : SeLe4n.Thread
 /-! With the doubly-linked stack the cancellation's reply arm is a chain
 **writer** on two counts, and neither reaches `donationChainWellFormed_of_frame`:
 
-* the `O(1)` detach (`spliceReplyFrameOut`, seL4's `reply_remove_tcb` on a
-  non-head frame) clears the `prev` of the frame above the cancelled caller's;
+* the `O(1)` splice (`spliceReplyFrameOut`, seL4's `reply_remove_tcb` on a
+  non-head frame, with the middle case spliced rather than severed since WS-HP
+  HP6.3) re-points the `prev` of the frame above the cancelled caller's at the
+  frame below it, links that frame back up, and clears the cut frame's own `prev`
+  — or, at a bottom frame, clears the frame above's `prev` alone;
 * the reply-link consume (`clearReplyObjectCaller`, storing `Reply.consumed`)
   clears the cancelled caller's own two links unless the frame heads a context.
 
-So each carries a preservation theorem.  The detach needs no hypothesis: it
-shortens one stack and repairs the only link that named the frame it cut
-(`donationChainWalk_exists_of_agree_or_cut`).  The consume needs two facts about
-the frame it clears, both established by the detach that runs first: the frame
-heads no context (a head is popped by the reclaim, never consumed in place), and
-no frame's `prev` still names it — which is exactly what the detach guarantees
-(`spliceThreadReplyFrameOut_unreferenced`).  The stale *upward* link the frame
-below the cut keeps (`next = .frame victim`) is one the invariant deliberately
-does not constrain: nothing trusts an upward link that is not answered from
-above, which is what lets the cut be `O(1)`. -/
+So each carries a preservation theorem.  The splice needs no hypothesis: it
+reconnects the two frames either side of the cut
+(`spliceReplyFrameOut_preserves_donationChainWellFormed`), or — at a bottom frame,
+the degenerate sever — shortens the stack by one and repairs the only link that
+named the frame it cut (`donationChainWalk_exists_of_agree_or_cut`).  The consume
+needs two facts about the frame it clears, both established by the splice that
+runs first: the frame heads no context (a head is popped by the reclaim, never
+consumed in place), and no frame's `prev` still names it — which is exactly what
+the splice guarantees (`spliceThreadReplyFrameOut_unreferenced`).  A stale
+*upward* link (`next = .frame victim` on a frame below whose own link did not
+reciprocate) survives only the degenerate arm, and is one the invariant
+deliberately does not constrain: nothing trusts an upward link that is not
+answered from above, which is what keeps the cut `O(1)`. -/
 
-/-- `v0.35.4`: **the detach preserves the chain invariant** — one Reply store that
-clears the `prev` of a frame whose `next` is unchanged, so every reciprocity
-clause is either untouched or made vacuous, and the walk from the frame's head
-stops at it. -/
+/-- `v0.35.4`: **the splice preserves the chain invariant** — since WS-HP HP6.3
+three Reply stores that reconnect the frames either side of the cut and clear the
+cut frame's own `prev` (one store, clearing the frame above's `prev`, at a bottom
+frame), so every reciprocity clause is either untouched or re-established, and
+the walk from the frame's head continues past the cut — or, at the bottom, stops
+at it. -/
 theorem spliceReplyFrameOut_preserves_donationChainWellFormed {st st' : SystemState}
     {rid : SeLe4n.ReplyId} (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
     (h : spliceReplyFrameOut st rid = .ok st') : donationChainWellFormed st' := by
@@ -1724,8 +1732,8 @@ theorem spliceReplyFrameOut_preserves_donationChainWellFormed {st st' : SystemSt
             fuel).1 (.head c) sc.scReply chain hWalk (by rintro ⟨hx, -⟩; cases hx)
         exact ⟨fuel, chain', hWalk'⟩
 
-/-- `v0.35.4`: the cancelled caller's frame detach preserves the chain — the
-identity where there is nothing to detach, one `spliceReplyFrameOut` otherwise. -/
+/-- `v0.35.4`: the cancelled caller's frame splice preserves the chain — the
+identity where there is nothing to splice out, one `spliceReplyFrameOut` otherwise. -/
 theorem spliceThreadReplyFrameOut_preserves_donationChainWellFormed (st : SystemState)
     (tcb : TCB) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st) :
     donationChainWellFormed (spliceThreadReplyFrameOut st tcb) := by
@@ -1745,7 +1753,7 @@ theorem spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed (st : System
 /-- **WS-RM (`v0.35.6`): after the fold, no stored Reply's `prev` names `rid`.**
 
 This is the producer for the consume's `hUnreferenced` obligation, and it is why
-the detach must run **before** the consume rather than beside it: `Reply.consumed`
+the splice must run **before** the consume rather than beside it: `Reply.consumed`
 clears a non-head frame's `next`, so a frame still linking down to `rid` would
 lose its reciprocity and every later walk would refuse it.
 
@@ -1833,7 +1841,7 @@ theorem spliceReplyFrameOutOrSelf_unreferenced (st : SystemState)
     exact hNo r0 q rq ((SystemState.getReply?_eq_some_iff _ _ _).mpr hR0) hR0next
       ((SystemState.getReply?_eq_some_iff _ _ _).mpr hQ) hPrevQ
 
-/-- `v0.35.4`: **after the detach, no frame's `prev` names the cancelled caller's
+/-- `v0.35.4`: **after the splice, no frame's `prev` names the cancelled caller's
 frame** — the TCB-keyed instance of `spliceReplyFrameOutOrSelf_unreferenced`,
 which answers the same question for whichever `ReplyId` the thread holds. -/
 theorem spliceThreadReplyFrameOut_unreferenced (st : SystemState) (tcb : TCB)
@@ -1849,7 +1857,7 @@ theorem spliceThreadReplyFrameOut_unreferenced (st : SystemState) (tcb : TCB)
 
 /-- **WS-RM (`v0.35.6`): the object-store effect of consuming a reply link
 preserves the chain**, when the frame heads no context and no frame's `prev`
-names it — the two facts a detach run beforehand establishes.
+names it — the two facts a splice run beforehand establishes.
 
 Stated over the *store effect* (`hAt` / `hOther`) rather than over an operation,
 because the tree spells that effect twice — `consumeReply` on the reply path and
@@ -2015,7 +2023,7 @@ theorem consumeCallerReply_preserves_donationChainWellFormed (st st' : SystemSta
           ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hStep) hChain1
 
 /-- `v0.35.4`: **the cancellation's reply-link sever preserves the donation
-chain**, under the two facts the detach that precedes it establishes about the
+chain**, under the two facts the splice that precedes it establishes about the
 victim's frame.  The TCB half frames the chain outright; the Reply half is
 `clearReplyObjectCaller_preserves_donationChainWellFormed`, with both facts
 carried across the TCB write (which moves no Reply). -/
@@ -2186,7 +2194,7 @@ for a frame that heads no context, with **no** side condition beyond `invExt` an
 the chain itself.
 
 `hUnreferenced` — the fact the consume needs and cannot establish — is discharged
-by the detach that runs first (`spliceReplyFrameOutOrSelf_unreferenced`), on all
+by the splice that runs first (`spliceReplyFrameOutOrSelf_unreferenced`), on all
 three of its arms.  That is the whole reason the removal is a *sequence* rather
 than a fold: run the other way round, the consume would clear a non-head frame's
 `next` while the frame above still linked down to it, and every later walk to that
@@ -2237,7 +2245,7 @@ theorem removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept
     (hR : st.getReply? rid = some r) (hHead : r.next = some (.head scId))
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
     donationChainWellFormedExcept st' rid := by
-  -- On a head the detach is the identity: a `.head` link names no frame above.
+  -- On a head the splice is the identity: a `.head` link names no frame above.
   have hFold : spliceReplyFrameOutOrSelf st rid = st :=
     spliceReplyFrameOutOrSelf_eq_self_of_no_frame_above st rid
       (replyFrameAbove?_of_head st rid r scId hR hHead)

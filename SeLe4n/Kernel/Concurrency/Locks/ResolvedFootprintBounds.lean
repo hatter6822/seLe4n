@@ -256,11 +256,12 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twenty (st : SystemState)
 /-- **WS-RM (`v0.35.6`): eighteen — and since WS-HP HP6.2 (`v0.35.44`) with **no
 hypothesis at all**.**
 
-The detach's member costs the *reachable* footprint nothing, and this is the
+The splice's members cost the *reachable* footprint nothing, and this is the
 theorem that says so: the answered frame has a frame above it exactly when it is
 not a stack head, so the three members the pop contributes are absent whenever the
-detach's one is present, and a blocking `.replyRecv` that detaches declares
-**sixteen**, two fewer than one that pops.  Eighteen bounds both branches and both
+splice's two are present, and a blocking `.replyRecv` that splices declares
+**seventeen**, one fewer than one that pops (sixteen, two fewer, until WS-HP HP3.1
+declared the frame below the cut).  Eighteen bounds both branches and both
 groups.
 
 **What HP6.2 changed is the price of saying it.**  Under the binding-driven
@@ -438,7 +439,7 @@ theorem lockSet_cancelIpcBlocking_size_le (victimTid : SeLe4n.ThreadId)
   -- WS-OD OD3.7: eleven — the two objects the hand-back reaches below the head.
   -- WS-OD (`v0.35.4`): thirteen — the reclaimed head and the detached frame.
   -- **WS-HP HP3.1**: fourteen — the frame below the cut, which the splice
-  -- re-links upward in the same step as the detach.
+  -- re-links upward in the same step as the frame above's rewrite.
   refine Nat.le_trans (size_le_14 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
   simp only [List.length_cons, List.length_nil]
   omega
@@ -573,7 +574,7 @@ SchedContext, the donation holder, the victim's two splice neighbours, (WS-OD
 OD1.5) the holder's endpoint and *its* two splice neighbours, (WS-OD OD3.5) the
 state-level lock, (WS-OD OD3.7) the two objects the hand-back reaches below the
 reply-stack head, (WS-OD `v0.35.4`) the head the reclaim clears and the frame
-the detach unlinks, and (WS-HP HP3.1) the frame below the cut, which the splice
+above the cut, which the splice rewrites, and (WS-HP HP3.1) the frame below the cut, which the splice
 re-links upward.  The bound is thirteen because the members are
 **arm-selected**, and selected for a checkable reason rather than by
 convention: every resolver keys on `tcb.ipcState`.  `cancelledCallerDonation?`

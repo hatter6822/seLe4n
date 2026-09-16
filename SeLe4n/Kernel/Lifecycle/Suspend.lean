@@ -679,8 +679,12 @@ structure, so the parameter survives only to keep 93 call sites and every
 statement's arity unchanged.  Pinned rather than left to an underscore, for the
 reason `endpointReplyCrossCoreDispatch_independent_of_replier` is: a reader cannot
 tell from a name whether an argument is consulted, and a later cut that starts
-reading it would silently reintroduce the identity check this flip removed. -/
-@[simp] theorem cancelledCallerDonation?_independent_of_victim
+reading it would silently reintroduce the identity check this flip removed.
+
+A plain theorem, not a `@[simp]` lemma (the post-landing audit, `v0.35.62`): its
+right-hand side has a variable the left does not, which simp can never
+instantiate, so the attribute it carried could never fire. -/
+theorem cancelledCallerDonation?_independent_of_victim
     (st : SystemState) (t₁ t₂ : SeLe4n.ThreadId) (tcb : TCB) :
     cancelledCallerDonation? st t₁ tcb = cancelledCallerDonation? st t₂ tcb := rfl
 

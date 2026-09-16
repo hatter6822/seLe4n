@@ -1090,7 +1090,7 @@ theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
   -- two objects the pop reaches at call depth ≥ 2.  **WS-OD (`v0.35.4`)**: a
   -- seventh -- the stack head the pop clears, declared on its own account.
   -- **WS-RM (`v0.35.6`)**: an eighth -- the frame above the answered caller's
-  -- reply object, which the removal's detach rewrites.
+  -- reply object, which the removal's splice rewrites.
   -- **WS-HP HP10.6**: a tenth -- the origin a bottom-of-stack pop redirects the
   -- reservation to.  `3 + 10 = 13`, comfortably inside the ceiling; only
   -- `.replyRecv` has ever needed the raise.
@@ -1188,7 +1188,7 @@ reply — eighteen, the figure PR #894's review established.**
 
 `answeredReplyFrameAbove?` is `none` on every reply of the nested Call pattern,
 which is every reply the tree could make before `v0.35.6`: the answered frame is
-the stack head and nothing links down to it.  So the member the removal's detach
+the stack head and nothing links down to it.  So the member the removal's splice
 declares is absent and this is PR #894's `4 + 14 = 18` verbatim. -/
 theorem lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove_of_no_origin
     (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
@@ -1207,15 +1207,16 @@ theorem lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove_of_no_o
   omega
 
 /-- **WS-RM (`v0.35.6`): and the branch in which the frame above *is* live —
-sixteen, two **below** the figure it replaces.**
+seventeen since WS-HP HP3.1, one **below** the eighteen the popping branch
+declares (sixteen, two below, until the splice's second member landed).**
 
 The two groups are mutually exclusive on a coherent state: the answered frame has
 a frame above it exactly when it is **not** a stack head, and the three members
 the donation return contributes — the head the pop clears, the frame below it and
-that frame's caller — are live only when it **is**.  So the detach's member is
-never paid for on top of them; it is paid for *instead* of them, and a reachable
-`.replyRecv` that detaches declares two locks fewer than one that pops.  `4 + 12 =
-16`. -/
+that frame's caller — are live only when it **is**.  So the splice's two members
+(the frame above the cut and the frame below it) are never paid for on top of
+them; they are paid for *instead* of them, and a reachable `.replyRecv` that
+splices declares one lock fewer than one that pops.  `4 + 13 = 17`. -/
 theorem lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head_of_no_origin
     (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
     (f : Option SchedContextId) (g : Option ThreadId)
@@ -1736,7 +1737,7 @@ def KernelOperation.ofReplyRecv (a : ThreadId) (b : ObjId) (c : ThreadId)
     (s : Option ReplyId := none) (t : Option ReplyId := none)
     (u : Option ThreadId := none)
     -- WS-RM (`v0.35.6`): the frame above the answered caller's reply object,
-    -- which the reply leg's removal detaches.  No default, for the reason the
+    -- which the reply leg's removal splices out.  No default, for the reason the
     -- footprint gives.
     (v : Option ReplyId)
     -- **WS-HP HP3.1**: and the frame below it, which the splice re-links upward.

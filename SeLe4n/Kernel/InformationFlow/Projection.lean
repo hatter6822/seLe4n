@@ -529,8 +529,8 @@ theorem projectKernelObject_reply_caller_invariant
 
 /-- **WS-OD OD2.2 / `v0.35.4`**: the projection is invariant under a Reply's
 `next` link — the `.reply` arm strips it, so a push that writes the head link (or
-a detach that clears the frame above's) is unobservable through a low-visible
-Reply.  Stated per field beside `_caller_invariant` and `_prev_invariant`, because
+a splice that rewrites the links either side of a cut) is unobservable through a
+low-visible Reply.  Stated per field beside `_caller_invariant` and `_prev_invariant`, because
 an erasure with no theorem is one nothing consumes: the OD2.2 sweep found the
 arm had erased every link field from the day it was written while only `caller`
 had a statement. -/

@@ -1050,7 +1050,7 @@ theorem spliceReplyFrameOutOrSelf_preserves_dualQueueSystemInvariant
       hM2.2 hS (Or.inl ⟨o, hO⟩) hM2.1
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: and so does the removal — the detach then the consume. -/
+/-- **WS-RM (`v0.35.6`)**: and so does the removal — the splice then the consume. -/
 theorem removeCallerReplyFrame_preserves_dualQueueSystemInvariant
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : dualQueueSystemInvariant st)

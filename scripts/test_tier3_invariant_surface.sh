@@ -1298,17 +1298,17 @@ run_negative_check "INVARIANT" rg -n 'donationHolderIsReplyTarget' SeLe4n/Kernel
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_no_donation_to_victim' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 # Relation, not presence: the reply arm must call the return, and call it
 # **before** the restore — the return reads the caller's `.blockedOnReply` state,
-# which the restore clears.  `v0.35.4` interposes the frame detach between them:
+# which the restore clears.  `v0.35.4` interposes the frame splice between them:
 # it runs *after* the reclaim (on whose success it is the identity) and *before*
 # the caller link is consumed, so the whole nesting is pinned rather than the
-# pair, and a detach moved outside that window is refused.
+# pair, and a splice moved outside that window is refused.
 run_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink\n      \(restoreToReadyCancelled\n        \(spliceThreadReplyFrameOut \(returnDonationToCancelledCaller st tid tcb\) tcb\) tid\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # NEGATIVE: the pre-remediation arm, which cleared the reply link and left the
 # donation with the server, must not come back.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink \(restoreToReadyCancelled st tid\) tid tcb" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # NEGATIVE: ...nor the `v0.35.3` arm, which reclaimed but left a non-head frame
 # on its stack with its caller consumed — the dead frame this cut removes.  The
-# mutation keeps the reclaim and the restore and drops only the detach.
+# mutation keeps the reclaim and the restore and drops only the splice.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink\n      \(restoreToReadyCancelled \(returnDonationToCancelledCaller st tid tcb\) tid\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # ...and the removal itself is O(1) on the frame ABOVE the cancelled one, which is
 # what the upward link makes possible: a single-linked stack cannot find it.
@@ -1319,7 +1319,7 @@ run_check "INVARIANT" rg -n '^def spliceReplyFrameOut' SeLe4n/Kernel/IPC/Operati
 # the frame above, and the cut frame loses its own downward link (seL4's
 # `reply_unlink` downward half, which is what makes `donationChainWellFormed`
 # survive the removal outright rather than transiently).  Anchored on the ORDER
-# rather than on the presence of three stores: the detach reads the link the
+# rather than on the presence of three stores: the splice reads the link the
 # consume clears, so a swap is a different program.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*else spliceReplyFrameStores st rid above r a" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameStores[^\n]*(\n([ \t][^\n]*)?)*storeObject above\.toObjId \(\.reply \{ a with prev := some below \}\) st[^\n]*(\n([ \t][^\n]*)?)*storeObject below\.toObjId \(\.reply \{ b with next := some \(\.frame above\) \}\) s1[^\n]*(\n([ \t][^\n]*)?)*storeObject rid\.toObjId \(\.reply \{ r with prev := none \}\) s2" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
@@ -1341,7 +1341,7 @@ run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOut_eq_sever_of_no_frame_b
 run_check "INVARIANT" rg -n '^theorem spliceFrameBelow\?_mem_replyFrameBelow\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem spliceFrameBelow\?_mem_answeredReplyFrameBelow\?' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem spliceFrameBelow\?_mem_cancelSplicedFrameBelow\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-# Relation, not presence: the detach validates the back-link before it writes —
+# Relation, not presence: the splice validates the back-link before it writes —
 # a frame whose `prev` does not name the frame being cut out is a stale upward
 # link, and repairing it would corrupt an unrelated stack.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*if a\.prev != some rid then \.error \.invalidArgument" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
@@ -1550,7 +1550,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "\.schedContext \{ sc with bou
 run_check "INVARIANT" bash -lc 'rg -U -n "def wellFormed \(r : Reply\) : Prop :=\n  r\.caller = none → r\.prev = none ∧ r\.next = none" SeLe4n/Model/Object/Reply.lean'
 run_negative_check "INVARIANT" rg -n 'def wellFormed \(_r : Reply\) : Prop := True' SeLe4n/Model/Object/Reply.lean
 # NEGATIVE: the one-directional predicate, which says nothing about the upward
-# link a pop or a detach must clear.  The mutation keeps the implication and
+# link a pop or a splice must clear.  The mutation keeps the implication and
 # drops one conjunct of its conclusion — deleting the definition would be caught
 # by the positive above.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "def wellFormed \(r : Reply\) : Prop :=\n  r\.caller = none → r\.prev = none$" SeLe4n/Model/Object/Reply.lean'
@@ -1769,7 +1769,7 @@ run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerResolves_of_chainWell
 run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerResolves_of_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The fourth state the resolver can meet -- a validated frame below the head
 # whose caller has been consumed -- is answered by a THEOREM and a runtime
-# witness.  Since `v0.35.4` that answer is a REFUSAL: the detach takes a
+# witness.  Since `v0.35.4` that answer is a REFUSAL: the splice takes a
 # cancelled middle caller's frame off its stack at the cancellation, so a linked
 # frame always has a blocked caller (`Reply.wellFormed`), and a frame that
 # validates and has none is an invariant violation rather than the bottom of the
@@ -1781,23 +1781,23 @@ run_check "INVARIANT" rg -n 'the resolved pop refuses rather than settling the c
 run_check "INVARIANT" rg -n 'the below-head Reply read is still declared on that frame' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem replyStackOuterCaller\?_of_no_stack' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 
-# `v0.35.4`: **the detach's writing arm, and the wedge it removes, are WITNESSED.**
+# `v0.35.4`: **the splice's writing arm, and the wedge it removes, are WITNESSED.**
 # Every `spliceReplyFrameOut` result proved elsewhere is discharged on a state
 # whose frame has nothing above it, where the step is the identity -- so a
 # writing arm that stored the wrong field would satisfy all of them.  The witness
 # runs a depth-2 push, severs the outer caller's frame, and then completes the
 # pop that used to refuse; the paired negative runs the SAME consume with the
-# detach omitted, keeping every object and every consumed field and breaking only
+# splice omitted, keeping every object and every consumed field and breaking only
 # the relation between the head and the frame below it.  Without the negative the
 # witness would pass before the fix and after it.
-run_check "INVARIANT" rg -n 'the detach clears the .prev. of the frame ABOVE the cancelled one' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'the removal clears the .prev. of the frame ABOVE the cancelled one' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n 'PAYOFF: the pop after a severed middle caller succeeds' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: without the detach the head still links down to the consumed frame' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: without the splice the head still links down to the consumed frame' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: \.\.\.so the pop wedges, writing nothing' tests/SmpIpcSuite.lean
 # ...and both fail-closed arms of the primitive are told apart, since a single
 # `.error` assertion would pass with the two refusals merged.
-run_check "INVARIANT" rg -n 'the detach refuses a frame above that does not link back' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n 'the detach refuses a frame above that resolves to no Reply' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'the splice refuses a frame above that does not link back' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'the splice refuses a frame above that resolves to no Reply' tests/SmpIpcSuite.lean
 # The wrapper's fold is what keeps a severed stack's LOWER frames cancellable:
 # the second cancellation meets a frame whose upward link no longer reciprocates,
 # and a propagating refusal there would wedge the cancellation itself.
@@ -2710,7 +2710,7 @@ run_check "INVARIANT" rg -n '^theorem linkReply_donationChainFrame' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^theorem linkCallerReply_donationChainFrame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem clearTcbReplyObject_donationChainFrame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 # ...and the two clears that DO write chain data since `v0.35.4` — the consume
-# clears an unlinked frame's links, and the detach clears the frame above's
+# clears an unlinked frame's links, and the splice rewrites the frame above's
 # `prev` — carry a preservation theorem instead of a frame, which is the same
 # division the pop and the push are on.  A frame there would be false.
 run_check "INVARIANT" rg -n '^theorem clearReplyObjectCaller_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
@@ -13085,7 +13085,7 @@ run_prose_check "INVARIANT" rg -n 'the retired owner-merge sharp bounds' SeLe4n/
 # invariant at all -- the re-donation members are live exactly when the endpoint
 # has a queued sender and the invoker's own pre-receive return exactly when it
 # does not, so no state carries both groups.  WS-RM (`v0.35.6`) moved that
-# figure 18 -> 19, because the frame the removal's detach writes is a member the
+# figure 18 -> 19, because the frame the removal's splice writes is a member the
 # *definition* can produce alongside either group.
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_twenty' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_eighteen_of_no_preReturn_of_no_origin' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
@@ -13175,7 +13175,7 @@ run_negative_check "INVARIANT" rg -n 'lockSet_endpointReplyOnCore_covers_headDri
 # The runtime witness executes the merge, and pins that the sharpening is ONE
 # member: the recorded server merges only on a non-delegated reply, which is a
 # case split rather than an invariant.
-run_check "INVARIANT" rg -n 'a \.replyRecv whose donation owner is the answered caller declares 22' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'a \.replyRecv whose donation owner is the answered caller declares one under the ceiling' tests/DeadlockFreedomSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the merge sharpening is one member, not two' tests/DeadlockFreedomSuite.lean
 # PR #894 review: and the mutual exclusion is exercised at both reachable widths,
 # with the negative that neither reaches the ceiling -- a witness asserting only
@@ -13294,15 +13294,15 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind[^\n]*(\n
 # head, which `Reply.consumed` deliberately leaves linked, so the head survived
 # with its caller gone; and a delegated reply answering out of order left a
 # frame below the head with a stale `prev`.  `removeCallerReplyFrame` is seL4's
-# `reply_remove`: detach the frame above, then unlink.
+# `reply_remove`: splice the frame out from between its neighbours, then unlink.
 
 # (1) ONE removal step, and both spines call it.  A second spelling of "take the
 # answered frame off its stack and unlink it" is the divergence this tree has
 # paid for repeatedly; the composite is the single answer.
 run_check "INVARIANT" rg -n '^def removeCallerReplyFrame' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def removeCallerReplyFrame[^\n]*(\n([ \t][^\n]*)?)*SystemState\.consumeCallerReply caller rid \(spliceReplyFrameOutOrSelf st rid\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
-# The order is the content: the detach reads the link the consume clears, so a
-# consume-then-detach body detaches from a Reply whose `next` is already gone.
+# The order is the content: the splice reads the link the consume clears, so a
+# consume-then-splice body splices from a Reply whose `next` is already gone.
 # NEGATIVE, token-preserving -- it keeps both steps and swaps them.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeCallerReplyFrame[^\n]*(\n([ \t][^\n]*)?)*spliceReplyFrameOutOrSelf \(SystemState\.consumeCallerReply" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 
@@ -13377,7 +13377,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyOnCore[^\n]
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReply\b[^\n]*(\n([ \t][^\n]*)?)*SystemState\.consumeCallerReply target rid" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecv\b[^\n]*(\n([ \t][^\n]*)?)*SystemState\.consumeCallerReply replyTarget rid" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
 
-# (3) The footprint declares the frame the detach writes, resolved from the SAME
+# (3) The footprint declares the frame the splice writes, resolved from the SAME
 # expression the arm's existing reply member is resolved from, so the footprint
 # and the transition cannot disagree about which frame is answered.
 run_check "INVARIANT" rg -n '^def answeredReplyFrameAbove\?' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
@@ -13782,10 +13782,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBody[^\n]*(\n([ \t][^\n]
 # **reachable since HP6.8** (`v0.35.45`), which is the cut that made the splice the
 # live policy.  Flipped in the same cut as the live trigger rather than registered,
 # because this project's rule for an asymmetry between two paths is to make them
-# symmetric, not to document the asymmetry.  The frozen removal itself still
-# severs; HP8 is the row that makes it splice, and the `frozenDetach…` names stay
-# until then so that a `frozenDetach…` beside a live `splice…` reads as the
-# schedule rather than as a drift.
+# symmetric, not to document the asymmetry.  The frozen removal itself severed
+# until HP8 (`v0.35.47`), which made it splice and renamed the family in the same
+# cut, so that a `frozenDetach…` beside a live `splice…` read as the schedule
+# rather than as a drift while the sever was still its body.
 
 # (13) The frozen resolvers exist and ask the reciprocal question, clause for
 # clause with the live ones: a one-sided link is not a head.
@@ -13874,8 +13874,14 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelledCallerDonation\
 # the victim's own -- the provenance mutation, which keeps `replyFrameHeadHolder?`.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelledCallerDonation\?[^\n]*(\n([ \t][^\n]*)?)*\(st\.getTcb\? holder\)\.bind \(·\.replyObject\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # (2) The victim's id is not consulted, pinned rather than left to an underscore:
-# the binding reading's `owner == tid` check is what the structure replaces.
-run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelledCallerDonation\?_independent_of_victim' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# the binding reading's `owner == tid` check is what the structure replaces.  A
+# plain theorem, not a `@[simp]` lemma (the post-landing audit's second pass,
+# `v0.35.62`): its right-hand side has a variable the left does not, which simp
+# can never instantiate, so the attribute it carried could never fire.
+run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_independent_of_victim' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# NEGATIVE: the inert attribute must not come back -- token-preserving, since it
+# keeps the theorem and changes only the attribute list in front of it.
+run_negative_check "INVARIANT" rg -n '^@\[[^]]*simp[^]]*\] theorem cancelledCallerDonation\?_independent_of_victim' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_eq_answeredFrameHeadContext\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # (3) HP5.2: the generalised success lemma takes the context and its bound thread
 # as ARGUMENTS, so the head reading can supply them; the binding-keyed form is its

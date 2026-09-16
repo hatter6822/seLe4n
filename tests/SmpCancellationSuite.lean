@@ -483,7 +483,7 @@ variable (hNb? : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
 -- that frame's caller's TCB, which the hand-back reaches at call depth ≥ 2.
 variable (bhR? : Option SeLe4n.ReplyId) (oc? : Option SeLe4n.ThreadId)
 -- WS-OD (`v0.35.4`): and two more again — the head the reclaim's pop clears, and
--- the frame above a cancelled *middle* caller's own, which the detach unlinks.
+-- the frame above a cancelled *middle* caller's own, which the splice rewrites.
 variable (rh? fa? : Option SeLe4n.ReplyId)
 -- **WS-HP HP3.4**: the frame the removal's splice re-links below the cut.
 variable (sb? : Option SeLe4n.ReplyId)
@@ -1989,7 +1989,7 @@ private def runFrameHeadReclaimChecks : IO Unit := do
   assertBool "the head the pop clears is the victim's own reply object"
     (decide (cancelReclaimHead? stFrameHeadReclaim victimTid tcb = some rId
       ∧ cancelReclaimHead? stFrameHeadReclaim victimTid tcb = tcb.replyObject))
-  assertBool "a reclaim excludes both removal members (no detach, no splice)"
+  assertBool "a reclaim excludes both removal members (no frame above, no frame below)"
     (decide (cancelSplicedFrameAbove? stFrameHeadReclaim tcb = none
       ∧ cancelSplicedFrameBelow? stFrameHeadReclaim tcb = none))
   -- (iii) The reclaim runs: the reservation comes back to the victim, the server

@@ -86,8 +86,8 @@ theorem applyReplyDonationOnCore_preserves_donationChainWellFormed_of_except
 chain.
 
 Two outcomes, and the second is the whole point of the workstream.  The reply
-leg's last step is `removeCallerReplyFrame`, which detaches the answered frame
-from the one above it and then consumes the caller link.  On a frame that heads
+leg's last step is `removeCallerReplyFrame`, which splices the answered frame
+out from between its neighbours and then consumes the caller link.  On a frame that heads
 no scheduling context that restores `Reply.wellFormed` outright (RM2's
 `removeCallerReplyFrame_preserves_donationChainWellFormed`).  On a frame that
 *is* a stack head, `Reply.consumed` keeps the links deliberately — the donation
@@ -648,10 +648,11 @@ footprints onto the pop's own trigger, which makes that coverage **definitional*
 take no hypothesis at all — so keeping a conditional restatement beside them
 would be a theorem whose content its own subject already supplies.
 
-`answeredFrameHeadContext?_implies_serverDonation` above is **not** retired with
-it: that is HP2.1's equivalence, cited where this tree explains why the two
-readings agree on every state `severAtCut` can produce, and HP2.3 is what makes
-the splice falsify its hypotheses. -/
+`answeredFrameHeadContext?_implies_serverDonation` — HP2.1's equivalence, stated
+over the binding-driven resolver — did not survive HP6.2 for long either: HP7
+(`v0.35.46`) deleted it with the predicate it took as a hypothesis, as the section
+above records.  What stands in its place is the HP2.4 family below, together with
+the executed orphan-head witness in `tests/SmpCrossCoreReplySuite.lean`. -/
 
 /-- **WS-HP HP2.4: the head of the popped context IS the answered caller's reply
 object** -- `replyStackHeadIsAnsweredReply`'s content, as a theorem of the

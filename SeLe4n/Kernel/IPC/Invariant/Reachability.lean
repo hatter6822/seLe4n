@@ -504,7 +504,7 @@ The reciprocity clauses are the substantive ones: the context's head answers it
 (`headLinkReciprocal` / `headLinkResolves`), the head's `prev` is answered by a
 frame whose `next` names the head back (`prevLinkReciprocal`), and the walk from
 the head terminates on exactly those two frames — which is what the donation
-return's link validation and the cancellation's `O(1)` detach both rely on. -/
+return's link validation and the removal's `O(1)` splice both rely on. -/
 theorem donationChainWitness_wellFormed :
     donationChainWellFormed donationChainWitness := by
   have hInnerNe : (donationChainWitnessInner.toObjId

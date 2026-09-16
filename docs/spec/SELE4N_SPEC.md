@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.61` (`lakefile.toml`) |
+| **Package version** | `0.35.62` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 385,353 across 330 Lean files |
+| **Production LoC** | 385,405 across 330 Lean files |
 | **Test LoC** | 78,723 across 70 Lean test suites |
 | **Proved declarations** | 12,823 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -4220,8 +4220,8 @@ so no live transition is ever ahead of its own proofs.
   another domain, driven by object reuse.  Relinking clears both links, so a
   reused Reply carries no answer back and the walk stops at it.  The relation is
   stated **downward** deliberately: an upward `.frame` link whose target does not
-  point back is a legitimate state — the top of a part a detach cut off — and no
-  reader trusts one on its own.
+  point back is a legitimate state — a frame below a severed cut, the degenerate
+  arm of the splice (§8.12.11) — and no reader trusts one on its own.
 - **A conjunct of `ipcReachable`, not of `ipcInvariantFull`**, which keeps its
   twenty — and *preserved* rather than assumed.  `donationChainFrame` is the
   reusable frame, stated over the two projections the walk actually reads
@@ -4429,7 +4429,7 @@ because each is false without the other.
 - **Every teardown path either frames the chain or preserves it** (OD5.6).
   `linkReply`, `linkCallerReply` and the TCB-side reply-link clear reach
   `donationChainWellFormed_of_frame`, because they write no chain data.  The push,
-  the pop, the detach and the cancellation's reply-link sever carry their own
+  the pop, the splice and the cancellation's reply-link consume carry their own
   preservation theorem, because they do.
 
 **The payoff** (WS-OD OD6.1, v0.35.2).
@@ -4453,12 +4453,15 @@ permanently.  Reachable with no more authority than a TCB write right over a
 thread in one's own call chain.
 
 The remedy is seL4's own structure rather than a weakening.  `Reply.donatedSc`
-is replaced by `Reply.next : ReplyStackLink`, the policy is unchanged, and it is
-now carried out by a **detach**:
+is replaced by `Reply.next : ReplyStackLink`, the policy was unchanged at this cut
+(it flipped to the splice at WS-HP HP6.8, §8.12.11), and the removal is carried
+out by what is now the **splice**:
 
-- **`spliceReplyFrameOut`** clears the `prev` of the frame above the one being
-  removed, so that frame becomes the bottom of the stack it heads and the removed
-  frame leaves the structure when its caller link is consumed (`Reply.consumed`).
+- **`spliceReplyFrameOut`** — then a sever — cleared the `prev` of the frame above
+  the one being removed, so that frame became the bottom of the stack it heads and
+  the removed frame left the structure when its caller link was consumed
+  (`Reply.consumed`); since §8.12.11 it re-points that `prev` at the frame below
+  the cut instead, and clears it only at a bottom frame.
   It validates the back-link before it writes — a frame whose `prev` does not name
   the frame being cut out is a stale upward link, which the downward-stated
   relation permits and which is therefore read as "nothing above me", never
@@ -4466,7 +4469,7 @@ now carried out by a **detach**:
 - **The cancellation path runs it** (`spliceThreadReplyFrameOut`), after the
   reclaim and before `consumeReplyLink`, with both orders pinned.
 - **A validated frame below the head whose caller was consumed is now an
-  `.error`**, not the bottom of the stack: with the detach in place a linked frame
+  `.error`**, not the bottom of the stack: with the removal in place a linked frame
   always has a blocked caller, so that shape is an invariant violation and
   settling a context on it would hand a reservation to a thread the stack does
   not name.
@@ -4478,21 +4481,23 @@ now carried out by a **detach**:
 
 #### 8.12.8 The reply path runs `reply_remove` too — WS-RM (`v0.35.6`)
 
-`v0.35.4` wired the detach into the **cancellation** path and left the **reply**
+`v0.35.4` wired the removal (then a sever; the splice since §8.12.11) into the
+**cancellation** path and left the **reply**
 path relying on the answered frame being the head: every reply of the nested
 Call pattern satisfies that, and a *delegated* reply capability answering its
 caller out of order does not.  WS-RM closes it.  Seven things new code must
 respect.
 
 1. **One removal step, and both spines call it.**
-   `removeCallerReplyFrame caller rid` is seL4's `reply_remove`: the detach
+   `removeCallerReplyFrame caller rid` is seL4's `reply_remove`: the splice
    (folded to the identity when nothing links down to the answered frame, which
    the chain relation permits by design since it is stated downward), then the
    consume.  `endpointReplyOnCore`, `endpointReply` and `endpointReplyRecv` all
    run it; a Tier 3 negative refuses a bare `SystemState.consumeCallerReply` in
-   any of the three.  The order inside it is the content — the detach reads the
+   any of the three.  The order inside it is the content — the splice reads the
    link the consume clears — and a second negative refuses the swap.
-2. **`.reply` and `.replyRecv` declare the frame the detach writes.**
+2. **`.reply` and `.replyRecv` declare the frame above the cut, which the splice
+   writes.**
    `answeredReplyFrameAbove?` resolves it from the same
    `(st.getTcb? target).bind (·.replyObject)` expression the arm's existing
    reply member comes from, so the footprint and the transition cannot disagree

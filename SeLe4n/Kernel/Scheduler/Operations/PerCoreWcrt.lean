@@ -61,8 +61,8 @@ OD3.13 from 13 to 14 for the queue-structure neighbour its receive leg relinks;
 WS-OD `v0.35.4` from 14 to 16 for the old head a doubly-linked push rewrites and
 the stack head every pop clears, declared on their own account; PR #894's review
 from 16 to 21 for the five objects the *invoking* receiver's own pre-receive
-return touches on a delegated reply; WS-RM from 21 to 22 for the frame the reply
-path's `reply_remove` detaches; and **WS-HP HP3.2** from 22 to 23 for the frame
+return touches on a delegated reply; WS-RM from 21 to 22 for the frame above the
+one the reply path's `reply_remove` takes out; and **WS-HP HP3.2** from 22 to 23 for the frame
 below the cut, which HP6 makes that removal re-link upward; and **WS-HP HP10.6**
 from 23 to 24 for the origin a bottom-of-stack pop redirects the reservation to),
 the

@@ -875,7 +875,8 @@ each is a correction to this section rather than a discovery about the kernel.
    composed `spliceReplyFrameStores` leaves the arity alone and proves the
    two-store analysis once.  Statement-level changes are then five lemmas with
    ~15 callers in total — `_cases`, `_objects_ne`, `_decision`,
-   `_objects_rewrite` and `replyFrameAbove?_of_detach_store` — while
+   `_objects_rewrite` and `replyFrameAbove?_of_detach_store` (renamed
+   `replyFrameAbove?_of_splice_store` at HP6.1) — while
    `_reply_rewrite` needs none, because `replyStackRewrite` is already general
    over both links and transitive.
 
@@ -1134,6 +1135,40 @@ CHANGELOG entry; what this plan owes is the correction of its own text.
   states the recipient once and four proofs lost their reconciling rewrites.
 * **Acceptance box 9 restated the census's totals**, which `CLAUDE.md`'s WS-RM
   section says not to do; it cites the census's own output now.
+
+### Post-landing audit, second pass — `v0.35.62`
+
+A second, deeper reading of the same PR, this time of every file it changed.  The
+code held again; what it found is one sweep this plan's HP6.1 row said HP6.3 would
+run and which was never run.
+
+* **HP6.1 (3) claimed the prose would follow the behaviour at HP6.3.**  It did not:
+  some 120 docstrings, comments, test labels and documentation sentences in 35
+  files still called the splice *the detach*, and nine described the **sever** as
+  what it does ("sets its `prev := none`", "clears the `prev` of the frame above",
+  "the `severAtCut` policy is unchanged").  All are swept; where the sever is still
+  the truth — the degenerate arm at a bottom frame, or a frame below that does not
+  reciprocate — the text now says so.  The row above records the miss.
+* **Three figures had gone stale in docstrings while their theorems stayed
+  right**: the splicing `.replyRecv` branch is seventeen, one below the popping
+  branch, not *sixteen, two below* (`lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head_of_no_origin`,
+  `lockSet_endpointReplyRecvOnCore_size_le_eighteen`); `maxLockSetSize`'s
+  docstring stopped its history at twenty-three and cited the retired
+  `…_size_le_nineteen`; and `tests/DeadlockFreedomSuite.lean`'s *declares 22*
+  label asserted `maxLockSetSize - 1` (23 since HP10.6) with a negative pinned at
+  21 — both derive from the constant now.
+* **Two dead citations and one retired label**: `replyDonationOwnerHome` cited as
+  live in `Endpoint.lean`; `answeredFrameHeadContext?_implies_serverDonation`
+  declared *not retired* in the HP6.2 block forty lines after HP7's deletion
+  note; `SchedContext.donationOrigin` pointing at §3.20's `PAYOFF/COST` rows.
+* **An inert attribute**: `cancelledCallerDonation?_independent_of_victim` carried
+  `@[simp]` on an equation whose right-hand side has a free variable, which simp
+  can never instantiate.  It is a plain theorem now.
+* **Re-verified mechanically**: the 122 deleted declarations all have twins or
+  documented retirements; the 31 hypothesis changes are all recorded; no added
+  line carries `sorry`, `axiom`, `native_decide` or `partial`; every
+  declaration-shaped identifier the CHANGELOG cites resolves or is named as
+  retired; the reachability sweep from every build root finds no orphan module.
 
 ## 7. What every cut in this workstream must run, in order
 

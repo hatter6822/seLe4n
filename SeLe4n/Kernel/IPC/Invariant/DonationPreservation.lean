@@ -885,7 +885,7 @@ theorem donationReadAgreement_of_headPop
 
 /-- WS-OD OD4.1 / `v0.35.4`: **a Reply store that keeps the Reply's `caller`
 establishes the read agreement** — the shape of every reply-stack write (the
-push's two, the pop's two, the cancellation's detach).  It writes one Reply, and
+push's two, the pop's two, the splice's three).  It writes one Reply, and
 the agreement reads nothing of a Reply but its `caller`. -/
 theorem donationReadAgreement_of_replyStackStore
     {st st' : SystemState} {rid : SeLe4n.ReplyId} {r r' : Reply}
@@ -2862,8 +2862,8 @@ theorem returnDonatedSchedContext_preserves_donationChainWellFormed_of_except
 
 The payoff, and the theorem the whole predicate was stated for: the pop is one of
 the two transitions in the tree that move a `SchedContext.scReply` or rewrite a
-`Reply.prev` / `Reply.next` (the push is the other, and the cancellation's detach
-of a middle frame is the third writer of `prev`), so it cannot reach
+`Reply.prev` / `Reply.next` (the push is the other, and the removal's splice of a
+middle frame is the third writer of both link fields), so it cannot reach
 `donationChainWellFormed_of_frame`.  With this, `donationChainWellFormed` is
 preserved by every kernel transition — the frame family covers the rest — and
 `ipcReachable` carries it rather than assuming it.
@@ -2912,8 +2912,8 @@ preserve `donationChainWellFormed`.**
 The dual of OD3.8's `donationHeadPop_preserves_donationChainWellFormed`, and the
 row that closes the loop OD2.4 opened: with both, `donationChainWellFormed` is
 preserved by *every* transition in the tree, since the push and the pop are the
-two that write a `SchedContext.scReply` or a `Reply.next`, the cancellation's
-detach is the one other writer of a `Reply.prev`, and the frame family covers
+two that write a `SchedContext.scReply`, the removal's splice is the one other
+writer of a `Reply.prev` or a `Reply.next`, and the frame family covers
 everything else.
 
 Three things this proof turns on.
@@ -3320,7 +3320,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
 /-- **WS-OD OD4.5: `donateSchedContext` preserves the donation chain.**
 
 The payoff of the row, and the other half of OD3.8: with the push and the pop
-both proved, and the cancellation's detach beside them, `donationChainWellFormed`
+both proved, and the removal's splice beside them, `donationChainWellFormed`
 is preserved by every kernel transition and `ipcReachable` carries it rather than
 assuming it.
 

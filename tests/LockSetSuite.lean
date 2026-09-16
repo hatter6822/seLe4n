@@ -1364,7 +1364,7 @@ private def runLubMergeChecks : IO Unit := do
   -- exclusion and nothing else.
   --
   -- **WS-RM (`v0.35.6`)**: and the blocking shape stays at eighteen even though
-  -- the ceiling moved 21 -> 22, because the detach's member and the pop's three
+  -- the ceiling moved 21 -> 22, because the splice's member and the pop's three
   -- are mutually exclusive: a reply whose frame has a frame above it is not the
   -- stack head, so the returned context heads no stack.  That needed a stated
   -- coherence fact under the binding-driven trigger; since HP6.2 it is structural

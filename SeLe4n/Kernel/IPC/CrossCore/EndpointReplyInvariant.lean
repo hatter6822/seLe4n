@@ -909,7 +909,7 @@ theorem consumeCallerReply_tcb_fields_backward
         exact ⟨t1, hT1, hEq1, hEq2, hEq3, hEq4⟩
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal's pullback — the detach writes no TCB at
+/-- **WS-RM (`v0.35.6`)**: the removal's pullback — the splice writes no TCB at
 all, so the four fields agree for the same reason they do across the consume. -/
 theorem removeCallerReplyFrame_tcb_fields_backward
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -1800,7 +1800,7 @@ theorem endpointReplyOnCore_observer_atomic
     -- reply-stack head, for the same reason the reply object is here.
     (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     -- WS-OD (`v0.35.4`) / WS-RM (`v0.35.6`): and the head the pop clears and the
-    -- frame above the answered reply, which the removal's detach writes -- every
+    -- frame above the answered reply, which the removal's splice writes -- every
     -- argument of the footprint this theorem names, for the reason above.
     (donatedHead? answeredFrameAbove? : Option SeLe4n.ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity.
@@ -1849,7 +1849,7 @@ theorem endpointReplyRecvOnCore_observer_atomic
     (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     -- WS-OD OD3.13 / (`v0.35.4`) / PR #894 review / WS-RM (`v0.35.6`): and every
     -- remaining argument -- the queue-structure neighbour, the two heads, the
-    -- invoker's own pre-receive return and the frame the reply leg detaches.
+    -- invoker's own pre-receive return and the frame the reply leg splices out.
     (queueNeighbour? : Option SeLe4n.ThreadId)
     (redonationOldHead? donatedHead? : Option SeLe4n.ReplyId)
     (preReturnSc? : Option SeLe4n.SchedContextId) (preReturnOwner? : Option SeLe4n.ThreadId)

@@ -248,7 +248,7 @@ example : ¬ mutualBlocked execNoDeadlock c0 c1 := by decide
 -- twenty-one, for the five objects the *invoking* receiver's own pre-receive
 -- return touches on a delegated `.replyRecv`; and WS-RM (`v0.35.6`) to
 -- twenty-two, for the frame above the answered caller's reply object, which
--- `removeCallerReplyFrame`'s detach rewrites before the caller link is consumed;
+-- `removeCallerReplyFrame`'s splice rewrites before the caller link is consumed;
 -- and WS-HP HP3.1 to twenty-three, for the frame **below** it, which the
 -- removal's splice re-links upward in the same step; and WS-HP HP10.6 to
 -- twenty-four, for the origin a bottom-of-stack pop redirects the reservation to.
@@ -550,7 +550,7 @@ private def runSizeBoundChecks : IO Unit := do
     (some ⟨16⟩) (some (ThreadId.ofNat 17)) (some ⟨18⟩) (some ⟨19⟩)
     (some (ThreadId.ofNat 20)) (some ⟨21⟩) (some ⟨22⟩)
       (some (ThreadId.ofNat 23))
-  assertBool "a .replyRecv whose donation owner is the answered caller declares 22"
+  assertBool "a .replyRecv whose donation owner is the answered caller declares one under the ceiling"
     (decide (reachableShapeReplyRecv.size = maxLockSetSize - 1))
   assertBool "…one inside the ceiling, which is the slack the merge carries"
     (decide (reachableShapeReplyRecv.size < maxLockSetSize))
@@ -559,7 +559,7 @@ private def runSizeBoundChecks : IO Unit := do
   -- is a case split rather than an invariant, so it cannot be taken in a bound.
   -- Keeping the delegated server distinct here is what makes that visible.
   assertBool "NEGATIVE: the merge sharpening is one member, not two"
-    (!decide (reachableShapeReplyRecv.size = 21))
+    (!decide (reachableShapeReplyRecv.size = maxLockSetSize - 2))
   -- WS-OD OD3.7: and the two below-head reads are each a member of their own —
   -- the reason the ceiling moved 11 → 13.  Stated as the drop, so a merge would
   -- fail here rather than silently make the raise look unnecessary.

@@ -30,8 +30,9 @@ caller and the authority to reply to it:
   head only**: a frame below the head does not know which context it carries,
   which is what makes taking a frame out of the *middle* of a stack an `O(1)`
   operation on three objects (seL4's `reply_remove_tcb`) rather than a walk
-  over every frame below it.  Written by the donation push, cleared by the
-  pop and by the frame detach (WS-OD); the stack they form is constrained by
+  over every frame below it.  Written by the donation push, rewritten by the
+  pop and by the middle-frame splice (WS-OD; a sever until WS-HP HP6.3); the
+  stack they form is constrained by
   `donationChainWellFormed` (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`), whose
   head is `SchedContext.scReply`.
 - `lock`: per-object reader-writer lock state (SM3 per-object lock discipline),
@@ -132,9 +133,9 @@ which `linkReply`'s single-use barrier already refuses, and a frame whose caller
 is gone has already been taken off its stack.
 
 What this predicate deliberately does **not** say is anything about *which*
-stack: `prev = some _ ∧ next = none` is a legitimate shape — the top frame of a
-part the detach has cut off, seL4's "start of call chain" — and a frame below the
-head never names its context at all.  Both halves of the stack relation that read
+stack: `prev = some _ ∧ next = none` is not refused here — whether any reachable
+state holds it is `donationChainWellFormed`'s question, not this predicate's —
+and a frame below the head never names its context at all.  Both halves of the stack relation that read
 the store — a `prev` link is reciprocated by the frame it names, a `.head` link by
 the context it names — are `donationChainWellFormed`'s, beside the data they
 read; `donationChainWellFormed.replyWellFormed` is the bridge. -/
@@ -169,9 +170,11 @@ stack**: a head is taken off its stack by the donation pop, which runs in the
 same transition right after the reply leg (plan §3.3 — the leg consumes the
 caller first, the pop reads the head afterwards and validates it by this very
 link), so clearing a head here would make the pop refuse the frame it is about
-to pop.  A frame that is *not* a head and still carries links is the top of a
-part the detach cut off (seL4's "start of call chain"); nothing will ever pop
-it, so its consumption is where it leaves the structure.
+to pop.  A frame that is *not* a head and still carries links is the cut frame
+itself, between the splice and this consume: the splice has already reconnected
+its neighbours and cleared its `prev`, and its upward link (both links, after the
+degenerate sever at a bottom frame) is what this record clears.  Nothing will ever
+pop it, so its consumption is where it leaves the structure.
 
 **The frame below is REPAIRED rather than left stale, since WS-HP HP6.3
 (`v0.35.45`).**  The removal writes `below.next := some (.frame above)` in the same

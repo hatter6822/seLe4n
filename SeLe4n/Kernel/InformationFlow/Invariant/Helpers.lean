@@ -903,7 +903,7 @@ theorem spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete
             hSetInv1 hC1 hS2) hS3
 
 /-- **WS-RM (`v0.35.6`): `removeCallerReplyFrame` preserves the projection** under
-exactly the hypothesis the consume alone needed.  The detach half is
+exactly the hypothesis the consume alone needed.  The splice half is
 unconditional (`projectKernelObject` erases both stack links), so taking the frame
 off its stack costs the information-flow surface one rewrite per write and no new
 obligation — the index-set invariant it now threads was already a hypothesis. -/

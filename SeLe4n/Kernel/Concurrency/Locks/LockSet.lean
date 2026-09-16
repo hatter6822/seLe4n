@@ -932,7 +932,8 @@ the honest constant is the one the definition can produce.
 **The cost, stated rather than implied.**  This constant is the WCRT headline's
 first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrows the
 per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at eleven,
-25 µs at thirteen, 23 µs at fourteen, 20 µs at sixteen and 15 µs at twenty-one
+25 µs at thirteen, 23 µs at fourteen, 20 µs at sixteen, 15 µs at twenty-one and
+twenty-two, 14 µs at twenty-three and 13 µs at twenty-four
 (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
@@ -1015,14 +1016,16 @@ most-travelled IPC path.  The five members are the same five
 (the OD3.7 precedent).  The pre-receive return fires exactly when the endpoint
 has **no** queued sender, and the re-donation members fire exactly when it has
 one, so no reachable state carries both groups:
-`lockSet_endpointReplyRecvOnCore_size_le_nineteen` bounds every state at
-**nineteen** with no hypothesis at all, and under the two local coherence facts
-the invariants supply — the returned donation's owner is the answered caller,
+`lockSet_endpointReplyRecvOnCore_size_le_nineteen` bounded every state at
+**nineteen** with no hypothesis at all (it is `…_size_le_twenty` since WS-HP
+HP3.2, for the frame below the cut), and under the two local coherence facts the
+invariants then supplied — the returned donation's owner is the answered caller,
 and the returned context's stack head is that caller's own reply object — a
-reachable `.replyRecv` is back to **eighteen** and **seventeen**, exactly where
-PR #894's review left them.  Twenty-two is what the *definition* can produce over
-all argument values, which is what `boundedWait_under_2pl` and the WCRT surface
-must consume.
+reachable `.replyRecv` was back to **eighteen** and **seventeen**, exactly where
+PR #894's review left them.  (WS-HP HP6.2 made the eighteen unconditional and
+retired the seventeen, and HP7 deleted both facts: see the HP paragraphs below.)
+Twenty-two was what the *definition* could then produce over all argument values,
+which is what `boundedWait_under_2pl` and the WCRT surface must consume.
 
 **WS-RM (`v0.35.6`): 21 → 22**, on that same arm for the sixth time, and again
 for a member the arm writes.  seL4's `reply_remove` takes the answered frame off
@@ -1063,7 +1066,19 @@ below-member with no invariant at all, and the two reachable `.replyRecv` figure
 are unmoved at eighteen and seventeen; what absorbs it is the unconditional
 `lockSet_endpointReplyRecvOnCore_size_le_twenty`.  This raise *does* cost the
 admissible section: `1000 / (23 · 3) = 14` µs, and the uniform 60 µs envelope
-moves 3960 → 4140 µs. -/
+moves 3960 → 4140 µs.
+
+**WS-HP HP10.6 takes it to twenty-four**, for the TCB a bottom-of-stack pop
+redirects the reservation to (`donationOriginRecipient?`): HP10.7 hands a
+reservation back to its recorded *origin* rather than to the thread stack
+reachability names, which is a different TCB exactly on the out-of-order removal
+that phase exists for, so the pop writes an object no member covered.  Declared
+one phase ahead of the arm, as HP3.2 was.  The reachable figures do not move —
+the origin member is live only at the bottom of a stack, where the two below-head
+members are absent (`replyStackBelowHead?_of_originRecipient`), so a reachable
+footprint trades two members for one — and the cost is the admissible section
+again: `1000 / (24 · 3) = 13` µs, with the uniform 60 µs envelope moving
+4140 → 4320 µs. -/
 def maxLockSetSize : Nat := 24
 
 end SeLe4n.Kernel.Concurrency

@@ -157,11 +157,11 @@ theorem consumeCallerReply_preserves_capabilityInvariantBundle
       exact Option.some_ne_none _
 
 /-- **WS-RM (`v0.35.6`)**: the *removal* preserves the bundle.  It is
-`consumeCallerReply` run at the state the detach left, and the detach writes one
-`.reply` slot that already held a Reply — so no CNode moves, the CDT and its slot
+`consumeCallerReply` run at the state the splice left, and the splice writes only
+`.reply` slots that already held Replies — so no CNode moves, the CDT and its slot
 map are untouched, and every key that resolved still resolves.  Proved directly
-rather than by composing a detach-level bundle lemma: the bundle's CDT clauses
-read fields the detach frames by `rfl`, so a second bundle statement about the
+rather than by composing a splice-level bundle lemma: the bundle's CDT clauses
+read fields the splice frames by `rfl`, so a second bundle statement about the
 fold would be a copy of this reasoning at a state no transition visits. -/
 theorem removeCallerReplyFrame_preserves_capabilityInvariantBundle
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)

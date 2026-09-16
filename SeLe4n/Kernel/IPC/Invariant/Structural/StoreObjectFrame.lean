@@ -1691,8 +1691,8 @@ theorem consumeCallerReply_preserves_badgeWellFormed
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`)**: and the removal preserves the three above.  Each reads
-TCB fields the removal keeps, or object kinds it never writes — the detach's one
-store is a `.reply`. -/
+TCB fields the removal keeps, or object kinds it never writes — the splice's
+stores are all `.reply`. -/
 theorem removeCallerReplyFrame_preserves_allPendingMessagesBounded
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : allPendingMessagesBounded st)

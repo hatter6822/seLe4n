@@ -100,9 +100,10 @@ dispatch-layer consume is folded in, so a direct below-API caller gets full
 single-use reply semantics.
 
 **WS-RM (`v0.35.6`)**: the removal is seL4's `reply_remove` — the answered frame
-is taken off its reply stack (the frame above stops linking down to it) *before*
-the caller link is consumed, so no frame is left named by a `prev` whose target
-has had its links cleared.  On a head frame the detach is the identity and this
+is taken off its reply stack (the frame above links down past it — to the frame
+below the cut, or to nothing at a bottom frame) *before* the caller link is
+consumed, so no frame is left named by a `prev` whose target has had its links
+cleared.  On a head frame the splice is the identity and this
 is the pre-`v0.35.6` consume, definitionally.
 
 Returns the post-state paired with `Except KernelError (Option (CoreId ×
@@ -155,7 +156,7 @@ def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
                 -- that stack refused, fail-closed, for good — the wedge a
                 -- *delegated* reply capability answering a middle caller
                 -- created.  On every reply of the nested Call pattern the
-                -- answered frame is the head, the detach is the identity and
+                -- answered frame is the head, the splice is the identity and
                 -- this **is** the former consume, definitionally
                 -- (`removeCallerReplyFrame_eq_consume_of_no_frame_above`).  Both
                 -- legs are total, so the error surface and the surfaced wake SGI
@@ -540,17 +541,17 @@ def recordedReplyServer? (st : SystemState) (target : SeLe4n.ThreadId) :
 -- than on donations (see `propagatePipChainCrossCore`'s call site).
 
 /-- **WS-RM (`v0.35.6`): the frame *above* the answered caller's reply object** —
-the one Reply the removal's detach rewrites, and the member both reply footprints
-declare for it.
+the frame the removal's splice re-points at the frame below the cut (or clears, at
+a bottom frame), and the member both reply footprints declare for it.
 
 Derived from the **same** expression the arm's existing reply member is resolved
-from (`(st.getTcb? target).bind (·.replyObject)`) composed with the detach's own
+from (`(st.getTcb? target).bind (·.replyObject)`) composed with the splice's own
 resolver (`replyFrameAbove?`), so the footprint and the transition cannot
 disagree about which frame is answered or which frame sits above it.
 
 `some` exactly when the answered frame is not a stack head and its `next` names a
 frame — the shape a *delegated* reply capability answering a middle caller
-creates.  On every reply of the nested Call pattern it is `none` and the detach
+creates.  On every reply of the nested Call pattern it is `none` and the splice
 is the identity. -/
 def answeredReplyFrameAbove? (st : SystemState) (target : SeLe4n.ThreadId) :
     Option SeLe4n.ReplyId :=
@@ -572,7 +573,7 @@ theorem answeredReplyFrameAbove?_eq (st : SystemState) (target : SeLe4n.ThreadId
 -- WS-HP HP1.1: the head-driven donation-pop trigger, at the answered caller
 -- ============================================================================
 
-/-- The existing frame-above member is that resolver composed with the detach's
+/-- The existing frame-above member is that resolver composed with the splice's
 own, so the shared expression has a consumer rather than a second spelling. -/
 theorem answeredReplyFrameAbove?_eq_bind (st : SystemState) (target : SeLe4n.ThreadId) :
     answeredReplyFrameAbove? st target
@@ -761,7 +762,7 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
     -- theorem.
     (((answeredFrameHeadContext? st target).map (·.1)).bind (replyStackHead? st))
     -- **WS-RM (`v0.35.6`)**: and the frame above the answered one, which the
-    -- removal detaches before it consumes the caller link.
+    -- removal splices out before it consumes the caller link.
     (answeredReplyFrameAbove? st target)
     -- **WS-HP HP3.1**: and the frame **below** it, which the removal's splice
     -- re-links upward in the same step.  Resolved from the same
@@ -1009,7 +1010,7 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     (receivePreReturnStack? st endpointObjId replier).2.1
     (receivePreReturnStack? st endpointObjId replier).2.2
     -- **WS-RM (`v0.35.6`)**: and the frame above the answered caller's reply
-    -- object, which this arm's reply leg detaches -- the same resolver the
+    -- object, which this arm's reply leg splices out -- the same resolver the
     -- `.reply` arm uses, because it is the same transition.
     (answeredReplyFrameAbove? st target)
     -- **WS-HP HP3.1**: and the frame **below** it, which the removal's splice
@@ -1286,7 +1287,7 @@ theorem endpointReplyOnCore_lockSet_correct
     -- **WS-OD (`v0.35.4`)**: and at the head arity.
     (donatedHead? : Option SeLe4n.ReplyId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity — the member the
-    -- removal's detach writes.
+    -- removal's splice writes.
     (answeredFrameAbove? : Option SeLe4n.ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
     -- removal's splice writes.
@@ -1396,7 +1397,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_queueNeighbour
   unfold lockSet_endpointReplyRecvOnCore lockSet_replyRecv
   rw [hq]
   -- WS-RM (`v0.35.6`) / WS-HP HP3.1 / WS-HP HP10.6: three extensions sit above
-  -- it — the frame the removal detaches, the frame below it that the splice
+  -- it — the frame above the cut, the frame below it that the splice
   -- re-links, and the origin a bottom-of-stack pop redirects to.
   iterate 3 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
@@ -2028,14 +2029,14 @@ theorem lockSet_endpointReplyRecvOnCore_covers_pop
     exact lockSet_replyRecv_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       _ _ _ _ _ _ _
 
-/-- **WS-RM (`v0.35.6`)**: the frame the reply leg's detach unlinks is a declared
+/-- **WS-RM (`v0.35.6`)**: the frame the reply leg's splice rewrites is a declared
 write of the resolved `.reply` footprint.
 
 The reply-path twin of `lockSet_cancelIpcBlockingOnCore_covers_splicedFrameAbove`,
 which the cancellation path has carried since `v0.35.4`.  It is the relation the
 Tier 3 anchor over this footprint's definition does not make: that anchor asks
 that `answeredReplyFrameAbove? st target` *occur* in the definition, and a member
-occurring is not a member being a declared write at the mode the detach needs.
+occurring is not a member being a declared write at the mode the splice needs.
 
 Like every member of this family the resolution is on the pre-state, which is
 what `runUnderDeclaredLockSet` re-resolves and refuses on change (WS-RR RR7.12);
@@ -2051,7 +2052,7 @@ theorem lockSet_endpointReplyOnCore_covers_splicedFrameAbove
   exact lockSet_endpointReply_frameAbove_write_mem _ _ _ _ _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
-/-- **WS-RM (`v0.35.6`)**: and `.replyRecv`'s, which is the same detach because
+/-- **WS-RM (`v0.35.6`)**: and `.replyRecv`'s, which is the same splice because
 its reply leg is the `.reply` arm's transition. -/
 theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameAbove
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
@@ -2320,7 +2321,7 @@ theorem endpointReplyOnCore_atomic_under_lockSet
     (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     -- WS-OD (`v0.35.4`): and over the head the pop clears.
     (donatedHead? : Option SeLe4n.ReplyId)
-    -- **WS-RM (`v0.35.6`)**: and over the frame the removal's detach writes.
+    -- **WS-RM (`v0.35.6`)**: and over the frame the removal's splice writes.
     (answeredFrameAbove? : Option SeLe4n.ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
     -- removal's splice writes.
@@ -2365,7 +2366,7 @@ theorem endpointReplyRecvOnCore_atomic_under_lockSet
     (queueNeighbour? : Option SeLe4n.ThreadId)
     (redonationOldHead? donatedHead? : Option SeLe4n.ReplyId)
     -- **PR #894 review / WS-RM (`v0.35.6`)**: and over the invoker's own
-    -- pre-receive return and the frame the reply leg's detach writes.  Stated
+    -- pre-receive return and the frame the reply leg's splice writes.  Stated
     -- rather than defaulted: an atomicity claim checked at one argument value
     -- while the resolved footprint supplies another is about a different
     -- footprint.

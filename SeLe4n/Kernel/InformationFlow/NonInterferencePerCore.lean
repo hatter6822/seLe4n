@@ -867,8 +867,8 @@ theorem consumeCallerReply_confinedToCore (st st' : SystemState) (caller : SeLe4
     (SystemState.consumeCallerReply_machine_eq st st' caller rid hStep)
 
 /-- **WS-RM (`v0.35.6`)**: the removal touches neither the scheduler nor the
-machine, so it is confined on every core — the detach writes one Reply and the
-consume two objects, none of them scheduler or machine state. -/
+machine, so it is confined on every core — the splice writes only Reply objects
+and the consume two objects, none of them scheduler or machine state. -/
 theorem removeCallerReplyFrame_confinedToCore (st st' : SystemState) (caller : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (c₀ : CoreId)
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :

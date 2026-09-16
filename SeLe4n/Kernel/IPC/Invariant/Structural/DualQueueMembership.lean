@@ -44,16 +44,16 @@ open SeLe4n.Model
 
 
 -- ============================================================================
--- WS-RM (`v0.35.6`): the detach's per-conjunct frames
+-- WS-RM (`v0.35.6`): the splice's per-conjunct frames
 -- ============================================================================
 --
 -- `removeCallerReplyFrame` is `spliceReplyFrameOutOrSelf` followed by
 -- `consumeCallerReply`, so every preservation the consume proves lifts to the
--- removal once the detach is shown to preserve the same conjunct.  Each of these
--- is short by construction: the detach's one write is a `.reply` store, so every
+-- removal once the splice is shown to preserve the same conjunct.  Each of these
+-- is short by construction: the splice's writes are all `.reply` stores, so every
 -- TCB, every endpoint, every SchedContext and the scheduler are **identical**
--- across it, and the only Reply field it moves is `prev` -- which no conjunct
--- below reads.  Composing them is what keeps the removal's surface a
+-- across it, and the only Reply fields it moves are the stack links `prev` and
+-- `next` -- which no conjunct below reads.  Composing them is what keeps the removal's surface a
 -- *composition* rather than a second copy of the consume's reasoning.
 
 open SeLe4n.Model.SystemState in
@@ -130,7 +130,7 @@ theorem spliceReplyFrameOutOrSelf_preserves_blockedOnReplyHasTarget
 
 open SeLe4n.Model.SystemState in
 /-- The stash clause reads a TCB's `pendingReceiveReply` and the named Reply's
-`caller`; the detach leaves every TCB alone and rewrites only stack links, which
+`caller`; the splice leaves every TCB alone and rewrites only stack links, which
 `replyStackRewrite.caller_eq` keeps out of the `caller` projection. -/
 theorem spliceReplyFrameOutOrSelf_preserves_pendingReceiveReplyWellFormed
     (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
@@ -3120,7 +3120,7 @@ theorem consumeCallerReply_preserves_blockedThreadTimeoutConsistent
   rw [hIS]; exact hState
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the detach, then the
+/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the splice, then the
 consume. -/
 theorem removeCallerReplyFrame_preserves_ipcStateQueueConsistent
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -3220,7 +3220,7 @@ theorem consumeCallerReply_passiveServerIdleFrame
   exact ⟨tcb, hSt, hSCB.symm.trans hU, hQ, hC, hIS.symm⟩
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal's frame — the detach's composed with the
+/-- **WS-RM (`v0.35.6`)**: the removal's frame — the splice's composed with the
 consume's. -/
 theorem removeCallerReplyFrame_timeoutBudgetFrame
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -3233,7 +3233,7 @@ theorem removeCallerReplyFrame_timeoutBudgetFrame
       (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep))
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal's frame — the detach's composed with the
+/-- **WS-RM (`v0.35.6`)**: the removal's frame — the splice's composed with the
 consume's. -/
 theorem removeCallerReplyFrame_passiveServerIdleFrame
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -3358,7 +3358,7 @@ theorem endpointReply_preserves_ipcStateQueueConsistent
       simp [hIpc] at hStep
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the detach, then the
+/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the splice, then the
 consume. -/
 theorem removeCallerReplyFrame_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -4654,11 +4654,12 @@ theorem removeCallerReplyFrame_objects_frame (st st' : SystemState)
   exact spliceReplyFrameOutOrSelf_objects_ne st rid hObjInv x hxA hxB hxR
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal's frame *up to the stack link the detach
-clears*.  Outside the consumed Reply and the answered caller every slot reads
-back to the pre-state, except at the frame above — where the Reply survives with
-only its stack links rewritten, which `replyStackRewrite.caller_eq` keeps out of
-every projection the linkage conjuncts read.  This is the form the reply
+/-- **WS-RM (`v0.35.6`)**: the removal's frame *up to the stack links the splice
+rewrites*.  Outside the consumed Reply and the answered caller every slot reads
+back to the pre-state, except at the frames either side of the cut — where each
+Reply survives with only its stack links rewritten, which
+`replyStackRewrite.caller_eq` keeps out of every projection the linkage conjuncts
+read.  This is the form the reply
 delivery's reciprocity payoff consumes: it cannot exclude the frame above,
 because no reply-path hypothesis names it. -/
 theorem removeCallerReplyFrame_objects_rewrite (st st' : SystemState)
@@ -8959,7 +8960,7 @@ theorem ipcUnwrapCaps_sameSchedContextBindings
     st st' summary y.toObjId tcY hObjInv hStep hY, rfl⟩
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal's frame — the detach's composed with the
+/-- **WS-RM (`v0.35.6`)**: the removal's frame — the splice's composed with the
 consume's. -/
 theorem removeCallerReplyFrame_sameSchedContextBindings
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -13577,7 +13578,7 @@ theorem consumeCallerReply_preserves_blockedOnReplyHasTarget
       exact hP1 caller tcb ep rt hCallerObj (by simpa using hb)
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal frames it — the detach, then the consume. -/
+/-- **WS-RM (`v0.35.6`)**: the removal frames it — the splice, then the consume. -/
 theorem removeCallerReplyFrame_preserves_blockedOnReplyHasTarget
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st)
@@ -15002,7 +15003,7 @@ theorem consumeCallerReply_preserves_pendingReceiveReplyWellFormed
         { tcb with replyObject := none } hObjInv1 hT rfl rfl hP1 hStep
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal frames it — the detach, then the consume. -/
+/-- **WS-RM (`v0.35.6`)**: the removal frames it — the splice, then the consume. -/
 theorem removeCallerReplyFrame_preserves_pendingReceiveReplyWellFormed
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : pendingReceiveReplyWellFormed st)
@@ -15357,7 +15358,7 @@ theorem storeObject_reply_preserves_queueNextTargetBlocked
     exact ⟨tcb', hY, rfl, rfl⟩
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the detach, then the
+/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the splice, then the
 consume. -/
 theorem removeCallerReplyFrame_preserves_endpointQueueTailBlockedConsistent
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -15456,7 +15457,7 @@ theorem consumeCallerReply_preserves_queueNextTargetBlocked
         ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl rfl hInv1 hStep
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the detach, then the
+/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the splice, then the
 consume. -/
 theorem removeCallerReplyFrame_preserves_queueNextTargetBlocked
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -15736,7 +15737,7 @@ theorem storeObject_reply_stackLinks_preserves_ipcInvariantFull
     rw [hCaller, ← KernelObject.reply.inj (Option.some.inj
       (((getReply?_eq_some_iff _ _ _).mp hr1).symm.trans ((getReply?_eq_some_iff _ _ _).mp hA)))]
     exact hc1
-  -- `donationOwnerUnique`: the detach writes no TCB, so no binding moved.
+  -- `donationOwnerUnique`: the splice writes no TCB, so no binding moved.
   · exact donationOwnerUnique_of_sameSchedContextBindings
       (fun tid tcb' hTcb' => ⟨tcb', hTcbFwd _ _ hTcb', rfl⟩) hInv.donationOwnerUnique
   · exact storeObject_reply_preserves_endpointQueueTailBlockedConsistent st st' above
@@ -15804,8 +15805,8 @@ open SeLe4n.Model.SystemState in
 under exactly the hypotheses `consumeCallerReply_preserves_ipcInvariantFull`
 takes, stated on the **pre**-state — so a caller that could cite the consume can
 cite this.  No side condition relating the consumed frame to the frame above it
-is needed: the detach rewrites stack links only, so the consumed Reply reads back
-with the same `caller` whichever key the detach wrote
+is needed: the splice rewrites stack links only, so the consumed Reply reads back
+with the same `caller` whichever keys the splice wrote
 (`spliceReplyFrameOutOrSelf_reply_rewrite`), and no TCB moves at all. -/
 theorem removeCallerReplyFrame_preserves_ipcInvariantFull
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -15819,7 +15820,7 @@ theorem removeCallerReplyFrame_preserves_ipcInvariantFull
   rw [removeCallerReplyFrame_eq] at hStep
   have hObjInvD := spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv
   -- The consumed frame reads back with its `caller` exactly where it was: the
-  -- detach rewrites stack links only, at whichever key it writes — so no side
+  -- splice rewrites stack links only, at whichever keys it writes — so no side
   -- condition relating `rid` to the frame above is needed here.
   obtain ⟨r0', hr0', hRw⟩ := spliceReplyFrameOutOrSelf_reply_rewrite st rid hObjInv
     rid.toObjId r0 ((getReply?_eq_some_iff _ _ _).mp hGetR0)
@@ -16507,7 +16508,7 @@ theorem linkServerStashedReply_preserves_queueNextBlockingConsistent
           ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl rfl hInv1 hStep
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the detach, then the
+/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the splice, then the
 consume. -/
 theorem removeCallerReplyFrame_preserves_queueNextBlockingConsistent
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -18282,7 +18283,7 @@ theorem linkServerStashedReply_preserves_queueHeadBlockedConsistent
           ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl hInv1 hStep
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the detach, then the
+/-- **WS-RM (`v0.35.6`)**: the removal preserves it — the splice, then the
 consume. -/
 theorem removeCallerReplyFrame_preserves_queueHeadBlockedConsistent
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -21044,7 +21045,7 @@ theorem consumeCallerReply_preserves_replyIdEstablishFresh
           exact hUn1 tid t ((getTcb?_eq_some_iff st1 tid t).mpr hT') hS
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the detach frames the freshness pair.  It writes no
+/-- **WS-RM (`v0.35.6`)**: the splice frames the freshness pair.  It writes no
 TCB, so the stash clause is untouched; it rewrites only stack links, so the
 Reply's `caller` — the one field the free clause reads — survives
 (`replyStackRewrite.caller_eq`). -/
@@ -21060,7 +21061,7 @@ theorem spliceReplyFrameOutOrSelf_preserves_replyIdEstablishFresh
   exact hUn tid tcb ((spliceReplyFrameOutOrSelf_getTcb?_eq st ridC hObjInv tid).symm.trans hT)
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal frames it — the detach, then the consume. -/
+/-- **WS-RM (`v0.35.6`)**: the removal frames it — the splice, then the consume. -/
 theorem removeCallerReplyFrame_preserves_replyIdEstablishFresh
     (st st' : SystemState) (caller : SeLe4n.ThreadId)
     (ridC ridR : SeLe4n.ReplyId)
@@ -21609,13 +21610,13 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.8 / **WS-RM (`v0.35.6`)**: the reply delivery's **object-level**
 frame — every slot other than the answered caller's and its Reply's reads back to
-the pre-state, *up to the stack link the removal's detach clears at the frame
-above*.  Lets the `.replyRecv` fold transport its receive leg's pre-state side
+the pre-state, *up to the stack links the removal's splice rewrites at the frames
+either side of the cut*.  Lets the `.replyRecv` fold transport its receive leg's pre-state side
 conditions (`queueHeadBlockedConsistent`, the receiver's readiness) across the
 reply leg instead of restating them at an internal state no caller can see.
 
 The disjunct is not slack: since `v0.35.6` the reply leg is seL4-MCS's
-`reply_remove`, so it detaches the answered frame from the one above it before
+`reply_remove`, so it splices the answered frame out from between its neighbours before
 consuming the caller link, and that frame is a third key — one no reply-path
 hypothesis names, which is why the honest statement tolerates a rewrite there
 rather than excluding it.  Both projections a linkage conjunct reads survive it:
@@ -21760,7 +21761,7 @@ theorem replyDelivery_preserves_replyCallerLinkageReciprocal
         obtain ⟨tx, hTx, _⟩ := removeCallerReplyFrame_tcb_backward _ st' target rid
           hObjInvMid hCons target.toObjId _ hMidTarget
         exact ⟨tx, hTx⟩
-      -- WS-RM (`v0.35.6`): the removal detaches the frame above before it
+      -- WS-RM (`v0.35.6`): the removal splices the frame out before it
       -- consumes, so outside `rid` and `target` a slot reads back to the
       -- pre-state *or* holds a Reply whose stack links moved.  Reciprocity
       -- reads a Reply's `caller` and a TCB, both of which survive a rewrite.

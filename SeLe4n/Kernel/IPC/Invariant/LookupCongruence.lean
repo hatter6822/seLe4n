@@ -764,7 +764,7 @@ theorem spliceReplyFrameStores_offSchedulerAgrees {s1 s2 t1 t2 : SystemState}
         (SeLe4n.Model.storeObject_preserves_objects_invExt m2 n2 _ _ hInvA2 hSb2) hSc1 hSc2
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)** step congruence: the removal's *detach* leg maps
+/-- **WS-RM (`v0.35.6`)** step congruence: the removal's *splice* leg maps
 off-scheduler-agreeing inputs to off-scheduler-agreeing outputs.  Its decision is
 read off `getReply?` alone (`spliceReplyFrameOutOrSelf_decision`), so agreeing
 object stores take the same branch; its writes are `storeObject`s, whose
@@ -845,9 +845,9 @@ theorem consumeCallerReply_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`)** step congruence: the removal (total) maps
-off-scheduler-agreeing inputs to off-scheduler-agreeing outputs — the detach,
+off-scheduler-agreeing inputs to off-scheduler-agreeing outputs — the splice,
 then the consume.  This is what lets the cross-core reply's post-state be
-compared with the single-core spine's now that both detach. -/
+compared with the single-core spine's now that both splice. -/
 theorem removeCallerReplyFrame_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hRel : OffSchedulerAgrees s1 s2)

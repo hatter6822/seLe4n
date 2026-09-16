@@ -198,8 +198,9 @@ structure SchedContext where
       *off* that stack — so at reply-stack depth 2 a delegate answering the client
       out of order leaves the client's frame gone and the later in-order pop
       settles the reservation on the **intermediate** caller, with the owner
-      `.unbound` for good (`tests/SmpIpcSuite.lean` §3.20, the `PAYOFF/COST`
-      row and the `COST` row beside it).  Both removal policies write `none` into
+      `.unbound` for good (`tests/SmpIpcSuite.lean` §3.20, whose two accounting
+      halves have been PAYOFF rows since HP10.9 closed this).  Both removal
+      policies write `none` into
       the frame above a *bottom* frame, so WS-HP HP6's splice provably cannot
       reach that case; seL4-MCS derives the recipient the same way
       (`reply_pop` donates to the answered frame's own `replyTCB`, read at master,

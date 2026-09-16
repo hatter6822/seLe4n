@@ -438,13 +438,16 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
 live reply stack — one whose upward link is **answered** by what it names?  Such
 a thread is owed a scheduling context by the pop that reaches its frame.
 
-**The test is reciprocity, not `next.isSome`** (PR #894 review).  `severAtCut`
-leaves the frame *below* the cut with a **stale** upward link: cancelling the
-middle caller of `B → M → H` detaches `H` (`prev := none`) and consumes `M`, but
-`B.next` still reads `some (.frame M)`.  `B` is then on no live stack and is owed
-nothing, so refusing its bind refuses an operation `schedContextBind` documents as
-supported (binding a *blocked* thread).  Presence of the link is not the property;
-the property is that the frame or context above answers this frame.
+**The test is reciprocity, not `next.isSome`** (PR #894 review).  A stale upward
+link is reachable: the splice's below side *degenerates* to the sever when the
+frame below does not reciprocate (`spliceFrameBelow?` answers `none`), and the
+sever leaves the frame below the cut with an upward link nothing answers — under
+`severAtCut`, live until WS-HP HP6.8, cancelling the middle caller of `B → M → H`
+cleared `H.prev` and consumed `M` while `B.next` still read `some (.frame M)`.
+`B` is then on no live stack and is owed nothing, so refusing its bind refuses an
+operation `schedContextBind` documents as supported (binding a *blocked* thread).
+Presence of the link is not the property; the property is that the frame or
+context above answers this frame.
 
 That is the same question `donationChainWalk` validates on the way down — a link
 is validated by the target's own upward link, never by its `caller`, because a
@@ -509,8 +512,9 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
           -- live stack (`next.isSome`) is owed a context by the pop that reaches
           -- that frame, and the pop writes its binding; giving it a second
           -- context now would be overwritten by that pop, orphaning this one.
-          -- Refused while the frame is on a stack; a frame the detach cut off
-          -- (`next = none`) is owed nothing, and binding is allowed.
+          -- Refused while the frame is on a stack; a frame with no upward link
+          -- (`next = none`), or one below a severed cut whose link nothing
+          -- answers, is owed nothing, and binding is allowed.
           else if replyFrameOnLiveStack st tcb then .error .illegalState
           else
           -- Z5-G1: Precondition check — TCB must be unbound.

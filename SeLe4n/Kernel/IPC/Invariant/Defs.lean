@@ -2624,11 +2624,13 @@ stop mentioning it and keep passing.
 it names (`prevLinkReciprocal`: that frame's `next` is `.frame` of the one
 above), and every head is answered by its context (`headLinkReciprocal` /
 `headLinkResolves`).  The converse — every upward `.frame` link answered by a
-`prev` — is deliberately **not** required: a frame the detach cut off keeps an
-upward link naming a Reply that has since been consumed (`Reply.consumed`), and
-nothing reads an upward link without checking the answer.  Every walk and every
-pop validator follows `prev` and validates the target's `next`, so a stale upward
-link in a cut-off part is never trusted and never reached from a head. -/
+`prev` — is deliberately **not** required: a frame below a *severed* cut — the
+degenerate arm of the splice, taken when the frame below does not reciprocate —
+keeps an upward link naming a Reply that has since been consumed
+(`Reply.consumed`), and nothing reads an upward link without checking the answer.
+Every walk and every pop validator follows `prev` and validates the target's
+`next`, so a stale upward link below a severed cut is never trusted and never
+reached from a head. -/
 
 /-- WS-OD OD2.4 / `v0.35.4`: the reply-stack data an object carries **as a
 Reply** — the link down to the frame below it and the link up to the frame above
@@ -2964,8 +2966,10 @@ theorem donationChainWalk_mem_prev (st : SystemState) :
 /-- **A walk survives clearing one member's `prev`.**  If the post-state agrees
 with the pre-state on every member's links, except that some members have had
 their `prev` cleared with `next` kept, the post-state walk exists: it follows the
-same frames and stops at the first cleared one.  This is what the cancellation's
-`O(1)` detach costs the chain invariant — a shorter stack, never a broken one. -/
+same frames and stops at the first cleared one.  This is what the splice's
+degenerate (severed) arm costs the chain invariant — a shorter stack, never a
+broken one; the reciprocating arm reconnects the stack instead
+(`spliceReplyFrameOut_preserves_donationChainWellFormed`). -/
 theorem donationChainWalk_exists_of_agree_or_cut {st st' : SystemState} :
     ∀ (fuel : Nat) (expect : ReplyStackLink) (rid? : Option SeLe4n.ReplyId)
       (chain : List SeLe4n.ReplyId),
@@ -3393,7 +3397,7 @@ answer to one question a reader of the stack asks.
 **What is deliberately absent**: any converse for upward `.frame` links (a
 cut-off part keeps stale ones, see the section docstring) and any completeness
 clause over a per-frame context field — a frame below the head does not know its
-context, which is exactly what makes the detach `O(1)`.
+context, which is exactly what makes the splice `O(1)`.
 
 **Not a conjunct of `ipcInvariantFull`.**  That bundle has exactly twenty
 conjuncts and a family of theorems whose size a Tier-0 gate holds equal to the

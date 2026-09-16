@@ -450,8 +450,8 @@ theorem endpointQueueNoDup_of_endpointAgree_of_tcbQueueNext (st st' : SystemStat
   exact hSelf tid ty hSt
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: and the removal preserves it too — the detach writes a
-Reply, which is neither an endpoint nor a TCB. -/
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves it too — the splice writes
+only Reply objects, which are neither endpoints nor TCBs. -/
 theorem removeCallerReplyFrame_preserves_endpointQueueNoDup
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : endpointQueueNoDup st)

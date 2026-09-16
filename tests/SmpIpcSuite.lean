@@ -2119,7 +2119,7 @@ private def runDonationReturnPopChecks : IO Unit := do
   -- the stack: the pop bound the target outright and left that dead frame
   -- heading the context forever, pinning both objects against every retype and
   -- against ever linking the Reply again.  `severAtCut` is now implemented by
-  -- the *detach* at the cancellation (`spliceReplyFrameOut`), so a linked
+  -- the *splice* at the cancellation (`spliceReplyFrameOut`), so a linked
   -- frame always has a blocked caller (`Reply.wellFormed`) and this shape is an
   -- invariant violation — refused, never settled.  Pinned in three halves: the
   -- resolver's verdict, the declared below-head read (which is on the link
@@ -2241,7 +2241,7 @@ private def pushLinksOf (st : SystemState) (rid : SeLe4n.ReplyId) :
   | some (.reply r) => some (r.prev, r.next)
   | _ => none
 
-/-- The whole of what a detach can write: both frames' links and the context's
+/-- The whole of what a splice can write: the frames' links and the context's
 head.  `SystemState` has no `BEq`, and comparing this rather than asserting a
 single field is what lets "the step is the identity" be checked instead of
 described. -/
@@ -2422,7 +2422,7 @@ private def runDonationPushChecks : IO Unit := do
         (SeLe4n.ObjId.ofNat 0)).pairs.any
         (fun p => p.1 == schedContextLock pushSc && p.2 == AccessMode.write)))
 
-/-- **`v0.35.4`: the middle-caller detach, and the wedge it removes.**
+/-- **`v0.35.4`: the middle-caller removal, and the wedge it removes.**
 
 Its own runner rather than a tail of the push checks: the C code generator
 nests a `do`-block's statements, and a helper past roughly 150 Lean lines
@@ -2430,7 +2430,7 @@ compiles to an `if`-tree that can exceed clang's bracket limit.  The boundary
 resets the nesting, and the concern is distinct anyway -- the push builds the
 stack these checks then cut. -/
 private def runMiddleCallerRemovalChecks : IO Unit := do
-  IO.println "--- §3.19 the middle-caller detach, and the wedge it removes (`v0.35.4`) ---"
+  IO.println "--- §3.19 the middle-caller removal, and the wedge it removes (`v0.35.4`; spliced since HP6.3) ---"
   -- The state a depth-2 push leaves is exactly the one the pinning defect
   -- needed: two frames, the outer caller's below the donor's.  Cancelling the
   -- *outer* caller consumes a frame that is not the head, and before this cut
@@ -2439,16 +2439,16 @@ private def runMiddleCallerRemovalChecks : IO Unit := do
   -- and after it.
   match donateSchedContext pushStore pushDonor pushServer pushSc with
   | .error e =>
-    assertBool s!"the detach witness needs a depth-2 push (got {reprStr e})" false
+    assertBool s!"the removal witness needs a depth-2 push (got {reprStr e})" false
   | .ok pushed =>
     -- The outer caller, exactly as the store holds it (WS-HP HP5: one definition,
     -- since the reclaim's trigger now reads its `replyObject`).
     let outerTcb : TCB := pushOuterBlockedTcb
-    -- Step one: the detach's WRITING arm.  Every `spliceReplyFrameOut` result
+    -- Step one: the splice's WRITING arm.  Every `spliceReplyFrameOut` result
     -- proved elsewhere is discharged on a state whose frame has nothing above
     -- it, where the step is the identity; this is the arm that stores.
     let detached := spliceThreadReplyFrameOut pushed outerTcb
-    assertBool "the detach clears the `prev` of the frame ABOVE the cancelled one"
+    assertBool "the removal clears the `prev` of the frame ABOVE the cancelled one (a bottom frame: the splice's sever arm)"
       (pushLinksOf detached pushDonorReply == some (none, some (.head pushSc)))
     assertBool "...and writes nothing on the cancelled frame itself — the consume does that"
       (pushLinksOf detached pushOuterReply == some (none, some (.frame pushDonorReply)))
@@ -2480,12 +2480,12 @@ private def runMiddleCallerRemovalChecks : IO Unit := do
        | .ok st' => pushHeadOf st' == some none
        | .error _ => false)
     -- NEGATIVE, and the reason this witness exists: the SAME consume with the
-    -- detach omitted.  Every object is still there and every field the consume
+    -- splice omitted.  Every object is still there and every field the consume
     -- writes is identical; what changes is the relation between the head and the
     -- frame below it.  That state is what wedged the chain — the pop refuses and
     -- the context can never leave the server.
     let wedged := Lifecycle.Suspend.consumeReplyLink pushed pushOuter outerTcb
-    assertBool "NEGATIVE: without the detach the head still links down to the consumed frame"
+    assertBool "NEGATIVE: without the splice the head still links down to the consumed frame"
       (pushLinksOf wedged pushDonorReply == some (some pushOuterReply, some (.head pushSc)))
     assertBool "NEGATIVE: ...and the outer-caller resolution refuses it"
       (match replyStackOuterCaller? wedged pushSc with
@@ -2495,7 +2495,7 @@ private def runMiddleCallerRemovalChecks : IO Unit := do
       (match returnDonatedSchedContextResolved wedged pushServer pushSc pushDonor with
        | .error e => e == KernelError.invalidArgument
        | .ok _ => false)
-    -- The detach is FAIL-CLOSED and the wrapper is TOTAL: a frame above that
+    -- The splice is FAIL-CLOSED and the wrapper is TOTAL: a frame above that
     -- does not link back is refused by the primitive, and the cancellation still
     -- runs rather than failing — which is what keeps a severed stack's lower
     -- frames cancellable.  Both halves, since the primitive's refusal and the
@@ -2505,7 +2505,7 @@ private def runMiddleCallerRemovalChecks : IO Unit := do
     -- That is the state a second cancellation — of the caller below the cut —
     -- meets, so the refusal and the wrapper's fold together are what keep a
     -- severed stack's lower frames cancellable rather than wedged in turn.
-    assertBool "the detach refuses a frame above that does not link back"
+    assertBool "the splice refuses a frame above that does not link back"
       (match spliceReplyFrameOut detached pushOuterReply with
        | .error e => e == KernelError.invalidArgument
        | .ok _ => false)
@@ -2520,14 +2520,14 @@ private def runMiddleCallerRemovalChecks : IO Unit := do
        | none => false)
     -- ...and a frame above that names no Reply at all is a different refusal,
     -- so the two fail-closed arms are told apart rather than merged.
-    assertBool "the detach refuses a frame above that resolves to no Reply"
+    assertBool "the splice refuses a frame above that resolves to no Reply"
       (match spliceReplyFrameOut
           (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
             { pushFreshHead with next := some (.frame ⟨98⟩) })
           pushDonorReply with
        | .error e => e == KernelError.objectNotFound
        | .ok _ => false)
-    assertBool "the detach is the identity for a frame with nothing above it"
+    assertBool "the splice is the identity for a frame with nothing above it"
       (pushStackShape (spliceThreadReplyFrameOut pushed
          { outerTcb with replyObject := some pushDonorReply }) == pushStackShape pushed)
     assertBool "...and for a thread holding no reply object at all"
@@ -2541,7 +2541,7 @@ private def runMiddleCallerRemovalChecks : IO Unit := do
 /-- **WS-RM**: the depth-2 chain's outer caller, carrying the reply object it is
 blocked on.
 
-`§3.19`'s detach witness builds the same TCB for the *cancellation* path; the
+`§3.19`'s removal witness builds the same TCB for the *cancellation* path; the
 reply path answers the very same frame, which is the point — one removal step,
 two callers of it. -/
 private def replyRemovalOuterTcb : TCB := pushOuterBlockedTcb
@@ -2847,12 +2847,12 @@ private def runReplyFrameRemovalChecks : IO Unit := do
             | (_, .error _) => false)
        | (_, .error _) => false)
     -- NEGATIVE, and the reason this witness exists: the SAME reply with the
-    -- detach omitted.  Every object is present and every field the consume
+    -- splice omitted.  Every object is present and every field the consume
     -- writes is identical; what changes is the head's link down to a frame whose
     -- caller is gone.  A fixture that exercised only the in-order path would
     -- pass before this cut and after it.
     let wedged := SystemState.consumeCallerReply pushOuter pushOuterReply stChain
-    assertBool "NEGATIVE: without the detach the head still links down to the answered frame"
+    assertBool "NEGATIVE: without the splice the head still links down to the answered frame"
       (match wedged with
        | .ok ((), st') => pushLinksOf st' pushDonorReply == some (some pushOuterReply,
            some (.head pushSc))

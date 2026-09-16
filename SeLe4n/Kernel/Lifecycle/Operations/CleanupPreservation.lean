@@ -1104,14 +1104,15 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     --
     -- **WS-OD OD5.4 / `v0.35.4`: and a third in-use form — a reply-stack frame.**
     -- A Reply carrying a stack link in either direction (`prev` or `next`) is a
-    -- frame of some scheduling context's donation stack, or the top of a part
-    -- the detach cut off; freeing it would leave a context's `scReply` or a
+    -- frame of some scheduling context's donation stack, or a frame below a
+    -- degenerate (severed) cut still carrying its stale upward link; freeing it
+    -- would leave a context's `scReply` or a
     -- neighbour's link naming a slot the retype has replaced.  The one spelling
     -- of "this Reply may be linked or retyped" is `Reply.isFree` — no caller, no
     -- links — shared with `linkReply`, `replyStashValid` and the boot check.
     -- Under `donationChainWellFormed` a linked frame always has a blocked
     -- caller, and a frame whose caller is gone has already left its stack (the
-    -- pop, the detach, `Reply.consumed`), so nothing is pinned by this guard
+    -- pop, the splice, `Reply.consumed`), so nothing is pinned by this guard
     -- that a cancellation cannot free: the `v0.35.4` finding was exactly a frame
     -- that stayed linked after its caller was consumed.
     if !r.isFree || st.replyIsStashed (SeLe4n.ReplyId.ofNat target.toNat) then

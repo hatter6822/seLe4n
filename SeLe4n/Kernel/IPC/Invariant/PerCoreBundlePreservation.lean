@@ -489,8 +489,8 @@ theorem consumeCallerReply_passiveServerIdleFrameOnCore
   exact ⟨tcb, (getTcb?_eq_some_iff st tid tcb).mpr hSt, hSCB.symm.trans hU, hQ, hC, hIS.symm⟩
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)** micro-frame: the *detach* frames every core's slice —
-its one write is a `.reply` store, so every TCB is identical and the scheduler
+/-- **WS-RM (`v0.35.6`)** micro-frame: the *splice* frames every core's slice —
+its writes are all `.reply` stores, so every TCB is identical and the scheduler
 is untouched. -/
 theorem spliceReplyFrameOutOrSelf_passiveServerIdleFrameOnCore
     (st : SystemState) (rid : SeLe4n.ReplyId) {c : CoreId}
@@ -503,7 +503,7 @@ theorem spliceReplyFrameOutOrSelf_passiveServerIdleFrameOnCore
       ((getTcb?_eq_some_iff _ tid tcb').mp h)), hU, hQ, hC, rfl⟩
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)** micro-frame: the removal frames it — the detach, then
+/-- **WS-RM (`v0.35.6`)** micro-frame: the removal frames it — the splice, then
 the consume. -/
 theorem removeCallerReplyFrame_passiveServerIdleFrameOnCore
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) {c : CoreId}

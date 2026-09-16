@@ -642,8 +642,8 @@ theorem ipcStateQueueMembershipConsistent_of_agree (st st' : SystemState)
           exact Or.inr ⟨prev, xx, hStX, hQNeq.trans hQN⟩
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: and the removal preserves it — the detach writes a
-Reply, which is neither an endpoint nor a TCB. -/
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves it — the splice writes only
+Reply objects, which are neither endpoints nor TCBs. -/
 theorem removeCallerReplyFrame_preserves_ipcStateQueueMembershipConsistent
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : ipcStateQueueMembershipConsistent st)

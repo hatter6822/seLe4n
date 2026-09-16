@@ -1,3 +1,108 @@
+## v0.35.62 — the second pass of the post-landing audit: a sweep the closure claimed and had not run
+
+Requested by the maintainer: a second, deeper audit of everything this PR
+implements — WS-HP end to end, RR8.1–RR8.4, the `v0.35.59`–`v0.35.61` cuts, and
+every other file the PR touches — reading each docstring as a claim to check
+against the code, running every suite and gate, and bringing the documentation
+back into line with what the code does.  **The code held again**: no kernel
+transition, proof, frozen mirror, footprint or test changed its meaning in this
+cut.  What the pass found is prose, one test label, one Tier 3 anchor and one
+inert attribute — and one of those findings is a sweep this workstream's own plan
+row said would run and which never did.
+
+### Finding 1 — HP6.1 promised the prose would follow the body at HP6.3, and it did not
+
+HP6.1 (`v0.35.41`) renamed the removal family `detach…` → `splice…` while the body
+still severed, and recorded in its own row that *the English word "detach" in
+prose describing what the operation does is left alone: it is accurate at this
+version, and prose follows behaviour when the body changes*.  HP6.3 (`v0.35.45`)
+changed the body and swept one docstring.  Measured seventeen cuts later rather
+than estimated: some **120 sites in 35 files** still called the splice *the
+detach* — docstrings, inline comments, test labels, Tier 3 comments, the spec's
+§8.12.7–§8.12.8, GitBook 12 and the claim index — and **nine of them described
+the sever as its behaviour**: "`spliceReplyFrameOut` sets its `prev := none`",
+"clears the `prev` of the frame above", "the `severAtCut` policy is unchanged and
+is now carried out by the detach", "the frame above becomes the bottom of the
+stack it heads", "the only Reply field it moves is `prev`".  Every one is swept.
+Where the sever is still the truth — the **degenerate** arm, taken at a bottom
+frame or when the frame below does not reciprocate
+(`spliceReplyFrameOut_eq_sever_of_no_frame_below`) — the text now says that
+instead of describing the sever as the operation.  Six test labels moved with
+their meaning and the five Tier 3 anchors that match them moved in the same cut
+(`tests/SmpIpcSuite.lean` §3.19, `tests/SmpCancellationSuite.lean` §3.20,
+`tests/DeadlockFreedomSuite.lean`, `scripts/test_tier3_invariant_surface.sh`).
+What was deliberately **kept**: every `detach` in the CDT, slot, retype and
+endpoint-queue senses (`detachSlotFromCdt`, `detachCNodeSlots`,
+`retypeTargetDetached`, the queue-splice "detachment facts"), which are different
+operations; the history in closed plans, `CHANGELOG.md` and the HP6.1/HP8 rows
+that record the rename; and the Tier 3 negative refusing
+`frozenDetachReplyFrameAbove` tree-wide, which is the shape a retired name is
+meant to leave.
+
+### Finding 2 — three figures stale in docstrings while their theorems stayed right
+
+* Two docstrings called the splicing `.replyRecv` branch *sixteen, two below* the
+  popping one, on theorems whose conclusions read **seventeen**
+  (`lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head_of_no_origin`:
+  `4 + 13 = 17`, one below the eighteen of
+  `lockSet_endpointReplyRecvOnCore_size_le_eighteen`, since HP3.1's below-frame
+  member).
+* `maxLockSetSize`'s own docstring narrated the ceiling's history to twenty-three
+  and stopped, one raise short of the constant beneath it, and cited
+  `lockSet_endpointReplyRecvOnCore_size_le_nineteen`, renamed at HP3.2.  It now
+  carries the HP10.6 raise to twenty-four, the per-lock costs it implied
+  (15 → 14 → 13 µs on the 1 ms tick), and the live sharp-bound names.
+* `tests/DeadlockFreedomSuite.lean` labelled a `.replyRecv` shape *declares 22*
+  while asserting `maxLockSetSize - 1` — 23 since HP10.6 — with its negative
+  pinned at the literal `21` rather than at the ceiling's minus two.  Both are
+  derived from the constant now (`maxLockSetSize - 1`, `maxLockSetSize - 2`), the
+  label says *one under the ceiling*, and the Tier 3 anchor on it moved.
+
+### Finding 3 — two dead citations and one retired label
+
+`Endpoint.lean` cited `replyDonationOwnerHome` as live discipline (retired at
+HP4.3; the live names are `replyDonationHolderHome` and
+`replyDonationRecipientHome`).  `EndpointReplyDispatchInvariant.lean`'s HP6.2 block
+said `answeredFrameHeadContext?_implies_serverDonation` was *not* retired, forty
+lines below the HP7 comment recording that it was.  `SchedContext.donationOrigin`'s
+docstring pointed at §3.20's `PAYOFF/COST` rows, which HP10.9 renamed to `PAYOFF`.
+And the sweep over every reply-frame citation in the tree found three more in
+open or live documents: the claim index's chain row still listed *the detach*
+among the chain's writers, the open RR8.5 register row cited
+`detachFrameAboveThreadReply` (renamed at HP6.1), and the closed WS-OD plan's
+header still said the reply path *does not yet* remove the answered frame — a
+forward-looking sentence that came true at `v0.35.6`.  The plan's §3 design
+narrative names the HP6.1 rename beside `replyFrameAbove?_of_detach_store` so the
+citation resolves, and a Tier 3 comment written at HP4.7 that said the frozen
+removal *still severs* now dates the sentence to the cut that changed it.
+
+### Finding 4 — an inert attribute
+
+`cancelledCallerDonation?_independent_of_victim` was a `@[simp]` lemma whose
+right-hand side has a variable the left does not (`t₂`), which simp can never
+instantiate, so the attribute could never fire.  It is a plain `rfl` theorem now,
+with the reason in its docstring; nothing consumed it as a rewrite.
+
+### Also polished
+
+A proof-local hypothesis in `CancellationReplyShape.lean` named for the sever
+(`hDetach`) is `hSplice`; the remaining `hDetach` binders in the tree are all the
+CDT and endpoint-queue senses and stay.
+
+### What the pass re-verified
+
+Every one of the **122** declarations this PR deletes has a splice or head-driven
+twin or a documented retirement; every one of the **31** theorems whose hypotheses
+changed is recorded in `CLAUDE.md`'s WS-HP section; no added line in the PR
+carries a `sorry`, `axiom`, `admit`, `native_decide` or `partial`; every
+declaration-shaped identifier the PR's CHANGELOG entries cite either resolves in
+the tree or is named as retired; the reachability sweep from every build root
+(`lakefile.toml`'s 71 targets, both library roots, `Platform.Staged` and the six
+Tier 1 censuses) finds no orphan module; and the RR8.1 claims were re-measured
+against the tree.  Golden trace byte-identical.  `test_full.sh`, `test_rust.sh`
+and `test_aarch64_cross_build.sh` exit 0, with no Lean warnings on any rebuilt
+module.
+
 ## v0.35.61 — the post-landing audit of WS-HP and RR8: the code held, and the prose about the future did not
 
 Requested by the maintainer: a deep audit of everything this PR implements —
