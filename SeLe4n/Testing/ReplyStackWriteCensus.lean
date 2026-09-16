@@ -19,9 +19,12 @@ import SeLe4n.Platform.Staged
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
 import SeLe4n.Kernel.IPC.Invariant.FaultPreservation
--- The frozen execution surface, which neither root reaches: it is built by its
--- own `lean_exe` target (`tests.FrozenOpsSuite`) and is in the staged allowlist
--- of neither.  `FrozenKernelObject.reply` carries the **live**
+-- The frozen execution surface.  Until `v0.35.60` neither root reached it -- it
+-- was built by its own `lean_exe` target (`tests.FrozenOpsSuite`) and was in
+-- neither staged allowlist -- which is why this census had to be widened by hand
+-- at `v0.35.12`, after a defect had already shipped through the hole; it is in
+-- `SeLe4n.lean` now, so the import below is the root's rather than this file's
+-- alone.  `FrozenKernelObject.reply` carries the **live**
 -- `SeLe4n.Kernel.Reply` — links and all — and `Model.freeze` copies a live
 -- state's Reply objects verbatim, so a frozen state taken mid-call-chain holds
 -- a real reply stack and a frozen transition can falsify the chain exactly as a
@@ -649,9 +652,10 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- ---------------------------------------------------------------------
     -- The frozen execution surface.
     --
-    -- These were invisible to this census until `v0.35.12`: `FrozenOps` is
+    -- These were invisible to this census until `v0.35.12`: `FrozenOps` was
     -- reached by neither root, so the closure it claims held for every module
-    -- except one that writes the live `Reply` record.  And the gap was not
+    -- except one that writes the live `Reply` record.  The root cause -- a
+    -- subsystem outside every derived domain -- closed at `v0.35.60`.  And the gap was not
     -- theoretical — `frozenEndpointReply` cleared a caller's Reply bare, which
     -- is WS-RM's own defect, surviving on the surface nothing was looking at.
     --

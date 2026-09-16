@@ -12,8 +12,14 @@ import SeLe4n.Kernel.FrozenOps.Operations
 /-!
 # Q7-D: Commutativity Proofs
 
-**STATUS: Experimental — post-1.0 hardening candidate (AG8-D). Not in
-production chain; registered in `docs/REGISTERED_DEBT.md` (Registered debt index, C.1).**
+**STATUS: in the production import chain since `v0.35.60`** (`SeLe4n.lean` imports
+`FrozenOps.Agreement` and `FrozenOps.Invariant`), so the Tier 1 censuses and the
+production/staging partition gate reach this module by derivation rather than
+because someone remembered to widen them.  What remains deferred is the
+*architectural* switch — `API.lean` running syscalls over frozen snapshots — which
+AG8-D gated on RPi5 freeze→operate→thaw benchmarks that do not exist yet
+(`docs/REGISTERED_DEBT.md`, Registered debt index C.1 row 14).  Being in the chain
+is not being the dispatch path.
 
 Establishes the commutativity diagram between builder-phase and frozen-phase
 operations:

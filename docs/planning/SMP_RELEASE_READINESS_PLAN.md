@@ -1178,8 +1178,9 @@ them to a documentation sweep.
 the numbering rule rather than an exception to it.**  WS-RR RR8.4 (`v0.35.58`)
 ran its own sweep for who computes a queue boundary and found a **fifth** asker
 the plan row's enumeration had missed — `frozenQueueRemove`, the frozen
-execution mirror, which a kernel-tree sweep misses structurally because
-`SeLe4n/Kernel/FrozenOps/` is reached by neither library root.  It already asked
+execution mirror, which a kernel-tree sweep missed structurally because
+`SeLe4n/Kernel/FrozenOps/` was then reached by neither library root -- the root
+cause, closed at `v0.35.60` by putting the surface in `SeLe4n.lean`.  It already asked
 the right question about the queue's tail, so its boundary was repointed in that
 cut; what it did **not** carry was the live removal's *guard*, so it succeeded on
 three classes of state where `endpointQueueRemoveDual` returns `.illegalState` —
@@ -1201,7 +1202,17 @@ execution order: a cut landing before RR8.5 would have to *be* RR8.5 and shift
 RR8.5..RR8.16 up by one, and six of those IDs are already cited in
 `CHANGELOG.md` — which this project's own rule treats as freezing them, since a
 renumber leaves those entries resolving to different work, the one drift
-`check_workstream_plan.py` states it cannot see.  So the row is struck in the
+`check_workstream_plan.py` states it cannot see.
+
+**`v0.35.60` is a second unnumbered cut in this phase, for the same reason, and it
+closes the root cause of the one above.**  The maintainer's correction: the frozen
+surface being outside both library roots is not a status to work around but a
+**gate-domain defect**, since it exempted the subsystem from five of the six Tier 1
+censuses and from the production/staging partition gate.  `SeLe4n.lean` imports it
+now; one gate fired (the content-flow coverage gate's property (C), on the frozen
+taint primitives naming the live taint-writing API), and it is declared as a
+reconciled mirror rather than folded into the live surface.  Phase AG8's
+"production-promotion deferred to post-1.0 hardening" is retired.  So the row is struck in the
 register, this paragraph is the plan's record of it, and the declared sub-task
 count below is unchanged.  A reader working RR8.5 next has lost nothing: the
 relocation repaired no proof and cascaded nowhere, and RR8.15's hand-off check

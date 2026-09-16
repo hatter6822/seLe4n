@@ -106,6 +106,34 @@ DECLARED_TAINT_WRITERS = {
     "SeLe4n.Kernel.applySyscallTaint",
 }
 
+# **`v0.35.60`: the FROZEN propagation surface, as mirrors.**
+#
+# `FrozenSystemState.declassificationTaint` is the **same `TaintTable`** as the
+# live field, so the frozen mirror's propagation primitives name the same API and
+# check (C) reports them.  They are not part of the live surface — nothing here
+# can move `SystemState.declassificationTaint`, which is what (C2) decides
+# type-resolved — so folding them into `DECLARED_TAINT_WRITERS` would dilute the
+# live one-writer fact into "one live writer and some others".
+#
+# They are declared as **mirrors** instead, each naming the live counterpart it
+# reproduces — the shape `ReplyStackWriteCensus`'s `.mirrors` constructor already
+# uses for exactly this question, and `frozenBranchLiveOperation` for its own.  A
+# counterpart named in a comment is a claim nothing reconciles, so the map is
+# reconciled in **both** directions: a key the probe no longer reports is stale,
+# and a value outside `DECLARED_TAINT_WRITERS` names a live surface that does not
+# exist.
+#
+# Surfaced by promoting `SeLe4n/Kernel/FrozenOps/` into the library root at
+# `v0.35.60`.  Before that it was in neither root and in no staged allowlist, so
+# it sat outside this gate's derived domain along with five of the six Tier 1
+# censuses — which is why `DECLARED_TAINT_CONSUMERS`'s own note below records a
+# "frozen/live taint-layer mismatch" that survived until a differential scenario
+# could start from a tagged state.  This is that gap given a declaration.
+DECLARED_FROZEN_TAINT_WRITERS = {
+    "private@SeLe4n.Kernel.FrozenOps.frozenTaintFlow": "SeLe4n.Kernel.TaintTable.joinAt",
+    "private@SeLe4n.Kernel.FrozenOps.frozenTaintClear": "SeLe4n.Kernel.TaintTable.clearAt",
+}
+
 # The two content channels, as (structure, field) pairs.  Named because they are
 # the *subject* the gate is about; the gate then checks that the domain it
 # quantifies over — every live arm — is exhaustive of what it polices.
@@ -1383,11 +1411,29 @@ def main() -> int:
     unexpected = sorted(w for w in writers
                         if w not in DECLARED_TAINT_WRITERS
                         and not is_auxiliary(w)
-                        and w not in DECLARED_TAINT_CONSUMERS)
+                        and w not in DECLARED_TAINT_CONSUMERS
+                        and w not in DECLARED_FROZEN_TAINT_WRITERS)
     if unexpected:
         failures.append(
             "  constants outside the declared propagation surface name the taint-writing "
             "API:\n      " + "\n      ".join(unexpected[:12]))
+
+    # `v0.35.60`: the frozen mirrors are reconciled in BOTH directions.  A key the
+    # probe no longer reports is a stale exemption reading exactly like coverage;
+    # a value outside the live surface names a counterpart that does not exist.
+    stale_frozen = sorted(k for k in DECLARED_FROZEN_TAINT_WRITERS if k not in writers)
+    if stale_frozen:
+        failures.append(
+            "  declared frozen taint mirrors that no longer name the taint-writing API "
+            "(stale — delete them, or the exemption reads as coverage):\n      "
+            + "\n      ".join(stale_frozen))
+    unknown_counterpart = sorted(
+        f"{k} -> {v}" for k, v in DECLARED_FROZEN_TAINT_WRITERS.items()
+        if v not in DECLARED_TAINT_WRITERS)
+    if unknown_counterpart:
+        failures.append(
+            "  declared frozen taint mirrors naming a live counterpart outside "
+            "`DECLARED_TAINT_WRITERS`:\n      " + "\n      ".join(unknown_counterpart))
 
     # (C2) one field writer.  Check (C) sees only constants that NAME the taint
     # API; a definition writing `SystemState.declassificationTaint` directly in

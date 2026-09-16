@@ -13,8 +13,14 @@ import SeLe4n.Kernel.SchedContext.Budget
 /-!
 # Q7-C: Per-Subsystem Frozen Operations
 
-**STATUS: Experimental — post-1.0 hardening candidate (AG8-D). Not in
-production chain; registered in `docs/REGISTERED_DEBT.md` (Registered debt index, C.1).**
+**STATUS: in the production import chain since `v0.35.60`** (`SeLe4n.lean` imports
+`FrozenOps.Agreement` and `FrozenOps.Invariant`), so the Tier 1 censuses and the
+production/staging partition gate reach this module by derivation rather than
+because someone remembered to widen them.  What remains deferred is the
+*architectural* switch — `API.lean` running syscalls over frozen snapshots — which
+AG8-D gated on RPi5 freeze→operate→thaw benchmarks that do not exist yet
+(`docs/REGISTERED_DEBT.md`, Registered debt index C.1 row 14).  Being in the chain
+is not being the dispatch path.
 
 AF5-I (AF-43): Implements 24 frozen kernel operations that operate on
 `FrozenSystemState` using O(1) array-indexed lookups. Each mirrors a

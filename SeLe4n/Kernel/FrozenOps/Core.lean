@@ -13,20 +13,35 @@ import SeLe4n.Model.FreezeProofs
 /-!
 # Q7-A: Frozen Kernel Monad and Core Primitives
 
-**STATUS: Experimental — post-1.0 hardening candidate, registered in the *Registered debt index* (table C.1) in `docs/REGISTERED_DEBT.md`,
-row 14. Not in production import chain.**
+**STATUS: in the production import chain since `v0.35.60`.**  `SeLe4n.lean`
+imports `FrozenOps.Agreement` and `FrozenOps.Invariant`, which reach all five
+modules.  The *architectural* switch — `API.lean` running syscall processing over
+frozen snapshots — remains deferred and is C.1 row 14 in
+`docs/REGISTERED_DEBT.md`; **being in the import chain is not being the dispatch
+path**, and a reader must not take one for the other.
 
 AG8-D production decision (H3-PROOF-05): FrozenOps evaluated for H3 promotion.
-Decision: **defer as post-1.0 hardening candidate**. Rationale:
+Decision at the time: **defer as post-1.0 hardening candidate**. Rationale:
 1. All 24 per-subsystem operations have preservation theorems (33 total).
 2. `FrozenSchedulerState.replenishQueue` present (AG1-E).
 3. `FrozenMap` commutativity proofs complete.
 4. However, the two-phase architecture requires RPi5 performance benchmarking
    to validate that the freeze→operate→thaw cycle does not exceed the WCRT
    budget on Cortex-A76. This cannot be assessed until a post-1.0 hardware-
-   testing workstream is opened.
+   testing workstream is opened.  **Still live** — it gates the dispatch switch,
+   and nothing in `v0.35.60` touches it.
 5. Zero production consumers — promoting now would add import weight without
-   a runtime benefit.
+   a runtime benefit.  **Refuted at `v0.35.60`, and how it was wrong is worth
+   keeping**: it weighed *runtime* benefit only.  The benefit of being in the
+   chain is **verification** — the import is what puts a module inside the
+   derived domain of the Tier 1 censuses and the production/staging partition
+   gate.  Outside it this subsystem was exempt from five of the six censuses and
+   from the partition gate entirely, which cost five after-the-fact corrections
+   (`v0.35.12`, `v0.35.38`, `v0.35.47`, `v0.35.52`, `v0.35.58`) on a surface
+   that carries the **live** `TCB`, `Reply`, `SchedContext` and `IntrusiveQueue`
+   records and mirrors the reply and cancellation spines.  Reasoning about
+   "import weight" while a differential mirror sat outside every derived gate
+   domain weighed the cheap axis and not the expensive one.
 
 These modules implement the frozen-state kernel monad for a future
 architecture where syscall processing operates on immutable
@@ -36,10 +51,14 @@ Integration into the production API layer is a post-1.0 hardening candidate
 pending RPi5 benchmark data.
 (AE2-E / U-02 / AG8-D)
 
-**Subsystem status (W3-G):** FrozenOps has zero production consumers — the
-kernel API (`API.lean`) does not reference it. Only `FrozenOpsSuite.lean` and
-`TwoPhaseArchSuite.lean` import it. This subsystem is retained as **architectural
-validation infrastructure** for the two-phase (builder→frozen) state model:
+**Subsystem status:** FrozenOps has no production *caller* — the kernel API
+(`API.lean`) does not dispatch through it — but it is in the production import
+chain since `v0.35.60`, so it is not outside the gates' derived domains.  The
+distinction is the point: a module can be checked by everything and called by
+nothing, and conflating "no caller" with "not production" is what exempted this
+surface from five of the six Tier 1 censuses.  It remains **architectural
+validation infrastructure** for the two-phase (builder→frozen) state model, and
+it is also the live kernel's differential mirror:
 
 - `FrozenKernel` monad validates that `FrozenMap` lookups/mutations are
   expressible as pure functions with `FrozenSystemState`.
@@ -1114,10 +1133,11 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
           -- the one definition of what a removal writes to a queue's boundaries,
           -- shared with all three live removals.  This was the **fifth** asker of
           -- that question and the one the sweep nearly missed, which is the
-          -- position this surface keeps occupying: it is reached by neither
-          -- library root and holds the **live** `TCB`, so a model-level definition
-          -- applies to it directly and a sweep that stops at the kernel tree
-          -- leaves it behind.
+          -- position this surface kept occupying: until `v0.35.60` it was reached
+          -- by neither library root, and it holds the **live** `TCB`, so a
+          -- model-level definition applies to it directly and a sweep that stopped
+          -- at the kernel tree left it behind.  It is in `SeLe4n.lean` now, so a
+          -- root-derived sweep reaches it.
           --
           -- It already asked the **fact** (`q.tail == some tid`) rather than the
           -- proxy (`queueNext = none`) the live dual removal used, so the mirror

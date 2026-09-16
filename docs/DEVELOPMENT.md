@@ -272,7 +272,7 @@ SeLe4n/Kernel/InformationFlow/   Security labels, projection, non-interference
 SeLe4n/Kernel/RobinHood/         Verified Robin Hood hash table
 SeLe4n/Kernel/RadixTree/         Verified flat-array CNode radix tree
 SeLe4n/Kernel/SchedContext/      CBS budgets, replenishment queue, MCP authority
-SeLe4n/Kernel/FrozenOps/         Frozen-state kernel operations (experimental)
+SeLe4n/Kernel/FrozenOps/         Frozen-state kernel operations, refined against the live API
 SeLe4n/Kernel/Concurrency/       Locks, memory model, SMP assumption inventory
 SeLe4n/Kernel/CrossSubsystem.lean  Cross-subsystem invariants, discharge index marker
 SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers

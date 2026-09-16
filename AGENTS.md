@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.59.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.60.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -162,7 +162,7 @@ SeLe4n/Kernel/InformationFlow/   Security labels, projection, non-interference
 SeLe4n/Kernel/RobinHood/         Verified Robin Hood hash table
 SeLe4n/Kernel/RadixTree/         Verified flat-array CNode radix tree
 SeLe4n/Kernel/SchedContext/      CBS budgets, replenishment queue, MCP authority
-SeLe4n/Kernel/FrozenOps/         Frozen-state kernel operations (experimental)
+SeLe4n/Kernel/FrozenOps/         Frozen-state kernel operations, refined against the live API
 SeLe4n/Kernel/Concurrency/       SMP-latent assumption inventory
 SeLe4n/Kernel/CrossSubsystem.lean  Cross-subsystem invariants, discharge index marker
 SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~67302 lines)
+- `CHANGELOG.md` (~67433 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23591 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -212,7 +212,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7301 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6309 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6129 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6032 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6033 lines)
 - `SeLe4n/Platform/Boot.lean` (~5887 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5382 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5105 lines)
@@ -310,13 +310,13 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1720 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1674 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1668 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1617 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1497 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1481 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1470 lines)
@@ -339,18 +339,18 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1316 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
-- `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1291 lines)
+- `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1293 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1256 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1239 lines)
-- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1236 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1236 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
-- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1191 lines)
+- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1195 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1176 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
@@ -3313,10 +3313,14 @@ it is not about.
 running it rather than stating it.  `frozenQueueRemove`
 (`Kernel/FrozenOps/Core.lean`) is the frozen mirror of `endpointQueueRemoveDual`
 and computed the boundary itself, with `==` where the live ones use `=`.  It is
-the asker a kernel-tree sweep structurally misses — the frozen surface is reached
-by neither library root, built only by its own test target — and it is the third
-time this project has paid for that (WS-RM's census, HP4.7's trigger, HP8's
-splice).  Because the frozen store holds the **live** `TCB` and `IntrusiveQueue`,
+the asker a kernel-tree sweep structurally missed — until `v0.35.60` the frozen
+surface was in neither library root, built only by its own test target — and it
+is the **fifth** time this project paid for that (WS-RM's census at `v0.35.12`,
+HP4.7's trigger at `v0.35.38`, HP8's splice at `v0.35.47`, HP10.8's origin clear
+at `v0.35.52`, and this boundary).  **This paragraph said "third" for two cuts
+after it was five**, in the file whose own rules retire hand-kept counts; the
+root cause is closed at `v0.35.60` — see *a surface outside every derived domain
+is checked by whoever remembers it* below.  Because the frozen store holds the **live** `TCB` and `IntrusiveQueue`,
 a *model*-level definition applies to it directly, which is why
 `queueRemoveBoundary` lives beside the two unlink updates in
 `Model/Object/Types.lean` rather than in the IPC layer.  Two results worth
@@ -3333,6 +3337,131 @@ does not import, so relocating it to the model was its own cut — **taken at
 **A plan row's enumeration is a recognised set**; the sweep is what makes it a
 derived one — and a sweep that stops where the build roots stop is still an
 enumeration.
+
+**And a surface outside every derived domain is checked by whoever remembers it**
+(`v0.35.60`, the maintainer's correction).  Every domain rule above polices one
+gate's input.  This is the same defect at the scale of a **subsystem**, and it is
+the one that produced most of the frozen-surface findings in this file.
+
+`SeLe4n/Kernel/FrozenOps/` was in neither library root and in no staged
+allowlist, built only by its own `lean_exe`.  Measured at `v0.35.59`: that put it
+outside the *derived* domain of **five of the six** Tier 1 censuses
+(`IpcDethreadingEnvironmentCensus`, `BootEntryContract`,
+`ExportCommitDisciplineCensus`, `LockFootprintBoundCensus`,
+`StoreReadClassificationCensus` — the sixth, `ReplyStackWriteCensus`, reaches it
+only because `v0.35.12` widened it *by hand, after a defect shipped through the
+hole*), and outside `check_production_staging_partition.sh` entirely, which has no
+opinion on a module that is neither production nor staged.  It was executed
+(Tier 2 runs `lake exe frozen_ops_suite`) and anchored in Tier 3, so it was not
+unchecked — it was under-**derived**, which is the failure mode this section
+spends its length retiring.
+
+**The cost was five after-the-fact corrections**, each found by a later cut rather
+than by a gate, on a surface carrying the **live** `TCB`, `Reply`, `SchedContext`
+and `IntrusiveQueue` records and mirroring the reply and cancellation spines: a
+caller's Reply cleared bare and a link guard reading `caller.isNone` where the
+live kernel reads `Reply.isFree` (`v0.35.12`); a binding-driven trigger after the
+live path went head-driven, plus a missing recipient guard and a missing ID
+promotion (`v0.35.38`); still severing after the live removal spliced
+(`v0.35.47`); never clearing `donationOrigin` (`v0.35.52`); and a duplicated queue
+boundary followed by a guard carrying **one of four** refusals with the wrong
+error code (`v0.35.58`–`v0.35.59`).
+
+So: **the gates' domains nearly all key on library-root reachability, which makes
+"not in a root" a silent exemption from most of this tree's defences.**  A
+mirror deliberately shaped to be compared against production therefore gets the
+weakest derivation precisely because it is not production.  The remedy is not a
+sixth hand-widened census — that is the recognised set again — but to put the
+surface **in the root**, which `SeLe4n.lean` does at `v0.35.60` with two imports
+(`FrozenOps.Agreement` and `FrozenOps.Invariant` reach all five modules; the
+dependency runs frozen → production and never the reverse, so no cycle closes).
+
+Three things that promotion measured, and the first is the argument for having
+done it earlier.  **The build was clean and only one gate fired**: the
+content-flow coverage gate's property (C), on `frozenTaintFlow` and
+`frozenTaintClear` naming the taint-writing API from outside the declared
+propagation surface — because `FrozenSystemState.declassificationTaint` is the
+*same* `TaintTable` as the live field.  Tier 0, Tier 2, Tier 3 and the partition
+gate all passed.  That the promotion is cheap is not evidence the deferral was
+harmless; it is evidence the five corrections had already paid the behavioural
+price one cut at a time, and what remained was the **declaration**.
+
+**A frozen writer is declared as a mirror, never folded into the live surface.**
+Nothing in `FrozenOps` can move `SystemState.declassificationTaint` — which the
+gate's property (C2) decides type-resolved — so adding the two to
+`DECLARED_TAINT_WRITERS` would dilute the live one-writer fact into "one live
+writer and some others".  `DECLARED_FROZEN_TAINT_WRITERS` maps each frozen
+primitive to the live counterpart it reproduces, reconciled in **both**
+directions (a key the probe no longer reports is a stale exemption reading as
+coverage; a value outside the live surface names a counterpart that does not
+exist), which is the shape `ReplyStackWriteCensus`'s `.mirrors` constructor and
+`frozenBranchLiveOperation` already use for this question — *find the answer this
+tree already has*.  Both directions are mutation-tested.
+
+**And the gate that fired had already written the finding down.**
+`DECLARED_TAINT_CONSUMERS`'s own note records a "frozen/live taint-layer
+mismatch" that "survived until a differential scenario could start from a tagged
+state".  The gate knew the frozen taint layer diverges; it could not see the
+divergence, because the constants were not in its environment.  **A gate's
+comment naming a hazard it cannot reach is the clearest possible signal that its
+domain is too small** — and it sat there unread while five corrections landed
+around it.
+
+**And the published METRIC had been calling it production the whole time — which
+is why this was reported as a documentation contradiction rather than found by a
+gate** (the maintainer's correction, `v0.35.60`).  This is the sharpest part, and
+it inverts how the deferral looked from outside.
+
+`scripts/generate_codebase_map.py` computes `prod_paths` as *everything not under
+`tests/`*.  So all five `SeLe4n/Kernel/FrozenOps/` modules have been inside
+`readme_sync.production_files` (330) and `readme_sync.production_loc` (385,265)
+since those figures existed — and those two numbers are mechanically synced into
+`README.md`, `docs/spec/SELE4N_SPEC.md`, all **eleven** `docs/i18n/*/README.md`
+and GitBook.  Meanwhile the source-layout line said "(experimental)", `SeLe4n.lean`
+excluded it, `check_production_staging_partition.sh` had no opinion on it, and
+four C.1 rows deferred "promotion into the production chain".
+
+**Four artefacts, three answers to one question, and the artefact that reads as
+authoritative was the one nobody had checked** — because it is *derived* and
+published in fourteen places, where the others are hand-written prose or a build
+file.  A reader who trusts the metric over the prose, which is exactly what this
+file tells readers to do everywhere else, concludes FrozenOps is production; a
+reader who opens `SeLe4n.lean` concludes it is not.  Both were reading correctly.
+
+Three things follow.  **"Is this production" is one question and must have one
+answer**: the import chain is now that answer, and the metric agrees with it
+because the metric already did.  **A derived figure is not automatically the right
+derivation** — `not under tests/` is a *path* convention standing in for a
+*reachability* fact, which is this section's own `a field name is not a receiver
+type` shape at the level of a build classification; it was never wrong about the
+line count, only about what "production" names.  And **a contradiction between a
+published metric and a build file will be reported by a person, not a gate**,
+because no gate reads both: the partition gate reads the roots and the map reads
+the filesystem, and nothing reconciles them.  That reconciliation is the check this
+class needs, and `v0.35.60` makes it *true* rather than *checked* — the surface is
+in the root, so the two agree — which is a state a later cut can silently break.
+
+**Running that reconciliation by hand found one more, and getting the number right
+took three attempts.**  Of the **331** files the metric counts as production,
+**251** are in this root's closure and the rest are reached by `Platform.Staged`,
+by a Tier 1 census, or by one of the 71 `lean_exe` roots — all but **one**:
+`SeLe4n/Kernel/RadixTree.lean`, a re-export hub with zero in-tree consumers that
+**no build target compiled**.  Its three re-exports were therefore never checked
+as a unit, so a re-export naming a renamed or deleted submodule was invisible.
+`SeLe4n.lean` imports the hub now; the count is zero.
+
+The three attempts are the finding's own epilogue, and they are this section's
+*a measurement can carry the defect it is sizing* rule applied to me.  The first
+reported **80** orphans, because the allowlist parser ignored the trailing
+` # comment` on every entry and matched none of the 67.  The second reported
+**7**, because it walked only the two roots, the staged anchor and the six
+censuses, and forgot the `lean_exe` targets — which build most of what was left.
+The third, reading all 71 roots out of `lakefile.toml`, reported **1**.  Two of
+those three numbers would have justified a much larger claim than the tree
+supports, and the only reason the first was not believed is that 80 looked wrong
+enough to re-derive.  **A measurement that licenses a conclusion gets checked as
+hard as the conclusion** — and a domain measured by hand needs its own domain
+checked, which is the rule this whole section is about, arriving one level up.
 
 **And a shared answer must be REACHABLE from every asker, or the unreachable one
 grows its own** (`v0.35.59`).  This file's most-repeated rule is *one question
@@ -3974,9 +4103,10 @@ level above the frontier the census deliberately stops at (composites inherit by
 `donationChainFrame`'s algebra, which is a composition rather than a claim).
 
 **And "every" meant every module either root reaches** (PR #895 review,
-`v0.35.12`).  `SeLe4n/Kernel/FrozenOps/` is reached by neither, and it is in no
-staged allowlist: it is built only by its own `lean_exe` target
-(`tests.FrozenOpsSuite`), so the closure this census claims held for every
+`v0.35.12`).  `SeLe4n/Kernel/FrozenOps/` was reached by neither, and was in no
+staged allowlist: it was built only by its own `lean_exe` target
+(`tests.FrozenOpsSuite`) — **the root cause closed at `v0.35.60`, which put it in
+the library root** — so the closure this census claims held for every
 module except one that writes the live `Reply` record — `FrozenKernelObject.reply` carries `SeLe4n.Kernel.Reply`, links and
 all, and `Model.freeze` copies a live state's Reply objects verbatim, so a
 frozen state taken mid-call-chain holds a real reply stack.  And the gap was not

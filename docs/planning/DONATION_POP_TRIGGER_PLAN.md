@@ -970,8 +970,10 @@ the next person, exactly like one nobody checked.
 
 ### HP8 — The frozen mirror (4 sub-tasks)
 
-`FrozenOps` is reached by neither library root and must stay in step (PR #895
-review, `v0.35.12`).
+`FrozenOps` must stay in step with the live path (PR #895 review, `v0.35.12`).
+At the time of this phase it was reached by neither library root, which is why
+staying in step was a per-cut obligation rather than something a gate derived;
+`v0.35.60` put it in `SeLe4n.lean`.
 
 **The trigger half already landed, as HP4.7.** §3.8.8 says why: HP4 is the cut
 that makes the live `.reply` operation head-driven, so that is the cut in which a

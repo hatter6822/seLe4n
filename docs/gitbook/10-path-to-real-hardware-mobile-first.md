@@ -338,7 +338,9 @@ verification, version bump to 0.28.0, and full regression gate.
 remaining Lean model gaps: timeout sentinel → `timedOut : Bool` TCB field
 (eliminates GPR x0 collision risk), cache coherency model (`CacheModel.lean`
 with 17 preservation theorems), memory barrier semantics formalization,
-FrozenOps production-promotion deferred to post-1.0 hardening,
+FrozenOps production-promotion (deferred at AG8; **taken at `v0.35.60`**, which
+put the surface in `SeLe4n.lean` so the Tier 1 censuses and the production/staging
+partition gate reach it by derivation),
 CDT `descendantsOf` fuel sufficiency placeholders
 (substantive proofs deferred to post-1.0 hardening),
 donation owner blocked-on-reply extraction (`donationChainAcyclic_general`),

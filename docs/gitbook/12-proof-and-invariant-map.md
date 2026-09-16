@@ -240,7 +240,7 @@ or — on the frozen execution surface, which has no chain predicate of its own 
 as mirroring a live site that states one — with the primitive list it starts from
 held to the code by a second, independent derivation, since `storeObject` takes a
 whole object and a record update can rewrite a stack link without naming any
-helper.  The frozen surface joined at `v0.35.12`: it is reached by neither
+helper.  The frozen surface joined at `v0.35.12`: it was then reached by neither
 library root, so the closure held everywhere except one module that writes the
 live `Reply` record, and the frozen reply was clearing a caller's Reply bare —
 this workstream's own defect, on the surface nothing was looking at.  The cost was

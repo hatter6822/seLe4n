@@ -169,3 +169,31 @@ import SeLe4n.Kernel.SchedContext.BindingAffinity
 -- `lean_classify_synchronous_exception`).  One import: the entry's transitive
 -- closure is the whole production fault surface.
 import SeLe4n.Kernel.FaultEntry
+-- **The frozen execution surface is production** (`v0.35.60`).  It was outside
+-- both library roots and in no staged allowlist, built only by its own
+-- `lean_exe` — which put it outside the *derived* domain of five of the six
+-- Tier 1 censuses and outside the production/staging partition gate entirely.
+-- That is this tree's own *a recognised set is not a derived set* rule at the
+-- scale of a subsystem, and it cost five after-the-fact corrections
+-- (`v0.35.12`, `v0.35.38`, `v0.35.47`, `v0.35.52`, `v0.35.58`), each found by a
+-- later cut rather than by a gate, on a surface that carries the **live**
+-- `TCB`, `Reply`, `SchedContext` and `IntrusiveQueue` records and mirrors the
+-- reply and cancellation spines.
+--
+-- Two imports reach all five modules: `Agreement` pulls `Operations` → `Core`
+-- and the live `Kernel.API` it is refined against, `Invariant` pulls
+-- `Commutativity` → `Operations`.  The dependency runs frozen → production and
+-- never the reverse, so this closes no cycle.
+import SeLe4n.Kernel.FrozenOps.Agreement
+import SeLe4n.Kernel.FrozenOps.Invariant
+-- **The one remaining re-export hub that no build target reached** (`v0.35.60`).
+-- Measured while promoting `FrozenOps`: of the 331 files the published
+-- `readme_sync.production_*` metric counts as production, 251 are in this root's
+-- closure and the rest are reached by `Platform.Staged`, a Tier 1 census or a
+-- `lean_exe` — all but `SeLe4n.Kernel.RadixTree`, a hub with zero in-tree
+-- consumers that nothing compiled.  Its three re-exports were therefore never
+-- checked as a unit, so a re-export naming a renamed or deleted submodule would
+-- have been invisible.  The submodules are already in this closure; this import
+-- adds only the hub, which is the point -- a file outside every build target is
+-- checked by nothing, which is the `FrozenOps` finding one file smaller.
+import SeLe4n.Kernel.RadixTree

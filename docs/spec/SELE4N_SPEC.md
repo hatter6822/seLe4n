@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.59` (`lakefile.toml`) |
+| **Package version** | `0.35.60` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 385,223 across 330 Lean files |
+| **Production LoC** | 385,265 across 330 Lean files |
 | **Test LoC** | 78,645 across 70 Lean test suites |
 | **Proved declarations** | 12,821 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -4943,8 +4943,9 @@ on is a claim about a different state.
 
 #### 8.12.13 The frozen mirror splices too — WS-HP HP8 (`v0.35.47`)
 
-`FrozenOps` is reached by neither library root and is in no staged allowlist, so
-its divergences are the ones nothing else catches — and it holds the **live**
+`FrozenOps` was reached by neither library root and was in no staged allowlist,
+so its divergences were the ones nothing else caught — it is in `SeLe4n.lean`
+since `v0.35.60` (§8.12.16) — and it holds the **live**
 `SeLe4n.Kernel.Reply`, links and all, because `Model.freeze` copies a live state's
 Reply objects verbatim.  A frozen state taken mid-call-chain therefore carries a
 doubly linked reply stack exactly as the live one does, and a removal that severs

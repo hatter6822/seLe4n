@@ -1,3 +1,134 @@
+## v0.35.60 — the frozen surface is in the production import chain, because "is this production" had three answers
+
+Reported by the maintainer as a documentation contradiction: FrozenOps is
+described as the production implementation, so why was it being treated as
+experimental?  The prose said experimental.  **The published metric said
+production, and the metric was the artefact nobody had checked.**
+
+### One question, four artefacts, three answers
+
+`scripts/generate_codebase_map.py` computes `prod_paths` as *everything not under
+`tests/`*, so all five `SeLe4n/Kernel/FrozenOps/` modules have been inside
+`readme_sync.production_files` (330) and `readme_sync.production_loc` (385,223)
+since those figures existed — and both are mechanically synced into `README.md`,
+`docs/spec/SELE4N_SPEC.md`, all **eleven** `docs/i18n/*/README.md` and GitBook.
+
+Against that:
+
+| Artefact | Answer |
+|---|---|
+| `readme_sync.production_files` / `production_loc` | **production** (14+ published sites) |
+| `CLAUDE.md` / `AGENTS.md` / `docs/DEVELOPMENT.md` source layout | "(experimental)" |
+| `SeLe4n.lean` import chain | absent |
+| `docs/REGISTERED_DEBT.md` C.1 rows 14–17 | "promotion into the production chain" **deferred** |
+| `check_production_staging_partition.sh` | neither production nor staged — **no opinion** |
+
+A reader who trusts the derived figure over hand-written prose — which is what
+this project's rules say to do everywhere else — concludes production.  A reader
+who opens `SeLe4n.lean` concludes otherwise.  Both were reading correctly.
+
+### Why the import chain is the answer that matters
+
+Being outside it is not a status; it is a **standing exemption from the gates**.
+The domains of this tree's derived checks nearly all key on library-root
+reachability, so "not in a root" removed FrozenOps from:
+
+- five of the six Tier 1 censuses — `IpcDethreadingEnvironmentCensus`,
+  `BootEntryContract`, `ExportCommitDisciplineCensus`, `LockFootprintBoundCensus`,
+  `StoreReadClassificationCensus`.  The sixth, `ReplyStackWriteCensus`, reaches it
+  only because `v0.35.12` widened it **by hand, after a defect had shipped**.
+- `check_production_staging_partition.sh` entirely.
+
+It was executed (Tier 2 runs `lake exe frozen_ops_suite`) and anchored in Tier 3,
+so it was not unchecked — it was under-**derived**, on a surface that carries the
+**live** `TCB`, `Reply`, `SchedContext` and `IntrusiveQueue` records and mirrors
+the reply and cancellation spines.
+
+**The cost was five after-the-fact corrections**, each found by a later cut rather
+than by a gate: a caller's Reply cleared bare and a link guard reading
+`caller.isNone` where the live kernel reads `Reply.isFree` (`v0.35.12`); a
+binding-driven trigger after the live path went head-driven, plus a missing
+recipient guard and a missing ID promotion (`v0.35.38`); still severing after the
+live removal spliced (`v0.35.47`); never clearing `donationOrigin` (`v0.35.52`);
+a duplicated queue boundary and then a guard carrying one of four refusals with
+the wrong error code (`v0.35.58`–`v0.35.59`).
+
+`CLAUDE.md` said "the **third** time this project has paid for that" for two cuts
+after it was the fifth — a stale hand-kept count in the file whose own rules
+retire them.  Corrected.
+
+### What landed
+
+`SeLe4n.lean` imports `FrozenOps.Agreement` and `FrozenOps.Invariant`, which
+reach all five modules.  The dependency runs frozen → production and never the
+reverse, so no cycle closes.
+
+**The build was clean and exactly one gate fired**: the content-flow coverage
+gate's property (C), on `frozenTaintFlow` and `frozenTaintClear` naming the
+taint-writing API from outside the declared propagation surface — because
+`FrozenSystemState.declassificationTaint` is the *same* `TaintTable` as the live
+field.  Tier 0, Tier 2, Tier 3 and the partition gate all passed.
+
+That the promotion is cheap is **not** evidence the deferral was harmless.  It is
+evidence the five corrections had already paid the behavioural price one cut at a
+time, and what remained was the declaration.
+
+**And the gate that fired had already written the finding down.**
+`DECLARED_TAINT_CONSUMERS` records a "frozen/live taint-layer mismatch" that
+"survived until a differential scenario could start from a tagged state".  The
+gate knew the frozen taint layer diverges; it could not see the divergence,
+because the constants were not in its environment.  A gate's comment naming a
+hazard it cannot reach is the clearest possible signal that its domain is too
+small — and it sat unread while five corrections landed around it.
+
+`DECLARED_FROZEN_TAINT_WRITERS` maps each frozen primitive to the live
+counterpart it reproduces, reconciled in **both** directions (a key the probe no
+longer reports is a stale exemption reading as coverage; a value outside the live
+surface names a counterpart that does not exist).  They are **not** folded into
+`DECLARED_TAINT_WRITERS`: nothing in `FrozenOps` can move
+`SystemState.declassificationTaint`, which property (C2) decides type-resolved, so
+folding them in would dilute the live one-writer fact.  That mirror shape is the
+one `ReplyStackWriteCensus`'s `.mirrors` constructor and
+`frozenBranchLiveOperation` already use — *find the answer this tree already has*.
+Both directions are mutation-tested.
+
+### What this does NOT close
+
+**Being in the import chain is not being the dispatch path.**  AG8-D's rationale
+had five points and point 4 is still live: the two-phase switch — `API.lean`
+running syscall processing over frozen snapshots — is gated on RPi5
+freeze→operate→thaw benchmarks that do not exist.  C.1 row 14 is **re-scoped** to
+that switch and stays open; rows 15–17, which named the import chain, are closed.
+
+Point 5 is **refuted**, and how it was wrong is worth keeping: "zero production
+consumers — promoting now would add import weight without a runtime benefit"
+weighed the *runtime* axis only.  The benefit of being in the chain is
+**verification**.  Reasoning about import weight while a differential mirror sat
+outside every derived gate domain weighed the cheap axis and not the expensive one.
+
+Table C's claim that of the 32 in-source candidates "none is a soundness gap" is
+corrected: **a deferral that removes gate coverage is not a deferred
+strengthening** — it is a standing exemption from the checks, and it reads like
+the former because the item is phrased as work not done rather than as protection
+withdrawn.  A reader triaging the remaining 28 should ask of each which it is.
+
+### One more, found by running the reconciliation by hand
+
+Of the 331 files the metric counts as production, 251 are in the root's closure
+and the rest are reached by `Platform.Staged`, a Tier 1 census, or one of the 71
+`lean_exe` roots — all but **one**: `SeLe4n/Kernel/RadixTree.lean`, a re-export
+hub with zero in-tree consumers that **no build target compiled**, so a
+re-export naming a renamed or deleted submodule was invisible.  `SeLe4n.lean`
+imports the hub now; the count is zero.
+
+Getting that number right took three attempts — 80, then 7, then 1 — the first
+because the allowlist parser ignored every entry's trailing comment, the second
+because it forgot the `lean_exe` roots.  Two of the three would have justified a
+much larger claim than the tree supports.  **A measurement that licenses a
+conclusion gets checked as hard as the conclusion.**
+
+Refs: docs/REGISTERED_DEBT.md Registered debt index C.1 rows 14-17
+
 ## v0.35.59 — the frozen removal's refusal set: a shared answer must be reachable, and the question must be named
 
 WS-RR RR8.4 (`v0.35.58`) ran its own sweep for who computes an endpoint queue's
