@@ -1,3 +1,141 @@
+## v0.35.61 — the post-landing audit of WS-HP and RR8: the code held, and the prose about the future did not
+
+Requested by the maintainer: a deep audit of everything this PR implements —
+WS-HP (the head-driven donation pop and the chain-preserving splice), RR8.1–RR8.4,
+and the `v0.35.59` / `v0.35.60` cuts — with the docstrings treated as **claims to
+check against the code** rather than descriptions to trust, every test and gate run,
+and the documentation brought back into line with what the code does.
+
+### What was read, and what held
+
+Every resolver, guard, pop, splice store and frozen mirror the WS-HP sections of
+`CLAUDE.md` describe was read in the source and compared with the section's claim:
+`answeredReplyObject?` → `replyFrameHeadContext?` (reciprocity: `r.next = .head scId`
+**and** `sc.scReply = some rid`) → `replyFrameHeadHolder?` → `answeredFrameHeadContext?`;
+`donationRecipientAcceptable`, `donationOriginRebindable`, `outerCallerAcceptable`;
+`replyStackOuterCaller?`, `donationHeadOf?`, `returnDonatedSchedContext` and its
+resolved form; the three pops and `cancelledCallerDonation?`; `spliceFrameBelow?`,
+`spliceReplyFrameStores` (three stores, `below ≠ above` checked, the cut frame's own
+`prev` cleared), `spliceReplyFrameOut{,OrSelf}`, `spliceThreadReplyFrameOut`,
+`removeCallerReplyFrame`; `donationOrigin`'s one write (a *first* push,
+`donationFirstPush`) and every clear (the pop's bottom arm, bind, both unbind arms,
+both `cancelBoundDonation` spellings, `clearDonationOriginReferences` on retype);
+`placedCoreOf?`, `descheduleAtPlacement`, `replyRecvServerDeschedule`; the dual
+removal's four refusals and the five `queueRemoveBoundary` askers; the promotion's
+imports and the content-flow gate's mirror map; both reply footprints and the
+`maxLockSetSize = 24` ceiling with their coverage theorems.  **The code held.**  Two
+facts the audit established beyond what the prose says: objects are never erased
+(only `asidTable` has an `erase`), so a recorded origin always resolves — a TCB
+ceases to exist only by retype, which runs the origin sweep; and the recipient guard
+is inert on every reachable state because `schedContextBind` refuses a thread whose
+frame is on a live stack (`replyFrameOnLiveStack`).  The sixteen `def`s and 106
+theorems the PR deletes were reconciled too: the four `detach*` theorems without an
+obvious twin all have one (`spliceReplyFrameOut_getTcb?_eq`,
+`spliceThreadReplyFrameOut_getTcb?_eq`, `spliceReplyFrameOutOrSelf_getTcb?_eq`, and
+`_preserves_reply_caller_and_headLink` for the retired `_reply_next`), so no
+coverage was lost.
+
+### Finding 1 — a contract the code does not decide is one a later cut can break silently
+
+`donationOriginRecipient?`'s docstring promised that *a stale origin falls back to the
+reachability answer rather than refusing the pop*, and the body decided that only
+for an origin **failing a guard**.  Both guards pass a thread with no TCB — their
+`_of_none` arms exist so the *operation's* argument keeps its own error code — so a
+recorded origin naming a thread the store does not hold was answered as a candidate,
+and `returnDonatedSchedContext`'s own Step 3 `lookupTcb` then refused the whole
+reply with `.objectNotFound`: a refusal, on the one shape the redirect exists to make
+a fallback.  The same docstring said so two paragraphs later ("what refuses it is the
+pop's later lookup"), which is a contract stated in two places with two answers.
+Unreachable today, for the two facts above, and closed anyway:
+
+* `donationOriginRecipient?` resolves the origin through `lookupTcb` **before** it
+  consults either guard; `frozenDonationOriginRecipient?` does the same through
+  `frozenLookupTcb`.
+* `donationOriginRecipient?_eq_some_iff` carries resolution as its fourth fact, with
+  `donationOriginRecipient?_resolves` the projection and
+  `replyDonationRecipient_resolves` the no-refusal payoff: whenever the answered
+  caller resolves, so does the thread the pop actually rebinds.
+* `donationAccountingPreserved_atCallDepthTwo` takes the origin's existence at the
+  post-removal state as a **third** hypothesis, for the reason the other two are
+  hypotheses: the removal's success says nothing about the thread the field names
+  (`consumeCallerReply` is total on an absent caller).
+* Witnesses on both surfaces — `tests/SmpIpcSuite.lean` §3.25's last negative and
+  `FO-044`'s third half — each with the two-guard **CONTROL** that makes the decline
+  attributable to the resolution check alone; four Tier 3 anchors (two positives
+  pinning the `match lookupTcb`/`frozenLookupTcb … | none => none` shape, two
+  negatives refusing a guard consulted straight off the origin arm), each
+  mutation-tested in both directions over the comment-free view.
+
+### Finding 2 — one thread, two spellings
+
+`replyRecvPopDonation` passed `holderV.val` / `targetV.val` to the return and
+`holder` / `target` to the migration, and every proof over the step
+(`_preserves_objects_invExt`, `_preserves_replenishQueueAffinityConsistent_smp`,
+`_preserves_ipcInvariantFull`, `_confinedToCores`) carried
+`toValid?_some_val_eq` rewrites to reconcile them.  The two `toValid?` matches are
+the sentinel refusals and nothing else; after them one `let recipient :=
+replyDonationRecipient st oldScId target` is read by both the return and the
+migration, and the four proofs lost their reconciling rewrites.
+
+### Finding 3 — prose about the future, or about the sever, in eleven places
+
+`replyFrameHeadIsBound`'s docstring and the chain composite's
+(`endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed`) both said
+*"HP7 is where it becomes a clause of the chain invariant"*, and so did the plan's
+§3.8 narrative.  HP7 (`v0.35.46`) did no such thing, and none of its rows ever
+scheduled it: it deleted the three binding-driven coherence facts and left the two
+the head-driven trigger does not witness — this one and
+`replyFrameHeadHolderDonation` — exactly as they were.  Eight more sites still read
+*"once HP4 lands"* (`replyFrameHeadHolder?`), *"once HP6 makes that removal a
+splice"* (`answeredReplyFrameBelow?`, `cancelSplicedFrameBelow?`), *"the sever
+today, the splice after WS-HP HP6.3 … the name is one cut ahead of the body"*
+(`spliceThreadReplyFrameOut`), *"once HP6 lands"* (the frozen `.reply` composite),
+*"the one HP10 will have to keep true"* (§3.23), or described the removal as
+*clearing the frame above's `prev`* (`removeCallerReplyFrame`, the inline comment in
+`endpointReplyOnCore`) — the sever, three cuts after the splice replaced it.  Every
+one is corrected to state the fact and the version it became true at.  The rule that
+catches these is already in `CLAUDE.md`'s retired-code section (*sweep the
+forward-looking prose when the phase it names closes*); WS-HP's own closure had not
+run it over WS-HP's own docstrings, which is the finding.
+
+### Finding 4 — a hand-kept figure two paragraphs after the rule against it
+
+`CLAUDE.md`'s HP8 paragraph restated the reply-stack write census's totals ("24 write
+sites, six of them frozen mirrors") a few paragraphs after the WS-RM section's item
+(6) records why a hand-kept figure beside a derivation drifts; the plan's acceptance
+box 9 did the same.  Both were accurate that day (the census printed the same
+numbers when re-elaborated for this audit) and both are replaced by a pointer to the
+census's own output.
+
+### Finding 5 — two stated hypotheses with no register row
+
+`replyFrameHeadIsBound` (carried by the chain composite and the two fault-path
+composites) and `replyFrameHeadHolderDonation` (consumers across the reply-path
+bundles and the dispatch packs' reply-stage fields) are true on every reachable state
+by the arguments their docstrings carry — the push and the pop write `boundThread`
+and `scReply` together, bind refuses a context that heads a stack, unbind refuses a
+`.donated` holder — and entailed by no invariant.  They now have a row in
+`docs/REGISTERED_DEBT.md` table C with the remedy stated: a `headBound` clause of
+`donationChainWellFormed` and a binding clause, with `donationChainFrame` extended
+over `boundThread` — a cut of its own, since every binding-writing transition is in
+its blast radius.
+
+### Also swept
+
+`donationOriginRebindable` reads `st.getTcb?` where its siblings read `lookupTcb`
+and the frozen mirror reads `frozenLookupTcb`; the two readers part only on the
+sentinel id, and neither resolver now consults its guard on a thread it has not
+resolved, so both docstrings say precisely that instead of "as it does in every
+sibling guard" and "clause for clause".  The RR8 work (`dualQueueRemovalEnabled`,
+`queuePredecessorNamesSuccessor`, `queueRemoveBoundary` at all five askers, the
+frozen mirror's refusal set) and the `v0.35.60` promotion (three root imports, the
+content-flow gate's mirror map reconciled both ways) were read and found as their
+sections describe; nothing there changed.
+
+Golden trace byte-identical.  `test_full.sh`, `test_rust.sh` and
+`test_aarch64_cross_build.sh` all exit 0, with no Lean warnings on any rebuilt
+module.
+
 ## v0.35.60 — the frozen surface is in the production import chain, because "is this production" had three answers
 
 Reported by the maintainer as a documentation contradiction: FrozenOps is

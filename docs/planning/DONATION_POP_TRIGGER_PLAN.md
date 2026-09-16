@@ -515,7 +515,10 @@ every reply whose frame heads nothing, and it is what rules out the arm
 where the pop would be the identity while the leg had already relaxed the chain
 there. `answeredFrameHeadContext?`'s docstring argues that arm is unreachable, and
 that argument is about *reachability*: `donationChainWellFormed` carries no binding
-clause. HP7 is where it becomes one.
+clause. (This paragraph used to end "HP7 is where it becomes one", and HP7 did
+not — its rows never scheduled the clause, so the sentence was a prediction that
+read as a schedule.  Corrected at the post-landing audit, `v0.35.61`; the fact
+is registered in `docs/REGISTERED_DEBT.md` table C rather than predicted again.)
 
 **The pop's conditions are stated at the state the pop runs on.** The bundle
 payoff's `hDonationReturned` was a pre-state fact transported across the reply leg
@@ -1098,6 +1101,40 @@ frames left the stack, which is the loss, at any depth.
 | HP10.9 | **LANDED v0.35.53 — the payoff, and the decisive comparison is not a mutation.**  `donationAccountingPreserved_atCallDepthTwo` derives the reachability answer from the removal (`replyStackOuterCaller? st' scId = .ok none` is a *conclusion*, through the new sever-direction sibling `removeCallerReplyFrame_clears_prev_of_bottom_frame`) and hypothesises the two guards, because one of them **cannot** be derived: `donationOriginRebindable` is *false* at the pre-state — the owner is `.blockedOnReply` on exactly the reply being answered — and becomes true at the wake `endpointReplyOnCore` performs before the removal.  Tier 3 negatives refuse hypothesising either derived fact, and the sibling's `above ≠ rid` is derived from bottom-ness rather than assumed.  §3.20's halves inverted from COST to PAYOFF and now measure the **live `.reply` spine**: they measured `returnDonatedSchedContextResolved` directly, which was an accurate proxy for the pop while nothing redirected and is a proxy that *omits* the redirect since HP10.7.  **What the row did not predict is that no mutation is available**: every mutation of the production code — the origin write, the resolver, the three pops, the dispatch's recipient — fails to **elaborate** rather than failing the suite, which is §3.23's situation with the splice's store shape.  So `replyRemovalOutcome` takes the chain as a *parameter* and is applied twice, to a chain whose first push recorded an origin and to `pushStore`'s, which predates HP10.4 and records none: one function, two chains differing in exactly one field, opposite outcomes.  **And it found that HP10.4's production write had never been measured** — every fixture that carried an origin set the field by hand, so `pushOwnerStore` is `pushStore` with the first push undone and `replyRemovalChain` runs the live push *twice*, asserting both directions (a FIRST push records, an ONWARD push preserves) and that the first push reproduces `pushStore`'s own shape.  The depth-three payoff (§3.22, §3.23) is byte-identical and so is the golden trace, which is the measurement that this phase is confined to the reachability gap — *structurally* rather than luckily, since at depth ≥ 3 the pop sits at a `some` arm where `replyDonationRecipient_eq_of_outer_some` makes the redirect the identity by theorem.  One mechanical note: a Tier 3 anchor in this cut lost the closing quote of its `bash -lc '…'` argument, so it swallowed the following lines and **never decided**; `bash -n` passes and the gate prints PASS, the mutation harness reported it as a negative that would not fire, and `check_anchor_consistency.py` refuses it by name for its own stated reason.  Consumes HP10.8, HP10.2 | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean`, `tests/SmpIpcSuite.lean` | L |
 | HP10.10 | **LANDED v0.35.54 — the closure, and both halves are earned rather than retracted.**  `docs/REGISTERED_DEBT.md` table C's donation-accounting row is **CLOSED**: the depth-≥ 3 half at `v0.35.45` (HP6's chain-preserving removal) and the depth-2 half at `v0.35.53` (HP10.9's recorded origin), so the claim-set constraint lifts in full — **v1.0.0 may claim that completing a call chain returns a client's reservation at every reply-stack depth**, which is a claim seL4-MCS cannot make: upstream severs at depth ≥ 3 (`reply_remove`'s non-head branch writes zero into the frame above, re-verified at five revisions) and donates to the answered frame's own `replyTCB` at depth 2.  Most of this row's *content* had already landed incrementally with HP6, HP7, HP8 and HP10.9 — each cut swept its own citations, which is what kept the dead-citation classes from accumulating — so what this row does is verify that and close the artefacts only it can.  **Three things it records rather than ticks.**  (1) **The row is struck through, not deleted**: the register's own convention keeps a closed row for traceability, and RR8.15's hand-off check reads this table, so a deleted row and a closed one must not look alike.  (2) **Two fragments survive the closure and are named**: the footprint/transition resolution asymmetry HP10.8 found keeps its own open row (owner WS-HP), and `CancelledMiddleCallerPolicy.severAtCut` is deliberately **kept** as a constructor, because it names the behaviour upstream still has and an improvement is only statable against something.  (3) **The register's narrative about "the exception row" is rewritten rather than deleted**: what a reader should now take from it is the shape — a row whose subject is a claim the project makes needs an owner before it needs a remedy, and this one sat with none until `v0.35.16`.  Consumes HP10.9 | `docs/REGISTERED_DEBT.md`, `docs/spec/SELE4N_SPEC.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, `docs/gitbook/12-proof-and-invariant-map.md`, `CLAUDE.md`, `AGENTS.md` | M |
 
+### Post-landing audit — `v0.35.61`
+
+The whole workstream was re-read after closure with every docstring treated as a
+claim to check rather than a description to trust.  The code held; the prose did
+not, in eleven places, and three things beyond prose were found.  The record is
+in `CLAUDE.md`'s WS-HP section (*the post-landing audit*) and in the `v0.35.61`
+CHANGELOG entry; what this plan owes is the correction of its own text.
+
+* **§3.8 predicted a clause HP7 never scheduled.**  "HP7 is where it becomes one"
+  (of `replyFrameHeadIsBound` and a binding clause of `donationChainWellFormed`)
+  was written into the HP4 narrative and into two docstrings, and no HP7 row
+  ever carried it.  The sentence is corrected in place above, and the fact —
+  two stated coherence hypotheses, `replyFrameHeadIsBound` and
+  `replyFrameHeadHolderDonation`, entailed by no invariant — is registered in
+  `docs/REGISTERED_DEBT.md` table C with the remedy stated.
+* **`donationOriginRecipient?` now decides its own contract.**  HP10.6 wrote
+  that a stale origin *falls back rather than refusing the pop*, and the body
+  decided that only for an origin failing a guard: both guards pass a thread
+  with no TCB, so a recorded origin naming none was answered as a candidate and
+  the pop's own `lookupTcb` refused the reply with `.objectNotFound`.
+  Unreachable (objects are never erased; HP10.5's sweep clears the field on
+  retype) and closed anyway, on both surfaces: the resolver resolves through
+  `lookupTcb` / `frozenLookupTcb` before it consults either guard,
+  `donationOriginRecipient?_eq_some_iff` carries resolution as its fourth fact,
+  `replyDonationRecipient_resolves` is the no-refusal payoff,
+  `donationAccountingPreserved_atCallDepthTwo` takes the origin's existence as a
+  third hypothesis, and §3.25 and FO-044's third half are the witnesses with the
+  two-guard CONTROL that makes the decline attributable.
+* **`replyRecvPopDonation` names its recipient once.**  The return took
+  `holderV.val` / `targetV.val` and the migration `holder` / `target`; one `let`
+  states the recipient once and four proofs lost their reconciling rewrites.
+* **Acceptance box 9 restated the census's totals**, which `CLAUDE.md`'s WS-RM
+  section says not to do; it cites the census's own output now.
+
 ## 7. What every cut in this workstream must run, in order
 
 ```bash
@@ -1205,8 +1242,9 @@ a document existing.
    `cancelIpcBlocking_reply_no_donation_to_victim`) are live at HEAD.
 9. The frozen mirror runs the same removal and the same trigger, reconciled in
    both directions by the Tier 1 census (HP8.3).  **MET** at `v0.35.47` (trigger
-   at `v0.35.38`, HP4.7).  The census reports 24 write sites with six frozen
-   mirrors; `FO-043` is the depth-3 witness the flip needed, because every
+   at `v0.35.38`, HP4.7).  The census prints its own counts (not restated here,
+   for the reason `CLAUDE.md`'s WS-RM section gives); `FO-043` is the depth-3
+   witness the flip needed, because every
    scenario that surface carried sits at depth ≤ 2 and passed byte-identically
    when the splice landed.
 10. ~~`docs/REGISTERED_DEBT.md` table C's donation-accounting row is closed~~ —

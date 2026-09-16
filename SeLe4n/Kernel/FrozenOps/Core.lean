@@ -846,13 +846,20 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
 /-- **WS-HP HP10.7/HP10.8, frozen mirror**: the origin may be rebound without
 invalidating a live donation.
 
-`donationOriginRebindable`'s counterpart, clause for clause, and it is here for
-the same reason it is live: `frozenDonationRecipientAcceptable` asks that the
-recipient hold no binding of its *own*, which a thread another binding names as
-its owner can satisfy — and `donationOwnerValid` requires such an owner to be
-`.unbound` **and** `.blockedOnReply`, so rebinding a reply-blocked thread
-falsifies the clause that binding depends on.  A thread that is not reply-blocked
-is named by none, which is the contrapositive this decides in O(1). -/
+`donationOriginRebindable`'s counterpart, and it is here for the same reason it
+is live: `frozenDonationRecipientAcceptable` asks that the recipient hold no
+binding of its *own*, which a thread another binding names as its owner can
+satisfy — and `donationOwnerValid` requires such an owner to be `.unbound` **and**
+`.blockedOnReply`, so rebinding a reply-blocked thread falsifies the clause that
+binding depends on.  A thread that is not reply-blocked is named by none, which is
+the contrapositive this decides in O(1).
+
+One reader differs from the live guard's, and it is immaterial: this reads
+`frozenLookupTcb` (this surface's one spelling of "is this id usable") where the
+live guard reads `st.getTcb?`.  The two part only on the sentinel id, and neither
+resolver consults its guard on a thread it has not already resolved
+(`frozenDonationOriginRecipient?` / `donationOriginRecipient?` resolve first, since
+`v0.35.61`), so on every candidate the two readers see the same record. -/
 def frozenDonationOriginRebindable (st : FrozenSystemState)
     (origin : SeLe4n.ThreadId) : Bool :=
   match frozenLookupTcb st origin with
@@ -869,7 +876,11 @@ pop is at the bottom of its stack and that thread passes both guards.
 `SchedContext` record, so `donationOrigin` is already there and there is no field
 to add — which is why this row is a resolver and a call site rather than a schema
 change.  Both guards are applied to the **candidate**, so a stale origin falls
-back to the reachability answer rather than refusing the pop. -/
+back to the reachability answer rather than refusing the pop — and, as live since
+`v0.35.61`, a candidate is first of all a thread that **resolves**
+(`frozenLookupTcb`): both guards pass a thread with no TCB, so without the check a
+recorded origin naming none would reach the pop's own lookup as `.objectNotFound`,
+a refusal on the one shape this resolver exists to make a fallback. -/
 def frozenDonationOriginRecipient? (st : FrozenSystemState)
     (scId : SeLe4n.SchedContextId) : Option SeLe4n.ThreadId :=
   match frozenReplyStackOuterCaller? st scId with
@@ -877,10 +888,13 @@ def frozenDonationOriginRecipient? (st : FrozenSystemState)
     match (st.getSchedContext? scId).bind (·.donationOrigin) with
     | none => none
     | some origin =>
-      if frozenDonationRecipientAcceptable st origin
-          && frozenDonationOriginRebindable st origin then
-        some origin
-      else none
+      match frozenLookupTcb st origin with
+      | none => none
+      | some _ =>
+        if frozenDonationRecipientAcceptable st origin
+            && frozenDonationOriginRebindable st origin then
+          some origin
+        else none
   | _ => none
 
 /-- **WS-HP HP10.8, frozen mirror**: which thread a reply's pop hands the

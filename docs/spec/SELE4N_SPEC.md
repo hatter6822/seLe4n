@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.60` (`lakefile.toml`) |
+| **Package version** | `0.35.61` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 385,265 across 330 Lean files |
-| **Test LoC** | 78,645 across 70 Lean test suites |
-| **Proved declarations** | 12,821 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 385,353 across 330 Lean files |
+| **Test LoC** | 78,723 across 70 Lean test suites |
+| **Proved declarations** | 12,823 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5065,6 +5065,23 @@ wake `endpointReplyOnCore` performs before the removal.  A statement about the
 removal alone therefore cannot supply it.  Tier 3 negatives refuse hypothesising
 either derived fact, because either turns the payoff into a theorem whose conclusion
 is one of its own premises.
+
+**And the resolver decides its own contract** (`v0.35.61`, the post-landing
+audit).  `donationOriginRecipient?` resolves the recorded origin through
+`lookupTcb` before it consults either guard: both guards pass a thread with no
+TCB (their `_of_none` arms exist so the *operation's* argument keeps its own
+error code), so as first landed a stale origin naming no thread was answered as a
+candidate and the pop's own lookup refused the reply with `.objectNotFound` — a
+refusal on the one shape the redirect exists to make a fallback.  Unreachable
+today, because objects are never erased and `clearDonationOriginReferences`
+clears the field when the thread it names is retyped, and closed on both surfaces
+anyway: `donationOriginRecipient?_eq_some_iff` carries resolution as its fourth
+fact, `replyDonationRecipient_resolves` says the pop's recipient resolves whenever
+the answered caller does, `donationAccountingPreserved_atCallDepthTwo` takes the
+origin's existence at the post-removal state as its third hypothesis, the frozen
+mirror resolves through `frozenLookupTcb`, and `tests/SmpIpcSuite.lean` §3.25 and
+`FO-044`'s third half are the witnesses, each with the two-guard CONTROL that
+makes the decline attributable to the resolution check alone.
 
 **Measured on the live spine, and the decisive comparison is not a mutation.**
 `tests/SmpIpcSuite.lean` §3.20's accounting halves inverted from COST to PAYOFF and

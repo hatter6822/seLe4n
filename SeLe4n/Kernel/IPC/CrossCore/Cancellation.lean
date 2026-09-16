@@ -1667,7 +1667,8 @@ def cancelSplicedFrameAbove? (st : SystemState) (tcb : TCB) : Option SeLe4n.Repl
   | _ => none
 
 /-- **WS-HP HP3.1**: the frame **below** the cancelled caller's own -- the second
-Reply the removal writes once HP6 makes the cancellation's removal a splice.
+Reply the removal writes; declared at HP3 ahead of HP6.3 (`v0.35.45`), the cut
+that made the cancellation's removal a splice.
 
 Derived from `cancelSplicedFrameAbove?`'s own two inputs -- the reply arm and the
 victim's `replyObject` -- composed with `replyFrameBelow?`, which is itself

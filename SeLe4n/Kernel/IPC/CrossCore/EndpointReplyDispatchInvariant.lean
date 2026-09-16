@@ -755,8 +755,10 @@ What survives is strictly weaker and is the one arm that construction does not
 close: `replyFrameHeadIsBound` rules out a frame that heads a context bound to
 **nobody**, where the pop would be the identity while the leg has already relaxed
 the chain at that frame.  It is vacuous on every reply whose frame heads nothing,
-which is every reply in a tree with no donation, and HP7 is where it becomes a
-clause of the chain invariant. -/
+which is every reply in a tree with no donation.  It is a **stated** hypothesis:
+HP7 (`v0.35.46`) deleted the three binding-driven coherence facts and left this
+one standing -- no chain clause entails it, and making it one is registered
+(`docs/REGISTERED_DEBT.md`, WS-HP) rather than predicted here a second time. -/
 theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st : SystemState)

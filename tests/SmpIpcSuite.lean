@@ -3368,8 +3368,11 @@ is therefore the **composition**, which no theorem states and which §3.22 canno
 reach: that the reconnected chain is walkable past its reconnection, and that three
 successive pops carry the reservation from the innermost holder to its owner.
 §3.22 does two pops over a two-frame remainder; three frames below a head is a
-different proposition, and it is the one HP10 will have to keep true when the
-recipient stops being derived from stack reachability.
+different proposition, and it is the one HP10 kept true when the recipient
+stopped being derived from stack reachability: at depth ≥ 3 every pop sits at a
+`some` arm, where the redirect is the identity by theorem
+(`replyDonationRecipient_eq_of_outer_some`), and this scenario is byte-identical
+across HP10.7.
 
 Non-vacuous by construction: every pop assertion reads `.error _ => false`, so a
 refused pop fails the row rather than passing it. -/
@@ -3447,6 +3450,12 @@ private def runDonationOriginIdReuseChecks : IO Unit := do
   -- which is every state before a first donation.
   assertBool "the scrub is the identity when nothing records an origin"
     (originOf (clearDonationOriginReferences pushStore pushOuter) == some none)
+
+/-- **`v0.35.61`** (the post-landing audit): a recorded origin naming a thread the
+store does not hold.  Reachable only through a stale field, which
+`clearDonationOriginReferences` prevents; what §3.25's last negative measures is
+the resolver's *contract* -- a candidate resolves -- not the field's reachability. -/
+private def staleOrigin : SeLe4n.ThreadId := ⟨89⟩
 
 /-- **WS-HP HP10.7: the redirect computes a DIFFERENT recipient, and both guards
 decline.**
@@ -3539,6 +3548,30 @@ private def runDonationOriginRedirectChecks : IO Unit := do
   assertBool "NEGATIVE: ...and the destination home is the answered caller's"
     (replyDonationRecipientHome pushStore pushOuterReply pushServer
       == determineTargetCore pushStore pushServer)
+  -- NEGATIVE (`v0.35.61`, the post-landing audit): an origin that no longer
+  -- RESOLVES is not a candidate.  Both guards pass a thread with no TCB (their
+  -- `_of_none` arms), so before the resolver resolved the origin itself the pop's
+  -- own `lookupTcb` was what met a stale origin -- as `.objectNotFound`, a
+  -- refusal on the one shape the redirect exists to make a fallback.  The two
+  -- CONTROLs are what make the last assertion attributable: with both guards
+  -- admitting the thread, only the resolution check can be what declines it,
+  -- and deleting that check answers `some staleOrigin` here.
+  let stStaleOrigin : SystemState :=
+    { pushStore with
+        objects := pushStore.objects.insert pushSc.toObjId
+          (.schedContext { SchedContext.empty pushSc with
+                             boundThread := some pushServer,
+                             scReply := some pushOuterReply,
+                             donationOrigin := some staleOrigin }) }
+  assertBool "CONTROL: the stale origin resolves to no thread"
+    (lookupTcb stStaleOrigin staleOrigin).isNone
+  assertBool "CONTROL: ...and BOTH guards admit it, vacuously"
+    (donationRecipientAcceptable stStaleOrigin staleOrigin == true
+      && donationOriginRebindable stStaleOrigin staleOrigin == true)
+  assertBool "NEGATIVE: so only the resolution check can decline it, and it does"
+    (donationOriginRecipient? stStaleOrigin pushSc == none)
+  assertBool "NEGATIVE: ...and the pop FALLS BACK to the answered caller, never refuses"
+    (replyDonationRecipient stStaleOrigin pushSc pushServer == pushServer)
 
 private def runMiddleRemovalDepthFourChecks : IO Unit := do
   IO.println "--- §3.23 WS-HP HP9.1: a middle removal at stack depth four ---"

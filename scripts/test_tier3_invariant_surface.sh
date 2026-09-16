@@ -2503,6 +2503,28 @@ run_check "INVARIANT" rg -n 'the redirect costs the reachable footprint nothing:
 run_check "INVARIANT" bash -lc 'rg -U -n "^def donationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*if donationRecipientAcceptable st origin && donationOriginRebindable st origin then" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # NEGATIVE: and the single-guard spelling must not come back.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def donationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*if donationRecipientAcceptable st origin then some origin else none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# `v0.35.61` (the post-landing audit): a candidate is a thread that RESOLVES.
+# Both guards pass a thread with no TCB (their `_of_none` arms exist so the
+# OPERATION's argument keeps its own error code), so the resolver resolves the
+# origin through `lookupTcb` BEFORE it consults them -- a stale origin falls back
+# to the reachability recipient rather than reaching the pop's own lookup as
+# `.objectNotFound`, which is a refusal on the one shape the redirect exists to
+# make a fallback.  Pinned on both surfaces, with the no-refusal payoff a theorem
+# (`replyDonationRecipient_resolves`) rather than a sentence.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def donationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*match lookupTcb st origin with\n[ \t]*\| none => none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenDonationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*match frozenLookupTcb st origin with\n[ \t]*\| none => none" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" rg -n '^theorem donationOriginRecipient\?_resolves' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem replyDonationRecipient_resolves' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# NEGATIVE: the guards must not be consulted straight off the origin arm again.
+# The code view blanks comments, so only a run of blank lines may separate the
+# arm from what follows it; a guard there is the pre-`v0.35.61` shape.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def donationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*\| some origin =>\n([ \t]*\n)*[ \t]*if donationRecipientAcceptable st origin" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenDonationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*\| some origin =>\n([ \t]*\n)*[ \t]*if frozenDonationRecipientAcceptable st origin" SeLe4n/Kernel/FrozenOps/Core.lean'
+# The witnesses: a stale origin declines and falls back, live (§3.25) and on both
+# surfaces (FO-044 half three), each with the two-guard CONTROL that makes the
+# decline attributable to the resolution check alone.
+run_check "INVARIANT" rg -n 'NEGATIVE: so only the resolution check can decline it, and it does' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'FO-044 half three: both resolvers DECLINE a stale origin' tests/FrozenOpsSuite.lean
 # --- WS-HP HP10.7: the arm flips -------------------------------------------
 # The redirect is ONE definition read by all three reply-path pops, because
 # "which thread receives the reservation" is one question and two spellings of it

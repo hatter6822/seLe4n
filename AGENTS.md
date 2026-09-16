@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.60.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.61.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -4295,7 +4295,7 @@ a licence to delete the reclaim — deleting it reaches a state
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — COMPLETE (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10 v0.35.49 → v0.35.54)
+### WS-HP The head-driven donation pop — COMPLETE (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10 v0.35.49 → v0.35.54; post-landing audit v0.35.61)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -4811,8 +4811,9 @@ The store step is registered on its own — as the live `spliceReplyFrameStores`
 because it performs the writes with none of the removal's resolution or validation
 — and each is a `.mirrors` entry naming the live counterpart of the *same shape*,
 so the store step's chain terminates in a stating entry two hops out, through the
-live `.halfStep`.  The census reports **24** write sites, six of them frozen
-mirrors.
+live `.halfStep`.  The census prints its own counts; they are not restated here,
+for the reason the WS-RM section's item (6) gives — this paragraph carried them
+until the post-landing audit (`v0.35.61`) found it doing so.
 
 **What new code must respect since HP9 (`v0.35.48`).**  Five things, and three of
 them are about what the phase did *not* do.
@@ -4917,7 +4918,21 @@ whole difference between a recovery and a regression: a stale origin makes the
 resolver answer `none` and the pop falls back to the reachability recipient, where
 applying the guard after the choice would *refuse* the pop.  A resolver that
 answered `some` unconditionally passes every positive anchor and breaks this; a
-Tier 3 positive pins the `if … then some origin else none` shape.
+Tier 3 positive pins the `if … then some origin else none` shape.  **And since
+`v0.35.61` a candidate is first of all a thread that resolves.**  Both guards pass
+a thread with no TCB (their `_of_none` arms exist so the *operation's* argument
+keeps its own error code), so as first landed a recorded origin naming no thread
+was answered as a candidate and the pop's own `lookupTcb` then refused the reply
+with `.objectNotFound` — a refusal on exactly the shape this item says falls back.
+Unreachable, because objects are never erased and `clearDonationOriginReferences`
+clears the field when the thread it names is retyped, and closed anyway: a
+contract the code does not decide is one a later cut can break silently.  The
+resolver resolves the origin through `lookupTcb` before it consults either guard,
+`replyDonationRecipient_resolves` is the no-refusal fact the pop now has (whenever
+the answered caller resolves, so does the recipient), the frozen mirror does the
+same through `frozenLookupTcb`, and §3.25 and FO-044's third half are the
+witnesses — each with the two-guard CONTROL that makes the decline attributable to
+the resolution check alone.
 
 (3) **The member is a WRITE, and coverage is a relation rather than a presence
 check.**  `lockSet_endpointReply_originRecipient_write_mem` and its `.replyRecv`
@@ -5080,7 +5095,9 @@ asymmetry between the state the **footprint** resolves at and the state the
 neither.**  `frozenDonationOriginRebindable` is `donationOriginRebindable`'s
 counterpart because the frozen surface models the same bindings; a mirror carrying
 the recipient guard alone would redirect on states the kernel refuses, which is
-the direction that matters on a differential surface.
+the direction that matters on a differential surface.  The resolution check is
+mirrored too since `v0.35.61` (`frozenLookupTcb`), with FO-044's third half the
+witness on both surfaces.
 
 **What new code must respect since HP10.9 (`v0.35.53`).**  The depth-two payoff is
 stated and measured, so the donation accounting holds at **every** reply-stack
@@ -5094,7 +5111,11 @@ thread — is a **conclusion**, read off the removal through
 payoff over.  The two guards are **hypotheses** because one of them *cannot* be
 derived: `donationOriginRebindable` is **false** at the pre-state, the owner being
 `.blockedOnReply` on exactly the reply being answered, and becomes true at the wake
-`endpointReplyOnCore` performs before the removal.  A cut that "simplifies" the
+`endpointReplyOnCore` performs before the removal.  The origin's *existence* at
+that state is a third hypothesis since `v0.35.61`, for the same reason: the
+removal's success says nothing about the thread the field names
+(`consumeCallerReply` is total on an absent caller), and the resolver now names
+only a thread it can resolve.  A cut that "simplifies" the
 statement by hypothesising the resolver's answer or the reachability answer has
 gutted it; Tier 3 negatives refuse both.
 
@@ -5214,6 +5235,40 @@ Registered in
 reply-stack depth.  What it must still not claim is *parity* with seL4-MCS on
 reply-stack removal at depth ≥ 3: upstream severs and this kernel splices, so the
 honest claim is an improvement on upstream rather than a match for it.
+
+**The post-landing audit (`v0.35.61`) — what reading the code against its prose
+found.**  The whole of WS-HP, RR8.1–RR8.4 and the `v0.35.59`/`v0.35.60` cuts were
+re-read with every docstring treated as a claim to check rather than a description
+to trust.  The code held: each resolver, guard, pop, splice store and frozen
+mirror does what its section above says; the deleted `detach*` theorems all have
+splice twins; objects are never erased, so a recorded origin always resolves; and
+the recipient guard is inert on reachable states because `schedContextBind`
+refuses a thread whose frame is on a live stack.  What did not hold was prose
+**about the future, or about the sever** — ten docstrings and comments across six
+Lean files, and the plan's HP4 narrative.  `replyFrameHeadIsBound`'s docstring and
+the chain composite's both said *"HP7 is where it becomes a clause of the chain
+invariant"*, and HP7 did no such thing — no plan row ever scheduled it; the rest
+still read *"once HP4 lands"*, *"once HP6 makes the removal a splice"*, *"the
+sever today, the splice after HP6.3"*, *"the one HP10 will have to keep true"*,
+or described the removal as clearing the frame above's `prev`, each about a phase
+that had landed.  The retired-code section's rule — *sweep the forward-looking
+prose when the phase it names closes* — is the one that catches these, and
+WS-HP's own closure had not run it over WS-HP's own docstrings.  Three findings
+beyond prose.  (1) **A contract the code does not decide is one a later cut can
+break silently**: `donationOriginRecipient?` promised that a stale origin *falls
+back rather than refusing*, and decided it only for an origin failing a guard — a
+recorded origin naming no thread passed both guards and reached the pop's own
+lookup as `.objectNotFound`.  Unreachable, and closed on both surfaces (item (2)
+under HP10.6 above).  (2) **One thread, two spellings**: `replyRecvPopDonation`
+passed `holderV.val` / `targetV.val` to the return and `holder` / `target` to the
+migration, and four proofs carried `toValid?_some_val_eq` rewrites to reconcile
+what one `let` now states once.  (3) **A hand-kept figure had crept back in**:
+HP8's paragraph restated the reply-stack census's totals a few paragraphs after
+the WS-RM section says why that shape drifts — accurate that day, deleted anyway.
+And the two stated coherence facts HP7 left standing — `replyFrameHeadIsBound`
+and `replyFrameHeadHolderDonation`, true on every reachable state by arguments
+their docstrings carry and entailed by no invariant — had no register row; they
+have one (`docs/REGISTERED_DEBT.md`, table C).
 
 Plan: [`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md).
 

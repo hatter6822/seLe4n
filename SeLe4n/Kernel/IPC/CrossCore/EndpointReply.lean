@@ -147,8 +147,9 @@ def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
                 --
                 -- **WS-RM (`v0.35.6`)**: and the answered frame comes **off its
                 -- reply stack first** — `removeCallerReplyFrame` is seL4's
-                -- `reply_remove`: the detach clears the `prev` of the frame
-                -- above, then the consume severs the caller link.  Without it
+                -- `reply_remove` with the middle case spliced (WS-HP HP6.3):
+                -- the frame above is linked down to the frame below and that
+                -- frame back up, then the consume severs the caller link.  Without it
                 -- `Reply.consumed` cleared a non-head frame's links while the
                 -- frame above still linked down to it, and every later pop of
                 -- that stack refused, fail-closed, for good — the wedge a
@@ -578,8 +579,9 @@ theorem answeredReplyFrameAbove?_eq_bind (st : SystemState) (target : SeLe4n.Thr
       = (answeredReplyObject? st target).bind (replyFrameAbove? st) := rfl
 
 /-- **WS-HP HP3.1: the frame *below* the answered one** -- the second object the
-removal writes, and the member both reply footprints declare for it once HP6
-makes that removal a splice.
+removal writes, and the member both reply footprints declare for it; declared
+at HP3 ahead of HP6.3 (`v0.35.45`), which is the cut that made the removal a
+splice and the member live.
 
 Composed exactly as the frame-above member is, so the footprint and the splice
 read one answer to "which frame sits below the cut". -/

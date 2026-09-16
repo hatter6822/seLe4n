@@ -3750,9 +3750,15 @@ theorem donationAccountingPreserved_atCallDepthTwo
     (hOrigin : sc.donationOrigin = some origin)
     -- The out-of-order removal: the OWNER's own frame leaves the stack.
     (hRemove : removeCallerReplyFrame origin rid st = .ok ((), st'))
-    -- The owner is awake and holds no reservation of its own.
+    -- The owner is awake, holds no reservation of its own, and exists at that
+    -- state -- the third is a hypothesis for the same reason as the other two:
+    -- the removal's success says nothing about the thread the field names
+    -- (`consumeCallerReply` is total on an absent caller), and since `v0.35.61`
+    -- the resolver names only a thread it can resolve, so a payoff stated for
+    -- an origin with no TCB would be stating the fallback.
     (hAcceptable : donationRecipientAcceptable st' origin = true)
     (hRebindable : donationOriginRebindable st' origin = true)
+    (originTcb : TCB) (hOriginTcb : lookupTcb st' origin = some originTcb)
     -- The pop the in-order reply that follows performs, through the reply path's
     -- own recipient resolution.
     (hPop : returnDonatedSchedContextResolved st' serverTid scId
@@ -3782,7 +3788,7 @@ theorem donationAccountingPreserved_atCallDepthTwo
   -- ...so the resolver answers the recorded origin.
   have hResolver : donationOriginRecipient? st' scId = some origin :=
     (donationOriginRecipient?_eq_some_iff st' scId origin).mpr
-      ⟨hOuter', ⟨sc, hSc', hOrigin⟩, hAcceptable, hRebindable⟩
+      ⟨hOuter', ⟨sc, hSc', hOrigin⟩, hAcceptable, hRebindable, originTcb, hOriginTcb⟩
   have hRecip : replyDonationRecipient st' scId answeredCaller = origin :=
     replyDonationRecipient_eq_origin st' hResolver
   refine ⟨hOuter', hRecip, ?_⟩

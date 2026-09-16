@@ -1053,7 +1053,8 @@ exactly the frame the live operation recovers through `answeredReplyObject?`.
 
 Two consequences worth stating.  The pop's subject is the frame's **holder**
 (the context's `boundThread`), which on a delegated reply capability is neither
-the replier nor, once HP6 lands, necessarily the recorded server.  And the
+the replier nor, since HP6's splice (`v0.35.45`), necessarily the recorded
+server.  And the
 recipient is `targetId` — the caller being answered — rather than the binding's
 recorded `originalOwner`; the two agree wherever `donationOwnerValid` holds, and
 the frame reading is the one that stays true when a middle frame has been

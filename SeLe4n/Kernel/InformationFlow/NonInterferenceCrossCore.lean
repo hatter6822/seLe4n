@@ -2146,8 +2146,8 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
       | some targetV =>
         rw [hHV, hTV] at hStep
         simp only [] at hStep
-        cases hRet : returnDonatedSchedContextResolved st holderV.val oldScId
-            (replyDonationRecipient st oldScId targetV.val) with
+        cases hRet : returnDonatedSchedContextResolved st holder oldScId
+            (replyDonationRecipient st oldScId target) with
         | error e => rw [hRet] at hStep; simp only [] at hStep; cases hStep
         | ok st1' =>
           rw [hRet] at hStep

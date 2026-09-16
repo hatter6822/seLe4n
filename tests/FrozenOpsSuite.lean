@@ -943,6 +943,9 @@ express delegation — `diffB` *is* the recorded server in every fixture here, w
 is exactly why the round-15 operation differential could not see the divergence
 round 22 found. -/
 private def diffDelegate : SeLe4n.ThreadId := ⟨65⟩
+/-- **`v0.35.61`**: a thread id the fixtures store nothing under, so a
+`donationOrigin` naming it is a **stale** origin -- FO-044's third half. -/
+private def diffStaleOrigin : SeLe4n.ThreadId := ⟨68⟩
 
 /-- The actors share one CSpace root holding the operand capability at slot 0.
 
@@ -1748,11 +1751,14 @@ window in which the live one redirects and the mirror does not makes that claim 
 over-claim rather than a failing test — every existing scenario keeps passing,
 because none of them records an origin that differs from the answered caller.
 
-**Two halves, and the second is what makes the first decisive.**  A selector that
+**Three halves, and the second is what makes the first decisive.**  A selector that
 fired unconditionally — handing the reservation to whatever the origin field says
 regardless of the guards — would pass a half that only checks "the origin gets
 it", so the second half fixes the origin *at* the answered caller and requires the
-identity.  That is the shape §3.9b was built against, one surface over.
+identity.  That is the shape §3.9b was built against, one surface over.  The third
+(`v0.35.61`) records an origin the store does not hold and requires both surfaces
+to decline it and fall back, because both guards pass such a thread and only the
+resolver's own resolution check can be what declines it.
 
 The stack is a single frame, which is the bottom of its own stack: the redirect
 fires exactly there (`donationOriginRecipient?` answers only at
@@ -1868,6 +1874,45 @@ private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
       (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze sameOrigin))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
         (liveReplySpine diffB diffA msg) sameOrigin.state))
+  -- ### Half three (`v0.35.61`, the post-landing audit): the origin no longer
+  -- RESOLVES, so it is not a candidate on either surface.  Both guards pass a
+  -- thread with no TCB (their `_of_none` arms), so a resolver that consulted the
+  -- guards alone would name `diffStaleOrigin` and the pop's own lookup would then
+  -- refuse the whole reply -- a refusal where the design promises a fallback.
+  -- Reachable only through a stale field, which `clearDonationOriginReferences`
+  -- prevents; the differential pins the two surfaces to one reading of "stale".
+  let staleOrigin := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
+    diffScId { diffDonatedSc (some rid) with donationOrigin := some diffStaleOrigin }
+  expect "FO-044 half three control: the recorded origin resolves to no thread on either surface"
+    ((SeLe4n.Kernel.lookupTcb staleOrigin.state diffStaleOrigin).isNone
+      && (frozenLookupTcb (freeze staleOrigin) diffStaleOrigin).isNone)
+  expect "FO-044 half three control: ...and both guards admit it, vacuously, on both surfaces"
+    (SeLe4n.Kernel.donationRecipientAcceptable staleOrigin.state diffStaleOrigin
+      && SeLe4n.Kernel.donationOriginRebindable staleOrigin.state diffStaleOrigin
+      && frozenDonationRecipientAcceptable (freeze staleOrigin) diffStaleOrigin
+      && frozenDonationOriginRebindable (freeze staleOrigin) diffStaleOrigin)
+  expect "FO-044 half three: both resolvers DECLINE a stale origin"
+    (SeLe4n.Kernel.donationOriginRecipient? staleOrigin.state diffScId == none
+      && frozenDonationOriginRecipient? (freeze staleOrigin) diffScId == none)
+  expect "FO-044 half three: ...so the reply SUCCEEDS on both surfaces (a fallback, not a refusal)"
+    ((liveReplySpine diffB diffA msg staleOrigin.state).toOption.isSome
+      && (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
+            (freeze staleOrigin)).toOption.isSome)
+  expect "FO-044 half three: ...binding the reservation to the answered caller (frozen)"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
+              (freeze staleOrigin)).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffA with
+          | some t => t.schedContextBinding == .bound diffScId
+          | none   => false)
+     | none => false)
+  expect "FO-044 half three: and the operations agree"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze staleOrigin))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) staleOrigin.state))
 
 /-- FO-035: **a receive that dequeues a `.blockedOnCall` caller** (PR #873
 round 17).
