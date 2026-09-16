@@ -609,6 +609,17 @@ The workstream closes when **all nine** hold and each is checkable:
    `linkCallerReply_donationChainFrame`, `consumeCallerReply_donationChainFrame`,
    `clearReplyObjectCaller_donationChainFrame`, `clearTcbReplyObject_…`,
    `consumeReplyLink_…`).  No theorem takes it on a post-state.
+   *Lifecycle of that list, recorded so the box reads as the history it is:*
+   `v0.35.4` made the reply stack doubly linked, so the two consumes write
+   chain data and their frames became preservation theorems
+   (`consumeCallerReply_preserves_donationChainWellFormed`,
+   `consumeReplyLink_preserves_donationChainWellFormed`; Tier 3 refuses the
+   retired `consumeReply_donationChainFrame` / `consumeCallerReply_donationChainFrame`
+   names tree-wide), and WS-RR RR8.5 (`v0.35.63`) deleted the cancellation path's
+   raw-insert twins `clearTcbReplyObject` / `clearReplyObjectCaller` with every
+   theorem over them — `consumeReplyLink` is the reply path's own consume now,
+   and its chain result is a corollary through `consumeCallerReply_eq_link`.
+   The two `link*` frames are live.
 4. **MET.**  Unchanged by this phase and re-checked: `ipcInvariantFull` has
    exactly **twenty** conjuncts, `passiveServerIdle` among them, preserved by
    `cancelIpcBlocking` on every arm since OD1.5.

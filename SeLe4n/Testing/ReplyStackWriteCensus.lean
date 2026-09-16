@@ -105,7 +105,7 @@ requires every candidate to be a primitive, a registered site, or a member of
 
 Without that, this list would be an enumeration standing in for a derivation:
 `storeObject` takes a whole `KernelObject`, so a definition writing
-`{ r with next := … }` directly, calling none of the nine names here, would be
+`{ r with next := … }` directly, calling none of the ten names here, would be
 invisible to this census and to the registry it drives. -/
 def chainWritePrimitives : List Name :=
   [ -- The caller clear, and the link clear off a frame that heads nothing.
@@ -117,6 +117,12 @@ def chainWritePrimitives : List Name :=
     -- a site and has to be registered.
   , `SeLe4n.Model.SystemState.consumeReply
   , `SeLe4n.Model.SystemState.consumeCallerReply
+    -- ...and the pure projection of the second (WS-RR RR8.5): the one state the
+    -- infallible `consumeCallerReply` leaves, which is how a pure composition
+    -- such as `cancelIpcBlocking` runs the consume.  A primitive for the same
+    -- reason as its monadic form -- a pure transition reaching for it bare is
+    -- WS-RM's defect in the other calling convention.
+  , `SeLe4n.Model.SystemState.consumeCallerReplyLink
     -- The removal: the composed store step (WS-HP HP6.3 -- the frame above's
     -- `prev`, the frame below's `next`, and the cut frame's own unlink), the
     -- validated operation over it, and its total fold.  The store step is a
@@ -643,6 +649,12 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Model.SystemState.consumeCallerReply,
       .states [`SeLe4n.Kernel.consumeCallerReply_preserves_donationChainWellFormed,
                `SeLe4n.Kernel.consumeCallerReply_head_preserves_donationChainWellFormedExcept])
+    -- The pure projection of the pair (WS-RR RR8.5).  Its two chain results are
+    -- the pair's own, reached through the bridge `consumeCallerReply_eq_link`
+    -- rather than proved a second time over a second body.
+  , (`SeLe4n.Model.SystemState.consumeCallerReplyLink,
+      .states [`SeLe4n.Kernel.consumeCallerReplyLink_preserves_donationChainWellFormed,
+               `SeLe4n.Kernel.consumeCallerReplyLink_head_preserves_donationChainWellFormedExcept])
     -- seL4's `reply_remove`: the splice, then the unlink.  This is the step both
     -- reply spines run, and the one a new reply path must call rather than
     -- reaching for the consume.
@@ -707,9 +719,12 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .states [`SeLe4n.Kernel.spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed])
   , (`SeLe4n.Kernel.spliceThreadReplyFrameOut,
       .states [`SeLe4n.Kernel.spliceThreadReplyFrameOut_preserves_donationChainWellFormed])
-    -- The teardown's TCB-side clear.
-  , (`SeLe4n.Kernel.Lifecycle.Suspend.clearReplyObjectCaller,
-      .states [`SeLe4n.Kernel.clearReplyObjectCaller_preserves_donationChainWellFormed])
+    -- The cancellation path's teardown: the projection above under the victim's
+    -- own `replyObject`.  Until WS-RR RR8.5 this was a raw-insert twin of the
+    -- pair (`clearTcbReplyObject` then `clearReplyObjectCaller`) with its own
+    -- chain proof; it is a corollary now.
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.consumeReplyLink,
+      .states [`SeLe4n.Kernel.consumeReplyLink_preserves_donationChainWellFormed])
     -- The push's second store: the new head's links and the old head's `next`.
     -- Between the two stores the context's head names a frame that does not yet
     -- answer it, so the chain is broken by construction here.
@@ -814,7 +829,7 @@ def reconciliationViolations (derived alsoWriting recorded : List Name) : List S
   let unregistered := derived.filter (fun n => !recorded.contains n)
   -- **Two derivations of "writes chain data", and an entry justified by either
   -- is not stale.**  `derived` is the primitive-reaching frontier — a site that
-  -- calls one of the nine chain-write helpers — and `alsoWriting` is the
+  -- calls one of the ten chain-write helpers — and `alsoWriting` is the
   -- independent record-constructing one, which sees a definition that builds a
   -- `Reply` or `SchedContext` and stores it without naming any helper.  The
   -- tree's own depth-2 chain fixture is in the second and not the first, so
@@ -848,7 +863,7 @@ private def censusWitnessBareConsume (caller : SeLe4n.ThreadId) (rid : SeLe4n.Re
 
 /-- **The write that calls no primitive**: a transition that rewrites a Reply's
 upward stack link through a record update and `storeObject`, naming none of the
-nine helpers in `chainWritePrimitives`.
+ten helpers in `chainWritePrimitives`.
 
 This is what makes that list a pin rather than the definition of the frontier.
 Nothing in `usesDirectly env chainWritePrimitives` can see it; only
@@ -1137,7 +1152,7 @@ run_cmd Command.liftTermElabM do
     derived := n :: derived
   -- The primitive list itself, held to what the code does.  `derived` above is
   -- read off `chainWritePrimitives`, so it can only ever confirm that list; this
-  -- is the independent half, and it is what stops the nine names from becoming
+  -- is the independent half, and it is what stops the ten names from becoming
   -- an enumeration standing in for a derivation.
   let mut candidates : List Name := []
   for n in recordConstructingStoreCandidates env do

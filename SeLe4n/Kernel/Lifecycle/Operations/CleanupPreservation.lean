@@ -352,7 +352,7 @@ theorem removeFromAllNotificationWaitLists_preserves_objects_invExt
 `p` read at key `nid` preserves TCB-kind and `cpuAffinity` at every key that
 held a TCB before the insert — the single-step frame instantiated by both
 `spliceOutMidQueueNode` link patches and by every conditional TCB rewrite in
-the suspend teardown (`restoreToReady`, `clearTcbReplyObject`). -/
+the suspend teardown (`restoreToReady`, `consumeReplyLink`). -/
 theorem insert_tcb_rewrite_lookup
     (objs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
     (nid k : SeLe4n.ObjId) (p q t0 : TCB)

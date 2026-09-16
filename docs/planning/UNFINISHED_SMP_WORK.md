@@ -318,7 +318,11 @@ queue:
   new frames — `restoreToReady_preserves_projection_high`,
   `clearTcbReplyObject_preserves_projection_high`,
   `clearReplyObjectCaller_preserves_projection` and
-  `consumeReplyLink_preserves_projection_high` — and feeds
+  `consumeReplyLink_preserves_projection_high` (since WS-RR RR8.5, `v0.35.63`,
+  the middle two are deleted with the raw-insert teardown they were about, and
+  the last is a corollary of the reply path's own
+  `consumeCallerReply_preserves_projection` through the bridge
+  `consumeCallerReply_eq_link`) — and feeds
   `cancelIpcBlockingOnCore_reply_cancellation_NI`, which takes **no**
   `hTeardownProj`.  This arm reaches no queue: it walks the Reply object's
   caller link, which is precisely why it does not need the missing invariant.

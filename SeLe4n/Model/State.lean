@@ -3883,6 +3883,156 @@ theorem consumeCallerReply_isOk (st : SystemState) (caller : SeLe4n.ThreadId)
   | none => exact ⟨st1, rfl⟩
   | some tcb => exact ⟨_, rfl⟩
 
+/-- **WS-RR RR8.5: the teardown as a pure, total function — the one state
+`consumeCallerReply` leaves.**
+
+The tree carried two spellings of "tear down the caller↔Reply link": this
+monadic one on the reply paths, and a pure two-helper one
+(`clearTcbReplyObject` then `clearReplyObjectCaller`) on the cancellation path,
+which existed only because `cancelIpcBlocking` is a pure composition and could
+not run a `Kernel` step.  Two bodies for one question drift, and these two had
+already parted on write **order** and on whether the writes went through
+`storeObject`'s lifecycle bookkeeping — so the cancellation spelling is deleted
+and its teardown is this projection: `consumeReplyLink`
+(`Lifecycle/Suspend.lean`) is `st.consumeCallerReplyLink tid rid` under the
+victim's own `replyObject`, and every fact proved of the monadic step transfers to
+the cancellation path through `consumeCallerReply_eq_link` rather than being
+proved a second time.
+
+The `.error` arm is **eliminated, not defaulted**: both legs are `storeObject`s
+behind no-op guards (`consumeCallerReply_isOk`), so an "on error, the identity"
+fallback here would read as a decision the operation never takes.  The definition
+carries the infallibility instead; computationally the arm is unreachable
+(`False.elim` erases), so the executable is the `.ok` projection and nothing
+else. -/
+def consumeCallerReplyLink (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) : SystemState :=
+  match h : consumeCallerReply caller rid st with
+  | .ok ((), st') => st'
+  | .error _ =>
+      False.elim (by
+        obtain ⟨st', hOk⟩ := consumeCallerReply_isOk st caller rid
+        rw [hOk] at h
+        cases h)
+
+/-- **WS-RR RR8.5: the bridge.**  The monadic teardown *is* `.ok` at the pure
+one, so a result stated over `consumeCallerReply caller rid st = .ok ((), st')`
+instantiates to the pure spelling with this equation as its step hypothesis —
+which is how every `consumeReplyLink_*` theorem on the cancellation path is a
+corollary of its reply-path twin. -/
+theorem consumeCallerReply_eq_link (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) :
+    consumeCallerReply caller rid st = .ok ((), st.consumeCallerReplyLink caller rid) := by
+  unfold consumeCallerReplyLink
+  split
+  · next _ h => exact h
+  · next _ h =>
+    exfalso
+    obtain ⟨st', hOk⟩ := consumeCallerReply_isOk st caller rid
+    rw [hOk] at h
+    cases h
+
+/-- WS-RR RR8.5: `consumeCallerReply` leaves the service registry untouched —
+both legs are object-store writes.  The cancellation path's
+`consumeReplyLink_serviceRegistry_eq` reads it through the bridge. -/
+theorem consumeCallerReply_serviceRegistry_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    st'.serviceRegistry = st.serviceRegistry := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have h1 : st1.serviceRegistry = st.serviceRegistry := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; rfl
+      | some r => rw [hGet] at hCons; unfold storeObject at hCons; cases hCons; rfl
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact h1
+    | some tcb =>
+      simp only [hT] at hStep
+      unfold storeObject at hStep; cases hStep; exact h1
+
+/-- **WS-RR RR8.5: the sharp pointwise reading of the consume at a TCB-holding
+key other than the caller's** — untouched.  The Reply leg writes a `.reply`
+value, whose key can never be one that holds a TCB, and the TCB leg writes the
+caller's key alone.  Stated with no `rid`-distinctness hypothesis, because
+`ReplyId.toObjId` and `ThreadId.toObjId` are two wrappers over one `ObjId` and a
+collision is representable: the distinctness is derived from the store's
+contents instead (a key holding a TCB holds no Reply). -/
+theorem consumeCallerReply_tcb_other (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st'))
+    (k : SeLe4n.ObjId) (t0 : TCB) (hNe : k ≠ caller.toObjId)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    st'.objects[k]? = some (.tcb t0) := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hInv1 : st1.objects.invExt :=
+      consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    have h1 : st1.objects[k]? = some (.tcb t0) := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; exact hPre
+      | some r =>
+        rw [hGet] at hCons
+        have hkr : k ≠ rid.toObjId := by
+          intro hk
+          rw [hk, (getReply?_eq_some_iff st rid r).mp hGet] at hPre
+          cases hPre
+        rw [storeObject_objects_ne st st1 rid.toObjId k _ hkr hObjInv hCons]
+        exact hPre
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact h1
+    | some tcb =>
+      simp only [hT] at hStep
+      rw [storeObject_objects_ne st1 st' caller.toObjId k _ hNe hInv1 hStep]
+      exact h1
+
+/-- **WS-RR RR8.5: the sharp pointwise reading at the caller's own key** — the
+record stored is the pre-state TCB with `replyObject` cleared and nothing else
+moved.  Together with `consumeCallerReply_tcb_other` this is the whole of what
+the consume does to TCBs, stated exactly rather than as field lists. -/
+theorem consumeCallerReply_tcb_caller (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st'))
+    (t0 : TCB) (hPre : st.objects[caller.toObjId]? = some (.tcb t0)) :
+    st'.objects[caller.toObjId]? = some (.tcb { t0 with replyObject := none }) := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hInv1 : st1.objects.invExt :=
+      consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    have h1 : st1.objects[caller.toObjId]? = some (.tcb t0) := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; exact hPre
+      | some r =>
+        rw [hGet] at hCons
+        have hkr : caller.toObjId ≠ rid.toObjId := by
+          intro hk
+          rw [hk, (getReply?_eq_some_iff st rid r).mp hGet] at hPre
+          cases hPre
+        rw [storeObject_objects_ne st st1 rid.toObjId caller.toObjId _ hkr hObjInv hCons]
+        exact hPre
+    have hT : st1.getTcb? caller = some t0 := (getTcb?_eq_some_iff st1 caller t0).mpr h1
+    simp only [hT] at hStep
+    exact storeObject_objects_eq st1 st' caller.toObjId _ hInv1 hStep
+
 /-- WS-SM SM6.D (PR #827 #3 fold): `consumeReply` leaves the scheduler untouched
 (object-store writes only). -/
 theorem consumeReply_scheduler_eq (st st' : SystemState) (rid : SeLe4n.ReplyId)

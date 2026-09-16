@@ -442,46 +442,6 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
           have hTidEq : tid = holder := congrArg Prod.snd hPair
           exact hH (by rw [hTidEq])
 
-theorem clearTcbReplyObject_sameSchedContextBindings (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    sameSchedContextBindings st (Lifecycle.Suspend.clearTcbReplyObject st tid) := by
-  intro k tcb' hTcb'
-  unfold Lifecycle.Suspend.clearTcbReplyObject at hTcb'
-  split at hTcb'
-  · rename_i t hT
-    by_cases hk : k = tid
-    · subst hk
-      have hx : (st.objects.insert k.toObjId (.tcb { t with replyObject := none })).get?
-          k.toObjId = some (.tcb tcb') := hTcb'
-      rw [RHTable.getElem?_insert_self st.objects k.toObjId _ hInv] at hx
-      have hEqT : { t with replyObject := (none : Option SeLe4n.ReplyId) } = tcb' :=
-        KernelObject.tcb.inj (Option.some.inj hx)
-      exact ⟨t, (SystemState.getTcb?_eq_some_iff st k t).mp hT, by rw [← hEqT]⟩
-    · have hx : (st.objects.insert tid.toObjId _).get? k.toObjId = some (.tcb tcb') := hTcb'
-      rw [RHTable.getElem?_insert_ne st.objects tid.toObjId k.toObjId _
-        (by simpa using fun h => hk (SeLe4n.ThreadId.toObjId_injective _ _ h).symm) hInv] at hx
-      exact ⟨tcb', hx, rfl⟩
-  · exact ⟨tcb', hTcb', rfl⟩
-
-theorem clearReplyObjectCaller_sameSchedContextBindings (st : SystemState)
-    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) :
-    sameSchedContextBindings st (Lifecycle.Suspend.clearReplyObjectCaller st rid) := by
-  intro k tcb' hTcb'
-  unfold Lifecycle.Suspend.clearReplyObjectCaller at hTcb'
-  split at hTcb'
-  · rename_i r hR
-    by_cases hk : k.toObjId = rid.toObjId
-    · exfalso
-      have hx : (st.objects.insert rid.toObjId (.reply r.consumed)).get?
-          k.toObjId = some (.tcb tcb') := hTcb'
-      rw [hk, RHTable.getElem?_insert_self st.objects rid.toObjId _ hInv] at hx
-      cases hx
-    · have hx : (st.objects.insert rid.toObjId _).get? k.toObjId = some (.tcb tcb') := hTcb'
-      rw [RHTable.getElem?_insert_ne st.objects rid.toObjId k.toObjId _
-        (by simpa using fun h => hk h.symm) hInv] at hx
-      exact ⟨tcb', hx, rfl⟩
-  · exact ⟨tcb', hTcb', rfl⟩
-
 theorem consumeReplyLink_sameSchedContextBindings (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) :
     sameSchedContextBindings st (Lifecycle.Suspend.consumeReplyLink st tid tcb) := by
@@ -489,9 +449,8 @@ theorem consumeReplyLink_sameSchedContextBindings (st : SystemState)
   split
   · exact sameSchedContextBindings.refl st
   · rename_i rid _
-    exact (clearTcbReplyObject_sameSchedContextBindings st tid hInv).trans
-      (clearReplyObjectCaller_sameSchedContextBindings _ rid
-        (Lifecycle.Suspend.clearTcbReplyObject_preserves_objects_invExt st tid hInv))
+    exact consumeCallerReply_sameSchedContextBindings st _ tid rid hInv
+      (SystemState.consumeCallerReply_eq_link st tid rid)
 
 theorem restoreToReadyStaging_sameSchedContextBindings (st : SystemState)
     (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
@@ -519,57 +478,8 @@ theorem restoreToReadyStaging_sameSchedContextBindings (st : SystemState)
 -- §4  WS-OD OD1.5 — the reply arm frames `passiveServerIdle`
 -- ============================================================================
 
-/-- WS-OD OD1.5: clearing the caller's forward reply link frames
-`passiveServerIdle` — its one write rewrites `replyObject`, which is neither
-field the conjunct reads. -/
-theorem clearTcbReplyObject_passiveServerIdleFrame (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    passiveServerIdleFrame st (Lifecycle.Suspend.clearTcbReplyObject st tid) := by
-  refine passiveServerIdleFrame_of_backward ?_
-    (Lifecycle.Suspend.clearTcbReplyObject_scheduler_eq st tid)
-  intro a tcb' hPost
-  unfold Lifecycle.Suspend.clearTcbReplyObject at hPost
-  split at hPost
-  · rename_i t hT
-    by_cases hk : a = tid
-    · subst hk
-      have hx : (st.objects.insert a.toObjId (.tcb { t with replyObject := none })).get?
-          a.toObjId = some (.tcb tcb') := hPost
-      rw [RHTable.getElem?_insert_self st.objects a.toObjId _ hInv] at hx
-      have hEqT : { t with replyObject := (none : Option SeLe4n.ReplyId) } = tcb' :=
-        KernelObject.tcb.inj (Option.some.inj hx)
-      exact ⟨t, (SystemState.getTcb?_eq_some_iff st a t).mp hT, by rw [← hEqT], by rw [← hEqT]⟩
-    · have hx : (st.objects.insert tid.toObjId _).get? a.toObjId = some (.tcb tcb') := hPost
-      rw [RHTable.getElem?_insert_ne st.objects tid.toObjId a.toObjId _
-        (by simpa using fun h => hk (SeLe4n.ThreadId.toObjId_injective _ _ h).symm) hInv] at hx
-      exact ⟨tcb', hx, rfl, rfl⟩
-  · exact ⟨tcb', hPost, rfl, rfl⟩
-
-/-- WS-OD OD1.5: clearing the Reply's back-link frames `passiveServerIdle` — its
-one write lands on a `.reply` value, whose key can never hold a TCB. -/
-theorem clearReplyObjectCaller_passiveServerIdleFrame (st : SystemState)
-    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) :
-    passiveServerIdleFrame st (Lifecycle.Suspend.clearReplyObjectCaller st rid) := by
-  refine passiveServerIdleFrame_of_backward ?_
-    (Lifecycle.Suspend.clearReplyObjectCaller_scheduler_eq st rid)
-  intro a tcb' hPost
-  refine ⟨tcb', ?_, rfl, rfl⟩
-  unfold Lifecycle.Suspend.clearReplyObjectCaller at hPost
-  split at hPost
-  · rename_i r hR
-    by_cases hk : a.toObjId = rid.toObjId
-    · exfalso
-      have hx : (st.objects.insert rid.toObjId (.reply r.consumed)).get?
-          a.toObjId = some (.tcb tcb') := hPost
-      rw [hk, RHTable.getElem?_insert_self st.objects rid.toObjId _ hInv] at hx
-      cases hx
-    · have hx : (st.objects.insert rid.toObjId _).get? a.toObjId = some (.tcb tcb') := hPost
-      rw [RHTable.getElem?_insert_ne st.objects rid.toObjId a.toObjId _
-        (by simpa using fun h => hk h.symm) hInv] at hx
-      exact hx
-  · exact hPost
-
-/-- WS-OD OD1.5: the reply-link consume frames `passiveServerIdle`. -/
+/-- WS-OD OD1.5: the reply-link consume frames `passiveServerIdle` — the reply
+path's own frame, through the RR8.5 bridge. -/
 theorem consumeReplyLink_passiveServerIdleFrame (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) :
     passiveServerIdleFrame st (Lifecycle.Suspend.consumeReplyLink st tid tcb) := by
@@ -577,9 +487,8 @@ theorem consumeReplyLink_passiveServerIdleFrame (st : SystemState)
   cases tcb.replyObject with
   | none => exact passiveServerIdleFrame.refl st
   | some rid =>
-    exact (clearTcbReplyObject_passiveServerIdleFrame st tid hInv).trans
-      (clearReplyObjectCaller_passiveServerIdleFrame _ rid
-        (Lifecycle.Suspend.clearTcbReplyObject_preserves_objects_invExt st tid hInv))
+    exact consumeCallerReply_passiveServerIdleFrame st _ tid rid hInv
+      (SystemState.consumeCallerReply_eq_link st tid rid)
 
 /-- `v0.35.4`: the cancelled caller's frame splice frames `passiveServerIdle` —
 its writes all land on `.reply` values, whose keys can never hold a TCB, and it
@@ -863,9 +772,10 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
 /-- **WS-OD OD3.5**: `consumeReplyLink` leaves every TCB but the swept thread's
 verbatim.
 
-Its TCB leg (`clearTcbReplyObject`) rewrites `tid` alone, and its Reply leg
-(`clearReplyObjectCaller`) writes a key that holds a `.reply`, which can never
-alias a TCB-holding key.  The existing `consumeReplyLink_tcb_lookup` says only
+Its TCB leg rewrites `tid` alone, and its Reply leg writes a key that holds a
+`.reply`, which can never alias a TCB-holding key — since WS-RR RR8.5 both are
+the reply path's own `consumeCallerReply`, so this is
+`consumeCallerReply_tcb_other` through the bridge.  The existing `consumeReplyLink_tcb_lookup` says only
 that the *kind* and `cpuAffinity` survive; a footprint argument needs the
 stronger reading, because "some TCB is still there" does not rule out its links
 having changed. -/
@@ -874,22 +784,11 @@ theorem consumeReplyLink_other_tcb_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (hNe : k ≠ tid.toObjId) (hPre : st.objects[k]? = some (.tcb t0)) :
     (Lifecycle.Suspend.consumeReplyLink st tid tcb).objects[k]? = some (.tcb t0) := by
   unfold Lifecycle.Suspend.consumeReplyLink
-  cases hR : tcb.replyObject with
+  cases tcb.replyObject with
   | none => exact hPre
   | some rid =>
-    have hClear : (Lifecycle.Suspend.clearTcbReplyObject st tid).objects[k]? = some (.tcb t0) := by
-      unfold Lifecycle.Suspend.clearTcbReplyObject
-      cases hT : st.getTcb? tid with
-      | none => exact hPre
-      | some t =>
-        show (st.objects.insert tid.toObjId _).get? k = some (.tcb t0)
-        rw [RHTable.getElem?_insert_ne st.objects tid.toObjId k _
-          (by simpa using fun h => hNe h.symm) hInv]
-        exact hPre
-    exact (Lifecycle.Suspend.clearReplyObjectCaller_tcb_lookup_eq
-      (Lifecycle.Suspend.clearTcbReplyObject st tid) rid k t0
-      (Lifecycle.Suspend.clearTcbReplyObject_preserves_objects_invExt st tid hInv)
-      hClear).trans hClear
+    exact SystemState.consumeCallerReply_tcb_other st _ tid rid hInv
+      (SystemState.consumeCallerReply_eq_link st tid rid) k t0 hNe hPre
 
 /-- **WS-OD OD3.5: the reply arm writes no queue neighbour** — on the shape where
 the reclaim is inert.
@@ -1372,72 +1271,6 @@ theorem returnDonationToCancelledCaller_leaves_donated_at_depth_two
 -- WS-OD OD5.6 — the teardown paths frame the donation chain
 -- ============================================================================
 
-/-- **WS-OD OD5.6**: the TCB half of the sever carries no chain data at all. -/
-theorem clearTcbReplyObject_donationChainFrame (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    donationChainFrame st (Lifecycle.Suspend.clearTcbReplyObject st tid) := by
-  unfold Lifecycle.Suspend.clearTcbReplyObject
-  cases hT : st.getTcb? tid with
-  | none => simp only []; exact donationChainFrame.refl st
-  | some t =>
-    simp only []
-    exact donationChainFrame_of_objects_insert hInv
-      (by rw [(SystemState.getTcb?_eq_some_iff st tid t).mp hT]; rfl)
-      (by rw [(SystemState.getTcb?_eq_some_iff st tid t).mp hT]; rfl)
-      (fun _ h => by cases h)
-
-/-- `v0.35.4`: the TCB half of the sever leaves every Reply where it was. -/
-theorem clearTcbReplyObject_reply_backward (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (r : Reply)
-    (h : (Lifecycle.Suspend.clearTcbReplyObject st tid).objects[k]? = some (.reply r)) :
-    st.objects[k]? = some (.reply r) := by
-  unfold Lifecycle.Suspend.clearTcbReplyObject at h
-  cases hT : st.getTcb? tid with
-  | none => rw [hT] at h; exact h
-  | some t =>
-    rw [hT] at h
-    by_cases hk : k = tid.toObjId
-    · rw [hk] at h
-      have hx : (st.objects.insert tid.toObjId (.tcb { t with replyObject := none })).get?
-          tid.toObjId = some (.reply r) := h
-      rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv] at hx
-      cases hx
-    · have hx : (st.objects.insert tid.toObjId _).get? k = some (.reply r) := h
-      rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId k _
-        (by simpa using fun h => hk h.symm) hInv] at hx
-      exact hx
-
-theorem clearTcbReplyObject_getReply?_eq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) (rid : SeLe4n.ReplyId) :
-    (Lifecycle.Suspend.clearTcbReplyObject st tid).getReply? rid = st.getReply? rid := by
-  cases hPost : (Lifecycle.Suspend.clearTcbReplyObject st tid).getReply? rid with
-  | some r =>
-    exact ((SystemState.getReply?_eq_some_iff st rid r).mpr
-      (clearTcbReplyObject_reply_backward st tid hInv rid.toObjId r
-        ((SystemState.getReply?_eq_some_iff _ rid r).mp hPost))).symm
-  | none =>
-    cases hPre : st.getReply? rid with
-    | none => rfl
-    | some r =>
-      exfalso
-      have hObj := (SystemState.getReply?_eq_some_iff st rid r).mp hPre
-      have hPostObj : (Lifecycle.Suspend.clearTcbReplyObject st tid).objects[rid.toObjId]?
-          = some (.reply r) := by
-        unfold Lifecycle.Suspend.clearTcbReplyObject
-        cases hT : st.getTcb? tid with
-        | none => exact hObj
-        | some t =>
-          have hNe : rid.toObjId ≠ tid.toObjId := by
-            intro hx; rw [hx, (SystemState.getTcb?_eq_some_iff st tid t).mp hT] at hObj
-            cases hObj
-          show (st.objects.insert tid.toObjId _).get? rid.toObjId = some (.reply r)
-          rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId rid.toObjId _
-            (by simpa using fun h => hNe h.symm) hInv]
-          exact hObj
-      have hSome := (SystemState.getReply?_eq_some_iff _ rid r).mpr hPostObj
-      rw [hPost] at hSome
-      cases hSome
-
 -- ============================================================================
 -- `v0.35.4` — the cancellation's chain writes preserve the chain
 -- ============================================================================
@@ -1450,8 +1283,9 @@ theorem clearTcbReplyObject_getReply?_eq (st : SystemState) (tid : SeLe4n.Thread
   HP6.3) re-points the `prev` of the frame above the cancelled caller's at the
   frame below it, links that frame back up, and clears the cut frame's own `prev`
   — or, at a bottom frame, clears the frame above's `prev` alone;
-* the reply-link consume (`clearReplyObjectCaller`, storing `Reply.consumed`)
-  clears the cancelled caller's own two links unless the frame heads a context.
+* the reply-link consume (`consumeReplyLink` — the reply path's own
+  `consumeCallerReply` since WS-RR RR8.5, storing `Reply.consumed`) clears the
+  cancelled caller's own two links unless the frame heads a context.
 
 So each carries a preservation theorem.  The splice needs no hypothesis: it
 reconnects the two frames either side of the cut
@@ -1859,10 +1693,14 @@ theorem spliceThreadReplyFrameOut_unreferenced (st : SystemState) (tcb : TCB)
 preserves the chain**, when the frame heads no context and no frame's `prev`
 names it — the two facts a splice run beforehand establishes.
 
-Stated over the *store effect* (`hAt` / `hOther`) rather than over an operation,
-because the tree spells that effect twice — `consumeReply` on the reply path and
-`clearReplyObjectCaller` on the cancellation path — and a chain argument written
-against one of them would have to be written again for the other.  Both cite this.
+Stated over the *store effect* (`hAt` / `hOther`) rather than over an operation.
+When it was written the tree spelled that effect twice — `consumeReply` on the
+reply path and a raw-insert twin on the cancellation path — and a chain argument
+written against one of them would have had to be written again for the other.
+WS-RR RR8.5 deleted the twin (the cancellation path reads `consumeReply` through
+`consumeCallerReplyLink` now), and stating the argument over the effect is what
+made that deletion a pure removal rather than a re-proof; `consumeReply`'s chain
+results cite this.
 
 The consumed frame leaves the structure with both links clear, every other object
 is untouched, and the frame was on no walk to begin with
@@ -1957,27 +1795,6 @@ theorem consumedReplyStore_preserves_donationChainWellFormed (st s' : SystemStat
       unfold replyStackLinksAt? SystemState.getObject?
       rw [hReplyFwd q rq hqNe hrq, hrq])
 
-/-- `v0.35.4`: **consuming a reply link preserves the chain** when the frame heads
-no context and no frame's `prev` names it — the cancellation spelling's instance
-of `consumedReplyStore_preserves_donationChainWellFormed`. -/
-theorem clearReplyObjectCaller_preserves_donationChainWellFormed (st : SystemState)
-    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (hNotHead : ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
-      st.getReply? rid = some r → r.next ≠ some (.head sc))
-    (hUnreferenced : ∀ (a : SeLe4n.ReplyId) (ra : Reply),
-      st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid) :
-    donationChainWellFormed (Lifecycle.Suspend.clearReplyObjectCaller st rid) := by
-  unfold Lifecycle.Suspend.clearReplyObjectCaller
-  cases hR : st.getReply? rid with
-  | none => simp only []; exact hChain
-  | some r =>
-    simp only []
-    refine consumedReplyStore_preserves_donationChainWellFormed st _ rid r hChain hR
-      (fun sc => hNotHead r sc hR) hUnreferenced
-      (RobinHood.RHTable.getElem?_insert_self st.objects rid.toObjId _ hInv)
-      (fun k hk => RobinHood.RHTable.getElem?_insert_ne st.objects rid.toObjId k _
-        (by simpa using fun h => hk h.symm) hInv)
-
 /-- **WS-RM (`v0.35.6`): the reply path's spelling preserves the chain** — the
 same instance, for the store `consumeReply` performs.  `consumeCallerReply`'s
 other write is the answered caller's TCB, which moves no chain data at all. -/
@@ -2022,11 +1839,26 @@ theorem consumeCallerReply_preserves_donationChainWellFormed (st st' : SystemSta
         (donationChainFrame_of_tcb_rewrite hInv1
           ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hStep) hChain1
 
-/-- `v0.35.4`: **the cancellation's reply-link sever preserves the donation
+/-- **WS-RR RR8.5**: the same fact stated over the pure projection
+`SystemState.consumeCallerReplyLink` — the spelling the cancellation path reads —
+so the reply-stack write census holds that site to a chain result of its own
+rather than to its monadic twin's. -/
+theorem consumeCallerReplyLink_preserves_donationChainWellFormed (st : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st)
+    (hNotHead : ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
+      st.getReply? rid = some r → r.next ≠ some (.head sc))
+    (hUnreferenced : ∀ (a : SeLe4n.ReplyId) (ra : Reply),
+      st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid) :
+    donationChainWellFormed (st.consumeCallerReplyLink caller rid) :=
+  consumeCallerReply_preserves_donationChainWellFormed st _ caller rid hInv hChain hNotHead
+    hUnreferenced (SystemState.consumeCallerReply_eq_link st caller rid)
+
+/-- `v0.35.4`: **the cancellation's reply-link consume preserves the donation
 chain**, under the two facts the splice that precedes it establishes about the
-victim's frame.  The TCB half frames the chain outright; the Reply half is
-`clearReplyObjectCaller_preserves_donationChainWellFormed`, with both facts
-carried across the TCB write (which moves no Reply). -/
+victim's frame.  Since WS-RR RR8.5 the consume *is* the reply path's, so this is
+`consumeCallerReplyLink_preserves_donationChainWellFormed` at the victim's own
+reply object and nothing more. -/
 theorem consumeReplyLink_preserves_donationChainWellFormed (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
     (hChain : donationChainWellFormed st)
@@ -2040,15 +1872,9 @@ theorem consumeReplyLink_preserves_donationChainWellFormed (st : SystemState)
   | none => simp only []; exact hChain
   | some rid =>
     simp only []
-    have hInv1 := Lifecycle.Suspend.clearTcbReplyObject_preserves_objects_invExt st tid hInv
-    have hChain1 : donationChainWellFormed (Lifecycle.Suspend.clearTcbReplyObject st tid) :=
-      donationChainWellFormed_of_frame (clearTcbReplyObject_donationChainFrame st tid hInv) hChain
-    refine clearReplyObjectCaller_preserves_donationChainWellFormed _ rid hInv1 hChain1 ?_ ?_
-    · intro r sc hR1
-      rw [clearTcbReplyObject_getReply?_eq st tid hInv rid] at hR1
-      exact hNotHead rid r sc hR hR1
-    · intro a ra hA
-      exact hUnreferenced rid a ra hR (clearTcbReplyObject_reply_backward st tid hInv _ ra hA)
+    exact consumeCallerReplyLink_preserves_donationChainWellFormed st tid rid hInv hChain
+      (fun r sc hR1 => hNotHead rid r sc hR hR1)
+      (fun a ra hA => hUnreferenced rid a ra hR hA)
 
 /-- **WS-RM (`v0.35.6`): consuming a *head* frame's caller link leaves the chain
 relaxed at exactly that key.**
@@ -2184,6 +2010,16 @@ theorem consumeCallerReply_head_preserves_donationChainWellFormedExcept
       exact donationChainWellFormedExcept_of_frame
         (donationChainFrame_of_tcb_rewrite hInv1
           ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hStep) hChain1
+
+/-- **WS-RR RR8.5**: the head case over the pure projection, for the same reason. -/
+theorem consumeCallerReplyLink_head_preserves_donationChainWellFormedExcept
+    (st : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (r : Reply) (scId : SeLe4n.SchedContextId) (hInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st)
+    (hR : st.getReply? rid = some r) (hHead : r.next = some (.head scId)) :
+    donationChainWellFormedExcept (st.consumeCallerReplyLink caller rid) rid :=
+  consumeCallerReply_head_preserves_donationChainWellFormedExcept st _ caller rid r scId hInv
+    hChain hR hHead (SystemState.consumeCallerReply_eq_link st caller rid)
 
 -- ============================================================================
 -- WS-RM (`v0.35.6`) — the reply path's removal preserves the chain

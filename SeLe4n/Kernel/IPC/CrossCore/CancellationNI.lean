@@ -490,11 +490,16 @@ theorem cancelDonatedDonationOnCore_cancellation_NI_smp
 -- arm actually makes, each invisible for its own reason:
 --
 --   * the victim's `ipcState` / queue-link reset (`restoreToReady`) and its
---     `replyObject` clear (`clearTcbReplyObject`) land on the victim's own TCB,
---     which `LabelingContextValid` makes unobservable when the victim is;
---   * the Reply's `caller` back-link clear (`clearReplyObjectCaller`) is
---     invisible **unconditionally** — `projectKernelObject` strips `caller`,
---     so it does not even need the Reply object to be high.
+--     `replyObject` clear land on the victim's own TCB, which
+--     `LabelingContextValid` makes unobservable when the victim is;
+--   * the Reply's `caller` back-link clear is invisible **unconditionally** —
+--     `projectKernelObject` strips `caller`, so it does not even need the Reply
+--     object to be high.
+--
+-- Since WS-RR RR8.5 the last two are one step — `consumeReplyLink` is the reply
+-- path's own `consumeCallerReply`, read through `consumeCallerReplyLink` — so
+-- their invisibility is that path's theorem (`consumeCallerReply_preserves_projection`)
+-- reached through the bridge, not a second argument over raw inserts.
 
 /-- WS-RR RR2.18: `restoreToReady` writes one TCB, so it preserves the
 object-store invariant.
@@ -566,41 +571,19 @@ theorem restoreToReadyCancelled_preserves_projection_high
   restoreToReadyStaging_preserves_projection_high ctx observer st tid _
     hTidObjHigh hObjInv
 
-/-- WS-RR RR2.18: clearing a high thread's `replyObject` is invisible. -/
-theorem clearTcbReplyObject_preserves_projection_high
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (tid : SeLe4n.ThreadId)
-    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
-    (hObjInv : st.objects.invExt) :
-    projectState ctx observer (Lifecycle.Suspend.clearTcbReplyObject st tid)
-      = projectState ctx observer st := by
-  unfold Lifecycle.Suspend.clearTcbReplyObject
-  split
-  · exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
-      hTidObjHigh hObjInv
-  · rfl
+/-- WS-RR RR2.18: the whole reply-link consume is invisible for a high victim.
 
-/-- WS-RR RR2.18: clearing a Reply object's `caller` back-link is invisible
-**unconditionally** — the projection strips `caller`, so no high-object
-hypothesis on the Reply is needed. -/
-theorem clearReplyObjectCaller_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
-    projectState ctx observer (Lifecycle.Suspend.clearReplyObjectCaller st rid)
-      = projectState ctx observer st := by
-  unfold Lifecycle.Suspend.clearReplyObjectCaller
-  split
-  · next r hR =>
-    refine objects_insert_preserves_projection_of_proj_eq ctx observer st rid.toObjId _ hObjInv ?_
-    rw [(SystemState.getReply?_eq_some_iff st rid r).mp hR]
-    exact congrArg some (projectKernelObject_reply_caller_invariant ctx observer r none).symm
-  · rfl
-
-/-- WS-RR RR2.18: the whole reply-link consume is invisible for a high victim. -/
+**WS-RR RR8.5**: derived from the reply path's own
+`consumeCallerReply_preserves_projection` through the bridge, so the argument is
+made once — the `.reply` `caller := none` write is projection-stripped and the
+caller-TCB `replyObject := none` write lands on a high TCB.  It reads the index
+completeness that theorem asks for the (already-present) Reply's membership,
+which the composite below carries through the writes ahead of the teardown. -/
 theorem consumeReplyLink_preserves_projection_high
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (Lifecycle.Suspend.consumeReplyLink st tid tcb)
       = projectState ctx observer st := by
@@ -608,10 +591,8 @@ theorem consumeReplyLink_preserves_projection_high
   cases tcb.replyObject with
   | none => rfl
   | some rid =>
-      simp only []
-      rw [clearReplyObjectCaller_preserves_projection ctx observer _ rid
-        (clearTcbReplyObject_preserves_objects_invExt st tid hObjInv)]
-      exact clearTcbReplyObject_preserves_projection_high ctx observer st tid hTidObjHigh hObjInv
+    exact consumeCallerReply_preserves_projection ctx observer st _ tid rid hTidObjHigh
+      hIdxComplete hObjInv (SystemState.consumeCallerReply_eq_link st tid rid)
 
 /-- **WS-OD OD1.4**: the projection obligation the holder abort adds to the
 donation return.
@@ -777,6 +758,12 @@ outright, the fourth invisible because the projection erases the binding fields
 it writes.  This is the `hTeardownProj` obligation the cross-core theorems above
 take as a hypothesis, proved rather than assumed.
 
+**WS-RR RR8.5**: the second and third of those writes are the reply path's own
+`consumeCallerReply` now, so their invisibility is
+`consumeCallerReply_preserves_projection` through the bridge; what the composite
+adds is the index completeness that theorem reads, carried from the return
+through the splice and the restore.
+
 **WS-OD OD1.4**: the return acquired a *prefix* — the holder abort — whose write
 set the projection does **not** erase, so the arm now carries
 `abortHolderProjectionStable` and nothing else changes.  The obligation is free
@@ -817,6 +804,15 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
   have hInvD : (spliceThreadReplyFrameOut
       (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb).objects.invExt :=
     spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
+  -- WS-RR RR8.5: the teardown is the reply path's consume, whose projection
+  -- theorem reads the index completeness of the state it runs on — carried
+  -- here through the splice and the restore, neither of which touches the index.
+  have hCompD : SeLe4n.Model.objectIndexSetComplete
+      (Lifecycle.Suspend.restoreToReadyCancelled
+        (spliceThreadReplyFrameOut
+          (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb) victim) :=
+    Lifecycle.Suspend.restoreToReadyCancelled_preserves_objectIndexSetComplete _ victim hInvD
+      (spliceThreadReplyFrameOut_preserves_objectIndexSetComplete _ tcb hInvR hSetInvR hCompR)
   have h1 : projectState ctx observer
       (Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
@@ -827,7 +823,7 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
         (Lifecycle.Suspend.restoreToReadyCancelled
           (spliceThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb) victim) :=
-    consumeReplyLink_preserves_projection_high ctx observer _ victim tcb hObjHigh
+    consumeReplyLink_preserves_projection_high ctx observer _ victim tcb hObjHigh hCompD
       (restoreToReadyCancelled_preserves_objects_invExt _ victim hInvD)
   exact h1.trans
     ((restoreToReadyCancelled_preserves_projection_high ctx observer _ victim hObjHigh

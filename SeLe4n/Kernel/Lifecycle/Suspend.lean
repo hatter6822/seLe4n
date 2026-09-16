@@ -507,97 +507,58 @@ theorem resumeThreadOnCoreLive_remote_agrees (st : SystemState)
     resumeThreadOnCore
   split <;> simp [hRemote]
 
-/-- WS-SM SM6.D (PR #822 review, Reply objects): sever a caller→Reply link as
+/-- WS-SM SM6.D (PR #822 review, Reply objects): tear down a caller→Reply link as
 part of lifecycle teardown.  When `tcb.replyObject = some rid` (the seL4
 `tcb->tcbReply` forward link of a caller blocked awaiting a reply), clear the
-Reply object's `caller` back-link and the TCB's `replyObject` forward link —
-the pure, total analogue of the runtime `SystemState.consumeCallerReply`,
-suitable for composition inside the pure `cancelIpcBlocking` teardown.
+Reply object's `caller` back-link and the TCB's `replyObject` forward link.
 
-A no-op when the thread holds no reply object (`replyObject = none`) or the
-Reply object is already gone — so the existing teardown semantics are unchanged
-for every thread that was not a blocked caller.  Without it, suspending /
-cancelling a `blockedOnReply` caller would leave the Reply object permanently
-in-use (`reply.caller` set) and the TCB pointing at it, so a later receive that
-re-supplies that reply cap would fail `.replyCapInvalid`.
+A no-op when the thread holds no reply object (`replyObject = none`); a Reply
+object or a TCB already gone makes the corresponding leg a no-op inside the
+shared step.  Without it, suspending / cancelling a `blockedOnReply` caller would
+leave the Reply object permanently in-use (`reply.caller` set) and the TCB
+pointing at it, so a later receive that re-supplies that reply cap would fail
+`.replyCapInvalid`.
 
-`tcb` is the pre-teardown TCB (carrying the original `replyObject`); the TCB
-write re-reads the post-IPC-clear TCB so the `replyObject` clear composes on top
-of `clearTcbIpcFields`.  Reply object and caller TCB are distinct objects, so
-the two writes commute.  Factored into two single-match helpers
-(`clearReplyObjectCaller` / `clearTcbReplyObject`) so each preserves the
-scheduler / serviceRegistry / lifecycle by a one-line `split <;> rfl`. -/
-def clearReplyObjectCaller (st : SystemState) (rid : SeLe4n.ReplyId)
-    : SystemState :=
-  match st.getReply? rid with
-  | some r =>
-      -- WS-OD (`v0.35.4`): the record is `Reply.consumed r` — the caller clear,
-      -- and the stack links unless the frame heads a stack — the same record
-      -- `consumeReply` stores on the reply path, so the two spellings of
-      -- "consume a reply link" cannot disagree about what a consumed frame is.
-      { st with objects := st.objects.insert rid.toObjId (.reply r.consumed) }
-  | none => st
-
-def clearTcbReplyObject (st : SystemState) (tid : SeLe4n.ThreadId)
-    : SystemState :=
-  -- typed accessor (AK7 `getTcb?` adoption; no raw object-store index by tid)
-  match st.getTcb? tid with
-  | some t =>
-      { st with objects := st.objects.insert tid.toObjId (.tcb { t with replyObject := none }) }
-  | none => st
-
+**WS-RR RR8.5: one teardown, not two.**  This was the pure, total analogue of
+`SystemState.consumeCallerReply`, written as two raw-insert helpers
+(`clearTcbReplyObject` then `clearReplyObjectCaller`) because `cancelIpcBlocking`
+is a pure composition and could not run a `Kernel` step — and the two spellings
+had parted on write order and on `storeObject`'s lifecycle bookkeeping, which is
+what a second body does.  It is now the reply path's own step, read through
+`SystemState.consumeCallerReplyLink` (the pure projection of the infallible
+`consumeCallerReply`), under the **pre-teardown** TCB's `replyObject`: `tcb`
+carries the original link, and the step re-reads the TCB from the state, so the
+`replyObject` clear composes on top of `restoreToReadyCancelled`.  Every
+`consumeReplyLink_*` fact in the tree is a corollary of its `consumeCallerReply_*`
+twin through `SystemState.consumeCallerReply_eq_link`; nothing about the
+teardown is proved twice. -/
 def consumeReplyLink (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     : SystemState :=
   match tcb.replyObject with
   | none => st
-  | some rid => clearReplyObjectCaller (clearTcbReplyObject st tid) rid
+  | some rid => st.consumeCallerReplyLink tid rid
 
-/-- `clearReplyObjectCaller` only writes `objects`, preserving the scheduler. -/
-theorem clearReplyObjectCaller_scheduler_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
-    (clearReplyObjectCaller st rid).scheduler = st.scheduler := by
-  unfold clearReplyObjectCaller; split <;> rfl
+/-- WS-RR RR8.5: the `some` arm, named — the cancellation teardown *is* the reply
+path's consume at the victim's own reply object. -/
+theorem consumeReplyLink_some (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (rid : SeLe4n.ReplyId) (hR : tcb.replyObject = some rid) :
+    consumeReplyLink st tid tcb = st.consumeCallerReplyLink tid rid := by
+  unfold consumeReplyLink; rw [hR]
 
-/-- `clearReplyObjectCaller` preserves the serviceRegistry. -/
-theorem clearReplyObjectCaller_serviceRegistry_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
-    (clearReplyObjectCaller st rid).serviceRegistry = st.serviceRegistry := by
-  unfold clearReplyObjectCaller; split <;> rfl
-
-/-- `clearReplyObjectCaller` preserves lifecycle metadata. -/
-theorem clearReplyObjectCaller_lifecycle_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
-    (clearReplyObjectCaller st rid).lifecycle = st.lifecycle := by
-  unfold clearReplyObjectCaller; split <;> rfl
-
-/-- `clearTcbReplyObject` only writes `objects`, preserving the scheduler. -/
-theorem clearTcbReplyObject_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearTcbReplyObject st tid).scheduler = st.scheduler := by
-  unfold clearTcbReplyObject; split <;> rfl
-
-/-- `clearTcbReplyObject` preserves the serviceRegistry. -/
-theorem clearTcbReplyObject_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearTcbReplyObject st tid).serviceRegistry = st.serviceRegistry := by
-  unfold clearTcbReplyObject; split <;> rfl
-
-/-- `clearTcbReplyObject` preserves lifecycle metadata. -/
-theorem clearTcbReplyObject_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearTcbReplyObject st tid).lifecycle = st.lifecycle := by
-  unfold clearTcbReplyObject; split <;> rfl
+/-- WS-RR RR8.5: the `none` arm — a thread holding no reply object is untouched. -/
+theorem consumeReplyLink_none (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hR : tcb.replyObject = none) :
+    consumeReplyLink st tid tcb = st := by
+  unfold consumeReplyLink; rw [hR]
 
 /-- `consumeReplyLink` preserves the scheduler (both legs only write `objects`). -/
 theorem consumeReplyLink_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
     (consumeReplyLink st tid tcb).scheduler = st.scheduler := by
   unfold consumeReplyLink; split
   · rfl
-  · rw [clearReplyObjectCaller_scheduler_eq, clearTcbReplyObject_scheduler_eq]
-
-/-- WS-SM SM8.B: `clearReplyObjectCaller` only writes `objects` — machine framed. -/
-theorem clearReplyObjectCaller_machine_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
-    (clearReplyObjectCaller st rid).machine = st.machine := by
-  unfold clearReplyObjectCaller; split <;> rfl
-
-/-- WS-SM SM8.B: `clearTcbReplyObject` only writes `objects` — machine framed. -/
-theorem clearTcbReplyObject_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearTcbReplyObject st tid).machine = st.machine := by
-  unfold clearTcbReplyObject; split <;> rfl
+  · rename_i rid _
+    exact SystemState.consumeCallerReply_scheduler_eq st _ tid rid
+      (SystemState.consumeCallerReply_eq_link st tid rid)
 
 /-- WS-SM SM8.B: `consumeReplyLink` preserves the machine (both legs only write
 `objects`). -/
@@ -605,21 +566,29 @@ theorem consumeReplyLink_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
     (consumeReplyLink st tid tcb).machine = st.machine := by
   unfold consumeReplyLink; split
   · rfl
-  · rw [clearReplyObjectCaller_machine_eq, clearTcbReplyObject_machine_eq]
+  · rename_i rid _
+    exact SystemState.consumeCallerReply_machine_eq st _ tid rid
+      (SystemState.consumeCallerReply_eq_link st tid rid)
 
 /-- `consumeReplyLink` preserves the serviceRegistry. -/
 theorem consumeReplyLink_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
     (consumeReplyLink st tid tcb).serviceRegistry = st.serviceRegistry := by
   unfold consumeReplyLink; split
   · rfl
-  · rw [clearReplyObjectCaller_serviceRegistry_eq, clearTcbReplyObject_serviceRegistry_eq]
+  · rename_i rid _
+    exact SystemState.consumeCallerReply_serviceRegistry_eq st _ tid rid
+      (SystemState.consumeCallerReply_eq_link st tid rid)
 
-/-- `consumeReplyLink` preserves lifecycle metadata. -/
-theorem consumeReplyLink_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
-    (consumeReplyLink st tid tcb).lifecycle = st.lifecycle := by
-  unfold consumeReplyLink; split
-  · rfl
-  · rw [clearReplyObjectCaller_lifecycle_eq, clearTcbReplyObject_lifecycle_eq]
+-- WS-RR RR8.5: `consumeReplyLink_lifecycle_eq` — and the `clear*_lifecycle_eq`
+-- pair it composed — is retired rather than restated.  The teardown writes
+-- through `storeObject` now, exactly as the donation return on the same arm has
+-- since WS-RR RR7.22, and `storeObject` rewrites `lifecycle.objectTypes` and
+-- filters `lifecycle.capabilityRefs` at the stored key, so a *definitional*
+-- lifecycle frame is false of it — which `cancelIpcBlocking_lifecycle_eq`'s own
+-- docstring had already recorded for the return.  The semantic content (the same
+-- types, a filter that removes nothing at a Reply or TCB key) is what the
+-- lifecycle invariant's preservation states; nothing in the tree consumed the
+-- definitional form.
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation a cancelled caller is
 owed back, resolved from the pre-state.

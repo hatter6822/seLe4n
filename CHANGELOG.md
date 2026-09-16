@@ -1,3 +1,130 @@
+## v0.35.63 — WS-RR RR8.5: one teardown, not two — the cancellation path reads the reply path's consume through a proof-carrying projection
+
+The tree carried two spellings of "tear down the caller↔Reply link".  The reply
+paths ran the monadic `SystemState.consumeCallerReply` — `consumeReply rid`
+(store `Reply.consumed` through `storeObject`), then the caller TCB's
+`replyObject := none` through `storeObject`, a no-op where the TCB is absent —
+and the cancellation path ran `Lifecycle.Suspend.consumeReplyLink`, a pure pair
+of raw-insert helpers (`clearTcbReplyObject` then `clearReplyObjectCaller`)
+written because `cancelIpcBlocking` is a pure composition and could not run a
+`Kernel` step.  They wrote the same two values and agreed on `objects` in every
+case, `toObjId` collisions included; they had parted on **order** (TCB first
+against Reply first) and on whether the writes went through `storeObject`'s
+lifecycle bookkeeping — which is why `cancelIpcBlocking_lifecycle_eq` had already
+had to become conditional — and every fact about one was proved a second time
+about the other (`REGISTERED_DEBT.md` row *Two spellings of "tear down the
+caller↔Reply link"*, registered at WS-RM's closure with the measurement that
+collapsing them then would have made that cut unreviewable).  This cut collapses
+them.
+
+**The survivor is the monadic step, and its pure form is a projection rather
+than a second body.**  The register's remedy was *define one and derive the
+other, with the survivor's write order decided by which one the chain results are
+stated over* — and both criteria pick the reply path: its step is the one
+`consumeCallerReply_preserves_donationChainWellFormed` and the head-case
+`_Except` result are stated over, and it writes through `storeObject`, which is
+the object-store write that maintains the index, the type table and the ASID
+table.  What a pure composition needs is not a re-spelling but the *one state the
+step leaves*, so `SystemState.consumeCallerReplyLink st caller rid`
+(`Model/State.lean`, beside the step) is defined by matching on
+`consumeCallerReply caller rid st` with the `.error` arm **eliminated** —
+`consumeCallerReply_isOk` says the step never fails, so that arm is `False.elim`
+of the equation, never a default to `st` that would silently make a refused
+teardown look like a no-op.  `consumeCallerReply_eq_link` is the bridge:
+`consumeCallerReply caller rid st = .ok ((), st.consumeCallerReplyLink caller rid)`.
+`consumeReplyLink st tid tcb` is that projection under the victim's own
+`replyObject` (`consumeReplyLink_some` / `_none` are its two definitional
+readings), so the cancellation teardown *is* the reply path's consume — Reply
+first, through the bookkeeping — rather than a twin of it.
+
+**Every cancellation-side fact is now a corollary through the bridge.**
+`consumeReplyLink_preserves_objects_invExt`, `_tcb_lookup`, `_other_tcb_eq`,
+`_preserves_ipcInvariant`, `_sameSchedContextBindings`,
+`_passiveServerIdleFrame`, `_preserves_donationChainWellFormed`,
+`_scheduler_eq`, `_machine_eq`, `_serviceRegistry_eq` and
+`_preserves_projection_high` all keep their statements and are one application of
+the `consumeCallerReply_*` twin each; `cancelIpcBlocking_getTcb?_none`'s reply
+arm reads `consumeCallerReply_tcb_forward` instead of the deleted `_no_tcb`
+helper.  Two sharp pointwise readings the monadic side lacked were added to make
+that possible — `consumeCallerReply_tcb_caller` (the caller's own key holds the
+pre-state TCB with `replyObject` cleared and nothing else moved) and
+`consumeCallerReply_tcb_other` (every other TCB-holding key is untouched) —
+stated with **no** `rid`-distinctness hypothesis, because `ReplyId.toObjId` and
+`ThreadId.toObjId` are two wrappers over one `ObjId` and a collision is
+representable: the distinctness is derived from the store's contents, a key
+holding a TCB holding no Reply.  `consumeCallerReply_serviceRegistry_eq` joins
+the `_scheduler_eq` / `_machine_eq` frames the step already had, and the
+projection's two chain results
+(`consumeCallerReplyLink_preserves_donationChainWellFormed`,
+`consumeCallerReplyLink_head_preserves_donationChainWellFormedExcept`) are the
+step's own, read across.
+
+**Thirty declarations are deleted and twelve added.**  Gone: the two helpers and
+the twenty-eight theorems stated over them — the fourteen `clearTcbReplyObject_*`
+and twelve `clearReplyObjectCaller_*` frames across `Lifecycle/Suspend.lean`,
+`SuspendPreservation.lean`, `CancellationReplyShape.lean` and
+`IPC/CrossCore/CancellationNI.lean`, plus `consumeReplyLink_lifecycle_eq` and
+`cancelIpcBlocking_lifecycle_eq`.  The last two are deleted rather than given a
+third hypothesis: with the teardown running through `storeObject`, a
+*definitional* lifecycle frame across the reply arm would need
+`tcb.replyObject = none`, which `blockedOnReplyHasReplyObject` refutes on every
+reachable `.blockedOnReply` state, so the theorem could only hold vacuously — and
+its own docstring recorded that nothing consumed it.  A caller that needs the
+lifecycle metadata across a cancellation needs a *semantic* frame (the values
+`storeObject` rewrites there are the ones already present), which is a statement
+about `storeObject`, owed once.  Tombstones at both sites say so.
+
+**One statement changed, deliberately.**  `consumeReplyLink_preserves_projection_high`
+gains `objectIndexSetComplete st`, because the reply path's own
+`consumeCallerReply_preserves_projection` reads the (already-present) Reply's
+index membership; the reply arm's composite
+`cancelIpcBlocking_blockedOnReply_preserves_projection` already carried that
+hypothesis and now threads it to the teardown through two new lemmas
+(`restoreToReadyStaging_preserves_objectIndexSetComplete` with its cancellation
+instance, and `spliceThreadReplyFrameOut_preserves_objectIndexSetComplete`), so
+its own statement is unchanged.
+
+**The gates know both spellings.**  `SeLe4n/Testing/ReplyStackWriteCensus.lean`
+adds `consumeCallerReplyLink` to `chainWritePrimitives` — a pure transition
+reaching for it bare is WS-RM's defect in the other calling convention — and
+registers it as stating its two chain results, with `consumeReplyLink` registered
+as a site stating its own; the `clearReplyObjectCaller` entry is gone.  Tier 3
+refuses both retired names tree-wide, pins the projection, the bridge and the
+three chain results, holds `consumeReplyLink`'s body to the projection with a
+declaration-bounded positive, and refuses a raw `objects.insert` inside it with
+a declaration-bounded negative — all mutation-tested on a scratch code-view
+overlay in both directions: the retired name coming back, a raw insert inside
+the teardown, the same insert *outside* it with the token kept (silent, as it
+must be), the projection call moved into a sibling with the token kept (the
+bounded positive goes silent), and both name anchors renamed by suffix, which the
+first draft's anchors survived and the word-boundary form does not.
+
+**What the collapse measured and did not fix.**  The two deleted helpers were two
+of the executable definitions that write the object table raw beside
+`storeObject`: over the comment-free code view, **75 sites in 60 executable
+declarations across 24 files** outside `SeLe4n/Testing/` — four of them the
+primitives that should be raw (`storeObject` itself, `Builder.createObject`,
+`Concurrency.updateObjectAt`, the frozen surface's own store), seven
+state-building witnesses, and the rest kernel transitions in the scheduler, the
+fault path, the suspend/restore family and the SchedContext operations.  Not a
+soundness defect today (each rewrites a key already holding an object of the same
+kind, so the bookkeeping it bypasses is semantically unchanged), and *one
+question, two answers* at the scale of a store discipline all the same.  It is
+registered in `REGISTERED_DEBT.md` table C with the measurement and the shape of
+the remedy — a pure store write derived from `storeObject` by the same projection
+this cut used, then the sites migrated — rather than absorbed into an M-sized row.
+
+Documentation: `CLAUDE.md` / `AGENTS.md` gain the RR8.5 constraint bullet, the
+WS-RR status row carries RR8.3–RR8.5, the reclaim bullet's spelling of the
+`.blockedOnReply` arm gains the splice it had omitted since `v0.35.4`, and the
+`cancelIpcBlocking_lifecycle_eq` sentence records the deletion; the plan's RR8.5
+row is LANDED; the register's row is closed and the new row added;
+`UNFINISHED_SMP_WORK.md` and `SCHEDCONTEXT_DONATION_CHAIN_PLAN.md` acceptance
+box 3 record the lifecycle of the names they cite.  Golden trace byte-identical.
+
+Refs: `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (RR8.5);
+`docs/REGISTERED_DEBT.md` table A (the closed row) and table C (the new row).
+
 ## v0.35.62 — the second pass of the post-landing audit: a sweep the closure claimed and had not run
 
 Requested by the maintainer: a second, deeper audit of everything this PR

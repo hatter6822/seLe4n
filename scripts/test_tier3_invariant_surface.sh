@@ -2708,12 +2708,34 @@ run_check "INVARIANT" rg -n '^theorem applyRendezvousCallDonation_donated_donor_
 # tree either frames it or carries its own preservation (the push and the pop).
 run_check "INVARIANT" rg -n '^theorem linkReply_donationChainFrame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem linkCallerReply_donationChainFrame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem clearTcbReplyObject_donationChainFrame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-# ...and the two clears that DO write chain data since `v0.35.4` — the consume
-# clears an unlinked frame's links, and the splice rewrites the frame above's
-# `prev` — carry a preservation theorem instead of a frame, which is the same
-# division the pop and the push are on.  A frame there would be false.
-run_check "INVARIANT" rg -n '^theorem clearReplyObjectCaller_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+# WS-RR RR8.5 (`v0.35.63`): the cancellation path's raw-insert teardown twins —
+# `clearTcbReplyObject` and `clearReplyObjectCaller`, and every theorem stated
+# over them (`clearTcbReplyObject_donationChainFrame`,
+# `clearReplyObjectCaller_preserves_donationChainWellFormed`, the projection,
+# lookup, invExt and ipcInvariant lemmas) — are DELETED.  `consumeReplyLink` is
+# the reply path's own `consumeCallerReply`, read through its pure projection
+# `SystemState.consumeCallerReplyLink`, so the chain result is stated once and
+# reached through the bridge.  Neither name may come back: a second body for
+# the teardown is the drift this collapse closed.
+run_negative_check "INVARIANT" rg -n 'clearTcbReplyObject|clearReplyObjectCaller' SeLe4n/ tests/
+# The survivor and the bridge: the projection is total because the step is
+# infallible (`consumeCallerReply_isOk`), and the bridge is what every
+# cancellation-side fact is derived through.
+run_check "INVARIANT" rg -n '^def consumeCallerReplyLink\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem consumeCallerReply_eq_link\b' SeLe4n/Model/State.lean
+# `consumeReplyLink`'s body IS the projection under the victim's own
+# `replyObject` — bounded to the declaration, so a second spelling of the
+# teardown elsewhere in the file cannot satisfy it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def consumeReplyLink \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*\| some rid => st\.consumeCallerReplyLink tid rid" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# NEGATIVE: no raw store write inside `consumeReplyLink` — the teardown reaches
+# the store through `storeObject`'s bookkeeping, never a bare `insert`.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def consumeReplyLink \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# The consume writes chain data since `v0.35.4` (it clears an unlinked frame's
+# links), so it carries a preservation theorem rather than a frame — on the
+# monadic step, on its projection, and on the cancellation teardown, the last
+# two corollaries of the first.  The splice is on the same division.
+run_check "INVARIANT" rg -n '^theorem consumeCallerReplyLink_preserves_donationChainWellFormed\b' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem consumeCallerReplyLink_head_preserves_donationChainWellFormedExcept\b' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_check "INVARIANT" rg -n '^theorem consumeReplyLink_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOut_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_check "INVARIANT" rg -n '^theorem spliceThreadReplyFrameOut_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean

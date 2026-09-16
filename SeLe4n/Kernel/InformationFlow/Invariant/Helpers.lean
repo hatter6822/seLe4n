@@ -902,6 +902,23 @@ theorem spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete
           (storeObject_preserves_objectIndexSetComplete s1 s2 below.toObjId _ hInv1
             hSetInv1 hC1 hS2) hS3
 
+/-- WS-RR RR8.5: the thread-keyed fold preserves index-set completeness — the
+`OrSelf` lemma under the victim's own `replyObject`.  The reply arm's projection
+composite needs completeness at the state the consume runs on, now that the
+consume writes through `storeObject`. -/
+theorem spliceThreadReplyFrameOut_preserves_objectIndexSetComplete
+    (st : SystemState) (tcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st) :
+    SeLe4n.Model.objectIndexSetComplete (spliceThreadReplyFrameOut st tcb) := by
+  unfold spliceThreadReplyFrameOut
+  cases tcb.replyObject with
+  | none => exact hIdxComplete
+  | some rid =>
+    exact spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv
+      hObjSetInv hIdxComplete
+
 /-- **WS-RM (`v0.35.6`): `removeCallerReplyFrame` preserves the projection** under
 exactly the hypothesis the consume alone needed.  The splice half is
 unconditional (`projectKernelObject` erases both stack links), so taking the frame

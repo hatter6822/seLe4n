@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.62.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.63.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5363,7 +5363,7 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9.E | LANDED | v0.33.100 | Tests + closure: acceptance scenarios run live and pinned as golden fixtures; seam boundary coverage of both declassifying syscalls; the epoch exercised with survivors |
 | SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
 | SM5 runtime seams | LANDED | v0.34.1 | The three seams SM5's docstrings promised between the verified per-core scheduler and the hardware IRQ path — IRQ vector redirect, `.reschedule` SGI receiver, secondary bring-up entry — all dormant behind the per-core `lean_ready` gate until SM10.1 |
-| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50; RR7 v0.34.47 → v0.34.92; RR8.1 v0.35.55, RR8.2 v0.35.56 (RR8 grew 5 → 16 rows) | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
+| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50; RR7 v0.34.47 → v0.34.92; RR8.1 v0.35.55, RR8.2 v0.35.56, RR8.3 v0.35.57, RR8.4 v0.35.58, RR8.5 v0.35.63 (RR8 grew 5 → 16 rows) | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
 | SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0); SM10.1's content is **WS-BP** (see above) |
 
 **Plans**: master overview at
@@ -5711,8 +5711,10 @@ code may assume:
   RR8.14 retires this bullet.
 - **A cancelled caller gets its donated SchedContext back** (WS-RR RR7.22
   residual remediation, v0.34.97).  `cancelIpcBlocking`'s `.blockedOnReply` arm
-  is `consumeReplyLink (restoreToReadyCancelled (returnDonationToCancelledCaller
-  st tid tcb) tid) tid tcb` — seL4-MCS's `reply_remove`.  Before it, the server
+  is `consumeReplyLink (restoreToReadyCancelled (spliceThreadReplyFrameOut
+  (returnDonationToCancelledCaller st tid tcb) tcb) tid) tid tcb` — seL4-MCS's
+  `reply_remove` (the splice joined the chain at `v0.35.4`; this sentence
+  omitted it for fifty-nine cuts).  Before it, the server
   kept `.donated scId caller` while the caller left `.blockedOnReply`, which
   `donationOwnerValid` forbids and which permanently transferred the caller's CBS
   reservation.  Four things new code must respect.  (1) **The return runs before
@@ -5733,8 +5735,11 @@ code may assume:
   strips `schedContextBinding` and `boundThread`, so writing a possibly-low
   server's TCB on a high caller's cancellation leaks nothing
   (`returnDonationToCancelledCaller_preserves_projection`).  `cancelIpcBlocking_lifecycle_eq`
-  is now conditional on there being no donation, because `storeObject` maintains
-  bookkeeping the arm's other writes bypass.
+  was made conditional on there being no donation, because `storeObject` maintains
+  bookkeeping the arm's other writes bypassed — and it is **deleted** at WS-RR
+  RR8.5 (`v0.35.63`), when the teardown started writing through `storeObject`
+  too: the definitional lifecycle frame would then need `tcb.replyObject = none`,
+  which no reachable `.blockedOnReply` state satisfies, and nothing consumed it.
 - **...and the reclaim ends the holder's outstanding send or call first**
   (WS-OD OD1.4, v0.34.104).  The hand-back is
   `returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid`.
@@ -5863,6 +5868,55 @@ code may assume:
   the same number for the opposite reason, so read the theorem rather than the
   figure.  New code adding a cancellation member states the arm it belongs to,
   not the sum.
+- **The cancellation teardown IS the reply path's consume** (WS-RR RR8.5,
+  v0.35.63).  The tree carried two spellings of "tear down the caller↔Reply
+  link": the monadic `SystemState.consumeCallerReply` on the reply paths, and a
+  pure pair of raw-insert helpers on the cancellation path, written because
+  `cancelIpcBlocking` is a pure composition and could not run a `Kernel` step.
+  They had parted on write order and on whether the writes went through
+  `storeObject`'s bookkeeping, and every fact about one was proved a second time
+  about the other.  Five things new code must respect.  (1) **The survivor is the
+  monadic step, and its pure form is a projection, not a second body**:
+  `SystemState.consumeCallerReplyLink st caller rid` is the one state
+  `consumeCallerReply caller rid st` leaves — defined by matching on the step
+  with the `.error` arm *eliminated* by `consumeCallerReply_isOk`, never
+  defaulted to `st` — and `consumeCallerReply_eq_link` is the bridge.  A pure
+  transition that needs the consume calls the projection; one that re-spells the
+  two writes is the defect this closed, and Tier 3 refuses the retired names
+  (`clearTcbReplyObject`, `clearReplyObjectCaller`) tree-wide.  (2) **Every
+  cancellation-side fact is a corollary through the bridge.**
+  `consumeReplyLink st tid tcb` is the projection under the victim's own
+  `replyObject`, and `consumeReplyLink_preserves_objects_invExt`, `_tcb_lookup`,
+  `_other_tcb_eq`, `_preserves_ipcInvariant`, `_sameSchedContextBindings`,
+  `_passiveServerIdleFrame`, `_preserves_donationChainWellFormed` and
+  `_preserves_projection_high` all keep their statements and are one application
+  of the `consumeCallerReply_*` twin each; a new fact about the teardown is proved
+  of the monadic step and read across, never of `consumeReplyLink` directly.  The
+  two sharp pointwise readings that made this possible are new —
+  `consumeCallerReply_tcb_caller` (the caller's key holds the pre-state TCB with
+  `replyObject` cleared and nothing else moved) and `consumeCallerReply_tcb_other`
+  (every other TCB-holding key is untouched), stated with no `rid`-distinctness
+  hypothesis because the distinctness is derived from the store's contents.  (3)
+  **The teardown writes through `storeObject` now, so a definitional lifecycle
+  frame across the reply arm is false**: `cancelIpcBlocking_lifecycle_eq` and
+  `consumeReplyLink_lifecycle_eq` are deleted rather than given a third
+  hypothesis, and a caller needing the metadata across a cancellation needs a
+  semantic frame, owed once, about `storeObject`.  (4) **The projection theorem
+  reads index completeness**, because the reply path's
+  `consumeCallerReply_preserves_projection` needs the (already-present) Reply's
+  membership — so `consumeReplyLink_preserves_projection_high` takes
+  `objectIndexSetComplete` and the reply arm's composite carries it from the
+  return through the splice and the restore
+  (`restoreToReadyStaging_preserves_objectIndexSetComplete`,
+  `spliceThreadReplyFrameOut_preserves_objectIndexSetComplete`).  (5) **The
+  census knows both**: `consumeCallerReplyLink` is a `chainWritePrimitives`
+  entry — a pure transition reaching for it bare is WS-RM's defect in the other
+  calling convention — and `consumeReplyLink` is registered as a site stating its
+  chain result.  What the collapse *measured* and did not fix is the drift it is
+  one instance of: sixty executable definitions still write the object table
+  raw beside `storeObject`, registered with the measurement in
+  [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C rather than
+  absorbed into an M-sized row.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at
