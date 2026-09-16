@@ -1079,9 +1079,22 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
         if tcb.queuePPrev.isNone then .error .illegalState
         else
           let q := if isReceiveQ then ep.receiveQ else ep.sendQ
-          let q' : IntrusiveQueue :=
-            { head := if q.head == some tid then tcb.queueNext else q.head,
-              tail := if q.tail == some tid then tcb.queuePrev else q.tail }
+          -- **WS-RR RR8.4**: `queueRemoveBoundary` (`Model/Object/Types.lean`),
+          -- the one definition of what a removal writes to a queue's boundaries,
+          -- shared with all three live removals.  This was the **fifth** asker of
+          -- that question and the one the sweep nearly missed, which is the
+          -- position this surface keeps occupying: it is reached by neither
+          -- library root and holds the **live** `TCB`, so a model-level definition
+          -- applies to it directly and a sweep that stops at the kernel tree
+          -- leaves it behind.
+          --
+          -- It already asked the **fact** (`q.tail == some tid`) rather than the
+          -- proxy (`queueNext = none`) the live dual removal used, so the mirror
+          -- was right on the tail question where the operation it mirrors was
+          -- wrong — and nothing compared them on the state where they part.  The
+          -- boundary written here is unchanged; `==` and the propositional `if`
+          -- agree on `Option ThreadId` by `LawfulBEq`.
+          let q' : IntrusiveQueue := queueRemoveBoundary q tid tcb
           let ep' : Endpoint := if isReceiveQ
             then { ep with receiveQ := q' }
             else { ep with sendQ := q' }

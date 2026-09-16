@@ -2161,7 +2161,11 @@ theorem removeThreadFromQueue_id_of_off_boundary (s : SystemState) (q : Intrusiv
     (tid : SeLe4n.ThreadId) (hH : q.head ≠ some tid) (hT : q.tail ≠ some tid) :
     removeThreadFromQueue s q tid = q := by
   unfold removeThreadFromQueue
-  simp only [if_neg hH, if_neg hT]
+  -- **WS-RR RR8.4**: the `some` arm is `queueRemoveBoundary` now, so the two
+  -- boundary reads sit one definition deeper; the defensive arm keeps its own.
+  cases lookupTcb s tid with
+  | none => simp only [if_neg hH, if_neg hT]
+  | some tcb => unfold queueRemoveBoundary; simp only [if_neg hH, if_neg hT]
 
 /-- **WS-RR RR7.22 (residual)**: `removeThreadFromQueue` never leaves the removed
 thread at a boundary.
@@ -2181,6 +2185,8 @@ theorem removeThreadFromQueue_off_boundary (s : SystemState) (q : IntrusiveQueue
   cases hT : lookupTcb s tid with
   | none => simp only; constructor <;> (split <;> simp_all)
   | some tcb =>
+    -- **WS-RR RR8.4**: as above — the boundary reads are `queueRemoveBoundary`'s.
+    unfold queueRemoveBoundary
     simp only
     constructor
     · split

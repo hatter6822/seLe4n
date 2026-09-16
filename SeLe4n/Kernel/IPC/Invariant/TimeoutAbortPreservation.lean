@@ -148,7 +148,6 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
     (hNotReply : ∀ (tcb : TCB), st.getTcb? tid = some tcb →
       ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hEnabled : dualRemovalEnabled endpointId isReceiveQ tid st)
-    (hTailLast : spliceRemovedIsTailWhenLast isReceiveQ endpointId st tid)
     (hPred : splicePredecessorBlocked isReceiveQ endpointId st tid)
     (hDetached : ∀ st1, endpointQueueRemove endpointId isReceiveQ tid st = .ok st1 →
       spliceLeavesThreadDetached st1 tid)
@@ -159,10 +158,10 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
     endpointQueueRemove_preserves_objects_invExt endpointId isReceiveQ tid st st1 hObjInv hRem
   have hExcept : ipcInvariantFullExceptMembership st1 tid :=
     endpointQueueRemove_establishes_ipcInvariantFullExceptMembership hObjInv hInv hEnabled
-      hTailLast hPred hRem
+      hPred hRem
   obtain ⟨stD, hDual⟩ := hEnabled
   obtain ⟨stS, hRem', hAgree⟩ :=
-    endpointQueueRemove_agrees_with_dual hObjInv hInv hTailLast hDual
+    endpointQueueRemove_agrees_with_dual hObjInv hInv hDual
   have hEqS : stS = st1 := by rw [hRem'] at hRem; exact Except.ok.inj hRem
   rw [hEqS] at hAgree
   -- Two frames the dual carries, read through the agreement.

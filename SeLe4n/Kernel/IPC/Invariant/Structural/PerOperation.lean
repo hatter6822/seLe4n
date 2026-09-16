@@ -840,6 +840,12 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                   -- Extract guard facts from pprevConsistent
                   have hQHeadTid : q.head = some tid := by simp_all
                   have hPrevNone : tcb.queuePrev = none := by simp_all
+                  -- **WS-RR RR8.4**: the guard's tail factor.  It is what makes
+                  -- `queueRemoveBoundary`'s tail read decidable here: the queue's
+                  -- own `tail` field and this thread's `queueNext` agree about
+                  -- whether it is the tail, so each path below knows which of the
+                  -- four shapes the removal writes.
+                  have hTailPair : queueTailPairAgrees q tid tcb = true := by simp_all
                   have hWfQ : intrusiveQueueWellFormed q st := by rw [← hQ]; cases isReceiveQ <;> simp_all
                   obtain ⟨hHT, hHdBnd, hTlBnd⟩ := hWfQ
                   obtain ⟨_, hTcbH, hPrevNone'⟩ := hHdBnd tid hQHeadTid
@@ -848,7 +854,7 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                   cases hNext : tcb.queueNext with
                   | none =>
                     -- PATH A: sole element removal (endpointHead, queueNext=none)
-                    simp only [hNext, hQHeadTid] at hStep
+                    simp only [hNext] at hStep
                     generalize hStoreEp2 : storeObject endpointId _ pair1.2 = rEp2 at hStep
                     cases rEp2 with
                     | error e => simp at hStep
@@ -914,6 +920,7 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                         · rw [hNe] at hObj1
                           rw [storeObject_objects_eq pair1.2 pair3.2 endpointId _ hObjInv1 hStoreEp2] at hObj1
                           cases hObj1
+                          rw [queueRemoveBoundary_headLast hTailPair hQHeadTid hNext hPrevNone]
                           cases hRQ : isReceiveQ
                           · exact ⟨intrusiveQueueWellFormed_empty st4,
                               storeTcbQueueLinks_preserves_iqwf pair3.2 st4 tid none none none hObjInv3 hClear
@@ -959,7 +966,7 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                       cases rStN with
                       | error e => simp at hStep
                       | ok st2 =>
-                        simp only [hQHeadTid] at hStep
+                        simp only [] at hStep
                         generalize hStoreEp2 : storeObject endpointId _ st2 = rEp2 at hStep
                         cases rEp2 with
                         | error e => simp at hStep
@@ -1151,6 +1158,7 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                         rw [hNextTcbSt] at hTOrig; cases hTOrig
                                         exact ⟨_, hNextSt4, by simp [tcbWithQueueLinks]; exact hTNextOrig⟩
                                       · exact ⟨tOrig, hFwdOther tl tOrig htT htN hTOrig, hTNextOrig⟩
+                                rw [queueRemoveBoundary_headMore hTailPair hQHeadTid hNext]
                                 cases hRQ : isReceiveQ
                                 · simp only [Bool.false_eq_true, ↓reduceIte] at hWfNew ⊢
                                   exact ⟨hWfNew, hIqwfTransport ep.receiveQ hEpWf.2⟩
@@ -1216,6 +1224,9 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
               · -- pprevConsistent for tcbNext: q.head ≠ some tid ∧ tcb.queuePrev = some prevTid
                 have hQHeadNeTid : q.head ≠ some tid := by simp_all
                 have hPrevSome : tcb.queuePrev = some prevTid := by simp_all
+                -- **WS-RR RR8.4**: the guard's tail factor — see the sibling
+                -- extraction in the `endpointHead` branch above.
+                have hTailPair : queueTailPairAgrees q tid tcb = true := by simp_all
                 have hWfQ : intrusiveQueueWellFormed q st := by rw [← hQ]; cases isReceiveQ <;> simp_all
                 obtain ⟨hHT, hHdBnd, hTlBnd⟩ := hWfQ
                 -- applyPrev: lookupTcb st prevTid → prevTcb → storeTcbQueueLinks
@@ -1448,14 +1459,11 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                       · exact ⟨tHd, hTransportC hd tHd hdT hdP hTHd, hPHd⟩
                                   · intro tl hTl; cases hTl
                                     exact ⟨_, hPrevSt4, by simp [tcbWithQueueLinks]⟩
-                                have hIfSimp : (if q.head = some tid then { head := none, tail := some prevTid : IntrusiveQueue }
-                                    else { head := q.head, tail := some prevTid }) =
-                                    { head := q.head, tail := some prevTid } := by
-                                  simp [hQHeadNeTid]
+                                rw [queueRemoveBoundary_midLast hTailPair hQHeadNeTid hNext, hPrevSome]
                                 cases hRQ : isReceiveQ
-                                · simp only [hIfSimp] at hWfNew ⊢
+                                · simp only [Bool.false_eq_true, ↓reduceIte]
                                   exact ⟨hWfNew, hIqwfTransportC ep.receiveQ hEpWf.2⟩
-                                · simp only [hIfSimp] at hWfNew ⊢
+                                · simp only [↓reduceIte]
                                   exact ⟨hIqwfTransportC ep.sendQ hEpWf.1, hWfNew⟩
                               · have hObj4St1 : stPrev.objects[epId']? = some (.endpoint ep') := by
                                   rwa [storeObject_objects_ne stPrev pair3.2 endpointId epId' _ hNe hObjInv1 hStoreEpC] at hObj4
@@ -1477,8 +1485,9 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                             | error e => simp at hStep
                             | ok stNext =>
                               simp only [] at hStep
-                              -- q' = {head = q.head, tail = q.tail} since q.head ≠ some tid
-                              simp only [hQHeadNeTid, ↓reduceIte] at hStep
+                              -- **WS-RR RR8.4**: a mid-queue removal with a
+                              -- successor moves neither boundary.
+                              rw [queueRemoveBoundary_midMore hTailPair hQHeadNeTid hNext] at hStep
                               -- storeObject endpointId ep' stNext → pair4
                               generalize hStoreEpD : storeObject endpointId _ stNext = rEpD at hStep
                               cases rEpD with

@@ -98,7 +98,7 @@ inductive SpliceShape (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeL
       (hPPrev : tcb.queuePPrev = some .endpointHead)
       (hPrevNone : tcb.queuePrev = none)
       (hHead : (spliceQueue isReceiveQ ep).head = some tid)
-      (hTailSome : (spliceQueue isReceiveQ ep).tail.isSome = true)
+      (hTail : (spliceQueue isReceiveQ ep).tail = some tid)
       (hNext : tcb.queueNext = none)
       (hStore1 : storeObject endpointId
           (.endpoint (spliceEndpoint isReceiveQ ep
@@ -140,7 +140,7 @@ inductive SpliceShape (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeL
       (hPrev : tcb.queuePrev = some prevTid)
       (hHeadNe : (spliceQueue isReceiveQ ep).head ≠ some tid)
       (hHeadSome : (spliceQueue isReceiveQ ep).head.isSome = true)
-      (hTailSome : (spliceQueue isReceiveQ ep).tail.isSome = true)
+      (hTail : (spliceQueue isReceiveQ ep).tail = some tid)
       (hNext : tcb.queueNext = none)
       (hPrevTcb : lookupTcb st prevTid = some prevTcb)
       (hPrevNext : prevTcb.queueNext = some tid)
@@ -224,14 +224,16 @@ theorem endpointQueueRemoveDual_shape
             cases pprev with
             | endpointHead =>
               simp only []
-              cases hCons : (decide ((spliceQueue isReceiveQ ep).head = some tid)
-                  && tcb.queuePrev.isNone) with
+              -- **WS-RR RR8.4**: the guard's first factor is the tail pairing.
+              cases hCons : (queueTailPairAgrees (spliceQueue isReceiveQ ep) tid tcb
+                  && (decide ((spliceQueue isReceiveQ ep).head = some tid)
+                  && tcb.queuePrev.isNone)) with
               | false => simp
               | true =>
                 simp only [Bool.not_true, Bool.false_eq_true, if_false]
                 simp only [Bool.and_eq_true, decide_eq_true_eq,
                   Option.isNone_iff_eq_none] at hCons
-                obtain ⟨hHead, hPrevNone⟩ := hCons
+                obtain ⟨hTailPair, hHead, hPrevNone⟩ := hCons
                 cases hNext : tcb.queueNext with
                 | none =>
                   simp only []
@@ -239,7 +241,7 @@ theorem endpointQueueRemoveDual_shape
                   | error e => simp
                   | ok pair1 =>
                     simp only []
-                    rw [if_pos hHead]
+                    rw [queueRemoveBoundary_headLast hTailPair hHead hNext hPrevNone]
                     cases hStore2 : storeObject endpointId _ pair1.2 with
                     | error e => simp
                     | ok pair2 =>
@@ -250,7 +252,7 @@ theorem endpointQueueRemoveDual_shape
                         simp only [Except.ok.injEq, Prod.mk.injEq]
                         rintro ⟨-, rfl⟩
                         exact .headLast ep tcb pair1.2 pair2.2 hObj hLookup hPPrev hPrevNone
-                          hHead hTailSome hNext
+                          hHead (queueTailPairAgrees_tail_of_no_next hTailPair hNext) hNext
                           hStore1 hStore2 hClear
                 | some nextTid =>
                   simp only []
@@ -268,7 +270,7 @@ theorem endpointQueueRemoveDual_shape
                       | error e => simp
                       | ok s2 =>
                         simp only []
-                        rw [if_pos hHead]
+                        rw [queueRemoveBoundary_headMore hTailPair hHead hNext]
                         cases hStore2 : storeObject endpointId _ s2 with
                         | error e => simp
                         | ok pair2 =>
@@ -283,13 +285,15 @@ theorem endpointQueueRemoveDual_shape
                               hStore1 hNextTcb hRelink hStore2 hClear
             | tcbNext prevTid =>
               simp only []
-              cases hCons : (decide ((spliceQueue isReceiveQ ep).head ≠ some tid)
-                  && decide (tcb.queuePrev = some prevTid)) with
+              -- **WS-RR RR8.4**: the guard's first factor is the tail pairing.
+              cases hCons : (queueTailPairAgrees (spliceQueue isReceiveQ ep) tid tcb
+                  && (decide ((spliceQueue isReceiveQ ep).head ≠ some tid)
+                  && decide (tcb.queuePrev = some prevTid))) with
               | false => simp
               | true =>
                 simp only [Bool.not_true, Bool.false_eq_true, if_false]
                 simp only [Bool.and_eq_true, decide_eq_true_eq, ne_eq] at hCons
-                obtain ⟨hHeadNe, hPrev⟩ := hCons
+                obtain ⟨hTailPair, hHeadNe, hPrev⟩ := hCons
                 cases hPrevTcb : lookupTcb st prevTid with
                 | none => simp
                 | some prevTcb =>
@@ -304,7 +308,7 @@ theorem endpointQueueRemoveDual_shape
                       | error e => simp
                       | ok s1 =>
                         simp only []
-                        rw [if_neg hHeadNe]
+                        rw [queueRemoveBoundary_midLast hTailPair hHeadNe hNext, hPrev]
                         cases hStore : storeObject endpointId _ s1 with
                         | error e => simp
                         | ok pair2 =>
@@ -315,7 +319,9 @@ theorem endpointQueueRemoveDual_shape
                             simp only [Except.ok.injEq, Prod.mk.injEq]
                             rintro ⟨-, rfl⟩
                             exact .midLast ep tcb prevTcb prevTid s1 pair2.2 hObj hLookup
-                              hPPrev hPrev hHeadNe hHeadSome hTailSome hNext hPrevTcb hPN
+                              hPPrev hPrev hHeadNe hHeadSome
+                              (queueTailPairAgrees_tail_of_no_next hTailPair hNext)
+                              hNext hPrevTcb hPN
                               hRelink hStore hClear
                     | some nextTid =>
                       simp only []
@@ -334,7 +340,7 @@ theorem endpointQueueRemoveDual_shape
                           | error e => simp
                           | ok s2 =>
                             simp only []
-                            rw [if_neg hHeadNe]
+                            rw [queueRemoveBoundary_midMore hTailPair hHeadNe hNext]
                             cases hStore : storeObject endpointId _ s2 with
                             | error e => simp
                             | ok pair2 =>
@@ -3000,7 +3006,7 @@ theorem endpointQueueRemove_ok_headLast
             (.endpoint (spliceEndpoint isReceiveQ ep (IntrusiveQueue.mk none none)))).insert
           tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none)))) := by
   unfold spliceQueue at hHead hTail
-  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
+  unfold endpointQueueRemove queueRemoveBoundary spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
   -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
   unfold queueUnlinkPredecessor queueUnlinkSuccessor
   simp only [hEp, hTcb, hPrevNone, hNext, hHead, hTail, if_pos]
@@ -3026,7 +3032,7 @@ theorem endpointQueueRemove_ok_headMore
           tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none)))) := by
   have hNextRaw := (SystemState.getTcb?_eq_some_iff st nextTid nextTcb).mp hNextTcb
   unfold spliceQueue at hHead hTailNe ⊢
-  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
+  unfold endpointQueueRemove queueRemoveBoundary spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
   -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
   unfold queueUnlinkPredecessor queueUnlinkSuccessor
   simp only [hEp, hTcb, hPrevNone, hNext, hHead, hNextRaw, if_pos, if_neg hTailNe]
@@ -3052,7 +3058,7 @@ theorem endpointQueueRemove_ok_midLast
           tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none)))) := by
   have hPrevRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevTcb
   unfold spliceQueue at hHeadNe hTail ⊢
-  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
+  unfold endpointQueueRemove queueRemoveBoundary spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
   -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
   unfold queueUnlinkPredecessor queueUnlinkSuccessor
   simp only [hEp, hTcb, hPrev, hNext, hTail, hPrevRaw, if_pos, if_neg hHeadNe]
@@ -3091,7 +3097,7 @@ theorem endpointQueueRemove_ok_midMore
   rw [if_neg hPN, hNextRaw] at hLk
   unfold tcbWithQueueLinks at hLk
   unfold spliceQueue at hHeadNe hTailNe ⊢
-  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
+  unfold endpointQueueRemove queueRemoveBoundary spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
   -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
   unfold queueUnlinkPredecessor queueUnlinkSuccessor
   simp only [hEp, hTcb, hPrev, hNext, hPrevRaw, hLk, if_neg hHeadNe, if_neg hTailNe]
@@ -3105,29 +3111,20 @@ theorem tcbKey_ne_endpointKey {st : SystemState} {endpointId : SeLe4n.ObjId}
   have hRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
   intro h; rw [h, hEp] at hRaw; cases hRaw
 
-/-- WS-OD OD1.3: **the queue fact `ipcInvariantFull` does not carry.**
-
-The bundle constrains an endpoint queue only at its boundaries — the head has
-no predecessor, the tail no successor — and carries nothing that connects the
-two.  So it does not entail that a queued thread with no successor *is* the
-tail: a state whose head chain stops before a differently-linked tail satisfies
-every conjunct.
-
-The two removals disagree exactly there.  The dual computes the new tail from
-the removed thread's `queuePPrev` (`none` at the head, the predecessor
-otherwise); the single computes it from `q.tail = some tid`.  On a thread with
-a successor the bundle settles it — a tail has no successor, so it is not this
-thread — and on a thread without one it does not, so the agreement states this
-rather than assuming it, exactly as `splicePredecessorBlocked` is stated for
-the splice's tail conjunct and `sweptThreadQueueCoherent` for the cancellation
-arm. -/
-def spliceRemovedIsTailWhenLast (isReceiveQ : Bool) (endpointId : SeLe4n.ObjId)
-    (st : SystemState) (tid : SeLe4n.ThreadId) : Prop :=
-  ∀ (ep : Endpoint) (tcb : TCB),
-    st.objects[endpointId]? = some (.endpoint ep) →
-    lookupTcb st tid = some tcb →
-    tcb.queueNext = none →
-    (spliceQueue isReceiveQ ep).tail = some tid
+-- **WS-OD OD1.3 / WS-RR RR8.4 tombstone**: `spliceRemovedIsTailWhenLast` was
+-- the queue connectivity `ipcInvariantFull` does not carry — that a queued
+-- thread with no successor *is* the tail — stated as a hypothesis because the
+-- two removals computed the new tail from different fields and could only be
+-- shown to agree under it.  RR8.4 collapsed both onto `queueRemoveBoundary` and
+-- made `endpointQueueRemoveDual` **check** the fact (`queueTailPairAgrees`, the
+-- first factor of `dualQueueRemovalGuard`), so a state the bundle admits and
+-- connectivity refutes is now refused rather than mishandled.  Every consumer
+-- was conditioned on the dual succeeding (`dualRemovalEnabled`), so the guard
+-- discharges what the hypothesis used to supply and it is deleted rather than
+-- kept beside its replacement.  The fact itself did not vanish: it is
+-- `dualQueueRemovalGuardHolds`'s `hTailLast`, which a *caller* of the removal
+-- must establish.  `spliceTail_ne_of_hasNext` below is the direction the bundle
+-- does carry and is still live.
 
 /-- WS-OD OD1.3: the converse direction *is* carried by the bundle — a tail has
 no successor, so a thread that has one is not the tail. -/
@@ -3461,25 +3458,27 @@ writes the endpoint twice, which a Robin Hood table records in its probe
 displacement.  Pointwise agreement is what every conjunct of `ipcInvariantFull`
 can observe, and it is what §17's bundle frames consume.
 
-Two pre-state facts beyond the dual's own success are needed, and both are
-stated rather than assumed: `hObjInv` (the store's extensional invariant, which
-every caller at this layer already carries) and
-`spliceRemovedIsTailWhenLast` (the queue connectivity the bundle does not
-entail — see its docstring). -/
+**WS-RR RR8.4**: the dual's own success is now the *whole* of what is needed
+beyond `hObjInv` (the store's extensional invariant, which every caller at this
+layer already carries).  Both removals write `queueRemoveBoundary`, so the tail
+cannot differ by construction, and the one fact that used to be stated —
+OD1.3's `spliceRemovedIsTailWhenLast`, the queue connectivity `ipcInvariantFull`
+does not entail — is checked by `dualQueueRemovalGuard`'s tail factor, so
+`SpliceShape`'s two no-successor branches carry `hTail` outright.  The
+hypothesis is deleted rather than kept: see the tombstone in §17. -/
 theorem endpointQueueRemove_agrees_with_dual
     {st stD : SystemState} {endpointId : SeLe4n.ObjId}
     {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
-    (hTailLast : spliceRemovedIsTailWhenLast isReceiveQ endpointId st tid)
     (hDual : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), stD)) :
     ∃ stS, endpointQueueRemove endpointId isReceiveQ tid st = .ok stS ∧
       objectStoreAgrees stD stS := by
   cases endpointQueueRemoveDual_shape st stD endpointId isReceiveQ tid hDual with
-  | headLast ep tcb s1 s2 hEp hTcb _hPPrev hPrevNone hHead _hTailSome hNext
+  | headLast ep tcb s1 s2 hEp hTcb _hPPrev hPrevNone hHead hTail hNext
       hStore1 hStore2 hClear =>
     exact endpointQueueRemove_agrees_headLast hObjInv hEp hTcb hPrevNone hNext hHead
-      (hTailLast ep tcb hEp hTcb hNext) hStore1 hStore2 hClear
+      hTail hStore1 hStore2 hClear
   | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp hTcb hPPrev hPrevNone hHead _hTailSome
       hNext hStore1 hNextTcb hRelink hStore2 hClear =>
     have hTcbObj : st.getTcb? tid = some tcb :=
@@ -3489,12 +3488,12 @@ theorem endpointQueueRemove_agrees_with_dual
       (queueKey_ne_next hInv.endpointQueueNoDup hEp hTcbObj hNext)
       hStore1 hNextTcb hRelink hStore2 hClear
   | midLast ep tcb prevTcb prevTid s1 s2 hEp hTcb _hPPrev hPrev hHeadNe _hHeadSome
-      _hTailSome hNext hPrevTcb hPrevNext hRelink hStore hClear =>
+      hTail hNext hPrevTcb hPrevNext hRelink hStore hClear =>
     have hPrevObj : st.getTcb? prevTid = some prevTcb :=
       (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mpr
         (lookupTcb_some_objects st prevTid prevTcb hPrevTcb)
     exact endpointQueueRemove_agrees_midLast hObjInv hEp hTcb hPrev hNext hHeadNe
-      (hTailLast ep tcb hEp hTcb hNext) hPrevTcb
+      hTail hPrevTcb
       (queueKey_ne_prev hInv.endpointQueueNoDup hEp hPrevObj hPrevNext)
       hRelink hStore hClear
   | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp hTcb hPPrev hPrev hHeadNe
@@ -3545,13 +3544,12 @@ theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hEnabled : dualRemovalEnabled endpointId isReceiveQ tid st)
-    (hTailLast : spliceRemovedIsTailWhenLast isReceiveQ endpointId st tid)
     (hPred : splicePredecessorBlocked isReceiveQ endpointId st tid)
     (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok stS) :
     ipcInvariantFullExceptMembership stS tid := by
   obtain ⟨stD, hDual⟩ := hEnabled
   obtain ⟨stS', hStep', hAgree⟩ :=
-    endpointQueueRemove_agrees_with_dual hObjInv hInv hTailLast hDual
+    endpointQueueRemove_agrees_with_dual hObjInv hInv hDual
   have hEq : stS' = stS := by rw [hStep'] at hStep; exact Except.ok.inj hStep
   rw [hEq] at hAgree
   have hSched : stS.scheduler = stD.scheduler := by

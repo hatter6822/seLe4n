@@ -131,11 +131,32 @@ theorem threadCurrentOnSomeCore_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
     cross-subsystem composition once `dualQueueSystemInvariant` is threaded
     through every caller. -/
 def removeThreadFromQueue (st : SystemState) (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) : IntrusiveQueue :=
-  let advance := match lookupTcb st tid with
-    | some tcb => (tcb.queueNext, tcb.queuePrev)
-    | none => (none, none)  -- defensive: see W6-A / AN4-G.1 doc above
-  { head := if q.head = some tid then advance.1 else q.head,
-    tail := if q.tail = some tid then advance.2 else q.tail }
+  match lookupTcb st tid with
+  -- **WS-RR RR8.4**: `queueRemoveBoundary` (`Model/Object/Types.lean`), the one
+  -- definition of what a removal writes to a queue's boundaries, shared with
+  -- `endpointQueueRemove` and `endpointQueueRemoveDual`.  This was the **fourth**
+  -- asker of that question: RR8.4's plan row said "the two endpoint-queue
+  -- removals", WS-OD OD3.9 had already established there are *three*, and the
+  -- third asks it here rather than in `spliceOutMidQueueNode`, which writes only
+  -- the two neighbour TCBs.  Unifying two of four would have left the class open
+  -- and read as closed.
+  --
+  -- It already asked the **fact** (`q.tail = some tid`) rather than the proxy
+  -- (`queueNext = none`) the dual removal used, so this is a de-duplication and
+  -- not a behaviour change: `removeThreadFromQueue_tcb_present` is the
+  -- definitional reading, and the boundary it writes is byte-for-byte what it
+  -- wrote before.
+  | some tcb => queueRemoveBoundary q tid tcb
+  -- Defensive (see W6-A / AN4-G.1 doc above): with no TCB there is no removed
+  -- thread whose links a boundary could inherit, so a boundary naming `tid` is
+  -- cleared rather than advanced.  Deliberately *not* spelled through
+  -- `queueRemoveBoundary`: that definition is "the boundary a removal writes"
+  -- and this branch is the absence of one, so routing it through a synthetic
+  -- link-free TCB would make the shared definition describe a case it is not
+  -- about.
+  | none =>
+    { head := if q.head = some tid then none else q.head,
+      tail := if q.tail = some tid then none else q.tail }
 
 /-- AN4-G.1 (LIF-M01): When `lookupTcb st tid = some tcb` (the cleanup-ordering
 invariant guarantees this at every call site), `removeThreadFromQueue`
@@ -149,6 +170,17 @@ theorem removeThreadFromQueue_tcb_present
     removeThreadFromQueue st q tid =
       { head := if q.head = some tid then tcb.queueNext else q.head,
         tail := if q.tail = some tid then tcb.queuePrev else q.tail } := by
+  simp [removeThreadFromQueue, queueRemoveBoundary, hTcb]
+
+/-- **WS-RR RR8.4**: and the same fact stated over the shared definition — the
+relation that keeps this removal's boundary write and the other two's from
+drifting.  The two theorems are not a duplication: this one names the definition
+and the one above unfolds it, and a consumer that needs the record form should
+not have to know which module the definition lives in. -/
+theorem removeThreadFromQueue_eq_queueRemoveBoundary
+    (st : SystemState) (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : lookupTcb st tid = some tcb) :
+    removeThreadFromQueue st q tid = queueRemoveBoundary q tid tcb := by
   simp [removeThreadFromQueue, hTcb]
 
 /-- T5-E (M-LCS-1): Splice a mid-queue node out of the intrusive doubly-linked list.

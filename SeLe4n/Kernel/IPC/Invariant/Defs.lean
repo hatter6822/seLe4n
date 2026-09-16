@@ -283,14 +283,47 @@ theorem queuePPrevHeadPositionAgrees_of_member {st : SystemState}
       rw [hPrevSome] at hHdPrev
       exact absurd hHdPrev (by simp)
 
-/-- **WS-RR RR8.3**: `endpointQueueRemoveDual`'s own precondition, discharged.
+/-- **WS-RR RR8.4**: the free direction of the tail pairing — a tail has no
+successor (`intrusiveQueueWellFormed`'s third clause), so a thread that has one
+is not the tail.
+
+This is the half of `queueTailPairAgrees` the bundle *does* carry; the other half
+is queue connectivity, which it does not, and which `dualQueueRemovalGuardHolds`
+therefore takes as a hypothesis. -/
+theorem queueTailPairAgrees_of_wellFormed {st : SystemState}
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hWF : intrusiveQueueWellFormed q st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hTailLast : tcb.queueNext = none → q.tail = some tid) :
+    queueTailPairAgrees q tid tcb = true := by
+  refine queueTailPairAgrees_iff.mpr ⟨fun hTail => ?_, hTailLast⟩
+  obtain ⟨tlTcb, hTlObj, hTlNext⟩ := hWF.2.2 tid hTail
+  rw [hTcb] at hTlObj
+  obtain rfl : tcb = tlTcb := KernelObject.tcb.inj (Option.some.inj hTlObj)
+  exact hTlNext
+
+/-- **WS-RR RR8.3**, extended by **RR8.4**: `endpointQueueRemoveDual`'s own
+precondition, discharged.
 
 This is what the fourth `dualQueueSystemInvariant` conjunct is *for*: the pairing
 half comes from the invariant, system-wide and for free, so a caller that knows
 where in the queue the thread sits knows the removal will not refuse with
 `.illegalState`.  Before RR8.3 the check was an anonymous `let`, there was no
 invariant relating `queuePPrev` to `queuePrev`, and so the precondition could only
-be assumed. -/
+be assumed.
+
+`hTailLast` is the one thing no invariant supplies.  RR8.4 made the removal
+*check* that the queue's tail field and the removed thread's `queueNext` agree,
+because `queueRemoveBoundary` clears the tail on the fact (`q.tail = some tid`)
+rather than on the proxy (`queueNext = none`) and the two part on a state the
+bundle admits — a queued thread with no successor that is not the tail.  Checking
+it means the removal *refuses* that state instead of stranding the queue's real
+tail; the cost is that a caller must now supply the connectivity.  It is the same
+fact WS-OD OD1.3 used to state on every theorem *about* a removal, deleted at
+RR8.4 once the guard discharged it — so the obligation moved from the proofs to
+the call sites, where the caller knows where in the queue the thread sits.  It is
+vacuous for a thread that has a successor, which is every removal from the middle
+or the head of a queue of two or more. -/
 theorem dualQueueRemovalGuardHolds {st : SystemState}
     {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB} {pprev : QueuePPrev}
     (hWF : intrusiveQueueWellFormed q st)
@@ -298,12 +331,15 @@ theorem dualQueueRemovalGuardHolds {st : SystemState}
     (hPP : queuePPrevAgreesWithPrev st)
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hPPrev : tcb.queuePPrev = some pprev)
-    (hMem : q.head = some tid ∨ ∃ hd, q.head = some hd ∧ QueueNextPath st hd tid) :
+    (hMem : q.head = some tid ∨ ∃ hd, q.head = some hd ∧ QueueNextPath st hd tid)
+    (hTailLast : tcb.queueNext = none → q.tail = some tid) :
     dualQueueRemovalGuard q tid tcb pprev = true := by
   have hPair : tcb.queuePPrevAgreesWithPrev := hPP tid tcb hTcb
   rw [dualQueueRemovalGuard_eq_position_and_pair,
+    queueTailPairAgrees_of_wellFormed hWF hTcb hTailLast,
     queuePPrevHeadPositionAgrees_of_member hWF hLink hTcb hPPrev hPair hMem,
-    decide_eq_true (dualQueueRemovalGuard_pair_half hPPrev hPair), Bool.and_self]
+    decide_eq_true (dualQueueRemovalGuard_pair_half hPPrev hPair), Bool.and_self,
+    Bool.and_self]
 
 /-- V4-A: If no TCB has a non-none queueNext, then tcbQueueChainAcyclic holds. -/
 theorem tcbQueueChainAcyclic_of_allNextNone {st : SystemState}
@@ -393,7 +429,8 @@ of that endpoint's two — so the well-formedness comes out of
 `endpointsWellFormed` at that key rather than being supplied.  Membership stays a
 hypothesis, because no conjunct of the bundle entails it: a thread on **no** queue
 also has `queuePrev = none`, so the invariant cannot say which queue's head a
-`.endpointHead` back-pointer names. -/
+`.endpointHead` back-pointer names.  **RR8.4** adds `hTailLast` for the same
+reason one level over — see `dualQueueRemovalGuardHolds`. -/
 theorem dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant {st : SystemState}
     {epId : SeLe4n.ObjId} {ep : Endpoint} {isReceiveQ : Bool}
     {tid : SeLe4n.ThreadId} {tcb : TCB} {pprev : QueuePPrev}
@@ -403,7 +440,9 @@ theorem dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant {st : SystemState
     (hPPrev : tcb.queuePPrev = some pprev)
     (hMem : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some tid ∨
       ∃ hd, (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some hd ∧
-        QueueNextPath st hd tid) :
+        QueueNextPath st hd tid)
+    (hTailLast : tcb.queueNext = none →
+      (if isReceiveQ then ep.receiveQ else ep.sendQ).tail = some tid) :
     dualQueueRemovalGuard (if isReceiveQ then ep.receiveQ else ep.sendQ) tid tcb pprev = true := by
   have hEpWF := hDual.endpointsWellFormed epId ep hEp
   unfold dualQueueEndpointWellFormed at hEpWF
@@ -412,7 +451,7 @@ theorem dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant {st : SystemState
     cases isReceiveQ with
     | false => simpa using hEpWF.1
     | true => simpa using hEpWF.2
-  exact dualQueueRemovalGuardHolds hWF hDual.linkIntegrity hDual.pprevAgrees hTcb hPPrev hMem
+  exact dualQueueRemovalGuardHolds hWF hDual.linkIntegrity hDual.pprevAgrees hTcb hPPrev hMem hTailLast
 
 /-- WS-H12c: IPC invariant — all notifications satisfy notification queue
 well-formedness. The former `endpointInvariant` conjunct (vacuous `True`

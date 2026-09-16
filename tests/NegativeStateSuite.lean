@@ -1297,6 +1297,109 @@ private def runDualQueuePPrevPairingChecks : IO Unit := do
     (SeLe4n.Kernel.queuePPrevHeadPositionAgrees qEmpty (SeLe4n.ThreadId.ofNat 7) .endpointHead)
     false
 
+-- WS-RR RR8.4: the four shapes a guarded removal writes, and the two removals'
+-- boundary pins.  Elaborated here because `runDualQueueTailPairingChecks` below
+-- exercises the guard's and the boundary's *values* but not the theorems that
+-- state what each removal writes, and the whole content of the collapse is that
+-- the two write one definition.
+#check @SeLe4n.Kernel.queueTailPairAgrees_iff
+#check @SeLe4n.Kernel.queueTailPairAgrees_of_wellFormed
+#check @SeLe4n.Kernel.queueRemoveBoundary_headLast
+#check @SeLe4n.Kernel.queueRemoveBoundary_headMore
+#check @SeLe4n.Kernel.queueRemoveBoundary_midLast
+#check @SeLe4n.Kernel.queueRemoveBoundary_midMore
+#check @SeLe4n.Kernel.endpointQueueRemoveDual_writes_queueRemoveBoundary
+#check @SeLe4n.Kernel.dualQueueRemovalGuard_tail_half
+
+/-- **WS-RR RR8.4**: the tail question has one answer, and the removal refuses the
+state on which its two readings part.
+
+The two endpoint-queue removals agreed on the head and differed on the tail:
+`endpointQueueRemove` asked `q.tail = some tid` — the **fact** — and
+`endpointQueueRemoveDual` asked `removed.queueNext = none`, a **proxy** for it,
+deriving the new tail from `queuePPrev`.  Under a connected queue the two
+coincide, and `ipcInvariantFull` joins a queue's boundaries nowhere, so this
+measures both halves of that gap.
+
+Four assertions.
+
+1. On a queue the **live** operations built, the fact and the proxy agree at every
+   member, so `queueTailPairAgrees` is `true` and the guard is not made vacuous by
+   the new factor.
+2. `queueRemoveBoundary` computes the four shapes the branch facts predict — the
+   boundary both removals now write, so the comparison is of one definition
+   rather than of two authors' readings.
+3. On a state the bundle admits and connectivity refutes — a queued thread with
+   **no successor that is not the tail** — the fact and the proxy **disagree**, so
+   `queueTailPairAgrees` is `false` and the dual removal **refuses** with
+   `.illegalState`.  That is the fail-closed direction: the inferring form cleared
+   the tail here and stranded the queue's real tail, a thread that could then
+   never be dequeued.
+4. The refusal is attributable to the **tail** factor and not to the others: the
+   position and pairing factors are both `true` on that same state.  Without this
+   the third assertion would pass for a guard that refused everything. -/
+private def runDualQueueTailPairingChecks : IO Unit := do
+  let (_, stTail1) ← expectOkSt "tail pairing enqueue sender 7"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
+  let (_, stTail2) ← expectOkSt "tail pairing enqueue sender 8"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) .empty stTail1)
+
+  let sendQOf (st : SystemState) : IO IntrusiveQueue :=
+    match st.getEndpoint? endpointId with
+    | some ep => pure ep.sendQ
+    | none => throw <| IO.userError "tail pairing: endpoint missing"
+  let tcbOf (st : SystemState) (tid : SeLe4n.ThreadId) : IO TCB :=
+    match st.getTcb? tid with
+    | some tcb => pure tcb
+    | none => throw <| IO.userError s!"tail pairing: TCB {tid.toNat} missing"
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+  let expectQueue (label : String) (actual expected : IntrusiveQueue) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {repr expected}, got {repr actual}"
+
+  let q2 ← sendQOf stTail2
+  let tcb7 ← tcbOf stTail2 (SeLe4n.ThreadId.ofNat 7)
+  let tcb8 ← tcbOf stTail2 (SeLe4n.ThreadId.ofNat 8)
+
+  -- (1) the fact and the proxy agree at both members of a live queue.
+  expectBool "tail pairing holds at the head of the live queue"
+    (SeLe4n.Kernel.queueTailPairAgrees q2 (SeLe4n.ThreadId.ofNat 7) tcb7) true
+  expectBool "tail pairing holds at the tail of the live queue"
+    (SeLe4n.Kernel.queueTailPairAgrees q2 (SeLe4n.ThreadId.ofNat 8) tcb8) true
+
+  -- (2) the shared boundary computes the shapes the branch facts predict.
+  expectQueue "boundary: removing the head with a successor moves the head only"
+    (SeLe4n.Model.queueRemoveBoundary q2 (SeLe4n.ThreadId.ofNat 7) tcb7)
+    { head := some (SeLe4n.ThreadId.ofNat 8), tail := some (SeLe4n.ThreadId.ofNat 8) }
+  expectQueue "boundary: removing the tail moves the tail to its predecessor"
+    (SeLe4n.Model.queueRemoveBoundary q2 (SeLe4n.ThreadId.ofNat 8) tcb8)
+    { head := some (SeLe4n.ThreadId.ofNat 7), tail := some (SeLe4n.ThreadId.ofNat 7) }
+
+  -- (3) the fact and the proxy part on a state the bundle admits: thread 7 is the
+  -- head, is given no successor, and is not the tail.  Every `queueNext` chain and
+  -- both boundaries are left exactly as the live operations wrote them.
+  let stStranded ← expectOkVal "tail pairing: a head with no successor that is not the tail"
+    (corruptThreadQueueLinks stTail2 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) none)
+  let qS ← sendQOf stStranded
+  let tcbS ← tcbOf stStranded (SeLe4n.ThreadId.ofNat 7)
+  expectBool "...the queue's tail still names thread 8"
+    (qS.tail == some (SeLe4n.ThreadId.ofNat 8)) true
+  expectBool "...so the fact and the proxy DISAGREE"
+    (SeLe4n.Kernel.queueTailPairAgrees qS (SeLe4n.ThreadId.ofNat 7) tcbS) false
+  expectErr "...and the removal refuses it rather than stranding thread 8"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stStranded)
+    .illegalState
+
+  -- (4) the refusal is the tail factor's: the other two are true on that state.
+  expectBool "...the position factor is TRUE there"
+    (SeLe4n.Kernel.queuePPrevHeadPositionAgrees qS (SeLe4n.ThreadId.ofNat 7) .endpointHead) true
+  expectBool "...the pairing factor is TRUE there"
+    (SeLe4n.Kernel.queueLinkPairAgrees tcbS.queuePrev (some .endpointHead)) true
+  expectBool "...so the whole guard is false, and only because of the tail"
+    (SeLe4n.Kernel.dualQueueRemovalGuard qS (SeLe4n.ThreadId.ofNat 7) tcbS .endpointHead) false
+
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]
   runCspaceMutationAndRevokeNegativeChecks              -- [was 263-461; sections 2+3 combined for strictSeed/strictRootSlot reuse]
@@ -1305,6 +1408,7 @@ private def runNegativeChecks : IO Unit := do
   runIpcPayloadBoundsNegativeChecks                     -- [was 608-700]
   runDualQueueEndpointFifoNegativeChecks                -- [was 702-1034]
   runDualQueuePPrevPairingChecks                        -- WS-RR RR8.3
+  runDualQueueTailPairingChecks                         -- WS-RR RR8.4
 
   -- ==========================================================================
   -- WS-D4 F-12: Double-wait prevention in notificationWait (was 1036-1043).

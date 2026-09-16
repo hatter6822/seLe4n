@@ -1129,13 +1129,56 @@ run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_agrees_insert' SeLe4n/K
 # form is unprovable here and would read as a stronger, checked claim; the
 # mutation that finds this keeps the theorem and strengthens its conclusion.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_agrees_with_dual[^\n]*(\n([ \t][^\n]*)?)*stS\.objects = stD\.objects" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
-# The queue connectivity the bundle does not entail is **stated**, not assumed:
-# the carriage takes it as a hypothesis, in the same shape as
-# `splicePredecessorBlocked` and `sweptThreadQueueCoherent`.
-run_check "INVARIANT" rg -n '^def spliceRemovedIsTailWhenLast' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+# **WS-RR RR8.4**: the queue connectivity the bundle does not entail is
+# **checked** now, not stated.  `queueRemoveBoundary` clears the tail on the fact
+# (`q.tail = some tid`) where the dual removal used to infer it from the proxy
+# (`queueNext = none`), the guard's first factor requires the two to agree, and
+# every consumer is conditioned on the dual succeeding — so the obligation moved
+# from the proofs to `dualQueueRemovalGuardHolds`'s caller.
+run_check "INVARIANT" rg -n '^def queueTailPairAgrees' SeLe4n/Kernel/IPC/DualQueue/Core.lean
 run_check "INVARIANT" rg -n '^def dualRemovalEnabled' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership[^\n]*(\n([ \t][^\n]*)?)*hTailLast : spliceRemovedIsTailWhenLast" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership[^\n]*(\n([ \t][^\n]*)?)*hEnabled : dualRemovalEnabled" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+# NEGATIVE: `spliceRemovedIsTailWhenLast` must not come back.  It had one job —
+# supply what the removal now refuses — and a hypothesis restated beside a check
+# that discharges it reads in a signature exactly like one nothing discharges.
+run_negative_check "INVARIANT" rg -n 'spliceRemovedIsTailWhenLast' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean SeLe4n/Kernel/IPC/DualQueue/Core.lean SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+# NEGATIVE: and neither consumer may take it back as a hypothesis under any name.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem (endpointQueueRemove_agrees_with_dual|endpointQueueRemove_establishes_ipcInvariantFullExceptMembership|abortPendingIpcOnEndpoint_preserves_ipcInvariantFull)[^\n]*(\n([ \t][^\n]*)?)*tcb\.queueNext = none . \(spliceQueue" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean'
+# The two no-successor branches of `SpliceShape` carry the precise fact the guard
+# establishes, not the weaker `tail.isSome` the queue's non-emptiness gives: that
+# is what lets the agreement drop the hypothesis rather than re-derive it.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| headLast[^\n]*(\n([ \t][^\n]*)?)*hTail : \(spliceQueue isReceiveQ ep\)\.tail = some tid" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| midLast[^\n]*(\n([ \t][^\n]*)?)*hTail : \(spliceQueue isReceiveQ ep\)\.tail = some tid" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+# **WS-RR RR8.4**: both endpoint-queue removals write one definition of what a
+# removal does to the queue's boundaries.  The positive is the *relation* on the
+# dual side — its boundary write is buried in a five-step program, so a theorem
+# is the only thing that can state it; the single side is pinned by the four
+# `endpointQueueRemove_ok_*` shape theorems, which state its post-store per
+# branch and fail if the boundary changes (measured: a no-op mutation of Step 3
+# fails four of them).  The negative keeps the *sharing*: an inlined boundary
+# record in either body would pass every one of those.
+run_check "INVARIANT" rg -n '^def queueRemoveBoundary' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_writes_queueRemoveBoundary' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n 'let q. : IntrusiveQueue := queueRemoveBoundary q tid tcb' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n 'let q. : IntrusiveQueue := queueRemoveBoundary q tid tcb' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_negative_check "INVARIANT" rg -n 'head := if q\.head = some tid' SeLe4n/Kernel/IPC/DualQueue/Core.lean SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+# ...and the **third** removal's boundary write is the same definition.  RR8.4's
+# plan row said "the two endpoint-queue removals"; WS-OD OD3.9 had already
+# established there are three, and the third asks the boundary question in
+# `removeThreadFromQueue` rather than in `spliceOutMidQueueNode`, which writes
+# only the two neighbour TCBs.  Unifying two of four would read as closed.
+run_check "INVARIANT" rg -n 'some tcb => queueRemoveBoundary q tid tcb' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^theorem removeThreadFromQueue_eq_queueRemoveBoundary' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def removeThreadFromQueue[^\n]*(\n([ \t][^\n]*)?)*some tcb => \(tcb\.queueNext, tcb\.queuePrev\)" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# ...and the **fifth**: the frozen mirror, which a kernel-tree sweep misses
+# structurally — `SeLe4n/Kernel/FrozenOps/` is reached by neither library root and
+# is built only by its own test target.  It holds the live `TCB`, so the
+# model-level definition applies to it directly; that is why `queueRemoveBoundary`
+# lives in `Model/Object/Types.lean` and not in the IPC layer.
+run_check "INVARIANT" rg -n 'let q. : IntrusiveQueue := queueRemoveBoundary q tid tcb' SeLe4n/Kernel/FrozenOps/Core.lean
+run_negative_check "INVARIANT" rg -n 'head := if q\.head == some tid' SeLe4n/Kernel/FrozenOps/Core.lean
+# NEGATIVE: and the dual must not go back to inferring the tail from `pprev`.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "let newTail[^\n]*(\n([ \t][^\n]*)?)*endpointHead => none" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
 # The converse direction is derived, never assumed: a tail has no successor, so
 # a thread that has one is not the tail.
 run_check "INVARIANT" rg -n '^theorem spliceTail_ne_of_hasNext' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean

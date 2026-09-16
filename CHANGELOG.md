@@ -1,3 +1,151 @@
+## v0.35.58 — WS-RR RR8.4: the removals' queue boundary becomes one definition, which asks the fact rather than a proxy for it
+
+WS-OD OD3.9 unified what an endpoint-queue removal writes to the *neighbours*
+(`queueUnlinkPredecessor` / `queueUnlinkSuccessor`).  The queue's own `head` and
+`tail` stayed two readings, and RR8.4's plan row — written from reading both
+bodies — said they "write the same fields to the same values today, which is
+exactly why they can drift".  **The premise was false**, and finding that out is
+this cut's result.
+
+Both moved the head on `q.head = some tid`.  For the tail,
+`endpointQueueRemove` asked `q.tail = some tid` — the **fact** — while
+`endpointQueueRemoveDual` asked `removed.queueNext = none`, a **proxy** for it,
+and on a `some` derived the new tail from `queuePPrev`.  Under a connected queue
+the two conditions coincide, and `ipcInvariantFull` joins a queue's boundaries
+**nowhere**: it constrains the head, it constrains the tail, and nothing relates
+them.  So on a state the bundle admits — a queued thread with no successor that
+is not the tail — they part, and there the inferring form cleared the tail and
+**stranded the queue's real tail**, a thread that could then never be dequeued.
+That is the defect class OD3.9 reported, arriving through the one field OD3.9 did
+not unify, in the removal every IPC rendezvous path uses.
+
+`queueRemoveBoundary` (`SeLe4n/Model/Object/Types.lean`, beside the two unlink
+updates — the third and last piece of *what does unlinking write*) is the shared
+definition, with the four shapes a guarded removal writes named once
+(`queueRemoveBoundary_{headLast,headMore,midLast,midMore}`, read by both the
+dual's invariant proofs and the `endpointQueueRemove_agrees_*` family, so the
+branch analysis exists once rather than twice).
+
+**Which reading survives is not an arbitrary pick.**  `q.tail = some tid` is the
+fact and `queueNext = none` is a proxy for it — this project's own *a proxy is
+not the fact* rule, applied to a field rather than to a core — and the two fail
+in opposite directions: the proxy silently manufactures a well-formed-looking
+queue with a thread missing from it, while the fact leaves a head cleared without
+its tail, which `intrusiveQueueWellFormed` refuses.  The fact fails closed where
+the proxy fails open, so the fact is the survivor and the *proxy's* direction
+becomes something to establish.
+
+**So the removal checks it.**  `queueTailPairAgrees` — the queue's `tail` field
+and the removed thread's `queueNext` agree about whether this thread is the tail
+— is the first factor of `dualQueueRemovalGuard`, with
+`dualQueueRemovalGuard_eq_position_and_pair` restated over three factors, so the
+dual **refuses** the state on which the two readings part.  One direction is free
+from the bundle (a tail has no successor, so a thread with one is not the tail —
+`spliceTail_ne_of_hasNext`, which RR8.4 leaves live) and the other is the missing
+invariant, which is why this is a runtime guard and not a fifth conjunct.  The
+biconditional is stated because "the tail question has one answer" is what it
+means; refusing the free direction as well costs nothing, the bundle already
+excluding it.
+
+**WS-OD OD1.3's `spliceRemovedIsTailWhenLast` is deleted.**  Every consumer was
+already conditioned on the dual succeeding (`dualRemovalEnabled`), so the guard
+discharges what the hypothesis supplied: `SpliceShape`'s two no-successor
+branches carry `hTail : (spliceQueue isReceiveQ ep).tail = some tid` outright
+instead of the weaker `tail.isSome` the non-emptiness check gives, and
+`endpointQueueRemove_agrees_with_dual`,
+`endpointQueueRemove_establishes_ipcInvariantFullExceptMembership` and
+`abortPendingIpcOnEndpoint_preserves_ipcInvariantFull` each shed a hypothesis —
+the agreement now needs the dual's success and `hObjInv`, and nothing else.  The
+predicate is removed rather than left beside its replacement, with a tombstone
+naming what took over.
+
+**The deletion is not the fact's closure, and a later cut must not read it as
+one.**  Queue connectivity is still a missing invariant; it is now
+`dualQueueRemovalGuardHolds`'s `hTailLast`, an obligation on whoever *calls* a
+removal — where it is discharged from where the thread sits in the queue — rather
+than one carried by every theorem *about* one.  That is the same obligation
+`docs/REGISTERED_DEBT.md`'s row predicted as the collapse's own work, and it
+turned out to be two halves (position and tail) rather than the one the row
+named.
+
+**The pin is asymmetric, and the asymmetry was measured rather than assumed.**
+The dual's boundary write is buried in a five-step program, so only a theorem can
+state it: `endpointQueueRemoveDual_writes_queueRemoveBoundary`, hypothesis-free,
+replacing two consumer-less WS-L3 theorems (`…_preserves_tail_of_nonTail`,
+`…_tail_update`) that were the specification of the retired inference.  The
+single's body is straight-line and its four `endpointQueueRemove_ok_*` shape
+theorems already state its post-store *per branch* — a no-op mutation of its
+Step 3 fails four of them — so a fifth restatement was **not** added, that being
+the duplication this project spends its length retiring.  What neither side pins
+is the *sharing*: an inlined copy of the identical record satisfies every one of
+those theorems, so that is a Tier 3 negative, and its mutation keeps the values
+and breaks only the sharing.
+
+**And the boundary question had four askers, not two.**  RR8.4's plan row said
+"the two endpoint-queue removals"; WS-OD OD3.9 had already established there are
+**three**, and the third (`removeFromAllEndpointQueues`) splits the work — so
+`spliceOutMidQueueNode` writes only the two neighbour TCBs and its *boundary*
+write is `removeThreadFromQueue`, a fourth spelling of the same expression.  It
+was found by asking who else computes a queue boundary rather than by trusting the
+row, which is this project's own sweep rule: a fix applied at one site and not its
+siblings leaves the class open and reads as closed.  It already asked the **fact**,
+so unifying it is a de-duplication and not a behaviour change — the boundary it
+writes is byte-for-byte what it wrote before
+(`removeThreadFromQueue_tcb_present`), with
+`removeThreadFromQueue_eq_queueRemoveBoundary` the relation over the shared
+definition.  Its `lookupTcb`-absent arm is deliberately **not** routed through
+`queueRemoveBoundary`: with no TCB there is no removed thread whose links a
+boundary could inherit, so that arm is the *absence* of a removal, and routing it
+through a synthetic link-free TCB would make the shared definition describe a case
+it is not about.
+
+**And running the sweep again found a fifth.**  `frozenQueueRemove`
+(`Kernel/FrozenOps/Core.lean`) is the frozen mirror of `endpointQueueRemoveDual`
+and computed the boundary itself, with `==` where the live ones use `=`.  It is
+the asker a kernel-tree sweep structurally misses — that surface is reached by
+neither library root and is built only by `tests.FrozenOpsSuite` — and it is the
+third time this project has paid for that.  Because the frozen store holds the
+**live** `TCB` and `IntrusiveQueue`, a *model*-level definition applies to it
+directly, which is why `queueRemoveBoundary` lives beside the two unlink updates
+in `Model/Object/Types.lean` rather than in the IPC layer.  The frozen suite is
+byte-identical after the repoint: no behaviour change, which is the point of a
+de-duplication.
+
+Two results from asking it.  The mirror already asked the **fact**, so it was
+**right** on the tail question where the operation it mirrors was wrong, and
+nothing in the tree compared the two on the state where they part — a differential
+surface can hold the better answer and never be asked for it.  And its *guard* is
+a different matter, and a finding: it refuses only `queuePPrev.isNone` where the
+live removal refuses a pairing violation, a position violation and now a tail
+disagreement, so it **succeeds where the kernel refuses** — the direction that
+matters on a mirror.  The guard family lives in the kernel layer `FrozenOps`
+deliberately does not import, so relocating it to the model is a cut of its own;
+it is registered in `docs/REGISTERED_DEBT.md` §C rather than absorbed here, with
+the measurement that the affected surface is a test oracle and not the kernel.
+
+`endpointQueueRemoveDual_preserves_dualQueueSystemInvariant` stays
+hypothesis-free across the change: all four of its paths take the tail fact off
+the guard, which is the whole reason the guard carries it rather than the
+theorem.  Nothing in the golden trace moves.
+
+Witness: `tests/NegativeStateSuite.lean`'s `runDualQueueTailPairingChecks`, beside
+RR8.3's.  It asserts the fact and the proxy agree at both members of a queue the
+**live** operations built; that the shared boundary computes the two shapes those
+members predict; that on the stranding state they **disagree** and the removal
+answers `.illegalState`; and — the assertion that makes the third one mean
+something — that the position and pairing factors are both **true** there, so the
+refusal is attributable to the tail factor and not to a guard that refuses
+everything.
+
+Anchors: positives on `queueTailPairAgrees`, on `queueRemoveBoundary`, on the
+dual's pin and on `hTail` in both no-successor branches; negatives refusing
+`spliceRemovedIsTailWhenLast` tree-wide, refusing either consumer taking it back
+under another name, refusing an inlined boundary record in either removal, and
+refusing the `newTail` inference's return.  Mutation-tested in both directions:
+the retired predicate coming back, an inlined boundary that keeps every value,
+and `SpliceShape` reverting to `tail.isSome` each fire an anchor, and the clean
+tree is silent.
+
 ## v0.35.57 — WS-RR RR8.3: `queuePPrev` agreement becomes an invariant, and the dual removal's precondition is discharged rather than assumed
 
 The tree has three endpoint-queue removals, and two of them — WS-OD OD1.1's

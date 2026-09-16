@@ -1393,6 +1393,71 @@ structure IntrusiveQueue where
   tail : Option SeLe4n.ThreadId := none
   deriving Repr, DecidableEq
 
+/-- **WS-RR RR8.4**: the queue boundaries a removal writes — the third and last
+piece of "what does unlinking `removed` write", beside `queueUnlinkPredecessor`
+and `queueUnlinkSuccessor` above.
+
+`head` and `tail` are read off **the queue's own fields**: a boundary moves
+exactly when it named the removed thread, and to that thread's link on the
+matching side.  The removal's two spellings differed here and this is the robust
+one, which is why it is the survivor rather than an arbitrary pick.
+
+The two spellings asked **different questions about the same fact**, and that is
+the whole of their divergence.  Both moved the head on `q.head = some tid`; for
+the tail, `endpointQueueRemove` asked `q.tail = some tid` while
+`endpointQueueRemoveDual` asked `removed.queueNext = none` and, on a `some`,
+derived the new tail from `queuePPrev` (`none` at the head, the predecessor
+otherwise — which `queuePPrevAgreesWithPrev` makes exactly `removed.queuePrev`).
+Under a connected queue the two conditions coincide; the bundle constrains a queue
+only at its boundaries and joins them nowhere, so on a state it admits — a queued
+thread with no successor that is not the tail — they part.  There the inferring
+form clears the tail and **strands the queue's real tail**, a thread that can then
+never be dequeued, which is the defect class WS-OD OD3.9 reported.
+
+**`q.tail = some tid` is the fact and `removed.queueNext = none` is a proxy for
+it**, so this definition asks the fact — which leaves the *other* direction to be
+established rather than assumed, because clearing a head without clearing a tail
+breaks `intrusiveQueueWellFormed`.  The dual **checks** the two answers agree
+(`queueTailPairAgrees`, the first factor of `dualQueueRemovalGuard`) and
+**refuses** the state outright, which is fail-closed where the inference was
+fail-open.  `endpointQueueRemove` validates nothing, so it still performs that
+removal — but every statement about it is conditioned on the dual being enabled
+(`dualRemovalEnabled`), so the guard discharges what used to be assumed and
+WS-OD OD1.3's `spliceRemovedIsTailWhenLast` is **deleted** rather than kept
+beside its replacement.
+
+The fact did not vanish, and a reader should not take the deletion for its
+closure: queue connectivity is still a missing invariant, and it is now
+`dualQueueRemovalGuardHolds`'s `hTailLast` — an obligation on whoever *calls* a
+removal, where it is discharged from where the thread sits in the queue, rather
+than one carried by every theorem *about* one. -/
+def queueRemoveBoundary (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (removed : TCB) :
+    IntrusiveQueue :=
+  { head := if q.head = some tid then removed.queueNext else q.head,
+    tail := if q.tail = some tid then removed.queuePrev else q.tail }
+
+/-- The head moves only when it named the removed thread. -/
+@[simp] theorem queueRemoveBoundary_head_of_head
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {removed : TCB} (h : q.head = some tid) :
+    (queueRemoveBoundary q tid removed).head = removed.queueNext := by
+  unfold queueRemoveBoundary; simp [h]
+
+@[simp] theorem queueRemoveBoundary_head_of_not_head
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {removed : TCB} (h : q.head ≠ some tid) :
+    (queueRemoveBoundary q tid removed).head = q.head := by
+  unfold queueRemoveBoundary; simp [h]
+
+/-- The tail moves only when it named the removed thread. -/
+@[simp] theorem queueRemoveBoundary_tail_of_tail
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {removed : TCB} (h : q.tail = some tid) :
+    (queueRemoveBoundary q tid removed).tail = removed.queuePrev := by
+  unfold queueRemoveBoundary; simp [h]
+
+@[simp] theorem queueRemoveBoundary_tail_of_not_tail
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {removed : TCB} (h : q.tail ≠ some tid) :
+    (queueRemoveBoundary q tid removed).tail = q.tail := by
+  unfold queueRemoveBoundary; simp [h]
+
 /-- Endpoint object model.
 
 WS-H12a: Endpoint structure uses only intrusive dual-queue fields.
