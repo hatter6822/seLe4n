@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.63` (`lakefile.toml`) |
+| **Package version** | `0.35.64` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 385,300 across 330 Lean files |
-| **Test LoC** | 78,723 across 70 Lean test suites |
-| **Proved declarations** | 12,804 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 385,804 across 330 Lean files |
+| **Test LoC** | 78,722 across 70 Lean test suites |
+| **Proved declarations** | 12,867 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -3331,6 +3331,23 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   proves in-place mutations preserve `objectIndex` length exactly;
   `retypeFromUntyped_capacity_gated` proves the allocation boundary gates
   on `maxObjects`.
+- **In-place rewrite** (`v0.35.64`): a transition that rewrites an
+  existing object of the same, bookkeeping-neutral kind uses
+  `SystemState.rewriteObject` (and the typed `updateTcb` /
+  `updateSchedContext` over it) rather than `storeObject`: its body is the
+  bare table insert with the admissibility proof erased, so the hot
+  scheduler and IPC paths pay one insert, and the bookkeeping `storeObject`
+  maintains — the index, the kind table, the capability references, the
+  ASID table — is proved unchanged once, of the primitive
+  (`rewriteObject_preserves_objectIndexSetComplete`,
+  `rewriteObject_preserves_lifecycleMetadataConsistent`,
+  `rewriteObject_preserves_asidTableConsistent`,
+  `rewriteObject_preservesFieldsOutside`).  CNodes and VSpace roots are
+  refused by `KernelObjectType.rewriteNeutral`, because their contents are
+  bookkeeping; a key that may hold nothing is stored, through `storeObject`
+  or its pure spelling `withObjectStored`.  The migration of the raw
+  `objects.insert` sites onto these primitives is tracked in
+  `docs/REGISTERED_DEBT.md`.
 
 ### 8.2 Word-Boundedness Invariants
 
@@ -3851,9 +3868,10 @@ for the per-sub-task narrative.
   IPC-state-clearing transition shared between `cancelIpcBlocking`
   (suspend G2) and `resumeThread` (H3) extracted as `restoreToReady`
   (`SeLe4n/Kernel/Lifecycle/Suspend.lean`).  The private
-  `clearTcbIpcFields` retained as a `@[inline]` back-compat shim with
-  `clearTcbIpcFields_eq_restoreToReady` bridging the two names for
-  proof discharge.
+  `clearTcbIpcFields` was retained as a `@[inline]` back-compat shim,
+  with `clearTcbIpcFields_eq_restoreToReady` bridging the two names,
+  until `v0.35.64` deleted both: nothing named them, and a retired
+  spelling kept beside the live one is what this project removes.
 * **R5.E (DEEP-SCH-04) — surface `.missingSchedContext`**:
   `timerTickBudget` rejects with `KernelError.missingSchedContext`
   (new discriminant 52) when a bound-budget thread references an

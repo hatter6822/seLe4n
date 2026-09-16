@@ -487,13 +487,13 @@ def an10_e_clearPendingStateValid_reduces : IO Bool := do
 
 /-- AN10-E.H3 — `cancelIpcBlockingValid` reduces to `cancelIpcBlocking`
 on a TCB that is `.blockedOnSend`.  This forces the function to the
-substantive `clearTcbIpcFields` arm rather than the `.ready` no-op
+substantive `restoreToReadyCancelled` arm rather than the `.ready` no-op
 fallback, exercising the wrapper's effect path. -/
 def an10_e_cancelIpcBlockingValid_reduces : IO Bool := do
   let tid : ThreadId := ThreadId.ofNat 5
   let vtid : ValidThreadId := ⟨tid, by decide⟩
   let epId : ObjId := ObjId.ofNat 99
-  -- TCB is blockedOnSend → the function clears IPC fields via clearTcbIpcFields.
+  -- TCB is blockedOnSend → the function clears IPC fields via restoreToReadyCancelled.
   let tcb : TCB := { mkTcb 5 with ipcState := .blockedOnSend epId }
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert tid.toObjId (.tcb tcb) }

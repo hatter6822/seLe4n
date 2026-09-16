@@ -1,3 +1,122 @@
+## v0.35.64 — The in-place rewrite: a proof-carrying store write that costs the hot paths nothing, and the first nine raw writers moved onto it
+
+`docs/REGISTERED_DEBT.md`'s raw-write row (registered at `v0.35.63`) measured
+**75 raw `objects.insert` sites in 60 executable declarations across 24 files**
+outside `SeLe4n/Testing/`, every one a `{ st with objects := st.objects.insert k v }`
+that bypasses the bookkeeping `storeObject` exists to keep — the object index,
+the kind table, the capability references and the ASID table.  The row's remedy
+was a pure store derived from `storeObject` by RR8.5's projection.  This cut
+begins the migration, with a correction to that remedy first.
+
+**The primitive is a rewrite, not a store, and its proof argument is erased.**
+A pure `storeObject` projection is the wrong primitive for the sites that
+matter: `storeObject` filters every capability reference (`O(#refs)`) and
+re-inserts into two more tables on every write, and an `RHTable` re-insert of an
+existing key is *not* structurally the identity without a no-resize hypothesis
+(`RHTable.insert_eq_self_of_get?`), so a scheduler tick spelled through it would
+pay on every quantum and every definitional frame — `lifecycle`, `objectIndex`,
+`objectIndexSet` — would become a conditional theorem.
+`SystemState.rewriteObject st id new h` (`Model/State.lean`) takes instead a
+proof `h : st.rewriteAdmissible id new` — the key holds an object of the same
+kind, and that kind is bookkeeping-neutral (`KernelObjectType.rewriteNeutral`,
+enumerated constructor by constructor so a kind added to `KernelObjectType` fails
+to elaborate until classified; CNodes and VSpace roots are refused, because their
+contents *are* bookkeeping) — and its body is exactly the bare insert the raw
+writers spelled.  The proof is erased at code generation, so the executable is
+one table insert (`@[inline]`), and what the argument buys is proved once: the
+object index stays complete, live, bounded and in sync
+(`rewriteObject_preserves_objectIndexSetComplete`, `_objectIndexLive`,
+`_objectIndexBounded`, `_objectIndexSetSync`), the kind table and the lifecycle
+bundle stay consistent (`rewriteObject_preserves_objectTypeMetadataConsistent`,
+`rewriteObject_preserves_lifecycleMetadataConsistent`), the ASID table stays
+consistent (`rewriteObject_preserves_asidTableConsistent`,
+`Architecture/VSpaceInvariant.lean`), and nothing outside `objects` moves
+(`rewriteObject_preservesFieldsOutside` against the one-field
+`rewriteObject_modifiedFields`, `Kernel/CrossSubsystem.lean`;
+`rewriteObject_eq_objects_update` for any field the family gives no named frame
+for).  `SystemState.updateTcb st tid f` and `SystemState.updateSchedContext` are
+the typed read-modify-writes over it — a `match h : st.getTcb? tid with` whose
+lookup is the rewrite's own witness, computationally the code every site already
+ran — with `updateTcb_eq_of_some` / `updateTcb_eq_self_of_none` the two equations
+every proof repair reduces to, `updateTcb_getTcb?_self` the read-back, and the
+frame and neutrality family instantiated on both.  A key that may hold nothing,
+or an object of another kind, is a *store*: `SystemState.withObjectStored` is
+`storeObject`'s pure spelling — the RR8.5 projection with the error arm
+eliminated by `storeObject_isOk` — and `storeObject_eq_withObjectStored` is the
+bridge through which every `storeObject_*` theorem is a theorem about it.
+
+**Nine declarations migrated, and two of them the cut had to take.**  The seven
+in `Lifecycle/Suspend.lean` — `restoreToReadyStaging`, `restoreToReadyOnCore`,
+`resumeReadyMidState`, `cancelBoundDonation` (both writes), `clearPendingState`,
+`suspendThread`'s G6 and `resumeThread`'s H3c — are `updateTcb` /
+`updateSchedContext` now, and `resumeThread`'s unreachable fallback arm (a key
+found holding no TCB after `restoreToReady` rewrote the TCB H1 found) writes
+through `withObjectStored`, which is what a total function should do with a key
+it did not find.  The file carries **no raw store write at all**, and a Tier 3
+negative refuses the first one back.  Two sites outside the file went with it
+because a pin said they must: `cancelBoundDonationOnCore`
+(`IPC/CrossCore/Cancellation.lean`) is held to the single-core arm by the `rfl`
+bridge `cancelBoundDonationOnCore_bootCoreId`, which the migrated arm broke until
+its twin migrated identically; and `Scheduler/PriorityInheritance/PerCore.lean`
+carried a **private copy** of `restoreToReadyOnCore`'s object-writing prefix,
+pinned to the operation by `restoreToReadyOnCore_eq_enqueue_mid := rfl` — one
+question answered twice, held together by a pin.  The copy and the pin are
+deleted: `Lifecycle.Suspend.restoreToReadyMidState` is the prefix, public, and
+`restoreToReadyOnCore` is *defined* as that prefix followed by the enqueue, so
+the relation is structural rather than pinned.
+
+**Proof repairs, and the recipe.**  Some fifty proofs across
+`SuspendPreservation`, `Cancellation`, `CancellationNI`,
+`DispatchArmPreservation`, `NonInterferenceCrossCore`,
+`PriorityInheritance/PerCore` and `CancellationQueueShape` unfolded the raw match
+and split on it; each now either rewrites with `updateTcb_eq_of_some hT` /
+`updateTcb_eq_self_of_none hT` after a `cases hT : st.getTcb? tid` and continues
+verbatim, or reads a frame (`updateTcb_scheduler`,
+`updateSchedContext_serviceRegistry`, …) where it used to `split <;> rfl`, or is
+one application of the primitive's neutrality theorem where it used to re-derive
+the fact from `RHTable.insert_preserves_invExt`.  `CancellationQueueShape`'s
+`restoreToReadyStaging_eq` — the restore *is* the lookup-then-write — is no longer
+`rfl` and is proved by cases on the lookup; its statement is unchanged, so its
+consumers are.  No theorem statement changed and none was weakened.  One census
+entry retired for the right reason: `ReplyStackWriteCensus`'s chain-neutral
+exemption for `suspendThread` existed because the frontier pairs a *direct*
+store with a *transitive* construction, and the direct store was the raw G6
+insert — behind `updateTcb` the definition leaves the derived set, and the
+census refused the exemption as stale, which is the reconciliation doing its
+job (`suspendThreadOnCore` keeps its raw store and its entry until the
+scheduler cut).
+
+**Retired code removed.**  The R5.D back-compat shim `clearTcbIpcFields`
+(private, `@[inline]`, kept "so existing proofs continue to compile") had no
+consumer, and neither had its five theorems nor its typed entry
+`clearTcbIpcFieldsValid` — eight declarations deleted, with the `#check` in
+`tests/LivenessSuite.lean`, two comments in `tests/An10CascadeSuite.lean`, the
+spec's R5.D paragraph and discharge-index row H.11 (now RETIRED, with H.10
+carrying the discharge) swept.
+
+**What this cut measured and left.**  The population is **65 sites in 52
+executable declarations across 22 files** outside `SeLe4n/Testing/` (from 75 /
+60 / 24), of which five are the primitives that should be raw — `storeObject`,
+`rewriteObject`, `Builder.createObject`, `Concurrency.updateObjectAt` and the
+frozen store — and seven are state-building witnesses.  `enqueueIdleThreadOnCore`
+is deliberately **not** in this cut: it *creates* the idle TCB, so its primitive
+is `withObjectStored`, and a store grows the index, which is a write its declared
+lock footprint (`enqueueIdleThreadOnCoreLockSet`) does not name — that question
+belongs with the scheduler files, not in a lifecycle cut.  The remaining sites,
+the Tier 0 write census that will hold the executable population at zero, and
+`storeObject`'s own capability-reference filter (an erase over the displaced
+CNode's slots, which would make the store cheap on the IPC paths too) are the
+register row's next cuts.
+
+Tier 3 anchors pin the primitive's declarations, the neutrality family, the
+zero-cost body (matched as a whole line, so a bookkeeping write grown onto it
+goes silent), the typed match shape, the definition of `restoreToReadyOnCore`
+through the mid-state, the `rfl` bridge, and four negatives — no raw insert in
+`Suspend.lean`, no wildcard arm in the kind table, no private mid-state copy, no
+shim — each mutation-tested in both directions with the token kept and the
+relation broken.  Golden trace and fixtures byte-identical: a rewrite is the
+same insert.
+
 ## v0.35.63 — WS-RR RR8.5: one teardown, not two — the cancellation path reads the reply path's consume through a proof-carrying projection
 
 The tree carried two spellings of "tear down the caller↔Reply link".  The reply

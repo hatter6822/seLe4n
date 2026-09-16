@@ -232,6 +232,9 @@ inventory was written:
   - `SystemState` (machine + object store + scheduler + IRQ handlers),
   - `SchedulerState.runQueue : RunQueue` — priority-bucketed run queue with O(1) bucket-precomputed `remove` (WS-G4),
   - `lookupObject` / `storeObject` / `setCurrentThread`,
+  - `rewriteObject` / `updateTcb` / `updateSchedContext` / `withObjectStored` — the
+    proof-carrying in-place rewrite (bookkeeping-neutral by theorem) and the pure
+    store (v0.35.64),
   - typed CSpace lookup/ownership helpers and supporting lemmas.
 
 - `SeLe4n/Model/Fault.lean` (WS-RR RR4, v0.34.44)

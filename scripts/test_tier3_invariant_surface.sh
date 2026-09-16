@@ -2755,6 +2755,66 @@ run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_objects_insert' SeLe
 run_negative_check "INVARIANT" rg -n '^(private )?theorem donationChainFrame_of_objects_insert' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 
 # ============================================================================
+# The in-place rewrite -- the raw-write migration's primitive (v0.35.64)
+# ============================================================================
+#
+# A kernel object is rewritten in place through `SystemState.rewriteObject`,
+# whose body is the bare `objects.insert` every raw writer spelled and whose
+# argument is the proof that the key already holds an object of the same,
+# bookkeeping-neutral kind.  The proof is erased, so the executable is the one
+# insert; what it buys is that the bookkeeping `storeObject` maintains -- the
+# index, the kind table, the capability references, the ASID table -- is
+# unchanged by theorem, once, rather than site by site.
+run_check "INVARIANT" rg -n '^def KernelObjectType\.rewriteNeutral\b' SeLe4n/Model/State.lean
+# The two kinds whose CONTENTS are bookkeeping are refused, and the table is
+# enumerated constructor by constructor (a wildcard would admit a new kind by
+# default) -- bounded to the declaration.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def KernelObjectType\.rewriteNeutral[^\n]*(\n([ \t][^\n]*)?)*\| \.cnode => false" SeLe4n/Model/State.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def KernelObjectType\.rewriteNeutral[^\n]*(\n([ \t][^\n]*)?)*\| \.vspaceRoot => false" SeLe4n/Model/State.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def KernelObjectType\.rewriteNeutral[^\n]*(\n([ \t][^\n]*)?)*\| _ =>" SeLe4n/Model/State.lean'
+run_check "INVARIANT" rg -n '^def rewriteAdmissible\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def rewriteObject\b' SeLe4n/Model/State.lean
+# The body IS the bare insert (zero cost) -- bounded to the declaration.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def rewriteObject \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*\n  \{ st with objects := st\.objects\.insert id new \}\n\n" SeLe4n/Model/State.lean'
+# The typed read-modify-writes are matches whose lookup is the witness.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updateTcb \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match h : st\.getTcb\? tid with" SeLe4n/Model/State.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updateSchedContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match h : st\.getSchedContext\? scId with" SeLe4n/Model/State.lean'
+# The pure store for a key that may hold nothing: the projection with the
+# error arm ELIMINATED (`storeObject_isOk`), and the bridge.
+run_check "INVARIANT" rg -n '^theorem storeObject_isOk\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^def withObjectStored\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_eq_withObjectStored\b' SeLe4n/Model/State.lean
+# The bookkeeping is unchanged by theorem, unconditionally.
+run_check "INVARIANT" rg -n '^theorem rewriteObject_preserves_objectIndexSetComplete\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem rewriteObject_preserves_objectIndexLive\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem rewriteObject_preserves_objectTypeMetadataConsistent\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem rewriteObject_preserves_lifecycleMetadataConsistent\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem rewriteObject_preserves_asidTableConsistent\b' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem rewriteObject_preservesFieldsOutside\b' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem updateTcb_preservesFieldsOutside\b' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem updateSchedContext_preservesFieldsOutside\b' SeLe4n/Kernel/CrossSubsystem.lean
+# NEGATIVE: the first migrated file carries no raw store write at all -- every
+# rewrite in the suspend/restore family goes through the primitive.  The whole
+# file is the scope on purpose: the mutation that re-introduces a raw insert
+# anywhere in it is the one this refuses.
+run_negative_check "INVARIANT" rg -n 'objects\.insert' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# The restore is the typed rewrite -- bounded to the declaration.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def restoreToReadyStaging \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.updateTcb tid fun tcb" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# The per-core re-ready IS the mid-state followed by the enqueue, by
+# definition -- the private copy the priority-inheritance module carried, pinned
+# to the operation by `rfl`, is gone and must not come back.
+run_check "INVARIANT" rg -n '^def restoreToReadyMidState\b' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def restoreToReadyOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*enqueueRunnableOnCore \(restoreToReadyMidState st tid\) c tid" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_negative_check "INVARIANT" rg -n '^(private )?def restoreToReadyMidState\b' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_negative_check "INVARIANT" rg -n 'restoreToReadyOnCore_eq_enqueue_mid' SeLe4n
+# NEGATIVE: the R5.D back-compat shim and its bridge are deleted -- retired code
+# is removed, not kept beside its replacement.
+run_negative_check "INVARIANT" rg -n 'clearTcbIpcFields' SeLe4n tests
+# The cross-core twin of the bound-donation cancel is held to the single-core
+# arm by `rfl`, which is what forced the twin to migrate in the same cut.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelBoundDonationOnCore_bootCoreId[^\n]*(\n([ \t][^\n]*)?)*= cancelBoundDonation st tid tcb := rfl" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+
+# ============================================================================
 # WS-OD OD6 -- the payoff
 # ============================================================================
 #

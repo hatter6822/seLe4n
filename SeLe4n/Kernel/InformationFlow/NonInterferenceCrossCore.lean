@@ -2795,8 +2795,10 @@ it rewrites one TCB and touches neither the scheduler nor a register bank. -/
 theorem clearPendingState_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId) :
     observableSlotsConfinedToCores st (clearPendingState st tid) [] :=
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-    (by unfold clearPendingState; split <;> rfl)
-    (by unfold clearPendingState; split <;> rfl)
+    (by unfold clearPendingState
+        first | exact SystemState.updateTcb_scheduler _ _ _ | exact SystemState.updateTcb_machine _ _ _)
+    (by unfold clearPendingState
+        first | exact SystemState.updateTcb_machine _ _ _ | exact SystemState.updateTcb_scheduler _ _ _)
 
 /-- SM8.B.2: the bound-SchedContext cancellation arm is per-core silent. It
 unbinds the SC, purges the victim's replenishments from its home core's
@@ -2813,10 +2815,12 @@ theorem cancelBoundDonationOnCore_confinedToCores (st st' : SystemState)
   all_goals intro c _
   all_goals (
     simp only [cancelBoundDonationOnCore] at h
-    repeat' split at h
-    all_goals first
-      | (rw [Except.ok.injEq] at h; subst h; simp)
-      | exact absurd h (by simp))
+    split at h
+    · rw [Except.ok.injEq] at h
+      subst h
+      rw [SystemState.updateTcb_eq_objects_update, SystemState.updateSchedContext_eq_objects_update]
+      try simp
+    · exact absurd h (by simp))
 
 -- WS-RR RR2.7: `migrateSchedContextReplenishment_confinedToCores` moved up to
 -- §5, beside the donation legs that now compose it.

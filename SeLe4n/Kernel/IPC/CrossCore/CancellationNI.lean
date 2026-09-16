@@ -512,9 +512,7 @@ theorem restoreToReadyStaging_preserves_objects_invExt (st : SystemState)
     (hInv : st.objects.invExt) :
     (Lifecycle.Suspend.restoreToReadyStaging st tid frame).objects.invExt := by
   unfold Lifecycle.Suspend.restoreToReadyStaging
-  split
-  · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
-  · exact hInv
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
 
 theorem restoreToReady_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
@@ -543,7 +541,7 @@ theorem restoreToReadyStaging_preserves_projection_high
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (Lifecycle.Suspend.restoreToReadyStaging st tid frame)
       = projectState ctx observer st := by
-  unfold Lifecycle.Suspend.restoreToReadyStaging
+  unfold Lifecycle.Suspend.restoreToReadyStaging SystemState.updateTcb
   split
   · exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
       hTidObjHigh hObjInv

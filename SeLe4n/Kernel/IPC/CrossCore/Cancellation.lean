@@ -892,22 +892,14 @@ def cancelBoundDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (rqCore : CoreId) : Except KernelError SystemState :=
   match tcb.schedContextBinding with
   | .bound scId =>
-    let st1 : SystemState := match st.getSchedContext? scId with
-      | some sc =>
-        -- **WS-HP HP10.4**: and the origin, as the single-core spelling does — the
-        -- `_bootCoreId` bridge below is `rfl`, so the two cannot differ by a field.
-        let sc' := { sc with boundThread := none, isActive := false,
-                             donationOrigin := none }
-        { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
-      | none => st
+    let st1 : SystemState := st.updateSchedContext scId fun sc =>
+      -- **WS-HP HP10.4**: and the origin, as the single-core spelling does — the
+      -- `_bootCoreId` bridge below is `rfl`, so the two cannot differ by a field.
+      { sc with boundThread := none, isActive := false, donationOrigin := none }
     let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore rqCore) scId) }
     let st2 := { st2 with scThreadIndex :=
       (scThreadIndexRemove st2.scThreadIndex scId tid) }
-    .ok (match st2.getTcb? tid with
-    | some tcb' =>
-      let tcb'' := { tcb' with schedContextBinding := .unbound }
-      { st2 with objects := st2.objects.insert tid.toObjId (.tcb tcb'') }
-    | none => st2)
+    .ok (st2.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound })
   | _ => .error .illegalState
 
 /-- WS-SM SM6.E.3: `cancelBoundDonationOnCore` at the boot core is exactly the
@@ -3617,12 +3609,8 @@ theorem cancelBoundDonationOnCore_preserves_objects_invExt
   split at h
   · injection h with h
     subst h
-    dsimp only
-    repeat' first
-      | exact hInv
-      | exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
-      | apply RobinHood.RHTable.insert_preserves_invExt
-      | split
+    exact SystemState.updateTcb_preserves_objects_invExt _ _ _
+      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
   · cases h
 
 /-- WS-SM SM6.E.3: the per-core donation-cancellation dispatcher preserves
@@ -3681,26 +3669,25 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariant
     simp only [cancelBoundDonationOnCore, hB] at h
     injection h with h
     subst h
-    cases st.getSchedContext? scId with
-    | none =>
+    -- Two in-place rewrites, a SchedContext then a TCB — neither is a
+    -- notification, so the notification lookups are the pre-state's.
+    have hInv1 : (st.updateSchedContext scId fun sc =>
+        { sc with boundThread := none, isActive := false, donationOrigin := none }).objects.invExt :=
+      SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
+    have hIpc1 : ipcInvariant (st.updateSchedContext scId fun sc =>
+        { sc with boundThread := none, isActive := false, donationOrigin := none }) := by
+      unfold SystemState.updateSchedContext
       split
-      · intro oid ntfn hL
-        exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
-          _ tid.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
-      · exact ipcInvariant_of_objects_eq rfl hIpc
-    | some sc =>
-      have hInv1 : (st.objects.insert scId.toObjId
-          (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none })).invExt :=
-        RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
-      split
-      · intro oid ntfn hL
-        have hL1 := notification_lookup_of_insert_no_notification
-          _ tid.toObjId _ hInv1 (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL
-        exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
-          _ scId.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL1)
       · intro oid ntfn hL
         exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
           _ scId.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
+      · exact hIpc
+    unfold SystemState.updateTcb
+    split
+    · intro oid ntfn hL
+      exact hIpc1 oid ntfn (notification_lookup_of_insert_no_notification
+        _ tid.toObjId _ hInv1 (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
+    · exact ipcInvariant_of_objects_eq rfl hIpc1
   | unbound =>
     simp only [cancelBoundDonationOnCore, hB] at h
     cases h
@@ -3775,9 +3762,9 @@ theorem cancelBoundDonationOnCore_runQueue_current_eq
   split at h
   · injection h with h
     subst h
-    constructor
-    · split <;> (split <;> simp)
-    · split <;> (split <;> simp)
+    constructor <;>
+      (rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler];
+       first | rfl | simp)
   · cases h
 
 /-- WS-SM SM6.E.3 (the per-core purge, positively): on the `.bound scId` arm
@@ -3794,7 +3781,8 @@ theorem cancelBoundDonationOnCore_replenishQueue_purged
   simp only [cancelBoundDonationOnCore, hBind] at h
   injection h with h
   subst h
-  split <;> (split <;> simp)
+  rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler]
+  simp
 
 /-- WS-SM SM6.E.3 (per-core locality of the purge): every **other** core's
 replenish queue is exactly the pre-state's. -/
@@ -3808,8 +3796,8 @@ theorem cancelBoundDonationOnCore_replenishQueue_ne
   split at h
   · injection h with h
     subst h
-    split <;> (split <;>
-      simp [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hOther])
+    rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler]
+    simp [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hOther]
   · cases h
 
 /-- WS-SM SM6.E.3: the per-core donation-cancellation dispatcher never
@@ -4650,9 +4638,7 @@ theorem clearPendingState_preserves_objects_invExt (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     (Lifecycle.Suspend.clearPendingState st tid).objects.invExt := by
   unfold Lifecycle.Suspend.clearPendingState
-  split
-  · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
-  · exact hInv
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
 
 /-- WS-RR RR2.17: `clearPendingState` frames every notification. -/
 theorem clearPendingState_notification_backward (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -4660,7 +4646,7 @@ theorem clearPendingState_notification_backward (st : SystemState) (tid : SeLe4n
     (h : (Lifecycle.Suspend.clearPendingState st tid).objects[oid]? = some (.notification ntfn)) :
     st.objects[oid]? = some (.notification ntfn) := by
   revert h
-  unfold Lifecycle.Suspend.clearPendingState
+  unfold Lifecycle.Suspend.clearPendingState SystemState.updateTcb
   split
   · exact fun h => tcbInsert_notification_backward st tid _ hInv oid ntfn h
   · exact id
@@ -5036,37 +5022,16 @@ theorem cancelBoundDonationOnCore_replenishments_purged
   injection h with h
   subst h
   intro c e hMem
-  cases hSC : st.getSchedContext? scId with
-  | none =>
-    revert hMem
-    simp only [hSC]
-    split
-    all_goals
-      (by_cases hc : c = rqCore
-       · subst hc
-         simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self]
-         intro hMem hEq
-         have hf := (List.mem_filter.mp hMem).2
-         simp [hEq] at hf
-       · simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne
-             _ _ _ _ (fun hEq => hc hEq.symm)]
-         intro hMem
-         exact hOnlyHome c hc e hMem)
-  | some sc =>
-    revert hMem
-    simp only [hSC]
-    split
-    all_goals
-      (by_cases hc : c = rqCore
-       · subst hc
-         simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self]
-         intro hMem hEq
-         have hf := (List.mem_filter.mp hMem).2
-         simp [hEq] at hf
-       · simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne
-             _ _ _ _ (fun hEq => hc hEq.symm)]
-         intro hMem
-         exact hOnlyHome c hc e hMem)
+  rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler] at hMem
+  by_cases hc : c = rqCore
+  · subst hc
+    simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self] at hMem
+    intro hEq
+    have hf := (List.mem_filter.mp hMem).2
+    simp [hEq] at hf
+  · simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne
+        _ _ _ _ (fun hEq => hc hEq.symm)] at hMem
+    exact hOnlyHome c hc e hMem
 
 /-- WS-SM SM6.E: at a bootCore-homed victim with a shared-home donated owner
 (in particular every single-core configuration), the per-core donation

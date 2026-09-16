@@ -3921,8 +3921,9 @@ private theorem restoreToReady_getElem_eq_of_quiescent
   intro oid
   unfold Lifecycle.Suspend.restoreToReady Lifecycle.Suspend.restoreToReadyStaging
   cases hLk : st.getTcb? tid with
-  | none => rfl
+  | none => rw [SystemState.updateTcb_eq_self_of_none hLk]
   | some tcb =>
+      rw [SystemState.updateTcb_eq_of_some hLk]
       dsimp only []
       have hSame : ({ tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none, pendingReceiveReply := none } : TCB) = tcb := by
         have h1 := hQ.ready tcb hLk
@@ -3949,9 +3950,7 @@ private theorem restoreToReady_objects_invExt (st : SystemState) (tid : SeLe4n.T
     (hObjInv : st.objects.invExt) :
     (Lifecycle.Suspend.restoreToReady st tid).objects.invExt := by
   unfold Lifecycle.Suspend.restoreToReady Lifecycle.Suspend.restoreToReadyStaging
-  split
-  · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hObjInv
-  · exact hObjInv
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
 
 /-- The resume mid-state — IPC-field restore plus the `threadState`/`pipBoost`
 store, neither field bundle-read — preserves the bundle from a quiescent
@@ -3974,8 +3973,9 @@ private theorem resumeReadyMidState_preserves_ipcInvariantFull
   unfold Lifecycle.Suspend.resumeReadyMidState
   dsimp only []
   cases hLk : (Lifecycle.Suspend.restoreToReady st tid).getTcb? tid with
-  | none => exact hInv1
+  | none => rw [SystemState.updateTcb_eq_self_of_none hLk]; exact hInv1
   | some t =>
+      rw [SystemState.updateTcb_eq_of_some hLk]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
         (Lifecycle.Suspend.restoreToReady st tid) tid t
         { t with threadState := .Ready, pipBoost := SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid }
@@ -4041,10 +4041,8 @@ private theorem resumeReadyMidState_objects_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
     (Lifecycle.Suspend.resumeReadyMidState st tid).objects.invExt := by
   unfold Lifecycle.Suspend.resumeReadyMidState
-  dsimp only []
-  split
-  · exact RHTable_insert_preserves_invExt _ _ _ (restoreToReady_objects_invExt st tid hObjInv)
-  · exact restoreToReady_objects_invExt st tid hObjInv
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _
+    (restoreToReady_objects_invExt st tid hObjInv)
 
 private theorem resumeReadyMidState_getTcb_ready
     (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -4058,9 +4056,11 @@ private theorem resumeReadyMidState_getTcb_ready
   unfold Lifecycle.Suspend.resumeReadyMidState at hT
   dsimp only [] at hT
   cases hLk : (Lifecycle.Suspend.restoreToReady st tid).getTcb? tid with
-  | none => simp only [hLk] at hT; cases hT
+  | none =>
+      rw [SystemState.updateTcb_eq_self_of_none hLk, hLk] at hT
+      cases hT
   | some t =>
-      simp only [hLk] at hT
+      rw [SystemState.updateTcb_eq_of_some hLk] at hT
       have hTobj := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT
       dsimp only [] at hTobj
       have hAt : ((Lifecycle.Suspend.restoreToReady st tid).objects.insert tid.toObjId (KernelObject.tcb { t with threadState := .Ready, pipBoost := SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid }))[tid.toObjId]? = some (KernelObject.tcb { t with threadState := .Ready, pipBoost := SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid }) := by
@@ -4332,8 +4332,9 @@ private theorem clearPendingState_getElem_eq_of_quiescent
   intro oid
   unfold Lifecycle.Suspend.clearPendingState
   cases hLk : st.getTcb? tid with
-  | none => rfl
+  | none => rw [SystemState.updateTcb_eq_self_of_none hLk]
   | some tcb =>
+      rw [SystemState.updateTcb_eq_of_some hLk]
       dsimp only []
       obtain ⟨h1, h2, h3, h4, h5⟩ := hFields tcb hLk
       have hSame : ({ tcb with pendingMessage := none, timeoutBudget := none, queuePrev := none, queueNext := none, queuePPrev := none } : TCB) = tcb := by
@@ -4409,7 +4410,7 @@ private theorem cancelBoundDonationOnCore_preserves_ipcInvariantFull
         (by rw [hB]; rfl)
       have hScLk : st.getSchedContext? scId = some sc :=
         (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hScPre
-      rw [hScLk] at hStep
+      rw [SystemState.updateSchedContext_eq_of_some hScLk] at hStep
       dsimp only [] at hStep
       have hNeTS : tid.toObjId ≠ scId.toObjId := by
         intro hEq
@@ -4426,7 +4427,7 @@ private theorem cancelBoundDonationOnCore_preserves_ipcInvariantFull
           (by simp; exact fun h => hNeTS h.symm) hObjInv]
         rw [← RHTable_getElem?_eq_get?]
         exact hStored
-      rw [hT2] at hStep
+      rw [SystemState.updateTcb_eq_of_some hT2] at hStep
       dsimp only [] at hStep
       cases hStep
       refine ipcInvariantFull_of_schedBindingRewrite st _ tid scId tcb
@@ -4536,7 +4537,7 @@ private theorem cancelBoundDonationOnCore_victim_shape
       dsimp only [] at hStep
       cases hScLk : st.getSchedContext? scId with
       | some sc =>
-          rw [hScLk] at hStep
+          rw [SystemState.updateSchedContext_eq_of_some hScLk] at hStep
           dsimp only [] at hStep
           have hScPre := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hScLk
           have hNeTS : tid.toObjId ≠ scId.toObjId := by
@@ -4554,7 +4555,7 @@ private theorem cancelBoundDonationOnCore_victim_shape
               (by simp; exact fun h => hNeTS h.symm) hObjInv]
             rw [← RHTable_getElem?_eq_get?]
             exact hStored
-          rw [hT2] at hStep
+          rw [SystemState.updateTcb_eq_of_some hT2] at hStep
           dsimp only [] at hStep
           cases hStep
           intro tcbX hX
@@ -4564,12 +4565,11 @@ private theorem cancelBoundDonationOnCore_victim_shape
             simpa using hXobj
           exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
       | none =>
-          rw [hScLk] at hStep
-          dsimp only [] at hStep
+          rw [SystemState.updateSchedContext_eq_self_of_none hScLk] at hStep
           have hT2 : ({ { st with scheduler := st.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st.scheduler.replenishQueueOnCore rqCore) scId) } with scThreadIndex := scThreadIndexRemove ({ st with scheduler := st.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st.scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).scThreadIndex scId tid } : SystemState).getTcb? tid = some tcb := by
             refine (SystemState.getTcb?_eq_some_iff _ tid tcb).mpr ?_
             exact hStored
-          rw [hT2] at hStep
+          rw [SystemState.updateTcb_eq_of_some hT2] at hStep
           dsimp only [] at hStep
           cases hStep
           intro tcbX hX
@@ -4667,16 +4667,14 @@ private theorem suspendClearStore_preserves_ipcInvariantFull
   have hEq := clearPendingState_getElem_eq_of_quiescent stR2 tid hObjInvR hFields
   have hObjInvC : (Lifecycle.Suspend.clearPendingState stR2 tid).objects.invExt := by
     unfold Lifecycle.Suspend.clearPendingState
-    split
-    · exact RHTable_insert_preserves_invExt _ _ _ hObjInvR
-    · exact hObjInvR
+    exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInvR
   have hInvC : ipcInvariantFull (Lifecycle.Suspend.clearPendingState stR2 tid) := by
     refine ipcInvariantFull_of_getElem_eq hEq ?_ hInvR
     intro t tcbT hT hUnb hNQ hNC
     rw [hEq] at hT
     have hSchedC : (Lifecycle.Suspend.clearPendingState stR2 tid).scheduler = stR2.scheduler := by
       unfold Lifecycle.Suspend.clearPendingState
-      split <;> rfl
+      exact SystemState.updateTcb_scheduler _ _ _
     rw [hSchedC] at hNQ hNC
     exact hInvR.passiveServerIdle t tcbT hT hUnb hNQ hNC
   cases hLkC : (Lifecycle.Suspend.clearPendingState stR2 tid).getTcb? tid with

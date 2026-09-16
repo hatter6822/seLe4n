@@ -1479,6 +1479,42 @@ theorem storeObject_preservesFieldsOutside
     | rfl
     | exact (hf (by decide)).elim
 
+/-- The in-place rewrite (`SystemState.rewriteObject`) writes the object table
+and **nothing else** — no index, no kind table, no ASID table — which is the
+whole point of the primitive, so its list is the one field rather than
+`storeObject_modifiedFields`.  Consumed by the three theorems below, one per
+spelling of the rewrite. -/
+def rewriteObject_modifiedFields : List StateField :=
+  [.objects]
+
+theorem rewriteObject_preservesFieldsOutside
+    (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) :
+    preservesFieldsOutside rewriteObject_modifiedFields st (st.rewriteObject id new h) := by
+  intro f hf
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
+
+theorem updateTcb_preservesFieldsOutside
+    (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    preservesFieldsOutside rewriteObject_modifiedFields st (st.updateTcb tid f) := by
+  rw [SystemState.updateTcb_eq_objects_update]
+  intro g hg
+  cases g <;> first
+    | rfl
+    | exact (hg (by decide)).elim
+
+theorem updateSchedContext_preservesFieldsOutside
+    (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    preservesFieldsOutside rewriteObject_modifiedFields st (st.updateSchedContext scId f) := by
+  rw [SystemState.updateSchedContext_eq_objects_update]
+  intro g hg
+  cases g <;> first
+    | rfl
+    | exact (hg (by decide)).elim
+
 /-- **WS-RR RR7.19**: `revokeService` writes nothing outside its declared set —
 the registry erase and the dependency-graph edit, and no more. -/
 theorem revokeService_preservesFieldsOutside

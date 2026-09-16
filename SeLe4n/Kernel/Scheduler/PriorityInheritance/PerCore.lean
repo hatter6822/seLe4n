@@ -62,7 +62,7 @@ namespace SeLe4n.Kernel.PriorityInheritance
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
 open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyStaging
-  restoreToReadyOnCore restoreToReadyWithWake
+  restoreToReadyOnCore restoreToReadyMidState restoreToReadyWithWake
   resumeReadyMidState resumeThreadOnCore)
 
 -- ============================================================================
@@ -433,9 +433,7 @@ theorem restoreToReady_objects_invExt (st : SystemState) (tid : ThreadId)
     (hInv : st.objects.invExt) :
     (restoreToReady st tid).objects.invExt := by
   unfold restoreToReady restoreToReadyStaging
-  split
-  · exact RHTable_insert_preserves_invExt _ _ _ hInv
-  · exact hInv
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
 
 /-- WS-SM SM5.F.5: `restoreToReadyOnCore` preserves the object-store invariant —
 each of the three steps (restore IPC clear, pipBoost recompute insert, per-core
@@ -443,20 +441,19 @@ enqueue) is an `invExt`-preserving `RHTable.insert` (or identity). -/
 theorem restoreToReadyOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
     (tid : ThreadId) (hInv : st.objects.invExt) :
     (restoreToReadyOnCore st c tid).objects.invExt := by
-  simp only [restoreToReadyOnCore]
+  unfold restoreToReadyOnCore
   apply enqueueRunnableOnCore_preserves_objects_invExt
-  have h1 : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
-  split
-  · exact RHTable_insert_preserves_invExt _ _ _ h1
-  · exact h1
+  unfold restoreToReadyMidState
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _
+    (restoreToReady_objects_invExt st tid hInv)
 
 /-- WS-SM SM5.F.5 (frame): `restoreToReadyOnCore` on core `c` never writes any
 core's `current` slot — the restore + pipBoost recompute touch only objects, the
 per-core enqueue touches only core `c`'s run queue. -/
 theorem restoreToReadyOnCore_currentOnCore (st : SystemState) (c c' : CoreId) (tid : ThreadId) :
     (restoreToReadyOnCore st c tid).scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := by
-  simp only [restoreToReadyOnCore, enqueueRunnableOnCore_currentOnCore]
-  split <;> simp only [Lifecycle.Suspend.restoreToReady_scheduler_eq]
+  simp only [restoreToReadyOnCore, restoreToReadyMidState, enqueueRunnableOnCore_currentOnCore,
+    SystemState.updateTcb_scheduler, Lifecycle.Suspend.restoreToReady_scheduler_eq]
 
 /-- WS-SM SM5.F.5 (cross-core frame): `restoreToReadyOnCore` on core `c` leaves every
 *other* core `c' ≠ c`'s run-queue slot untouched. -/
@@ -464,20 +461,9 @@ theorem restoreToReadyOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId
     (tid : ThreadId) (h : c ≠ c') :
     (restoreToReadyOnCore st c tid).scheduler.runQueueOnCore c'
       = st.scheduler.runQueueOnCore c' := by
-  simp only [restoreToReadyOnCore]
+  simp only [restoreToReadyOnCore, restoreToReadyMidState]
   rw [enqueueRunnableOnCore_runQueueOnCore_ne _ c c' tid h]
-  split <;> simp only [Lifecycle.Suspend.restoreToReady_scheduler_eq]
-
-/-- WS-SM SM5.F.6 (intermediate): the resume re-ready state *before* the per-core
-enqueue — restore IPC clear, then write the GLOBAL recomputed `pipBoost` onto the
-resumed thread. -/
-private def restoreToReadyMidState (st : SystemState) (tid : ThreadId) : SystemState :=
-  match (restoreToReady st tid).getTcb? tid with
-  | some t => { (restoreToReady st tid) with objects := (restoreToReady st tid).objects.insert tid.toObjId (.tcb { t with pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid }) }
-  | none => restoreToReady st tid
-
-private theorem restoreToReadyOnCore_eq_enqueue_mid (st : SystemState) (c : CoreId) (tid : ThreadId) :
-    restoreToReadyOnCore st c tid = enqueueRunnableOnCore (restoreToReadyMidState st tid) c tid := rfl
+  simp only [SystemState.updateTcb_scheduler, Lifecycle.Suspend.restoreToReady_scheduler_eq]
 
 /-- WS-SM SM5.F.6 (PIP recomputation, plan §3.6 resume H3b): `restoreToReadyOnCore`
 recomputes the resumed thread's `pipBoost` from the GLOBAL blocking graph
@@ -491,13 +477,14 @@ theorem restoreToReadyOnCore_pipBoost_recomputed (st : SystemState) (c : CoreId)
     ∃ t', (restoreToReadyOnCore st c tid).getTcb? tid = some t' ∧
       t'.pipBoost = computeMaxWaiterPriority (restoreToReady st tid) tid := by
   have hInv2 : (restoreToReadyMidState st tid).objects.invExt := by
-    simp only [restoreToReadyMidState, hTcb1]
-    exact RHTable_insert_preserves_invExt _ _ _ hInv
+    unfold restoreToReadyMidState
+    exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
   have hSt2Tcb : (restoreToReadyMidState st tid).getTcb? tid
       = some { t1 with pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid } := by
-    simp only [restoreToReadyMidState, hTcb1, SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
-    exact RHTable_get?_insert_self _ _ _ hInv
-  rw [restoreToReadyOnCore_eq_enqueue_mid]
+    simp only [restoreToReadyMidState]
+    rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, hTcb1]
+    rfl
+  unfold restoreToReadyOnCore
   -- The enqueue preserves `tid`'s pipBoost: no-op keeps the mid-state; the fresh
   -- branch sets only `ipcState` (`enqueueRunnableOnCore_makes_ready`).
   by_cases hRun : runnableOnSomeCore (restoreToReadyMidState st tid) tid = true
@@ -563,10 +550,8 @@ theorem restoreToReadyWithWake_preserves_objects_invExt (st : SystemState) (tid 
   apply enqueueRunnableOnCore_preserves_objects_invExt
   -- (resumeReadyMidState st tid).objects.invExt
   have hst1Inv : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
-  simp only [resumeReadyMidState]
-  split
-  · exact RHTable_insert_preserves_invExt _ _ _ hst1Inv
-  · exact hst1Inv
+  unfold resumeReadyMidState
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hst1Inv
 
 -- ============================================================================
 -- §6  SM5.F.7 / SM5.F.8 — per-core blocking graph (slice + acyclicity)
@@ -1051,12 +1036,11 @@ theorem resumeReadyMidState_getTcb?_ready (st : SystemState) (tid : ThreadId) (t
   have hst1 : (restoreToReady st tid).getTcb? tid
       = some { tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none, pendingReceiveReply := none } := by
     unfold restoreToReady restoreToReadyStaging
-    simp only [hGet, SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
-    exact RHTable_get?_insert_self st.objects tid.toObjId _ hInv
-  simp only [resumeReadyMidState, hst1]
-  refine ⟨{ ({ tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none, pendingReceiveReply := none }) with threadState := .Ready, pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid }, ?_, rfl⟩
-  simp only [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
-  exact RHTable_get?_insert_self (restoreToReady st tid).objects tid.toObjId _ hst1Inv
+    rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, hGet]
+    rfl
+  simp only [resumeReadyMidState]
+  rw [SystemState.updateTcb_getTcb?_self _ _ _ hst1Inv, hst1]
+  exact ⟨_, rfl, rfl⟩
 
 /-- WS-SM SM5.F.6 (helper): the resume "ready mid-state" preserves the object-store
 invariant (`restoreToReady` then a single TCB `insert`). -/
@@ -1064,10 +1048,8 @@ theorem resumeReadyMidState_objects_invExt (st : SystemState) (tid : ThreadId)
     (hInv : st.objects.invExt) :
     (resumeReadyMidState st tid).objects.invExt := by
   have hst1Inv : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
-  simp only [resumeReadyMidState]
-  split
-  · exact RHTable_insert_preserves_invExt _ _ _ hst1Inv
-  · exact hst1Inv
+  unfold resumeReadyMidState
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hst1Inv
 
 /-- WS-SM SM5.F.6 (helper, PR #811 P2-5): the resume "ready mid-state" leaves the
 scheduler untouched — `restoreToReady` and the single TCB `insert` write only the
@@ -1076,8 +1058,8 @@ object-writing prefix (used to discharge the `currentOnCore ec ≠ some tid` sid
 condition of the inline local reschedule's `handleRescheduleSgiOnCore_getTcb?_ne_current`). -/
 theorem resumeReadyMidState_scheduler_eq (st : SystemState) (tid : ThreadId) :
     (resumeReadyMidState st tid).scheduler = st.scheduler := by
-  simp only [resumeReadyMidState]
-  split <;> simp [Lifecycle.Suspend.restoreToReady_scheduler_eq]
+  simp only [resumeReadyMidState, SystemState.updateTcb_scheduler,
+    Lifecycle.Suspend.restoreToReady_scheduler_eq]
 
 /-- WS-SM SM8.B: and the machine state, register banks included.  Added beside
 the scheduler frame for the per-core confinement consumer: SM5.I banks every
@@ -1085,8 +1067,8 @@ core's `RegisterFile` inside one `MachineState`, so a scheduler frame alone
 never bounded this step's observable writes. -/
 theorem resumeReadyMidState_machine_eq (st : SystemState) (tid : ThreadId) :
     (resumeReadyMidState st tid).machine = st.machine := by
-  simp only [resumeReadyMidState]
-  split <;> simp [Lifecycle.Suspend.restoreToReady_machine_eq]
+  simp only [resumeReadyMidState, SystemState.updateTcb_machine,
+    Lifecycle.Suspend.restoreToReady_machine_eq]
 
 /-- WS-SM SM5.F.6 (plan §3.6, resume H3c): the **complete** per-core resume sets the
 resumed thread's `threadState := .Ready` — the run-queue enqueue (no-op when already

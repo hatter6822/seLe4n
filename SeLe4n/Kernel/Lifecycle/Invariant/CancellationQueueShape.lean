@@ -289,14 +289,20 @@ def restoredTcb (tcb : TCB) (frame : Option Architecture.SyscallReturnFrame) : T
   | some f => cleared.withReturnFrame f
   | none => cleared
 
-/-- The restore *is* that store.  `rfl`, the pin. -/
+/-- The restore *is* that store — the lookup-then-write reading of the in-place
+rewrite `SystemState.updateTcb` the restore is spelled with (the rewrite's
+proof argument is what the raw spelling lacks, and it is erased here). -/
 theorem restoreToReadyStaging_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) :
     Lifecycle.Suspend.restoreToReadyStaging st tid frame =
       (match st.getTcb? tid with
        | some tcb =>
          { st with objects := st.objects.insert tid.toObjId (.tcb (restoredTcb tcb frame)) }
-       | none => st) := rfl
+       | none => st) := by
+  unfold Lifecycle.Suspend.restoreToReadyStaging
+  cases hT : st.getTcb? tid with
+  | some tcb => rw [SystemState.updateTcb_eq_of_some hT]; try rfl
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]
 
 /-- **The complete description**: the restored TCB is the original with exactly
 six fields rewritten — the five the clear names, and `registerContext`, which the

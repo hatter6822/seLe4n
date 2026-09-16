@@ -69,15 +69,17 @@ Used by:
     suspend but the explicit re-clearing acts as defense-in-depth and
     makes the post-resume invariant locally observable.
 
-Pre-R5 this logic lived as the private helper `clearTcbIpcFields`, used
-only by `cancelIpcBlocking`. `resumeThread` redundantly performed the
-`ipcState := .ready` half inline. R5.D promotes the helper to a shared
-top-level name and consolidates the resume path through it. -/
+Pre-R5 this logic lived as a private helper used only by `cancelIpcBlocking`,
+and `resumeThread` redundantly performed the `ipcState := .ready` half inline.
+R5.D promoted the helper to a shared top-level name and consolidated the
+resume path through it; the private alias R5.D kept for the old name was
+deleted once nothing named it. -/
 def restoreToReadyStaging (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) : SystemState :=
-  -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-  match st.getTcb? tid with
-  | some tcb' =>
+  -- The lookup is the rewrite's own witness (`SystemState.updateTcb`): one TCB
+  -- rewritten in place, no bookkeeping touched, the identity when `tid`
+  -- resolves to no TCB.
+  st.updateTcb tid fun tcb' =>
     let cleared : TCB := { tcb' with
         ipcState := .ready
         queuePrev := none
@@ -88,11 +90,9 @@ def restoreToReadyStaging (st : SystemState) (tid : SeLe4n.ThreadId)
         -- Reply permanently in-use and later lifecycle cleanup of it returns
         -- `revocationRequired` even though no receive is still pending.
         pendingReceiveReply := none }
-    let staged : TCB := match frame with
-      | some f => cleared.withReturnFrame f
-      | none => cleared
-    { st with objects := st.objects.insert tid.toObjId (.tcb staged) }
-  | none => st
+    match frame with
+    | some f => cleared.withReturnFrame f
+    | none => cleared
 
 /-- The restore that stages **nothing** — `resumeThread`'s spelling.  A resumed
 thread keeps its own register window: `.tcbResume` restarts it where it was
@@ -136,13 +136,8 @@ theorem restoreToReadyCancelled_tcb (st : SystemState) (tid : SeLe4n.ThreadId)
       = ((restoreToReady st tid).getTcb? tid).map
           (·.withReturnFrame Architecture.cancelledIpcFrame) := by
   unfold restoreToReadyCancelled restoreToReady restoreToReadyStaging
-  cases hTcb : st.getTcb? tid with
-  | none => simp only [hTcb, Option.map_none]
-  | some tcb =>
-      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
-      rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv,
-          RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
-      simp only [Option.map_some]
+  rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, SystemState.updateTcb_getTcb?_self _ _ _ hInv]
+  cases st.getTcb? tid <;> rfl
 
 /-- **WS-RR RR7.14 (the payoff)**: a cancelled thread reads the cancellation
 frame back out of its own register context — so the SM10.1 context restore
@@ -153,19 +148,10 @@ theorem restoreToReadyCancelled_readReturnFrame (st : SystemState)
     Architecture.readReturnFrame (restoreToReadyCancelled st tid) tid
       = Architecture.cancelledIpcFrame := by
   unfold restoreToReadyCancelled restoreToReadyStaging Architecture.readReturnFrame
-  simp only [hTcb]
+  rw [SystemState.updateTcb_eq_of_some hTcb]
   simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
   rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
   rfl
-
-/-- R5.D / backward-compatibility shim. Pre-R5 the IPC-clearing helper was
-named `clearTcbIpcFields` and was `private`. The renamed helper is now
-`restoreToReady` (R5.D); this alias retains the old name so existing
-proofs and information-flow projection helpers continue to compile
-unchanged. Definitionally equal to `restoreToReady`. -/
-@[inline] private def clearTcbIpcFields (st : SystemState) (tid : SeLe4n.ThreadId)
-    : SystemState :=
-  restoreToReady st tid
 
 /-- **WS-RR RR7.14**: the framing holds for **every** staged frame — stated once
 on `restoreToReadyStaging` so the plain and cancellation spellings cannot
@@ -174,7 +160,7 @@ target TCB's `registerContext` and nothing outside `objects`. -/
 theorem restoreToReadyStaging_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) :
     (restoreToReadyStaging st tid frame).scheduler = st.scheduler := by
-  unfold restoreToReadyStaging; split <;> rfl
+  unfold restoreToReadyStaging; exact SystemState.updateTcb_scheduler _ _ _
 
 /-- Helper: restoreToReady preserves the scheduler. -/
 theorem restoreToReady_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -193,7 +179,7 @@ target TCB's `registerContext` and nothing outside `objects`. -/
 theorem restoreToReadyStaging_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) :
     (restoreToReadyStaging st tid frame).machine = st.machine := by
-  unfold restoreToReadyStaging; split <;> rfl
+  unfold restoreToReadyStaging; exact SystemState.updateTcb_machine _ _ _
 
 /-- WS-SM SM8.B: `restoreToReady` only writes `objects` — the machine, and hence
 every core's register bank, is framed.  The information-flow counterpart of
@@ -216,7 +202,7 @@ target TCB's `registerContext` and nothing outside `objects`. -/
 theorem restoreToReadyStaging_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) :
     (restoreToReadyStaging st tid frame).serviceRegistry = st.serviceRegistry := by
-  unfold restoreToReadyStaging; split <;> rfl
+  unfold restoreToReadyStaging; exact SystemState.updateTcb_serviceRegistry _ _ _
 
 /-- Helper: restoreToReady preserves the serviceRegistry. -/
 theorem restoreToReady_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -235,7 +221,7 @@ target TCB's `registerContext` and nothing outside `objects`. -/
 theorem restoreToReadyStaging_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) :
     (restoreToReadyStaging st tid frame).lifecycle = st.lifecycle := by
-  unfold restoreToReadyStaging; split <;> rfl
+  unfold restoreToReadyStaging; exact SystemState.updateTcb_lifecycle _ _ _
 
 /-- Helper: restoreToReady preserves lifecycle. -/
 theorem restoreToReady_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -246,34 +232,6 @@ theorem restoreToReady_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
 theorem restoreToReadyCancelled_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReadyCancelled st tid).lifecycle = st.lifecycle :=
   restoreToReadyStaging_lifecycle_eq st tid _
-
-/-- R5.D back-compat: `clearTcbIpcFields = restoreToReady`. -/
-@[simp] theorem clearTcbIpcFields_eq_restoreToReady (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    clearTcbIpcFields st tid = restoreToReady st tid := rfl
-
-/-- Helper: clearTcbIpcFields preserves the scheduler (back-compat). -/
-theorem clearTcbIpcFields_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearTcbIpcFields st tid).scheduler = st.scheduler :=
-  restoreToReady_scheduler_eq st tid
-
-/-- WS-SM SM8.B: the machine companion of `clearTcbIpcFields_scheduler_eq`.
-Stated here rather than at the consumer because `clearTcbIpcFields` is
-`private`, so only this file can name it — the same reason its scheduler frame
-lives here. -/
-theorem clearTcbIpcFields_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearTcbIpcFields st tid).machine = st.machine :=
-  restoreToReady_machine_eq st tid
-
-/-- Helper: clearTcbIpcFields preserves the serviceRegistry (back-compat). -/
-theorem clearTcbIpcFields_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearTcbIpcFields st tid).serviceRegistry = st.serviceRegistry :=
-  restoreToReady_serviceRegistry_eq st tid
-
-/-- Helper: clearTcbIpcFields preserves lifecycle (back-compat). -/
-theorem clearTcbIpcFields_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearTcbIpcFields st tid).lifecycle = st.lifecycle :=
-  restoreToReady_lifecycle_eq st tid
 
 -- ============================================================================
 -- WS-SM SM5.F.5 / SM5.F.6: per-core restore-to-ready + PIP recomputation
@@ -288,6 +246,30 @@ theorem clearTcbIpcFields_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId
 -- resume restore+recompute+enqueue; the single-core `resumeThread` keeps using
 -- the `bootCoreId`-pinned `ensureRunnable` (recovered at `c = bootCoreId`).
 
+/-- WS-SM SM5.F.5 (the object-writing prefix of the per-core re-ready): `tid`
+restored to ready with its `pipBoost` recomputed from the post-restore **GLOBAL**
+blocking graph — H3a and H3b, *before* the H4 run-queue enqueue.
+
+`restoreToReadyOnCore` is this followed by the enqueue **by definition**, so a
+fact about the prefix is a fact about the operation's object writes rather than
+about a second spelling of them: until this definition existed the per-core
+priority-inheritance module carried its own private copy of the prefix, pinned
+to the operation by a `rfl` theorem — one question answered twice, with the
+answer held together by a pin.  `resumeReadyMidState` is its
+`threadState`-setting twin on the resume path.
+
+Deliberately does NOT set `threadState := .Ready` — that transition is
+`resumeThread`'s H3c concern, kept out of the IPC-clearing helper exactly as the
+single-core `restoreToReady` does. -/
+def restoreToReadyMidState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  -- H3a: clear IPC state + intrusive queue links
+  let st1 := restoreToReady st tid
+  -- H3b: re-derive pipBoost from the post-restore (GLOBAL) blocking graph
+  let newPipBoost : Option SeLe4n.Priority :=
+    PriorityInheritance.computeMaxWaiterPriority st1 tid
+  -- H3c (pipBoost only): refresh the recomputed boost on the IPC-cleared TCB
+  st1.updateTcb tid fun t => { t with pipBoost := newPipBoost }
+
 /-- WS-SM SM5.F.5 / SM5.F.6 (plan §3.6, resume H3a+H3b+H4 per-core): restore
 `tid` to ready on core `c`, recomputing its PIP boost from the post-restore
 blocking graph.
@@ -301,25 +283,18 @@ Three steps mirroring the resume path, lifted to an explicit home core:
 3. **H4 per-core enqueue** — insert `tid` into core `c`'s run queue at its
    (now PIP-correct) effective priority via the SM5.C `enqueueRunnableOnCore`.
 
-Note this is the per-core analogue of resume's restore+enqueue and deliberately
-does NOT set `threadState := .Ready` — that transition is `resumeThread`'s H3c
-concern, kept out of the IPC-clearing helper exactly as the single-core
-`restoreToReady` does.  `restoreToReadyOnCore st bootCoreId tid` is the
-single-core re-ready (bucket on the boot core). -/
+Steps 1–2 are `restoreToReadyMidState`, and this operation is that prefix
+followed by the enqueue by definition.  Note this is the per-core analogue of
+resume's restore+enqueue and deliberately does NOT set `threadState := .Ready`
+— that transition is `resumeThread`'s H3c concern, kept out of the IPC-clearing
+helper exactly as the single-core `restoreToReady` does.
+`restoreToReadyOnCore st bootCoreId tid` is the single-core re-ready (bucket on
+the boot core). -/
 def restoreToReadyOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     : SystemState :=
-  -- H3a: clear IPC state + intrusive queue links
-  let st1 := restoreToReady st tid
-  -- H3b: re-derive pipBoost from the post-restore (GLOBAL) blocking graph
-  let newPipBoost : Option SeLe4n.Priority :=
-    PriorityInheritance.computeMaxWaiterPriority st1 tid
-  -- H3c (pipBoost only): refresh the recomputed boost on the IPC-cleared TCB
-  let st2 := match st1.getTcb? tid with
-    | some t =>
-      { st1 with objects := st1.objects.insert tid.toObjId (.tcb { t with pipBoost := newPipBoost }) }
-    | none => st1
-  -- H4 (per-core): enqueue on core c at the boosted effective priority
-  enqueueRunnableOnCore st2 c tid
+  -- H3a–H3c: the object-writing prefix (`restoreToReadyMidState`);
+  -- H4 (per-core): enqueue on core c at the boosted effective priority.
+  enqueueRunnableOnCore (restoreToReadyMidState st tid) c tid
 
 /-- WS-SM SM5.F.6 (helper): the resume "ready mid-state" — IPC transients cleared
 (`restoreToReady`), `threadState` set to `.Ready`, and `pipBoost` recomputed from the
@@ -332,10 +307,7 @@ def resumeReadyMidState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState
   let st1 := restoreToReady st tid
   let newPipBoost : Option SeLe4n.Priority :=
     PriorityInheritance.computeMaxWaiterPriority st1 tid
-  match st1.getTcb? tid with
-  | some t =>
-    { st1 with objects := st1.objects.insert tid.toObjId (.tcb { t with threadState := .Ready, pipBoost := newPipBoost }) }
-  | none => st1
+  st1.updateTcb tid fun t => { t with threadState := .Ready, pipBoost := newPipBoost }
 
 /-- WS-SM SM5.F.6 (plan §3.6, resume cross-core wake): restore `tid` to **Ready** on
 its home core and, if that core is remote (≠ `executingCore`), return the
@@ -829,7 +801,7 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
   match tcb.ipcState with
   | .ready => st
   | .blockedOnSend _ | .blockedOnReceive _ | .blockedOnCall _ =>
-    -- WS-RR RR7.14: `restoreToReadyCancelled`, not `clearTcbIpcFields` — the
+    -- WS-RR RR7.14: `restoreToReadyCancelled`, not the plain restore — the
     -- unblocked thread is owed the `.ipcCancelled` frame, see there.  The
     -- `.ready` arm above stages nothing: it is the no-op for a thread that was
     -- not blocked, and it commits no write at all.
@@ -907,17 +879,13 @@ def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
   | .bound scId =>
     -- Unbind: clear the SchedContext's boundThread and deactivate (AE3-B/U-15)
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    let st1 : SystemState := match st.getSchedContext? scId with
-      | some sc =>
-        -- **WS-HP HP10.4**: and the recorded reservation origin, because this is
-        -- the same question `schedContextUnbind` answers — "this context stops
-        -- being owned" — and two spellings of one loan-ender are free to diverge.
-        -- The suspend path reaches it for a `.bound` victim, so a context whose
-        -- origin survived a suspend would carry it into whatever binds it next.
-        let sc' := { sc with boundThread := none, isActive := false,
-                             donationOrigin := none }
-        { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
-      | none => st
+    let st1 : SystemState := st.updateSchedContext scId fun sc =>
+      -- **WS-HP HP10.4**: and the recorded reservation origin, because this is
+      -- the same question `schedContextUnbind` answers — "this context stops
+      -- being owned" — and two spellings of one loan-ender are free to diverge.
+      -- The suspend path reaches it for a `.bound` victim, so a context whose
+      -- origin survived a suspend would carry it into whatever binds it next.
+      { sc with boundThread := none, isActive := false, donationOrigin := none }
     -- AE3-C/SC-07: Remove SchedContext from replenish queue (consistent with schedContextUnbind)
     let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore bootCoreId (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore bootCoreId) scId) }
     -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
@@ -925,11 +893,7 @@ def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
       (scThreadIndexRemove st2.scThreadIndex scId tid) }
     -- Clear TCB binding
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    .ok (match st2.getTcb? tid with
-    | some tcb' =>
-      let tcb'' := { tcb' with schedContextBinding := .unbound }
-      { st2 with objects := st2.objects.insert tid.toObjId (.tcb tcb'') }
-    | none => st2)
+    .ok (st2.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound })
   | _ => .error .illegalState
 
 /-- D1-D / R5.A (DEEP-SUSP-02): Cancel a donated SchedContext binding.
@@ -976,16 +940,12 @@ def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
 pending message, timeout budget, and queue link fields to ensure clean
 state when the thread is Inactive. -/
 def clearPendingState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-  match st.getTcb? tid with
-  | some tcb =>
-    { st with objects := st.objects.insert tid.toObjId (.tcb { tcb with
-        pendingMessage := none
-        timeoutBudget := none
-        queuePrev := none
-        queueNext := none
-        queuePPrev := none }) }
-  | none => st
+  st.updateTcb tid fun tcb => { tcb with
+    pendingMessage := none
+    timeoutBudget := none
+    queuePrev := none
+    queueNext := none
+    queuePPrev := none }
 
 -- ============================================================================
 -- AN10 residual closure (H1–H4): typed entry-points for lifecycle handlers
@@ -998,14 +958,6 @@ def clearPendingState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :
 -- validation, post-`validateThreadIdArg` argument check, or
 -- structurally-extracted from a TCB lookup) should prefer the typed
 -- entry-points to make the invariant locally observable.
-
-/-- AN10-H1: typed entry-point for `clearTcbIpcFields`. -/
-@[inline] private def clearTcbIpcFieldsValid (st : SystemState)
-    (vtid : SeLe4n.ValidThreadId) : SystemState :=
-  clearTcbIpcFields st vtid.val
-
-@[simp] theorem clearTcbIpcFieldsValid_eq (st : SystemState) (vtid : SeLe4n.ValidThreadId) :
-    clearTcbIpcFieldsValid st vtid = clearTcbIpcFields st vtid.val := rfl
 
 /-- AN10-H2: typed entry-point for `clearPendingState`. -/
 @[inline] def clearPendingStateValid (st : SystemState)
@@ -1148,9 +1100,9 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
         | some serverId => PriorityInheritance.revertPriorityInheritance st serverId
         | none => st
       -- AI2-D (M-20) / AF5-H (AF-28): Re-lookup is necessary because
-      -- `cancelIpcBlocking` modifies the TCB via `clearTcbIpcFields`, which
-      -- updates `ipcState`, `queuePrev`, `queueNext`, and `queuePPrev`.
-      -- The `schedContextBinding` field is NOT modified — `clearTcbIpcFields`
+      -- `cancelIpcBlocking` modifies the TCB via `restoreToReadyCancelled`,
+      -- which updates `ipcState`, `queuePrev`, `queueNext`, and `queuePPrev`.
+      -- The `schedContextBinding` field is NOT modified — the restore
       -- uses record-with syntax that preserves all unmentioned fields
       -- (structurally guaranteed).
       --
@@ -1188,11 +1140,7 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- G5: Clear pending state — AN10-residual-1 (commit 3): typed entry-point.
       let st := clearPendingStateValid st vtid
       -- G6: Set threadState := .Inactive
-      let st := match st.getTcb? tid with
-        | some tcb'' =>
-          { st with objects := st.objects.insert tid.toObjId (.tcb { tcb'' with
-              threadState := .Inactive }) }
-        | none => st
+      let st := st.updateTcb tid fun tcb'' => { tcb'' with threadState := .Inactive }
       -- G7: If suspended thread was current, trigger reschedule.
       -- WS-SM SM6.E fix: dispatch on the G7-precapture (entry-time) value —
       -- the post-G4 current slot never holds the victim (see the precapture
@@ -1275,13 +1223,19 @@ def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- so the post-`restoreToReady` TCB is observed via the
       -- variant-aware lookup that already returns `none` on
       -- non-TCB / absent.
-      let tcb' :=
-        match st.getTcb? tid with
+      -- One lookup: it is the in-place rewrite's witness on the arm that finds
+      -- the TCB `restoreToReady` just rewrote.  The other arm is unreachable on
+      -- a well-formed table and total regardless: a key found holding no TCB is
+      -- written as a *store*, with its bookkeeping (`withObjectStored`).
+      let (tcb', st) : TCB × SystemState :=
+        match h : st.getTcb? tid with
         | some t =>
-            { t with threadState := .Ready, pipBoost := newPipBoost }
+            let t' : TCB := { t with threadState := .Ready, pipBoost := newPipBoost }
+            (t', st.rewriteObject tid.toObjId (.tcb t') (SystemState.rewriteAdmissible_tcb h t'))
         | none =>
-            { tcb with threadState := .Ready, ipcState := .ready, pipBoost := newPipBoost }
-      let st := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+            let t' : TCB :=
+              { tcb with threadState := .Ready, ipcState := .ready, pipBoost := newPipBoost }
+            (t', st.withObjectStored tid.toObjId (.tcb t'))
       -- H4: Insert into run queue at effective priority
       let st := ensureRunnable st tid
       -- H5: Conditional preemption check (AE3-D/U-16: use effective priority)

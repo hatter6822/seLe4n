@@ -789,9 +789,10 @@ theorem cancelBoundDonation_scheduler_runQueue_eq
   split at h
   · -- .bound case
     injection h with h; subst h
-    constructor
-    · split <;> (split <;> rfl)
-    · split <;> (split <;> rfl)
+    -- Two in-place rewrites and a replenish-queue write: the run queue and the
+    -- current slot are read off the scheduler both rewrites leave alone.
+    constructor <;>
+      (rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler]; try rfl)
   · -- wrong variant: `.error .illegalState ≠ .ok st'` — contradiction
     cases h
 
@@ -831,7 +832,7 @@ theorem cancelDonation_scheduler_runQueue_eq
 theorem clearPendingState_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (clearPendingState st tid).scheduler = st.scheduler := by
-  unfold clearPendingState; split <;> rfl
+  unfold clearPendingState; exact SystemState.updateTcb_scheduler _ _ _
 
 -- ============================================================================
 -- D1-I: Transport lemmas — serviceRegistry and lifecycle preservation
@@ -857,13 +858,13 @@ theorem cancelIpcBlocking_serviceRegistry_eq
 theorem clearPendingState_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (clearPendingState st tid).serviceRegistry = st.serviceRegistry := by
-  unfold clearPendingState; split <;> rfl
+  unfold clearPendingState; exact SystemState.updateTcb_serviceRegistry _ _ _
 
 /-- D1-I: clearPendingState preserves lifecycle. -/
 theorem clearPendingState_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (clearPendingState st tid).lifecycle = st.lifecycle := by
-  unfold clearPendingState; split <;> rfl
+  unfold clearPendingState; exact SystemState.updateTcb_lifecycle _ _ _
 
 /-- Helper / AJ1-A (M-14): cleanupDonatedSchedContext preserves serviceRegistry
 (conditional on success). -/
@@ -890,7 +891,7 @@ theorem cancelBoundDonation_serviceRegistry_eq
   split at h
   · -- .bound case: two nested matches, all branches preserve serviceRegistry
     injection h with h; subst h
-    split <;> (split <;> rfl)
+    rw [SystemState.updateTcb_serviceRegistry, SystemState.updateSchedContext_serviceRegistry]
   · simp at h
 
 /-- D1-I/R5.A: `cancelDonatedDonation` preserves serviceRegistry by
@@ -971,7 +972,7 @@ theorem cancelDonation_serviceRegistry_eq
 theorem restoreToReady_objectIndex_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReady st tid).objectIndex = st.objectIndex := by
-  unfold restoreToReady restoreToReadyStaging; split <;> rfl
+  unfold restoreToReady restoreToReadyStaging; exact SystemState.updateTcb_objectIndex _ _ _
 
 /-- R5.B: When `restoreToReady` rewrites the TCB at `tid`, the resulting
 TCB has `ipcState = .ready` and the three queue link fields cleared. The
@@ -993,7 +994,7 @@ theorem restoreToReady_objects_eq_at_tid
                 queuePPrev := none
                 pendingReceiveReply := none }) := by
   unfold restoreToReady restoreToReadyStaging
-  rw [hLook]
+  exact congrArg SystemState.objects (SystemState.updateTcb_eq_of_some hLook _)
 
 /-- R5.B: The resumed thread's TCB has `pipBoost` equal to the post-
 `restoreToReady` `computeMaxWaiterPriority`, by construction. This is the
@@ -1068,9 +1069,7 @@ theorem restoreToReadyStaging_invExt
     (hObjInv : st.objects.invExt) :
     (restoreToReadyStaging st tid frame).objects.invExt := by
   unfold restoreToReadyStaging
-  cases st.getTcb? tid with
-  | none => exact hObjInv
-  | some _ => exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
 
 theorem restoreToReady_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -1100,19 +1099,7 @@ theorem restoreToReadyStaging_preserves_objectIndexSetComplete
     (hComplete : SeLe4n.Model.objectIndexSetComplete st) :
     SeLe4n.Model.objectIndexSetComplete (restoreToReadyStaging st tid frame) := by
   unfold restoreToReadyStaging
-  cases hT : st.getTcb? tid with
-  | none => exact hComplete
-  | some tcb' =>
-    intro oid hSome
-    show st.objectIndexSet.contains oid = true
-    by_cases hk : oid = tid.toObjId
-    · subst hk
-      exact hComplete _ (by
-        rw [(SystemState.getTcb?_eq_some_iff st tid tcb').mp hT]; exact Option.some_ne_none _)
-    · have hNe : ¬(tid.toObjId == oid) = true := fun hbeq => hk (eq_of_beq hbeq).symm
-      refine hComplete oid (fun hNone => hSome ?_)
-      exact (RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hObjInv).trans
-        hNone
+  exact SystemState.updateTcb_preserves_objectIndexSetComplete _ _ _ hObjInv hComplete
 
 /-- **WS-RR RR8.5**: the cancellation spelling of the restore keeps the index
 complete — one more field of the same single TCB rewrite. -/
@@ -1150,7 +1137,8 @@ theorem restoreToReady_blockingServer_subgraph
       right
       unfold PriorityInheritance.blockingServer
       have hRR : restoreToReady st tid = st := by
-        unfold restoreToReady restoreToReadyStaging; rw [hPre]
+        unfold restoreToReady restoreToReadyStaging
+        exact SystemState.updateTcb_eq_self_of_none hPre _
       rw [hRR]
     | some origTcb =>
       -- Post-state TCB at tid has ipcState = .ready.
@@ -1162,7 +1150,7 @@ theorem restoreToReady_blockingServer_subgraph
                                         queueNext := none, queuePPrev := none,
                                         pendingReceiveReply := none }) := by
         unfold restoreToReady restoreToReadyStaging
-        rw [hPre]
+        rw [SystemState.updateTcb_eq_of_some hPre]
         show (st.objects.insert tid.toObjId _).get? t.toObjId = _
         rw [hEq]
         exact RobinHood.RHTable.getElem?_insert_self _ tid.toObjId _ hObjInv
@@ -1179,13 +1167,7 @@ theorem restoreToReady_blockingServer_subgraph
         (restoreToReady st tid).objects[t.toObjId]?
           = st.objects[t.toObjId]? := by
       unfold restoreToReady restoreToReadyStaging
-      cases hPre : st.getTcb? tid with
-      | none => rfl
-      | some _ =>
-        show (st.objects.insert tid.toObjId _).get? t.toObjId = _
-        have hNe : ¬(tid.toObjId == t.toObjId) = true := by
-          intro h; apply hEq; exact (beq_iff_eq.mp h).symm
-        exact RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId t.toObjId _ hNe hObjInv
+      exact SystemState.updateTcb_objects_ne _ _ _ _ (fun h => hEq h.symm) hObjInv
     rw [SystemState.getTcb?_congr_at hRRObj]
 
 /-- WS-RC R5.B.2 / Phase Q1: `restoreToReady` preserves `blockingAcyclic`.
@@ -1784,8 +1766,9 @@ theorem restoreToReadyStaging_tcb_lookup
       ∧ t'.cpuAffinity = t0.cpuAffinity := by
   unfold restoreToReadyStaging
   cases hT : st.getTcb? tid with
-  | none => exact ⟨t0, hPre, rfl⟩
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact ⟨t0, hPre, rfl⟩
   | some t =>
+    rw [SystemState.updateTcb_eq_of_some hT]
     cases frame with
     | none =>
         exact insert_tcb_rewrite_lookup st.objects tid.toObjId k t _ t0 hInv
@@ -1896,7 +1879,7 @@ theorem restoreToReadyStaging_eq_self_of_getTcb?_none
     (h : st.getTcb? tid = none) :
     restoreToReadyStaging st tid frame = st := by
   unfold restoreToReadyStaging
-  rw [h]
+  exact SystemState.updateTcb_eq_self_of_none h _
 
 theorem restoreToReady_eq_self_of_getTcb?_none
     (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -2001,12 +1984,8 @@ theorem cancelBoundDonation_preserves_objects_invExt
   · -- `.bound scId` arm.
     injection h with h
     subst h
-    dsimp only
-    repeat' first
-      | exact hInv
-      | exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
-      | apply RobinHood.RHTable.insert_preserves_invExt
-      | split
+    exact SystemState.updateTcb_preserves_objects_invExt _ _ _
+      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
   · -- `.donated` / `.unbound`: rejected with `.illegalState`.
     cases h
 
@@ -2052,12 +2031,11 @@ theorem restoreToReadyStaging_preserves_ipcInvariant
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
     ipcInvariant (restoreToReadyStaging st tid frame) := by
   unfold restoreToReadyStaging
-  cases st.getTcb? tid with
-  | none => exact hIpc
+  cases hT : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact hIpc
   | some t =>
-    cases frame with
-    | none => exact ipcInvariant_insert_tcb st tid.toObjId _ hInv hIpc
-    | some f => exact ipcInvariant_insert_tcb st tid.toObjId _ hInv hIpc
+    rw [SystemState.updateTcb_eq_of_some hT]
+    exact ipcInvariant_insert_tcb st tid.toObjId _ hInv hIpc
 
 theorem restoreToReady_preserves_ipcInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -2149,27 +2127,25 @@ theorem cancelBoundDonation_preserves_ipcInvariant
     simp only [cancelBoundDonation, hB] at h
     injection h with h
     subst h
-    cases hSC : st.getSchedContext? scId with
-    | none =>
-      -- No SchedContext write: the only object write is the TCB unbind.
+    -- Two in-place rewrites, a SchedContext then a TCB — neither is a
+    -- notification, so the notification lookups are the pre-state's.
+    have hInv1 : (st.updateSchedContext scId fun sc =>
+        { sc with boundThread := none, isActive := false, donationOrigin := none }).objects.invExt :=
+      SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
+    have hIpc1 : ipcInvariant (st.updateSchedContext scId fun sc =>
+        { sc with boundThread := none, isActive := false, donationOrigin := none }) := by
+      unfold SystemState.updateSchedContext
       split
-      · intro oid ntfn hL
-        exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
-          _ tid.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
-      · exact ipcInvariant_of_objects_eq rfl hIpc
-    | some sc =>
-      have hInv1 : (st.objects.insert scId.toObjId
-          (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none })).invExt :=
-        RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
-      split
-      · intro oid ntfn hL
-        have hL1 := notification_lookup_of_insert_no_notification
-          _ tid.toObjId _ hInv1 (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL
-        exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
-          _ scId.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL1)
       · intro oid ntfn hL
         exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
           _ scId.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
+      · exact hIpc
+    unfold SystemState.updateTcb
+    split
+    · intro oid ntfn hL
+      exact hIpc1 oid ntfn (notification_lookup_of_insert_no_notification
+        _ tid.toObjId _ hInv1 (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
+    · exact ipcInvariant_of_objects_eq rfl hIpc1
   | unbound =>
     simp only [cancelBoundDonation, hB] at h
     cases h

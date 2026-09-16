@@ -308,10 +308,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ sc with boundThread := none, isActive := false }` and the TCB's `schedContextBinding`; the binding graph, not the stack")
   , (`SeLe4n.Kernel.cancelBoundDonationOnCore,
       "the per-core spelling of the same binding cancel; same reason")
-  , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThread,
-      "composes `consumeReplyLink`, which is registered; writes no chain field in its own body")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore,
-      "the per-core spelling of the same suspend; same reason")
+      "composes `consumeReplyLink`, which is registered; writes no chain field in its own body (its single-core twin left this list at v0.35.64, when its own direct store became `updateTcb` and the frontier stopped reaching it)")
   , (`SeLe4n.Kernel.Liveness.stepPost,
       "the scheduler trace model's step: a SchedContext budget update and a replenish queue; no chain field")
     -- The dispatch payoff's pack-inhabitation witnesses.  They build a fresh
