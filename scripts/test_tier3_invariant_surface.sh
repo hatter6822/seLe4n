@@ -1050,9 +1050,18 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def dualQueueSystemInvariant[^\n]*(\n(
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant[^\n]*(\n([ \t][^\n]*)?)*hDual\.pprevAgrees" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 # The dual removal's precondition is a NAMED definition the transition reads, so
 # the theorem that discharges it cannot describe a different condition.  It was
-# an anonymous `let` until RR8.3, which is why no caller could state it.
-run_check "INVARIANT" rg -n '^def dualQueueRemovalGuard' SeLe4n/Kernel/IPC/DualQueue/Core.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "def endpointQueueRemoveDual[^\n]*(\n([ \t][^\n]*)?)*dualQueueRemovalGuard q tid tcb pprev" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
+# an anonymous `let` until RR8.3, which is why no caller could state it.  It lives
+# in the MODEL layer since RR8.5: the guard is a question about an `IntrusiveQueue`
+# and a `TCB`, both model records, and the frozen execution surface imports no
+# kernel module -- so a guard homed in the IPC layer is one the mirror provably
+# cannot ask, which is how it came to refuse one condition where the kernel
+# refuses three.  Its DISCHARGES stay in the kernel layer, where the invariants are.
+run_check "INVARIANT" rg -n '^def dualQueueRemovalGuard' SeLe4n/Model/Object/Types.lean
+# `v0.35.59`: the transition reads `dualQueueRemovalEnabled`, which *is* the guard
+# conjoined with the boundary check -- the guard alone was a subset of what the
+# removal refuses, and the frozen mirror carrying only it still succeeded where the
+# kernel refuses.  The guard-alone spelling is refused by a negative further down.
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointQueueRemoveDual[^\n]*(\n([ \t][^\n]*)?)*dualQueueRemovalEnabled q tid tcb pprev" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
 # NEGATIVE: the inline spelling must not come back beside the named one -- a
 # second copy of the guard is a second answer to the question the invariant
 # exists to settle.  Mutating by deleting the `let` would be caught by the
@@ -1062,8 +1071,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "let pprevConsistent[^\n]*(\n(
 # is what the invariant discharges system-wide.  This equality is what makes the
 # factorisation immutable: mutating either arm of `dualQueueRemovalGuard` or of
 # `queuePPrevHeadPositionAgrees` fails to elaborate.
-run_check "INVARIANT" rg -n '^theorem dualQueueRemovalGuard_eq_position_and_pair' SeLe4n/Kernel/IPC/DualQueue/Core.lean
-run_check "INVARIANT" rg -n '^def queuePPrevHeadPositionAgrees' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem dualQueueRemovalGuard_eq_position_and_pair' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def queuePPrevHeadPositionAgrees' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^theorem dualQueueRemovalGuardHolds' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The two unlink updates keep the pair together, and the third removal composes
 # them -- which is the machine-checked form of the OD1.1/OD3.9 finding.  Pinned at
@@ -1135,7 +1144,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_a
 # (`queueNext = none`), the guard's first factor requires the two to agree, and
 # every consumer is conditioned on the dual succeeding — so the obligation moved
 # from the proofs to `dualQueueRemovalGuardHolds`'s caller.
-run_check "INVARIANT" rg -n '^def queueTailPairAgrees' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^def queueTailPairAgrees' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^def dualRemovalEnabled' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership[^\n]*(\n([ \t][^\n]*)?)*hEnabled : dualRemovalEnabled" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
 # NEGATIVE: `spliceRemovedIsTailWhenLast` must not come back.  It had one job —
@@ -1177,6 +1186,59 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "def removeThreadFromQueue[^\n
 # lives in `Model/Object/Types.lean` and not in the IPC layer.
 run_check "INVARIANT" rg -n 'let q. : IntrusiveQueue := queueRemoveBoundary q tid tcb' SeLe4n/Kernel/FrozenOps/Core.lean
 run_negative_check "INVARIANT" rg -n 'head := if q\.head == some tid' SeLe4n/Kernel/FrozenOps/Core.lean
+# **`v0.35.59`**: ...and the frozen removal carries the live removal's WHOLE
+# store-free precondition, by calling the definition the live removal calls.
+#
+# RR8.4 unified what a removal *writes* and found the mirror refusing one of four
+# things `endpointQueueRemoveDual` refuses, so it **succeeded where the kernel
+# refuses** -- the direction that matters on a differential surface, since
+# `frozenRunAgrees` compares outcomes and a mirror more permissive than its subject
+# reports agreement on states the kernel never reaches.  The first attempt at the
+# fix carried the *named* guard and left the unnamed boundary check behind, which
+# is a subset of the refusal set reached through a shared name -- so the question
+# itself is named now (`dualQueueRemovalEnabled`) and **both** removals read it.
+#
+# A relation, not a presence: each call must sit inside the declaration that owns
+# it, and the gap is line-bounded so it cannot leave that declaration.
+run_check "INVARIANT" rg -n '^def dualQueueRemovalEnabled' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def queueBoundariesEmpty' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def queuePredecessorNamesSuccessor' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def frozenQueueRemove[^\n]*(\n([ \t][^\n]*)?)*if !dualQueueRemovalEnabled q tid tcb pprev then" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointQueueRemoveDual[^\n]*(\n([ \t][^\n]*)?)*if !dualQueueRemovalEnabled q tid tcb pprev then" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
+# NEGATIVE: the *guard alone* must not come back as either removal's condition --
+# that is precisely the subset this cut retired, and it keeps every token.
+run_negative_check "INVARIANT" rg -n 'if !dualQueueRemovalGuard q tid tcb pprev then' SeLe4n/Kernel/FrozenOps/Core.lean SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+# NEGATIVE: and the boundary check must not be re-spelled inline beside the named
+# one.  `queueBoundariesEmpty` is its one definition; an inlined copy in either
+# removal would satisfy every positive above.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "if q\.head\.isNone \|\| q\.tail\.isNone then" SeLe4n/Kernel/FrozenOps/Core.lean SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
+# The predecessor's forward link is checked on BOTH sides, each resolving its own
+# `prevTcb` -- the one factor that needs a store lookup, so it cannot be folded
+# into the shared enabling condition.
+run_check "INVARIANT" bash -lc 'rg -U -n "def frozenQueueRemove[^\n]*(\n([ \t][^\n]*)?)*if !queuePredecessorNamesSuccessor prevTcb tid then" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointQueueRemoveDual[^\n]*(\n([ \t][^\n]*)?)*if !queuePredecessorNamesSuccessor prevTcb tid then" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
+# ...and the no-back-pointer arm answers the SAME error code.  `frozenRunAgrees`
+# compares codes, so this one was visible to the differential all along and
+# invisible only because nothing drove both sides to it.
+run_check "INVARIANT" bash -lc 'rg -U -n "def frozenQueueRemove[^\n]*(\n([ \t][^\n]*)?)*none => \.error \.endpointQueueEmpty" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "match tcb\.queuePPrev with[^\n]*(\n([ \t][^\n]*)?)*none => \.error \.illegalState" SeLe4n/Kernel/FrozenOps/Core.lean'
+# The witness is decisive because the retired reading is COMPUTED beside the live
+# one: a suite that merely asserts the refusal cannot show the refusal is new.  The
+# retired spelling lives in the witness that refutes it and nowhere else.
+run_check "INVARIANT" rg -n '^private def isNoneOnlyFrozenRemovalGuard' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^private def differentialRemovalGuardRefusalsAgree' tests/FrozenOpsSuite.lean
+# ...and FO-046, which covers the three refusals FO-045 structurally cannot: each
+# of its halves sits on a state that passes everything the previous half checks and
+# is refused by exactly one more thing, so the refusal is attributable.
+run_check "INVARIANT" rg -n '^private def differentialRemovalRefusalSetAgrees' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def main[^\n]*(\n([ \t][^\n]*)?)*differentialRemovalRefusalSetAgrees" tests/FrozenOpsSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "private def differentialRemovalGuardRefusalsAgree[^\n]*(\n([ \t][^\n]*)?)*isNoneOnlyFrozenRemovalGuard tcbA == true" tests/FrozenOpsSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "private def differentialRemovalGuardRefusalsAgree[^\n]*(\n([ \t][^\n]*)?)*SeLe4n\.Kernel\.endpointQueueRemoveDual diffEpId false diffA" tests/FrozenOpsSuite.lean'
+# ...and it is RUN.  A witness nothing dispatches reads in the report exactly like
+# one that passed.
+run_check "INVARIANT" bash -lc 'rg -U -n "def main[^\n]*(\n([ \t][^\n]*)?)*differentialRemovalGuardRefusalsAgree" tests/FrozenOpsSuite.lean'
+# NEGATIVE: the retired reading must not escape its witness into either source.
+run_negative_check "INVARIANT" rg -n 'isNoneOnlyFrozenRemovalGuard' SeLe4n/Kernel/FrozenOps/Core.lean SeLe4n/Kernel/IPC/DualQueue/Transport.lean SeLe4n/Model/Object/Types.lean
 # NEGATIVE: and the dual must not go back to inferring the tail from `pprev`.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "let newTail[^\n]*(\n([ \t][^\n]*)?)*endpointHead => none" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
 # The converse direction is derived, never assumed: a tail has no successor, so

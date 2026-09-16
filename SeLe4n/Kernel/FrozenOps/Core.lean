@@ -1076,9 +1076,40 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
       match frozenLookupTcb st tid with
       | none => .error .objectNotFound
       | some tcb =>
-        if tcb.queuePPrev.isNone then .error .illegalState
-        else
+        match tcb.queuePPrev with
+        -- `v0.35.59`: `.endpointQueueEmpty`, which is what
+        -- `endpointQueueRemoveDual` answers here.  This arm said `.illegalState`,
+        -- and `frozenRunAgrees` compares error codes — so the two disagreed on a
+        -- state either side could be driven to, and nothing drove them there.
+        | none => .error .endpointQueueEmpty
+        | some pprev =>
           let q := if isReceiveQ then ep.receiveQ else ep.sendQ
+          -- `v0.35.59`: the live removal's whole store-free precondition, by
+          -- calling the definition the live removal calls.
+          --
+          -- `endpointQueueRemoveDual` refuses four things before it writes
+          -- anything: a `queuePPrev` of `none` (above), a queue missing either
+          -- boundary, a back-pointer that does not pair with `queuePrev` or
+          -- disagrees with where the thread sits in the queue (WS-RR RR8.3), and
+          -- a queue `tail` field disagreeing with the removed thread's
+          -- `queueNext` (RR8.4).  This mirror refused only the first, and with the
+          -- wrong code — so on a state violating any of the others it
+          -- **succeeded where the kernel refuses**, which is the direction that
+          -- matters on a differential surface: `frozenRunAgrees` compares
+          -- outcomes, so a mirror more permissive than its subject reports
+          -- agreement on states the kernel never reaches and says nothing at all
+          -- about the states that distinguish them.
+          --
+          -- RR8.4 registered that rather than closing it, `dualQueueRemovalGuard`
+          -- then living in the IPC layer this surface deliberately does not
+          -- import.  `v0.35.59` moved the guard to the model beside the records it
+          -- reads and named the *whole* condition `dualQueueRemovalEnabled`, so
+          -- both removals read one definition and a condition added to it reaches
+          -- both by construction.  Carrying the named guard alone would have left
+          -- the unnamed boundary check behind — a subset of the refusal set,
+          -- reached through a shared name, which reads like agreement.
+          if !dualQueueRemovalEnabled q tid tcb pprev then .error .illegalState
+          else
           -- **WS-RR RR8.4**: `queueRemoveBoundary` (`Model/Object/Types.lean`),
           -- the one definition of what a removal writes to a queue's boundaries,
           -- shared with all three live removals.  This was the **fifth** asker of
@@ -1106,17 +1137,34 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
             | none => .error .objectNotFound
             | some o2 =>
               -- Predecessor now points past the removed node.
-              let afterPrev : Option (FrozenMap SeLe4n.ObjId FrozenKernelObject) :=
+              --
+              -- `v0.35.59`: and it must *be* the predecessor.
+              -- `endpointQueueRemoveDual` refuses `.illegalState` when the
+              -- resolved predecessor's own `queueNext` does not name `tid`; this
+              -- patched it unconditionally, so a one-sided link was repaired here
+              -- and refused there.  The check is
+              -- `queuePredecessorNamesSuccessor`, the definition the live removal
+              -- reads, and it needs a store lookup, which is why each side
+              -- resolves `prevTcb` itself rather than sharing one call.  The
+              -- result is an `Except` rather than an `Option` because the two
+              -- failures are different: an unresolvable predecessor is
+              -- `.objectNotFound` and a non-reciprocating one is `.illegalState`.
+              let afterPrev : Except KernelError (FrozenMap SeLe4n.ObjId FrozenKernelObject) :=
                 match tcb.queuePrev with
-                | none => some o2
+                | none => .ok o2
                 | some prevTid =>
                   match o2.get? prevTid.toObjId with
                   | some (.tcb prevTcb) =>
-                      o2.set prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
-                  | _ => none
+                      if !queuePredecessorNamesSuccessor prevTcb tid then .error .illegalState
+                      else
+                        match o2.set prevTid.toObjId
+                            (.tcb { prevTcb with queueNext := tcb.queueNext }) with
+                        | some o3 => .ok o3
+                        | none => .error .objectNotFound
+                  | _ => .error .objectNotFound
               match afterPrev with
-              | none => .error .objectNotFound
-              | some o3 =>
+              | .error e => .error e
+              | .ok o3 =>
                 -- Successor's back-links move to the removed node's predecessor.
                 match tcb.queueNext with
                 | none => .ok { st with objects := o3 }

@@ -1458,6 +1458,325 @@ def queueRemoveBoundary (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (removed : 
     (queueRemoveBoundary q tid removed).tail = q.tail := by
   unfold queueRemoveBoundary; simp [h]
 
+-- ============================================================================
+-- WS-RR RR8.5: the removal guard, in the model beside the fields it reads
+-- ============================================================================
+
+/-- **WS-RR RR8.5**: `endpointQueueRemoveDual`'s precondition lives here, not in
+`Kernel/IPC/DualQueue/Core.lean`, and the move is the whole of a finding RR8.4
+registered rather than closed.
+
+The guard is a predicate over `(IntrusiveQueue, ThreadId, TCB, QueuePPrev)` —
+model types, with no kernel dependency — and `SeLe4n/Kernel/FrozenOps/Core.lean`
+imports only `Model.FrozenState` and `Model.FreezeProofs`, deliberately, the
+frozen surface being a thin layer over the model.  So while the guard sat in the
+IPC layer the frozen mirror **could not carry it**, and `frozenQueueRemove`
+refused only `queuePPrev.isNone` where `endpointQueueRemoveDual` refuses a
+pairing violation, a position violation and a tail disagreement: the mirror
+**succeeded where the kernel refuses**, which is the direction that matters on a
+differential surface — `frozenRunAgrees` then reports agreement on states the
+kernel never reaches and says nothing about the three it declines.
+
+What stays in the kernel is what genuinely needs the store: the *discharges*
+(`dualQueueRemovalGuardHolds`, `…_of_dualQueueSystemInvariant`,
+`queueTailPairAgrees_of_wellFormed`, `queuePPrevHeadPositionAgrees_of_member`)
+read `intrusiveQueueWellFormed`, `tcbQueueLinkIntegrity`, the store-level
+`queuePPrevAgreesWithPrev` and `QueueNextPath`.  The guard is model-level; its
+discharges are kernel-level, and the layering now says so.
+
+`tcbWithQueueLinks` comes with it as the third member of the link-write family
+(`queueUnlinkPredecessor` / `queueUnlinkSuccessor` above), which is where WS-OD
+OD3.9 said what unlinking writes belongs. -/
+def tcbWithQueueLinks
+    (tcb : TCB)
+    (prev : Option SeLe4n.ThreadId)
+    (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId) : TCB :=
+  { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next }
+
+/-- **WS-RR RR8.3**: the pairing condition on the *values* a link store writes.
+
+`tcbWithQueueLinks` overwrites all three link fields at once, so whether the
+result satisfies `TCB.queuePPrevAgreesWithPrev` depends on the arguments alone
+and not on the record displaced.  Naming that condition is what lets each
+queue-writing call site state its own obligation — which is the whole content of
+the invariant: `endpointQueueEnqueue` discharges it because it writes
+`(none, .endpointHead)` on an empty queue and `(some t, .tcbNext t)` behind a
+tail, `endpointQueuePopHead` because it promotes the successor to
+`(none, .endpointHead)`, and every clear because `none` constrains nothing. -/
+def queueLinkPairAgrees
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) : Prop :=
+  match pprev with
+  | none => True
+  | some .endpointHead => prev = none
+  | some (.tcbNext p) => prev = some p
+
+@[simp] theorem queueLinkPairAgrees_none (prev : Option SeLe4n.ThreadId) :
+    queueLinkPairAgrees prev none := trivial
+
+@[simp] theorem queueLinkPairAgrees_endpointHead :
+    queueLinkPairAgrees none (some .endpointHead) := rfl
+
+@[simp] theorem queueLinkPairAgrees_tcbNext (p : SeLe4n.ThreadId) :
+    queueLinkPairAgrees (some p) (some (.tcbNext p)) := rfl
+
+/-- The pairing is decidable: each arm is an equality of `Option ThreadId`.  The
+instance is what lets `dualQueueRemovalGuard`'s `Bool` check be stated as the
+conjunction of a position question and *this* proposition, rather than as a second
+spelling of it. -/
+instance queueLinkPairAgrees_decidable
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) :
+    Decidable (queueLinkPairAgrees prev pprev) := by
+  unfold queueLinkPairAgrees
+  cases pprev with
+  | none => exact isTrue trivial
+  | some pp => cases pp with
+    | endpointHead => exact inferInstanceAs (Decidable (prev = none))
+    | tcbNext p => exact inferInstanceAs (Decidable (prev = some p))
+
+/-- **WS-RR RR8.3**: a TCB's *own* pair agrees whenever it satisfies the pairing
+— the shape every `storeTcbQueueLinks st p tcb.queuePrev tcb.queuePPrev _` site
+needs, which is how a removal re-writes a neighbour's `queueNext` without
+disturbing the two fields it must keep together. -/
+theorem queueLinkPairAgrees_of_tcb {tcb : TCB}
+    (h : tcb.queuePPrevAgreesWithPrev) :
+    queueLinkPairAgrees tcb.queuePrev tcb.queuePPrev := by
+  unfold TCB.queuePPrevAgreesWithPrev at h
+  unfold queueLinkPairAgrees
+  cases hpp : tcb.queuePPrev with
+  | none => trivial
+  | some pp =>
+      rw [hpp] at h; cases pp with
+      | endpointHead => exact h
+      | tcbNext p => exact h
+
+/-- The written record satisfies the pairing exactly when the written values do. -/
+theorem tcbWithQueueLinks_queuePPrevAgreesWithPrev
+    {tcb : TCB} {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev}
+    {next : Option SeLe4n.ThreadId} (h : queueLinkPairAgrees prev pprev) :
+    (tcbWithQueueLinks tcb prev pprev next).queuePPrevAgreesWithPrev := by
+  unfold TCB.queuePPrevAgreesWithPrev tcbWithQueueLinks
+  unfold queueLinkPairAgrees at h
+  cases pprev with
+  | none => trivial
+  | some pp => cases pp with
+    | endpointHead => exact h
+    | tcbNext p => exact h
+
+/-- **WS-RR RR8.3**: the head-position half of `endpointQueueRemoveDual`'s
+precondition — a node whose back-pointer names the endpoint's head field *is* the
+head, and one whose back-pointer names a predecessor TCB is not.
+
+Split out from the pairing half because the two are discharged from different
+places: this one from where `tid` sits in `q`, the other from the invariant.  A
+caller that can supply neither is a caller that should not be unlinking. -/
+def queuePPrevHeadPositionAgrees
+    (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (pprev : QueuePPrev) : Bool :=
+  match pprev with
+  | .endpointHead => q.head = some tid
+  | .tcbNext _ => q.head ≠ some tid
+
+/-- **WS-RR RR8.4**: the tail half — the queue's `tail` field and the removed
+thread's `queueNext` field must agree about whether this thread is the tail.
+
+The *pair* is the point, as it is for `queueLinkPairAgrees` one field over.  A
+removal has two ways to ask "is this the tail?" — read `q.tail`, or observe that
+the thread has no successor — and `queueRemoveBoundary` asks the first, because
+`q.tail = some tid` is the fact and `queueNext = none` is a proxy for it.  Asking
+the fact means the *proxy's* direction has to be established: clearing a head
+without clearing the tail leaves a queue that fails
+`intrusiveQueueWellFormed`, and the bundle joins a queue's boundaries nowhere, so
+nothing entails it — the connectivity WS-OD OD1.3 stated as a hypothesis on every
+theorem about a removal, which RR8.4 deleted in favour of this check.
+
+So `endpointQueueRemoveDual` **checks** it.  One direction is free from the
+bundle — `intrusiveQueueWellFormed`'s third clause gives a tail no successor, so
+a thread with one is not the tail (`spliceTail_ne_of_hasNext`) — and the other is
+the missing invariant, which is why this is a runtime guard rather than a
+conjunct.  The biconditional is stated because it is what "the tail question has
+one answer" means; refusing the free direction as well costs nothing, since the
+bundle already excludes it. -/
+def queueTailPairAgrees (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (removed : TCB) : Bool :=
+  (q.tail = some tid) == removed.queueNext.isNone
+
+/-- `queueTailPairAgrees` as a proposition about the two fields. -/
+theorem queueTailPairAgrees_iff
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {removed : TCB} :
+    queueTailPairAgrees q tid removed = true ↔
+      (q.tail = some tid ↔ removed.queueNext = none) := by
+  unfold queueTailPairAgrees
+  cases hn : removed.queueNext <;> simp
+
+/-- The tail is cleared exactly when the removed thread had no successor — the
+form `queueRemoveBoundary`'s consumers need once the guard has passed. -/
+theorem queueTailPairAgrees_tail_of_no_next
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {removed : TCB}
+    (hAgree : queueTailPairAgrees q tid removed = true) (hNext : removed.queueNext = none) :
+    q.tail = some tid :=
+  (queueTailPairAgrees_iff.mp hAgree).mpr hNext
+
+/-- A thread with a successor is not the tail — the direction
+`intrusiveQueueWellFormed` already carries, read off the guard. -/
+theorem queueTailPairAgrees_tail_ne_of_next
+    {q : IntrusiveQueue} {tid next : SeLe4n.ThreadId} {removed : TCB}
+    (hAgree : queueTailPairAgrees q tid removed = true) (hNext : removed.queueNext = some next) :
+    q.tail ≠ some tid := by
+  intro hTail
+  rw [(queueTailPairAgrees_iff.mp hAgree).mp hTail] at hNext
+  exact absurd hNext (by simp)
+
+/-- **WS-RR RR8.4**: the four shapes a *guarded* removal writes to the queue's
+boundaries, named after the four cases the removal splits on — whether the thread
+is the head, and whether it has a successor.
+
+`queueRemoveBoundary` reads `q.tail` and the guard supplies the bridge to
+`removed.queueNext`, so each shape needs only the head and successor facts the
+branch already has.  These are the forms `endpointQueueRemoveDual`'s invariant
+proofs and `endpointQueueRemove_agrees_*` both consume: one derivation of "what
+does this branch write", rather than one per proof. -/
+theorem queueRemoveBoundary_headLast
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {removed : TCB}
+    (hPair : queueTailPairAgrees q tid removed = true)
+    (hHead : q.head = some tid) (hNext : removed.queueNext = none)
+    (hPrev : removed.queuePrev = none) :
+    queueRemoveBoundary q tid removed = {} := by
+  unfold queueRemoveBoundary
+  simp [hHead, hNext, hPrev, queueTailPairAgrees_tail_of_no_next hPair hNext]
+
+theorem queueRemoveBoundary_headMore
+    {q : IntrusiveQueue} {tid next : SeLe4n.ThreadId} {removed : TCB}
+    (hPair : queueTailPairAgrees q tid removed = true)
+    (hHead : q.head = some tid) (hNext : removed.queueNext = some next) :
+    queueRemoveBoundary q tid removed = { head := some next, tail := q.tail } := by
+  unfold queueRemoveBoundary
+  simp [hHead, hNext, queueTailPairAgrees_tail_ne_of_next hPair hNext]
+
+theorem queueRemoveBoundary_midLast
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {removed : TCB}
+    (hPair : queueTailPairAgrees q tid removed = true)
+    (hHeadNe : q.head ≠ some tid) (hNext : removed.queueNext = none) :
+    queueRemoveBoundary q tid removed = { head := q.head, tail := removed.queuePrev } := by
+  unfold queueRemoveBoundary
+  simp [hHeadNe, queueTailPairAgrees_tail_of_no_next hPair hNext]
+
+theorem queueRemoveBoundary_midMore
+    {q : IntrusiveQueue} {tid next : SeLe4n.ThreadId} {removed : TCB}
+    (hPair : queueTailPairAgrees q tid removed = true)
+    (hHeadNe : q.head ≠ some tid) (hNext : removed.queueNext = some next) :
+    queueRemoveBoundary q tid removed = { head := q.head, tail := q.tail } := by
+  unfold queueRemoveBoundary
+  simp [hHeadNe, queueTailPairAgrees_tail_ne_of_next hPair hNext]
+
+/-- **WS-RR RR8.3**: `endpointQueueRemoveDual`'s `pprevConsistent` check, named.
+
+The operation reads *this* definition, so the check and the theorem that
+discharges it (`dualQueueRemovalGuardHolds`) cannot describe different
+conditions.  Before RR8.3 it was an anonymous `let` inside the transition, which
+is why nothing could state that a caller had established it. -/
+def dualQueueRemovalGuard
+    (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (tcb : TCB) (pprev : QueuePPrev) : Bool :=
+  queueTailPairAgrees q tid tcb &&
+    match pprev with
+    | .endpointHead => q.head = some tid && tcb.queuePrev.isNone
+    | .tcbNext prevTid => q.head ≠ some tid && tcb.queuePrev = some prevTid
+
+/-- **WS-RR RR8.3**, extended by **RR8.4**: the guard factors into three
+questions — where `tid` sits in `q`, whether its two back-pointer fields pair,
+and whether the queue's tail field and its `queueNext` agree.
+
+This is the statement that makes the fourth `dualQueueSystemInvariant` conjunct
+worth having: the invariant discharges the *pairing* factor system-wide, and
+`intrusiveQueueWellFormed` discharges one direction of the tail factor, leaving
+the caller the position and the queue connectivity nothing entails.  It is stated
+as an equality of `Bool`s rather than an `Iff` so it rewrites inside the
+transition's own `if`. -/
+theorem dualQueueRemovalGuard_eq_position_and_pair
+    (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (tcb : TCB) (pprev : QueuePPrev) :
+    dualQueueRemovalGuard q tid tcb pprev =
+      (queueTailPairAgrees q tid tcb && queuePPrevHeadPositionAgrees q tid pprev &&
+        decide (queueLinkPairAgrees tcb.queuePrev (some pprev))) := by
+  unfold dualQueueRemovalGuard queuePPrevHeadPositionAgrees queueLinkPairAgrees
+  cases pprev with
+  | endpointHead => cases tcb.queuePrev <;> simp
+  | tcbNext p =>
+    cases tcb.queuePrev with
+    | none => simp
+    | some v => simp [Bool.and_assoc]
+
+/-- **`v0.35.59`**: a removal needs a queue with both boundaries populated.
+
+Named because it is the *second* thing `endpointQueueRemoveDual` refuses, and the
+frozen mirror refused none of them: a mirror that carries the named guard and not
+its unnamed neighbours still succeeds where the kernel refuses.  Spelled exactly
+as the transition spelled it inline, with a `@[simp]` equation, so every proof
+that reasoned through the old `if` sees the same term. -/
+def queueBoundariesEmpty (q : IntrusiveQueue) : Bool :=
+  q.head.isNone || q.tail.isNone
+
+@[simp] theorem queueBoundariesEmpty_eq (q : IntrusiveQueue) :
+    queueBoundariesEmpty q = (q.head.isNone || q.tail.isNone) := rfl
+
+/-- **`v0.35.59`**: the *whole* store-free precondition of a dual-queue removal.
+
+`dualQueueRemovalGuard` is one of two conditions `endpointQueueRemoveDual` checks
+before it writes anything, and naming only the one it discharges from an invariant
+is what let the frozen mirror carry a **subset** of the refusal set while reading
+a shared definition.  Both removals read this, so a condition added here reaches
+both by construction — the difference between sharing an answer and sharing the
+*question*. -/
+def dualQueueRemovalEnabled
+    (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (tcb : TCB) (pprev : QueuePPrev) : Bool :=
+  !queueBoundariesEmpty q && dualQueueRemovalGuard q tid tcb pprev
+
+@[simp] theorem dualQueueRemovalEnabled_eq
+    (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (tcb : TCB) (pprev : QueuePPrev) :
+    dualQueueRemovalEnabled q tid tcb pprev =
+      (!(q.head.isNone || q.tail.isNone) && dualQueueRemovalGuard q tid tcb pprev) := rfl
+
+/-- The guard half of the enabling condition. -/
+theorem dualQueueRemovalEnabled_guard
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB} {pprev : QueuePPrev}
+    (h : dualQueueRemovalEnabled q tid tcb pprev = true) :
+    dualQueueRemovalGuard q tid tcb pprev = true := by
+  unfold dualQueueRemovalEnabled at h
+  exact (Bool.and_eq_true .. |>.mp h).2
+
+/-- The populated-boundaries half. -/
+theorem dualQueueRemovalEnabled_boundaries
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB} {pprev : QueuePPrev}
+    (h : dualQueueRemovalEnabled q tid tcb pprev = true) :
+    queueBoundariesEmpty q = false := by
+  unfold dualQueueRemovalEnabled at h
+  have := (Bool.and_eq_true .. |>.mp h).1
+  simpa using this
+
+/-- **`v0.35.59`**: the predecessor's own forward link must name the thread being
+removed.  The third refusal the frozen mirror lacked, and the one that needs a
+store lookup, so each side resolves `prevTcb` itself and both read this. -/
+def queuePredecessorNamesSuccessor (prevTcb : TCB) (tid : SeLe4n.ThreadId) : Bool :=
+  prevTcb.queueNext = some tid
+
+@[simp] theorem queuePredecessorNamesSuccessor_eq (prevTcb : TCB) (tid : SeLe4n.ThreadId) :
+    queuePredecessorNamesSuccessor prevTcb tid = decide (prevTcb.queueNext = some tid) := rfl
+
+/-- **WS-RR RR8.4**: the tail factor, read straight off the guard.  Consumers
+reach for this rather than re-deriving it from the factorisation. -/
+theorem dualQueueRemovalGuard_tail_half
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB} {pprev : QueuePPrev}
+    (hGuard : dualQueueRemovalGuard q tid tcb pprev = true) :
+    queueTailPairAgrees q tid tcb = true := by
+  unfold dualQueueRemovalGuard at hGuard
+  exact (Bool.and_eq_true .. |>.mp hGuard).1
+
+/-- **WS-RR RR8.3**: the pairing half of the guard, discharged from the
+`TCB`-level predicate the fourth conjunct lifts. -/
+theorem dualQueueRemovalGuard_pair_half {tcb : TCB} {pprev : QueuePPrev}
+    (hPPrev : tcb.queuePPrev = some pprev) (hPair : tcb.queuePPrevAgreesWithPrev) :
+    queueLinkPairAgrees tcb.queuePrev (some pprev) := by
+  have h := queueLinkPairAgrees_of_tcb hPair
+  rw [hPPrev] at h
+  exact h
+
 /-- Endpoint object model.
 
 WS-H12a: Endpoint structure uses only intrusive dual-queue fields.

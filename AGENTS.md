@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.58.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.59.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~67130 lines)
+- `CHANGELOG.md` (~67302 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23591 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -226,7 +226,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4225 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3925 lines)
-- `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3801 lines)
+- `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3811 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3797 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
 - `tests/SmpIpcSuite.lean` (~3683 lines)
@@ -237,28 +237,29 @@ To find files that need pagination today, run:
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3260 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3215 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3247 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3118 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3074 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
+- `SeLe4n/Model/Object/Types.lean` (~2837 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2714 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2658 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2611 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2614 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
-- `SeLe4n/Model/Object/Types.lean` (~2518 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2515 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `tests/ModelIntegritySuite.lean` (~2487 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
+- `tests/FrozenOpsSuite.lean` (~2428 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2420 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2356 lines)
@@ -271,7 +272,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~2248 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2244 lines)
-- `tests/FrozenOpsSuite.lean` (~2239 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
 - `tests/SmpCancellationSuite.lean` (~2080 lines)
@@ -297,7 +297,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1849 lines)
 - `tests/SyscallDispatchSuite.lean` (~1847 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
@@ -315,11 +314,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1668 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1617 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1497 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1481 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1470 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1464 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1439 lines)
@@ -347,10 +347,10 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1239 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1236 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1236 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1191 lines)
-- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1188 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1176 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
@@ -3326,13 +3326,92 @@ compared the two on the state where they part — a differential surface can hol
 the better answer and never be asked.  And its *guard* is a different matter: it
 refuses only `queuePPrev.isNone` where the live removal refuses three things, so
 it **succeeds where the kernel refuses**, which is the direction that matters on a
-mirror; the guard family lives in the kernel layer the frozen surface deliberately
-does not import, so relocating it to the model is its own cut and is registered
-debt rather than absorbed here.
+mirror; the guard family lived in the kernel layer the frozen surface deliberately
+does not import, so relocating it to the model was its own cut — **taken at
+`v0.35.59`**, and the next paragraph is what it measured.
 
 **A plan row's enumeration is a recognised set**; the sweep is what makes it a
 derived one — and a sweep that stops where the build roots stop is still an
 enumeration.
+
+**And a shared answer must be REACHABLE from every asker, or the unreachable one
+grows its own** (`v0.35.59`).  This file's most-repeated rule is *one question
+answered in two places will diverge*, and its remedy has always been to give the
+question one owner.  The frozen removal is the case that shows the remedy is
+incomplete: `dualQueueRemovalGuard` **had** one owner, in
+`SeLe4n/Kernel/IPC/DualQueue/Core.lean`, and the one surface whose whole purpose is
+to be compared against the operation that reads it **could not import it** — so it
+answered the question itself, with one factor, and the divergence was not a second
+implementation drifting from a first but a *layer boundary* standing between an
+asker and the only answer.  The two failure modes are indistinguishable in a diff
+and have opposite remedies: drift is fixed by deleting a copy, and this is fixed by
+**moving the original down** to the layer both askers reach.  So: when a question
+has one owner and an asker that cannot see it, the owner is in the wrong layer.
+`dualQueueRemovalGuard`, `queueTailPairAgrees`, `queuePPrevHeadPositionAgrees`,
+`queueLinkPairAgrees` and `tcbWithQueueLinks` are in `Model/Object/Types.lean` now,
+beside the records they read and beside `queueRemoveBoundary` — the predicate is
+over an `IntrusiveQueue`, a `ThreadId`, a `TCB` and a `QueuePPrev`, every one a
+model record, so the IPC layer never had a claim on it.  Its **discharges** stayed
+in the kernel layer (`dualQueueRemovalGuardHolds`,
+`queueTailPairAgrees_of_wellFormed`), because those read `ipcInvariantFull`, and
+that split is the test of whether a relocation is a layering fix or a layering
+violation: the *predicate* moves, the *invariants that entail it* do not.
+
+**And moving the answer is not enough if the QUESTION was never named — a named
+condition beside unnamed ones is a subset, and reaching it through a shared
+definition reads like agreement.**  This is the sharper half, and it was found by
+auditing the fix rather than by a review: the first attempt relocated
+`dualQueueRemovalGuard` and had the mirror call it, and that mirror **still**
+succeeded where the kernel refuses.  `endpointQueueRemoveDual` refuses *four*
+things before it writes anything, and only one of them had a name — the one an
+invariant discharges, which is why it got named.  Beside it sat an unnamed
+`if q.head.isNone || q.tail.isNone`, an unnamed `prevTcb.queueNext ≠ some tid` in
+the predecessor patch, and an arm answering `.endpointQueueEmpty` where the mirror
+answered `.illegalState` (and `frozenRunAgrees` compares codes, so that one was
+visible to the differential all along, invisible only because nothing drove both
+sides to it).  A state with an **empty queue** and `pprev = .tcbNext p` passes the
+guard outright — `q.head ≠ some tid` holds vacuously for `none`, the link pair
+agrees, and the tail pair agrees because both sides of it are false — so the
+guard-carrying mirror would have unlinked a node from a queue that has none.
+
+So the remedy is not a better shared *answer* but a named shared **question**:
+`dualQueueRemovalEnabled` is the whole store-free precondition, both removals read
+it, and a condition added to it reaches both by construction.  The one factor that
+needs a store lookup cannot fold in, so it is `queuePredecessorNamesSuccessor`,
+named and read by both sides, each resolving its own `prevTcb`.  **A checker for
+this class must ask whether the refusal SETS agree, never whether a shared name is
+called** — the anchors that pin it are the two removals' conditions *and* a
+negative that refuses the guard-alone spelling coming back, because that spelling
+keeps every token.  Generalising: when you relocate a definition so a second asker
+can reach it, enumerate what the *first* asker does that the definition does not
+cover; a named condition is the one a proof needed, not the one an operation
+performs.
+
+Four things this cut recorded rather than predicted.  **The registered cost was
+wrong in the cheap direction, and that is an argument, not luck**: the debt row
+said the closure must pay "whatever fixture cost the newly-refused states carry",
+and it carried none — the newly-refused states are states the *kernel already
+refused*, so nothing in the tree was on one, `frozenRunAgrees` is unmoved and the
+golden trace is byte-identical.  A guard that only ever refuses what its subject
+refuses cannot cost a fixture; that is what distinguishes tightening a mirror from
+tightening an operation, and it is worth checking before deferring one.  **A
+relocation that repairs no proof is the evidence the layer was wrong**: 233 lines
+moved and nothing needed fixing, which is exactly what one expects when a
+definition had no dependency on the layer it was sitting in.  **Collapsing two
+`if`s into one costs a tactic, and the tactic says where the proofs were reading
+structure**: eleven proofs across five modules needed `cases pprev` moved *ahead*
+of their `split`, because unfolding the enabling condition exposes the guard's own
+`match pprev` inside the `if`, and `split` takes that first — a mechanical repair,
+and a reminder that a proof that splits on an `if` is coupled to how many `if`s
+there are.  And **the witness must be decisive about *which* refusal is new**:
+`FO-045` computes the retired `isNone`-only reading beside the live guard on a
+state violating the **tail** factor and no other, and `FO-046` adds one half per
+remaining refusal, each on a state that passes everything the previous half checks
+and is refused by exactly one more thing.  All four were mutation-tested by
+reverting the refusal each is about, and the fourth mutation is the one worth
+keeping: `lake env lean --run` elaborates against existing oleans, so a mutation of
+a *dependency* reads as PASS until the dependency is rebuilt — the first run of M1
+reported green over the reverted fix.
 
 **The cancellation footprint is arm-selected, and `.replyRecv` declares the
 hand-off it was hiding** (OD3.5, `v0.34.128`).  Two changes with one cause: a

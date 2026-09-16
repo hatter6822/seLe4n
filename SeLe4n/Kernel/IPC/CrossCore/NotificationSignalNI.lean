@@ -353,7 +353,7 @@ theorem endpointQueueRemoveDual_preserves_projection_and_invExt
     fun s s' t qp qpp qn ht hi h =>
       ⟨storeTcbQueueLinks_preserves_projection ctx observer s s' t qp qpp qn ht hi h,
        storeTcbQueueLinks_preserves_objects_invExt s s' t qp qpp qn hi h⟩
-  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep
   revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
@@ -371,9 +371,10 @@ theorem endpointQueueRemoveDual_preserves_projection_and_invExt
         | some pprev =>
           simp only []
           generalize (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
-          split
-          · simp
-          · cases pprev with
+          -- `v0.35.59`: `cases pprev` precedes the `split`.  `dualQueueRemovalEnabled`
+          -- carries the guard, whose own `match pprev` the unfold puts inside the
+          -- `if` condition, so `split` would take it before the `if`.
+          cases pprev with
             | endpointHead =>
               simp only []
               split
@@ -429,7 +430,7 @@ theorem endpointQueueRemoveDual_preserves_projection_and_invExt
                 | some prevTcb =>
                 dsimp only [hLookupP]; split
                 · simp
-                · rename_i _ _ _ stAp heqAp
+                · rename_i _ _ stAp heqAp
                   split at heqAp
                   · simp at heqAp
                   · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev

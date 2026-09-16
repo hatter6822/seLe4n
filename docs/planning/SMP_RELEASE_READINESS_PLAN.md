@@ -1174,6 +1174,39 @@ them to a documentation sweep.
 
 ### RR8 — Phase closure and hand-off to SM10
 
+**One cut landed inside this phase without a sub-task number, and the reason is
+the numbering rule rather than an exception to it.**  WS-RR RR8.4 (`v0.35.58`)
+ran its own sweep for who computes a queue boundary and found a **fifth** asker
+the plan row's enumeration had missed — `frozenQueueRemove`, the frozen
+execution mirror, which a kernel-tree sweep misses structurally because
+`SeLe4n/Kernel/FrozenOps/` is reached by neither library root.  It already asked
+the right question about the queue's tail, so its boundary was repointed in that
+cut; what it did **not** carry was the live removal's *guard*, so it succeeded on
+three classes of state where `endpointQueueRemoveDual` returns `.illegalState` —
+the direction that matters on a differential surface, since `frozenRunAgrees`
+compares outcomes and a mirror more permissive than its subject reports agreement
+on states the kernel never reaches.  RR8.4 registered that in
+[`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) table C rather than closing
+it, the guard family then living in `SeLe4n/Kernel/IPC/DualQueue/Core.lean` and
+the mirror importing no kernel module.
+
+`v0.35.59` closed it by relocating `dualQueueRemovalGuard` and its three factors
+into `SeLe4n/Model/Object/Types.lean`, beside the records they read, and then --
+having found that the guard was one of **four** refusals and the only one with a
+name -- by naming the whole store-free precondition (`dualQueueRemovalEnabled`)
+and the one factor that needs a store lookup
+(`queuePredecessorNamesSuccessor`), so both removals read both.  It is **not**
+numbered because numbering here is
+execution order: a cut landing before RR8.5 would have to *be* RR8.5 and shift
+RR8.5..RR8.16 up by one, and six of those IDs are already cited in
+`CHANGELOG.md` — which this project's own rule treats as freezing them, since a
+renumber leaves those entries resolving to different work, the one drift
+`check_workstream_plan.py` states it cannot see.  So the row is struck in the
+register, this paragraph is the plan's record of it, and the declared sub-task
+count below is unchanged.  A reader working RR8.5 next has lost nothing: the
+relocation repaired no proof and cascaded nowhere, and RR8.15's hand-off check
+reads the register row struck.
+
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | RR8.1 | Walk the RR0..RR7 acceptance gates and record the closing version for each.  **LANDED v0.35.55**: §8 carries the version and sub-task that earned each of the seventeen boxes, fifteen ticked on a re-measurement of the tree rather than on the landing phase's word, and two left unticked with the row that owns each named in §8 itself, because a box a later row produces, silently unticked, reads exactly like a box nobody checked.  Box 4 records its *confinement* — `threadIpcFieldsQuiescent` on the `.tcbSuspend` arm — since a tick read as unconditional claims more than the tree.  The walk found and fixed two stale status claims: `CLAUDE.md` named `cancelIpcBlockingOnCore`'s notification arm as uncovered for eighteen cuts after `v0.34.96` covered it, two sentences above its own retraction, and the register's row for that debt said the `.tcbSuspend` arm carries `ipcInvariant` and `objects.invExt` *only*, which ignores RR3's arm theorem.  It also measured what the closure is gated on (§8.1): eight register rows, none of them bookkeeping — five RR8's own with no sub-task carrying them, and three owned by a workstream that closed at `v0.35.2`, RR0.10's circular-closure-target shape recurring | (1 file) | S |

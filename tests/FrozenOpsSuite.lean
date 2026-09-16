@@ -1958,6 +1958,193 @@ private def differentialRefusalsAgree : IO Unit := do
       (liveWithTaint .notificationWait diffA (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.notificationWait missing diffA) ist.state))
 
+/-- **`v0.35.59`** — the retired frozen guard, computed beside the live one.
+
+`frozenQueueRemove` refused only `tcb.queuePPrev.isNone` where
+`endpointQueueRemoveDual` refuses four things.  The spelling lives here, private
+to the witness that refutes it, so `FO-045` below is known to **discriminate**
+rather than merely to pass — the pattern WS-HP HP5.5 set and HP7 generalised. -/
+private def isNoneOnlyFrozenRemovalGuard (tcb : TCB) : Bool :=
+  !tcb.queuePPrev.isNone
+
+/-- `.illegalState`, matched rather than compared: neither removal's result type
+carries `BEq` (a `SystemState` does not), and what these scenarios are about is
+the refusal. -/
+private def refusesIllegalState {α : Type} (r : Except KernelError α) : Bool :=
+  match r with
+  | .error .illegalState => true
+  | _ => false
+
+/-- `.endpointQueueEmpty`, the code the live removal answers for a thread carrying
+no `queuePPrev`.  Matched for the same reason as `refusesIllegalState`. -/
+private def refusesQueueEmpty {α : Type} (r : Except KernelError α) : Bool :=
+  match r with
+  | .error .endpointQueueEmpty => true
+  | _ => false
+
+/-- FO-045 (**WS-RR RR8.5**): **the mirror refuses what the kernel refuses.**
+
+RR8.4 unified what the two removals *write* and registered what they *refuse* as
+debt: `dualQueueRemovalGuard` sat in the IPC layer, which `FrozenOps`
+deliberately does not import, so the mirror could not carry it and
+**succeeded where the kernel refuses**.  On a differential surface that is the
+direction that matters — `frozenRunAgrees` compares outcomes, so a mirror more
+permissive than its subject reports agreement on states the kernel never reaches
+and says nothing at all about the ones it declines.  RR8.5 moved the guard to
+the model beside the fields it reads, and this is the measurement that the move
+had an effect.
+
+The state is a two-member send queue whose **tail field disagrees with the
+removed thread's `queueNext`** — `diffA` is the head with no successor and is
+not the tail — which is exactly the shape RR8.4's `queueTailPairAgrees` factor
+exists to refuse, and one `intrusiveQueueWellFormed` admits (the bundle
+constrains a queue's head and its tail and relates them nowhere).
+
+Four assertions, and the last two are what make the first two mean something.
+The retired `isNone`-only guard **admits** this state while the live guard
+refuses it, so the fixture is known to sit on the side of the divergence; then
+both removals answer `.illegalState`.  Without the retired reading computed here
+the scenario would pass identically against a guard that refused everything, and
+without the control it would pass against a fixture no removal could ever
+accept. -/
+private def differentialRemovalGuardRefusalsAgree : IO Unit := do
+  -- `diffA` heads the send queue, carries `.endpointHead`, and has NO successor;
+  -- the queue's tail names `diffB`.  So the tail field and `queueNext` disagree.
+  let tcbA : TCB :=
+    { diffTcb 62 with
+        ipcState := .blockedOnSend diffEpId,
+        queuePrev := none,
+        queuePPrev := some .endpointHead,
+        queueNext := none }
+  let tcbB : TCB :=
+    { diffTcb 63 with
+        ipcState := .blockedOnSend diffEpId,
+        queuePrev := some diffA,
+        queuePPrev := some (.tcbNext diffA),
+        queueNext := none }
+  let ep : Endpoint :=
+    { sendQ := { head := some diffA, tail := some diffB }, receiveQ := {} }
+  let ist := diffAddEndpoint (diffAddTcb (diffAddTcb mkEmptyIntermediateState tcbA) tcbB)
+    diffEpId ep
+  let q : IntrusiveQueue := ep.sendQ
+
+  -- (1) the fixture sits on the side of the divergence: the retired reading
+  -- ADMITS it, so the live guard's refusal is the thing being mirrored.
+  expect "FO-045 control: the retired isNone-only frozen guard ADMITS this state"
+    (isNoneOnlyFrozenRemovalGuard tcbA == true)
+  expect "FO-045: ...while the live guard refuses it, on the tail factor"
+    (SeLe4n.Model.dualQueueRemovalGuard q diffA tcbA .endpointHead == false)
+  expect "FO-045 control: ...and specifically the TAIL factor, the others holding"
+    ((SeLe4n.Model.queueTailPairAgrees q diffA tcbA == false)
+      && (SeLe4n.Model.queuePPrevHeadPositionAgrees q diffA .endpointHead == true))
+
+  -- (2) both removals refuse, with the same error.
+  expect "FO-045: the live dual removal refuses with .illegalState"
+    (refusesIllegalState (SeLe4n.Kernel.endpointQueueRemoveDual diffEpId false diffA ist.state))
+  expect "FO-045: ...and the frozen mirror refuses it too, identically"
+    (refusesIllegalState (frozenQueueRemove diffEpId false diffA (freeze ist)))
+
+/-- FO-046 (**`v0.35.59`**): **the guard was one of four refusals, not the whole
+set** — the three the mirror still lacked once it carried the guard.
+
+`FO-045` measured the guard and would have passed with the other three missing,
+which is what the first attempt at this fix shipped: it carried the *named*
+condition and left its unnamed neighbours behind.  A mirror reached through a
+shared name while refusing a **subset** of the set reads exactly like agreement.
+So each half here sits on a state that passes everything the previous half checks
+and is refused by exactly one more thing — which is the only way a refusal is
+attributable to the condition it is about rather than to a guard that refuses
+everything.
+
+The three:
+
+* **Populated boundaries.**  An **empty** queue with `pprev = .tcbNext p`.  The
+  guard *passes* — `q.head ≠ some tid` holds vacuously for `none`, the link pair
+  agrees, and the tail pair agrees because `q.tail = some tid` and
+  `queueNext = none` are both false — and `endpointQueueRemoveDual` refuses it on
+  a check that had no name until `queueBoundariesEmpty`.  This is the state the
+  guard-only mirror would have removed a node from a queue that has none.
+
+* **Predecessor reciprocity.**  A queue whose second member names a predecessor
+  that does not name it back.  `dualQueueRemovalEnabled` passes; the live removal
+  refuses `.illegalState` when the resolved `prevTcb.queueNext` is not `tid`,
+  where the mirror patched it unconditionally — repairing a one-sided link the
+  kernel declines to touch.
+
+* **The error code.**  A thread with no `queuePPrev` at all.  The live removal
+  answers `.endpointQueueEmpty` and the mirror answered `.illegalState`, and
+  `frozenRunAgrees` compares codes — so this one was visible to the differential
+  and invisible only because nothing drove both sides to it. -/
+private def differentialRemovalRefusalSetAgrees : IO Unit := do
+  -- ── (1) populated boundaries: an EMPTY queue, `pprev = .tcbNext` ──
+  let tcbEmptyQ : TCB :=
+    { diffTcb 62 with
+        ipcState := .blockedOnSend diffEpId,
+        queuePrev := some diffB,
+        queuePPrev := some (.tcbNext diffB),
+        queueNext := some diffB }
+  let epEmpty : Endpoint := { sendQ := {}, receiveQ := {} }
+  let istEmpty := diffAddEndpoint (diffAddTcb mkEmptyIntermediateState tcbEmptyQ) diffEpId epEmpty
+  expect "FO-046 control: the guard itself ADMITS an empty queue with a .tcbNext back-pointer"
+    (SeLe4n.Model.dualQueueRemovalGuard epEmpty.sendQ diffA tcbEmptyQ (.tcbNext diffB) == true)
+  expect "FO-046: ...so it is the BOUNDARY half that refuses, not the guard"
+    ((SeLe4n.Model.queueBoundariesEmpty epEmpty.sendQ == true)
+      && (SeLe4n.Model.dualQueueRemovalEnabled epEmpty.sendQ diffA tcbEmptyQ
+            (.tcbNext diffB) == false))
+  expect "FO-046: the live dual removal refuses the empty queue"
+    (refusesIllegalState
+      (SeLe4n.Kernel.endpointQueueRemoveDual diffEpId false diffA istEmpty.state))
+  expect "FO-046: ...and the frozen mirror refuses it too"
+    (refusesIllegalState (frozenQueueRemove diffEpId false diffA (freeze istEmpty)))
+
+  -- ── (2) predecessor reciprocity: `prevTcb.queueNext` does not name `tid` ──
+  -- `diffA` heads the queue; `diffB` is its tail and names `diffA` as its
+  -- predecessor, but `diffA.queueNext` names nobody.  Removing `diffB` therefore
+  -- passes the whole enabling condition and fails on the predecessor's link.
+  let headNotNaming : TCB :=
+    { diffTcb 62 with
+        ipcState := .blockedOnSend diffEpId,
+        queuePrev := none,
+        queuePPrev := some .endpointHead,
+        queueNext := none }
+  let tailNamingIt : TCB :=
+    { diffTcb 63 with
+        ipcState := .blockedOnSend diffEpId,
+        queuePrev := some diffA,
+        queuePPrev := some (.tcbNext diffA),
+        queueNext := none }
+  let epOneSided : Endpoint :=
+    { sendQ := { head := some diffA, tail := some diffB }, receiveQ := {} }
+  let istOneSided :=
+    diffAddEndpoint (diffAddTcb (diffAddTcb mkEmptyIntermediateState headNotNaming) tailNamingIt)
+      diffEpId epOneSided
+  expect "FO-046 control: the enabling condition ADMITS the one-sided link"
+    (SeLe4n.Model.dualQueueRemovalEnabled epOneSided.sendQ diffB tailNamingIt
+      (.tcbNext diffA) == true)
+  expect "FO-046: ...and the predecessor does not name it back"
+    (SeLe4n.Model.queuePredecessorNamesSuccessor headNotNaming diffB == false)
+  expect "FO-046: the live dual removal refuses a non-reciprocating predecessor"
+    (refusesIllegalState
+      (SeLe4n.Kernel.endpointQueueRemoveDual diffEpId false diffB istOneSided.state))
+  expect "FO-046: ...and the frozen mirror refuses it too"
+    (refusesIllegalState (frozenQueueRemove diffEpId false diffB (freeze istOneSided)))
+
+  -- ── (3) the error CODE on the no-back-pointer arm ──
+  let detached : TCB :=
+    { diffTcb 62 with
+        ipcState := .blockedOnSend diffEpId,
+        queuePrev := none,
+        queuePPrev := none,
+        queueNext := none }
+  let istDetached :=
+    diffAddEndpoint (diffAddTcb mkEmptyIntermediateState detached) diffEpId
+      { sendQ := { head := some diffA, tail := some diffA }, receiveQ := {} }
+  expect "FO-046: the live removal answers .endpointQueueEmpty for no back-pointer"
+    (refusesQueueEmpty
+      (SeLe4n.Kernel.endpointQueueRemoveDual diffEpId false diffA istDetached.state))
+  expect "FO-046: ...and so does the frozen mirror, which answered .illegalState"
+    (refusesQueueEmpty (frozenQueueRemove diffEpId false diffA (freeze istDetached)))
+
 /-- FO-036: **a send naming a thread that does not exist** (PR #873 round 17).
 
 On a rendezvous the message goes straight from the argument into the receiver's
@@ -2230,6 +2417,8 @@ def main : IO Unit := do
   operationDifferentialScenarios.forM (fun s => s.2)
   differentialTaintedSignalAgrees
   differentialRefusalsAgree
+  differentialRemovalGuardRefusalsAgree
+  differentialRemovalRefusalSetAgrees
   differentialComparisonHasBite
   -- **Derived, not hand-kept** (PR #895 review round 15).  The literal that
   -- stood here read "33 scenarios" against 40 distinct `FO-` ids and 34 runner

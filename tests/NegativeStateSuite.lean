@@ -1211,7 +1211,7 @@ private def runUntypedF2NegativeChecks : IO Unit := do
 -- is what WS-RR RR8.4's collapse of the two removals consumes.
 #check @SeLe4n.Kernel.dualQueueRemovalGuardHolds
 #check @SeLe4n.Kernel.dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant
-#check @SeLe4n.Kernel.dualQueueRemovalGuard_eq_position_and_pair
+#check @SeLe4n.Model.dualQueueRemovalGuard_eq_position_and_pair
 #check @SeLe4n.Kernel.spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev
 #check @SeLe4n.Kernel.sweptAndRestored_queuePPrevAgreesWithPrev
 #check @SeLe4n.Kernel.QueueNextPath.lastEdge
@@ -1261,9 +1261,9 @@ private def runDualQueuePPrevPairingChecks : IO Unit := do
   expectBool "pprev pairing holds on the live three-member queue"
     (queuePPrevAgreesWithPrevBool stPair3) true
   expectBool "removal guard holds at the head (endpointHead arm)"
-    (SeLe4n.Kernel.dualQueueRemovalGuard q3 (SeLe4n.ThreadId.ofNat 7) tcb7 .endpointHead) true
+    (SeLe4n.Model.dualQueueRemovalGuard q3 (SeLe4n.ThreadId.ofNat 7) tcb7 .endpointHead) true
   expectBool "removal guard holds at an interior node (tcbNext arm)"
-    (SeLe4n.Kernel.dualQueueRemovalGuard q3 (SeLe4n.ThreadId.ofNat 8) tcb8
+    (SeLe4n.Model.dualQueueRemovalGuard q3 (SeLe4n.ThreadId.ofNat 8) tcb8
       (.tcbNext (SeLe4n.ThreadId.ofNat 7))) true
 
   -- (2) breaking the pairing alone: every queue and every `queueNext` unchanged.
@@ -1291,10 +1291,10 @@ private def runDualQueuePPrevPairingChecks : IO Unit := do
   let qEmpty ← sendQOf stDetached
   let tcbDet ← tcbOf stDetached (SeLe4n.ThreadId.ofNat 7)
   expectBool "...and still fails the guard, on the position half"
-    (SeLe4n.Kernel.dualQueueRemovalGuard qEmpty (SeLe4n.ThreadId.ofNat 7) tcbDet .endpointHead)
+    (SeLe4n.Model.dualQueueRemovalGuard qEmpty (SeLe4n.ThreadId.ofNat 7) tcbDet .endpointHead)
     false
   expectBool "...which is exactly the position factor"
-    (SeLe4n.Kernel.queuePPrevHeadPositionAgrees qEmpty (SeLe4n.ThreadId.ofNat 7) .endpointHead)
+    (SeLe4n.Model.queuePPrevHeadPositionAgrees qEmpty (SeLe4n.ThreadId.ofNat 7) .endpointHead)
     false
 
 -- WS-RR RR8.4: the four shapes a guarded removal writes, and the two removals'
@@ -1302,14 +1302,14 @@ private def runDualQueuePPrevPairingChecks : IO Unit := do
 -- exercises the guard's and the boundary's *values* but not the theorems that
 -- state what each removal writes, and the whole content of the collapse is that
 -- the two write one definition.
-#check @SeLe4n.Kernel.queueTailPairAgrees_iff
+#check @SeLe4n.Model.queueTailPairAgrees_iff
 #check @SeLe4n.Kernel.queueTailPairAgrees_of_wellFormed
-#check @SeLe4n.Kernel.queueRemoveBoundary_headLast
-#check @SeLe4n.Kernel.queueRemoveBoundary_headMore
-#check @SeLe4n.Kernel.queueRemoveBoundary_midLast
-#check @SeLe4n.Kernel.queueRemoveBoundary_midMore
+#check @SeLe4n.Model.queueRemoveBoundary_headLast
+#check @SeLe4n.Model.queueRemoveBoundary_headMore
+#check @SeLe4n.Model.queueRemoveBoundary_midLast
+#check @SeLe4n.Model.queueRemoveBoundary_midMore
 #check @SeLe4n.Kernel.endpointQueueRemoveDual_writes_queueRemoveBoundary
-#check @SeLe4n.Kernel.dualQueueRemovalGuard_tail_half
+#check @SeLe4n.Model.dualQueueRemovalGuard_tail_half
 
 /-- **WS-RR RR8.4**: the tail question has one answer, and the removal refuses the
 state on which its two readings part.
@@ -1365,9 +1365,9 @@ private def runDualQueueTailPairingChecks : IO Unit := do
 
   -- (1) the fact and the proxy agree at both members of a live queue.
   expectBool "tail pairing holds at the head of the live queue"
-    (SeLe4n.Kernel.queueTailPairAgrees q2 (SeLe4n.ThreadId.ofNat 7) tcb7) true
+    (SeLe4n.Model.queueTailPairAgrees q2 (SeLe4n.ThreadId.ofNat 7) tcb7) true
   expectBool "tail pairing holds at the tail of the live queue"
-    (SeLe4n.Kernel.queueTailPairAgrees q2 (SeLe4n.ThreadId.ofNat 8) tcb8) true
+    (SeLe4n.Model.queueTailPairAgrees q2 (SeLe4n.ThreadId.ofNat 8) tcb8) true
 
   -- (2) the shared boundary computes the shapes the branch facts predict.
   expectQueue "boundary: removing the head with a successor moves the head only"
@@ -1387,18 +1387,18 @@ private def runDualQueueTailPairingChecks : IO Unit := do
   expectBool "...the queue's tail still names thread 8"
     (qS.tail == some (SeLe4n.ThreadId.ofNat 8)) true
   expectBool "...so the fact and the proxy DISAGREE"
-    (SeLe4n.Kernel.queueTailPairAgrees qS (SeLe4n.ThreadId.ofNat 7) tcbS) false
+    (SeLe4n.Model.queueTailPairAgrees qS (SeLe4n.ThreadId.ofNat 7) tcbS) false
   expectErr "...and the removal refuses it rather than stranding thread 8"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stStranded)
     .illegalState
 
   -- (4) the refusal is the tail factor's: the other two are true on that state.
   expectBool "...the position factor is TRUE there"
-    (SeLe4n.Kernel.queuePPrevHeadPositionAgrees qS (SeLe4n.ThreadId.ofNat 7) .endpointHead) true
+    (SeLe4n.Model.queuePPrevHeadPositionAgrees qS (SeLe4n.ThreadId.ofNat 7) .endpointHead) true
   expectBool "...the pairing factor is TRUE there"
-    (SeLe4n.Kernel.queueLinkPairAgrees tcbS.queuePrev (some .endpointHead)) true
+    (SeLe4n.Model.queueLinkPairAgrees tcbS.queuePrev (some .endpointHead)) true
   expectBool "...so the whole guard is false, and only because of the tail"
-    (SeLe4n.Kernel.dualQueueRemovalGuard qS (SeLe4n.ThreadId.ofNat 7) tcbS .endpointHead) false
+    (SeLe4n.Model.dualQueueRemovalGuard qS (SeLe4n.ThreadId.ofNat 7) tcbS .endpointHead) false
 
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]

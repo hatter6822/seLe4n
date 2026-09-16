@@ -794,7 +794,7 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   obtain ⟨hEpInv, hLink, hAcyclic, hPP⟩ := hInv
-  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -817,13 +817,11 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
         | none => simp [hPPrev] at hStep
         | some pprev =>
           simp only [hPPrev] at hStep
-          -- isNone guard
+          -- `v0.35.59`: one enabling condition, `dualQueueRemovalEnabled`, so one
+          -- `split` -- and `cases pprev` has to precede it, because unfolding the
+          -- guard puts its own `match pprev` inside the `if` condition.
           generalize hQ : (if isReceiveQ then ep.receiveQ else ep.sendQ) = q at hStep
-          split at hStep
-          · simp at hStep
-          · rename_i hNotIsNone
-            -- pprevConsistent guard
-            cases pprev with
+          cases pprev with
             | endpointHead =>
               simp only [] at hStep
               split at hStep
@@ -1227,6 +1225,11 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                 -- **WS-RR RR8.4**: the guard's tail factor — see the sibling
                 -- extraction in the `endpointHead` branch above.
                 have hTailPair : queueTailPairAgrees q tid tcb = true := by simp_all
+                -- `v0.35.59`: the populated-boundaries fact came from a second,
+                -- outer `split` on an unnamed `if`.  It is now the other half of
+                -- `dualQueueRemovalEnabled`, extracted here the same way its
+                -- siblings above are, so the consumer below is unchanged.
+                have hNotIsNone : ¬((q.head.isNone || q.tail.isNone) = true) := by simp_all
                 have hWfQ : intrusiveQueueWellFormed q st := by rw [← hQ]; cases isReceiveQ <;> simp_all
                 obtain ⟨hHT, hHdBnd, hTlBnd⟩ := hWfQ
                 -- applyPrev: lookupTcb st prevTid → prevTcb → storeTcbQueueLinks

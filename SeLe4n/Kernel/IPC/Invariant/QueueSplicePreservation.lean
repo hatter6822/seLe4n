@@ -188,7 +188,8 @@ theorem endpointQueueRemoveDual_shape
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     SpliceShape endpointId isReceiveQ tid st st' := by
-  unfold endpointQueueRemoveDual dualQueueRemovalGuard SystemState.getObject? at hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled queueBoundariesEmpty
+    dualQueueRemovalGuard SystemState.getObject? at hStep
   revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
@@ -210,7 +211,11 @@ theorem endpointQueueRemoveDual_shape
               || (spliceQueue isReceiveQ ep).tail.isNone) with
           | true => simp
           | false =>
-            simp only [Bool.false_eq_true, if_false]
+            -- `v0.35.59`: the two preconditions are one `if` on
+            -- `dualQueueRemovalEnabled`, so discharging the boundaries half no
+            -- longer eliminates a whole branch -- it reduces the condition to the
+            -- guard, which the `split` further down then takes.
+            simp only [Bool.not_false, Bool.true_and]
             have hTailSome : (spliceQueue isReceiveQ ep).tail.isSome = true := by
               simp only [Bool.or_eq_false_iff] at hEmpty
               cases hT : (spliceQueue isReceiveQ ep).tail with
@@ -299,7 +304,11 @@ theorem endpointQueueRemoveDual_shape
                 | some prevTcb =>
                   simp only []
                   by_cases hPN : prevTcb.queueNext = some tid
-                  · rw [if_neg (not_not_intro hPN)]
+                  -- `v0.35.59`: the reciprocity check is
+                  -- `queuePredecessorNamesSuccessor`, shared with the frozen
+                  -- mirror, so the condition is a `Bool` rather than a `≠`.
+                  · simp only [queuePredecessorNamesSuccessor, hPN, decide_true,
+                      Bool.not_true, Bool.false_eq_true, if_false]
                     cases hNext : tcb.queueNext with
                     | none =>
                       simp only []
@@ -354,8 +363,9 @@ theorem endpointQueueRemoveDual_shape
                                   pair2.2 hObj hLookup hPPrev hPrev hHeadNe hHeadSome
                                   hTailSome hNext hPrevTcb hPN hRelinkPrev hNextTcb
                                   hRelinkNext hStore hClear
-                  · rw [if_pos hPN]
-                    simp
+                  · simp only [queuePredecessorNamesSuccessor,
+                      Bool.not_eq_eq_eq_not, Bool.not_true, decide_eq_false_iff_not]
+                    simp [hPN]
 
 -- ============================================================================
 -- §4  Carrying a predicate across the splice

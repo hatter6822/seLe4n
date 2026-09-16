@@ -1,3 +1,175 @@
+## v0.35.59 — the frozen removal's refusal set: a shared answer must be reachable, and the question must be named
+
+WS-RR RR8.4 (`v0.35.58`) ran its own sweep for who computes an endpoint queue's
+boundary and found a **fifth** asker after the plan row had said "two":
+`frozenQueueRemove`, the frozen execution mirror of `endpointQueueRemoveDual`.
+Its *boundary* was repointed in that cut — it already asked the fact rather than
+the proxy, so the repoint was a de-duplication with no behaviour change, and the
+mirror was therefore **right** on the tail question where the operation it
+mirrors was wrong.  Its **guard** was a different matter, and RR8.4 registered it
+in `docs/REGISTERED_DEBT.md` table C rather than closing it.  This cut closes it.
+
+`endpointQueueRemoveDual` refuses **four** things before it writes anything: a
+`queuePPrev` of `none` (answering `.endpointQueueEmpty`), a queue missing either
+boundary, a back-pointer that does not pair with `queuePrev` or disagrees with
+where the thread sits in its queue (WS-RR RR8.3's `dualQueueRemovalGuard`, plus
+RR8.4's tail factor), and a resolved predecessor whose own `queueNext` does not
+name the thread being removed.  `frozenQueueRemove` refused only the first, and
+with the wrong code — so on a state violating any of the others it **succeeded
+where the kernel returns `.illegalState`**.  That is the direction that matters on
+a differential surface: `frozenRunAgrees` compares outcomes, so a mirror more
+permissive than its subject reports agreement on states the kernel never reaches,
+and says nothing at all about the states that distinguish them.  Not a kernel
+defect — `SeLe4n/Kernel/FrozenOps/` is experimental, reached by neither library
+root and built only by `tests.FrozenOpsSuite`, so the weakening is of a *check* —
+but a check that reads as coverage while asserting less than it appears to.
+
+### A shared answer must be REACHABLE from every asker, or the unreachable one grows its own
+
+This tree's most-repeated rule is *one question answered in two places will
+diverge*, and its remedy has always been to give the question one owner.  This is
+the case that shows the remedy incomplete.  `dualQueueRemovalGuard` **had** one
+owner, in `SeLe4n/Kernel/IPC/DualQueue/Core.lean`, and the one surface whose whole
+purpose is to be compared against the operation that reads it **could not import
+it**: `FrozenOps/Core.lean` imports `Model.FrozenState` and `Model.FreezeProofs`
+and nothing from the kernel, deliberately, the mirror being a thin layer over the
+model.  So it answered the question itself, with one factor of four.
+
+The divergence was therefore not a second implementation drifting from a first —
+it was a **layer boundary standing between an asker and the only answer**.  The
+two look identical in a diff and have opposite remedies: drift is fixed by
+deleting a copy, and this is fixed by *moving the original down* to the layer both
+askers reach.  **When a question has one owner and an asker that cannot see it,
+the owner is in the wrong layer.**
+
+`dualQueueRemovalGuard`, `queueTailPairAgrees`, `queuePPrevHeadPositionAgrees`,
+`queueLinkPairAgrees` and `tcbWithQueueLinks` are in
+`SeLe4n/Model/Object/Types.lean` now, beside the records they read and beside
+`queueRemoveBoundary`.  The predicate is over an `IntrusiveQueue`, a `ThreadId`, a
+`TCB` and a `QueuePPrev` — every one a model record, with no kernel dependency —
+so the IPC layer never had a claim on it.
+
+### And moving the answer is not enough if the QUESTION was never named
+
+That relocation, with the mirror calling the guard, was the first attempt at this
+fix — and the mirror **still** succeeded where the kernel refuses.  Found by
+auditing the fix against the live removal's body rather than by a review, and it
+is the sharper half of this cut.
+
+Only one of the live removal's four refusals had a name, and it had one because a
+*proof* needed it: `dualQueueRemovalGuardHolds` discharges it from
+`dualQueueSystemInvariant`.  Beside it sat an unnamed
+`if q.head.isNone || q.tail.isNone`, an unnamed `prevTcb.queueNext ≠ some tid`
+inside the predecessor patch, and an arm answering a different error code.  **A
+named condition beside unnamed ones is a subset of the refusal set, and reaching
+it through a shared definition reads like agreement.**
+
+The gap is not hypothetical.  A state with an **empty** queue and
+`pprev = .tcbNext p` passes `dualQueueRemovalGuard` outright — `q.head ≠ some tid`
+holds vacuously for `none`, the link pair agrees, and the tail pair agrees because
+`q.tail = some tid` and `queueNext = none` are both false — so the
+guard-carrying mirror would have unlinked a node from a queue that has none, on a
+state the kernel declines.  `FO-046` is that state.
+
+So the remedy is a named shared **question** rather than a better shared answer.
+`dualQueueRemovalEnabled` is the whole store-free precondition —
+`!queueBoundariesEmpty q && dualQueueRemovalGuard q tid tcb pprev` — and **both**
+removals read it, so a condition added to it reaches both by construction.  The
+one factor that needs a store lookup cannot fold in, so it is
+`queuePredecessorNamesSuccessor`, named and read by both sides with each resolving
+its own `prevTcb`.  The no-back-pointer arm answers `.endpointQueueEmpty` on both.
+
+The generalisation, for the next time a definition is relocated so a second asker
+can reach it: **enumerate what the first asker does that the definition does not
+cover.**  A named condition is the one a proof needed, not the one the operation
+performs — and a checker for this class must ask whether the refusal *sets* agree,
+never whether a shared name is called.  The Tier 3 anchors accordingly pin both
+removals' conditions and carry a negative refusing the guard-alone spelling, which
+keeps every token.
+
+Its **discharges** stayed in the kernel layer — `dualQueueRemovalGuardHolds`,
+`dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant`,
+`queueTailPairAgrees_of_wellFormed` — because those read `ipcInvariantFull`, and
+that split is the test of whether a relocation is a layering fix or a layering
+violation: **the predicate moves, the invariants that entail it do not.**  A guard
+whose discharges followed it down would have dragged the IPC invariant surface
+into the model, which is the violation this cut is the opposite of.
+
+### Three things measured rather than predicted
+
+**The registered cost was wrong in the cheap direction, and that is an argument
+rather than luck.**  The debt row said the closure must pay "whatever fixture cost
+the newly-refused states carry".  It carried none: the newly-refused states are
+states the *kernel already refused*, so nothing in the tree was on one.
+`frozenRunAgrees` is unmoved, every pre-existing `FO-` scenario passes unchanged
+and `tests/fixtures/main_trace_smoke.expected` is byte-identical.  A guard that
+only ever refuses what its subject refuses cannot cost a fixture — that is what
+separates tightening a *mirror* from tightening an *operation*, and it is worth
+checking before deferring one.
+
+**A relocation that repairs no proof is the evidence that the layer was wrong.**
+233 lines moved and not one proof needed fixing; the production target (494 jobs)
+and the staged target (301 jobs) both build.  That is what one expects when a
+definition had no dependency on the layer it was sitting in.  Had the move
+cascaded, the right reading would have been the reverse — that the guard belonged
+where it was and the mirror needed something else.
+
+**Collapsing two `if`s into one costs a tactic, and the tactic says where the
+proofs were reading structure.**  Eleven proofs across five modules needed
+`cases pprev` moved *ahead* of their `split`: unfolding `dualQueueRemovalEnabled`
+exposes the guard's own `match pprev` inside the `if` condition, and `split` takes
+that before the `if`.  Mechanical, and a reminder that a proof which splits on an
+`if` is coupled to how many `if`s there are.  One proof
+(`QueueSplicePreservation`'s `SpliceShape` derivation) case-splits on the boundary
+expression explicitly to derive `hHeadSome`/`hTailSome`, so it keeps that split and
+the condition it discharges now reduces to the guard instead of eliminating a
+branch; one arm of `PerOperation` re-derives the boundaries fact locally, the same
+way its siblings extract the guard's other factors.
+
+**The witness must be decisive about *which* refusal is new.**  `FO-045`
+(`tests/FrozenOpsSuite.lean`) computes the retired `isNone`-only reading —
+`isNoneOnlyFrozenRemovalGuard`, a `private def` living in the witness that refutes
+it and nowhere else — beside the live guard, on a state that violates the **tail**
+factor and no other, with the position factor's holding asserted as a control.  So
+the assertions cannot pass on a guard that refuses everything, which is the
+failure mode a mirror-tightening witness is most likely to have.  It then drives
+the live `endpointQueueRemoveDual` and the frozen mirror on that same state and
+requires both to answer `.illegalState` — the claim the whole differential surface
+rests on, and one no scenario in the tree had made.
+
+`FO-046` adds one half per remaining refusal, each on a state that passes
+everything the previous half checks and is refused by exactly one more thing: the
+empty queue with a `.tcbNext` back-pointer, the queue whose second member names a
+predecessor that does not name it back, and the thread with no back-pointer at all
+(where the claim is the error *code*).  Each half asserts the *control* — that the
+guard, or the whole enabling condition, admits the state — before asserting the
+refusal, so a refusal is attributable to the condition it is about.
+
+All four refusals were mutation-tested by reverting the one each is about, and the
+fourth mutation is the one worth recording: **`lake env lean --run` elaborates
+against existing oleans**, so a mutation of a *dependency* reads as PASS until the
+dependency is rebuilt.  The first run of the guard-narrowing mutation reported
+green over the reverted fix; rebuilding first made it fail on exactly the
+assertion it should.
+
+### Why this carries no sub-task number
+
+Numbering in `SMP_RELEASE_READINESS_PLAN.md` is execution order, so a cut landing
+before RR8.5 would have to *be* RR8.5 and shift RR8.5..RR8.16 up by one.  Six of
+those IDs (RR8.5, RR8.7, RR8.12, RR8.13, RR8.15, RR8.16) are already cited in this
+file, which the project's own rule treats as freezing them: a renumber would leave
+those entries resolving to different work, which is the one drift
+`check_workstream_plan.py` states it cannot see.  The plan's RR8 preamble records
+the cut, the register row is struck, the declared sub-task count is unchanged, and
+RR8.15's hand-off check reads that row closed.
+
+Anchors: eight new Tier 3 checks over the relocated guard, the frozen call site,
+`FO-045` and its wiring, two of them negatives (no re-spelling of the guard inside
+the frozen module; the retired reading confined to its witness), with the four
+anchors naming the moved definitions repointed at the model.
+
+Refs: docs/REGISTERED_DEBT.md table C (the frozen-removal guard row, closed)
+
 ## v0.35.58 — WS-RR RR8.4: the removals' queue boundary becomes one definition, which asks the fact rather than a proxy for it
 
 WS-OD OD3.9 unified what an endpoint-queue removal writes to the *neighbours*
