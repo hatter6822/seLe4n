@@ -426,9 +426,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     ]
   }
   let stDeepCNode : SystemState :=
-    { st1 with
-      objects := st1.objects.insert ⟨200⟩ (.cnode deepRadixCNode)
-    }
+    st1.withObjectStored ⟨200⟩ (.cnode deepRadixCNode)
   IO.println s!"[SST-021] deep cnode radix fixture: {reprStr <| (stDeepCNode.getCNode? ⟨200⟩).map (fun cn => cn.radixWidth)}"
   match SeLe4n.Kernel.cspaceLookupPath { cnode := ⟨200⟩, cptr := SeLe4n.CPtr.ofNat 13312, depth := 14 } stDeepCNode with
   | .error err => IO.println s!"[SST-022] deep cnode path lookup error: {reprStr err}"
@@ -456,9 +454,8 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     ipcState := .ready, registerContext := ctxRegFile }
-  let stCtx : SystemState := { st1 with
-    objects := st1.objects.insert ⟨1⟩ ctxTcb1,
-    scheduler := setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩]) none }
+  let stCtx : SystemState := { (st1.withObjectStored ⟨1⟩ ctxTcb1) with
+      scheduler := setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩]) none }
   match SeLe4n.Kernel.schedule stCtx with
   | .error err => IO.println s!"[SST-031] context switch schedule error: {reprStr err}"
   | .ok (_, stCtxSched) =>
@@ -468,10 +465,8 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
 
   -- WS-G7: multi-endpoint test migrated to dual-queue operations
   let stMultiEndpoint : SystemState :=
-    { st1 with
-      objects := st1.objects.insert demoEndpoint (.endpoint {})
-        |>.insert ⟨31⟩ (.endpoint {})
-    }
+    st1.withObjectStored demoEndpoint (.endpoint {})
+        |>.withObjectStored ⟨31⟩ (.endpoint {})
   match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default stMultiEndpoint with
   | .error err => IO.println s!"[SST-033] multi-endpoint send A error: {reprStr err}"
   | .ok (_, stEp1) =>
@@ -679,7 +674,7 @@ private def runCapabilityIpcTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   -- Set up fresh state with idle endpoint for dual-queue test
   let dualEp : KernelObject := .endpoint {
     sendQ := {}, receiveQ := {} }
-  let stDual : SystemState := { st1 with objects := st1.objects.insert dualEpId dualEp }
+  let stDual : SystemState := st1.withObjectStored dualEpId dualEp
   match SeLe4n.Kernel.endpointSendDual dualEpId ⟨1⟩ .empty stDual with
   | .error err => IO.println s!"[CIC-006] endpointSendDual error: {reprStr err}"
   | .ok (_, stSent) =>
@@ -705,7 +700,8 @@ private def runCapabilityIpcTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
     ipcState := .blockedOnReply demoEndpoint (some replierTid) }
   let replySched := st1.scheduler.setRunQueueOnCore bootCoreId
     ((st1.scheduler.runQueueOnCore bootCoreId).remove replyTarget)
-  let stReply : SystemState := { st1 with objects := st1.objects.insert replyTarget.toObjId replyTcb, scheduler := replySched }
+  let stReply : SystemState := { (st1.withObjectStored replyTarget.toObjId replyTcb) with
+      scheduler := replySched }
   -- WS-H1/M-02: endpointReply now requires a replier that matches replyTarget.
   match SeLe4n.Kernel.endpointReply replierTid replyTarget .empty stReply with
   | .error err => IO.println s!"[CIC-009] endpointReply error: {reprStr err}"
@@ -728,9 +724,9 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
     tid := ⟨12⟩, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
     ipcState := .ready, deadline := ⟨30⟩ }
-  let stEdf : SystemState := { st1 with
-    objects := st1.objects.insert ⟨1⟩ edfTcbA |>.insert ⟨12⟩ edfTcbB,
-    scheduler := setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩, ⟨12⟩]) none }
+  let stEdf : SystemState := { (st1.withObjectStored ⟨1⟩ edfTcbA
+        |>.withObjectStored ⟨12⟩ edfTcbB) with
+      scheduler := setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩, ⟨12⟩]) none }
   match SeLe4n.Kernel.chooseThread stEdf with
   | .error err => IO.println s!"[STD-001] EDF choose error: {reprStr err}"
   | .ok (chosen, _) =>
@@ -741,9 +737,8 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
     tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     ipcState := .ready, timeSlice := 2 }
-  let stTick : SystemState := { st1 with
-    objects := st1.objects.insert ⟨1⟩ tickTcb,
-    scheduler := setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩, ⟨12⟩]) (some ⟨1⟩) }
+  let stTick : SystemState := { (st1.withObjectStored ⟨1⟩ tickTcb) with
+      scheduler := setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩, ⟨12⟩]) (some ⟨1⟩) }
   match SeLe4n.Kernel.timerTick stTick with
   | .error err => IO.println s!"[STD-003] timer tick decrement error: {reprStr err}"
   | .ok ((), stTicked) =>
@@ -757,9 +752,8 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
     tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     ipcState := .ready, timeSlice := 1 }
-  let stExpiry : SystemState := { st1 with
-    objects := st1.objects.insert ⟨1⟩ expiryTcb,
-    scheduler := setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩, ⟨12⟩]) (some ⟨1⟩) }
+  let stExpiry : SystemState := { (st1.withObjectStored ⟨1⟩ expiryTcb) with
+      scheduler := setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩, ⟨12⟩]) (some ⟨1⟩) }
   match SeLe4n.Kernel.timerTick stExpiry with
   | .error err => IO.println s!"[STD-006] timer tick expiry error: {reprStr err}"
   | .ok ((), stExpired) =>
@@ -803,7 +797,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   -- Fresh endpoint for dual-queue test
   let ep0 : KernelObject := .endpoint {
     sendQ := {}, receiveQ := {} }
-  let st0 : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
+  let st0 : SystemState := st1.withObjectStored epId ep0
   -- Sender sends (no receiver queued → sender blocks with message)
   match SeLe4n.Kernel.endpointSendDual epId senderId testMsg st0 with
   | .error err => IO.println s!"[IMT-001] F1-01 send error: {reprStr err}"
@@ -836,7 +830,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   -- F1-02: Rendezvous path — receiver waits first, then send delivers directly
   let ep1 : KernelObject := .endpoint {
     sendQ := {}, receiveQ := {} }
-  let stR : SystemState := { st1 with objects := st1.objects.insert epId ep1 }
+  let stR : SystemState := st1.withObjectStored epId ep1
   -- Receiver blocks first (no sender waiting → receiver enqueued)
   match SeLe4n.Kernel.endpointReceiveDual epId receiverId none stR with
   | .error err => IO.println s!"[IMT-007] F1-02 receive-first error: {reprStr err}"
@@ -855,7 +849,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
           IO.println s!"[IMT-009] rendezvous delivery registers: {reprStr rendRegs}"
   -- T7-B: Post-mutation invariant check after IPC rendezvous
   let epRend : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
-  let stRMut : SystemState := { st1 with objects := st1.objects.insert demoEndpoint epRend }
+  let stRMut : SystemState := st1.withObjectStored demoEndpoint epRend
   match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none stRMut with
   | .ok (_, stWaitMut) =>
     let rendMsg : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := none }
@@ -870,9 +864,9 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   -- WS-SM SM6.D (#7.3 fold): the server supplies a Reply object on its server-first
   -- `Recv`; the later `Call` rendezvous links the caller to it atomically.
   let f103ReplyId : SeLe4n.ReplyId := ⟨9004⟩
-  let f103Objects :=
-    (st1.objects.insert epId ep2).insert f103ReplyId.toObjId (.reply { replyId := f103ReplyId })
-  let stC : SystemState := { st1 with objects := f103Objects }
+  let stC : SystemState :=
+    st1.withObjectStored epId ep2
+      |>.withObjectStored f103ReplyId.toObjId (.reply { replyId := f103ReplyId })
   -- Receiver waits first (server-first, stashing its reply object)
   match SeLe4n.Kernel.endpointReceiveDual epId receiverId (some f103ReplyId) stC with
   | .error err => IO.println s!"[IMT-010] F1-03 receive error: {reprStr err}"
@@ -914,7 +908,8 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   let h1ReplyId : SeLe4n.ReplyId := ⟨9001⟩
   let h1Reply : KernelObject := .reply { replyId := h1ReplyId }
   let stH1 : SystemState :=
-    { st1 with objects := (st1.objects.insert epId ep3).insert h1ReplyId.toObjId h1Reply }
+    st1.withObjectStored epId ep3
+        |>.withObjectStored h1ReplyId.toObjId h1Reply
   -- No receiver queued → caller enqueues on sendQ with blockedOnCall
   let h1CallMsg : IpcMessage := { registers := #[⟨77⟩], caps := #[], badge := none }
   match SeLe4n.Kernel.endpointCall epId callerId h1CallMsg stH1 with
@@ -1020,7 +1015,7 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     badge := some (Badge.ofNatMasked 999) }
   -- Create a fresh endpoint for this test
   let ep0 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
-  let stFresh : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
+  let stFresh : SystemState := st1.withObjectStored epId ep0
   match SeLe4n.Kernel.endpointSendDual epId senderId boundaryMsg stFresh with
   | .error err =>
       IO.println s!"[IMB-007] H12d boundary message accepted: false (error: {reprStr err})"
@@ -1113,17 +1108,16 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   -- F2-06: Device restriction — create a device untyped and try to retype a TCB from it
   let deviceUntypedId : SeLe4n.ObjId := ⟨41⟩
   let stDevice : SystemState :=
-    { st1 with
-      objects := st1.objects.insert deviceUntypedId (.untyped {
+    st1.withObjectStored deviceUntypedId (.untyped {
           regionBase := (SeLe4n.PAddr.ofNat 0x200000), regionSize := 8192,
           watermark := 0, children := [], isDevice := true })
-        |>.insert ⟨10⟩ (.cnode {
+        |>.withObjectStored ⟨10⟩ (.cnode {
           depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
           slots := SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 0, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }),
             (SeLe4n.Slot.ofNat 5, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
             (SeLe4n.Slot.ofNat 6, { target := .object demoUntyped, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
-            (SeLe4n.Slot.ofNat 7, { target := .object deviceUntypedId, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }) ] }) }
+            (SeLe4n.Slot.ofNat 7, { target := .object deviceUntypedId, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }) ] })
   let devAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 7 }
   let devTcb : KernelObject := .tcb {
     tid := ⟨53⟩, priority := ⟨50⟩, domain := ⟨0⟩,
@@ -1168,10 +1162,10 @@ private def runDequeueOnDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState)
     tid := ⟨12⟩, priority := lowPrio, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
     ipcState := .ready }
-  let stDispatch : SystemState := { st1 with
-    objects := st1.objects.insert ⟨1⟩ highTcb |>.insert ⟨12⟩ lowTcb,
-    scheduler := setBootRqCur st1.scheduler
-      (SeLe4n.Kernel.RunQueue.ofList [(⟨1⟩, highPrio), (⟨12⟩, lowPrio)]) none }
+  let stDispatch : SystemState := { (st1.withObjectStored ⟨1⟩ highTcb
+        |>.withObjectStored ⟨12⟩ lowTcb) with
+      scheduler := setBootRqCur st1.scheduler
+        (SeLe4n.Kernel.RunQueue.ofList [(⟨1⟩, highPrio), (⟨12⟩, lowPrio)]) none }
   -- Schedule — higher-priority thread (1) should become current
   match SeLe4n.Kernel.schedule stDispatch with
   | .error err => IO.println s!"[DDT-001] H12f dequeue-on-dispatch schedule error: {reprStr err}"
@@ -1191,10 +1185,10 @@ private def runDequeueOnDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState)
     tid := ⟨12⟩, priority := lowPrio, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
     ipcState := .ready, timeSlice := 1 }
-  let stPreempt : SystemState := { st1 with
-    objects := st1.objects.insert ⟨1⟩ highTcb |>.insert ⟨12⟩ preemptLow,
-    scheduler := setBootRqCur st1.scheduler
-      (SeLe4n.Kernel.RunQueue.ofList [(⟨1⟩, highPrio)]) (some ⟨12⟩) }
+  let stPreempt : SystemState := { (st1.withObjectStored ⟨1⟩ highTcb
+        |>.withObjectStored ⟨12⟩ preemptLow) with
+      scheduler := setBootRqCur st1.scheduler
+        (SeLe4n.Kernel.RunQueue.ofList [(⟨1⟩, highPrio)]) (some ⟨12⟩) }
   -- Thread 12 is current (low priority, timeSlice=1). Thread 1 in queue (high priority).
   -- Tick → expires → re-enqueue 12 → schedule picks thread 1 → 12 stays in queue.
   match SeLe4n.Kernel.timerTick stPreempt with
@@ -1227,11 +1221,11 @@ private def runInlineContextSwitchTrace (counter : IO.Ref Nat) (st1 : SystemStat
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
     ipcState := .ready, registerContext := incomingRegs }
   -- Thread 1 is current, thread 12 is in run queue — schedule should switch to 12
-  let stCtx : SystemState := { st1 with
-    objects := st1.objects.insert ⟨1⟩ outgoingTcb |>.insert ⟨12⟩ incomingTcb,
-    machine := st1.machine.setRegsOnCore SeLe4n.Kernel.Concurrency.bootCoreId outgoingRegs,
-    scheduler := setBootRqCur st1.scheduler
-      (SeLe4n.Kernel.RunQueue.ofList [(⟨12⟩, inPrio)]) (some ⟨1⟩) }
+  let stCtx : SystemState := { (st1.withObjectStored ⟨1⟩ outgoingTcb
+        |>.withObjectStored ⟨12⟩ incomingTcb) with
+      machine := st1.machine.setRegsOnCore SeLe4n.Kernel.Concurrency.bootCoreId outgoingRegs,
+      scheduler := setBootRqCur st1.scheduler
+        (SeLe4n.Kernel.RunQueue.ofList [(⟨12⟩, inPrio)]) (some ⟨1⟩) }
   -- Yield triggers re-enqueue + schedule
   match SeLe4n.Kernel.handleYield stCtx with
   | .error err => IO.println s!"[ICS-001] H12f context switch yield error: {reprStr err}"
@@ -1292,7 +1286,7 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
   -- H12f-B01: Zero-length message (empty registers and caps) — should succeed
   let emptyMsg : IpcMessage := { registers := #[], caps := #[], badge := none }
   let ep0 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
-  let stFresh : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
+  let stFresh : SystemState := st1.withObjectStored epId ep0
   match SeLe4n.Kernel.endpointSendDual epId senderId emptyMsg stFresh with
   | .error err =>
       IO.println s!"[BME-001] H12f empty message accepted: false (error: {reprStr err})"
@@ -1301,7 +1295,7 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
   -- H12f-B02: Message at register boundary minus one (119 regs) — should succeed
   let subBoundaryMsg : IpcMessage := {
     registers := Array.mk (List.replicate 119 ⟨1⟩), caps := #[], badge := none }
-  let stFresh2 : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
+  let stFresh2 : SystemState := st1.withObjectStored epId ep0
   match SeLe4n.Kernel.endpointSendDual epId senderId subBoundaryMsg stFresh2 with
   | .error err =>
       IO.println s!"[BME-003] H12f sub-boundary message accepted: false (error: {reprStr err})"
@@ -1315,7 +1309,7 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
       TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.write] } 2,
       TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [.grant] } 3],
     badge := some (Badge.ofNatMasked 42) }
-  let stFresh3 : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
+  let stFresh3 : SystemState := st1.withObjectStored epId ep0
   match SeLe4n.Kernel.endpointSendDual epId senderId maxCapsMsg stFresh3 with
   | .error err =>
       IO.println s!"[BME-005] H12f max caps message accepted: false (error: {reprStr err})"
@@ -1354,8 +1348,8 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   }
   -- Insert the CNode and a fresh endpoint into the state
   let ep : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
-  let stLocal := { st1 with objects := st1.objects.insert cnodeId (.cnode cn)
-                                        |>.insert epId ep }
+  let stLocal := st1.withObjectStored cnodeId (.cnode cn)
+      |>.withObjectStored epId ep
   -- Case 1: Correct gate (slot 0, .write right, depth 4) → success
   let goodGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := cnodeId,
@@ -1959,10 +1953,10 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
   -- `ReplyRecv` that answers A and links B.  Both start free (`caller := none`).
   let replyAId : SeLe4n.ReplyId := ⟨9002⟩
   let replyBId : SeLe4n.ReplyId := ⟨9003⟩
-  let stFresh : SystemState := { st1 with
-    objects := (((st1.objects.insert epId ep).insert ⟨13⟩ callerB)
-      |>.insert replyAId.toObjId (.reply { replyId := replyAId }))
-      |>.insert replyBId.toObjId (.reply { replyId := replyBId }) }
+  let stFresh : SystemState := st1.withObjectStored epId ep
+      |>.withObjectStored ⟨13⟩ callerB
+      |>.withObjectStored replyAId.toObjId (.reply { replyId := replyAId })
+      |>.withObjectStored replyBId.toObjId (.reply { replyId := replyBId })
   -- Step 1: Caller A calls endpoint (no receiver yet → enqueues on sendQ)
   let callMsgA : IpcMessage := { registers := #[⟨50⟩, ⟨60⟩], caps := #[], badge := some (Badge.ofNatMasked 789) }
   match SeLe4n.Kernel.endpointCall epId callerAId callMsgA stFresh with
@@ -2142,8 +2136,9 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
   let ep1 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
   let ep2 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
   let ep3 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
-  let stFresh : SystemState := { st1 with
-    objects := ((st1.objects.insert epId1 ep1).insert epId2 ep2).insert epId3 ep3 }
+  let stFresh : SystemState := st1.withObjectStored epId1 ep1
+      |>.withObjectStored epId2 ep2
+      |>.withObjectStored epId3 ep3
   -- Send on endpoint 1
   let msg1 : IpcMessage := { registers := #[⟨11⟩, ⟨22⟩], caps := #[], badge := some (Badge.ofNatMasked 100) }
   match SeLe4n.Kernel.endpointSendDual epId1 senderId msg1 stFresh with
@@ -2241,10 +2236,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- Z5-AUD-06: schedContextConfigure — success path
   let scId : SeLe4n.ObjId := ⟨5000⟩
   let scObj : KernelObject := .schedContext (SeLe4n.Kernel.SchedContext.empty ⟨5000⟩)
-  let stWithSc := { st1 with
-    objects := st1.objects.insert scId scObj
-    objectIndex := scId :: st1.objectIndex
-    objectIndexSet := st1.objectIndexSet.insert scId }
+  let stWithSc := st1.withObjectStored scId scObj
   match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 1000 50 0 0 stWithSc with
   | .error err =>
     IO.println s!"[SCO-006] schedContextConfigure success: error {reprStr err}"
@@ -2259,8 +2251,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let scForBind : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
     budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨50⟩, budgetRemaining := ⟨100⟩ }
-  let stForBind := { st1 with
-    objects := st1.objects.insert scId (.schedContext scForBind) }
+  let stForBind := st1.withObjectStored scId (.schedContext scForBind)
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨tid, by decide⟩ stForBind with
   | .error err =>
     IO.println s!"[SCO-007] schedContextBind success: error {reprStr err}"
@@ -2276,8 +2267,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- Z5-AUD-08: schedContextBind — already bound rejected
   let scAlreadyBound : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with boundThread := some ⟨99⟩ }
-  let stAlreadyBound := { st1 with
-    objects := st1.objects.insert scId (.schedContext scAlreadyBound) }
+  let stAlreadyBound := st1.withObjectStored scId (.schedContext scAlreadyBound)
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨⟨2⟩, by decide⟩ stAlreadyBound with
   | .error err => IO.println s!"[SCO-008] schedContextBind already-bound: {reprStr err}"
   | .ok _ => IO.println s!"[SCO-008] schedContextBind already-bound: unexpected success"
@@ -2290,9 +2280,8 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
     vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready,
     schedContextBinding := .bound ⟨5000⟩ }
-  let stForUnbind := { st1 with
-    objects := (st1.objects.insert scId (.schedContext scBoundForUnbind)).insert
-      tid.toObjId tcbBoundForUnbind }
+  let stForUnbind := st1.withObjectStored scId (.schedContext scBoundForUnbind)
+      |>.withObjectStored tid.toObjId tcbBoundForUnbind
   match SeLe4n.Kernel.SchedContextOps.schedContextUnbind ⟨scId, by decide⟩ stForUnbind with
   | .error err =>
     IO.println s!"[SCO-009] schedContextUnbind success: error {reprStr err}"
@@ -2307,8 +2296,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
 
   -- Z5-AUD-10: schedContextUnbind — not bound rejected
   let scNotBound : SeLe4n.Kernel.SchedContext := SeLe4n.Kernel.SchedContext.empty ⟨5000⟩
-  let stNotBound := { st1 with
-    objects := st1.objects.insert scId (.schedContext scNotBound) }
+  let stNotBound := st1.withObjectStored scId (.schedContext scNotBound)
   match SeLe4n.Kernel.SchedContextOps.schedContextUnbind ⟨scId, by decide⟩ stNotBound with
   | .error err => IO.println s!"[SCO-010] schedContextUnbind not-bound: {reprStr err}"
   | .ok _ => IO.println s!"[SCO-010] schedContextUnbind not-bound: unexpected success"
@@ -2322,9 +2310,8 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     budget := ⟨200⟩, budgetRemaining := ⟨30⟩ }
   let fromId : SeLe4n.ObjId := ⟨5001⟩
   let targetId : SeLe4n.ObjId := ⟨5002⟩
-  let stYield := { st1 with
-    objects := (st1.objects.insert fromId (.schedContext fromSc)).insert
-      targetId (.schedContext targetSc) }
+  let stYield := st1.withObjectStored fromId (.schedContext fromSc)
+      |>.withObjectStored targetId (.schedContext targetSc)
   let stAfterYield := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
     stYield ⟨5001⟩ ⟨5002⟩
   let fromRemaining := match stAfterYield.getSchedContext? (SeLe4n.SchedContextId.ofObjId fromId) with
@@ -2339,10 +2326,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let scSmall : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
     budget := ⟨500⟩, period := ⟨1000⟩ }
-  let stAdmission := { st1 with
-    objects := st1.objects.insert scId (.schedContext scSmall)
-    objectIndex := scId :: st1.objectIndex
-    objectIndexSet := st1.objectIndexSet.insert scId }
+  let stAdmission := st1.withObjectStored scId (.schedContext scSmall)
   -- Without exclusion: existing 50% + candidate 50% = 100% ≤ 1000 per-mille → ok
   let withoutExclude := SeLe4n.Kernel.SchedContextOps.checkAdmission stAdmission scSmall none
   -- With exclusion: 0% + 50% = 50% → ok
@@ -2356,8 +2340,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let scForRQ : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
     budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨200⟩, budgetRemaining := ⟨100⟩ }
-  let stForRQ := { st1 with
-    objects := st1.objects.insert scId (.schedContext scForRQ)
+  let stForRQ := { (st1.withObjectStored scId (.schedContext scForRQ)) with
     -- thread in RunQueue at default prio 0
     scheduler := setBootRqCur st1.scheduler (mkRunQueue [tidRQ]) none }
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨tidRQ, by decide⟩ stForRQ with
@@ -2381,10 +2364,9 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     tid := tidCur, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
     vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready,
     schedContextBinding := .bound ⟨5000⟩ }
-  let stForCur := { st1 with
-    objects := (st1.objects.insert scId (.schedContext scBoundCur)).insert
-      tidCur.toObjId tcbBoundCur
-    scheduler := st1.scheduler.setCurrentOnCore bootCoreId (some tidCur) }
+  let stForCur := { (st1.withObjectStored scId (.schedContext scBoundCur)
+        |>.withObjectStored tidCur.toObjId tcbBoundCur) with
+      scheduler := st1.scheduler.setCurrentOnCore bootCoreId (some tidCur) }
   match SeLe4n.Kernel.SchedContextOps.schedContextUnbind ⟨scId, by decide⟩ stForCur with
   | .error err =>
     IO.println s!"[SCO-014] schedContextUnbind current-thread: error {reprStr err}"
@@ -2403,10 +2385,9 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     tid := tidInRQ, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
     vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready,
     schedContextBinding := .bound ⟨5000⟩ }
-  let stForRQUnbind := { st1 with
-    objects := (st1.objects.insert scId (.schedContext scBoundRQ)).insert
-      tidInRQ.toObjId tcbBoundRQ
-    scheduler := setBootRqCur st1.scheduler (mkRunQueue [tidInRQ]) none }
+  let stForRQUnbind := { (st1.withObjectStored scId (.schedContext scBoundRQ)
+        |>.withObjectStored tidInRQ.toObjId tcbBoundRQ) with
+      scheduler := setBootRqCur st1.scheduler (mkRunQueue [tidInRQ]) none }
   match SeLe4n.Kernel.SchedContextOps.schedContextUnbind ⟨scId, by decide⟩ stForRQUnbind with
   | .error err =>
     IO.println s!"[SCO-015] schedContextUnbind runqueue-removal: error {reprStr err}"
@@ -2437,10 +2418,9 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     boundThread := some tidTarget, priority := ⟨80⟩ }
   let fromIdS : SeLe4n.ObjId := ⟨5001⟩
   let targetIdS : SeLe4n.ObjId := ⟨5002⟩
-  let stYieldStarve := { st1 with
-    objects := (st1.objects.insert fromIdS (.schedContext fromScStarve)).insert
-      targetIdS (.schedContext targetScStarve)
-    scheduler := setBootRqCur st1.scheduler SeLe4n.Kernel.RunQueue.empty none }
+  let stYieldStarve := { (st1.withObjectStored fromIdS (.schedContext fromScStarve)
+        |>.withObjectStored targetIdS (.schedContext targetScStarve)) with
+      scheduler := setBootRqCur st1.scheduler SeLe4n.Kernel.RunQueue.empty none }
   let stAfterYieldStarve := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
     stYieldStarve ⟨5001⟩ ⟨5002⟩
   let targetEnqueued := (stAfterYieldStarve.scheduler.runQueueOnCore bootCoreId).contains tidTarget
@@ -2455,10 +2435,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
     budget := ⟨900⟩, period := ⟨1000⟩ }  -- 90% bandwidth
   let scIdHeavy : SeLe4n.ObjId := ⟨5000⟩
-  let stAdmissionFail := { st1 with
-    objects := st1.objects.insert scIdHeavy (.schedContext scHeavy)
-    objectIndex := scIdHeavy :: st1.objectIndex
-    objectIndexSet := st1.objectIndexSet.insert scIdHeavy }
+  let stAdmissionFail := st1.withObjectStored scIdHeavy (.schedContext scHeavy)
   let candidateHeavy : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5003⟩ with
     budget := ⟨200⟩, period := ⟨1000⟩ }  -- 20% bandwidth → total 110% > 100%
@@ -2474,9 +2451,8 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     tid := ⟨1⟩, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
     vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready,
     schedContextBinding := .bound ⟨9999⟩ }  -- already bound to SC 9999
-  let stBind2 := { st1 with
-    objects := (st1.objects.insert scId (.schedContext scForBind2)).insert
-      (SeLe4n.ThreadId.ofNat 1).toObjId tcbAlreadyBound }
+  let stBind2 := st1.withObjectStored scId (.schedContext scForBind2)
+      |>.withObjectStored (SeLe4n.ThreadId.ofNat 1).toObjId tcbAlreadyBound
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨⟨1⟩, by decide⟩ stBind2 with
   | .error err => IO.println s!"[SCO-018] schedContextBind tcb-already-bound: {reprStr err}"
   | .ok _ => IO.println s!"[SCO-018] schedContextBind tcb-already-bound: unexpected success"
@@ -2489,10 +2465,9 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let targetScNoBound : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5002⟩ with
     budget := ⟨200⟩, budgetRemaining := ⟨0⟩ }  -- starved but no bound thread
-  let stYieldNoBound := { st1 with
-    objects := (st1.objects.insert fromIdS (.schedContext fromScNoBound)).insert
-      targetIdS (.schedContext targetScNoBound)
-    scheduler := setBootRqCur st1.scheduler SeLe4n.Kernel.RunQueue.empty none }
+  let stYieldNoBound := { (st1.withObjectStored fromIdS (.schedContext fromScNoBound)
+        |>.withObjectStored targetIdS (.schedContext targetScNoBound)) with
+      scheduler := setBootRqCur st1.scheduler SeLe4n.Kernel.RunQueue.empty none }
   let stAfterNoBound := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
     stYieldNoBound ⟨5001⟩ ⟨5002⟩
   let rqEmpty := (stAfterNoBound.scheduler.runQueueOnCore bootCoreId).toList.length == 0
@@ -2507,8 +2482,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     { SeLe4n.Kernel.SchedContext.empty ⟨5003⟩ with
       budget := ⟨200⟩, period := ⟨500⟩, budgetRemaining := ⟨150⟩
       isActive := true }
-  let stSelfYield := { st1 with
-    objects := st1.objects.insert selfScId (.schedContext selfSc) }
+  let stSelfYield := st1.withObjectStored selfScId (.schedContext selfSc)
   let stAfterSelf := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
     stSelfYield ⟨5003⟩ ⟨5003⟩
   let selfRemaining := match stAfterSelf.getSchedContext? (SeLe4n.SchedContextId.ofObjId selfScId) with
@@ -2541,10 +2515,9 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     ipcState := .blockedOnSend epId,
     queuePrev := some tid1, queueNext := none, queuePPrev := some (.tcbNext tid1) }
   let ep : Endpoint := { sendQ := { head := some tid1, tail := some tid2 }, receiveQ := {} }
-  let stQ := { st1 with
-    objects := (st1.objects.insert epId (.endpoint ep))
-      |>.insert tid1.toObjId (.tcb tcb1)
-      |>.insert tid2.toObjId (.tcb tcb2) }
+  let stQ := st1.withObjectStored epId (.endpoint ep)
+      |>.withObjectStored tid1.toObjId (.tcb tcb1)
+      |>.withObjectStored tid2.toObjId (.tcb tcb2)
   match SeLe4n.Kernel.endpointQueueRemove epId false tid1 stQ with
   | .error err =>
     IO.println s!"[SCO-020] endpointQueueRemove head: error {reprStr err}"
@@ -2629,12 +2602,11 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     deadline := ⟨1000⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
     boundThread := some hTid, scReply := some rH }
   let epObj : Endpoint := { sendQ := { head := some hTid, tail := some hTid }, receiveQ := {} }
-  let stR := { st1 with
-    objects := (st1.objects.insert epH (.endpoint epObj))
-      |>.insert scH.toObjId (.schedContext holderSc)
-      |>.insert rH.toObjId (.reply victimReply)
-      |>.insert vTid.toObjId (.tcb victimTcb)
-      |>.insert hTid.toObjId (.tcb holderTcb) }
+  let stR := st1.withObjectStored epH (.endpoint epObj)
+      |>.withObjectStored scH.toObjId (.schedContext holderSc)
+      |>.withObjectStored rH.toObjId (.reply victimReply)
+      |>.withObjectStored vTid.toObjId (.tcb victimTcb)
+      |>.withObjectStored hTid.toObjId (.tcb holderTcb)
   let stAfter := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking stR vTid victimTcb
   let holderIdle := match stAfter.getTcb? hTid with
     | some t => t.ipcState == ThreadIpcState.ready
@@ -2660,9 +2632,8 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- `true` however the reclaim were written.
   let holderRecvTcb : TCB := { holderTcb with ipcState := .blockedOnReceive epH }
   let epRecv : Endpoint := { sendQ := {}, receiveQ := { head := some hTid, tail := some hTid } }
-  let stRecv := { stR with
-    objects := (stR.objects.insert epH (.endpoint epRecv))
-      |>.insert hTid.toObjId (.tcb holderRecvTcb) }
+  let stRecv := stR.withObjectStored epH (.endpoint epRecv)
+      |>.withObjectStored hTid.toObjId (.tcb holderRecvTcb)
   let stRecvAfter := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking stRecv vTid victimTcb
   let recvHolderUntouched := match stRecvAfter.getTcb? hTid with
     | some t => t.ipcState == ThreadIpcState.blockedOnReceive epH
@@ -2687,7 +2658,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- reclaim performs is one the victim's own deschedule does not cover, which is
   -- why `cancelIpcBlockingOnCoreSchedLockSet` names it.
   let holderPinned : TCB := { holderTcb with cpuAffinity := some ⟨1, by decide⟩ }
-  let stPin := { stR with objects := stR.objects.insert hTid.toObjId (.tcb holderPinned) }
+  let stPin := stR.withObjectStored hTid.toObjId (.tcb holderPinned)
   let stWoken := (SeLe4n.Kernel.cancelIpcBlockingOnCore vTid victimTcb ⟨0, by decide⟩ stPin).1
   let holderQueued := (stWoken.scheduler.runQueueOnCore ⟨1, by decide⟩).contains hTid
   let holderRunnable := SeLe4n.Kernel.runnableOnSomeCore stWoken hTid
@@ -2735,7 +2706,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     IO.println s!"[SCO-025] timeoutThread re-enqueue: in_runQueue={inRq}"
 
   -- SCO-026: endpointQueueRemove — non-endpoint object returns invalidCapability
-  let stNonEp := { stQ with objects := stQ.objects.insert ⟨6050⟩ (.tcb tcb1) }
+  let stNonEp := stQ.withObjectStored ⟨6050⟩ (.tcb tcb1)
   match SeLe4n.Kernel.endpointQueueRemove ⟨6050⟩ false tid1 stNonEp with
   | .error err => IO.println s!"[SCO-026] endpointQueueRemove non-endpoint: {reprStr err}"
   | .ok _ => IO.println s!"[SCO-026] endpointQueueRemove non-endpoint: unexpected success"
@@ -2746,9 +2717,8 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let sc : SeLe4n.Kernel.SchedContext := SeLe4n.Kernel.SchedContext.empty scId
   let tcb1Bound : TCB := { tcb1 with
     schedContextBinding := .bound scId }
-  let stBound := { stQ with
-    objects := (stQ.objects.insert scId.toObjId (.schedContext sc))
-      |>.insert tid1.toObjId (.tcb tcb1Bound)
+  let stBound := { (stQ.withObjectStored scId.toObjId (.schedContext sc)
+        |>.withObjectStored tid1.toObjId (.tcb tcb1Bound)) with
     -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find tid1
     scThreadIndex := scThreadIndexAdd stQ.scThreadIndex scId tid1 }
   let (stAfterTimeout, timeoutErrs, _timeoutSgis) := SeLe4n.Kernel.timeoutBlockedThreads stBound scId bootCoreId
@@ -2779,7 +2749,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     tid := rcvTid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288),
     ipcState := .ready, timedOut := true }
-  let stRcv := { st1 with objects := st1.objects.insert rcvTid.toObjId (.tcb tcbTimedOut) }
+  let stRcv := st1.withObjectStored rcvTid.toObjId (.tcb tcbTimedOut)
   match SeLe4n.Kernel.timeoutAwareReceive rcvTid stRcv with
   | .error err =>
     IO.println s!"[SCO-029] timeoutAwareReceive timeout-detect: error {reprStr err}"
@@ -2794,7 +2764,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     tid := rcvTid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288),
     ipcState := .ready }
-  let stNorm := { st1 with objects := st1.objects.insert rcvTid.toObjId (.tcb tcbNormal) }
+  let stNorm := st1.withObjectStored rcvTid.toObjId (.tcb tcbNormal)
   match SeLe4n.Kernel.timeoutAwareReceive rcvTid stNorm with
   | .error err =>
     IO.println s!"[SCO-030] timeoutAwareReceive normal: error {reprStr err}"
@@ -2835,11 +2805,10 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     ipcState := .blockedOnSend epId,
     queuePrev := some tid2, queueNext := none, queuePPrev := some (.tcbNext tid2) }
   let ep3q : Endpoint := { sendQ := { head := some tid1, tail := some tid3 }, receiveQ := {} }
-  let stQ3 := { st1 with
-    objects := (st1.objects.insert epId (.endpoint ep3q))
-      |>.insert tid1.toObjId (.tcb tcb1_3q)
-      |>.insert tid2.toObjId (.tcb tcb2_3q)
-      |>.insert tid3.toObjId (.tcb tcb3_3q) }
+  let stQ3 := st1.withObjectStored epId (.endpoint ep3q)
+      |>.withObjectStored tid1.toObjId (.tcb tcb1_3q)
+      |>.withObjectStored tid2.toObjId (.tcb tcb2_3q)
+      |>.withObjectStored tid3.toObjId (.tcb tcb3_3q)
   match SeLe4n.Kernel.endpointQueueRemove epId false tid2 stQ3 with
   | .error err =>
     IO.println s!"[SCO-032] endpointQueueRemove mid: error {reprStr err}"
@@ -2872,10 +2841,9 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
     ipcState := .blockedOnReceive epId,
     queuePrev := some tid1, queueNext := none, queuePPrev := some (.tcbNext tid1) }
-  let stRecvQ := { st1 with
-    objects := (st1.objects.insert epId (.endpoint epRecv))
-      |>.insert tid1.toObjId (.tcb tcb1Recv)
-      |>.insert tid2.toObjId (.tcb tcb2Recv) }
+  let stRecvQ := st1.withObjectStored epId (.endpoint epRecv)
+      |>.withObjectStored tid1.toObjId (.tcb tcb1Recv)
+      |>.withObjectStored tid2.toObjId (.tcb tcb2Recv)
   match SeLe4n.Kernel.endpointQueueRemove epId true tid1 stRecvQ with
   | .error err =>
     IO.println s!"[SCO-033] endpointQueueRemove receiveQ: error {reprStr err}"
@@ -2894,9 +2862,8 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     ipcState := .blockedOnCall epId,
     queuePrev := none, queueNext := none, queuePPrev := some .endpointHead }
   let epCall : Endpoint := { sendQ := { head := some tid1, tail := some tid1 }, receiveQ := {} }
-  let stCall := { st1 with
-    objects := (st1.objects.insert epId (.endpoint epCall))
-      |>.insert tid1.toObjId (.tcb tcb1Call) }
+  let stCall := st1.withObjectStored epId (.endpoint epCall)
+      |>.withObjectStored tid1.toObjId (.tcb tcb1Call)
   match SeLe4n.Kernel.timeoutThread epId false tid1 bootCoreId stCall with
   | .error err =>
     IO.println s!"[SCO-034] timeoutThread blockedOnCall: error {reprStr err}"
@@ -2925,11 +2892,10 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     ipcState := .blockedOnSend epId,
     schedContextBinding := .bound scIdMulti,
     queuePrev := some tid1, queueNext := none, queuePPrev := some (.tcbNext tid1) }
-  let stMulti := { st1 with
-    objects := (st1.objects.insert scIdMulti.toObjId (.schedContext scMulti))
-      |>.insert epId (.endpoint epMulti)
-      |>.insert tid1.toObjId (.tcb tcbM1)
-      |>.insert tid2.toObjId (.tcb tcbM2)
+  let stMulti := { (st1.withObjectStored scIdMulti.toObjId (.schedContext scMulti)
+        |>.withObjectStored epId (.endpoint epMulti)
+        |>.withObjectStored tid1.toObjId (.tcb tcbM1)
+        |>.withObjectStored tid2.toObjId (.tcb tcbM2)) with
     -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find both threads
     scThreadIndex := scThreadIndexAdd (scThreadIndexAdd st1.scThreadIndex scIdMulti tid1) scIdMulti tid2 }
   let (stAfterMulti, multiErrs, _multiSgis) := SeLe4n.Kernel.timeoutBlockedThreads stMulti scIdMulti bootCoreId
@@ -2974,10 +2940,10 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     SeLe4n.Kernel.SchedContext.empty scId with
     budget := ⟨1000⟩, budgetRemaining := ⟨800⟩,
     boundThread := some callerTid, priority := ⟨100⟩ }
-  let stDon := { st1 with
-    objects := (((st1.objects.insert callerTid.toObjId callerTcb).insert
-      serverTid.toObjId serverTcb).insert scId.toObjId (.schedContext sc)).insert
-      callerReplyId.toObjId callerReply }
+  let stDon := st1.withObjectStored callerTid.toObjId callerTcb
+      |>.withObjectStored serverTid.toObjId serverTcb
+      |>.withObjectStored scId.toObjId (.schedContext sc)
+      |>.withObjectStored callerReplyId.toObjId callerReply
   match SeLe4n.Kernel.donateSchedContext stDon callerTid serverTid scId with
   | .error err =>
     IO.println s!"[Z7D-001] donateSchedContext: error {reprStr err}"
@@ -3016,9 +2982,9 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     SeLe4n.Kernel.SchedContext.empty scId with
     budget := ⟨1000⟩, budgetRemaining := ⟨500⟩,
     boundThread := some serverTid, priority := ⟨100⟩ }
-  let stRet := { st1 with
-    objects := ((st1.objects.insert callerTid.toObjId callerDonated).insert
-      serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
+  let stRet := st1.withObjectStored callerTid.toObjId callerDonated
+      |>.withObjectStored serverTid.toObjId serverDonated
+      |>.withObjectStored scId.toObjId (.schedContext scDonated)
   -- WS-OD OD3.1: the bottom-of-stack return — `callerTid` is the donation's
   -- original owner and no reply stack exists, so the context goes back `.bound`.
   match SeLe4n.Kernel.returnDonatedSchedContext stRet serverTid scId callerTid none with
@@ -3037,10 +3003,10 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     IO.println s!"[Z7D-002] returnDonatedSchedContext: server_unbound={serverUnbound} caller_rebound={callerRebound} sc_points_caller={scPointsCaller}"
 
   -- Z7D-003: applyCallDonation — passive server gets SchedContext
-  let stApply := { st1 with
-    objects := (((st1.objects.insert callerTid.toObjId callerTcb).insert
-      serverTid.toObjId serverTcb).insert scId.toObjId (.schedContext sc)).insert
-      callerReplyId.toObjId callerReply }
+  let stApply := st1.withObjectStored callerTid.toObjId callerTcb
+      |>.withObjectStored serverTid.toObjId serverTcb
+      |>.withObjectStored scId.toObjId (.schedContext sc)
+      |>.withObjectStored callerReplyId.toObjId callerReply
   -- AN10-residual-1 deep-audit: applyCallDonation now requires ValidThreadId.
   let callerVtid : SeLe4n.ValidThreadId := ⟨callerTid, by decide⟩
   let serverVtid : SeLe4n.ValidThreadId := ⟨serverTid, by decide⟩
@@ -3056,9 +3022,9 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     schedContextBinding := .bound ⟨9999⟩ }  -- already has SC
-  let stActive := { st1 with
-    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
-      serverTid.toObjId activeServer).insert scId.toObjId (.schedContext sc) }
+  let stActive := st1.withObjectStored callerTid.toObjId callerTcb
+      |>.withObjectStored serverTid.toObjId activeServer
+      |>.withObjectStored scId.toObjId (.schedContext sc)
   let stAfterActive := match SeLe4n.Kernel.applyCallDonation stActive callerVtid serverVtid with
     | .ok s => s | .error _ => stActive
   let schedulerUnchanged := (stAfterActive.scheduler.currentOnCore bootCoreId) == (stActive.scheduler.currentOnCore bootCoreId)
@@ -3077,10 +3043,10 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
       caller := some callerTid, next := some (.head scId) }
   let scDonatedHead : SeLe4n.Kernel.SchedContext :=
     { scDonated with scReply := some callerReplyId }
-  let stReplyDon := { st1 with
-    objects := (((st1.objects.insert callerTid.toObjId callerDonated).insert
-      serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonatedHead)).insert
-      callerReplyId.toObjId callerReplyHead }
+  let stReplyDon := st1.withObjectStored callerTid.toObjId callerDonated
+      |>.withObjectStored serverTid.toObjId serverDonated
+      |>.withObjectStored scId.toObjId (.schedContext scDonatedHead)
+      |>.withObjectStored callerReplyId.toObjId callerReplyHead
   let stAfterReply :=
     match SeLe4n.Kernel.applyReplyDonation stReplyDon callerReplyId callerVtid with
     | .ok s => s | .error _ => stReplyDon
@@ -3096,8 +3062,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   -- **WS-HP HP4.2**: the pre-flip reading of this case was "the server holds no
   -- donated binding"; the head-driven reading is "the answered frame heads no
   -- scheduling context", and here there is no frame at all.
-  let stReplyNormal := { st1 with
-    objects := (st1.objects.insert serverTid.toObjId serverTcb) }
+  let stReplyNormal := st1.withObjectStored serverTid.toObjId serverTcb
   let stAfterNormal :=
     match SeLe4n.Kernel.applyReplyDonation stReplyNormal callerReplyId callerVtid with
     | .ok s => s | .error _ => stReplyNormal
@@ -3105,9 +3070,9 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   IO.println s!"[Z7D-006] applyReplyDonation non-donated: unchanged={unchanged}"
 
   -- Z7D-007: cleanupDonatedSchedContext — lifecycle cleanup returns SC
-  let stCleanup := { st1 with
-    objects := ((st1.objects.insert callerTid.toObjId callerDonated).insert
-      serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
+  let stCleanup := st1.withObjectStored callerTid.toObjId callerDonated
+      |>.withObjectStored serverTid.toObjId serverDonated
+      |>.withObjectStored scId.toObjId (.schedContext scDonated)
   let stCleaned := match SeLe4n.Kernel.cleanupDonatedSchedContext stCleanup serverTid with
     | .ok s => s | .error _ => stCleanup
   let callerRecovered := match stCleaned.getTcb? callerTid with
@@ -3116,9 +3081,9 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   IO.println s!"[Z7D-007] cleanupDonatedSchedContext: caller_recovered={callerRecovered}"
 
   -- Z7D-008: cleanupPreReceiveDonation — stale donation cleaned up
-  let stStale := { st1 with
-    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
-      serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
+  let stStale := st1.withObjectStored callerTid.toObjId callerTcb
+      |>.withObjectStored serverTid.toObjId serverDonated
+      |>.withObjectStored scId.toObjId (.schedContext scDonated)
   let stPreRecv := SeLe4n.Kernel.cleanupPreReceiveDonation stStale serverTid
   let callerBack := match stPreRecv.getTcb? callerTid with
     | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
@@ -3152,11 +3117,12 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     SeLe4n.Kernel.SchedContext.empty scId with
     budget := ⟨1000⟩, budgetRemaining := ⟨600⟩,
     boundThread := some callerTid, scReply := some outerReplyId, priority := ⟨100⟩ }
-  let stChain2 := { st1 with
-    objects := (((((st1.objects.insert callerTid.toObjId midTcb).insert
-      serverTid.toObjId serverTcb).insert scId.toObjId (.schedContext scDepth2)).insert
-      callerReplyId.toObjId callerReply).insert outerTid.toObjId outerTcb).insert
-      outerReplyId.toObjId outerReply }
+  let stChain2 := st1.withObjectStored callerTid.toObjId midTcb
+      |>.withObjectStored serverTid.toObjId serverTcb
+      |>.withObjectStored scId.toObjId (.schedContext scDepth2)
+      |>.withObjectStored callerReplyId.toObjId callerReply
+      |>.withObjectStored outerTid.toObjId outerTcb
+      |>.withObjectStored outerReplyId.toObjId outerReply
   match SeLe4n.Kernel.donateSchedContext stChain2 callerTid serverTid scId with
   | .error err =>
     IO.println s!"[SCN-DONATION-PUSH-DEPTH-TWO] depth-2 donateSchedContext: error {reprStr err}"
@@ -3207,10 +3173,8 @@ private def runBudgetLifecycleTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     ipcState := .ready }
-  let stSetup := { st1 with
-    objects := (st1.objects.insert scId scObj).insert tid.toObjId (.tcb tcb0)
-    objectIndex := scId :: tid.toObjId :: st1.objectIndex
-    objectIndexSet := (st1.objectIndexSet.insert scId).insert tid.toObjId }
+  let stSetup := st1.withObjectStored scId scObj
+      |>.withObjectStored tid.toObjId (.tcb tcb0)
   match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 5 100 50 0 0 stSetup with
   | .error err =>
     IO.println s!"[Z8J-001] SchedContext create+configure: error {reprStr err}"

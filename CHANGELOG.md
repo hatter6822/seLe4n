@@ -1,3 +1,40 @@
+## v0.35.75 — The trace harness builds every fixture through the store
+
+**Raw-write migration, twelfth cut (D0).**  `SeLe4n/Testing/MainTraceHarness.lean`
+built its fixture states with **61 raw object-table inserts in 16 runners** —
+`{ st1 with objects := st1.objects.insert k v |>.insert k' v' }` — four of
+them maintaining `objectIndex` / `objectIndexSet` by hand beside the insert and
+the other fifty-seven maintaining nothing, so a fixture's index, kind table and
+ASID table described a store the fixture no longer had.  Every one is
+`withObjectStored` now — `st1.withObjectStored k v |>.withObjectStored k' v'`,
+the record update kept only where the fixture also sets the scheduler, the
+machine or the SchedContext index — so the states the golden trace runs the
+kernel on carry the store's own bookkeeping.  **The golden trace is
+byte-identical** (239/239 lines), which is the measurement that no operation
+the trace exercises had been reading the stale bookkeeping; the four
+hand-maintained index updates are gone, because the store performs exactly
+that update, minus the duplicate a re-stored key would have produced.
+
+**Why this cut precedes the write census.**  The read census's domain is every
+module under `SeLe4n/`, the harness included, and a write census that excluded
+the harness would be a domain written as an exclusion — the shape this
+project's gates keep retiring.  With this cut the whole `SeLe4n/` tree holds
+exactly **six** raw writes: the five primitives that should be raw
+(`SystemState.storeObject`, `SystemState.rewriteObject`,
+`Builder.createObject`, `Concurrency.updateObjectAt`, the frozen surface's
+`frozenUpdatePipBoost`) and `censusWitnessRawTableWrite`, the planted witness
+the reply-stack write census's derivation is exercised on, which must stay raw
+to prove that census sees a raw table write.  The census lands next (D1) with
+those six as its registered bodies, reconciled in both directions.
+
+**Tier 3**: positives on three fixture spellings (a plain store, a store as the
+base of a record update that also sets the scheduler, the SchedContext fixture
+that used to maintain the index by hand); negatives on any raw insert or erase
+in the harness and on any hand-maintained index bookkeeping beside a store — 5
+cases, 3 mutations, every one keeping the tokens (a store restored to the raw
+insert, the store discarded for the raw insert inside its record update, the
+index bookkeeping restored by hand beside the store).
+
 ## v0.35.74 — The two queue sweeps read the accumulator's record through the witnessed lookup and rewrite it under the store's proof
 
 **Raw-write migration, eleventh cut (C4c) — the last two kernel transitions

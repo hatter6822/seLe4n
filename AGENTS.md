@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.74.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.75.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6036,7 +6036,9 @@ code may assume:
   `rewriteObject`, and those five are the primitives that should be raw:
   `storeObject`, `rewriteObject`, `Builder.createObject`, `updateObjectAt`
   and the frozen store, so the executable population outside them is
-  **zero**).  (6) **A transition that rewrites a TCB it is
+  **zero**; since `v0.35.75` the trace harness's 61 fixture inserts are
+  stores too, so over the whole `SeLe4n/` tree the only raw writes are
+  those five and the reply-stack census's planted witness).  (6) **A transition that rewrites a TCB it is
   handed takes the store's witness for it.**  `timerTickBudget` /
   `timerTickBudgetOnCore` (`v0.35.67`) take `(hTcb : st.getTcb? tid = some tcb)`
   beside the TCB — the proof `rewriteAdmissible_tcb` consumes, erased at runtime —

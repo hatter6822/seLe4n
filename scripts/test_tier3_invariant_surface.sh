@@ -3285,6 +3285,26 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAll(EndpointQu
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAll(EndpointQueues|NotificationWaitLists)[^\n]*(\n([ \t][^\n]*)?)*rewriteObject oid \(\.(endpoint|notification) \(if " SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 
 # ============================================================================
+# v0.35.75 -- the trace harness builds every fixture through the store
+# ============================================================================
+#
+# `SeLe4n/Testing/MainTraceHarness.lean` built its fixture states with 61 raw
+# object-table inserts in 16 runners, four of them maintaining the object index
+# by hand beside the insert and the rest maintaining nothing.  Every fixture is
+# `withObjectStored` now, so the states the golden trace runs the kernel on
+# carry the store's own bookkeeping -- and the trace is byte-identical, which
+# is the measurement that nothing the trace exercises read the stale index.
+# The harness is in the write census's domain (D1), so it holds no raw write.
+
+run_check "INVARIANT" bash -lc 'rg -U -n "^  let stDeepCNode : SystemState :=\n    st1\.withObjectStored ⟨200⟩ \(\.cnode deepRadixCNode\)$" SeLe4n/Testing/MainTraceHarness.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^  let stCtx : SystemState := \{ \(st1\.withObjectStored ⟨1⟩ ctxTcb1\) with\n      scheduler := setBootRqCur st1\.scheduler \(mkRunQueue \[⟨1⟩\]\) none \}$" SeLe4n/Testing/MainTraceHarness.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^  let stWithSc := st1\.withObjectStored scId scObj$" SeLe4n/Testing/MainTraceHarness.lean'
+# NEGATIVE: no raw insert or erase anywhere in the harness, and no hand-kept
+# index bookkeeping beside a store (the store performs exactly that update).
+run_negative_check "INVARIANT" rg -n 'objects\.(insert|erase)' SeLe4n/Testing/MainTraceHarness.lean
+run_negative_check "INVARIANT" rg -n 'objectIndexSet := .*\.insert|objectIndex := .* :: ' SeLe4n/Testing/MainTraceHarness.lean
+
+# ============================================================================
 # WS-OD OD6 -- the payoff
 # ============================================================================
 #

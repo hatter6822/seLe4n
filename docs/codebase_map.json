@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "1f1504d2353526ada37b9734f7cff847b515373a",
-      "tree_sha": "ababedea67a52f42deb0573e6294c6acf1e291d2",
-      "committed_at_utc": "2026-09-17T06:19:39+00:00"
+      "commit_sha": "677c1d638f36756d3f7038d1892fc24ac20b824c",
+      "tree_sha": "8dc0f8e3067ae9bc551556a888b12cc013ecaab3",
+      "committed_at_utc": "2026-09-17T07:03:21+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ee62837a9e73c14a4447b7fa260e321dfea3c12b95a0db22e5ac41cc66544669"
+    "source_digest": "d00be472cdb8f1790dcb46e79866f7a5292653f0a09a6388d4d1afbd4d030836"
   },
   "summary": {
     "module_count": 401,
     "declaration_count": 21759
   },
   "readme_sync": {
-    "version": "0.35.74",
+    "version": "0.35.75",
     "lean_toolchain": "v4.28.0",
     "production_files": 331,
-    "production_loc": 386605,
+    "production_loc": 386569,
     "test_files": 70,
     "test_loc": 78776,
     "proved_theorem_lemma_decls": 12913,
@@ -268252,13 +268252,14 @@
             "svcDb",
             "svcDenied",
             "svcMissingBacking",
-            "toNat"
+            "toNat",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runLifecycleAndEndpointTrace",
-          "line": 542,
+          "line": 537,
           "called": [
             "SystemState",
             "any",
@@ -268300,7 +268301,7 @@
         {
           "kind": "def",
           "name": "runCapabilityIpcTrace",
-          "line": 661,
+          "line": 656,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -268320,7 +268321,6 @@
             "endpointReply",
             "endpointSendDual",
             "getEndpoint",
-            "insert",
             "lookup",
             "none",
             "ofList",
@@ -268330,13 +268330,14 @@
             "rootSlot",
             "runQueueOnCore",
             "setRunQueueOnCore",
-            "toObjId"
+            "toObjId",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runSchedulerTimingDomainTrace",
-          "line": 721,
+          "line": 717,
           "called": [
             "DomainScheduleEntry",
             "KernelObject",
@@ -268349,7 +268350,6 @@
             "decrement",
             "domainTimeRemainingOnCore",
             "getTcb",
-            "insert",
             "length",
             "mkRunQueue",
             "none",
@@ -268364,13 +268364,14 @@
             "switchDomain",
             "tick",
             "timerTick",
-            "toNat"
+            "toNat",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runIpcMessageTransferTrace",
-          "line": 797,
+          "line": 791,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -268387,7 +268388,6 @@
             "endpointReply",
             "endpointSendDual",
             "epId",
-            "insert",
             "lookupTcb",
             "none",
             "ofNatMasked",
@@ -268396,13 +268396,14 @@
             "replyMsg",
             "stBlocked",
             "toObjId",
-            "transfer"
+            "transfer",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runIpcMessageBoundsTrace",
-          "line": 981,
+          "line": 976,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -268417,16 +268418,16 @@
             "endpointReply",
             "endpointSendDual",
             "epId",
-            "insert",
             "none",
             "ofList",
-            "ofNatMasked"
+            "ofNatMasked",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runUntypedMemoryTrace",
-          "line": 1055,
+          "line": 1050,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -268438,7 +268439,6 @@
             "demoUntyped",
             "getObjectType",
             "getUntyped",
-            "insert",
             "length",
             "lifecycleAuthSlot",
             "none",
@@ -268450,13 +268450,14 @@
             "retypeFromUntyped",
             "rootSlot",
             "size",
-            "untypedAuthSlot"
+            "untypedAuthSlot",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runDequeueOnDispatchTrace",
-          "line": 1159,
+          "line": 1153,
           "called": [
             "KernelObject",
             "Priority",
@@ -268465,7 +268466,6 @@
             "bootCoreId",
             "checkInvariants",
             "currentOnCore",
-            "insert",
             "none",
             "ofList",
             "ofNat",
@@ -268475,13 +268475,14 @@
             "stPreempt",
             "tick",
             "timerTick",
-            "toNat"
+            "toNat",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runInlineContextSwitchTrace",
-          "line": 1215,
+          "line": 1209,
           "called": [
             "KernelObject",
             "Priority",
@@ -268493,20 +268494,20 @@
             "currentOnCore",
             "getTcb",
             "handleYield",
-            "insert",
             "none",
             "ofList",
             "ofNat",
             "regs",
             "setBootRqCur",
             "setRegsOnCore",
-            "toNat"
+            "toNat",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runPerCoreIdleDispatchTrace",
-          "line": 1263,
+          "line": 1257,
           "called": [
             "SystemState",
             "any",
@@ -268530,7 +268531,7 @@
         {
           "kind": "def",
           "name": "runBoundedMessageExtendedTrace",
-          "line": 1289,
+          "line": 1283,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -268544,16 +268545,16 @@
             "empty",
             "endpointSendDual",
             "epId",
-            "insert",
             "none",
             "ofList",
-            "ofNatMasked"
+            "ofNatMasked",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runSyscallGateTrace",
-          "line": 1338,
+          "line": 1332,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -268571,7 +268572,6 @@
             "demoUntyped",
             "endpointSendDual",
             "epId",
-            "insert",
             "lifecycleRetypeObject",
             "none",
             "ofList",
@@ -268579,13 +268579,14 @@
             "ofNat",
             "st",
             "syscall",
-            "syscallInvoke"
+            "syscallInvoke",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runRuntimeContractFixtureTrace",
-          "line": 1418,
+          "line": 1412,
           "called": [
             "SystemState",
             "adapterAdvanceTimer",
@@ -268600,7 +268601,7 @@
         {
           "kind": "def",
           "name": "runRegisterDecodeTrace",
-          "line": 1461,
+          "line": 1455,
           "called": [
             "Capability",
             "ObjId",
@@ -268633,7 +268634,7 @@
         {
           "kind": "def",
           "name": "runSyscallDispatchTrace",
-          "line": 1597,
+          "line": 1591,
           "called": [
             "ASID",
             "Badge",
@@ -268688,7 +268689,7 @@
         {
           "kind": "def",
           "name": "runCheckedPipelineTrace",
-          "line": 1787,
+          "line": 1781,
           "called": [
             "Capability",
             "ObjId",
@@ -268730,7 +268731,7 @@
         {
           "kind": "def",
           "name": "runCspaceMoveTrace",
-          "line": 1890,
+          "line": 1884,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -268759,7 +268760,7 @@
         {
           "kind": "def",
           "name": "runReplyRecvRoundtripTrace",
-          "line": 1945,
+          "line": 1939,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -268774,7 +268775,6 @@
             "endpointReceiveDual",
             "endpointReplyRecv",
             "epId",
-            "insert",
             "lookupTcb",
             "none",
             "ofNat",
@@ -268782,13 +268782,14 @@
             "replyId",
             "replyMsg",
             "state",
-            "toObjId"
+            "toObjId",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runEndpointLifecycleTrace",
-          "line": 2037,
+          "line": 2031,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -268819,7 +268820,7 @@
         {
           "kind": "def",
           "name": "runMultiEndpointInterleavingTrace",
-          "line": 2135,
+          "line": 2129,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -268834,17 +268835,17 @@
             "endpointReceiveDual",
             "endpointSendDual",
             "getEndpoint",
-            "insert",
             "lookupTcb",
             "none",
             "of",
-            "ofNatMasked"
+            "ofNatMasked",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runSchedContextOpsTrace",
-          "line": 2219,
+          "line": 2214,
           "called": [
             "KernelObject",
             "ObjId",
@@ -268859,7 +268860,6 @@
             "get",
             "getSchedContext",
             "getTcb",
-            "insert",
             "isBound",
             "length",
             "mkRunQueue",
@@ -268879,13 +268879,14 @@
             "toObjId",
             "valid",
             "validateSchedContextParams",
+            "withObjectStored",
             "zero"
           ]
         },
         {
           "kind": "def",
           "name": "runTimeoutEndpointTrace",
-          "line": 2527,
+          "line": 2501,
           "called": [
             "Endpoint",
             "ObjId",
@@ -268907,7 +268908,6 @@
             "getEndpoint",
             "getTcb",
             "head",
-            "insert",
             "isEmpty",
             "length",
             "none",
@@ -268923,13 +268923,14 @@
             "timeoutBlockedThreads",
             "timeoutThread",
             "toObjId",
-            "victimTcb"
+            "victimTcb",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runDonationTrace",
-          "line": 2950,
+          "line": 2916,
           "called": [
             "KernelObject",
             "ReplyId",
@@ -268951,7 +268952,6 @@
             "getSchedContext",
             "getTcb",
             "head",
-            "insert",
             "isBound",
             "none",
             "ofNat",
@@ -268959,13 +268959,14 @@
             "returnDonatedSchedContextResolved",
             "scId",
             "serverTid",
-            "toObjId"
+            "toObjId",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runBudgetLifecycleTrace",
-          "line": 3200,
+          "line": 3166,
           "called": [
             "KernelObject",
             "ObjId",
@@ -268979,7 +268980,6 @@
             "empty",
             "getSchedContext",
             "getTcb",
-            "insert",
             "lookup",
             "none",
             "ofNat",
@@ -268989,13 +268989,14 @@
             "schedContextConfigure",
             "tcb0",
             "tick",
-            "toObjId"
+            "toObjId",
+            "withObjectStored"
           ]
         },
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 3257,
+          "line": 3221,
           "called": [
             "SystemState",
             "assertStateInvariantsFor",
@@ -269040,7 +269041,7 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 3307,
+          "line": 3271,
           "called": [
             "Capability",
             "KernelObject",
@@ -269068,7 +269069,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 3358,
+          "line": 3322,
           "called": [
             "ServiceId",
             "buildParameterizedTopology",
@@ -269084,7 +269085,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 3373,
+          "line": 3337,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -269092,7 +269093,7 @@
         {
           "kind": "def",
           "name": "runRustXvalVectors",
-          "line": 3384,
+          "line": 3348,
           "called": [
             "CSpaceMintArgs",
             "MessageInfo",
@@ -269120,7 +269121,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 3448,
+          "line": 3412,
           "called": [
             "assertCrossSubsystemInvariants",
             "assertStateInvariantsFor",
