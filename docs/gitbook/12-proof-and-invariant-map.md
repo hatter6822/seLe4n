@@ -121,7 +121,7 @@ make the theorem assume what it claims to prove.
 `scripts/check_ipc_invariant_dethreading.py` (Tier 0) measures this over the
 comment-free code view, deriving the conjunct set and each bundle's own
 pre-state rather than matching binder names, and reports **zero** conjuncts
-bound on a post-state across all **179** statements in the family, with the
+bound on a post-state across all **180** statements in the family, with the
 conjunct set and the bundle family both derived from the sources.  The figure is
 spelled in the form the gate reads, so a cut that grows the family fails until
 this sentence is corrected — it said 146 while the tree measured 170, unwatched,
@@ -388,6 +388,30 @@ region (`untypedRegionsDisjoint`, §3.5), and `lifecycleRevokeDeleteRetype`
 revokes every capability naming the object before it is retyped, so no slot
 carries authority over the consumed object into its successor (the
 capability layer's revoke theorems, §3.2).
+
+**The cancellation reply arm's bundle statement is taken at the pair, not at
+either half** (WS-RR RR8.7, `v0.35.80`).  Two theorems about the reply-link
+teardown used to ask for `ipcInvariantFull` of the state they run on *together
+with* that state's answered caller not being `.blockedOnReply` — and
+`replyCallerLinkage`'s second direction refutes exactly that pairing, since a
+stored Reply naming a caller obliges that caller to be reply-blocked.  Their
+premises therefore held on **no state**: they asserted nothing while their names
+read, in a bundle search, like coverage.  `replyCallerLinkage_refutes_woken_linked_caller`
+is that reading as a theorem (the two premises derive `False`) and is kept as a
+permanent pin so the spelling cannot return.
+
+The honest pre-state is `ipcInvariantFullExceptReplyLinkage st woken` — the twenty
+conjuncts with reciprocity relaxed at **one** thread, and relaxed as narrowly as
+possible: the reciprocal pair is still required to exist at the woken thread and
+only the blocking clause is dropped, as a disjunct rather than by excusing the
+thread from the clause (the pair is what the teardown reads).  It stands to
+`replyCallerLinkage` as `ipcInvariantFullExceptDonationOwner` stands to
+`donationOwnerValid`.  The **unit** is the restore-and-teardown pair: the restore
+wakes the victim and so breaks reciprocity, the teardown consumes the link that
+wake left dangling, and each is the other's repair — so `restoredAndConsumed` is
+what carries the full bundle end to end.  What the cut leaves owed rather than
+claimed is the splice's own bundle statement, registered in
+`docs/REGISTERED_DEBT.md`.
 
 ### 3.5 Cross-subsystem — `SeLe4n/Kernel/CrossSubsystem.lean`
 

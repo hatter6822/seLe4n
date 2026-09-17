@@ -640,7 +640,12 @@ theorem purgedAndRestored_replyCallerLinkage
       cases hBlk
 
 /-- The swept thread bounds no endpoint queue: both boundary conjuncts demand a
-blocking state the notification-blocked thread does not have. -/
+blocking state the notification-blocked thread does not have.
+
+**WS-RR RR8.7**: this arm's instance of `notQueueBlocked_bounds_no_endpoint_queue`,
+which is where the argument now lives — the reply arm asks the identical question
+of a `.blockedOnReply` victim, and the discriminating fact is a parameter there so
+that the two cannot answer it differently. -/
 theorem purgedAndRestored_victim_off_endpoint_boundaries
     (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB) (nId : SeLe4n.ObjId)
     (hLookup : lookupTcb st v = some tcbV)
@@ -648,15 +653,12 @@ theorem purgedAndRestored_victim_off_endpoint_boundaries
     (hHead : queueHeadBlockedConsistent st) (hTail : endpointQueueTailBlockedConsistent st)
     (epId : SeLe4n.ObjId) (ep : Endpoint) (hEp : st.objects[epId]? = some (.endpoint ep)) :
     ep.sendQ.head ≠ some v ∧ ep.receiveQ.head ≠ some v ∧
-    ep.sendQ.tail ≠ some v ∧ ep.receiveQ.tail ≠ some v := by
-  have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
-  refine ⟨fun hx => ?_, fun hx => ?_, fun hx => ?_, fun hx => ?_⟩
-  · rcases (hHead epId ep v tcbV hEp hVObj).2 hx with h | h <;> rw [hBlocked] at h <;> cases h
-  · have h := (hHead epId ep v tcbV hEp hVObj).1 hx
-    rw [hBlocked] at h; cases h
-  · rcases (hTail epId ep v tcbV hEp hVObj).2 hx with h | h <;> rw [hBlocked] at h <;> cases h
-  · have h := (hTail epId ep v tcbV hEp hVObj).1 hx
-    rw [hBlocked] at h; cases h
+    ep.sendQ.tail ≠ some v ∧ ep.receiveQ.tail ≠ some v :=
+  notQueueBlocked_bounds_no_endpoint_queue st v tcbV hLookup
+    (fun _ h => by rw [hBlocked] at h; cases h)
+    (fun _ h => by rw [hBlocked] at h; cases h)
+    (fun _ h => by rw [hBlocked] at h; cases h)
+    hHead hTail epId ep hEp
 
 theorem purgedAndRestored_queueHeadBlockedConsistent
     (st : SystemState) (v : SeLe4n.ThreadId)

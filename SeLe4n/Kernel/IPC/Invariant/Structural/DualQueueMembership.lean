@@ -5833,16 +5833,16 @@ unblocking it, so on a still-`.blockedOnReply` caller it would *strand* the thir
 reply transition — not this primitive — re-establishes the third clause (the unblocked
 caller no longer constrains it). `consumeCallerReply` is reply-path prep awaiting that
 fusion; this lemma carries the part it genuinely preserves on its own. -/
-theorem consumeCallerReply_preserves_replyCallerLinkageReciprocal (st st' : SystemState)
+theorem consumeCallerReply_closes_replyCallerLinkageExcept (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (r0 : SeLe4n.Kernel.Reply)
-    (hRecip : replyCallerLinkageReciprocal st) (hObjInv : st.objects.invExt)
+    (hRecip : replyCallerLinkageExcept st caller) (hObjInv : st.objects.invExt)
     (hGetR : st.getReply? rid = some r0) (hLinked : r0.caller = some caller)
     (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
     replyCallerLinkageReciprocal st' := by
   have hReplyObj : st.objects[rid.toObjId]? = some (.reply r0) :=
     (getReply?_eq_some_iff st rid r0).mp hGetR
   -- mutual link: the caller points back at `rid` (reciprocity from `hRecip`).
-  obtain ⟨tcbC, hCallerObj, hCallerRep, _⟩ := hRecip.2 rid r0 caller hReplyObj hLinked
+  obtain ⟨tcbC, hCallerObj, hCallerRep, _⟩ := hRecip.2.1 rid r0 caller hReplyObj hLinked
   have hC_ne : caller.toObjId ≠ rid.toObjId :=
     getTcb?_getReply?_slot_ne st caller rid tcbC r0
       ((getTcb?_eq_some_iff st caller tcbC).mpr hCallerObj) hGetR
@@ -5914,23 +5914,35 @@ theorem consumeCallerReply_preserves_replyCallerLinkageReciprocal (st st' : Syst
       have hridv_ne_caller : ridv.toObjId ≠ caller.toObjId := by
         intro h; obtain ⟨t, ht⟩ := hCallerTcb'; rw [h, ht] at hRep; cases hRep
       rw [hFrame ridv.toObjId hridv_ne_rid hridv_ne_caller] at hRep
-      obtain ⟨tcb, ht, htr, hBlk⟩ := hRecip.2 ridv r tid hRep hCaller
+      obtain ⟨tcb, ht, htr, hCase⟩ := hRecip.2.1 ridv r tid hRep hCaller
       have htid_ne_caller : tid.toObjId ≠ caller.toObjId := by
         intro h; rw [h, hCallerObj] at ht
         simp only [Option.some.injEq, KernelObject.tcb.injEq] at ht
         rw [ht] at hCallerRep; rw [hCallerRep] at htr
         simp only [Option.some.injEq] at htr; exact hRR htr.symm
+      -- WS-RR RR8.7: the relaxation is at `caller` alone, and this Reply does not
+      -- name it -- `caller`'s single `replyObject` already names `rid`, which this
+      -- branch has excluded -- so the blocking clause is available after all.
+      have hBlk : ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+          tcb.ipcState = .blockedOnReply ep rt := by
+        rcases hCase with hEq | hB
+        · exact absurd (congrArg SeLe4n.ThreadId.toObjId hEq) htid_ne_caller
+        · exact hB
       have htid_ne_rid : tid.toObjId ≠ rid.toObjId := by
         intro h; rw [h, hReplyObj] at ht; cases ht
       rw [← hFrame tid.toObjId htid_ne_rid htid_ne_caller] at ht
       exact ⟨tcb, ht, htr, hBlk⟩
 
 -- NOTE: `linkCallerReply_preserves_ipcInvariantFull` and
--- `consumeCallerReply_preserves_ipcInvariantFull` are defined further down,
--- after the D3 `pendingReceiveReplyWellFormed` frame family, so their de-threaded
--- forms can derive the 17th conjunct via
+-- `consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage` are
+-- defined further down, after the D3 `pendingReceiveReplyWellFormed` frame
+-- family, so their de-threaded forms can derive the 17th conjunct via
 -- `linkCallerReply_preserves_pendingReceiveReplyWellFormed` and
 -- `consumeCallerReply_preserves_pendingReceiveReplyWellFormed` respectively.
+-- WS-RR RR8.7 renamed the second: it takes the RELAXED pre-state
+-- `ipcInvariantFullExceptReplyLinkage`, because its `_preserves_` spelling asked
+-- for the full bundle of a state whose answered caller is already woken, which
+-- reciprocity's second direction refutes -- so it was vacuous.
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `endpointSendDual` **preserves** the third clause — it never sets
@@ -15556,38 +15568,44 @@ theorem linkCallerReply_preserves_ipcInvariantFull
         · simp at hStep
 
 open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D / #7.4: `consumeCallerReply` preserves `ipcInvariantFull` on a *mutually
-linked* pair (`r0.caller = some caller`). Structural core: the reply store
-(`consumeReply`) then the caller-TCB `replyObject := none` store, both via
-`ipcInvariantCore`. Reply linkage (`hRCL'`) is threaded as a post-state hypothesis,
-exactly as for the live IPC transitions: standalone consume clears `caller.replyObject`
-without unblocking it, so the strengthened `replyCallerLinkage` (third clause:
-`blockedOnReply ⇒ replyObject`) is re-established by the *fused* reply transition that
-unblocks the caller, not by the link-teardown primitive in isolation. Its reciprocal
-half is `consumeCallerReply_preserves_replyCallerLinkageReciprocal`. IPC de-threading D3
-(de-threaded): the 17th conjunct is **derived** via
-`consumeCallerReply_preserves_pendingReceiveReplyWellFormed` rather than threaded. -/
-theorem consumeCallerReply_preserves_ipcInvariantFull
+/-- **WS-RR RR8.7: `consumeCallerReply` closes the relaxed bundle** on a mutually
+linked pair (`r0.caller = some caller`) whose caller has already been woken.
+
+**This replaces a vacuous statement.**  Until `v0.35.80` the theorem asked for the
+*full* `ipcInvariantFull st` beside `hCallerWoken`, and those two are
+contradictory: the full bundle's `replyCallerLinkageReciprocal` says that a Reply
+whose `caller` names a thread has that thread `.blockedOnReply`, which is exactly
+what `hCallerWoken` denies of the thread `hLinked` names.  No state satisfied the
+premises, so the theorem asserted nothing about the link teardown while its name
+and its docstring read as coverage of it.  The de-threading gate could not see
+that: it counts post-state hypotheses and says nothing about whether the
+pre-state ones are jointly satisfiable, so the hypothesis introduced at WS-RR
+RR3.10 to *remove* a threaded `hRCL'` is what made them contradict.
+
+The honest pre-state is `ipcInvariantFullExceptReplyLinkage st caller`: nineteen
+conjuncts, with reciprocity relaxed at the woken caller alone.  That is what a
+reply path holds between waking its caller and tearing the link down, so the
+statement now carries the content the old one claimed.  `hCallerWoken` stays,
+because clearing a still-`.blockedOnReply` caller's `replyObject` really would
+strand the third clause; beside the relaxed bundle it is satisfiable rather than
+self-defeating.
+
+Structural core: the reply store (`consumeReply`) then the caller-TCB
+`replyObject := none` store, both via `ipcInvariantCore`.  The reciprocal half is
+`consumeCallerReply_closes_replyCallerLinkageExcept`, and the 17th conjunct is
+derived through `consumeCallerReply_preserves_pendingReceiveReplyWellFormed`. -/
+theorem consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (r0 : SeLe4n.Kernel.Reply)
-    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFullExceptReplyLinkage st caller) (hObjInv : st.objects.invExt)
     (hGetR0 : st.getReply? rid = some r0) (hLinked : r0.caller = some caller)
-    -- WS-RR RR3.10: the answered caller has already been woken. This replaces the
-    -- threaded `hRCL' : replyCallerLinkage st'` and closes the documented exception:
-    -- a *standalone* consume clears `replyObject` without unblocking, so on a
-    -- still-`.blockedOnReply` caller it would strand the third clause
-    -- (`blockedOnReply ⇒ replyObject`). The live reply paths wake the caller
-    -- **before** the consume — `endpointReply` and `endpointReplyOnCore` both store
-    -- `.ready` and only then tear the link down — so the precondition is exactly
-    -- what every caller of this primitive already satisfies, and the reciprocal
-    -- half needs nothing extra (`consumeCallerReply_preserves_replyCallerLinkageReciprocal`).
     (hCallerWoken : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
     ipcInvariantFull st' := by
   have hRCL' : replyCallerLinkage st' := by
-    refine ⟨consumeCallerReply_preserves_replyCallerLinkageReciprocal st st' caller rid r0
-      hInv.replyCallerLinkage.1 hObjInv hGetR0 hLinked hStep, ?_⟩
+    refine ⟨consumeCallerReply_closes_replyCallerLinkageExcept st st' caller rid r0
+      hInv.replyCallerLinkageExcept hObjInv hGetR0 hLinked hStep, ?_⟩
     -- third clause: the consume clears exactly one thread's `replyObject`, and that
     -- thread is not `.blockedOnReply` (`hCallerWoken`), so no `.blockedOnReply` TCB
     -- loses its reply object.
@@ -15607,7 +15625,7 @@ theorem consumeCallerReply_preserves_ipcInvariantFull
       have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
         rw [← consumeCallerReply_objects_frame st st' caller rid hObjInv hStep tid.toObjId hTR hTC]
         exact hTcb
-      exact hInv.replyCallerLinkage.2 tid tcb ep rt hTcbPre hBlk
+      exact hInv.replyCallerLinkageExcept.2.2 tid tcb ep rt hTcbPre hBlk
   refine ipcInvariantFull_of_core_replyCallerLinkage ?core hRCL'
     (consumeCallerReply_preserves_pendingReceiveReplyWellFormed st st' caller rid hObjInv
       hInv.pendingReceiveReplyWellFormed hStep)
@@ -15800,37 +15818,31 @@ theorem spliceReplyFrameOutOrSelf_preserves_ipcInvariantFull
   · rw [h]; exact hInv
   · exact spliceReplyFrameOut_preserves_ipcInvariantFull hObjInv hInv h
 
-open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`): `removeCallerReplyFrame` preserves `ipcInvariantFull`**
-under exactly the hypotheses `consumeCallerReply_preserves_ipcInvariantFull`
-takes, stated on the **pre**-state — so a caller that could cite the consume can
-cite this.  No side condition relating the consumed frame to the frame above it
-is needed: the splice rewrites stack links only, so the consumed Reply reads back
-with the same `caller` whichever keys the splice wrote
-(`spliceReplyFrameOutOrSelf_reply_rewrite`), and no TCB moves at all. -/
-theorem removeCallerReplyFrame_preserves_ipcInvariantFull
-    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (r0 : Reply)
-    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
-    (hGetR0 : st.getReply? rid = some r0) (hLinked : r0.caller = some caller)
-    (hCallerWoken : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
-        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
-    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  rw [removeCallerReplyFrame_eq] at hStep
-  have hObjInvD := spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv
-  -- The consumed frame reads back with its `caller` exactly where it was: the
-  -- splice rewrites stack links only, at whichever keys it writes — so no side
-  -- condition relating `rid` to the frame above is needed here.
-  obtain ⟨r0', hr0', hRw⟩ := spliceReplyFrameOutOrSelf_reply_rewrite st rid hObjInv
-    rid.toObjId r0 ((getReply?_eq_some_iff _ _ _).mp hGetR0)
-  refine consumeCallerReply_preserves_ipcInvariantFull _ st' caller rid r0'
-    (spliceReplyFrameOutOrSelf_preserves_ipcInvariantFull st rid hObjInv hInv)
-    hObjInvD ((getReply?_eq_some_iff _ _ _).mpr hr0')
-    (by rw [hRw.caller_eq]; exact hLinked) ?_ hStep
-  intro tcb hTcb
-  exact hCallerWoken tcb
-    (spliceReplyFrameOutOrSelf_tcb_backward st rid hObjInv caller.toObjId tcb hTcb)
+/-! ### WS-RR RR8.7 — `removeCallerReplyFrame`'s bundle statement is RETIRED
+
+`removeCallerReplyFrame_preserves_ipcInvariantFull` (WS-RM RM1.5, `v0.35.6`) was
+**vacuous** and is deleted rather than kept beside a correct statement.  It asked
+for the full `ipcInvariantFull` of the state the removal runs on *together with*
+that state's answered caller not being `.blockedOnReply`, and the bundle's
+`replyCallerLinkageReciprocal` says a Reply whose `caller` names a thread has that
+thread `.blockedOnReply`.  No state satisfies both, so it asserted nothing about
+the removal while its name read as coverage of it; it had no consumer anywhere in
+the tree, so nothing rested on it.
+
+What replaced its content is
+`consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage` above,
+which takes the honest pre-state — the bundle with reciprocity relaxed at the
+woken caller (`ipcInvariantFullExceptReplyLinkage`).
+
+**What is owed**, and why it is not written here: the removal is the splice then
+the consume, so its own relaxed-bundle form needs the *splice* to carry the
+relaxed bundle, and the splice's full-bundle proof runs through
+`storeObject_reply_stackLinks_preserves_ipcInvariantFull` — a whole-bundle store
+lemma with no per-conjunct parts to re-compose.  Writing its relaxed twin is a
+cut of its own and is registered in `docs/REGISTERED_DEBT.md`.  The cancellation's
+reply arm does not need it: that arm splices, restores and consumes as three
+separate steps rather than through this composite. -/
+
 
 /-! ### WS-SM SM6.D reply-fold foundation (PR #827 review #3)
 

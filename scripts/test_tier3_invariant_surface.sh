@@ -14729,4 +14729,40 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def runSmpCancellationChecks[^\n]*(\n
 # nowhere made the old confinement assertion vacuous.
 run_check "INVARIANT" rg -n 'NEGATIVE: the deschedule dual is NOT confined to the executing core 0' tests/SmpInformationFlowSuite.lean
 
+# ---------------------------------------------------------------------------
+# v0.35.80 -- WS-RR RR8.7: the reply arm's teardown pair carries the bundle, and
+# two vacuous statements are retired
+# ---------------------------------------------------------------------------
+# The reply-link teardown's two bundle theorems asked for the FULL bundle of the
+# state they run on together with that state's answered caller not being
+# `.blockedOnReply`, and reciprocity's second direction makes those two
+# contradictory -- so both asserted nothing while their names read as coverage.
+# The honest pre-state is the bundle with reciprocity relaxed at the woken
+# caller, and the restore/teardown pair is what opens and closes it.
+run_check "INVARIANT" rg -n '^def replyCallerLinkageExcept ' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def ipcInvariantFullExceptReplyLinkage ' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The relaxation is the NARROWEST one that admits the state: the reciprocal pair
+# is still required to exist at the woken thread and only the blocking clause is
+# dropped, as a disjunct rather than by excusing the thread from the clause.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyCallerLinkageExcept[^\n]*(\n([ \t][^\n]*)?)*\(tid = woken ∨" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The pin that the contradictory pairing must not be restated.
+run_check "INVARIANT" rg -n '^theorem replyCallerLinkage_refutes_woken_linked_caller' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The restore opens the relaxation; the teardown closes it; the pair is the unit.
+run_check "INVARIANT" rg -n '^theorem restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem consumeReplyLink_closes_exceptReplyLinkage' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def restoredAndConsumed[^\n]*(\n([ \t][^\n]*)?)*Lifecycle\.Suspend\.consumeReplyLink" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+run_check "INVARIANT" rg -n '^theorem restoredAndConsumed_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+# The teardown's own bundle theorem takes the RELAXED pre-state.  A revert to the
+# full bundle there is the vacuity coming back, so the relation is anchored
+# rather than the name.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage[^\n]*(\n([ \t][^\n]*)?)*hInv : ipcInvariantFullExceptReplyLinkage st caller" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+# The two retired names must not come back anywhere in the tree.
+run_negative_check "INVARIANT" rg -n 'consumeCallerReply_preserves_ipcInvariantFull' SeLe4n
+run_negative_check "INVARIANT" rg -n 'removeCallerReplyFrame_preserves_ipcInvariantFull' SeLe4n
+# The boundary question has one owner: the notification arm and the reply arm ask
+# it of victims in different blocking states, so the discriminating fact is a
+# parameter and neither arm carries its own copy.
+run_check "INVARIANT" rg -n '^theorem notQueueBlocked_bounds_no_endpoint_queue' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem purgedAndRestored_victim_off_endpoint_boundaries[^\n]*(\n([ \t][^\n]*)?)*notQueueBlocked_bounds_no_endpoint_queue" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
+
 finalize_report

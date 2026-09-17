@@ -5139,6 +5139,160 @@ theorem ipcInvariantFull_of_exceptDonationOwner {st : SystemState}
    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
+/-! ### WS-RR RR8.7 — the bundle relaxed at a woken caller's reply linkage
+
+`replyCallerLinkageReciprocal`'s second direction says that a Reply whose `caller`
+names a thread has that thread `.blockedOnReply`.  Every path that answers a
+caller therefore passes through a state where it is **false at exactly one
+thread**: the caller has been woken and its reply link has not yet been torn down.
+The cancellation's reply arm is such a path (`restoreToReadyCancelled` before
+`consumeReplyLink`), and so is the live reply leg.
+
+Before this the tree stated the teardown's bundle result the other way round —
+the *full* bundle of the pre-state together with the caller already woken — and
+those two are **contradictory**, so `consumeCallerReply_preserves_ipcInvariantFull`
+and `removeCallerReplyFrame_preserves_ipcInvariantFull` had premises no state
+could satisfy and asserted nothing.  Both are deleted; this predicate is what
+their content becomes, and `consumeReplyLink_closes_exceptReplyLinkage` is the
+statement that survives.
+
+The relaxation is the **narrowest** one that admits the state: at the woken thread
+the reciprocal pair is still required to exist, and only the blocking clause is
+dropped.  Clause 1 and `blockedOnReplyHasReplyObject` are untouched, because
+waking a caller costs neither. -/
+def replyCallerLinkageExcept (st : SystemState) (woken : SeLe4n.ThreadId) : Prop :=
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.replyObject = some rid →
+      ∃ r, st.objects[rid.toObjId]? = some (.reply r) ∧ r.caller = some tid) ∧
+  (∀ (rid : SeLe4n.ReplyId) (r : Reply) (tid : SeLe4n.ThreadId),
+      st.objects[rid.toObjId]? = some (.reply r) →
+      r.caller = some tid →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.replyObject = some rid ∧
+        (tid = woken ∨ ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+          tcb.ipcState = .blockedOnReply ep rt)) ∧
+  blockedOnReplyHasReplyObject st
+
+/-- WS-RR RR8.7: **a relaxed linkage with nothing referencing the woken thread is
+the full linkage.**  This is what the reply-link teardown supplies: it clears the
+one Reply that named the caller, and under the relaxed clause it is the only one
+that could (a second would force the caller's single `replyObject` to name two
+Reply objects). -/
+theorem replyCallerLinkage_of_except_of_unreferenced {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : replyCallerLinkageExcept st woken)
+    (hFree : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      st.objects[rid.toObjId]? = some (.reply r) → r.caller ≠ some woken) :
+    replyCallerLinkage st := by
+  refine ⟨⟨h.1, ?_⟩, h.2.2⟩
+  intro rid r tid hR hC
+  obtain ⟨tcb, hT, hRO, hCase⟩ := h.2.1 rid r tid hR hC
+  rcases hCase with hEq | hBlk
+  · exact absurd hC (by rw [hEq] at hC ⊢; exact hFree rid r hR)
+  · exact ⟨tcb, hT, hRO, hBlk⟩
+
+/-- **WS-RR RR8.7: `ipcInvariantFull` with the reply linkage relaxed at one woken
+caller** — the honest statement about the state a reply path reaches between
+waking its caller and tearing that caller's reply link down.
+
+It stands to the reply-link teardown as `ipcInvariantFullExceptDonationOwner`
+stands to the bare reply and `ipcInvariantFullExceptMembership` to the bare
+splice.  Use `ipcInvariantFull_of_exceptReplyLinkage` to recover the full bundle
+once the link is gone. -/
+def ipcInvariantFullExceptReplyLinkage (st : SystemState) (woken : SeLe4n.ThreadId) :
+    Prop :=
+  ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
+  badgeWellFormed st ∧ blockedThreadsPendingMessageConsistent st ∧
+  endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
+  queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
+  blockedThreadTimeoutConsistent st ∧
+  donationChainAcyclic st ∧ donationOwnerValid st ∧
+  passiveServerIdle st ∧ donationBudgetTransfer st ∧
+  blockedOnReplyHasTarget st ∧ replyCallerLinkageExcept st woken ∧
+  pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
+  endpointQueueTailBlockedConsistent st ∧
+  queueNextTargetBlocked st
+
+/-- **WS-RR RR8.7: the superseded hypothesis set was contradictory, and this is
+the pin that it must not come back.**
+
+The reply-link teardown's bundle theorems used to ask for the *full* bundle of the
+state they run on **and** that the answered caller was no longer `.blockedOnReply`.
+Those two cannot both hold: reciprocity's second direction says a Reply whose
+`caller` names a thread has that thread `.blockedOnReply`.  So the premises were
+unsatisfiable and the theorems asserted nothing, while their names and docstrings
+read as coverage of the teardown.
+
+Nothing in the tree can catch that shape by counting: the de-threading gate asks
+whether a conjunct is bound on a *post*-state and says nothing about whether the
+pre-state hypotheses are jointly satisfiable.  A theorem is the only check that
+fires, so this is one — and it is decisive rather than illustrative, because it
+would fail to elaborate the moment anyone weakened reciprocity in a way that made
+the old pairing consistent again. -/
+theorem replyCallerLinkage_refutes_woken_linked_caller {st : SystemState}
+    {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {r0 : Reply}
+    (hRCL : replyCallerLinkage st)
+    (hGetR0 : st.objects[rid.toObjId]? = some (.reply r0))
+    (hLinked : r0.caller = some caller)
+    (hCallerWoken : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
+    False := by
+  obtain ⟨tcb, hTcb, _, ep, rt, hBlk⟩ := hRCL.1.2 rid r0 caller hGetR0 hLinked
+  exact hCallerWoken tcb hTcb ep rt hBlk
+
+/-- WS-RR RR8.7: the relaxed bundle plus the full reply linkage is the full
+bundle. -/
+theorem ipcInvariantFull_of_exceptReplyLinkage {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken)
+    (hRCL : replyCallerLinkage st) :
+    ipcInvariantFull st :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, hRCL,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+
+/-- WS-RR RR8.7: the relaxed bundle's fifteen structural conjuncts are
+`ipcInvariantCore` verbatim — the relaxation is the sixteenth. -/
+theorem ipcInvariantFullExceptReplyLinkage.toCore {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    ipcInvariantCore st :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
+
+/-- WS-RR RR8.7: the relaxed sixteenth conjunct. -/
+theorem ipcInvariantFullExceptReplyLinkage.replyCallerLinkageExcept {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    _root_.SeLe4n.Kernel.replyCallerLinkageExcept st woken :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- WS-RR RR8.7: the relaxed bundle's remaining named projections. -/
+theorem ipcInvariantFullExceptReplyLinkage.pendingReceiveReplyWellFormed {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    _root_.SeLe4n.Kernel.pendingReceiveReplyWellFormed st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+theorem ipcInvariantFullExceptReplyLinkage.donationOwnerUnique {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    _root_.SeLe4n.Kernel.donationOwnerUnique st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+theorem ipcInvariantFullExceptReplyLinkage.endpointQueueTailBlockedConsistent
+    {st : SystemState} {woken : SeLe4n.ThreadId}
+    (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    _root_.SeLe4n.Kernel.endpointQueueTailBlockedConsistent st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+theorem ipcInvariantFullExceptReplyLinkage.queueNextTargetBlocked {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    _root_.SeLe4n.Kernel.queueNextTargetBlocked st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+
 /-- WS-RR RR3.12: the relaxed bundle's own `donationOwnerValidExcept` projection. -/
 theorem ipcInvariantFullExceptDonationOwner.donationOwnerValidExcept
     {st : SystemState} {woken : SeLe4n.ThreadId}

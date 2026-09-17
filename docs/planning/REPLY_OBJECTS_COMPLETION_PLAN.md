@@ -369,7 +369,15 @@ any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
   re-based on the honest intermediate-state preconditions (`ipcInvariantCore` + `reciprocal` +
   `hThirdExc` — full `ipcInvariantFull st` would be *vacuous* at a link site); and
   `consumeCallerReply_preserves_ipcInvariantFull` threads `replyCallerLinkage st'` like every
-  live transition.  The 16-conjunct threading architecture is otherwise unchanged — the live
+  live transition.  *(WS-RR RR8.7, `v0.35.80`: that last theorem is **retired**.  The
+  parenthesis two clauses above names the class this entry then walked past — the link
+  side was re-based because the full bundle "would be *vacuous* at a link site", and the
+  consume side, one clause away and with the same contradiction available, was left
+  threading the post-state.  RR8.5 later turned its post-state threading into a
+  *pre*-state hypothesis, which moved the vacuity from the conclusion to the premises
+  rather than removing it.  It is now
+  `consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage`, over the
+  relaxed pre-state `ipcInvariantFullExceptReplyLinkage`.)*  The 16-conjunct threading architecture is otherwise unchanged — the live
   `_preserves_ipcInvariantFull` theorems carry the strengthened conjunct as a hypothesis (no
   signature change).  **Verified:** `test_full.sh` (Tier 0–3, invariant surface anchors);
   trace byte-identical; AK7 re-anchored (third-clause `objects[tid.toObjId]?` +3).

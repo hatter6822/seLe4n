@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.79` (`lakefile.toml`) |
+| **Package version** | `0.35.80` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 385,802 across 331 Lean files |
+| **Production LoC** | 386,776 across 331 Lean files |
 | **Test LoC** | 78,841 across 70 Lean test suites |
-| **Proved declarations** | 12,865 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 12,902 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4107,7 +4107,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **179** statements in the family (the
+bound on a post-state across all **180** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to
@@ -5153,6 +5153,65 @@ It is structural rather than lucky: at depth ≥ 3 the pop sits at a `some` arm,
 `replyDonationRecipient_eq_of_outer_some` makes the redirect the identity by
 theorem.  What remains is documentation closure (HP10.10), after which v1.0.0 may
 claim that completing a call chain returns a client's reservation at every depth.
+
+#### 8.12.16 The teardown's bundle statement is honest about its own state — WS-RR RR8.7 (`v0.35.80`)
+
+Two production theorems about the reply-link teardown asked for `ipcInvariantFull`
+of the state they run on **together with** that state's answered caller not being
+`.blockedOnReply`.  Those two premises are **contradictory**.  `replyCallerLinkage`'s
+second direction says that a stored Reply naming a caller obliges that caller to be
+reply-blocked, so a state satisfying the bundle has no woken thread whose Reply still
+names it — which is exactly what the second premise asserts.  The premises therefore
+held on **no state**, both theorems asserted nothing, and their names
+(`consumeCallerReply_preserves_ipcInvariantFull`,
+`removeCallerReplyFrame_preserves_ipcInvariantFull`) read in a bundle search exactly
+like coverage.
+
+`replyCallerLinkage_refutes_woken_linked_caller` is the machine-checked form of that
+reading: from the bundle's own reciprocity and a woken caller whose Reply still names
+it, `False`.  It is a **permanent pin**, not a step in a proof — nothing consumes it,
+and a Tier 3 anchor keeps it, because a refutation nothing states is a refutation the
+next cut re-discovers by shipping the defect again.
+
+The honest pre-state is the bundle with reciprocity relaxed **at one thread**, and the
+relaxation is the narrowest one that admits the state.  `replyCallerLinkageExcept st
+woken` still requires the reciprocal pair to *exist* at the woken thread — the Reply
+resolves and the thread names it back — and drops only the blocking clause, written as
+a **disjunct** (`tid = woken ∨ ∃ ep rt, tcb.ipcState = .blockedOnReply ep rt`) rather
+than by excusing the thread from the clause.  Excusing it would also drop the pair, and
+the pair is what the teardown reads.  `ipcInvariantFullExceptReplyLinkage st woken` is
+the twenty conjuncts with that one substitution; it stands to `replyCallerLinkage` as
+`ipcInvariantFullExceptDonationOwner` (§8.12.x) stands to `donationOwnerValid`, and it
+is registered with the de-threading gate's pre-state predicates so the gate reads it as
+a pre-state rather than as a threaded post-state conjunct.
+
+**The unit is the pair, not either half.**  The restore alone
+(`restoreToReadyStaging`) wakes the victim and so *breaks* reciprocity's second
+direction, leaving the relaxed bundle and nothing stronger
+(`restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage`).  The teardown
+alone would break the third clause, since it clears `replyObject` without unblocking.
+Each is the other's repair: the teardown consumes the link the restore's wake left
+dangling, so `consumeReplyLink_closes_exceptReplyLinkage` turns the relaxed bundle back
+into the full one, and `restoredAndConsumed` — the composition the cancellation reply
+arm actually performs — is what carries `ipcInvariantFull` end to end
+(`restoredAndConsumed_preserves_ipcInvariantFull`).  A claim taken at either half is a
+claim about a state the arm does not rest at.
+
+What is **owed** rather than claimed: the splice's own bundle statement.  Deleting the
+retired composite theorem leaves `removeCallerReplyFrame` — the splice then the consume
+— with no `ipcInvariantFull` result, and the honest one is the relaxed form, which needs
+a relaxed twin of `storeObject_reply_stackLinks_preserves_ipcInvariantFull`.  It is
+registered in `docs/REGISTERED_DEBT.md` rather than absorbed, and the deletion carries a
+tombstone naming both the replacement and what is missing.
+
+One de-duplication rode along.  "Does this victim bound an endpoint queue?" was asked by
+the notification arm and, in this cut, by the reply arm — of victims in *different*
+blocking states, so the discriminating fact is a parameter:
+`notQueueBlocked_bounds_no_endpoint_queue` takes the three not-blocked-on-this-endpoint
+facts and both boundary conjuncts, and `purgedAndRestored_victim_off_endpoint_boundaries`
+is now one application of it.  Writing a second copy under the reply arm would have been
+one question with two answers, in the cut whose whole subject is a statement that read as
+coverage.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

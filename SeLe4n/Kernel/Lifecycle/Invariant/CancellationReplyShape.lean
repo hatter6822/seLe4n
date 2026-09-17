@@ -2089,4 +2089,766 @@ theorem removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept
   exact consumeCallerReply_head_preserves_donationChainWellFormedExcept st st' caller rid r scId
     hInv hChain hR hHead hStep
 
+-- ============================================================================
+-- WS-RR RR8.7 — §11  The restore's own bundle preservation
+-- ============================================================================
+
+/-! ### Why this step gets its own bundle theorem
+
+The reply arm is four steps, and three of them already carry `ipcInvariantFull`:
+the reclaim's abort (`abortPendingIpcOnEndpoint_preserves_ipcInvariantFull`), its
+pop (`returnDonatedSchedContext_establishes_ipcInvariantFull_of_except`), the
+frame splice (`spliceReplyFrameOut_preserves_ipcInvariantFull`) and the reply-link
+teardown (`consumeCallerReply_preserves_ipcInvariantFull`, which WS-RR RR8.5 gave
+it when it collapsed the two spellings).  The unblock-and-stage rewrite was the
+one link with no bundle result at all, so the arm could not be composed.
+
+It is **not** a third answer to a question the other two cancellation arms
+already answer.  Those prove their *composites* — `sweptAndRestored`,
+`purgedAndRestored` — and neither composite is separable: on the endpoint arm the
+field clear is what repairs the swept thread's own dangling links
+(`sweptAndRestored_tcbQueueLinkIntegrity` holds over the composite and not over
+the sweep), and on the notification arm the purge leaves the victim
+`.blockedOnNotification` with its waiter entry gone until the restore makes it
+`.ready`.  The reply arm's four steps *are* separable, because nothing before the
+restore needs the restore to repair it, so the restore's own contribution is
+statable here and was not there.
+
+Two of the tree's reusable frames are **false** of this step and the conjuncts
+they serve are proved directly instead.  `donationOwnerFrame.ownerForward` asks
+that an `.unbound` reply-blocked owner still be one afterwards, and
+`replyLinkageFrame.pushLinked` asks that a linked `.blockedOnReply` TCB stay
+`.blockedOnReply`; this step makes exactly such a thread `.ready`.  What rescues
+`donationOwnerValid` is `hNotOwner` — no donation names the restored thread as
+its owner — which is the fact the reclaim establishes
+(`returnDonationToCancelledCaller_no_donation_to_victim`) and the reason the
+reclaim runs first.  What rescues `replyCallerLinkage` is that the step writes
+neither `TCB.replyObject` nor `Reply.caller`, so both of its clauses survive: the
+reciprocal one reads only untouched fields, and the `.blockedOnReply ⇒
+replyObject` one loses its antecedent at the restored thread.
+-/
+
+/-- The restore's TCB pullback: away from the restored thread the pre-state's
+record **verbatim**, at the restored thread `restoredTcb`.
+
+The counterpart of `purgedAndRestored_tcb_pullback` at the bare rewrite. -/
+theorem restoreToReadyStaging_tcb_pullback (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (k : SeLe4n.ObjId) (tA : TCB)
+    (h : (Lifecycle.Suspend.restoreToReadyStaging st v frame).objects[k]? = some (.tcb tA)) :
+    (k ≠ v.toObjId ∧ st.objects[k]? = some (.tcb tA)) ∨
+      (k = v.toObjId ∧ tA = restoredTcb tcbV frame) := by
+  have hGet : st.getTcb? v = some tcbV := by
+    rw [SystemState.getTcb?_eq_some_iff]; exact lookupTcb_some_objects st v tcbV hLookup
+  by_cases hk : k = v.toObjId
+  · subst hk
+    rw [restoreToReadyStaging_objects_self st v frame tcbV hInv hGet] at h
+    exact Or.inr ⟨rfl, (KernelObject.tcb.inj (Option.some.inj h)).symm⟩
+  · rw [restoreToReadyStaging_objects_ne st v frame k hInv hk] at h
+    exact Or.inl ⟨hk, h⟩
+
+/-- ...and forwards, away from the restored thread. -/
+theorem restoreToReadyStaging_tcb_forward (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB) (hk : k ≠ v.toObjId)
+    (h : st.objects[k]? = some (.tcb t0)) :
+    (Lifecycle.Suspend.restoreToReadyStaging st v frame).objects[k]? = some (.tcb t0) := by
+  rw [restoreToReadyStaging_objects_ne st v frame k hInv hk]; exact h
+
+/-- **The restore writes a TCB and nothing else**, so every reading of an object
+of another kind agrees in both directions.
+
+At the restored thread's own key the post-state holds a `.tcb`, and the pre-state
+did too (the rewrite is the identity where the lookup fails), so a non-TCB
+reading is never at that key. -/
+theorem restoreToReadyStaging_nonTcb (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (k : SeLe4n.ObjId) (o : KernelObject) (hNotTcb : ∀ t : TCB, o ≠ .tcb t) :
+    ((Lifecycle.Suspend.restoreToReadyStaging st v frame).objects[k]? = some o) ↔
+      (st.objects[k]? = some o) := by
+  have hGet : st.getTcb? v = some tcbV := by
+    rw [SystemState.getTcb?_eq_some_iff]; exact lookupTcb_some_objects st v tcbV hLookup
+  by_cases hk : k = v.toObjId
+  · subst hk
+    constructor
+    · intro h
+      rw [restoreToReadyStaging_objects_self st v frame tcbV hInv hGet] at h
+      exact absurd (Option.some.inj h).symm (hNotTcb _)
+    · intro h
+      rw [lookupTcb_some_objects st v tcbV hLookup] at h
+      exact absurd (Option.some.inj h).symm (hNotTcb _)
+  · rw [restoreToReadyStaging_objects_ne st v frame k hInv hk]
+
+/-- **The restore writes no queue link.**  Away from the restored thread the TCB
+is the pre-state's; at the restored thread it writes `none` over fields
+`sweptThreadOffQueueChains` already says are `none`. -/
+theorem restoreToReadyStaging_tcb_links (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hOff : sweptThreadOffQueueChains st v)
+    (k : SeLe4n.ObjId) (tA : TCB)
+    (h : (Lifecycle.Suspend.restoreToReadyStaging st v frame).objects[k]? = some (.tcb tA)) :
+    ∃ t0, st.objects[k]? = some (.tcb t0) ∧
+      tA.queuePrev = t0.queuePrev ∧ tA.queueNext = t0.queueNext := by
+  rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup k tA h with
+    ⟨_, h0⟩ | ⟨hk, rfl⟩
+  · exact ⟨tA, h0, rfl, rfl⟩
+  · obtain ⟨hp, hn⟩ := hOff tcbV hLookup
+    exact ⟨tcbV, by rw [hk]; exact lookupTcb_some_objects st v tcbV hLookup,
+      by rw [restoredTcb_queuePrev, hp], by rw [restoredTcb_queueNext, hn]⟩
+
+/-- ...and the reading is an equivalence, so a pre-state link reappears
+unchanged. -/
+theorem restoreToReadyStaging_tcb_links_forward (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hOff : sweptThreadOffQueueChains st v)
+    (k : SeLe4n.ObjId) (t0 : TCB)
+    (h : st.objects[k]? = some (.tcb t0)) :
+    ∃ tA, (Lifecycle.Suspend.restoreToReadyStaging st v frame).objects[k]? = some (.tcb tA) ∧
+      tA.queuePrev = t0.queuePrev ∧ tA.queueNext = t0.queueNext := by
+  have hGet : st.getTcb? v = some tcbV := by
+    rw [SystemState.getTcb?_eq_some_iff]; exact lookupTcb_some_objects st v tcbV hLookup
+  by_cases hk : k = v.toObjId
+  · subst hk
+    have hx : t0 = tcbV := by
+      rw [lookupTcb_some_objects st v tcbV hLookup] at h
+      exact (KernelObject.tcb.inj (Option.some.inj h)).symm
+    obtain ⟨hp, hn⟩ := hOff tcbV hLookup
+    exact ⟨restoredTcb tcbV frame,
+      restoreToReadyStaging_objects_self st v frame tcbV hInv hGet,
+      by rw [restoredTcb_queuePrev, hx, hp], by rw [restoredTcb_queueNext, hx, hn]⟩
+  · exact ⟨t0, restoreToReadyStaging_tcb_forward st v frame hInv k t0 hk h, rfl, rfl⟩
+
+/-- Reachability through the restore is reachability in the pre-state — indeed the
+**same** path, no `queueNext` field having moved. -/
+theorem restoreToReadyStaging_path_transport (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hOff : sweptThreadOffQueueChains st v)
+    {x y : SeLe4n.ThreadId}
+    (h : QueueNextPath (Lifecycle.Suspend.restoreToReadyStaging st v frame) x y) :
+    QueueNextPath st x y := by
+  induction h with
+  | single a b tcb hA hN =>
+    obtain ⟨t0, h0, _, hn⟩ :=
+      restoreToReadyStaging_tcb_links st v frame tcbV hInv hLookup hOff a.toObjId tcb hA
+    exact .single a b t0 h0 (by rw [← hn]; exact hN)
+  | cons a b c tcb hA hN _ ih =>
+    obtain ⟨t0, h0, _, hn⟩ :=
+      restoreToReadyStaging_tcb_links st v frame tcbV hInv hLookup hOff a.toObjId tcb hA
+    exact .cons a b c t0 h0 (by rw [← hn]; exact hN) ih
+
+/-- The restore preserves the dual-queue system invariant.
+
+Endpoints are untouched (it writes one TCB), no `queueNext` / `queuePrev` field
+moves anywhere, so acyclicity transports path for path; and the restored thread's
+own `queuePPrev` is cleared, which satisfies the RR8.3 pairing outright. -/
+theorem restoreToReadyStaging_dualQueueSystemInvariant (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hOff : sweptThreadOffQueueChains st v)
+    (hDual : dualQueueSystemInvariant st) :
+    dualQueueSystemInvariant (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  obtain ⟨hEps, hLink, hAcyc, hPPair⟩ := hDual
+  have hEpIff : ∀ (k : SeLe4n.ObjId) (ep : Endpoint),
+      ((Lifecycle.Suspend.restoreToReadyStaging st v frame).objects[k]?
+          = some (.endpoint ep)) ↔ (st.objects[k]? = some (.endpoint ep)) :=
+    fun k ep => restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup k (.endpoint ep)
+      (by simp)
+  have hWF : ∀ (q : IntrusiveQueue), intrusiveQueueWellFormed q st →
+      intrusiveQueueWellFormed q (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+    intro q hq
+    refine ⟨hq.1, ?_, ?_⟩
+    · intro hd hHd
+      obtain ⟨t0, h0, hp⟩ := hq.2.1 hd hHd
+      obtain ⟨tA, hA, hpA, _⟩ :=
+        restoreToReadyStaging_tcb_links_forward st v frame tcbV hInv hLookup hOff
+          hd.toObjId t0 h0
+      exact ⟨tA, hA, by rw [hpA]; exact hp⟩
+    · intro tl hTl
+      obtain ⟨t0, h0, hn⟩ := hq.2.2 tl hTl
+      obtain ⟨tA, hA, _, hnA⟩ :=
+        restoreToReadyStaging_tcb_links_forward st v frame tcbV hInv hLookup hOff
+          tl.toObjId t0 h0
+      exact ⟨tA, hA, by rw [hnA]; exact hn⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro epId ep hEp
+    have hEp0 : st.objects[epId]? = some (.endpoint ep) := (hEpIff epId ep).mp hEp
+    have h0 := hEps epId ep hEp0
+    unfold dualQueueEndpointWellFormed at h0 ⊢
+    rw [hEp0] at h0
+    rw [hEp]
+    exact ⟨hWF ep.sendQ h0.1, hWF ep.receiveQ h0.2⟩
+  · refine ⟨?_, ?_⟩
+    · intro a tcbA hA b hNext
+      obtain ⟨t0a, h0a, _, hnA⟩ :=
+        restoreToReadyStaging_tcb_links st v frame tcbV hInv hLookup hOff a.toObjId tcbA hA
+      obtain ⟨t0b, h0b, hpB⟩ := hLink.1 a t0a h0a b (by rw [← hnA]; exact hNext)
+      obtain ⟨tB, hB, hpBA, _⟩ :=
+        restoreToReadyStaging_tcb_links_forward st v frame tcbV hInv hLookup hOff
+          b.toObjId t0b h0b
+      exact ⟨tB, hB, by rw [hpBA]; exact hpB⟩
+    · intro b tcbB hB a hPrev
+      obtain ⟨t0b, h0b, hpB, _⟩ :=
+        restoreToReadyStaging_tcb_links st v frame tcbV hInv hLookup hOff b.toObjId tcbB hB
+      obtain ⟨t0a, h0a, hnA⟩ := hLink.2 b t0b h0b a (by rw [← hpB]; exact hPrev)
+      obtain ⟨tA, hA, _, hnAA⟩ :=
+        restoreToReadyStaging_tcb_links_forward st v frame tcbV hInv hLookup hOff
+          a.toObjId t0a h0a
+      exact ⟨tA, hA, by rw [hnAA]; exact hnA⟩
+  · exact fun x hPath => hAcyc x
+      (restoreToReadyStaging_path_transport st v frame tcbV hInv hLookup hOff hPath)
+  · intro tid tcb hTcb
+    rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+      tid.toObjId tcb hTcb with ⟨_, h0⟩ | ⟨_, rfl⟩
+    · exact hPPair tid tcb h0
+    · exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev tcbV frame)
+
+/-- The restore frames the timeout budget: it writes no `timeoutBudget`. -/
+theorem restoreToReadyStaging_timeoutBudgetFrame (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV) :
+    timeoutBudgetFrame st (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  intro tid tcb' hTcb'
+  rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+    tid.toObjId tcb' hTcb' with ⟨_, h0⟩ | ⟨hk, rfl⟩
+  · exact ⟨tcb', h0, rfl⟩
+  · exact ⟨tcbV, by rw [hk]; exact lookupTcb_some_objects st v tcbV hLookup,
+      by rw [restoredTcb_eq]⟩
+
+theorem restoreToReadyStaging_allPendingMessagesBounded (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (h : allPendingMessagesBounded st) :
+    allPendingMessagesBounded (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  intro tid tcb' msg hTcb' hMsg
+  rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+    tid.toObjId tcb' hTcb' with ⟨_, h0⟩ | ⟨hk, rfl⟩
+  · exact h tid tcb' msg h0 hMsg
+  · exact h tid tcbV msg (by rw [hk]; exact lookupTcb_some_objects st v tcbV hLookup)
+      (by rw [restoredTcb_eq] at hMsg; exact hMsg)
+
+theorem restoreToReadyStaging_badgeWellFormed (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (h : badgeWellFormed st) :
+    badgeWellFormed (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  refine ⟨?_, ?_⟩
+  · intro oid ntfn badge hN hB
+    exact h.1 oid ntfn badge
+      ((restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup oid (.notification ntfn)
+        (by simp)).mp hN) hB
+  · intro oid cn slot cap badge hC hL hB
+    exact h.2 oid cn slot cap badge
+      ((restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup oid (.cnode cn)
+        (by simp)).mp hC) hL hB
+
+theorem restoreToReadyStaging_blockedThreadsPendingMessageConsistent (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (h : blockedThreadsPendingMessageConsistent st) :
+    blockedThreadsPendingMessageConsistent
+      (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  intro tid tcb' hTcb'
+  rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+    tid.toObjId tcb' hTcb' with ⟨_, h0⟩ | ⟨_, rfl⟩
+  · exact h tid tcb' h0
+  · rw [restoredTcb_eq]
+    simp only
+
+theorem restoreToReadyStaging_blockedOnReplyHasTarget (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (h : blockedOnReplyHasTarget st) :
+    blockedOnReplyHasTarget (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  intro tid tcb' epId rt hTcb' hBlocked
+  rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+    tid.toObjId tcb' hTcb' with ⟨_, h0⟩ | ⟨_, rfl⟩
+  · exact h tid tcb' epId rt h0 hBlocked
+  · rw [restoredTcb_ipcState] at hBlocked
+    cases hBlocked
+
+theorem restoreToReadyStaging_donationChainAcyclic (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (hInv : st.objects.invExt) (h : donationChainAcyclic st) :
+    donationChainAcyclic (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  have hBind := restoreToReadyStaging_sameSchedContextBindings st v frame hInv
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
+  obtain ⟨tc1, hP1, hEq1⟩ := hBind tid1 tcb1 h1
+  obtain ⟨tc2, hP2, hEq2⟩ := hBind tid2 tcb2 h2
+  exact h tid1 tid2 tc1 tc2 scId1 scId2 hP1 hP2
+    (by rw [hEq1]; exact hB1) (by rw [hEq2]; exact hB2)
+
+theorem restoreToReadyStaging_pendingReceiveReplyWellFormed (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (h : pendingReceiveReplyWellFormed st) :
+    pendingReceiveReplyWellFormed (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  have hPull : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB) (rid : SeLe4n.ReplyId),
+      (Lifecycle.Suspend.restoreToReadyStaging st v frame).getTcb? tid = some tcb' →
+      tcb'.pendingReceiveReply = some rid → st.getTcb? tid = some tcb' := by
+    intro tid tcb' rid hTcb' hStash
+    have hObj : (Lifecycle.Suspend.restoreToReadyStaging st v frame).objects[tid.toObjId]?
+        = some (.tcb tcb') := (SystemState.getTcb?_eq_some_iff _ tid tcb').mp hTcb'
+    rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+      tid.toObjId tcb' hObj with ⟨_, h0⟩ | ⟨_, rfl⟩
+    · exact (SystemState.getTcb?_eq_some_iff _ tid tcb').mpr h0
+    · rw [restoredTcb_pendingReceiveReply] at hStash
+      cases hStash
+  refine ⟨?_, ?_⟩
+  · intro tid tcb' rid hTcb' hStash
+    obtain ⟨hEp, r, hr, hrc⟩ := h.1 tid tcb' rid (hPull tid tcb' rid hTcb' hStash) hStash
+    refine ⟨hEp, r, ?_, hrc⟩
+    exact (SystemState.getReply?_eq_some_iff _ rid r).mpr
+      ((restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup rid.toObjId (.reply r)
+        (by simp)).mpr ((SystemState.getReply?_eq_some_iff st rid r).mp hr))
+  · intro tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hs1 hs2
+    exact h.2 tid₁ tid₂ tcb₁ tcb₂ rid (hPull tid₁ tcb₁ rid h1 hs1)
+      (hPull tid₂ tcb₂ rid h2 hs2) hs1 hs2
+
+/-- No `queueNext` edge in the restored state touches the restored thread: it
+points at nothing (the restore cleared its link) and nothing points at it (link
+integrity would give it a `queuePrev`, which `sweptThreadOffQueueChains`
+denies). -/
+theorem restoreToReadyStaging_edge_avoids_victim (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hLink : tcbQueueLinkIntegrity st) (hOff : sweptThreadOffQueueChains st v)
+    (a b : SeLe4n.ThreadId) (tcbA : TCB)
+    (hA : (Lifecycle.Suspend.restoreToReadyStaging st v frame).objects[a.toObjId]?
+      = some (.tcb tcbA))
+    (hNext : tcbA.queueNext = some b) :
+    a.toObjId ≠ v.toObjId ∧ b.toObjId ≠ v.toObjId := by
+  obtain ⟨hp, hn⟩ := hOff tcbV hLookup
+  have hGet : st.getTcb? v = some tcbV := by
+    rw [SystemState.getTcb?_eq_some_iff]; exact lookupTcb_some_objects st v tcbV hLookup
+  have hav : a.toObjId ≠ v.toObjId := by
+    intro hEq
+    rw [hEq, restoreToReadyStaging_objects_self st v frame tcbV hInv hGet] at hA
+    have hx : tcbA = restoredTcb tcbV frame := (KernelObject.tcb.inj (Option.some.inj hA)).symm
+    rw [hx, restoredTcb_queueNext] at hNext
+    cases hNext
+  refine ⟨hav, ?_⟩
+  intro hEq
+  obtain ⟨t0, h0, _, hnA⟩ :=
+    restoreToReadyStaging_tcb_links st v frame tcbV hInv hLookup hOff a.toObjId tcbA hA
+  obtain ⟨tB, hB, hpB⟩ := hLink.1 a t0 h0 b (by rw [← hnA]; exact hNext)
+  rw [hEq, lookupTcb_some_objects st v tcbV hLookup] at hB
+  have hy : tB = tcbV := (KernelObject.tcb.inj (Option.some.inj hB)).symm
+  rw [hy, hp] at hpB
+  cases hpB
+
+theorem restoreToReadyStaging_queueNextTargetBlocked (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hLink : tcbQueueLinkIntegrity st) (hOff : sweptThreadOffQueueChains st v)
+    (hTgt : queueNextTargetBlocked st) :
+    queueNextTargetBlocked (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  intro a b tcbA tcbB hA hB hNext
+  obtain ⟨hav, hbv⟩ := restoreToReadyStaging_edge_avoids_victim st v frame tcbV hInv hLookup
+    hLink hOff a b tcbA hA hNext
+  rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+    a.toObjId tcbA hA with ⟨_, h0a⟩ | ⟨hk, _⟩
+  · rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+      b.toObjId tcbB hB with ⟨_, h0b⟩ | ⟨hk, _⟩
+    · exact hTgt a b tcbA tcbB h0a h0b hNext
+    · exact absurd hk hbv
+  · exact absurd hk hav
+
+theorem restoreToReadyStaging_queueNextBlockingConsistent (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hLink : tcbQueueLinkIntegrity st) (hOff : sweptThreadOffQueueChains st v)
+    (hQNB : queueNextBlockingConsistent st) :
+    queueNextBlockingConsistent (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  intro a b tcbA tcbB hA hB hNext
+  obtain ⟨hav, hbv⟩ := restoreToReadyStaging_edge_avoids_victim st v frame tcbV hInv hLookup
+    hLink hOff a b tcbA hA hNext
+  rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+    a.toObjId tcbA hA with ⟨_, h0a⟩ | ⟨hk, _⟩
+  · rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+      b.toObjId tcbB hB with ⟨_, h0b⟩ | ⟨hk, _⟩
+    · exact hQNB a b tcbA tcbB h0a h0b hNext
+    · exact absurd hk hbv
+  · exact absurd hk hav
+
+theorem restoreToReadyStaging_endpointQueueNoDup (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hLink : tcbQueueLinkIntegrity st) (hOff : sweptThreadOffQueueChains st v)
+    (hNoDup : endpointQueueNoDup st) :
+    endpointQueueNoDup (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  intro oid ep hEp
+  have hEp0 : st.objects[oid]? = some (.endpoint ep) :=
+    (restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup oid (.endpoint ep)
+      (by simp)).mp hEp
+  refine ⟨?_, (hNoDup oid ep hEp0).2⟩
+  intro tid tcb hTcb hSelf
+  obtain ⟨hav, _⟩ := restoreToReadyStaging_edge_avoids_victim st v frame tcbV hInv hLookup
+    hLink hOff tid tid tcb hTcb hSelf
+  rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+    tid.toObjId tcb hTcb with ⟨_, h0⟩ | ⟨hk, _⟩
+  · exact (hNoDup oid ep hEp0).1 tid tcb h0 hSelf
+  · exact absurd hk hav
+
+theorem restoreToReadyStaging_ipcStateQueueMembershipConsistent (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hOff : sweptThreadOffQueueChains st v)
+    (hMem : ipcStateQueueMembershipConsistent st) :
+    ipcStateQueueMembershipConsistent
+      (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  obtain ⟨_, hvn⟩ := hOff tcbV hLookup
+  intro tid tcb' hTcb'
+  rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+    tid.toObjId tcb' hTcb' with ⟨_, h0⟩ | ⟨_, rfl⟩
+  · have hPre := hMem tid tcb' h0
+    have hFwd : ∀ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+        st.objects[prev.toObjId]? = some (.tcb prevTcb) → TCB.queueNext prevTcb = some tid →
+        ∃ (p : SeLe4n.ThreadId) (pTcb : TCB),
+          (Lifecycle.Suspend.restoreToReadyStaging st v frame).objects[p.toObjId]?
+            = some (.tcb pTcb) ∧ TCB.queueNext pTcb = some tid := by
+      intro prev prevTcb hPrev hPN
+      have hpv : prev.toObjId ≠ v.toObjId := by
+        intro hEq
+        rw [hEq, lookupTcb_some_objects st v tcbV hLookup] at hPrev
+        have hx : prevTcb = tcbV := (KernelObject.tcb.inj (Option.some.inj hPrev)).symm
+        rw [hx, hvn] at hPN
+        cases hPN
+      exact ⟨prev, prevTcb,
+        restoreToReadyStaging_tcb_forward st v frame hInv prev.toObjId prevTcb hpv hPrev, hPN⟩
+    cases hI : tcb'.ipcState with
+    | blockedOnSend epId =>
+      rw [hI] at hPre
+      obtain ⟨ep, hEp, hW⟩ := hPre
+      refine ⟨ep, (restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup epId
+        (.endpoint ep) (by simp)).mpr hEp, ?_⟩
+      rcases hW with hHd | ⟨prev, prevTcb, hPrev, hPN⟩
+      · exact Or.inl hHd
+      · exact Or.inr (hFwd prev prevTcb hPrev hPN)
+    | blockedOnCall epId =>
+      rw [hI] at hPre
+      obtain ⟨ep, hEp, hW⟩ := hPre
+      refine ⟨ep, (restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup epId
+        (.endpoint ep) (by simp)).mpr hEp, ?_⟩
+      rcases hW with hHd | ⟨prev, prevTcb, hPrev, hPN⟩
+      · exact Or.inl hHd
+      · exact Or.inr (hFwd prev prevTcb hPrev hPN)
+    | blockedOnReceive epId =>
+      rw [hI] at hPre
+      obtain ⟨ep, hEp, hW⟩ := hPre
+      refine ⟨ep, (restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup epId
+        (.endpoint ep) (by simp)).mpr hEp, ?_⟩
+      rcases hW with hHd | ⟨prev, prevTcb, hPrev, hPN⟩
+      · exact Or.inl hHd
+      · exact Or.inr (hFwd prev prevTcb hPrev hPN)
+    | _ => trivial
+  · rw [restoredTcb_ipcState]
+    trivial
+
+theorem restoreToReadyStaging_queueHeadBlockedConsistent (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (epV : SeLe4n.ObjId) (rtV : Option SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hBlocked : tcbV.ipcState = .blockedOnReply epV rtV)
+    (hHead : queueHeadBlockedConsistent st)
+    (hTail : endpointQueueTailBlockedConsistent st) :
+    queueHeadBlockedConsistent (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  intro epId ep hd tcbHd hEp hHd
+  have hEp0 : st.objects[epId]? = some (.endpoint ep) :=
+    (restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup epId (.endpoint ep)
+      (by simp)).mp hEp
+  obtain ⟨hSH, hRH, _, _⟩ := notQueueBlocked_bounds_no_endpoint_queue st v tcbV hLookup
+    (fun _ h => by rw [hBlocked] at h; cases h)
+    (fun _ h => by rw [hBlocked] at h; cases h)
+    (fun _ h => by rw [hBlocked] at h; cases h) hHead hTail epId ep hEp0
+  constructor
+  · intro hx
+    have hdv : hd.toObjId ≠ v.toObjId := fun hEq =>
+      hRH (hx.trans (congrArg some (SeLe4n.ThreadId.toObjId_injective _ _ hEq)))
+    rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+      hd.toObjId tcbHd hHd with ⟨_, h0⟩ | ⟨hk, _⟩
+    · exact (hHead epId ep hd tcbHd hEp0 h0).1 hx
+    · exact absurd hk hdv
+  · intro hx
+    have hdv : hd.toObjId ≠ v.toObjId := fun hEq =>
+      hSH (hx.trans (congrArg some (SeLe4n.ThreadId.toObjId_injective _ _ hEq)))
+    rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+      hd.toObjId tcbHd hHd with ⟨_, h0⟩ | ⟨hk, _⟩
+    · exact (hHead epId ep hd tcbHd hEp0 h0).2 hx
+    · exact absurd hk hdv
+
+theorem restoreToReadyStaging_endpointQueueTailBlockedConsistent (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (epV : SeLe4n.ObjId) (rtV : Option SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hBlocked : tcbV.ipcState = .blockedOnReply epV rtV)
+    (hHead : queueHeadBlockedConsistent st)
+    (hTail : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent
+      (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  intro epId ep tl tcbTl hEp hTl
+  have hEp0 : st.objects[epId]? = some (.endpoint ep) :=
+    (restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup epId (.endpoint ep)
+      (by simp)).mp hEp
+  obtain ⟨_, _, hST, hRT⟩ := notQueueBlocked_bounds_no_endpoint_queue st v tcbV hLookup
+    (fun _ h => by rw [hBlocked] at h; cases h)
+    (fun _ h => by rw [hBlocked] at h; cases h)
+    (fun _ h => by rw [hBlocked] at h; cases h) hHead hTail epId ep hEp0
+  constructor
+  · intro hx
+    have htv : tl.toObjId ≠ v.toObjId := fun hEq =>
+      hRT (hx.trans (congrArg some (SeLe4n.ThreadId.toObjId_injective _ _ hEq)))
+    rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+      tl.toObjId tcbTl hTl with ⟨_, h0⟩ | ⟨hk, _⟩
+    · exact (hTail epId ep tl tcbTl hEp0 h0).1 hx
+    · exact absurd hk htv
+  · intro hx
+    have htv : tl.toObjId ≠ v.toObjId := fun hEq =>
+      hST (hx.trans (congrArg some (SeLe4n.ThreadId.toObjId_injective _ _ hEq)))
+    rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+      tl.toObjId tcbTl hTl with ⟨_, h0⟩ | ⟨hk, _⟩
+    · exact (hTail epId ep tl tcbTl hEp0 h0).2 hx
+    · exact absurd hk htv
+
+/-- **The restore's donation-owner conjunct, and the one hypothesis it needs.**
+
+Making a thread `.ready` breaks `donationOwnerValid` at any donation that names it
+as owner, because the conjunct requires an owner to be reply-blocked.  What rules
+that out is `hNotOwner`, which is exactly what the reclaim establishes
+(`returnDonationToCancelledCaller_no_donation_to_victim`) and the reason the
+reclaim runs before the restore. -/
+theorem restoreToReadyStaging_donationOwnerValid (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding ≠ .donated scId v)
+    (h : donationOwnerValid st) :
+    donationOwnerValid (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  intro tid tcb scId owner hTcb hBind
+  obtain ⟨t0, h0, hEq⟩ :=
+    restoreToReadyStaging_sameSchedContextBindings st v frame hInv tid tcb hTcb
+  obtain ⟨⟨sc, hSc, hBound⟩, oTcb, hO, hUnb, hBlk⟩ :=
+    h tid t0 scId owner h0 (hEq.trans hBind)
+  have hOv : owner.toObjId ≠ v.toObjId := by
+    intro hEqO
+    exact hNotOwner tid t0 scId h0
+      (by rw [hEq.trans hBind, SeLe4n.ThreadId.toObjId_injective _ _ hEqO])
+  refine ⟨⟨sc, (restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup
+    scId.toObjId (.schedContext sc) (by simp)).mpr hSc, hBound⟩, oTcb,
+    restoreToReadyStaging_tcb_forward st v frame hInv owner.toObjId oTcb hOv hO,
+    hUnb, hBlk⟩
+
+/-- **The restore's reply linkage, relaxed at the thread it wakes.**
+
+Clause 1 and the third clause survive outright: the step writes neither
+`TCB.replyObject` nor any `Reply`, and the woken thread's `.blockedOnReply`
+antecedent is gone.  Clause 2 is where the relaxation is spent — the woken
+thread's Reply still names it — and the pair is still required to exist. -/
+theorem restoreToReadyStaging_replyCallerLinkageExcept (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (h : replyCallerLinkage st) :
+    replyCallerLinkageExcept (Lifecycle.Suspend.restoreToReadyStaging st v frame) v := by
+  have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) :=
+    lookupTcb_some_objects st v tcbV hLookup
+  have hRep : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      ((Lifecycle.Suspend.restoreToReadyStaging st v frame).objects[rid.toObjId]?
+          = some (.reply r)) ↔ (st.objects[rid.toObjId]? = some (.reply r)) :=
+    fun rid r => restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup
+      rid.toObjId (.reply r) (by simp)
+  refine ⟨?_, ?_, ?_⟩
+  · intro tid tcb' rid hTcb' hRO
+    rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+      tid.toObjId tcb' hTcb' with ⟨_, h0⟩ | ⟨hk, rfl⟩
+    · obtain ⟨r, hr, hrc⟩ := h.1.1 tid tcb' rid h0 hRO
+      exact ⟨r, (hRep rid r).mpr hr, hrc⟩
+    · have hidv : tid = v := SeLe4n.ThreadId.toObjId_injective _ _ hk
+      subst hidv
+      rw [restoredTcb_replyObject] at hRO
+      obtain ⟨r, hr, hrc⟩ := h.1.1 tid tcbV rid hVObj hRO
+      exact ⟨r, (hRep rid r).mpr hr, hrc⟩
+  · intro rid r tid hr hrc
+    obtain ⟨t0, h0, hRO, ep, rt, hBlk⟩ := h.1.2 rid r tid ((hRep rid r).mp hr) hrc
+    by_cases hidv : tid = v
+    · subst hidv
+      refine ⟨restoredTcb tcbV frame, ?_, ?_, Or.inl rfl⟩
+      · exact restoreToReadyStaging_objects_self st tid frame tcbV hInv
+          (by rw [SystemState.getTcb?_eq_some_iff]; exact hVObj)
+      · have hx : t0 = tcbV := by
+          rw [hVObj] at h0; exact (KernelObject.tcb.inj (Option.some.inj h0)).symm
+        rw [hx] at hRO
+        rw [restoredTcb_replyObject]; exact hRO
+    · have hne : tid.toObjId ≠ v.toObjId := fun hEq =>
+        hidv (SeLe4n.ThreadId.toObjId_injective _ _ hEq)
+      exact ⟨t0, restoreToReadyStaging_tcb_forward st v frame hInv tid.toObjId t0 hne h0,
+        hRO, Or.inr ⟨ep, rt, hBlk⟩⟩
+  · intro tid tcb' ep rt hTcb' hBlk
+    rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+      tid.toObjId tcb' hTcb' with ⟨_, h0⟩ | ⟨_, rfl⟩
+    · exact h.2 tid tcb' ep rt h0 hBlk
+    · rw [restoredTcb_ipcState] at hBlk
+      cases hBlk
+
+/-- **WS-RR RR8.7 — the restore's keystone**: the unblock-and-stage rewrite
+establishes `ipcInvariantFull` with the reply linkage relaxed at the thread it
+wakes.
+
+Four hypotheses beyond the bundle, and each is a fact about a different way the
+step could break a conjunct.  `hAllBudgetsNone` is the one both other cancellation
+arms take, for the same reason: the timeout conjunct says a budget-carrying thread
+is blocked and this step makes one `.ready`.  `hOff` is the queue-coherence fact —
+the step clears the woken thread's links with nothing to repair a neighbour, and
+`ipcInvariantFull` carries no connectivity.  `hNotOwner` is what the reclaim
+establishes.  And the blocking state is what puts the thread off every endpoint
+queue boundary.
+
+The one conjunct it cannot carry is the sixteenth, which is why the conclusion is
+the relaxed bundle: see `ipcInvariantFullExceptReplyLinkage`. -/
+theorem restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage
+    (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (epV : SeLe4n.ObjId) (rtV : Option SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hBlocked : tcbV.ipcState = .blockedOnReply epV rtV)
+    (hBundle : ipcInvariantFull st)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hOff : sweptThreadOffQueueChains st v)
+    (hNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding ≠ .donated scId v) :
+    ipcInvariantFullExceptReplyLinkage
+      (Lifecycle.Suspend.restoreToReadyStaging st v frame) v := by
+  obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, _hTimeout,
+    hDonAcyc, hDonOwner, hPassive, hDonBudget, hBlkReply, hReplyLink, hStash,
+    hDonUnique, hTailBlk, hTgt⟩ := hBundle
+  have hLink : tcbQueueLinkIntegrity st := hDual.2.1
+  have hBind := restoreToReadyStaging_sameSchedContextBindings st v frame hInv
+  exact ⟨Lifecycle.Suspend.restoreToReadyStaging_preserves_ipcInvariant st v frame hInv hIpc,
+    restoreToReadyStaging_dualQueueSystemInvariant st v frame tcbV hInv hLookup hOff hDual,
+    restoreToReadyStaging_allPendingMessagesBounded st v frame tcbV hInv hLookup hBnd,
+    restoreToReadyStaging_badgeWellFormed st v frame tcbV hInv hLookup hBadge,
+    restoreToReadyStaging_blockedThreadsPendingMessageConsistent st v frame tcbV hInv
+      hLookup hBlkMsg,
+    restoreToReadyStaging_endpointQueueNoDup st v frame tcbV hInv hLookup hLink hOff hNoDup,
+    restoreToReadyStaging_ipcStateQueueMembershipConsistent st v frame tcbV hInv hLookup
+      hOff hMem,
+    restoreToReadyStaging_queueNextBlockingConsistent st v frame tcbV hInv hLookup hLink
+      hOff hQNB,
+    restoreToReadyStaging_queueHeadBlockedConsistent st v frame tcbV epV rtV hInv hLookup
+      hBlocked hQHB hTailBlk,
+    blockedThreadTimeoutConsistent_of_frame
+      (restoreToReadyStaging_timeoutBudgetFrame st v frame tcbV hInv hLookup) hAllBudgetsNone,
+    restoreToReadyStaging_donationChainAcyclic st v frame hInv hDonAcyc,
+    restoreToReadyStaging_donationOwnerValid st v frame tcbV hInv hLookup hNotOwner hDonOwner,
+    passiveServerIdle_of_frame
+      (restoreToReadyStaging_passiveServerIdleFrame st v frame hInv) hPassive,
+    donationBudgetTransfer_of_sameSchedContextBindings hBind hDonBudget,
+    restoreToReadyStaging_blockedOnReplyHasTarget st v frame tcbV hInv hLookup hBlkReply,
+    restoreToReadyStaging_replyCallerLinkageExcept st v frame tcbV hInv hLookup hReplyLink,
+    restoreToReadyStaging_pendingReceiveReplyWellFormed st v frame tcbV hInv hLookup hStash,
+    donationOwnerUnique_of_sameSchedContextBindings hBind hDonUnique,
+    restoreToReadyStaging_endpointQueueTailBlockedConsistent st v frame tcbV epV rtV hInv
+      hLookup hBlocked hQHB hTailBlk,
+    restoreToReadyStaging_queueNextTargetBlocked st v frame tcbV hInv hLookup hLink hOff hTgt⟩
+
+/-- **WS-RR RR8.7 — the teardown closes the relaxation it was opened for.**
+
+`consumeReplyLink` is the other half of the pair: the restore opens the relaxation
+by waking the caller, and this step closes it by clearing both sides of that
+caller's reply link.  Stated over the *relaxed* bundle, which is what the restore
+leaves and what the full bundle provably is not.
+
+The two arms close it differently.  With a reply object the step is the reply
+path's own consume, and the relaxed clause 1 at the woken thread supplies the
+`caller` link that theorem needs.  With none the step is the identity, and the
+relaxed clause 2 is what says no Reply names the thread at all — a Reply that did
+would force the thread's single `replyObject` to name it. -/
+theorem consumeReplyLink_closes_exceptReplyLinkage (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcb tcbSt : TCB)
+    (hInv : st.objects.invExt)
+    (hStore : st.objects[v.toObjId]? = some (.tcb tcbSt))
+    (hAgree : tcbSt.replyObject = tcb.replyObject)
+    (hWoken : ∀ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+      tcbSt.ipcState ≠ .blockedOnReply ep rt)
+    (hExcept : ipcInvariantFullExceptReplyLinkage st v) :
+    ipcInvariantFull (Lifecycle.Suspend.consumeReplyLink st v tcb) := by
+  have hRecip := hExcept.replyCallerLinkageExcept
+  -- A Reply naming `v` forces `v`'s stored `replyObject` to name it back.
+  have hNames : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      st.objects[rid.toObjId]? = some (.reply r) → r.caller = some v →
+      tcbSt.replyObject = some rid := by
+    intro rid r hr hc
+    obtain ⟨t, ht, htr, _⟩ := hRecip.2.1 rid r v hr hc
+    rw [hStore] at ht
+    rw [(KernelObject.tcb.inj (Option.some.inj ht)).symm] at htr
+    exact htr
+  cases hR : tcb.replyObject with
+  | none =>
+    rw [Lifecycle.Suspend.consumeReplyLink_none st v tcb hR]
+    refine ipcInvariantFull_of_exceptReplyLinkage hExcept
+      (replyCallerLinkage_of_except_of_unreferenced hRecip ?_)
+    intro rid r hr hc
+    have hStRid : tcbSt.replyObject = some rid := hNames rid r hr hc
+    rw [hAgree, hR] at hStRid
+    cases hStRid
+  | some rid =>
+    rw [Lifecycle.Suspend.consumeReplyLink_some st v tcb rid hR]
+    have hStRid : tcbSt.replyObject = some rid := by rw [hAgree, hR]
+    obtain ⟨r0, hr0, hc0⟩ := hRecip.1 v tcbSt rid hStore hStRid
+    exact consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage st _ v rid r0
+      hExcept hInv ((SystemState.getReply?_eq_some_iff st rid r0).mpr hr0) hc0
+      (fun t ht ep rt => by
+        rw [hStore] at ht
+        rw [(KernelObject.tcb.inj (Option.some.inj ht)).symm]
+        exact hWoken ep rt)
+      (SystemState.consumeCallerReply_eq_link st v rid)
+
+/-- **WS-RR RR8.7 — the reply arm's teardown pair.**
+
+The cancellation's reply arm ends in the unblock-and-stage rewrite followed by the
+reply-link teardown, and this is that pair: `restoreToReadyCancelled` then
+`consumeReplyLink`, at the victim's own reply object.
+
+**The pair is the unit the bundle is about, and neither step is.**  The restore
+alone leaves a woken caller whose Reply still names it, which
+`replyCallerLinkageReciprocal` forbids, and the teardown alone would clear a
+still-blocked caller's reply object, which the third clause forbids.  Run in this
+order they are each other's repair, so the pair carries all twenty conjuncts while
+the two halves carry nineteen and a relaxation between them. -/
+def restoredAndConsumed (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (frame : Option Architecture.SyscallReturnFrame) : SystemState :=
+  Lifecycle.Suspend.consumeReplyLink
+    (Lifecycle.Suspend.restoreToReadyStaging st v frame) v tcbV
+
+/-- **WS-RR RR8.7 — the teardown pair's keystone**: it preserves `ipcInvariantFull`.
+
+The hypotheses are the restore's: the victim resolves and is reply-blocked, the
+timeout-budget discipline, this arm's queue-coherence fact, and the no-donation
+fact the reclaim establishes.  The teardown needs nothing further — everything it
+asks of its own pre-state is read off `restoredTcb`. -/
+theorem restoredAndConsumed_preserves_ipcInvariantFull (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (frame : Option Architecture.SyscallReturnFrame)
+    (epV : SeLe4n.ObjId) (rtV : Option SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hBlocked : tcbV.ipcState = .blockedOnReply epV rtV)
+    (hBundle : ipcInvariantFull st)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hOff : sweptThreadOffQueueChains st v)
+    (hNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding ≠ .donated scId v) :
+    ipcInvariantFull (restoredAndConsumed st v tcbV frame) := by
+  have hGet : st.getTcb? v = some tcbV := by
+    rw [SystemState.getTcb?_eq_some_iff]; exact lookupTcb_some_objects st v tcbV hLookup
+  unfold restoredAndConsumed
+  exact consumeReplyLink_closes_exceptReplyLinkage _ v tcbV (restoredTcb tcbV frame)
+    (Lifecycle.Suspend.restoreToReadyStaging_invExt st v frame hInv)
+    (restoreToReadyStaging_objects_self st v frame tcbV hInv hGet)
+    (restoredTcb_replyObject tcbV frame)
+    (fun ep rt => by rw [restoredTcb_ipcState]; intro hc; cases hc)
+    (restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage st v frame tcbV
+      epV rtV hInv hLookup hBlocked hBundle hAllBudgetsNone hOff hNotOwner)
+
 end SeLe4n.Kernel

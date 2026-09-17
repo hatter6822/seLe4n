@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.79.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.80.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,25 +203,25 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~68290 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23592 lines)
-- `tests/SmpInformationFlowSuite.lean` (~12166 lines)
+- `CHANGELOG.md` (~69332 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23604 lines)
+- `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7786 lines)
 - `SeLe4n/Kernel/API.lean` (~7592 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7305 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7459 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6133 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6083 lines)
-- `SeLe4n/Platform/Boot.lean` (~5813 lines)
-- `SeLe4n/Model/State.lean` (~5770 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5350 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5111 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5056 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6151 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6140 lines)
+- `SeLe4n/Platform/Boot.lean` (~5780 lines)
+- `SeLe4n/Model/State.lean` (~5695 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5604 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5072 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5044 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `SeLe4n/Kernel/CrossSubsystem.lean` (~4476 lines)
-- `tests/NegativeStateSuite.lean` (~4310 lines)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (~4454 lines)
+- `tests/NegativeStateSuite.lean` (~4294 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4225 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
@@ -230,37 +230,38 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3803 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
 - `tests/SmpIpcSuite.lean` (~3716 lines)
-- `SeLe4n/Platform/FFI.lean` (~3592 lines)
+- `SeLe4n/Platform/FFI.lean` (~3595 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~3470 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~3428 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
-- `tests/OperationChainSuite.lean` (~3290 lines)
+- `tests/OperationChainSuite.lean` (~3289 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3275 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3247 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3123 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3074 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3090 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3087 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~2854 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2837 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
-- `SeLe4n/Kernel/Capability/Operations.lean` (~2714 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2661 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2614 lines)
+- `SeLe4n/Kernel/Capability/Operations.lean` (~2633 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2608 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2575 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
-- `tests/ModelIntegritySuite.lean` (~2487 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `tests/FrozenOpsSuite.lean` (~2473 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2421 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2461 lines)
+- `tests/ModelIntegritySuite.lean` (~2456 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2356 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
@@ -269,21 +270,20 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2291 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2244 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2171 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2245 lines)
+- `tests/SmpCancellationSuite.lean` (~2183 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~2092 lines)
-- `tests/SmpCancellationSuite.lean` (~2080 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2050 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2051 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2048 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~2044 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2031 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2024 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~2006 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~1999 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1960 lines)
@@ -299,8 +299,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
 - `tests/SyscallDispatchSuite.lean` (~1847 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
-- `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
+- `SeLe4n/Model/FreezeProofs.lean` (~1819 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1799 lines)
@@ -313,37 +313,37 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1675 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
-- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
+- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1624 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1617 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1498 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1501 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1439 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1430 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1424 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1410 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1398 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1397 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1385 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1366 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1316 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1285 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
 - `SeLe4n/Kernel/FrozenOps/Core.lean` (~1270 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1254 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
@@ -364,7 +364,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1126 lines)
 - `tests/SmpIdleSuite.lean` (~1118 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
-- `SeLe4n/Model/FrozenState.lean` (~1092 lines)
+- `SeLe4n/Model/FrozenState.lean` (~1090 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
@@ -379,10 +379,10 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~963 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~963 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~962 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~960 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~957 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~951 lines)
 - `tests/SmpCrossCoreNotificationSuite.lean` (~937 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
@@ -390,24 +390,25 @@ To find files that need pagination today, run:
 - `tests/SmpTimerSuite.lean` (~934 lines)
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~927 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~900 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (~885 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~883 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
-- `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
+- `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~857 lines)
 - `tests/An10CascadeSuite.lean` (~854 lines)
-- `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~838 lines)
+- `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~851 lines)
+- `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~839 lines)
 - `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~833 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
+- `SeLe4n/Kernel/SchedContext/Operations.lean` (~832 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
@@ -418,7 +419,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 - `docs/DEVELOPMENT.md` (~803 lines)
-- `SeLe4n/Kernel/SchedContext/Operations.lean` (~800 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -5698,7 +5698,7 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **179**
+  reports **zero** conjuncts bound on a post-state across all **180**
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements, measured over the comment-free code view with the conjunct set,
   the bundle family and each bundle's own pre-state all *derived* rather than
@@ -6304,6 +6304,57 @@ code may assume:
   not an obligation**: `endpointQueueNoDup_of_dualQueue_of_headBlocked` derives
   it from the dual-queue invariant and the head conjunct, so a transition need
   not re-establish it separately.
+- **A woken caller's post-state does not satisfy `replyCallerLinkage`, and
+  asking for the full bundle *and* the wake is asking for nothing** (WS-RR
+  RR8.7, `v0.35.80`).  The third relaxed view, and the one whose absence had
+  produced two **vacuous** production theorems.
+  `consumeCallerReply_preserves_ipcInvariantFull` and
+  `removeCallerReplyFrame_preserves_ipcInvariantFull` each took
+  `ipcInvariantFull st` together with "st's answered caller is not
+  `.blockedOnReply`", and `replyCallerLinkage`'s second direction refutes that
+  pairing outright — a stored Reply naming a caller obliges that caller to be
+  reply-blocked, so the bundle *entails* that no woken thread is still named.
+  Their premises held on **no state**; they asserted nothing while their names
+  read, in a bundle search, exactly like coverage.  Six things new code must
+  respect.  (1) **The refutation is pinned, permanently**:
+  `replyCallerLinkage_refutes_woken_linked_caller` derives `False` from the two
+  premises, is consumed by nothing, and is anchored in Tier 3 for that reason —
+  a refutation nothing states is one the next cut re-discovers by shipping the
+  defect again.  Two Tier 3 negatives refuse both retired spellings tree-wide,
+  each mutation-tested by reintroducing the name as **code** (the tombstones
+  mention them in prose, which the code view strips, so the clean tree
+  exercises the other direction).  (2) **The relaxation is the narrowest one
+  that admits the state.**  `replyCallerLinkageExcept st woken` still requires
+  the reciprocal pair to *exist* at the woken thread — the Reply resolves and
+  the thread names it back — and drops only the blocking clause, written as a
+  **disjunct** (`tid = woken ∨ ∃ ep rt, …`) rather than by excusing the thread
+  from the clause.  Excusing it would drop the pair too, and the pair is
+  precisely what the teardown reads.  (3) **The unit is the pair, not either
+  half.**  `restoreToReadyStaging` wakes the victim and so *breaks*
+  reciprocity, leaving `ipcInvariantFullExceptReplyLinkage` and nothing
+  stronger; the teardown alone would break the third clause, since it clears
+  `replyObject` without unblocking.  Each is the other's repair, so
+  `restoredAndConsumed` — the composition the reply arm performs — is what
+  carries the full bundle (`restoredAndConsumed_preserves_ipcInvariantFull`), and
+  a claim taken at either half is a claim about a state the arm does not rest
+  at.  (4) **A relaxed view is registered with the de-threading gate**, in
+  `PRE_STATE_PREDICATES`, longest-prefix-first — otherwise the gate reads the
+  relaxed bundle's own hypothesis as a threaded post-state conjunct.  (5) **The
+  splice's own bundle statement is owed, not claimed**: the deleted composite's
+  honest form is the *relaxed* one, which needs a relaxed twin of
+  `storeObject_reply_stackLinks_preserves_ipcInvariantFull`; it is registered in
+  `docs/REGISTERED_DEBT.md` §A with a tombstone at the deletion site naming both.
+  (6) **The class was named at `v0.31.154` and not swept.**
+  `REPLY_OBJECTS_COMPLETION_PLAN.md`'s own landed note re-based
+  `linkCallerReply_preserves_ipcInvariantFull` because "full `ipcInvariantFull
+  st` would be *vacuous* at a link site" — and left the sibling `consumeCallerReply`
+  threading the post-state, one clause away, with the same contradiction
+  available.  RR8.5 then turned that post-state threading into a *pre*-state
+  hypothesis, which moved the vacuity from the conclusion into the premises
+  rather than removing it.  **When a cut records that a bundle would be vacuous
+  at one site, ask the same question of every operation that writes the same
+  field** — and note that de-threading a conjunct can *preserve* a vacuity by
+  relocating it.
 - **The `.call` chain's IPC bundle is staged; every other live-arm bundle is
   production.**  RR2 (v0.34.42) gave the transitions behind `Kernel/API.lean`'s
   SMP dispatch `_preserves_ipcInvariantFull` theorems, and the RR2 closure audit

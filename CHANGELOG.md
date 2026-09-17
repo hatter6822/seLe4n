@@ -1,3 +1,125 @@
+## v0.35.80 — WS-RR RR8.7 (first cut): the reply arm's teardown carried two theorems that asserted nothing
+
+**Two production bundle theorems had contradictory premises, so they held on no
+state at all.**  `consumeCallerReply_preserves_ipcInvariantFull` and
+`removeCallerReplyFrame_preserves_ipcInvariantFull` each asked for
+`ipcInvariantFull st` **together with** "`st`'s answered caller is not
+`.blockedOnReply`".  `replyCallerLinkage`'s second direction says a stored Reply
+naming a caller obliges that caller to be reply-blocked — so the bundle *entails*
+that no woken thread is still named by a Reply, which is the negation of the
+second premise.  The two together are unsatisfiable.  Both theorems therefore
+asserted **nothing**, while their names read in a bundle search, in the
+de-threading census and in the RM1.5 plan row exactly like coverage.  Found by
+reading the statements against the conjunct they quantify over, proved in Lean
+before anything was changed, and reported as a finding rather than folded into
+the cut silently.
+
+`replyCallerLinkage_refutes_woken_linked_caller` is that reading as a theorem:
+from the bundle's own reciprocity, a Reply naming a caller, and that caller being
+woken, derive `False`.  Nothing consumes it and nothing is meant to — it is a
+**permanent pin**, anchored in Tier 3 for the reason this project anchors any
+unconsumed declaration, because a refutation nothing states is one the next cut
+re-discovers by shipping the defect again.  Two Tier 3 negatives refuse both
+retired spellings tree-wide; each was mutation-tested by reintroducing the name
+as **code** (the tombstones name them in prose, which the code view strips, so
+the clean tree exercises the other direction of *gates read code, prose reads
+prose*).
+
+**The relaxation is the narrowest one that admits the state.**
+`replyCallerLinkageExcept st woken` still requires the reciprocal pair to
+*exist* at the woken thread — the Reply resolves and the thread names it back —
+and drops only the blocking clause, written as a **disjunct**
+(`tid = woken ∨ ∃ ep rt, tcb.ipcState = .blockedOnReply ep rt`) rather than by
+excusing the thread from the clause.  Excusing it would drop the pair as well,
+and the pair is precisely what the teardown reads to know which Reply to clear.
+`ipcInvariantFullExceptReplyLinkage st woken` is the twenty conjuncts with that
+one substitution; it stands to `replyCallerLinkage` as
+`ipcInvariantFullExceptDonationOwner` stands to `donationOwnerValid` and
+`ipcInvariantFullExceptMembership` to the membership conjunct, and it is
+registered in `check_ipc_invariant_dethreading.py`'s `PRE_STATE_PREDICATES`
+(longest-prefix-first) so the gate reads it as a pre-state rather than as a
+threaded post-state conjunct.  Six named accessors keep projection paths out of
+consumer proofs.
+
+**The unit is the pair, not either half — and that is the whole of why the
+statements were wrong.**  `restoreToReadyStaging` wakes the victim, so it
+*breaks* reciprocity's second direction and leaves the relaxed bundle and nothing
+stronger (`restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage`,
+over twenty-three per-conjunct helpers).  The teardown alone would break the
+third clause, since it clears `replyObject` without unblocking.  Each is the
+other's repair: `consumeReplyLink_closes_exceptReplyLinkage` turns the relaxed
+bundle back into the full one, and `restoredAndConsumed` — the composition the
+cancellation reply arm actually performs — is what carries `ipcInvariantFull` end
+to end (`restoredAndConsumed_preserves_ipcInvariantFull`).  A bundle claim taken
+at either half is a claim about a state the arm does not rest at.
+
+Of the three affected theorems: `consumeCallerReply_preserves_replyCallerLinkageReciprocal`
+is **generalised** to `consumeCallerReply_closes_replyCallerLinkageExcept` (it
+now consumes the relaxed clause and resolves the disjunction from the
+key-distinctness it already derived); `consumeCallerReply_preserves_ipcInvariantFull`
+is **restated** as `consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage`
+over the relaxed pre-state; and `removeCallerReplyFrame_preserves_ipcInvariantFull`
+is **deleted** behind a tombstone naming its replacement and what is missing.
+Nothing is lost by the deletion — it asserted nothing — but the splice then the
+consume now carries no bundle statement, and its honest form is the *relaxed*
+one, which needs a relaxed twin of
+`storeObject_reply_stackLinks_preserves_ipcInvariantFull`.  That is **registered**
+in `docs/REGISTERED_DEBT.md` §A against RR8.10 rather than absorbed: the twin is
+its own argument over the twenty conjuncts and belongs in the cut that needs it.
+
+**The class was named at `v0.31.154` and not swept, and RR8.5 preserved it by
+relocating it.**  `REPLY_OBJECTS_COMPLETION_PLAN.md`'s own landed note re-based
+`linkCallerReply_preserves_ipcInvariantFull` on intermediate-state preconditions
+because "full `ipcInvariantFull st` would be *vacuous* at a link site" — and, in
+the same paragraph, left the sibling `consumeCallerReply` threading
+`replyCallerLinkage st'`, one clause away, with the same contradiction available.
+RR8.5 (`v0.35.63`) then turned that post-state threading into a *pre*-state
+hypothesis, which is what the de-threading programme asks for and which moved the
+vacuity from the conclusion into the premises rather than removing it.  Two rules
+follow, both now in `CLAUDE.md`: when a cut records that a bundle would be vacuous
+at one site, ask the same question of every operation that writes the same field;
+and de-threading a conjunct can *preserve* a vacuity by relocating it.
+
+**One de-duplication rode along.**  "Does this victim bound an endpoint queue?"
+was asked by the notification arm and, in this cut, by the reply arm — of victims
+in *different* blocking states, so the discriminating fact is a parameter:
+`notQueueBlocked_bounds_no_endpoint_queue` (`CancellationQueueShape.lean`, the
+module both arms import) takes the three not-blocked-on-this-endpoint facts and
+both boundary conjuncts, and `purgedAndRestored_victim_off_endpoint_boundaries`
+is now one application of it with its statement unchanged.  The store-read census
+measures the collapse: that declaration's site count falls from 2 to 1 and the
+shared owner's is 2.  Writing a second copy under the reply arm would have been
+one question with two answers, in the cut whose whole subject is a statement that
+read as coverage.
+
+**Two declarations this cut added were then removed as dead**, and the second was
+a cascade: `ipcInvariantFullExceptReplyLinkage_of_full` (the full → relaxed
+weakening) had zero consumers, and deleting it left
+`replyCallerLinkageExcept_of_replyCallerLinkage` — its only caller — with zero as
+well.  The sibling `ipcInvariantFullExceptDonationOwner_of_full` has three real
+consumers, so symmetry with it is not consumption and does not earn a place in the
+tree.  What is kept unconsumed is kept *anchored*: the refutation pin and the
+cut's keystone, both named by Tier 3.
+
+**Two stale citations swept.**  A `NOTE` in `DualQueueMembership.lean` named the
+renamed theorem as "defined further down"; the RM1.5 row in
+`REPLY_FRAME_REMOVAL_PLAN.md` marked the deleted theorem **LANDED** and justified
+it from §3.2, whose reasoning is sound about the *splice* (a `prev`-only write at
+a third key) and was applied to the *composite*, which also consumes the caller
+link — the wrong-unit shape.  Both corrected in place; the historical `v0.31.154`
+note keeps its claim and gains a retirement pointer.
+
+**Verified**: `lake build` (516 jobs) and `lake build SeLe4n.Platform.Staged`
+(306 jobs) both clean; `check_ipc_invariant_dethreading.py` PASS with the relaxed
+view registered (180 bundles, zero post-state conjunct bindings, every prose
+figure held to the measured count); `ak7_cascade_check_monotonic.sh` PASS with
+`STORE_READ_CODE`, `STORE_WRITE_CODE`, `SORRY_COUNT` and `AXIOM_COUNT` all still
+zero and only the diagnostic SPEC count and the should-grow `GETTCB_ADOPTION`
+floor moving; `check_claim_evidence_citations.py`, `check_workstream_plan.py`,
+`test_full.sh` (Tier 0–3); golden trace byte-identical.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR8.7
+
 ## v0.35.79 — WS-RR RR8.6: the deschedule reads placement, not the home — and the sweep found a `.tcbSuspend` that did not suspend
 
 **Three sites descheduled a state-resolved victim at `determineTargetCore`, and

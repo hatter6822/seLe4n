@@ -121,6 +121,11 @@ PRE_STATE_PREDICATES = (
     # the first form that fits, and a shorter prefix placed first would claim
     # the longer name's occurrences.
     "ipcInvariantFullExceptMembership",
+    # WS-RR RR8.7: the bundle with the *reply linkage* relaxed at a woken
+    # caller, which is the honest post-state of the unblock-and-stage rewrite
+    # and the honest pre-state of the reply-link teardown.  Listed for the same
+    # reason as its two siblings, and ahead of the bare spelling it extends.
+    "ipcInvariantFullExceptReplyLinkage",
     "ipcInvariantFull",
     "ipcInvariantCore",
 )

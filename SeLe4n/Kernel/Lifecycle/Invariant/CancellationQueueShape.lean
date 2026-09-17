@@ -345,6 +345,14 @@ theorem restoredTcb_eq (tcb : TCB) (frame : Option Architecture.SyscallReturnFra
     (restoredTcb tcb frame).pendingReceiveReply = none := by
   unfold restoredTcb; cases frame <;> rfl
 
+/-- **WS-RR RR8.7**: the restore leaves the reply link alone.  The sibling of the
+five clears above, for the one field of the six the restore does *not* write and
+that the reply-linkage conjunct reads. -/
+@[simp] theorem restoredTcb_replyObject (tcb : TCB)
+    (frame : Option Architecture.SyscallReturnFrame) :
+    (restoredTcb tcb frame).replyObject = tcb.replyObject := by
+  unfold restoredTcb; cases frame <;> rfl
+
 theorem restoreToReadyStaging_objects_self (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) (tcb : TCB)
     (hInv : st.objects.invExt) (hTcb : st.getTcb? tid = some tcb) :
@@ -365,6 +373,42 @@ theorem restoreToReadyStaging_objects_ne (st : SystemState) (tid : SeLe4n.Thread
         = st.objects[k]?
     exact RHTable.getElem?_insert_ne st.objects tid.toObjId k _
       (by simpa using fun h => hNe h.symm) hInv
+
+/-- **WS-RR RR8.7: a thread that is not blocked on an endpoint queue bounds no
+endpoint queue** — it heads neither queue of any endpoint and tails neither.
+
+Both boundary conjuncts read a boundary thread's `ipcState` and demand a blocking
+state naming that very endpoint, so a thread in any other state is excluded from
+all four boundaries at once.
+
+Two of the three cancellation arms need this, of victims in different states: the
+notification arm's is `.blockedOnNotification` and the reply arm's
+`.blockedOnReply`, and both are cancelled by a step that clears the victim's queue
+links with nothing to repair a neighbour.  The discriminating fact is therefore a
+parameter rather than a blocking state, so the two ask the question once.  The
+endpoint arm does not consume it: its victim *is* queue-blocked, and its engine
+splices the boundary rather than establishing that there is none. -/
+theorem notQueueBlocked_bounds_no_endpoint_queue
+    (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (hLookup : lookupTcb st v = some tcbV)
+    (hNotRecv : ∀ ep, tcbV.ipcState ≠ .blockedOnReceive ep)
+    (hNotSend : ∀ ep, tcbV.ipcState ≠ .blockedOnSend ep)
+    (hNotCall : ∀ ep, tcbV.ipcState ≠ .blockedOnCall ep)
+    (hHead : queueHeadBlockedConsistent st) (hTail : endpointQueueTailBlockedConsistent st)
+    (epId : SeLe4n.ObjId) (ep : Endpoint) (hEp : st.objects[epId]? = some (.endpoint ep)) :
+    ep.sendQ.head ≠ some v ∧ ep.receiveQ.head ≠ some v ∧
+    ep.sendQ.tail ≠ some v ∧ ep.receiveQ.tail ≠ some v := by
+  have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) :=
+    lookupTcb_some_objects st v tcbV hLookup
+  refine ⟨fun hx => ?_, fun hx => ?_, fun hx => ?_, fun hx => ?_⟩
+  · rcases (hHead epId ep v tcbV hEp hVObj).2 hx with h | h
+    · exact hNotSend epId h
+    · exact hNotCall epId h
+  · exact hNotRecv epId ((hHead epId ep v tcbV hEp hVObj).1 hx)
+  · rcases (hTail epId ep v tcbV hEp hVObj).2 hx with h | h
+    · exact hNotSend epId h
+    · exact hNotCall epId h
+  · exact hNotRecv epId ((hTail epId ep v tcbV hEp hVObj).1 hx)
 
 -- ============================================================================
 -- §4  The composite, and its TCB readings
