@@ -2776,9 +2776,11 @@ run_check "INVARIANT" rg -n '^def rewriteAdmissible\b' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def rewriteObject\b' SeLe4n/Model/State.lean
 # The body IS the bare insert (zero cost) -- bounded to the declaration.
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def rewriteObject \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*\n  \{ st with objects := st\.objects\.insert id new \}\n\n" SeLe4n/Model/State.lean'
-# The typed read-modify-writes are matches whose lookup is the witness.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updateTcb \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match h : st\.getTcb\? tid with" SeLe4n/Model/State.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updateSchedContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match h : st\.getSchedContext\? scId with" SeLe4n/Model/State.lean'
+# The typed read-modify-writes are PLAIN matches on the witnessed lookup
+# (v0.35.65; at v0.35.64 they were dependent matches on the typed lookup, which
+# no consumer proof could reduce -- see the witnessed-lookup block below).
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updateTcb \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? tid with" SeLe4n/Model/State.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def updateSchedContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContextWitnessed\? scId with" SeLe4n/Model/State.lean'
 # The pure store for a key that may hold nothing: the projection with the
 # error arm ELIMINATED (`storeObject_isOk`), and the bridge.
 run_check "INVARIANT" rg -n '^theorem storeObject_isOk\b' SeLe4n/Model/State.lean
@@ -2813,6 +2815,59 @@ run_negative_check "INVARIANT" rg -n 'clearTcbIpcFields' SeLe4n tests
 # The cross-core twin of the bound-donation cancel is held to the single-core
 # arm by `rfl`, which is what forced the twin to migrate in the same cut.
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelBoundDonationOnCore_bootCoreId[^\n]*(\n([ \t][^\n]*)?)*= cancelBoundDonation st tid tcb := rfl" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+
+# ----------------------------------------------------------------------------
+# v0.35.65 -- the witnessed lookups, and the scheduler's context-save family
+# ----------------------------------------------------------------------------
+#
+# `getTcbWitnessed?` / `getSchedContextWitnessed?` are the typed lookups that
+# carry their own equation (`Option { t // st.getTcb? tid = some t }`), matched
+# on the STORE and erased to the value.  A `match h : st.getTcb? tid with` at a
+# rewrite site is a dependent matcher whose discriminant occurs in its motive,
+# so no consumer proof can rewrite it; a plain match on the witnessed lookup
+# reduces under `simp only [site, getTcbWitnessed?_eq_some h]`.
+# The two positives below pin the RETURN TYPE, which is the whole content of a
+# witnessed lookup: an `Option` of a subtype whose second component is the
+# lookup's own equation.  (The first spelling of these anchors was
+# `getTcbWitnessed\?\b`, and `\b` between `?` and a space is a boundary that
+# never exists -- the gate refused the clean tree, which is the fail-closed
+# direction, but an anchor that cannot match pins nothing.)
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def getTcbWitnessed\? \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) :\n    Option \{ t : TCB // st\.getTcb\? tid = some t \} :=" SeLe4n/Model/State.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def getSchedContextWitnessed\? \(st : SystemState\) \(scId : SeLe4n\.SchedContextId\) :\n    Option \{ sc : SeLe4n\.Kernel\.SchedContext // st\.getSchedContext\? scId = some sc \} :=" SeLe4n/Model/State.lean'
+# Matched on the store, never on the typed lookup -- bounded to the declaration.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def getTcbWitnessed\? \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match hx : st\.objects\[tid\.toObjId\]\? with" SeLe4n/Model/State.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def getSchedContextWitnessed\? \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match hx : st\.objects\[scId\.toObjId\]\? with" SeLe4n/Model/State.lean'
+# The three equations per kind: the witnessed lookup IS the typed lookup.
+run_check "INVARIANT" rg -n '^theorem getTcbWitnessed\?_eq_some\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem getTcbWitnessed\?_eq_none\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem getTcbWitnessed\?_val\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem getSchedContextWitnessed\?_eq_some\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem getSchedContextWitnessed\?_eq_none\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem getSchedContextWitnessed\?_val\b' SeLe4n/Model/State.lean
+# NEGATIVE: in the migrated files the dependent match on a typed lookup is
+# confined to the two witnessed definitions (which match on the store).  A
+# theorem may case on a lookup this way elsewhere; these five files are where
+# the executable rewrite sites live, and the mutation this refuses keeps the
+# match and makes it dependent again.
+run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# The scheduler's context-save family and the affinity op are the typed rewrite,
+# or the witnessed lookup around `rewriteObject` -- bounded to each declaration.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.updateTcb outTid fun outTcb" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContextOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.updateTcb outTid fun outTcb" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContextChecked \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? outTid with" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def preemptCurrentOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? prevTid with" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def preemptCurrentOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject prevTid\.toObjId" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def setThreadCpuAffinity \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? targetTid with" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def resumeThread \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? tid with" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# NEGATIVE, per declaration: none of the five scheduler sites carries a raw
+# store write.  The file is not the scope yet -- `enqueueRunnableOnCore` and
+# the tick family are the next cut -- so each negative is bounded to its own
+# declaration, which is where the mutation that re-introduces the insert lands.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContextChecked \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def preemptCurrentOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def setThreadCpuAffinity \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContextOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 
 # ============================================================================
 # WS-OD OD6 -- the payoff

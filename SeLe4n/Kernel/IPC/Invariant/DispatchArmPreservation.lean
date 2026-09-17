@@ -791,7 +791,7 @@ theorem setThreadCpuAffinityOnCore_preserves_ipcInvariantFull
         · rename_i stSet hSet
           have hSetEq : stSet = { st with objects := st.objects.insert vtid.val.toObjId (.tcb { tcb with cpuAffinity := affinity }) } := by
             unfold setThreadCpuAffinity at hSet
-            rw [hT] at hSet
+            rw [SystemState.getTcbWitnessed?_eq_some hT] at hSet
             exact (Except.ok.inj hSet).symm
           subst hSetEq
           dsimp only [] at hStep
@@ -1862,7 +1862,9 @@ theorem preemptCurrentOnCore_preserves_ipcInvariantFull (st : SystemState)
     · exact hInv
     · rename_i prevTid _ hPrev
       split
-      · rename_i prevTcb hPrevTcb
+      · rename_i prevTcb hPrevTcb _
+        -- The in-place rewrite IS the insert; the proof below is stated over it.
+        dsimp only [SystemState.rewriteObject]
         have hPreRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevTcb
         have hAt := insertObjects_getElem_self st prevTid.toObjId
           (.tcb { prevTcb with registerContext := st.machine.regsOnCore c }) hObjInv
@@ -1898,7 +1900,7 @@ theorem preemptCurrentOnCore_noop_of_prev_no_tcb (st : SystemState) (c : CoreId)
   unfold preemptCurrentOnCore
   rw [hCur]
   dsimp only []
-  rw [if_neg hne, hNo]
+  rw [if_neg hne, SystemState.getTcbWitnessed?_eq_none hNo]
 
 /-- The preempted `current` thread is on the core's queue afterwards. -/
 theorem preemptCurrentOnCore_prev_mem (st : SystemState) (c : CoreId)
@@ -1910,7 +1912,7 @@ theorem preemptCurrentOnCore_prev_mem (st : SystemState) (c : CoreId)
   unfold preemptCurrentOnCore
   rw [hCur]
   dsimp only []
-  rw [if_neg hne, hPT]
+  rw [if_neg hne, SystemState.getTcbWitnessed?_eq_some hPT]
   dsimp only []
   rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
   exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inr rfl)

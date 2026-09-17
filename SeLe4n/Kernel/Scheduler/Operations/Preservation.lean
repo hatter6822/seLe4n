@@ -144,10 +144,10 @@ theorem schedule_preserves_runQueueWellFormed
               simp only [hChoose] at hStep
               -- saveOutgoingContext doesn't change runQueue
               have hSaveRQ : ((saveOutgoingContext stChoose).scheduler.runQueueOnCore bootCoreId) = (stChoose.scheduler.runQueueOnCore bootCoreId) := by
-                simp only [saveOutgoingContext, SystemState.getTcb?]
+                simp only [saveOutgoingContext]
                 split
                 · rfl
-                · split <;> rfl
+                · rw [SystemState.updateTcb_scheduler]
               unfold setCurrentThread at hStep
               simp at hStep; subst hStep
               exact hSaveRQ ▸ hwfChoose
@@ -1722,26 +1722,12 @@ private theorem saveOutgoingContext_preserves_lookup_of_ne
     (hNe : ∀ outTid, (st.scheduler.currentOnCore bootCoreId) = some outTid → outTid.toObjId ≠ oid)
     (hObjInv : st.objects.invExt) :
     (saveOutgoingContext st).objects[oid]? = st.objects[oid]? := by
-  unfold saveOutgoingContext SystemState.getTcb?
+  unfold saveOutgoingContext
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
       dsimp only
-      cases hOut : st.objects[outTid.toObjId]? with
-      | none => rfl
-      | some outObj =>
-          cases outObj with
-          | tcb outTcb =>
-              dsimp only
-              simp only [RHTable_getElem?_eq_get?]
-              rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-              have hNeq : outTid.toObjId ≠ oid := hNe outTid hCur
-              have hBEq : (outTid.toObjId == oid) = false := by
-                cases hE : (outTid.toObjId == oid) with
-                | false => rfl
-                | true => exact absurd (beq_iff_eq.mp hE) hNeq
-              simp [hBEq]
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => rfl
+      exact SystemState.updateTcb_objects_ne _ _ _ _ (hNe outTid hCur) hObjInv
 
 /-- AK2-B helper: `saveOutgoingContext` preserves SchedContext lookups.
 Used to discharge the SchedContext arm of the weak frame lemma. -/
@@ -1750,29 +1736,23 @@ private theorem saveOutgoingContext_preserves_schedContext_lookup
     (hSc : st.objects[scId.toObjId]? = some (.schedContext sc))
     (hObjInv : st.objects.invExt) :
     (saveOutgoingContext st).objects[scId.toObjId]? = some (.schedContext sc) := by
-  unfold saveOutgoingContext SystemState.getTcb?
+  unfold saveOutgoingContext
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => exact hSc
   | some outTid =>
       dsimp only
-      cases hOut : st.objects[outTid.toObjId]? with
-      | none => exact hSc
-      | some outObj =>
-          cases outObj with
-          | tcb outTcb =>
-              dsimp only
-              simp only [RHTable_getElem?_eq_get?]
-              rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-              by_cases hEq : outTid.toObjId == scId.toObjId
-              · exfalso
-                have hEq' := beq_iff_eq.mp hEq
-                rw [hEq'] at hOut
-                rw [hOut] at hSc; exact absurd hSc (by simp)
-              · simp [hEq]
-                simp only [RHTable_getElem?_eq_get?] at hSc
-                exact hSc
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-              exact hSc
+      by_cases hEq : outTid.toObjId = scId.toObjId
+      · -- The rewrite fires only where the key holds a TCB, and this key holds
+        -- a SchedContext — so on this branch the update is the identity.
+        cases hOut : st.getTcb? outTid with
+        | none => rw [SystemState.updateTcb_eq_self_of_none hOut]; exact hSc
+        | some outTcb =>
+            exfalso
+            have hRaw := (SystemState.getTcb?_eq_some_iff st outTid outTcb).mp hOut
+            rw [hEq, hSc] at hRaw
+            cases hRaw
+      · rw [SystemState.updateTcb_objects_ne _ _ _ _ hEq hObjInv]
+        exact hSc
 
 /-- AK2-B: `saveOutgoingContext` preserves `effectiveBucketPriority` for any
 TCB — it only modifies the outgoing TCB's registerContext, which
@@ -1817,7 +1797,9 @@ private theorem saveOutgoingContext_effectiveBucketPriority_eq
       | none =>
         -- saveOut is no-op when outgoing TCB is missing
         have : (saveOutgoingContext st).objects[outTid.toObjId]? = none := by
-          unfold saveOutgoingContext SystemState.getTcb?; rw [hCur]; simp [hOut]
+          unfold saveOutgoingContext; rw [hCur]; dsimp only
+          rw [SystemState.updateTcb_eq_self_of_none (by simp [SystemState.getTcb?, hOut])]
+          exact hOut
         rw [this] at hE; exact absurd hE (by simp)
       | some outObj =>
         cases outObj with
@@ -1825,12 +1807,13 @@ private theorem saveOutgoingContext_effectiveBucketPriority_eq
           -- saveOut inserts .tcb at outTid.toObjId, hE says .schedContext
           have : (saveOutgoingContext st).objects[outTid.toObjId]?
               = some (.tcb { outTcb with registerContext := st.machine.regs }) := by
-            unfold saveOutgoingContext SystemState.getTcb?
+            unfold saveOutgoingContext
             rw [hCur]; dsimp only
-            rw [hOut]; dsimp only
+            rw [SystemState.updateTcb_eq_of_some
+              ((SystemState.getTcb?_eq_some_iff st outTid outTcb).mpr hOut)]
+            dsimp only
             simp only [RHTable_getElem?_eq_get?]
-            rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-            simp
+            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects _ _ hObjInv]
           rw [this] at hE; exact absurd hE (by simp)
         | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
           -- saveOut is no-op when outgoing isn't a TCB; hE reduces to original
@@ -1838,7 +1821,8 @@ private theorem saveOutgoingContext_effectiveBucketPriority_eq
           -- is .schedContext sc. We must contradict hLookN.
           have hPres : (saveOutgoingContext st).objects[outTid.toObjId]?
               = st.objects[outTid.toObjId]? := by
-            unfold saveOutgoingContext SystemState.getTcb?; rw [hCur]; simp [hOut]
+            unfold saveOutgoingContext; rw [hCur]; dsimp only
+            rw [SystemState.updateTcb_eq_self_of_none (by simp [SystemState.getTcb?, hOut])]
           rw [hPres] at hE
           rw [hEq] at hE
           exact hLookN sc hE
@@ -1956,13 +1940,10 @@ private theorem switchDomain_preserves_schedulerPriorityMatch
 private theorem saveOutgoingContext_domainTimeRemaining_eq (st : SystemState) :
     ((saveOutgoingContext st).scheduler.domainTimeRemainingOnCore bootCoreId) =
     (st.scheduler.domainTimeRemainingOnCore bootCoreId) := by
-  unfold saveOutgoingContext SystemState.getTcb?
+  unfold saveOutgoingContext
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
-  | some outTid =>
-    cases hObj : st.objects[outTid.toObjId]? with
-    | none => simp [hObj]
-    | some obj => cases obj <;> simp [hObj]
+  | some outTid => dsimp only; rw [SystemState.updateTcb_scheduler]
 
 /-- V5-H: `restoreIncomingContext` preserves `domainTimeRemaining`.
     It only modifies `machine`, not `scheduler`. -/
@@ -2153,12 +2134,10 @@ theorem switchDomain_preserves_domainSchedule
 private theorem saveOutgoingContext_preserves_domainSchedule
     (st : SystemState) :
     (saveOutgoingContext st).scheduler.domainSchedule = st.scheduler.domainSchedule := by
-  unfold saveOutgoingContext SystemState.getTcb?
+  unfold saveOutgoingContext
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
-  | some outTid =>
-    simp
-    split <;> simp
+  | some outTid => dsimp only; rw [SystemState.updateTcb_scheduler]
 
 /-- X2-C: `restoreIncomingContext` preserves `domainSchedule`. -/
 private theorem restoreIncomingContext_preserves_domainSchedule

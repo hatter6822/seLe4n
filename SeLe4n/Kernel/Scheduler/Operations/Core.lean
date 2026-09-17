@@ -80,10 +80,7 @@ open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
   simp only [saveOutgoingContext]
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
-  | some outTid =>
-      cases h : st.getTcb? outTid with
-      | none => simp_all
-      | some _ => simp_all
+  | some outTid => exact SystemState.updateTcb_scheduler _ _ _
 
 @[simp] theorem restoreIncomingContext_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).scheduler = st.scheduler := by
@@ -113,8 +110,9 @@ theorem saveOutgoingContext_preserves_tcb
   | some outTid =>
       dsimp only
       cases hOut : st.getTcb? outTid with
-      | none => exact ⟨tcb, h⟩
+      | none => rw [SystemState.updateTcb_eq_self_of_none hOut]; exact ⟨tcb, h⟩
       | some outTcb =>
+          rw [SystemState.updateTcb_eq_of_some hOut]
           dsimp only
           simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
           by_cases hEq : outTid.toObjId == oid
@@ -138,8 +136,9 @@ theorem saveOutgoingContext_tcb_fields
   | some outTid =>
       dsimp only
       cases hOut : st.getTcb? outTid with
-      | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      | none => rw [SystemState.updateTcb_eq_self_of_none hOut]; exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
       | some outTcb =>
+          rw [SystemState.updateTcb_eq_of_some hOut]
           dsimp only
           simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
           by_cases hEq : outTid.toObjId == oid
@@ -164,8 +163,9 @@ theorem saveOutgoingContext_preserves_non_tcb_lookup
   | some outTid =>
       dsimp only
       cases hOut : st.getTcb? outTid with
-      | none => rfl
+      | none => rw [SystemState.updateTcb_eq_self_of_none hOut]
       | some outTcb =>
+          rw [SystemState.updateTcb_eq_of_some hOut]
           dsimp only
           simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
           have hNe : ¬(outTid.toObjId == oid) := by
@@ -191,8 +191,9 @@ theorem saveOutgoingContext_preserves_timeSlicePositive
   | some outTid =>
       dsimp only
       cases hOut : st.getTcb? outTid with
-      | none => exact hOrig
+      | none => rw [SystemState.updateTcb_eq_self_of_none hOut]; exact hOrig
       | some outTcb =>
+          rw [SystemState.updateTcb_eq_of_some hOut]
           dsimp only
           simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
           by_cases hEq : outTid.toObjId == tid.toObjId
@@ -214,11 +215,7 @@ theorem saveOutgoingContext_preserves_objects_invExt
   | none => exact hObjInv
   | some outTid =>
       dsimp only
-      cases hObj : st.getTcb? outTid with
-      | none => simp; exact hObjInv
-      | some outTcb =>
-          dsimp only
-          exact RHTable_insert_preserves_invExt st.objects _ _ hObjInv
+      exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
 /-- `restoreIncomingContext` preserves `timeSlicePositive`. The context restore
 only changes `machine.regs` — objects and scheduler state are unchanged. -/
 private theorem restoreIncomingContext_preserves_timeSlicePositive
@@ -1016,11 +1013,8 @@ def saveOutgoingContextOnCore (st : SystemState) (c : CoreId) : SystemState :=
   match st.scheduler.currentOnCore c with
   | none => st
   | some outTid =>
-      match st.getTcb? outTid with
-      | some outTcb =>
-          let savedTcb : KernelObject := .tcb { outTcb with registerContext := st.machine.regsOnCore c }
-          { st with objects := st.objects.insert outTid.toObjId savedTcb }
-      | none => st
+      -- One TCB rewritten in place through the lookup that is its own witness.
+      st.updateTcb outTid fun outTcb => { outTcb with registerContext := st.machine.regsOnCore c }
 
 /-- WS-SM SM5.D (frame): the per-core context save writes only the object
 store — the scheduler state passes through untouched on every arm. -/
@@ -1029,9 +1023,7 @@ store — the scheduler state passes through untouched on every arm. -/
   unfold saveOutgoingContextOnCore
   split
   · rfl
-  · split
-    · rfl
-    · rfl
+  · exact SystemState.updateTcb_scheduler _ _ _
 
 /-- WS-SM SM5.E (idle-dispatch admission): is core `c`'s idle thread a *safe*
 dispatch target — installed, in core `c`'s active domain, **and admissible on core
@@ -2035,7 +2027,7 @@ theorem preemptCurrentOnCore_preserves_threadInactiveFlagConsistent
     split
     · exact h
     · split
-      · rename_i prevTcb hPrev
+      · rename_i prevTcb hPrev hW
         exact threadInactiveFlagConsistent_save_and_reenqueue st c prevTid prevTcb _ _
           hObjInv hPrev hCur rfl rfl h
       · exact h
@@ -2179,7 +2171,7 @@ theorem preemptCurrentOnCore_objects_frame (st : SystemState) (c : CoreId)
     split
     · intro hObj; exact ⟨tcb', hObj, rfl, rfl⟩
     · split
-      · rename_i prevTcb hPrev
+      · rename_i prevTcb hPrev hW
         intro hObj
         have hObj' : (st.objects.insert prevTid.toObjId
             (.tcb { prevTcb with registerContext := st.machine.regsOnCore c }))[oid]?
@@ -2241,7 +2233,7 @@ theorem switchToThreadOnCore_preserves_threadInactiveFlagConsistent
         unfold preemptCurrentOnCore
         rw [hCurP]
         dsimp only
-        rw [if_neg (by simpa using hu), hPrev]
+        rw [if_neg (by simpa using hu), SystemState.getTcbWitnessed?_eq_some hPrev]
         dsimp only
         show u ∈ (st.scheduler.setRunQueueOnCore c _).runQueueOnCore c
         rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]

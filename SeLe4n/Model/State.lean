@@ -5349,36 +5349,132 @@ theorem rewriteObject_preserves_lifecycleMetadataConsistent (st : SystemState)
    rewriteObject_preserves_capabilityRefMetadataConsistent st id new h⟩
 
 -- ----------------------------------------------------------------------------
+-- The witnessed lookups: the typed read with its own equation
+-- ----------------------------------------------------------------------------
+
+/-- `getTcb?` with its own equation: `some ⟨t, h⟩` where `h : st.getTcb? tid = some t`,
+`none` where `getTcb?` is `none` (`getTcbWitnessed?_val`).  Matched on the store
+rather than on `getTcb?`, because the expected type names `getTcb? tid` and a
+`match h : st.getTcb? tid with` would generalise it in the arms; and erased to
+the value at code generation, so it costs exactly what `getTcb?` costs.
+
+This is the lookup a site that rewrites what it read should perform: it matches
+on **this**, hands `h` to `rewriteObject`, and stays a *plain* `match` — which
+`simp only [site, getTcbWitnessed?_eq_some hT]` reduces.  A `match h : st.getTcb?
+tid with` written at the site instead is a dependent matcher, and `simp` cannot
+rewrite a discriminant that also occurs in the motive, so every consumer proof
+would need a per-site equation lemma.  Among the sites that rewrite what they
+read, the dependent match is confined to this one definition per kind, with one
+equation lemma each; a theorem may still case on a lookup that way. -/
+@[inline] def getTcbWitnessed? (st : SystemState) (tid : SeLe4n.ThreadId) :
+    Option { t : TCB // st.getTcb? tid = some t } :=
+  match hx : st.objects[tid.toObjId]? with
+  | some (.tcb t) => some ⟨t, (getTcb?_eq_some_iff st tid t).mpr hx⟩
+  | _ => none
+
+theorem getTcbWitnessed?_eq_some {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (h : st.getTcb? tid = some t) :
+    st.getTcbWitnessed? tid = some ⟨t, h⟩ := by
+  have hx := (getTcb?_eq_some_iff st tid t).mp h
+  unfold getTcbWitnessed?
+  split
+  · next t' hx' =>
+      obtain rfl : t = t' := KernelObject.tcb.inj (Option.some.inj (hx.symm.trans hx'))
+      rfl
+  · next hne => exact absurd hx (hne t)
+
+theorem getTcbWitnessed?_eq_none {st : SystemState} {tid : SeLe4n.ThreadId}
+    (h : st.getTcb? tid = none) :
+    st.getTcbWitnessed? tid = none := by
+  unfold getTcbWitnessed?
+  split
+  · next t hx => exact absurd ((getTcb?_eq_some_iff st tid t).mpr hx) (by rw [h]; simp)
+  · rfl
+
+/-- The witnessed lookup IS the typed lookup, value for value. -/
+theorem getTcbWitnessed?_val (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (st.getTcbWitnessed? tid).map Subtype.val = st.getTcb? tid := by
+  unfold getTcbWitnessed?
+  split
+  · next t hx =>
+      simp only [Option.map_some]
+      exact ((getTcb?_eq_some_iff st tid t).mpr hx).symm
+  · next hne =>
+      simp only [Option.map_none]
+      cases hG : st.getTcb? tid with
+      | none => rfl
+      | some t => exact absurd ((getTcb?_eq_some_iff st tid t).mp hG) (hne t)
+
+/-- `getSchedContext?` with its own equation — `getTcbWitnessed?`'s twin, for the
+same reason. -/
+@[inline] def getSchedContextWitnessed? (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    Option { sc : SeLe4n.Kernel.SchedContext // st.getSchedContext? scId = some sc } :=
+  match hx : st.objects[scId.toObjId]? with
+  | some (.schedContext sc) => some ⟨sc, (getSchedContext?_eq_some_iff st scId sc).mpr hx⟩
+  | _ => none
+
+theorem getSchedContextWitnessed?_eq_some {st : SystemState} {scId : SeLe4n.SchedContextId}
+    {sc : SeLe4n.Kernel.SchedContext} (h : st.getSchedContext? scId = some sc) :
+    st.getSchedContextWitnessed? scId = some ⟨sc, h⟩ := by
+  have hx := (getSchedContext?_eq_some_iff st scId sc).mp h
+  unfold getSchedContextWitnessed?
+  split
+  · next sc' hx' =>
+      obtain rfl : sc = sc' :=
+        KernelObject.schedContext.inj (Option.some.inj (hx.symm.trans hx'))
+      rfl
+  · next hne => exact absurd hx (hne sc)
+
+theorem getSchedContextWitnessed?_eq_none {st : SystemState} {scId : SeLe4n.SchedContextId}
+    (h : st.getSchedContext? scId = none) :
+    st.getSchedContextWitnessed? scId = none := by
+  unfold getSchedContextWitnessed?
+  split
+  · next sc hx =>
+      exact absurd ((getSchedContext?_eq_some_iff st scId sc).mpr hx) (by rw [h]; simp)
+  · rfl
+
+theorem getSchedContextWitnessed?_val (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (st.getSchedContextWitnessed? scId).map Subtype.val = st.getSchedContext? scId := by
+  unfold getSchedContextWitnessed?
+  split
+  · next sc hx =>
+      simp only [Option.map_some]
+      exact ((getSchedContext?_eq_some_iff st scId sc).mpr hx).symm
+  · next hne =>
+      simp only [Option.map_none]
+      cases hG : st.getSchedContext? scId with
+      | none => rfl
+      | some sc => exact absurd ((getSchedContext?_eq_some_iff st scId sc).mp hG) (hne sc)
+
+-- ----------------------------------------------------------------------------
 -- The typed read-modify-write over a rewrite: the lookup is the witness
 -- ----------------------------------------------------------------------------
 
 /-- Rewrite the TCB at `tid` in place through `f`; the identity when `tid`
-resolves to no TCB.  The lookup is performed once and is the rewrite's own
-witness — the shape every scheduler and IPC site spelled as a `match` on
-`getTcb?` around a raw insert, and computationally the same code. -/
+resolves to no TCB.  The witnessed lookup is performed once and is the
+rewrite's own witness — the shape every scheduler and IPC site spelled as a
+`match` on `getTcb?` around a raw insert, and computationally the same code.
+A site whose looked-up value is used for more than the write matches on
+`getTcbWitnessed?` itself and calls `rewriteObject` directly. -/
 @[inline] def updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
     SystemState :=
-  match h : st.getTcb? tid with
-  | some t => st.rewriteObject tid.toObjId (.tcb (f t)) (rewriteAdmissible_tcb h (f t))
+  match st.getTcbWitnessed? tid with
+  | some ⟨t, h⟩ => st.rewriteObject tid.toObjId (.tcb (f t)) (rewriteAdmissible_tcb h (f t))
   | none => st
 
 theorem updateTcb_eq_of_some {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (h : st.getTcb? tid = some t) (f : TCB → TCB) :
     st.updateTcb tid f = { st with objects := st.objects.insert tid.toObjId (.tcb (f t)) } := by
   unfold updateTcb
-  split
-  · next t' h' =>
-      obtain rfl : t = t' := Option.some.inj (h.symm.trans h')
-      rfl
-  · next h' => exact absurd (h.symm.trans h') (by simp)
+  rw [getTcbWitnessed?_eq_some h]
+  rfl
 
 theorem updateTcb_eq_self_of_none {st : SystemState} {tid : SeLe4n.ThreadId}
     (h : st.getTcb? tid = none) (f : TCB → TCB) :
     st.updateTcb tid f = st := by
   unfold updateTcb
-  split
-  · next _ h' => exact absurd (h.symm.trans h') (by simp)
-  · rfl
+  rw [getTcbWitnessed?_eq_none h]
 
 /-- `updateTcb` writes the object table and nothing else (see
 `rewriteObject_eq_objects_update`). -/
@@ -5470,8 +5566,8 @@ theorem updateTcb_preserves_lifecycleMetadataConsistent (st : SystemState)
 `scId` resolves to no SchedContext.  `updateTcb`'s twin, for the same reason. -/
 @[inline] def updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
     (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) : SystemState :=
-  match h : st.getSchedContext? scId with
-  | some sc =>
+  match st.getSchedContextWitnessed? scId with
+  | some ⟨sc, h⟩ =>
       st.rewriteObject scId.toObjId (.schedContext (f sc)) (rewriteAdmissible_schedContext h (f sc))
   | none => st
 
@@ -5481,20 +5577,15 @@ theorem updateSchedContext_eq_of_some {st : SystemState} {scId : SeLe4n.SchedCon
     st.updateSchedContext scId f =
       { st with objects := st.objects.insert scId.toObjId (.schedContext (f sc)) } := by
   unfold updateSchedContext
-  split
-  · next sc' h' =>
-      obtain rfl : sc = sc' := Option.some.inj (h.symm.trans h')
-      rfl
-  · next h' => exact absurd (h.symm.trans h') (by simp)
+  rw [getSchedContextWitnessed?_eq_some h]
+  rfl
 
 theorem updateSchedContext_eq_self_of_none {st : SystemState} {scId : SeLe4n.SchedContextId}
     (h : st.getSchedContext? scId = none)
     (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
     st.updateSchedContext scId f = st := by
   unfold updateSchedContext
-  split
-  · next _ h' => exact absurd (h.symm.trans h') (by simp)
-  · rfl
+  rw [getSchedContextWitnessed?_eq_none h]
 
 /-- `updateSchedContext` writes the object table and nothing else (see
 `rewriteObject_eq_objects_update`). -/

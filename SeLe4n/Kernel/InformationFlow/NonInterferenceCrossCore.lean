@@ -3739,11 +3739,11 @@ theorem setThreadCpuAffinity_determineTargetCore_eq (st stSet : SystemState)
     determineTargetCore stSet tid = affinity.getD Concurrency.bootCoreId := by
   unfold setThreadCpuAffinity at hSet
   split at hSet
-  · next tcb hTcb =>
+  · next tcb hTcb _ =>
     rw [Except.ok.injEq] at hSet
     subst hSet
     unfold determineTargetCore SystemState.getTcb?
-    simp only [RHTable_getElem?_eq_get?]
+    simp only [RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
     rw [RHTable_getElem?_insert st.objects tid.toObjId
       (.tcb { tcb with cpuAffinity := affinity }) hInv tid.toObjId]
     simp only [beq_self_eq_true, if_pos]

@@ -1,3 +1,106 @@
+## v0.35.65 — The witnessed lookup: the typed read that carries its own equation, and the scheduler's context-save family moved onto the rewrite
+
+`v0.35.64`'s `updateTcb` / `updateSchedContext` were spelled as a dependent
+`match h : st.getTcb? tid with` whose `h` fed `rewriteObject` — correct, and
+opaque to every consumer: a dependent matcher's discriminant occurs in its own
+motive, so `simp only [site, hT]` cannot rewrite it, and each site's consumer
+proofs would have needed a per-site equation lemma.  The cut that moves the
+scheduler's hot paths onto the primitive is therefore also the cut that fixes
+the primitive's shape.
+
+**The witnessed lookup.**  `SystemState.getTcbWitnessed? st tid : Option { t // st.getTcb? tid = some t }`
+(`Model/State.lean`, with `getSchedContextWitnessed?` its twin) is `getTcb?`
+carrying its own equation: `some ⟨t, h⟩` exactly where `getTcb?` is `some t`,
+`none` exactly where it is `none`, and the subtype erases to the value at code
+generation, so it costs what `getTcb?` costs.  It is matched on the **store**
+(`match hx : st.objects[tid.toObjId]? with`), because the expected type names
+`getTcb? tid` and a match on `getTcb?` itself would generalise it in the arms;
+the one dependent match per kind therefore lives inside the witnessed
+definition, and every rewrite site is a *plain* match on the witnessed lookup.
+Three equations per kind close it: `getTcbWitnessed?_eq_some` (`some ⟨t, h⟩`
+from `h`), `getTcbWitnessed?_eq_none`, and `getTcbWitnessed?_val` (the witnessed
+lookup **is** the typed lookup, value for value).  `updateTcb` and
+`updateSchedContext` match on it now, so `updateTcb_eq_of_some` /
+`updateTcb_eq_self_of_none` are one `rw` each; a site that uses the looked-up
+value for more than the write matches on the witnessed lookup itself and hands
+`h` to `rewriteObject`, and its consumer proofs reduce it with
+`simp only [site, getTcbWitnessed?_eq_some hT]` — or `split` on it and name the
+arm's **three** inaccessibles (`rename_i tcb hTcb _`: the value, the witness, the
+match equation).  A `next prevTcb _` written for the old two-variable arm binds
+the *witness* to `prevTcb` and reports `` `Eq` is not a structure `` one line
+later at the record update, which is how every such arm in the tree announced
+itself.  `rewriteObject_objects` exposes the bare insert to a proof that reads
+the table directly.
+
+**Six declarations moved.**  `saveOutgoingContext`, `saveOutgoingContextChecked`,
+`preemptCurrentOnCore` and `setThreadCpuAffinity`
+(`Scheduler/Operations/Selection.lean`) and `saveOutgoingContextOnCore`
+(`Operations/Core.lean`) — the register-context save on every context switch on
+both the boot-core and the per-core paths, the preempt's save-and-re-enqueue,
+and the affinity op — are `updateTcb` or the witnessed lookup around
+`rewriteObject`; and `resumeThread`'s H3c arm (`Lifecycle/Suspend.lean`), which
+`v0.35.64` had spelled as the dependent match, is re-spelled on the witnessed
+lookup, so no executable rewrite site in the migrated files carries a dependent
+match on a typed lookup (a Tier 3 negative holds that over the five files; a
+theorem may still case on a lookup that way where it needs to).
+`preemptCurrentOnCore`'s combined record — `{ st.rewriteObject … with scheduler
+:= … }` — is definitionally the `{ st with objects := …, scheduler := … }` it
+replaced, so its run-queue facts are untouched.
+
+**Proof repairs, and where they landed.**  132 diff hunks across 17 modules
+outside `Model/State.lean` — eight of them the migrated definitions themselves,
+the rest proof repairs: the two in-file facts in `Selection.lean`; `Operations/Core.lean`, `Operations/Preservation.lean` and
+`Lifecycle/Invariant/SuspendPreservation.lean`, whose eight-arm case analyses
+over the raw store became a case on the typed lookup and the two `updateTcb`
+equations; `PerCoreSwitchToThread.lean` and `PerCoreWake.lean`, where a bare
+`hTcb` in a simp set is `getTcbWitnessed?_eq_some hTcb` now and each match arm
+names three variables; `PerCoreTimerTick.lean`;
+`InformationFlow/Invariant/Operations.lean`, where the four private frame lemmas
+over `saveOutgoingContext` are one frame each (`updateTcb_machine`,
+`updateTcb_objectIndex`, or `updateTcb_eq_objects_update` for a field with no
+named frame) and the two projection proofs case on the lookup;
+`IPC/Invariant/DispatchArmPreservation.lean`; and the staged `PerCoreCbs`,
+`PerCoreTickCbsPreservation`, `PerCoreTickCbsAffinity`, `PerCoreInvariantSuite`,
+`ExceptionModel`, `NonInterferencePerCore` and `NonInterferenceCrossCore` —
+found by the Tier 1 gate, because they are outside the default target, which is
+what that gate exists for.  No theorem statement changed and none was weakened.
+
+**Measured and left.**  `scripts/lean_store_read_census.py`'s `ACCESSOR_BODIES`
+names the two witnessed lookups — they read the store raw by design, and the
+list is reconciled in both directions.  The raw-write population is **60 sites
+in 47 executable declarations across 22 files** outside `SeLe4n/Testing/` (from
+65 / 52 / 22); `Selection.lean` keeps `enqueueRunnableOnCore` and
+`Operations/Core.lean` its five (the tick family, `refillSchedContext`,
+`handleYieldWithBudget`), which are the next cut, so the per-declaration Tier 3
+negatives are bounded to the migrated declarations rather than to their files.
+Tier 3 also pins the witnessed definitions' subtype return types (the witness
+is the whole content, so the positive refuses a lookup whose equation is
+dropped) and their match on the store, the six equations, the plain match
+inside both typed rewrites, each migrated site's shape, and the
+dependent-match negative over the five migrated files — every negative
+mutation-tested with the token kept and the relation broken (an insert placed
+inside the declaration fires, the same insert in the next declaration does
+not; a match on the lookup made dependent again fires; a typed rewrite put back
+on the dependent match fails its positive).  Golden trace and fixtures
+byte-identical: a witnessed lookup is the same read.
+
+**The AK7 adoption ratchet, re-anchored with its reason.**  `GETTCB_ADOPTION`
+counts whole-symbol mentions of `getTcb?` outside its defining file and is held
+to a floor; this cut moved it **2476 → 2466**, and every mention that went was
+one of two things: a proof-side `unfold … SystemState.getTcb?` or
+`simp only […, SystemState.getTcb?]` that reached the raw store *around* the
+helper — thirty of them, which is exactly what the witnessed lookup makes
+unnecessary — or one of the seven executable matches on `getTcb?` that became
+`updateTcb` or the witnessed lookup.  A proof unfolding the helper was never a
+consumer reading through it, so the floor is re-anchored
+(`scripts/store_reader_hygiene_baseline.txt`) rather than restored by putting
+the unfoldings back, and `scripts/ak7_cascade_baseline.sh`'s counter now counts
+`getTcbWitnessed?` / `getSchedContextWitnessed?` as the adoption they are
+(`getTcbWitnessed?_val`: the witnessed lookup *is* the typed lookup), with the
+whole-symbol guards still excluding the lemma names about them.  Every
+should-drop metric is unchanged, the executable-read floor stays at zero, and
+`getSchedContext?` / `getEndpoint?` adoption grew.
+
 ## v0.35.64 — The in-place rewrite: a proof-carrying store write that costs the hot paths nothing, and the first nine raw writers moved onto it
 
 `docs/REGISTERED_DEBT.md`'s raw-write row (registered at `v0.35.63`) measured

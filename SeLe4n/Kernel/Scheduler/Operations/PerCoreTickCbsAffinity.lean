@@ -182,12 +182,12 @@ theorem saveOutgoingContextOnCore_determineTargetCore (st : SystemState) (c : Co
   | some outTid =>
     cases ho : st.getTcb? outTid with
     | none => rw [show saveOutgoingContextOnCore st c = st from by
-        simp only [saveOutgoingContextOnCore, hc, ho]]
+        simp only [saveOutgoingContextOnCore, hc, SystemState.updateTcb_eq_self_of_none ho]]
     | some outTcb =>
       have hRaw := (SystemState.getTcb?_eq_some_iff st outTid outTcb).mp ho
       have hObj : (saveOutgoingContextOnCore st c).objects
           = st.objects.insert outTid.toObjId (.tcb { outTcb with registerContext := st.machine.regsOnCore c }) := by
-        simp only [saveOutgoingContextOnCore, hc, ho]
+        simp only [saveOutgoingContextOnCore, hc, SystemState.updateTcb_eq_of_some ho]
       exact determineTargetCore_insert_tcb st _ outTid outTcb
         { outTcb with registerContext := st.machine.regsOnCore c } hInv hRaw rfl hObj t
 
@@ -202,12 +202,12 @@ theorem saveOutgoingContextOnCore_boundThread (st : SystemState) (c : CoreId)
   | some outTid =>
     cases ho : st.getTcb? outTid with
     | none => rw [show saveOutgoingContextOnCore st c = st from by
-        simp only [saveOutgoingContextOnCore, hc, ho]]
+        simp only [saveOutgoingContextOnCore, hc, SystemState.updateTcb_eq_self_of_none ho]]
     | some outTcb =>
       have hRaw := (SystemState.getTcb?_eq_some_iff st outTid outTcb).mp ho
       have hObj : (saveOutgoingContextOnCore st c).objects
           = st.objects.insert outTid.toObjId (.tcb { outTcb with registerContext := st.machine.regsOnCore c }) := by
-        simp only [saveOutgoingContextOnCore, hc, ho]
+        simp only [saveOutgoingContextOnCore, hc, SystemState.updateTcb_eq_of_some ho]
       rw [getSchedContext?_insert_tcb_eq st _ outTid outTcb
         { outTcb with registerContext := st.machine.regsOnCore c } hInv hRaw hObj scId]
 

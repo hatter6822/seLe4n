@@ -260,7 +260,7 @@ theorem saveOutgoingContextOnCore_machine (st : SystemState) (c : CoreId) :
     (saveOutgoingContextOnCore st c).machine = st.machine := by
   unfold saveOutgoingContextOnCore; split
   · rfl
-  · split <;> rfl
+  · exact SystemState.updateTcb_machine _ _ _
 
 /-- WS-SM SM5.I: `restoreIncomingContext` leaves the machine **timer** unchanged — it
 writes only `machine.regs` (the register file), never the global timer. -/

@@ -921,10 +921,12 @@ theorem setCurrentThread_confinedToBootCore (st st' : SystemState)
 theorem saveOutgoingContext_confinedToCore (st : SystemState) (c₀ : CoreId) :
     observableSlotsConfinedToCore st (saveOutgoingContext st) c₀ := by
   refine observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ ?_ ?_ <;>
-    unfold saveOutgoingContext SystemState.getTcb? <;>
+    unfold saveOutgoingContext <;>
     (split
      · rfl
-     · split <;> rfl)
+     · first
+       | exact SystemState.updateTcb_scheduler _ _ _
+       | exact SystemState.updateTcb_machine _ _ _)
 
 /-- `restoreIncomingContext` writes **the boot core's** register bank. -/
 theorem restoreIncomingContext_confinedToBootCore (st : SystemState) (tid : SeLe4n.ThreadId) :

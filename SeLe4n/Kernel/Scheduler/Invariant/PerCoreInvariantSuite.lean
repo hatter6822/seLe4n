@@ -4469,14 +4469,14 @@ theorem saveOutgoingContextOnCore_preserves_allThreadsTimeSlicePositive (st : Sy
       cases hout : st.getTcb? outTid with
       | none =>
           rw [show saveOutgoingContextOnCore st c₀ = st from by
-            simp only [saveOutgoingContextOnCore, hcur, hout]] at htcb'
+            simp only [saveOutgoingContextOnCore, hcur, SystemState.updateTcb_eq_self_of_none hout]] at htcb'
           exact ⟨tcb', htcb', rfl⟩
       | some outTcb =>
           by_cases hEq : tid = outTid
           · subst hEq
             have hpost : (saveOutgoingContextOnCore st c₀).getTcb? tid
                 = some { outTcb with registerContext := st.machine.regsOnCore c₀ } := by
-              simp only [saveOutgoingContextOnCore, hcur, hout]
+              simp only [saveOutgoingContextOnCore, hcur, SystemState.updateTcb_eq_of_some hout]
               simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
               rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
             rw [hpost, Option.some.injEq] at htcb'
@@ -4485,7 +4485,7 @@ theorem saveOutgoingContextOnCore_preserves_allThreadsTimeSlicePositive (st : Sy
           · have hNeO : ¬ (outTid.toObjId == tid.toObjId) = true := fun he =>
               hEq (ThreadId.toObjId_injective _ _ (by simpa using he)).symm
             have hpost : (saveOutgoingContextOnCore st c₀).getTcb? tid = st.getTcb? tid := by
-              simp only [saveOutgoingContextOnCore, hcur, hout]
+              simp only [saveOutgoingContextOnCore, hcur, SystemState.updateTcb_eq_of_some hout]
               simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
               rw [RobinHood.RHTable.getElem?_insert_ne st.objects outTid.toObjId tid.toObjId
                 _ hNeO hInv]
@@ -4521,9 +4521,10 @@ theorem preemptCurrentOnCore_preserves_allThreadsTimeSlicePositive (st : SystemS
     split
     · exact h
     · split
-      · next prevTcb hprev =>
+      · next prevTcb hprev _ =>
         -- the saved TCB is `{ prevTcb with registerContext := … }`, whose
         -- `timeSlice` is `prevTcb`'s — positive by `h` on the preempted thread.
+        dsimp only [SystemState.rewriteObject]
         exact allThreadsTimeSlicePositive_of_insert_pos hInv rfl (h prevTid prevTcb hprev) h
       · exact h
 

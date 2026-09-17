@@ -437,12 +437,12 @@ theorem setThreadCpuAffinity_getSchedContext? (st : SystemState)
     (h : setThreadCpuAffinity st targetTid affinity = .ok st') (scId'' : SchedContextId) :
     st'.getSchedContext? scId'' = st.getSchedContext? scId'' := by
   unfold setThreadCpuAffinity at h
-  simp only [hTcb, Except.ok.injEq] at h
+  simp only [SystemState.getTcbWitnessed?_eq_some hTcb, Except.ok.injEq] at h
   -- Keep `st'` a variable; record only its object-store value.  All object reads
   -- route through the `.get?` method form, so the raw `[·]?` bracket the AK7
   -- store-read census counts never appears in this source.
   have hObjEq : st'.objects = st.objects.insert targetTid.toObjId (.tcb { tcb with cpuAffinity := affinity }) := by
-    rw [← h]
+    rw [← h]; exact SystemState.rewriteObject_objects _ _ _ _
   have hTcbGet : st.objects.get? targetTid.toObjId = some (.tcb tcb) := by
     rw [← RHTable_getElem?_eq_get?]
     exact (SystemState.getTcb?_eq_some_iff st targetTid tcb).mp hTcb
@@ -1283,8 +1283,11 @@ theorem setThreadCpuAffinity_machine (st : SystemState) (targetTid : SeLe4n.Thre
     stSet.machine = st.machine := by
   unfold setThreadCpuAffinity at h
   cases hTcb : st.getTcb? targetTid with
-  | none => simp [hTcb] at h
-  | some tcb => simp only [hTcb, Except.ok.injEq] at h; subst h; rfl
+  | none => simp [SystemState.getTcbWitnessed?_eq_none hTcb] at h
+  | some tcb =>
+      simp only [SystemState.getTcbWitnessed?_eq_some hTcb, Except.ok.injEq] at h
+      subst h
+      exact SystemState.rewriteObject_machine _ _ _ _
 
 /-- WS-SM SM5.H.4 (A5): the full composite preserves replenish-queue **validity**
 on every core.  The affinity write shares `st`'s scheduler, the replenishment
@@ -1801,10 +1804,10 @@ theorem setThreadCpuAffinity_getTcb?_self (st : SystemState)
     (h : setThreadCpuAffinity st targetTid affinity = .ok st') :
     st'.getTcb? targetTid = some { tcb with cpuAffinity := affinity } := by
   unfold setThreadCpuAffinity at h
-  rw [hTcb] at h
+  rw [SystemState.getTcbWitnessed?_eq_some hTcb] at h
   simp only [Except.ok.injEq] at h
   subst h
-  simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+  simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
   rw [RobinHood.RHTable.getElem?_insert_self st.objects targetTid.toObjId _ hInv]
 
 /-- WS-SM SM5.H.4 (D15 helper): the affinity write preserves the SM4.C per-core
@@ -1820,7 +1823,10 @@ theorem setThreadCpuAffinity_preserves_schedContextRunQueueConsistent_perCore
   -- The target TCB exists (else the write would have errored).
   obtain ⟨tcbT, hTcbT⟩ : ∃ tcb, st.getTcb? targetTid = some tcb := by
     cases hT : st.getTcb? targetTid with
-    | none => unfold setThreadCpuAffinity at h; rw [hT] at h; simp at h
+    | none =>
+        unfold setThreadCpuAffinity at h
+        rw [SystemState.getTcbWitnessed?_eq_none hT] at h
+        simp at h
     | some tcb => exact ⟨tcb, rfl⟩
   have hSched : st'.scheduler = st.scheduler :=
     setThreadCpuAffinity_preserves_scheduler st targetTid affinity st' h

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.64.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.65.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5933,11 +5933,17 @@ code may assume:
   constructor by constructor) and its body is the bare insert; the proof is
   erased, so the executable is one table insert.  Five things new code must
   respect.  (1) **A lookup-then-write site is `updateTcb` /
-  `updateSchedContext`** — the `match h : st.getTcb? tid with` whose lookup is
-  the witness — or `rewriteObject` with the admissibility proof read off the
-  site's own match (`rewriteAdmissible_tcb`, one such lemma per neutral kind)
-  when the looked-up value is used for more than the write; never a raw
-  `objects.insert`.  (2) **A key that may hold nothing, or a CNode or VSpace
+  `updateSchedContext`** — a plain match on the **witnessed lookup**
+  `getTcbWitnessed?` / `getSchedContextWitnessed?` (`v0.35.65`: `getTcb?`
+  carrying its own equation, `Option { t // st.getTcb? tid = some t }`, matched
+  on the store and erased to the value) whose witness is the rewrite's proof —
+  or that witnessed lookup around `rewriteObject` with `rewriteAdmissible_tcb`
+  (one such lemma per neutral kind) when the looked-up value is used for more
+  than the write; never a raw `objects.insert`, and never a dependent
+  `match h : st.getTcb? tid with`: a dependent matcher's discriminant occurs in
+  its own motive, so no consumer proof can rewrite it, and `v0.35.64`'s
+  `updateTcb` was spelled that way for exactly one cut.  A Tier 3 negative holds
+  the migrated files to it.  (2) **A key that may hold nothing, or a CNode or VSpace
   root, is a store**: `storeObject` in a `Kernel` step, `withObjectStored` in a
   pure transition — the RR8.5 projection with the error arm eliminated by
   `storeObject_isOk`, bridged by `storeObject_eq_withObjectStored`.  (3) **The
@@ -5957,7 +5963,14 @@ code may assume:
   the fact from `RHTable.insert_preserves_invExt`.  (4) **The proof recipe is
   two equations**: `cases hT : st.getTcb? tid`, then `updateTcb_eq_of_some hT`
   or `updateTcb_eq_self_of_none hT`, and the old proof continues verbatim;
-  `updateTcb_getTcb?_self` is the read-back.  (5) **A twin migrates with its
+  `updateTcb_getTcb?_self` is the read-back.  A site that matches on the
+  witnessed lookup itself reduces under `simp only [site,
+  getTcbWitnessed?_eq_some hT]` (or `_eq_none`), and after a `split` its arm
+  carries **three** inaccessibles — the value, the witness, the match equation —
+  so it is `rename_i tcb hTcb _`, never the two-name `next tcb _` of the old arm,
+  which binds the witness to the value's name and fails one line later at the
+  record update; `rewriteObject_objects` exposes the insert to a proof that
+  reads the table directly.  (5) **A twin migrates with its
   original.**  `cancelBoundDonationOnCore` is held to `cancelBoundDonation` by a
   `rfl` bridge, so it moved in the same cut; the private copy of
   `restoreToReadyOnCore`'s prefix that `PriorityInheritance/PerCore.lean` pinned
@@ -5966,8 +5979,12 @@ code may assume:
   the signal to make one of them the definition.  The R5.D shim
   `clearTcbIpcFields` and its theorems went in the same cut, having no consumer.
   What is still raw is registered with its measurement (65 sites in 52
-  executable declarations across 22 files, five of them the primitives that
-  should be raw), and `enqueueIdleThreadOnCore` waits for the scheduler cut
+  executable declarations across 22 files after `v0.35.64`; **60 in 47 across
+  22** after `v0.35.65` moved the scheduler's context-save family —
+  `saveOutgoingContext`, `saveOutgoingContextChecked`,
+  `saveOutgoingContextOnCore`, `preemptCurrentOnCore` — and
+  `setThreadCpuAffinity`; five of them the primitives that should be raw), and
+  `enqueueIdleThreadOnCore` waits for the scheduler cut
   because a *store* grows the index, which its declared lock footprint does not
   name.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**

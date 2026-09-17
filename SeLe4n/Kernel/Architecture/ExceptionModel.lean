@@ -506,10 +506,10 @@ none toggle `machine.interruptsEnabled`.
     Context save only modifies `objects` (writes register context to TCB). -/
 theorem saveOutgoingContext_preserves_interruptsEnabled (st : SystemState) :
     (saveOutgoingContext st).machine.interruptsEnabled = st.machine.interruptsEnabled := by
-  unfold saveOutgoingContext SystemState.getTcb?
+  unfold saveOutgoingContext
   split
   · rfl
-  · split <;> simp_all
+  · rw [SystemState.updateTcb_machine]
 
 /-- AG5-G: `restoreIncomingContext` preserves `interruptsEnabled`.
     Context restore only modifies `machine.regs`, not `machine.interruptsEnabled`. -/

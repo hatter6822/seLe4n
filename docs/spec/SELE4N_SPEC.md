@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.64` (`lakefile.toml`) |
+| **Package version** | `0.35.65` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 385,804 across 330 Lean files |
+| **Production LoC** | 385,852 across 330 Lean files |
 | **Test LoC** | 78,722 across 70 Lean test suites |
-| **Proved declarations** | 12,867 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 12,873 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -3334,7 +3334,10 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
 - **In-place rewrite** (`v0.35.64`): a transition that rewrites an
   existing object of the same, bookkeeping-neutral kind uses
   `SystemState.rewriteObject` (and the typed `updateTcb` /
-  `updateSchedContext` over it) rather than `storeObject`: its body is the
+  `updateSchedContext` over it, whose lookup is the witnessed
+  `getTcbWitnessed?` / `getSchedContextWitnessed?` — `getTcb?` carrying its
+  own equation, matched on the store and erased to the value, `v0.35.65`)
+  rather than `storeObject`: its body is the
   bare table insert with the admissibility proof erased, so the hot
   scheduler and IPC paths pay one insert, and the bookkeeping `storeObject`
   maintains — the index, the kind table, the capability references, the

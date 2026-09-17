@@ -235,6 +235,8 @@ inventory was written:
   - `rewriteObject` / `updateTcb` / `updateSchedContext` / `withObjectStored` — the
     proof-carrying in-place rewrite (bookkeeping-neutral by theorem) and the pure
     store (v0.35.64),
+  - `getTcbWitnessed?` / `getSchedContextWitnessed?` — the typed lookups carrying
+    their own equation, the witness every in-place rewrite consumes (v0.35.65),
   - typed CSpace lookup/ownership helpers and supporting lemmas.
 
 - `SeLe4n/Model/Fault.lean` (WS-RR RR4, v0.34.44)

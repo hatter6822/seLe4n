@@ -977,9 +977,7 @@ theorem saveOutgoingContextOnCore_preserves_objects_invExt (st : SystemState) (c
   unfold saveOutgoingContextOnCore
   split
   · exact hInv
-  · split
-    · exact RHTable_insert_preserves_invExt st.objects _ _ hInv
-    · exact hInv
+  · exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
 
 /-- WS-SM SM5.D.5 (local helper): `restoreIncomingContext` writes only the machine
 register file, so the object store is unchanged. -/
@@ -1756,10 +1754,10 @@ theorem decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed
 object store; the scheduler is unchanged. -/
 theorem saveOutgoingContextOnCore_scheduler_eq (st : SystemState) (c : CoreId) :
     (saveOutgoingContextOnCore st c).scheduler = st.scheduler := by
-  simp only [saveOutgoingContextOnCore]
+  unfold saveOutgoingContextOnCore
   split
   · rfl
-  · split <;> rfl
+  · exact SystemState.updateTcb_scheduler _ _ _
 
 /-- WS-SM SM5.D.5 (frame): the per-core register-context save preserves
 TCB-resolvability of any thread — its only write replaces the outgoing thread's
@@ -1774,19 +1772,19 @@ theorem saveOutgoingContextOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
   | some outTid =>
     cases hout : st.getTcb? outTid with
     | none => rw [show saveOutgoingContextOnCore st c = st from by
-        simp only [saveOutgoingContextOnCore, hcur, hout]]; exact h
+        simp only [saveOutgoingContextOnCore, hcur, SystemState.updateTcb_eq_self_of_none hout]]; exact h
     | some outTcb =>
       obtain ⟨t, ht⟩ := h
       by_cases hEq : tid = outTid
       · subst hEq
         refine ⟨{ outTcb with registerContext := st.machine.regsOnCore c }, ?_⟩
-        simp only [saveOutgoingContextOnCore, hcur, hout]
+        simp only [saveOutgoingContextOnCore, hcur, SystemState.updateTcb_eq_of_some hout]
         simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
         rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
       · refine ⟨t, ?_⟩
         have hNeO : ¬ (outTid.toObjId == tid.toObjId) = true := fun he =>
           hEq (ThreadId.toObjId_injective _ _ (by simpa using he)).symm
-        simp only [saveOutgoingContextOnCore, hcur, hout]
+        simp only [saveOutgoingContextOnCore, hcur, SystemState.updateTcb_eq_of_some hout]
         simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
         rw [RobinHood.RHTable.getElem?_insert_ne st.objects outTid.toObjId tid.toObjId
           _ hNeO hInv]
@@ -1816,19 +1814,19 @@ theorem saveOutgoingContextOnCore_getTcb?_regContext (st : SystemState) (c₀ : 
       | none =>
           refine ⟨tcb, ?_, Or.inl rfl⟩
           rw [show saveOutgoingContextOnCore st c₀ = st from by
-            simp only [saveOutgoingContextOnCore, hcur, hout]]; exact htcb
+            simp only [saveOutgoingContextOnCore, hcur, SystemState.updateTcb_eq_self_of_none hout]]; exact htcb
       | some outTcb =>
           by_cases hEq : tid = outTid
           · subst hEq
             refine ⟨{ outTcb with registerContext := st.machine.regsOnCore c₀ }, ?_, ?_⟩
-            · simp only [saveOutgoingContextOnCore, hcur, hout]
+            · simp only [saveOutgoingContextOnCore, hcur, SystemState.updateTcb_eq_of_some hout]
               simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
               rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
             · exact Or.inr ⟨rfl, rfl⟩
           · refine ⟨tcb, ?_, Or.inl rfl⟩
             have hNeO : ¬ (outTid.toObjId == tid.toObjId) = true := fun he =>
               hEq (ThreadId.toObjId_injective _ _ (by simpa using he)).symm
-            simp only [saveOutgoingContextOnCore, hcur, hout]
+            simp only [saveOutgoingContextOnCore, hcur, SystemState.updateTcb_eq_of_some hout]
             simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
             rw [RobinHood.RHTable.getElem?_insert_ne st.objects outTid.toObjId tid.toObjId
               _ hNeO hInv]
@@ -3068,19 +3066,19 @@ theorem saveOutgoingContextOnCore_getTcb?_domain (st : SystemState) (c : CoreId)
   | some outTid =>
     cases ho : st.getTcb? outTid with
     | none => exact ⟨tcb, by rw [show saveOutgoingContextOnCore st c = st from by
-        simp only [saveOutgoingContextOnCore, hc, ho]]; exact hCur, rfl⟩
+        simp only [saveOutgoingContextOnCore, hc, SystemState.updateTcb_eq_self_of_none ho]]; exact hCur, rfl⟩
     | some outTcb =>
       by_cases heq : tid = outTid
       · subst heq
         refine ⟨{ outTcb with registerContext := st.machine.regsOnCore c }, ?_, ?_⟩
-        · simp only [saveOutgoingContextOnCore, hc, ho]
+        · simp only [saveOutgoingContextOnCore, hc, SystemState.updateTcb_eq_of_some ho]
           simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
           rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
         · rw [hCur] at ho; have he : tcb = outTcb := Option.some.inj ho; rw [he]
       · have hNeO : ¬ (outTid.toObjId == tid.toObjId) = true := fun he =>
           heq (ThreadId.toObjId_injective _ _ (by simpa using he)).symm
         refine ⟨tcb, ?_, rfl⟩
-        simp only [saveOutgoingContextOnCore, hc, ho]
+        simp only [saveOutgoingContextOnCore, hc, SystemState.updateTcb_eq_of_some ho]
         simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
         rw [RobinHood.RHTable.getElem?_insert_ne st.objects outTid.toObjId tid.toObjId _ hNeO hInv]
         simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hCur

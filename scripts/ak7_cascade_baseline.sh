@@ -434,8 +434,13 @@ count_adoption() {
     | awk -F: '{s += $2} END {print s + 0}'
 }
 
-GETTCB_ADOPTION=$(count_adoption "getTcb\?")
-GETSCHEDCTX_ADOPTION=$(count_adoption "getSchedContext\?")
+# The witnessed lookups (`getTcbWitnessed?` / `getSchedContextWitnessed?`,
+# v0.35.65) ARE the typed helpers, carrying their own equation
+# (`getTcbWitnessed?_val`): a consumer reading through one reads through the
+# typed helper, so each counts as an adoption of the helper it witnesses.  The
+# whole-symbol guards still exclude the lemma names about them.
+GETTCB_ADOPTION=$(count_adoption "getTcb(Witnessed)?\?")
+GETSCHEDCTX_ADOPTION=$(count_adoption "getSchedContext(Witnessed)?\?")
 GETENDPOINT_ADOPTION=$(count_adoption "getEndpoint\?")
 GETNOTIFICATION_ADOPTION=$(count_adoption "getNotification\?")
 GETUNTYPED_ADOPTION=$(count_adoption "getUntyped\?")

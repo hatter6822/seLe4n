@@ -752,6 +752,7 @@ ACCESSOR_BODIES = {
     for d in ("getObject?", "getObjectType?", "getTcb?", "getEndpoint?",
               "getNotification?", "getCNode?", "getVSpaceRoot?", "getUntyped?",
               "getSchedContext?", "getReply?",
+              "getTcbWitnessed?", "getSchedContextWitnessed?",
               "lookupObject", "lookupCNode", "lookupVSpaceRoot")
 } | {
     ("SeLe4n/Model/State.lean", d): "live object-store write primitive"

@@ -1192,7 +1192,7 @@ TCB. -/
 theorem setThreadCpuAffinity_ok_of_tcb (st : SystemState) (targetTid : SeLe4n.ThreadId)
     (affinity : Option CoreId) (tcb : TCB) (hTcb : st.getTcb? targetTid = some tcb) :
     ∃ st', setThreadCpuAffinity st targetTid affinity = .ok st' := by
-  simp only [setThreadCpuAffinity, hTcb]
+  simp only [setThreadCpuAffinity, SystemState.getTcbWitnessed?_eq_some hTcb]
   exact ⟨_, rfl⟩
 
 /-- WS-SM SM5.C.8 (fail-closed): `setThreadCpuAffinity` rejects a non-TCB target
@@ -1201,7 +1201,7 @@ theorem setThreadCpuAffinity_error_of_no_tcb (st : SystemState)
     (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
     (hTcb : st.getTcb? targetTid = none) :
     setThreadCpuAffinity st targetTid affinity = .error .invalidArgument := by
-  simp only [setThreadCpuAffinity, hTcb]
+  simp only [setThreadCpuAffinity, SystemState.getTcbWitnessed?_eq_none hTcb]
 
 /-- WS-SM SM5.C.8: after a successful `setThreadCpuAffinity`, the target's
 `cpuAffinity` is the new value (every other field unchanged). -/
@@ -1210,9 +1210,10 @@ theorem setThreadCpuAffinity_sets_affinity (st : SystemState)
     (tcb : TCB) (hTcb : st.getTcb? targetTid = some tcb) (hInv : st.objects.invExt)
     (h : setThreadCpuAffinity st targetTid affinity = .ok st') :
     st'.getTcb? targetTid = some { tcb with cpuAffinity := affinity } := by
-  simp only [setThreadCpuAffinity, hTcb, Except.ok.injEq] at h
+  simp only [setThreadCpuAffinity, SystemState.getTcbWitnessed?_eq_some hTcb, Except.ok.injEq] at h
   subst h
-  simp only [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
+  simp only [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?,
+    SystemState.rewriteObject_objects]
   exact RHTable_get?_insert_self st.objects targetTid.toObjId _ hInv
 
 /-- WS-SM SM5.C.8 (preservation): `setThreadCpuAffinity` preserves the RobinHood
@@ -1224,11 +1225,11 @@ theorem setThreadCpuAffinity_preserves_objects_invExt (st : SystemState)
     st'.objects.invExt := by
   unfold setThreadCpuAffinity at h
   cases hTcb : st.getTcb? targetTid with
-  | none => simp [hTcb] at h
+  | none => simp [SystemState.getTcbWitnessed?_eq_none hTcb] at h
   | some tcb =>
-      simp only [hTcb, Except.ok.injEq] at h
+      simp only [SystemState.getTcbWitnessed?_eq_some hTcb, Except.ok.injEq] at h
       subst h
-      exact RHTable_insert_preserves_invExt st.objects _ _ hInv
+      exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
 
 /-- WS-SM SM5.C.8: `setThreadCpuAffinity` leaves the scheduler state untouched —
 it writes only the target TCB.  So no run queue / current thread is disturbed
@@ -1240,11 +1241,11 @@ theorem setThreadCpuAffinity_preserves_scheduler (st : SystemState)
     st'.scheduler = st.scheduler := by
   unfold setThreadCpuAffinity at h
   cases hTcb : st.getTcb? targetTid with
-  | none => simp [hTcb] at h
+  | none => simp [SystemState.getTcbWitnessed?_eq_none hTcb] at h
   | some tcb =>
-      simp only [hTcb, Except.ok.injEq] at h
+      simp only [SystemState.getTcbWitnessed?_eq_some hTcb, Except.ok.injEq] at h
       subst h
-      rfl
+      exact SystemState.rewriteObject_scheduler _ _ _ _
 
 /-- WS-SM SM5.C.8 (per-thread frame): `setThreadCpuAffinity targetTid` leaves
 every *other* thread's `getTcb?` lookup unchanged — its only write is at key
@@ -1256,14 +1257,14 @@ theorem setThreadCpuAffinity_getTcb?_ne (st : SystemState)
     st'.getTcb? other = st.getTcb? other := by
   unfold setThreadCpuAffinity at h
   cases hTcb : st.getTcb? targetTid with
-  | none => simp [hTcb] at h
+  | none => simp [SystemState.getTcbWitnessed?_eq_none hTcb] at h
   | some tcb =>
-      simp only [hTcb, Except.ok.injEq] at h
+      simp only [SystemState.getTcbWitnessed?_eq_some hTcb, Except.ok.injEq] at h
       subst h
       have hNeT : targetTid ≠ other := fun he => hNe he.symm
       have hNeO : ¬ (targetTid.toObjId == other.toObjId) = true := fun he =>
         hNeT (ThreadId.toObjId_injective _ _ (by simpa using he))
-      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
       rw [RobinHood.RHTable.getElem?_insert_ne st.objects targetTid.toObjId
         other.toObjId _ hNeO hInv]
 

@@ -1223,13 +1223,14 @@ def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- so the post-`restoreToReady` TCB is observed via the
       -- variant-aware lookup that already returns `none` on
       -- non-TCB / absent.
-      -- One lookup: it is the in-place rewrite's witness on the arm that finds
-      -- the TCB `restoreToReady` just rewrote.  The other arm is unreachable on
-      -- a well-formed table and total regardless: a key found holding no TCB is
-      -- written as a *store*, with its bookkeeping (`withObjectStored`).
+      -- One witnessed lookup: it is the in-place rewrite's witness on the arm
+      -- that finds the TCB `restoreToReady` just rewrote.  The other arm is
+      -- unreachable on a well-formed table and total regardless: a key found
+      -- holding no TCB is written as a *store*, with its bookkeeping
+      -- (`withObjectStored`).
       let (tcb', st) : TCB × SystemState :=
-        match h : st.getTcb? tid with
-        | some t =>
+        match st.getTcbWitnessed? tid with
+        | some ⟨t, h⟩ =>
             let t' : TCB := { t with threadState := .Ready, pipBoost := newPipBoost }
             (t', st.rewriteObject tid.toObjId (.tcb t') (SystemState.rewriteAdmissible_tcb h t'))
         | none =>

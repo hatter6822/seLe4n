@@ -495,43 +495,31 @@ private theorem insert_rq_preserves_projection
 fields are identical to the original. -/
 private theorem saveOutgoingContext_machine (st : SystemState) :
     (saveOutgoingContext st).machine = st.machine := by
-  simp only [saveOutgoingContext, SystemState.getTcb?]
-  cases (st.scheduler.currentOnCore bootCoreId) with
-  | none => rfl
-  | some outTid =>
-      cases h : st.objects[outTid.toObjId]? with
-      | none => simp_all
-      | some obj => cases obj <;> simp_all
+  unfold saveOutgoingContext
+  split
+  · rfl
+  · exact SystemState.updateTcb_machine _ _ _
 
 private theorem saveOutgoingContext_services (st : SystemState) :
     (saveOutgoingContext st).services = st.services := by
-  simp only [saveOutgoingContext, SystemState.getTcb?]
-  cases (st.scheduler.currentOnCore bootCoreId) with
-  | none => rfl
-  | some outTid =>
-      cases h : st.objects[outTid.toObjId]? with
-      | none => simp_all
-      | some obj => cases obj <;> simp_all
+  unfold saveOutgoingContext
+  split
+  · rfl
+  · rw [SystemState.updateTcb_eq_objects_update]
 
 private theorem saveOutgoingContext_irqHandlers (st : SystemState) :
     (saveOutgoingContext st).irqHandlers = st.irqHandlers := by
-  simp only [saveOutgoingContext, SystemState.getTcb?]
-  cases (st.scheduler.currentOnCore bootCoreId) with
-  | none => rfl
-  | some outTid =>
-      cases h : st.objects[outTid.toObjId]? with
-      | none => simp_all
-      | some obj => cases obj <;> simp_all
+  unfold saveOutgoingContext
+  split
+  · rfl
+  · rw [SystemState.updateTcb_eq_objects_update]
 
 private theorem saveOutgoingContext_objectIndex (st : SystemState) :
     (saveOutgoingContext st).objectIndex = st.objectIndex := by
-  simp only [saveOutgoingContext, SystemState.getTcb?]
-  cases (st.scheduler.currentOnCore bootCoreId) with
-  | none => rfl
-  | some outTid =>
-      cases h : st.objects[outTid.toObjId]? with
-      | none => simp_all
-      | some obj => cases obj <;> simp_all
+  unfold saveOutgoingContext
+  split
+  · rfl
+  · exact SystemState.updateTcb_objectIndex _ _ _
 
 /-- WS-H12c: saveOutgoingContext preserves projectObjects because
 projectKernelObject strips registerContext from TCBs. -/
@@ -543,30 +531,27 @@ private theorem saveOutgoingContext_preserves_projectObjects
   simp only [projectObjects, SystemState.getObject?]
   split
   · next hObs =>
-      simp only [saveOutgoingContext, SystemState.getTcb?]
+      unfold saveOutgoingContext
       cases hCur : (st.scheduler.currentOnCore bootCoreId) with
       | none => rfl
       | some outTid =>
-          cases hOut : st.objects[outTid.toObjId]? with
-          | none => simp_all
-          | some outObj =>
-              cases outObj with
-              | tcb outTcb =>
-                  simp only [hOut, Option.map]
-                  simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-                  by_cases hEq : outTid.toObjId == oid
-                  · simp only [hEq, ↓reduceIte, projectKernelObject]
-                    have hEq' := beq_iff_eq.mp hEq
-                    subst hEq'
-                    have : st.objects.get? outTid.toObjId = st.objects[outTid.toObjId]? := (RHTable_getElem?_eq_get? st.objects outTid.toObjId).symm
-                    rw [this]; simp only [hOut]
-                  · simp [hEq]
-              | endpoint _ => simp_all
-              | notification _ => simp_all
-              | cnode _ => simp_all
-              | vspaceRoot _ => simp_all
-              | untyped _ => simp_all
-              | schedContext _ | reply _ => simp_all
+          simp only []
+          cases hOutT : st.getTcb? outTid with
+          | none => rw [SystemState.updateTcb_eq_self_of_none hOutT]
+          | some outTcb =>
+              have hOut : st.objects[outTid.toObjId]? = some (.tcb outTcb) :=
+                (SystemState.getTcb?_eq_some_iff st outTid outTcb).mp hOutT
+              rw [SystemState.updateTcb_eq_of_some hOutT]
+              dsimp only
+              simp only [Option.map]
+              simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+              by_cases hEq : outTid.toObjId == oid
+              · simp only [hEq, ↓reduceIte, projectKernelObject]
+                have hEq' := beq_iff_eq.mp hEq
+                subst hEq'
+                have : st.objects.get? outTid.toObjId = st.objects[outTid.toObjId]? := (RHTable_getElem?_eq_get? st.objects outTid.toObjId).symm
+                rw [this]; simp only [hOut]
+              · simp [hEq]
   · rfl
 
 /-- WS-H12c: saveOutgoingContext preserves the information-flow projection.
@@ -577,37 +562,32 @@ private theorem saveOutgoingContext_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (saveOutgoingContext st) = projectState ctx observer st := by
-  simp only [saveOutgoingContext, SystemState.getTcb?]
+  unfold saveOutgoingContext
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
-      cases hOut : st.objects[outTid.toObjId]? with
-      | none => simp_all
-      | some outObj =>
-          cases outObj with
-          | tcb outTcb =>
-              simp only [hOut]
-              -- Now: projectState ctx observer { st with objects := st.objects.insert ... } = projectState ctx observer st
-              simp only [projectState]
-              congr 1
-              · -- objects field
-                exact funext (fun oid => by
-                  simp only [projectObjects, SystemState.getObject?]
-                  split
-                  · simp only [Option.map]
-                    simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-                    by_cases hEq : outTid.toObjId == oid
-                    · simp only [hEq, ↓reduceIte, projectKernelObject]
-                      have hEq' := beq_iff_eq.mp hEq
-                      subst hEq'; rw [← RHTable_getElem?_eq_get?]; simp only [hOut]
-                    · simp [hEq]
-                  · rfl)
-          | endpoint _ => simp_all
-          | notification _ => simp_all
-          | cnode _ => simp_all
-          | vspaceRoot _ => simp_all
-          | untyped _ => simp_all
-          | schedContext _ | reply _ => simp_all
+      simp only []
+      cases hOutT : st.getTcb? outTid with
+      | none => rw [SystemState.updateTcb_eq_self_of_none hOutT]
+      | some outTcb =>
+          have hOut : st.objects[outTid.toObjId]? = some (.tcb outTcb) :=
+            (SystemState.getTcb?_eq_some_iff st outTid outTcb).mp hOutT
+          rw [SystemState.updateTcb_eq_of_some hOutT]
+          -- Now: projectState ctx observer { st with objects := st.objects.insert ... } = projectState ctx observer st
+          simp only [projectState]
+          congr 1
+          · -- objects field
+            exact funext (fun oid => by
+              simp only [projectObjects, SystemState.getObject?]
+              split
+              · simp only [Option.map]
+                simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+                by_cases hEq : outTid.toObjId == oid
+                · simp only [hEq, ↓reduceIte, projectKernelObject]
+                  have hEq' := beq_iff_eq.mp hEq
+                  subst hEq'; rw [← RHTable_getElem?_eq_get?]; simp only [hOut]
+                · simp [hEq]
+              · rfl)
 
 /-- WS-RA RA.B.10 — **the blanket return-frame projection preservation, for
 every observer.**
@@ -762,39 +742,34 @@ private theorem saveOutgoingContext_with_sched_preserves_projection
     (hObjInv : st.objects.invExt) :
     projectState ctx observer { (saveOutgoingContext st) with scheduler := sched }
     = projectState ctx observer { st with scheduler := sched } := by
-  simp only [saveOutgoingContext, SystemState.getTcb?]
+  unfold saveOutgoingContext
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
-      cases hOut : st.objects[outTid.toObjId]? with
-      | none => simp_all
-      | some outObj =>
-          cases outObj with
-          | tcb outTcb =>
-              simp only [hOut]
-              -- Goal: projectState ctx observer { { st with objects := st.objects.insert ... } with scheduler := sched }
-              -- = projectState ctx observer { st with scheduler := sched }
-              -- The LHS has objects changed, everything else (incl. scheduler override) same
-              simp only [projectState]
-              congr 1
-              · -- objects field: same proof as saveOutgoingContext_preserves_projection
-                exact funext (fun oid => by
-                  simp only [projectObjects, SystemState.getObject?]
-                  split
-                  · simp only [Option.map]
-                    simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-                    by_cases hEq : outTid.toObjId == oid
-                    · simp only [hEq, ↓reduceIte, projectKernelObject]
-                      have hEq' := beq_iff_eq.mp hEq
-                      subst hEq'; rw [← RHTable_getElem?_eq_get?]; simp only [hOut]
-                    · simp [hEq]
-                  · rfl)
-          | endpoint _ => simp_all
-          | notification _ => simp_all
-          | cnode _ => simp_all
-          | vspaceRoot _ => simp_all
-          | untyped _ => simp_all
-          | schedContext _ | reply _ => simp_all
+      simp only []
+      cases hOutT : st.getTcb? outTid with
+      | none => rw [SystemState.updateTcb_eq_self_of_none hOutT]
+      | some outTcb =>
+          have hOut : st.objects[outTid.toObjId]? = some (.tcb outTcb) :=
+            (SystemState.getTcb?_eq_some_iff st outTid outTcb).mp hOutT
+          rw [SystemState.updateTcb_eq_of_some hOutT]
+          -- Goal: projectState ctx observer { { st with objects := st.objects.insert ... } with scheduler := sched }
+          -- = projectState ctx observer { st with scheduler := sched }
+          -- The LHS has objects changed, everything else (incl. scheduler override) same
+          simp only [projectState]
+          congr 1
+          · -- objects field: same proof as saveOutgoingContext_preserves_projection
+            exact funext (fun oid => by
+              simp only [projectObjects, SystemState.getObject?]
+              split
+              · simp only [Option.map]
+                simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+                by_cases hEq : outTid.toObjId == oid
+                · simp only [hEq, ↓reduceIte, projectKernelObject]
+                  have hEq' := beq_iff_eq.mp hEq
+                  subst hEq'; rw [← RHTable_getElem?_eq_get?]; simp only [hOut]
+                · simp [hEq]
+              · rfl)
 
 /-- WS-H9/H12c: schedule when all schedulable threads are non-observable preserves projection.
 schedule = chooseThread >> save >> dequeue >> restore >> setCurrentThread.
@@ -4179,7 +4154,7 @@ theorem setThreadCpuAffinity_preserves_projection_unconditional
     projectState ctx observer stSet = projectState ctx observer st := by
   unfold setThreadCpuAffinity at hSet
   split at hSet
-  · rename_i tcb hTcb
+  · rename_i tcb hTcb _
     simp only [Except.ok.injEq] at hSet
     subst hSet
     refine objects_insert_preserves_projection_of_proj_eq ctx observer st targetTid.toObjId
