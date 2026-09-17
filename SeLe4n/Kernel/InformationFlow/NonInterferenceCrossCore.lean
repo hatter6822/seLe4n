@@ -178,6 +178,28 @@ theorem removeRunnableOnCore_confinedToCores (st : SystemState)
    fun c _ => removeRunnableOnCore_domainScheduleIndexOnCore st tid cc c,
    fun _ _ => by rw [removeRunnableOnCore_machine_eq]⟩
 
+/-- WS-RR RR8.6: a removal at a pre-resolved placement writes that core's
+run-queue and current slots when there is one, and nothing per-core when the
+placement is `none`. -/
+theorem descheduleAt_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
+    (placed : Option CoreId) :
+    observableSlotsConfinedToCores st (descheduleAt st tid placed) placed.toList := by
+  unfold descheduleAt
+  cases placed with
+  | none => exact observableSlotsConfinedToCores_refl st []
+  | some c => exact removeRunnableOnCore_confinedToCores st tid c
+
+/-- The state-resolved step's own confinement, stated once where every consumer
+— the reply path's donation return, the cancellation composite, the live
+suspend's write set — can reach it: the cores it may write are read off the
+SAME resolver the step itself uses. -/
+theorem descheduleAtPlacement_confinedToCores (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (descheduleAtPlacement st tid)
+      (descheduleAtPlacementCores st tid) := by
+  rw [descheduleAtPlacementCores_eq_toList]
+  exact descheduleAt_confinedToCores st tid (placedCoreOf? st tid)
+
 /-- SM8.B.2: **the cross-core wake writes exactly the woken thread's home
 core.** The write set is `[determineTargetCore st tid]` — read off the
 pre-state, and *not* the executing core, which is the whole point of SM5.C: a
@@ -190,14 +212,15 @@ theorem wakeThread_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
   rw [wakeThread_state_eq_enqueue]
   exact enqueueRunnableOnCore_confinedToCores st (determineTargetCore st tid) tid
 
-/-- SM8.B.2: the wake's dual — `descheduleThread` writes exactly the victim's
-home core. -/
+/-- SM8.B.2: the wake's dual — `descheduleThread` writes exactly the core the
+state **places** the victim on (WS-RR RR8.6; its home core until then, which
+an unpinned thread preempted off its home is not on). -/
 theorem descheduleThread_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) :
     observableSlotsConfinedToCores st (descheduleThread st tid executingCore).1
-      [determineTargetCore st tid] := by
+      (descheduleAtPlacementCores st tid) := by
   rw [descheduleThread_state_eq]
-  exact removeRunnableOnCore_confinedToCores st tid (determineTargetCore st tid)
+  exact descheduleAtPlacement_confinedToCores st tid
 
 /-- SM8.B.2: a successful `storeObject` is per-core silent — it writes the
 object store and neither the scheduler nor any register bank, so it is confined
@@ -1171,15 +1194,15 @@ theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
 -- ============================================================================
 
 /-- SM8.B.2 (**SM6.E, cross-core**): the cancellation mechanism is
-`descheduleThread`, whose confinement §1 proves — it writes only the victim's
-**home** core, not the core running the cancellation. This restates that at the
-SM6.E name so the coverage list below reads off one theorem per sub-phase: a
-`tcbSuspend` issued on core 0 against a victim homed on core 2 is invisible to
-observers on cores 1 and 3 outright. -/
+`descheduleThread`, whose confinement §1 proves — it writes only the core the
+state **places** the victim on (WS-RR RR8.6), not the core running the
+cancellation. This restates that at the SM6.E name so the coverage list below
+reads off one theorem per sub-phase: a `tcbSuspend` issued on core 0 against a
+victim placed on core 2 is invisible to observers on cores 1 and 3 outright. -/
 theorem cancellationCrossCore_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) :
     observableSlotsConfinedToCores st (descheduleThread st tid executingCore).1
-      [determineTargetCore st tid] :=
+      (descheduleAtPlacementCores st tid) :=
   descheduleThread_confinedToCores st tid executingCore
 
 /-- SM8.B.2: the SM6.E object-level teardown is per-core **silent** — it rewrites
@@ -1319,52 +1342,66 @@ theorem wakeAbortedDonationHolder_confinedToCores (stPre stPost : SystemState)
       fun _ _ => by rw [enqueueAbortedHolderOnCore_machineEq]⟩
 
 /-- SM8.B.2 (**SM6.E, the composed cancellation**): `cancelIpcBlockingOnCore`
-writes the victim's **home** core, and — since WS-OD OD1.7 — the home core of the
-holder its reclaim unblocked, when there is one.  Not the core running the
-cancellation, and not any core the victim's endpoint or notification neighbours
-are homed on.
+writes the core the pre-state **places** the victim on (WS-RR RR8.6), and —
+since WS-OD OD1.7 — the home core of the holder its reclaim unblocked, when
+there is one.  Not the core running the cancellation, and not any core the
+victim's endpoint or notification neighbours are homed on.
 
-`[] ++ [] ++ wake ++ [home]`: the teardown contributes nothing per-core, WS-RR
+`[] ++ [] ++ wake ++ placed`: the teardown contributes nothing per-core, WS-RR
 RR7.22's replenishment migration contributes nothing either (it writes a
 replenish queue, which is not an observable slot), OD1.7's holder wake
-contributes the holder's home core exactly when it fires, and the home-core
-removal contributes one core.  Unlike the wake pipelines this needs no pushback
-through the §1a frame layer, because `cancelIpcBlockingOnCore` reads both cores
-from the pre-state itself.
+contributes the holder's home core exactly when it fires, and the placement
+removal contributes at most one core.  The removal resolves its core on the
+post-wake state and this list is stated on the **pre**-state, which is the only
+state a caller holds; `cancelIpcBlockingOnCore_placedCoreOf?_cases` is the
+pushback, and it is why the list is stated as a superset rather than an
+equality: on the degenerate insert the wake could perform on the victim itself
+the removal's core is the wake core, already listed.
 
 **The second core is the point of OD1.7, not a regression.**  The list read
-`[determineTargetCore st victim]` before, and that was true only because the
-reclaim's abort left the holder on no run queue at all — the stranding defect.
-Placing it necessarily writes its home core, which is neither the victim's nor
-the executing core, so the honest statement names it.  Where no donation is
-resolved the wake list is empty and this is the old statement verbatim
-(`cancelIpcBlockingOnCore_confinedToCores_of_no_donation`). -/
+`[determineTargetCore st victim]` before OD1.7, and that was true only because
+the reclaim's abort left the holder on no run queue at all — the stranding
+defect.  Placing it necessarily writes its home core, which is neither the
+victim's nor the executing core, so the honest statement names it.  Where no
+donation is resolved the wake list is empty and this is the pre-OD1.7 statement
+at the placed core (`cancelIpcBlockingOnCore_confinedToCores_of_no_donation`). -/
 theorem cancelIpcBlockingOnCore_confinedToCores (victim : SeLe4n.ThreadId) (tcb : TCB)
     (executingCore : CoreId) (st : SystemState) :
     observableSlotsConfinedToCores st
       (cancelIpcBlockingOnCore victim tcb executingCore st).1
       ((cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
-          victim tcb).toList ++ [determineTargetCore st victim]) :=
-  observableSlotsConfinedToCores_trans
+          victim tcb).toList ++ descheduleAtPlacementCores st victim) := by
+  have hStep := observableSlotsConfinedToCores_trans
     (observableSlotsConfinedToCores_trans
       (observableSlotsConfinedToCores_trans
         (cancelIpcBlocking_confinedToCores st victim tcb)
         (cancelIpcBlockingMigrated_confinedToCores victim tcb st))
       (wakeAbortedDonationHolder_confinedToCores st
         (cancelIpcBlockingMigrated victim tcb st) victim tcb))
-    (removeRunnableOnCore_confinedToCores
+    (descheduleAtPlacement_confinedToCores
       (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated victim tcb st) victim tcb)
-      victim (determineTargetCore st victim))
+      victim)
+  refine observableSlotsConfinedToCores_mono ?_ hStep
+  intro c hc
+  simp only [List.nil_append, List.mem_append] at hc ⊢
+  rcases hc with hw | hd
+  · exact Or.inl hw
+  · rw [descheduleAtPlacementCores_eq_toList] at hd ⊢
+    rcases cancelIpcBlockingOnCore_placedCoreOf?_cases victim tcb st with hEq | ⟨hPre, hPost⟩
+    · rw [hEq] at hd
+      exact Or.inr hd
+    · rw [hPost] at hd
+      exact Or.inl hd
 
 /-- WS-OD OD1.7: with no donation resolved the reclaim wakes nobody, so the
-composite is confined to the victim's home core exactly as it was before OD1.7 —
-which is every arm but a reply arm whose caller had donated. -/
+composite is confined to the victim's placed core exactly as it was before
+OD1.7 — which is every arm but a reply arm whose caller had donated. -/
 theorem cancelIpcBlockingOnCore_confinedToCores_of_no_donation (victim : SeLe4n.ThreadId)
     (tcb : TCB) (executingCore : CoreId) (st : SystemState)
     (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
     observableSlotsConfinedToCores st
       (cancelIpcBlockingOnCore victim tcb executingCore st).1
-      [determineTargetCore st victim] := by
+      (descheduleAtPlacementCores st victim) := by
   have hW := cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st
   rwa [cancelAbortedHolderWakeCore?_of_no_donation _ _ victim tcb h, Option.toList,
     List.nil_append] at hW
@@ -1851,16 +1888,6 @@ theorem endpointCallCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingCo
 -- own* core — then reverts the priority-inheritance chain from that server.
 -- Legs two and three can each name a core the reply's own write set does not, so
 -- §4's theorem never bounded the live arm (PR #861 review round 4).
-
-/-- The step's own confinement, stated once where both consumers can reach it. -/
-theorem descheduleAtPlacement_confinedToCores (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    observableSlotsConfinedToCores st (descheduleAtPlacement st tid)
-      (descheduleAtPlacementCores st tid) := by
-  unfold descheduleAtPlacement descheduleAtPlacementCores
-  cases hp : placedCoreOf? st tid with
-  | none => exact observableSlotsConfinedToCores_refl st []
-  | some c => exact removeRunnableOnCore_confinedToCores st tid c
 
 /-- **WS-HP HP4.4: the cores the head-driven pop's deschedule may write.**
 
@@ -2886,10 +2913,10 @@ theorem cancelDonatedDonationOnCore_confinedToCores (st st' : SystemState)
 
 * the reverted priority-inheritance chain's home cores, walked from the
   captured `blockingServer` at the post-teardown state;
-* the victim's `home` (`determineTargetCore`), where it is dequeued;
-* the core actually **running** the victim, when `runningCoreOf?` diverges from
-  the home — the PR #831 review-4 case of an unbound victim current on a
-  secondary core;
+* the core the pre-state **places** the victim on (`descheduleAtPlacementCores`,
+  WS-RR RR8.6 — queued or current; its home and its running core until then,
+  two proxies that between them missed a victim queued off its home), where it
+  is dequeued;
 * the **executing** core, where G7 may run a local preemption point.
 
 The teardown, both donation arms, `clearPendingState` and the `.Inactive` store
@@ -2909,37 +2936,10 @@ def suspendThreadOnCoreWriteSet (st : SystemState) (vtid : SeLe4n.ValidThreadId)
              (cancelIpcBlockingValid st vtid tcb).objectIndex.length
        | none => []) -- teardown, then chain reversion
       ++ [] -- donation cancellation
-      ++ (determineTargetCore st vtid.val
-          :: (match runningCoreOf? st vtid.val with
-              | some c => [c]
-              | none => [])) -- home dequeue, running dequeue
+      ++ descheduleAtPlacementCores st vtid.val -- the placement dequeue
       ++ [] -- clearPendingState
       ++ [] -- the `.Inactive` store
       ++ [executingCore] -- the G7 scheduling point
-
-/-- SM8.B.2: the suspend pipeline's two dequeues — the victim leaves its
-**home** core's queue always, and the core actually **running** it as well when
-`runningCoreOf?` diverges from the home (the PR #831 review-4 case). -/
-theorem suspendDequeues_confinedToCores (s : SystemState) (tid : SeLe4n.ThreadId)
-    (home : CoreId) (rc : Option CoreId) :
-    observableSlotsConfinedToCores s
-      (match rc with
-       | some c =>
-         if (c == home) = true then removeRunnableOnCore s tid home
-         else removeRunnableOnCore (removeRunnableOnCore s tid home) tid c
-       | none => removeRunnableOnCore s tid home)
-      (home :: (match rc with | some c => [c] | none => [])) := by
-  cases rc with
-  | none => exact removeRunnableOnCore_confinedToCores s tid home
-  | some c =>
-    simp only []
-    split
-    · exact observableSlotsConfinedToCores_mono
-        (fun _ hm => by simp only [List.mem_singleton] at hm; simp [hm])
-        (removeRunnableOnCore_confinedToCores s tid home)
-    · exact observableSlotsConfinedToCores_trans
-        (removeRunnableOnCore_confinedToCores s tid home)
-        (removeRunnableOnCore_confinedToCores _ tid c)
 
 /-- SM8.B.2: marking the victim `.Inactive` is per-core silent — one object
 store write. -/
@@ -2967,10 +2967,10 @@ theorem suspendDonationArms_confinedToCores (s sD : SystemState) (tid : SeLe4n.T
 function `API.dispatchCapabilityOnly`'s `.tcbSuspend` arm routes through —
 writes no core outside `suspendThreadOnCoreWriteSet`.
 
-Six of its steps are per-core silent (the IPC teardown, both donation arms,
+Five of its steps are per-core silent (the IPC teardown, both donation arms,
 `clearPendingState`, the `.Inactive` store); the three that are not are the
-priority-inheritance reversion, the two dequeues and the G7 scheduling point,
-and all three are named. The closing `mono` is only re-ordering — the
+priority-inheritance reversion, the placement dequeue and the G7 scheduling
+point, and all three are named. The closing `mono` is only re-ordering — the
 composition produces the cores in execution order, the declared set lists them
 in reading order. -/
 theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
@@ -3020,8 +3020,8 @@ theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
                 (observableSlotsConfinedToCores_trans
                   (observableSlotsConfinedToCores_trans hPre
                     (suspendDonationArms_confinedToCores _ stD vtid.val _ _ hDonArm))
-                  (suspendDequeues_confinedToCores stD vtid.val
-                    (determineTargetCore st vtid.val) (runningCoreOf? st vtid.val)))
+                  (descheduleAtPlacementCores_eq_toList st vtid.val ▸
+                    descheduleAt_confinedToCores stD vtid.val (placedCoreOf? st vtid.val)))
                 (clearPendingState_confinedToCores _ vtid.val))
               (suspendInactiveStore_confinedToCores _ vtid.val))
             (suspendRescheduleOnCore_confinedToCores _ st' _ executingCore _ _ sgi hStep))
@@ -5078,24 +5078,25 @@ theorem notificationSignalBoundOnCore_crossCoreNonInterference (ctx : LabelingCo
     (notificationSignalBoundOnCore_confinedToCores notificationId badge executingCore st hObjInv)
     hShared
 
-/-- SM8.B.2 (SM6.E): a cross-core deschedule is invisible to any core that is not
-the victim's home core. -/
+/-- SM8.B.2 (SM6.E), re-keyed at WS-RR RR8.6: a cross-core deschedule is
+invisible to any core that is not the one the state places the victim on. -/
 theorem descheduleThread_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
     (st : SystemState) (c : CoreId)
-    (hne : c ≠ determineTargetCore st tid)
+    (hne : c ∉ descheduleAtPlacementCores st tid)
     (hShared : sharedViewUnchanged ctx observer st (descheduleThread st tid executingCore).1) :
     projectStateOnCore ctx observer (descheduleThread st tid executingCore).1 c
       = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer (by simpa using hne)
+  crossCoreNonInterference_ofCores ctx observer hne
     (descheduleThread_confinedToCores st tid executingCore) hShared
 
-/-- SM8.B.2 (SM6.E, composed): a cross-core IPC-blocking cancellation is
-invisible to any core that is not the victim's home core. -/
+/-- SM8.B.2 (SM6.E, composed), re-keyed at WS-RR RR8.6: a cross-core
+IPC-blocking cancellation is invisible to any core that is neither the one the
+pre-state places the victim on nor the one the reclaim's holder wake writes. -/
 theorem cancelIpcBlockingOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (victim : SeLe4n.ThreadId) (tcb : TCB)
     (executingCore : CoreId) (st : SystemState) (c : CoreId)
-    (hne : c ≠ determineTargetCore st victim)
+    (hne : c ∉ descheduleAtPlacementCores st victim)
     (hWake : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
       victim tcb ≠ some c)
     (hShared : sharedViewUnchanged ctx observer st
@@ -5105,16 +5106,18 @@ theorem cancelIpcBlockingOnCore_crossCoreNonInterference (ctx : LabelingContext)
       = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer
     (by
-      -- WS-OD OD1.7: `c` is neither the victim's home core nor the core the
+      -- WS-OD OD1.7: `c` is neither the victim's placed core nor the core the
       -- reclaim's holder wake writes.
-      cases hW : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
-          victim tcb with
-      | none => simpa using hne
-      | some w =>
-        rw [hW] at hWake
-        simp only [Option.toList, List.cons_append, List.nil_append, List.mem_cons,
-          List.not_mem_nil, or_false]
-        exact fun h => h.elim (fun hw => hWake (by rw [hw])) (fun hh => hne hh))
+      intro hMem
+      rcases List.mem_append.mp hMem with hw | hd
+      · cases hW : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
+            victim tcb with
+        | none => rw [hW] at hw; simp at hw
+        | some w =>
+          rw [hW] at hw
+          simp only [Option.toList, List.mem_singleton] at hw
+          exact hWake (by rw [hw, hW])
+      · exact hne hd)
     (cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st) hShared
 
 /-- SM8.B.2 (**the headline, and the thing SM6 cannot say**): waking a thread on

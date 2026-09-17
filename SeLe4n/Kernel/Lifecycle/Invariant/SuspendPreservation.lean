@@ -1739,9 +1739,12 @@ theorem cancelIpcBlocking_preserves_objects_invExt
 -- The teardown never changes the *kind* or the `cpuAffinity` of a key that
 -- holds a TCB (it rewrites IPC/queue-link fields only), and never
 -- materialises a TCB at the victim's key when none was there.  These frames
--- discharge the `cancelIpcBlockingOnCore_eq_descheduleThread` resolution
--- hypotheses (`determineTargetCore` / `getTcb?` coincidence) into the
--- invExt-only closed form (`IPC.CrossCore.Cancellation` §3).
+-- are what `cancelIpcBlocking_determineTargetCore_eq` (`IPC.CrossCore.Cancellation`
+-- §3) reads: the victim's home core — the `.bound` arm's replenish purge core
+-- in `suspendThreadOnCore` — is the same before and after the teardown.  Until
+-- WS-RR RR8.6 they also discharged the resolution hypotheses of the
+-- deschedule's bridge to the composite, which is definitional now that both
+-- read the placement at the state the removal acts on.
 
 /-- WS-SM SM6.E: `restoreToReady` preserves TCB-kind and `cpuAffinity` at
 every key — the conditional rewrite clears IPC and queue-link fields only. -/

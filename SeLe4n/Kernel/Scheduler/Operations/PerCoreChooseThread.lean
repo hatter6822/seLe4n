@@ -468,13 +468,14 @@ private theorem leCore_bool_total : ∀ (x y : CoreId),
   · simp [decide_eq_true h]
 
 /-- WS-SM SM6.E (audit closure): a `CoreId`-ascending, duplicate-free sorted
-TRIPLE of same-kind scheduler locks — the run-queue segment of the suspend
-footprint over {victim home, executing core, victim RUNNING core}: the
-review-4 G4b deschedule writes the running core's queue/current slot, which
-can be a **third** core distinct from both (an unbound victim running
-off-home).  Built on the SM3.B canonical-sort machinery (`List.mergeSort`
-over the deduped core list), so ascending order and endpoint membership are
-`pairwise_mergeSort` / `mem_mergeSort` corollaries. -/
+TRIPLE of same-kind scheduler locks — the replenish-queue segment of the
+suspend footprint over {victim home, donation owner's home, outer caller's
+home} (WS-OD OD5.3), three cores that can all differ; it was also the
+footprint's run-queue segment over {victim home, executing core, victim
+running core} until WS-RR RR8.6 keyed the deschedule on placement and that
+segment became a pair.  Built on the SM3.B canonical-sort machinery
+(`List.mergeSort` over the deduped core list), so ascending order and endpoint
+membership are `pairwise_mergeSort` / `mem_mergeSort` corollaries. -/
 def sortedSchedCoreTriple (f : CoreId → SchedLockId) (a b c : CoreId)
     : List (SchedLockId × Concurrency.AccessMode) :=
   (((if c = a ∨ c = b then (if a = b then [a] else [a, b])

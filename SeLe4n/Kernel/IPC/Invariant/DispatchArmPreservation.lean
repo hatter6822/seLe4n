@@ -4716,32 +4716,50 @@ private theorem suspendClearStore_preserves_ipcInvariantFull
           rfl rfl rfl rfl rfl rfl rfl rfl rfl
       · exact RHTable_insert_preserves_invExt _ _ _ hObjInvC
 
-/-- The suspend tail's deschedule stage: one or two run-queue removals of a
-`.ready` victim, then the clear-and-deactivate stage. -/
+/-- WS-RR RR8.6: descheduling a `.ready` thread at a pre-resolved placement
+preserves the bundle — the one-core removal at `some c`, nothing at `none`. -/
+private theorem descheduleAt_preserves_ipcInvariantFull
+    (st : SystemState) (tid : SeLe4n.ThreadId) (placed : Option CoreId)
+    (hReady : ∀ tcbX : TCB, st.getTcb? tid = some tcbX → tcbX.ipcState = .ready)
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (descheduleAt st tid placed) := by
+  unfold descheduleAt
+  cases placed with
+  | none => exact hInv
+  | some c => exact removeRunnableOnCore_preserves_ipcInvariantFull st tid c hReady hInv
+
+/-- The suspend tail's deschedule stage: the placement removal of a `.ready`
+victim (WS-RR RR8.6 — one removal at the pre-resolved placement, where the
+home removal and the running-core removal used to stand), then the
+clear-and-deactivate stage. -/
 private theorem suspendDescheduleTail_shape
-    (stD : SystemState) (tid : SeLe4n.ThreadId) (c1 c2 : CoreId)
+    (stD : SystemState) (tid : SeLe4n.ThreadId) (placed : Option CoreId)
     (hObjInvD : stD.objects.invExt)
     (hShape : ∀ tcbX : TCB, stD.getTcb? tid = some tcbX →
       tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧ tcbX.timeoutBudget = none ∧
       tcbX.queuePrev = none ∧ tcbX.queueNext = none ∧ tcbX.queuePPrev = none)
     (hInvD : ipcInvariantFull stD) :
-    ipcInvariantFull (removeRunnableOnCore (removeRunnableOnCore stD tid c1) tid c2) ∧
-    (removeRunnableOnCore (removeRunnableOnCore stD tid c1) tid c2).objects.invExt ∧
-    (∀ tcbX : TCB,
-      (removeRunnableOnCore (removeRunnableOnCore stD tid c1) tid c2).getTcb? tid
-        = some tcbX →
+    ipcInvariantFull (descheduleAt stD tid placed) ∧
+    (descheduleAt stD tid placed).objects.invExt ∧
+    (∀ tcbX : TCB, (descheduleAt stD tid placed).getTcb? tid = some tcbX →
       tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧ tcbX.timeoutBudget = none ∧
       tcbX.queuePrev = none ∧ tcbX.queueNext = none ∧ tcbX.queuePPrev = none) := by
-  have hReadyD : ∀ tcbX : TCB, stD.getTcb? tid = some tcbX → tcbX.ipcState = .ready :=
-    fun tcbX hX => (hShape tcbX hX).1
-  have hInv1 := removeRunnableOnCore_preserves_ipcInvariantFull stD tid c1 hReadyD hInvD
-  have hInv2 := removeRunnableOnCore_preserves_ipcInvariantFull
-    (removeRunnableOnCore stD tid c1) tid c2 (fun tcbX hX => hReadyD tcbX hX) hInv1
-  exact ⟨hInv2, hObjInvD, fun tcbX hX => hShape tcbX hX⟩
+  refine ⟨descheduleAt_preserves_ipcInvariantFull stD tid placed
+    (fun tcbX hX => (hShape tcbX hX).1) hInvD, ?_, ?_⟩
+  · unfold descheduleAt
+    cases placed with
+    | none => exact hObjInvD
+    | some c => exact hObjInvD
+  · intro tcbX hX
+    apply hShape
+    unfold descheduleAt at hX
+    cases placed with
+    | none => exact hX
+    | some c => exact hX
 
 /-- `.tcbSuspend` (dispatch arm): the whole per-core suspension pipeline —
 cancel (inert on a quiescent victim), PIP revert (empty for a `.ready`
-victim), donation cancel (all three binding arms), home/running deschedule,
+victim), donation cancel (all three binding arms), the placement deschedule,
 pending-state clear, deactivation store, and the local scheduling point —
 preserves `ipcInvariantFull`.
 
@@ -4833,34 +4851,10 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
                 rw [hLk] at hX
                 obtain rfl : tcb = tcbX := Option.some.inj hX
                 exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩)
-            cases hRC : runningCoreOf? st vtid.val with
-            | none =>
-                simp only [hRC] at hStep
-                exact hTail st hObjInv hInv hShapeD
-                  (removeRunnableOnCore st vtid.val (determineTargetCore st vtid.val))
-                  hObjInv
-                  (removeRunnableOnCore_preserves_ipcInvariantFull st vtid.val
-                    (determineTargetCore st vtid.val)
-                    (fun tcbX hX => (hShapeD tcbX hX).1) hInv)
-                  (fun tcbX hX => hShapeD tcbX hX)
-                  _ ec _ _ st' sgi hStep
-            | some rc =>
-                simp only [hRC] at hStep
-                by_cases hEqC : (rc == determineTargetCore st vtid.val) = true
-                · simp only [hEqC] at hStep
-                  exact hTail st hObjInv hInv hShapeD
-                    (removeRunnableOnCore st vtid.val (determineTargetCore st vtid.val))
-                    hObjInv
-                    (removeRunnableOnCore_preserves_ipcInvariantFull st vtid.val
-                      (determineTargetCore st vtid.val)
-                      (fun tcbX hX => (hShapeD tcbX hX).1) hInv)
-                    (fun tcbX hX => hShapeD tcbX hX)
-                    _ ec _ _ st' sgi hStep
-                · simp only [hEqC] at hStep
-                  obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape st vtid.val
-                    (determineTargetCore st vtid.val) rc hObjInv hShapeD hInv
-                  exact hTail st hObjInv hInv hShapeD _ hObjInv2 hInv2 hShape2
-                    _ ec _ _ st' sgi hStep
+            obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape st vtid.val
+              (placedCoreOf? st vtid.val) hObjInv hShapeD hInv
+            exact hTail st hObjInv hInv hShapeD _ hObjInv2 hInv2 hShape2
+              _ ec _ _ st' sgi hStep
         | bound scId =>
             simp only [hB] at hStep
             cases hDon : cancelBoundDonationOnCore st vtid.val tcb
@@ -4879,34 +4873,10 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
                   (cancelBoundDonationOnCore_victim_shape st stD vtid.val tcb
                     (determineTargetCore st vtid.val) hObjInv hPre
                     hDon)
-                cases hRC : runningCoreOf? st vtid.val with
-                | none =>
-                    simp only [hRC] at hStep
-                    exact hTail stD hObjInvD hInvD hShapeD
-                      (removeRunnableOnCore stD vtid.val (determineTargetCore st vtid.val))
-                      hObjInvD
-                      (removeRunnableOnCore_preserves_ipcInvariantFull stD vtid.val
-                        (determineTargetCore st vtid.val)
-                        (fun tcbX hX => (hShapeD tcbX hX).1) hInvD)
-                      (fun tcbX hX => hShapeD tcbX hX)
-                      _ ec _ _ st' sgi hStep
-                | some rc =>
-                    simp only [hRC] at hStep
-                    by_cases hEqC : (rc == determineTargetCore st vtid.val) = true
-                    · simp only [hEqC] at hStep
-                      exact hTail stD hObjInvD hInvD hShapeD
-                        (removeRunnableOnCore stD vtid.val (determineTargetCore st vtid.val))
-                        hObjInvD
-                        (removeRunnableOnCore_preserves_ipcInvariantFull stD vtid.val
-                          (determineTargetCore st vtid.val)
-                          (fun tcbX hX => (hShapeD tcbX hX).1) hInvD)
-                        (fun tcbX hX => hShapeD tcbX hX)
-                        _ ec _ _ st' sgi hStep
-                    · simp only [hEqC] at hStep
-                      obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape stD
-                        vtid.val (determineTargetCore st vtid.val) rc hObjInvD hShapeD hInvD
-                      exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
-                        _ ec _ _ st' sgi hStep
+                obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape stD
+                  vtid.val (placedCoreOf? st vtid.val) hObjInvD hShapeD hInvD
+                exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
+                  _ ec _ _ st' sgi hStep
         | donated scId owner =>
             simp only [hB] at hStep
             cases hDon : cancelDonatedDonationOnCore st vtid.val tcb with
@@ -4923,34 +4893,10 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
                   (cancelDonatedDonationOnCore_victim_shape st stD vtid tcb hObjInv hLk
                     hDon)
 
-                cases hRC : runningCoreOf? st vtid.val with
-                | none =>
-                    simp only [hRC] at hStep
-                    exact hTail stD hObjInvD hInvD hShapeD
-                      (removeRunnableOnCore stD vtid.val (determineTargetCore st vtid.val))
-                      hObjInvD
-                      (removeRunnableOnCore_preserves_ipcInvariantFull stD vtid.val
-                        (determineTargetCore st vtid.val)
-                        (fun tcbX hX => (hShapeD tcbX hX).1) hInvD)
-                      (fun tcbX hX => hShapeD tcbX hX)
-                      _ ec _ _ st' sgi hStep
-                | some rc =>
-                    simp only [hRC] at hStep
-                    by_cases hEqC : (rc == determineTargetCore st vtid.val) = true
-                    · simp only [hEqC] at hStep
-                      exact hTail stD hObjInvD hInvD hShapeD
-                        (removeRunnableOnCore stD vtid.val (determineTargetCore st vtid.val))
-                        hObjInvD
-                        (removeRunnableOnCore_preserves_ipcInvariantFull stD vtid.val
-                          (determineTargetCore st vtid.val)
-                          (fun tcbX hX => (hShapeD tcbX hX).1) hInvD)
-                        (fun tcbX hX => hShapeD tcbX hX)
-                        _ ec _ _ st' sgi hStep
-                    · simp only [hEqC] at hStep
-                      obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape stD
-                        vtid.val (determineTargetCore st vtid.val) rc hObjInvD hShapeD hInvD
-                      exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
-                        _ ec _ _ st' sgi hStep
+                obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape stD
+                  vtid.val (placedCoreOf? st vtid.val) hObjInvD hShapeD hInvD
+                exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
+                  _ ec _ _ st' sgi hStep
 
 -- ============================================================================
 -- §16  Return-frame staging composites (`Architecture.stage*`)

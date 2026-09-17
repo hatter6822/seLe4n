@@ -24,8 +24,8 @@ invisible to a low observer.
 The SM6.E-*new* state effects over the single-core suspend pipeline are all
 discharged **substantively** here:
 
-* the **home-core deschedule** (`descheduleThread`, the `removeRunnableOnCore`
-  of a high victim on an arbitrary core) — §2;
+* the **placement deschedule** (`descheduleThread`, the `removeRunnableOnCore`
+  of a high victim on the core the state places it on — WS-RR RR8.6) — §2;
 * the **∀-core replenish-queue frames** (`setReplenishQueueOnCore` at *any*
   core is projection-invisible — the rqCore-parametrised purge of the per-core
   bound arm reduces to exactly this) — §1;
@@ -137,12 +137,39 @@ theorem migrateSchedContextReplenishment_preserves_projectionOnCore
     · rfl
 
 -- ============================================================================
--- §2  The home-core deschedule of a high victim is invisible
+-- §2  The placement deschedule of a high victim is invisible
 -- ============================================================================
 
+/-- WS-RR RR8.6: removing a **non-observable** thread from wherever the state
+places it is invisible to a low observer — at a resolved core it is the
+`removeRunnableOnCore` invisibility, and at no core the step is the identity. -/
+theorem descheduleAtPlacement_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (victim : SeLe4n.ThreadId)
+    (hVictimHigh : threadObservable ctx observer victim = false) :
+    projectState ctx observer (descheduleAtPlacement st victim)
+      = projectState ctx observer st := by
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · exact removeRunnableOnCore_preserves_projection ctx observer st victim _ hVictimHigh
+  · rfl
+
+/-- WS-RR RR8.6: ...and on every core. -/
+theorem descheduleAtPlacement_preserves_projectionOnCore
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (victim : SeLe4n.ThreadId) (c : CoreId)
+    (hVictimHigh : threadObservable ctx observer victim = false) :
+    projectStateOnCore ctx observer (descheduleAtPlacement st victim) c
+      = projectStateOnCore ctx observer st c := by
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · exact removeRunnableOnCore_preserves_projectionOnCore ctx observer st victim _ c
+      hVictimHigh
+  · rfl
+
 /-- WS-SM SM6.E (boot-core form): descheduling a **non-observable** victim
-from its home core is invisible to a low observer — the wakeThread-dual of
-the SM6.A wake-invisibility. -/
+from the core the state places it on is invisible to a low observer — the
+wakeThread-dual of the SM6.A wake-invisibility. -/
 theorem descheduleThread_cancellation_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (victim : SeLe4n.ThreadId) (executingCore : CoreId)
@@ -150,10 +177,10 @@ theorem descheduleThread_cancellation_NI
     projectState ctx observer (descheduleThread st victim executingCore).1
       = projectState ctx observer st := by
   rw [descheduleThread_state_eq]
-  exact removeRunnableOnCore_preserves_projection ctx observer st victim _ hVictimHigh
+  exact descheduleAtPlacement_preserves_projection ctx observer st victim hVictimHigh
 
 /-- WS-SM SM6.E (∀-core form): descheduling a high victim is invisible on
-*every* core — including the victim's home core, whose run-queue/current
+*every* core — including the victim's placed core, whose run-queue/current
 edits touch only a thread the observer filters out. -/
 theorem descheduleThread_cancellation_NI_smp
     (ctx : LabelingContext) (observer : IfObserver)
@@ -166,7 +193,7 @@ theorem descheduleThread_cancellation_NI_smp
       (descheduleThread st victim executingCore).1 c
     = projectStateOnCore ctx observer st c
   rw [descheduleThread_state_eq]
-  exact removeRunnableOnCore_preserves_projectionOnCore ctx observer st victim _ c
+  exact descheduleAtPlacement_preserves_projectionOnCore ctx observer st victim c
     hVictimHigh
 
 -- ============================================================================
@@ -361,7 +388,7 @@ theorem cancelIpcBlockingOnCore_cancellation_NI
         (cancelIpcBlockingOnCore victim tcb executingCore st).1
       = projectState ctx observer st := by
   rw [cancelIpcBlockingOnCore_state_eq,
-      removeRunnableOnCore_preserves_projection ctx observer _ victim _ hVictimHigh,
+      descheduleAtPlacement_preserves_projection ctx observer _ victim hVictimHigh,
       wakeAbortedDonationHolder_preserves_projection ctx observer st victim tcb hWakeHigh,
       cancelIpcBlockingMigrated_preserves_projection]
   exact hTeardownProj
@@ -387,7 +414,7 @@ theorem cancelIpcBlockingOnCore_cancellation_NI_smp
       (cancelIpcBlockingOnCore victim tcb executingCore st).1 c
     = projectStateOnCore ctx observer st c
   rw [cancelIpcBlockingOnCore_state_eq,
-      removeRunnableOnCore_preserves_projectionOnCore ctx observer _ victim _ c
+      descheduleAtPlacement_preserves_projectionOnCore ctx observer _ victim c
         hVictimHigh,
       wakeAbortedDonationHolder_preserves_projectionOnCore ctx observer st victim tcb c
         hWakeHigh,
@@ -397,7 +424,7 @@ theorem cancelIpcBlockingOnCore_cancellation_NI_smp
 /-- WS-SM SM6.E (boot-core form, fully substantive): cancelling a `.ready`
 high victim — the suspend-of-a-running-thread scenario, the cross-core-
 relevant case — is invisible: the teardown is the identity, so the whole
-composite is the (invisible) home-core deschedule. -/
+composite is the (invisible) placement deschedule. -/
 theorem cancelIpcBlockingOnCore_ready_cancellation_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
@@ -429,7 +456,7 @@ theorem cancelIpcBlockingOnCore_ready_cancellation_NI_smp
   rw [cancelIpcBlockingOnCore_ready_eq_descheduleThread victim tcb executingCore st
         hReady,
       descheduleThread_state_eq]
-  exact removeRunnableOnCore_preserves_projectionOnCore ctx observer st victim _ c
+  exact descheduleAtPlacement_preserves_projectionOnCore ctx observer st victim c
     hVictimHigh
 
 -- ============================================================================

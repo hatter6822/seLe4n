@@ -1,3 +1,161 @@
+## v0.35.79 — WS-RR RR8.6: the deschedule reads placement, not the home — and the sweep found a `.tcbSuspend` that did not suspend
+
+**Three sites descheduled a state-resolved victim at `determineTargetCore`, and
+one of them was the live suspend.**  The register row PR #895 review round 10
+opened named two: `descheduleThread` (the SM5.C `wakeThread` dual) and
+`cancelIpcBlockingOnCore` (the cross-core cancellation composite) both removed
+the victim from its **home** core's run queue and current slot — the thread's
+affinity, `bootCoreId` when unpinned — which that review records as a proxy for
+placement: `affinityAdmitsCore` is `true` on every core for an unpinned thread,
+so nothing pins such a thread's queue to its home.  Running the sweep the row
+asked for found the third, and it is the one that matters:
+`suspendThreadOnCore`'s G4 removed at the home and its G4b (PR #831 review 4)
+at the core *running* the victim, and **a victim queued off its home is on
+neither**.  Reachable with ordinary syscalls: pin a thread to core 2, let it run
+there, unpin it (`none` admits every core, so
+`setThreadCpuAffinityWithMigration`'s running-thread refusal does not fire and
+its home reverts to boot), let a higher-priority thread preempt it — and
+`preemptCurrentOnCore` re-enqueues it **on core 2**, the core that ran it, not
+at its home.  A `.tcbSuspend` on it then removed it from the boot queue it was
+not on, ran no running-core removal because it was not current, marked it
+`.Inactive`, and left it in core 2's run queue, where `chooseThreadOnCore`
+dispatches it again.  A suspend that does not suspend, reported here as the
+security-relevant finding it is (severity **Medium**: the integrity of the
+suspend authority and availability of the core's schedule, not memory safety or
+confidentiality, and not exploitable while nothing boots) rather than folded
+into the sweep silently.
+
+**One question, one resolver.**  `descheduleAt st tid placed` (`EndpointCall.lean`)
+is the pre-resolved removal primitive — `removeRunnableOnCore` at `some c`, the
+identity at `none` — and `descheduleAtPlacement st tid` is now *defined* as
+`descheduleAt st tid (placedCoreOf? st tid)` rather than spelling the same match
+a second time.  `descheduleSgi?` is the `.reschedule` poke a deschedule owes,
+resolved on the same placement: the placed core, when the thread is current
+there and it is not the executing core.  `descheduleThread` is the pair
+`(descheduleAtPlacement st tid, descheduleSgi? st tid executingCore)`, so the
+SGI targets exactly the core whose current slot the removal cleared.  Two
+things the poke deliberately no longer reads: the home resolver, and the object
+store.  The wake's ghost-guard (`getTcb? = none` ⇒ no SGI) is *consistency with
+the state effect* at the wake, because a wake of a thread with no TCB inserts
+nothing; a removal takes a placed thread off its core whether or not a TCB
+backs it, so the same guard at the deschedule cleared a remote core's current
+slot and poked nobody — the fail-open direction, inert on every reachable state
+and gone regardless.  `descheduleThread_no_sgi_if_ghost` and
+`cancelIpcBlockingOnCore_no_sgi_if_ghost` are deleted with it.
+
+**The composite is `descheduleThread` on the post-wake state, definitionally.**
+`cancelIpcBlockingOnCore victim tcb executingCore st` is
+`descheduleThread (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated …) …)
+victim executingCore`.  The placement is resolved *after* the reclaim's holder
+wake, and that is deliberate: the wake is a run-queue insert, and resolving
+before it would leave the degenerate `holder = victim` insert standing (no
+reachable state produces one — a reply-blocked victim is not a holder blocked
+sending or calling — and the composite undoes it regardless).
+`cancelIpcBlockingOnCore_eq_descheduleThread` is `rfl` now; the closed form it
+used to need (`cancelIpcBlockingOnCore_eq_descheduleThread_closed`) and the
+resolution frame that served only it (`cancelIpcBlocking_getTcb?_isSome_eq`) are
+deleted, while `cancelIpcBlocking_determineTargetCore_eq` stays because the
+`.bound` arm's replenish purge core still reads the home.  What relates the
+post-wake removal to a footprint declared on the pre-state is
+`cancelIpcBlockingOnCore_placedCoreOf?_cases`: the post-wake placement is the
+pre-state placement, or the pre-state placed the victim nowhere and the post-wake
+placement is the declared wake core.  Its two consequences are what every
+restated theorem reads: `_placedCoreOf?_of_some` (a victim the pre-state places
+somewhere is removed exactly there) and
+`cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule` (the core the removal
+writes under is a declared member either way).  Proving the cases lemma cost
+three resolver facts in `EndpointCall.lean` —
+`placedCoreOf?_congr_of_contains_current_eq` (the resolver reads membership and
+current slots only, which is the form a run-queue insert of some *other* thread
+satisfies), `placedCoreOf?_eq_some_of_unique` (a thread placed on exactly one
+core is placed there by the resolver) and `descheduleAtPlacementCores_eq_toList`.
+
+**Every SGI and locality theorem is restated over the placement.**
+`descheduleThread_emits_sgi_if_remote_current` takes the placement, the victim
+being current there and that core being remote; `_no_sgi_if_local` takes the
+placement at the executing core; `_no_sgi_if_not_current` takes "current
+nowhere" (`runningOnSomeCore = false`), which every blocked thread satisfies;
+`descheduleThread_unplaced` says a thread placed nowhere is removed from nothing
+and pokes nobody.  `descheduleThread_descheduled_on_home` is
+`descheduleThread_descheduled_at_placement`, `_independent_of_other_core` excludes
+the placed core, and `descheduleThread_fully_descheduled` — which needed the
+*home-placement* discipline, false of exactly the thread the defect is about —
+takes **single placement** instead, the property the scheduler maintains by
+construction.  `cancellation_cross_core_correct` is stated at a victim the
+pre-state places on a remote core and current there; `cancelIpcBlockingOnCore_bootHome_state_eq`
+is `_bootPlaced_state_eq`.  The three composite SGI theorems reach the pre-state
+through `_placedCoreOf?_of_some` and `cancelIpcBlockingOnCore_runningOnSomeCore`
+(the teardown, the migration and the wake leave every current slot alone).
+
+**The footprints are keyed on the placement, and the suspend's run-queue
+segment is a pair.**  `descheduleThreadLockSet (placed : Option CoreId)` is the
+table lock plus the placed core's run-queue write lock when there is one — the
+table lock is kept, not because the deschedule reads the store (it no longer
+does) but because it is the one member the deschedule and a concurrent *wake* of
+the same thread are guaranteed to share, their run-queue members now naming
+the placed core and the home respectively.  `cancelIpcBlockingOnCoreSchedLockSet
+(placed wakeCore : Option CoreId)` adds the wake member as before;
+`_contains_home_runQueue_write` is `_contains_placed_runQueue_write`.
+`suspendThreadOnCoreSchedLockSet (home executingCore ownerHome outerHome : CoreId)
+(placed : Option CoreId)` has a run-queue **pair** over the placed core and the
+executing core where the triple over {home, executing, running} stood — the
+home stays a *replenish* member, because the `.bound` arm's purge really is
+keyed on it (SM5.H), and the running core needs no member of its own: it is the
+placed core whenever the victim is current anywhere.  In `suspendThreadOnCore`
+the placement is captured on the pre-state beside the other pre-resolutions
+(`let placed := placedCoreOf? st tid`), which is what the footprint declares,
+and G4 is `descheduleAt st tid placed`; nothing between the capture and the
+removal moves a thread between scheduler slots (the teardown and both donation
+arms write no run queue and no current slot, and the priority-inheritance revert
+re-buckets a chain member inside the queue it already sits in).  G7's fallback
+target for a victim current nowhere is the executing core rather than the home,
+so `suspendThreadOnCore_sgi_remote_reschedule` now concludes `runningCoreOf? st
+vtid.val = some c` — an SGI *names* the running core — and
+`suspendRescheduleOnCore`'s parameters say what they are (`runningCore`,
+`wasCurrent`).  The stage lemma is `descheduleAt_ipcInvariantStage`
+(`removeRunnableOnCoreOpt_ipcInvariantStage` is deleted), and the dispatch-arm
+bundle proof's three `runningCoreOf?` case splits collapse onto
+`descheduleAt_preserves_ipcInvariantFull`.
+
+**The information-flow surface follows.**  `descheduleThread_confinedToCores`
+and `cancellationCrossCore_confinedToCores` are confined to
+`descheduleAtPlacementCores st tid`; `cancelIpcBlockingOnCore_confinedToCores`
+to the wake core and the pre-state placement, pushed back from the post-wake
+state through the cases lemma (a superset, which is what makes the degenerate
+insert's core a listed one); `suspendThreadOnCoreWriteSet` reads
+`descheduleAtPlacementCores` where it read the home and the running core, and
+`suspendDequeues_confinedToCores` is deleted for `descheduleAt_confinedToCores`.
+The two `crossCoreNonInterference` theorems take `c ∉ descheduleAtPlacementCores
+st tid`, and `CancellationNI` gains `descheduleAtPlacement_preserves_projection`
+/ `_OnCore` so its four composite results state the removal once.
+
+**The witness discriminates.**  `tests/SmpCancellationSuite.lean` §3.24 builds
+an unpinned victim queued on core 2 and current nowhere, computes the RETIRED
+reading beside the live one — `retiredHomeAndRunningDeschedule`, the G4/G4b
+pair, kept in the suite and nowhere else — and asserts that it leaves the victim
+queued on core 2 while `descheduleThread`, the `.ready` cancellation composite
+and `suspendThreadOnCore` each remove it, surface no SGI, and leave it `.Inactive`
+on no core; the suspend and cancellation footprints resolved from the same
+pre-state expression both name core 2, and the members the retired keying
+declared on this state do not.  `tests/SmpInformationFlowSuite.lean`'s
+deschedule dual now runs on a fixture that places the thread on core 2, with the
+negative that it is *not* confined to the executing core: the old fixture held
+the thread on no scheduler slot, so under placement keying the dual would have
+been the identity and "confined to core 2" vacuous.  The Tier 3 block pins the
+primitive's shape, the poke's resolver, the suspend's capture-and-remove, the
+absence of the home resolver from each declaration (bounded negatives), the
+retired names tree-wide, and the witness — 27 mutation checks, each keeping the
+token and breaking the relation.  The golden trace is byte-identical.  The AK7
+`GETTCB_ADOPTION` floor is re-anchored 2465 → 2442: the twenty-three `getTcb?`
+occurrences that left the tree are the two ghost guards, the two ghost-guard
+theorems, the resolution-frame lemma and closed-form bridge this cut deletes,
+and the `hTcb` hypotheses the SGI theorems and their elaboration examples no
+longer carry — reads deleted with the code that made them, not replaced by raw
+ones (`RAW_MATCH_*` and `STORE_READ_CODE` are unmoved).
+
+Register row 55 closes on the sweep having been run rather than described, and
+`docs/planning/SMP_RELEASE_READINESS_PLAN.md`'s RR8.6 row is LANDED.
+
 ## v0.35.78 — The capability-reference table is retired, on measurement
 
 **The register row `v0.35.77` opened is closed by deleting the table it named.**

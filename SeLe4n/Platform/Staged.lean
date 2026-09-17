@@ -536,7 +536,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyNI
 -- `cancelIpcBlockingOnCore_{,ready_}cancellation_NI{,_smp}` +
 -- `cancelDonatedDonationOnCore_cancellation_NI{,_smp}` + the ∀-core
 -- replenish-queue / migration projection frames.  Every SM6.E-new state
--- effect (home-core deschedule, rqCore-parametrised purge, replenishment
+-- effect (placement deschedule, rqCore-parametrised purge, replenishment
 -- migration) is discharged substantively; the composites consume the
 -- single-core teardown/return projection obligations that the production
 -- closure forms (`suspendThread_preserves_projection` G3/G5) document.

@@ -337,7 +337,7 @@ theorem applyReplyDonationOnCore_eq_single_of_placed_at_bootCore (st : SystemSta
         obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
         have hSched : st'.scheduler = st.scheduler :=
           returnDonatedSchedContext_scheduler_eq st st' _ _ _ _ hPop
-        simp only [migrateSchedContextReplenishment_noop, descheduleAtPlacement,
+        simp only [migrateSchedContextReplenishment_noop, descheduleAtPlacement, descheduleAt,
           placedCoreOf?_congr_of_scheduler_eq _ hSched, hPlaced scId holder hTrig,
           removeRunnableOnCore_bootCoreId]
 

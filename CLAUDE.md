@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.78.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.79.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1669,7 +1669,11 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   Both are proxies; the fact is **placement**, and `removeRunnableOnCore` writes
   the run queue *and* the current slot of whatever core it is handed.
   `placedCoreOf?` is the witness, tied to `runnableOnSomeCore ||
-  runningOnSomeCore` by theorem so a third answer cannot appear.
+  runningOnSomeCore` by theorem so a third answer cannot appear.  The sites
+  round 10 named and did not sweep — the cancellation path's `descheduleThread`
+  and `cancelIpcBlockingOnCore` — and a third the sweep found, the live
+  suspend's own home-then-running-core removal pair, closed at WS-RR RR8.6
+  (`v0.35.79`); the standing constraint is recorded below.
 
   Two things generalise.  **A parameter is a place for a caller to be wrong**:
   the fix is not a better argument at the call site but *no argument* — the step
@@ -3187,7 +3191,7 @@ never leave its endpoint queue again — was invisible to the proofs and to the
 harness alike.  Six things new code must respect.
 
 (1) **`queuePPrevAgreesWithPrev` is `dualQueueSystemInvariant`'s fourth
-conjunct**, so `ipcInvariantFull` still has twenty and the 178-bundle family is
+conjunct**, so `ipcInvariantFull` still has twenty and the bundle family is
 untouched — but every transition in the tree now carries it, and a new one must.
 The cheap route is `queuePPrevAgreesWithPrev_of_frame` (every surviving TCB keeps
 its two link fields) or, for a queue writer, the per-primitive siblings
@@ -5411,7 +5415,7 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9.E | LANDED | v0.33.100 | Tests + closure: acceptance scenarios run live and pinned as golden fixtures; seam boundary coverage of both declassifying syscalls; the epoch exercised with survivors |
 | SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
 | SM5 runtime seams | LANDED | v0.34.1 | The three seams SM5's docstrings promised between the verified per-core scheduler and the hardware IRQ path — IRQ vector redirect, `.reschedule` SGI receiver, secondary bring-up entry — all dormant behind the per-core `lean_ready` gate until SM10.1 |
-| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50; RR7 v0.34.47 → v0.34.92; RR8.1 v0.35.55, RR8.2 v0.35.56, RR8.3 v0.35.57, RR8.4 v0.35.58, RR8.5 v0.35.63 (RR8 grew 5 → 16 rows) | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
+| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50; RR7 v0.34.47 → v0.34.92; RR8.1 v0.35.55, RR8.2 v0.35.56, RR8.3 v0.35.57, RR8.4 v0.35.58, RR8.5 v0.35.63, RR8.6 v0.35.79 (RR8 grew 5 → 16 rows) | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
 | SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0); SM10.1's content is **WS-BP** (see above) |
 
 **Plans**: master overview at
@@ -5694,7 +5698,7 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **178**
+  reports **zero** conjuncts bound on a post-state across all **179**
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements, measured over the comment-free code view with the conjunct set,
   the bundle family and each bundle's own pre-state all *derived* rather than
@@ -5832,8 +5836,9 @@ code may assume:
   unconditional.
 - **...and the unblocked holder is placed on a run queue, not merely unblocked**
   (WS-OD OD1.7, v0.34.108).  `cancelIpcBlockingOnCore`'s state is
-  `removeRunnableOnCore (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated
-  …) …) victim home`.  Without the wake the abort left the holder `.ready`,
+  `descheduleAtPlacement (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated
+  …) …) victim` (the removal at the victim's *home* until WS-RR RR8.6, see the
+  placement bullet below).  Without the wake the abort left the holder `.ready`,
   spliced off its endpoint and on **no** run queue, and every recovery path was
   closed — `resumeThreadOnCore` demands `threadState = .Inactive` and the abort
   leaves `.Ready`; `schedContextBind` re-buckets only a thread already queued
@@ -6190,6 +6195,48 @@ code may assume:
   it always was**: a reply cap is backed iff its Reply resolves, which is the
   capability layer's step-preserved `replyCapPointsToValidReply`, exhibited
   by `replyCapPointsToValidReply_distinguishes_backed_and_dangling`.
+- **A state-resolved thread is descheduled where the state PLACES it** (WS-RR
+  RR8.6, `v0.35.79`).  `descheduleThread`, `cancelIpcBlockingOnCore` and
+  `suspendThreadOnCore`'s G4 removed a victim at `determineTargetCore` — its
+  *home*, which is where a wake places a thread and not where a removal finds
+  it: `preemptCurrentOnCore` re-enqueues a preempted thread on the core that ran
+  it, and an unpinned thread may run on any core, so a `.tcbSuspend` on an
+  unpinned thread preempted on a secondary core marked it `.Inactive` and left
+  it in that core's run queue.  Five things new code must respect.  (1) **One
+  primitive, one resolver**: `descheduleAt st tid placed` removes at a
+  pre-resolved placement and `descheduleAtPlacement st tid` *is*
+  `descheduleAt st tid (placedCoreOf? st tid)`; a transition that must declare
+  its footprint before it runs captures `placedCoreOf?` on the pre-state and
+  removes through `descheduleAt` (the suspend), one that acts after other steps
+  resolves at the state it acts on through `descheduleAtPlacement` (the reply
+  path, the cancellation composite).  Tier 3 refuses `determineTargetCore` and a
+  bare `removeRunnableOnCore` inside each of the three declarations.  (2) **The
+  poke reads the same placement** (`descheduleSgi?`): the placed core, when the
+  thread is current there and it is not the executing core — and no object.
+  The wake's ghost-guard is not mirrored, because a removal takes a placed thread
+  off its core whether or not a TCB backs it, so a guard on the TCB would clear a
+  slot and poke nobody.  (3) **The composite is `descheduleThread` on the
+  post-wake state by `rfl`**, and the footprint is declared on the pre-state;
+  `cancelIpcBlockingOnCore_placedCoreOf?_cases` is the relation (the post-wake
+  placement is the pre-state's, or the pre-state placed the victim nowhere and
+  it is the declared wake core) and
+  `cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule` is its payoff.  (4)
+  **The scheduler footprints take the placement**: `descheduleThreadLockSet
+  (placed : Option CoreId)`, `cancelIpcBlockingOnCoreSchedLockSet (placed
+  wakeCore : Option CoreId)`, and `suspendThreadOnCoreSchedLockSet (home
+  executingCore ownerHome outerHome : CoreId) (placed : Option CoreId)`, whose
+  run-queue segment is a *pair* over the placed and executing cores — the home
+  stays a replenish member, since the `.bound` arm's purge is keyed on it, and
+  the running core needs no member of its own.  (5) **A theorem about a
+  deschedule is stated at the placement, never at the home**:
+  `descheduleThread_fully_descheduled` takes single placement (which the
+  scheduler maintains by construction) where it took the home-placement
+  discipline (false of exactly the thread the defect is about), and
+  `suspendThreadOnCore_sgi_remote_reschedule` concludes `runningCoreOf? = some c`
+  because a victim current nowhere now falls back to the executing core, where
+  no SGI can arise.  The retired reading survives in one place,
+  `tests/SmpCancellationSuite.lean` §3.24's `retiredHomeAndRunningDeschedule`,
+  computed beside the live one on the queued-off-home shape.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at

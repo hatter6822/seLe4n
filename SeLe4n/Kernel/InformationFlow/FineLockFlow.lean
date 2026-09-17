@@ -2469,8 +2469,8 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry (ctx : Labe
 -- takes locks in two domains this type cannot name:
 --
 -- * the **scheduler domain** — `suspendThreadOnCoreSchedLockSet` over
---   `SchedLockId` (run queues of the victim's home core, the executing core and
---   the core actually running it, plus replenish queues), and
+--   `SchedLockId` (run queues of the core the victim is placed on and of the
+--   executing core, plus replenish queues), and
 -- * the **dynamic PIP chain** — SM3.C.11's contract requires each chain member's
 --   TCB write lock *and* its home-core run-queue write lock, discovered as the
 --   walk proceeds rather than resolvable from the pre-state at all.

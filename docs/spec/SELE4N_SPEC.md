@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.78` (`lakefile.toml`) |
+| **Package version** | `0.35.79` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 385,487 across 331 Lean files |
-| **Test LoC** | 78,725 across 70 Lean test suites |
-| **Proved declarations** | 12,853 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 385,802 across 331 Lean files |
+| **Test LoC** | 78,841 across 70 Lean test suites |
+| **Proved declarations** | 12,865 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4107,7 +4107,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **178** statements in the family (the
+bound on a post-state across all **179** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to

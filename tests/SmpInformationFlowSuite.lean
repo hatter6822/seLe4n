@@ -522,7 +522,9 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @cancelBoundDonationOnCore_confinedToCores
 #check @migrateSchedContextReplenishment_confinedToCores
 #check @cancelDonatedDonationOnCore_confinedToCores
-#check @suspendDequeues_confinedToCores
+-- WS-RR RR8.6: the suspend's one dequeue is the placement removal.
+#check @descheduleAt_confinedToCores
+#check @descheduleAtPlacement_confinedToCores
 #check @suspendInactiveStore_confinedToCores
 #check @suspendDonationArms_confinedToCores
 #check @suspendThreadOnCoreWriteSet
@@ -4368,9 +4370,16 @@ transition, run for effect. -/
 private def remoteWakePost : SystemState :=
   (SeLe4n.Kernel.wakeThread crossCoreState remoteHomedThread c0).1
 
-/-- The deschedule dual, on the same remote-homed thread. -/
+/-- The remote-homed thread queued on its home core 2 — the deschedule dual reads
+**placement** (WS-RR RR8.6), and a thread the state places nowhere is
+descheduled from nowhere, so the wake fixture, which holds the thread on no
+scheduler slot, would make the dual the identity and its confinement vacuous. -/
+private def crossCorePlacedState : SystemState :=
+  SeLe4n.Kernel.enqueueRunnableOnCore crossCoreState c2 remoteHomedThread
+
+/-- The deschedule dual, on the same remote-homed thread, from where it sits. -/
 private def remoteDeschedulePost : SystemState :=
-  (SeLe4n.Kernel.descheduleThread crossCoreState remoteHomedThread c0).1
+  (SeLe4n.Kernel.descheduleThread crossCorePlacedState remoteHomedThread c0).1
 
 -- A state where a call really **rendezvouses**: an endpoint with a receiver
 -- waiting, and that receiver homed on core 2.  Without this the endpoint-call
@@ -4470,8 +4479,12 @@ private def runCrossCoreWriteSetChecks : IO Unit := do
     (confinedCheck crossCoreState remoteWakePost c2)
   assertBool "NEGATIVE: the wake is NOT confined to the executing core 0"
     (!confinedCheck crossCoreState remoteWakePost c0)
+  assertBool "setup: the deschedule fixture places the thread on core 2"
+    (decide (SeLe4n.Kernel.placedCoreOf? crossCorePlacedState remoteHomedThread = some c2))
   assertBool "the deschedule dual is likewise confined to core 2"
-    (confinedCheck crossCoreState remoteDeschedulePost c2)
+    (confinedCheck crossCorePlacedState remoteDeschedulePost c2)
+  assertBool "NEGATIVE: the deschedule dual is NOT confined to the executing core 0"
+    (!confinedCheck crossCorePlacedState remoteDeschedulePost c0)
   assertBool "the notification write set is empty when nobody waits"
     (decide (SeLe4n.Kernel.notificationSignalWriteSet crossCoreState highNotification = []))
   assertBool "an endpoint call with no waiting receiver writes only the caller's core"
@@ -8498,7 +8511,7 @@ every core {match lowSignalPost with
   , s!"[smp-information-flow] remote wake of a visible thread: home core \
 {(SeLe4n.Kernel.determineTargetCore crossCoreState remoteHomedThread).val}, \
 confined there {confinedCheck crossCoreState remoteWakePost c2}, \
-deschedule dual confined {confinedCheck crossCoreState remoteDeschedulePost c2}"
+deschedule dual confined {confinedCheck crossCorePlacedState remoteDeschedulePost c2}"
     -- Two cores in one write set — the case no single-core confinement
     -- statement can express.
   , s!"[smp-information-flow] rendezvous call write set: \
@@ -8588,7 +8601,7 @@ private def runPhaseSurfaceChecks : IO Unit := do
   -- The cross-core direction, on the same fixture.
   assertBool "a remote wake writes its target's home core and no other"
     (confinedCheck crossCoreState remoteWakePost c2 &&
-     confinedCheck crossCoreState remoteDeschedulePost c2)
+     confinedCheck crossCorePlacedState remoteDeschedulePost c2)
   assertBool "NEGATIVE: the remote wake is not confined to the EXECUTING core"
     (!confinedCheck crossCoreState remoteWakePost c0)
   -- The enforcement surface the phase sizes, read through the same expressions

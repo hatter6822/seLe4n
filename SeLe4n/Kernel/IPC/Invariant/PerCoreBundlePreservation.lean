@@ -1513,7 +1513,7 @@ theorem descheduleAtPlacement_passiveServerIdleFrame
     (hRemoved : ∀ tcb, st.objects[removed.toObjId]? = some (.tcb tcb) →
       tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
     passiveServerIdleFrame st (descheduleAtPlacement st removed) := by
-  unfold descheduleAtPlacement
+  unfold descheduleAtPlacement descheduleAt
   split
   · exact removeRunnableOnCore_passiveServerIdleFrame st removed _ hRemoved
   · exact ⟨fun tid tcb' h1 h2 h3 h4 h5 => ⟨tcb', h1, h2, h3, h4, rfl⟩⟩

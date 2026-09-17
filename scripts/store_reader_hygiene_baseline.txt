@@ -22,7 +22,7 @@ store_write_spec         = 298 (diagnostic)
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 2465
+gettcb_adoption          = 2442
 getschedctx_adoption     = 451
 getendpoint_adoption     = 195
 getnotification_adoption = 87
@@ -2182,7 +2182,7 @@ STORE_READ_CODE=0
 STORE_READ_SPEC=4714
 STORE_WRITE_CODE=0
 STORE_WRITE_SPEC=298
-GETTCB_ADOPTION=2465
+GETTCB_ADOPTION=2442
 GETSCHEDCTX_ADOPTION=451
 GETENDPOINT_ADOPTION=195
 GETNOTIFICATION_ADOPTION=87

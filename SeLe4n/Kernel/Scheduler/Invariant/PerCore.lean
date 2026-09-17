@@ -1906,11 +1906,12 @@ scheduling decisions, and every dispatch draws from the core-local run queue
 under the single-placement guard), but until this audit it was implicit —
 "(pathologically) current on two cores" was handled defensively in some
 proofs and assumed away in others.  The SM6.E running-core resolutions
-(`runningCoreOf?`, `crossCoreSgiBody`'s pre-current scan) take the FIRST
-matching core; under this invariant that scan is complete (there is no
-second core to miss).  Full-surface preservation is tracked WS-SM debt;
+(`runningCoreOf?`, `crossCoreSgiBody`'s pre-current scan, and since WS-RR
+RR8.6 `placedCoreOf?`'s placement scan) take the FIRST matching core; under
+this invariant that scan is complete (there is no second core to miss).
+Full-surface preservation is tracked WS-SM debt;
 `removeRunnableOnCore`/`descheduleThread` preservation is proven with the
-SM6.E surface (`IPC/CrossCore/Cancellation.lean` §15). -/
+SM6.E surface (`IPC/CrossCore/Cancellation.lean` §1). -/
 def currentThreadUniqueAcrossCores (st : SystemState) : Prop :=
   ∀ (c c' : Concurrency.CoreId) (t : SeLe4n.ThreadId),
     st.scheduler.currentOnCore c = some t →

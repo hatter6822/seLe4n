@@ -1459,7 +1459,7 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
         -- Both arms run `descheduleAtPlacement` now, so this branch splits on
         -- the resolver exactly as the Call arm below does (round 11).
         have hDesched : ipcInvariantFull (descheduleAtPlacement st recordedServer) := by
-          unfold descheduleAtPlacement
+          unfold descheduleAtPlacement descheduleAt
           split
           · rename_i c _
             refine ipcInvariantFull_of_descheduleFrame _ _ hInv
@@ -1490,7 +1490,7 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
           rw [hObjEq]; exact hObjInv
         have hSInv : ipcInvariantFull
             (replyRecvServerDeschedule tid recordedServer st) := by
-          unfold replyRecvServerDeschedule descheduleAtPlacement
+          unfold replyRecvServerDeschedule descheduleAtPlacement descheduleAt
           split
           · exact hInv
           · split

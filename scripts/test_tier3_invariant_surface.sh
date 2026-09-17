@@ -1450,9 +1450,10 @@ run_check "INVARIANT" rg -n '^theorem wakeAbortedDonationHolder_holder_runnable'
 # Relation, not presence: the composite must *contain* the wake, between the
 # teardown and the victim's removal.  Keeping the wake defined while the
 # transition stops calling it is exactly the mutation a presence check misses,
-# and it restores the defect verbatim.  The removal wrapping the wake is also
-# what makes the degenerate `holder = victim` resolution fail safe.
-run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCore[^\n]*(\n([ \t][^\n]*)?)*removeRunnableOnCore\n    \(wakeAbortedDonationHolder st \(cancelIpcBlockingMigrated victim tcb st\) victim tcb\)\n    victim home" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# and it restores the defect verbatim.  The removal wrapping the wake — the
+# placement deschedule, resolving AFTER the wake (WS-RR RR8.6) — is also what
+# undoes the degenerate `holder = victim` insert rather than leaving it standing.
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCore[^\n]*(\n([ \t][^\n]*)?)*descheduleThread\n    \(wakeAbortedDonationHolder st \(cancelIpcBlockingMigrated victim tcb st\) victim tcb\)\n    victim executingCore" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # ...and the wake must be gated on the holder being `.ready` in the POST state,
 # which is what distinguishes "the abort ran" from "the abort was inert" and
 # from "the whole reclaim was discarded".  A pre-state guard fires on the third.
@@ -1469,9 +1470,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def cancelAbortedHolderWake\?[^\n]*(\n
 # dispatched thread — which is why both predicates are asked.
 run_check "INVARIANT" bash -lc 'rg -U -n "def enqueueAbortedHolderOnCore[^\n]*(\n([ \t][^\n]*)?)*if runnableOnSomeCore st tid \|\| runningOnSomeCore st tid then st" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The declared scheduler footprint names the woken core's run-queue write lock.
-# A footprint naming only the victim's home would be FALSE of the transition,
-# which this project rates worse than a wide one.
-run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCoreSchedLockSet \(home : CoreId\) \(wakeCore : Option CoreId\)[^\n]*(\n([ \t][^\n]*)?)*descheduleThreadLockSet home \+\+ \[\(SchedLockId\.runQueue ⟨c⟩, \.write\)\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# A footprint naming only the victim's placed core would be FALSE of the
+# transition, which this project rates worse than a wide one.
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCoreSchedLockSet \(placed wakeCore : Option CoreId\)[^\n]*(\n([ \t][^\n]*)?)*descheduleThreadLockSet placed \+\+ \[\(SchedLockId\.runQueue ⟨c⟩, \.write\)\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_contains_wake_runQueue_write' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # The wake is a SCHEDULER write and nothing else — that is what keeps every
 # object-level and information-flow result about the composite true verbatim, so
@@ -2665,7 +2666,7 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_arm_below_the_cut'
 # OD5.3: the suspend pipeline pops TWICE at depth >= 2, so its scheduler-domain
 # replenish segment is a triple.  Relation, not presence: the mutation keeps
 # every core argument and collapses the segment back to a pair.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCoreSchedLockSet\n[ \t]*\(home executingCore ownerHome outerHome runningCore : CoreId\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCoreSchedLockSet\n[ \t]*\(home executingCore ownerHome outerHome : CoreId\) \(placed : Option CoreId\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" bash -lc 'rg -n "\+\+ sortedSchedCoreTriple \(fun c => SchedLockId\.replenishQueue ⟨c⟩\) home ownerHome outerHome\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -n "\+\+ sortedSchedCorePair \(fun c => SchedLockId\.replenishQueue ⟨c⟩\) home ownerHome\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The two theorems that make the third core a consequence rather than a guess:
@@ -9313,7 +9314,7 @@ run_check "INVARIANT" rg -n '^theorem readReturnValue_zero_when_not_tcb' SeLe4n/
 run_check "INVARIANT" rg -n 'fn lean_syscall_dispatch_cross_core' rust/sele4n-hal/src/svc_dispatch.rs
 # WS-SM SM6.E: the suspend atomicity bracket is flipped to the cross-core
 # entry `suspend_thread_cross_core` (`@[export]` in `SyscallDispatchEntry`,
-# backed by the verified per-core `suspendThreadOnCore`: home-core deschedule
+# backed by the verified per-core `suspendThreadOnCore`: placement deschedule
 # + remote `.reschedule` SGI after the commit).  WS-RR RR5.17 retired the
 # boot-pinned `suspend_thread_inner` export, so this is the ONLY C-callable
 # suspend entry a linked image carries.
@@ -14675,5 +14676,57 @@ run_prose_check "INVARIANT" rg -n 'finaliseCap' \
 run_prose_negative_check "INVARIANT" rg -n 'upstream permanently strands' \
   CLAUDE.md AGENTS.md SeLe4n/Kernel/Lifecycle/Suspend.lean \
   docs/REGISTERED_DEBT.md docs/planning/DONATION_POP_TRIGGER_PLAN.md
+
+# ---------------------------------------------------------------------------
+# v0.35.79 -- WS-RR RR8.6: the deschedule reads PLACEMENT, not the home
+# ---------------------------------------------------------------------------
+# `descheduleThread`, `cancelIpcBlockingOnCore` and `suspendThreadOnCore`'s G4
+# removed a state-resolved victim at `determineTargetCore` -- the thread's home,
+# which is where a wake places it and not where a removal finds it.  An unpinned
+# thread preempted on a secondary core is re-enqueued THERE, so a suspend at its
+# home removed nothing and left it runnable while `.Inactive`.  All three read
+# `placedCoreOf?` now, through the primitive the reply path adopted at PR #895
+# review round 11.
+run_check "INVARIANT" rg -n '^def descheduleAt ' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleAtPlacement[^\n]*(\n([ \t][^\n]*)?)*descheduleAt st tid \(placedCoreOf\? st tid\)" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
+run_check "INVARIANT" rg -n '^def descheduleSgi\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# Relation, not presence: the primitive's state IS the placement removal and its
+# poke IS the placement's, both read off one resolver.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleThread [^\n]*(\n([ \t][^\n]*)?)*\(descheduleAtPlacement st tid, descheduleSgi\? st tid executingCore\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleSgi\?[^\n]*(\n([ \t][^\n]*)?)*match placedCoreOf\? st tid with" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The home resolver must not come back into the deschedule, the poke or the
+# composite, and the poke reads no object -- bounded to each declaration, so the
+# legitimate reads elsewhere in the file (the reclaim's holder wake, the
+# `.bound` arm's replenish purge core) stay out of the negatives' reach.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleThread [^\n]*(\n([ \t][^\n]*)?)*determineTargetCore" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleSgi\?[^\n]*(\n([ \t][^\n]*)?)*(determineTargetCore|getTcb\?)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingOnCore [^\n]*(\n([ \t][^\n]*)?)*(determineTargetCore|removeRunnableOnCore)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The live suspend: the placement is captured on the pre-state -- where the
+# footprint declares it -- and the G4 removal is `descheduleAt` at that capture;
+# the home removal and the running-core removal are gone from the body.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCore [^\n]*(\n([ \t][^\n]*)?)*let placed := placedCoreOf\? st tid[^\n]*(\n([ \t][^\n]*)?)*let st := descheduleAt st tid placed" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCore [^\n]*(\n([ \t][^\n]*)?)*removeRunnableOnCore st tid" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The footprints resolve the same pre-state expression the transitions capture,
+# and the composite's footprint covers the core the post-wake removal writes.
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_placedCoreOf\?_cases' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_placedCoreOf\?_of_some' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem descheduleThread_fully_descheduled' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem descheduleThread_descheduled_at_placement' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem placedCoreOf\?_eq_some_of_unique' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+# The retired readings must not return anywhere in the tree.
+run_negative_check "INVARIANT" rg -n 'descheduleThread_descheduled_on_home|cancelIpcBlockingOnCore_bootHome_state_eq|cancelIpcBlockingOnCore_eq_descheduleThread_closed|cancelIpcBlocking_getTcb\?_isSome_eq|removeRunnableOnCoreOpt_ipcInvariantStage|suspendDequeues_confinedToCores|descheduleThread_no_sgi_if_ghost|cancelIpcBlockingOnCore_no_sgi_if_ghost' SeLe4n tests
+# The witness: an unpinned victim QUEUED on a secondary core, both readings
+# computed side by side -- the retired one in the suite and nowhere else -- and
+# the live `.tcbSuspend` operation run on it.
+run_check "INVARIANT" rg -n '^private def stUnpinnedQueuedRemote' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^private def retiredHomeAndRunningDeschedule' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def runPlacementDescheduleChecks[^\n]*(\n([ \t][^\n]*)?)*the RETIRED home-and-running reading leaves the victim queued on core 2" tests/SmpCancellationSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def runPlacementDescheduleChecks[^\n]*(\n([ \t][^\n]*)?)*suspendThreadOnCore removes the victim from core 2" tests/SmpCancellationSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def runSmpCancellationChecks[^\n]*(\n([ \t][^\n]*)?)*runPlacementDescheduleChecks" tests/SmpCancellationSuite.lean'
+# ...and the information-flow suite's deschedule dual is confined to the PLACED
+# core and refused at the executing one: a fixture that places the thread
+# nowhere made the old confinement assertion vacuous.
+run_check "INVARIANT" rg -n 'NEGATIVE: the deschedule dual is NOT confined to the executing core 0' tests/SmpInformationFlowSuite.lean
 
 finalize_report

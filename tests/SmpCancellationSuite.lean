@@ -52,15 +52,19 @@ open SeLe4n.Testing
 -- §1  Surface anchors (Tier-3): every SM6.E public symbol resolves
 -- ============================================================================
 
--- SM6.E.5 the per-core deschedule primitive (wakeThread dual) + its surface:
+-- SM6.E.5 the per-core deschedule primitive (wakeThread dual) + its surface,
+-- keyed on placement since WS-RR RR8.6:
+#check @descheduleAt
+#check @descheduleSgi?
 #check @descheduleThread
 #check @descheduleThread_state_eq
+#check @descheduleThread_sgi_eq
 #check @descheduleThread_objects_eq
 #check @descheduleThread_emits_sgi_if_remote_current
 #check @descheduleThread_no_sgi_if_local
 #check @descheduleThread_no_sgi_if_not_current
-#check @descheduleThread_no_sgi_if_ghost
-#check @descheduleThread_descheduled_on_home
+#check @descheduleThread_unplaced
+#check @descheduleThread_descheduled_at_placement
 #check @descheduleThread_independent_of_other_core
 
 -- SM6.E.1/.5 cross-core cancellation transitions + reductions:
@@ -79,7 +83,6 @@ open SeLe4n.Testing
 #check @cancelIpcBlockingOnCore_emits_sgi_if_remote_current
 #check @cancelIpcBlockingOnCore_no_sgi_if_local
 #check @cancelIpcBlockingOnCore_no_sgi_if_not_current
-#check @cancelIpcBlockingOnCore_no_sgi_if_ghost
 
 -- SM6.E.1/.3 lock-set footprints + pre-resolution + state-resolved forms:
 #check @cancelBlockedEndpoint?
@@ -180,8 +183,17 @@ open SeLe4n.Testing
 #check @cancelIpcBlocking_tcb_lookup
 #check @cancelIpcBlocking_getTcb?_none
 #check @cancelIpcBlocking_determineTargetCore_eq
-#check @cancelIpcBlocking_getTcb?_isSome_eq
-#check @cancelIpcBlockingOnCore_eq_descheduleThread_closed
+-- WS-RR RR8.6: the placement the composite deschedules at, read off the
+-- pre-state — the relation between a footprint declared before the transition
+-- runs and a removal resolved after the reclaim's wake.
+#check @placedCoreOf?_congr_of_contains_current_eq
+#check @placedCoreOf?_eq_some_of_unique
+#check @descheduleAtPlacementCores_eq_toList
+#check @cancelIpcBlockingMigrated_placedCoreOf?
+#check @cancelIpcBlockingOnCore_placedCoreOf?_cases
+#check @cancelIpcBlockingOnCore_placedCoreOf?_of_some
+#check @cancelIpcBlockingOnCore_runningOnSomeCore
+#check @cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule
 #check @notificationQueueWellFormed_filter_correct
 #check @cancelIpcBlocking_preserves_ipcInvariant
 #check @cancelIpcBlockingOnCore_preserves_ipcInvariant
@@ -194,7 +206,7 @@ open SeLe4n.Testing
 #check @cancellationObserver_acquireInsensitiveOn
 #check @cancellationObserver_unwindInsensitiveOn
 #check @cancelIpcBlockingOnCore_observer_atomic
-#check @cancelIpcBlockingOnCore_bootHome_state_eq
+#check @cancelIpcBlockingOnCore_bootPlaced_state_eq
 #check @descheduleThread_fully_descheduled
 #check @cancelBoundDonationOnCore_replenishments_purged
 #check @cancelDonationOnCore_bootHome_ok
@@ -470,7 +482,7 @@ open SeLe4n.Testing
 
 section ElaborationExamples
 
-variable (victim : SeLe4n.ThreadId) (tcb tcb0 : TCB) (ec : CoreId)
+variable (victim : SeLe4n.ThreadId) (tcb : TCB) (ec : CoreId)
 variable (st s : SystemState)
 variable (blEp blN : Option SeLe4n.ObjId) (r? : Option SeLe4n.ReplyId)
 variable (sc? : Option SeLe4n.SchedContextId) (ot? : Option SeLe4n.ThreadId)
@@ -490,55 +502,54 @@ variable (sb? : Option SeLe4n.ReplyId)
 -- WS-OD (`v0.35.4`): the donation cancellation's pop members.
 variable (dh1? dh2? : Option SeLe4n.ReplyId) (doc? : Option SeLe4n.ThreadId)
 
+-- WS-RR RR8.6: the flagship is keyed on the core the pre-state PLACES the
+-- victim on, not on its home; its three hypotheses are the placement, the
+-- victim being current there, and that core being remote.
 /-- SM6.E.5: the flagship's remote-poke conjunct applies. -/
-example (h1 : st.getTcb? victim = some tcb0)
-    (h2 : st.scheduler.currentOnCore (determineTargetCore st victim) = some victim)
-    (h3 : determineTargetCore st victim ≠ ec) :
-    (cancelIpcBlockingOnCore victim tcb ec st).2
-      = some (determineTargetCore st victim, SgiKind.reschedule) :=
-  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).1
+example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
+    (h2 : st.scheduler.currentOnCore c = some victim)
+    (h3 : c ≠ ec) :
+    (cancelIpcBlockingOnCore victim tcb ec st).2 = some (c, SgiKind.reschedule) :=
+  (cancellation_cross_core_correct victim tcb ec c st h1 h2 h3).1
 
-/-- SM6.E.5: the flagship's home-core deschedule conjunct applies. -/
-example (h1 : st.getTcb? victim = some tcb0)
-    (h2 : st.scheduler.currentOnCore (determineTargetCore st victim) = some victim)
-    (h3 : determineTargetCore st victim ≠ ec) :
-    victim ∉ (cancelIpcBlockingOnCore victim tcb ec st).1.scheduler.runQueueOnCore
-        (determineTargetCore st victim) :=
-  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).2.1
+/-- SM6.E.5: the flagship's placed-core deschedule conjunct applies. -/
+example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
+    (h2 : st.scheduler.currentOnCore c = some victim)
+    (h3 : c ≠ ec) :
+    victim ∉ (cancelIpcBlockingOnCore victim tcb ec st).1.scheduler.runQueueOnCore c :=
+  (cancellation_cross_core_correct victim tcb ec c st h1 h2 h3).2.1
 
 /-- SM6.E.5: the flagship's object-level fidelity conjunct applies. -/
-example (h1 : st.getTcb? victim = some tcb0)
-    (h2 : st.scheduler.currentOnCore (determineTargetCore st victim) = some victim)
-    (h3 : determineTargetCore st victim ≠ ec) :
+example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
+    (h2 : st.scheduler.currentOnCore c = some victim)
+    (h3 : c ≠ ec) :
     (cancelIpcBlockingOnCore victim tcb ec st).1.objects
       = (cancelIpcBlocking st victim tcb).objects :=
   -- WS-OD OD1.7: one projection deeper — the per-core locality conjunct split
   -- into a run-queue half (conditioned on the holder wake's core) and an
   -- unconditional current-slot half.
-  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).2.2.2.2.2
+  (cancellation_cross_core_correct victim tcb ec c st h1 h2 h3).2.2.2.2.2
 
 /-- WS-OD OD1.7: the flagship's **current-slot** locality conjunct applies, and
 is still unconditional — the reclaim's holder wake inserts into a run queue and
 moves nothing onto a core. -/
-example (h1 : st.getTcb? victim = some tcb0)
-    (h2 : st.scheduler.currentOnCore (determineTargetCore st victim) = some victim)
-    (h3 : determineTargetCore st victim ≠ ec) (c' : CoreId)
-    (hc' : c' ≠ determineTargetCore st victim) :
+example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
+    (h2 : st.scheduler.currentOnCore c = some victim)
+    (h3 : c ≠ ec) (c' : CoreId) (hc' : c' ≠ c) :
     (cancelIpcBlockingOnCore victim tcb ec st).1.scheduler.currentOnCore c'
       = st.scheduler.currentOnCore c' :=
-  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).2.2.2.2.1 c' hc'
+  (cancellation_cross_core_correct victim tcb ec c st h1 h2 h3).2.2.2.2.1 c' hc'
 
 /-- WS-OD OD1.7: the flagship's **run-queue** locality conjunct applies, on a
 core the holder wake does not target. -/
-example (h1 : st.getTcb? victim = some tcb0)
-    (h2 : st.scheduler.currentOnCore (determineTargetCore st victim) = some victim)
-    (h3 : determineTargetCore st victim ≠ ec) (c' : CoreId)
-    (hc' : c' ≠ determineTargetCore st victim)
+example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
+    (h2 : st.scheduler.currentOnCore c = some victim)
+    (h3 : c ≠ ec) (c' : CoreId) (hc' : c' ≠ c)
     (hWake : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
         victim tcb ≠ some c') :
     (cancelIpcBlockingOnCore victim tcb ec st).1.scheduler.runQueueOnCore c'
       = st.scheduler.runQueueOnCore c' :=
-  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).2.2.2.1 c' hc' hWake
+  (cancellation_cross_core_correct victim tcb ec c st h1 h2 h3).2.2.2.1 c' hc' hWake
 
 -- WS-OD OD1.7: the holder-wake surface — the resolver, its core, the
 -- scheduler-only placement, its frames, and the payoff that says a holder the
@@ -564,7 +575,7 @@ example (h1 : st.getTcb? victim = some tcb0)
 #check @cancelIpcBlockingOnCoreSchedLockSet_dedup
 #check @cancelIpcBlockingOnCoreSchedLockSet_write_only
 #check @cancelIpcBlockingOnCoreSchedLockSet_contains_wake_runQueue_write
-#check @cancelIpcBlockingOnCoreSchedLockSet_contains_home_runQueue_write
+#check @cancelIpcBlockingOnCoreSchedLockSet_contains_placed_runQueue_write
 
 /-- WS-OD OD1.7 payoff: a holder the reclaim's abort unblocked is queued or
 executing afterwards — the complete statement of "not stranded", and the one the
@@ -929,13 +940,13 @@ private def runRemoteRunningCancelChecks : IO Unit := do
   let tcb := victimTcb stRunningRemote
   assertBool "setup: victim is current on core 1"
     (decide (stRunningRemote.scheduler.currentOnCore core1 = some victimTid))
-  assertBool "setup: the victim's home core resolves to core 1"
-    (decide (determineTargetCore stRunningRemote victimTid = core1))
+  assertBool "setup: the state places the victim on core 1 (it is current there)"
+    (decide (placedCoreOf? stRunningRemote victimTid = some core1))
   let (st', sgi) := cancelIpcBlockingOnCore victimTid tcb bootCoreId stRunningRemote
   -- (1) remote poke
   assertBool "cancelling a remotely-running victim fires a reschedule SGI to core 1"
     (decide (sgi = some (core1, SgiKind.reschedule)))
-  -- (2) full home-core deschedule
+  -- (2) full deschedule at the placement
   assertBool "victim is cleared from core 1's current slot"
     (decide (st'.scheduler.currentOnCore core1 ≠ some victimTid))
   assertBool "victim is not in core 1's run queue"
@@ -1568,10 +1579,10 @@ private def runDisinheritanceSchedulingChecks : IO Unit := do
       -- the victim's home-core run-queue lock.
       assertBool "suspend sched footprint covers the executing core's run queue"
         (decide ((SchedLockId.runQueue ⟨bootCoreId⟩, Concurrency.AccessMode.write)
-          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 core1))
-      assertBool "suspend sched footprint still covers the victim home run queue"
+          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 (some core1)))
+      assertBool "suspend sched footprint still covers the victim's placed run queue"
         (decide ((SchedLockId.runQueue ⟨core1⟩, Concurrency.AccessMode.write)
-          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 core1))
+          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 (some core1)))
 
 -- ----------------------------------------------------------------------------
 -- Scenario O (PR #831 review 4, P1): an UNBOUND victim (home = boot) actually
@@ -1611,13 +1622,104 @@ private def runUnboundRunningSuspendChecks : IO Unit := do
           assertBool "diff seam derives the running-core poke (re-keyed descheduled rule)"
             ((PriorityInheritance.computeCrossCoreSgis stUnboundRunningRemote st'
               bootCoreId).any (fun p => p.1 == core2 && p.2 == SgiKind.reschedule))
-          -- Audit closure: the G4b running-core write is a DECLARED footprint
-          -- member — home = boot, exec = boot, running = core 2 (third-core
-          -- shape), and the running core's run-queue write lock is listed.
-          assertBool "suspend sched footprint covers the RUNNING core's run queue"
+          -- Audit closure, re-keyed at WS-RR RR8.6: the deschedule writes the core
+          -- the state PLACES the victim on — core 2, where it is current — and
+          -- that core's run-queue write lock is a DECLARED footprint member,
+          -- resolved from the same pre-state expression the transition reads.
+          assertBool "suspend sched footprint covers the PLACED core's run queue (core 2)"
             (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
-              ∈ suspendThreadOnCoreSchedLockSet bootCoreId bootCoreId bootCoreId bootCoreId core2))
+              ∈ suspendThreadOnCoreSchedLockSet bootCoreId bootCoreId bootCoreId bootCoreId
+                  (placedCoreOf? stUnboundRunningRemote victimTid)))
       | .error _ => assertBool "unbound-running suspend succeeds" false
+
+-- ----------------------------------------------------------------------------
+-- Scenario O' (WS-RR RR8.6): an UNPINNED victim (home = boot) QUEUED on a
+-- secondary core and current nowhere — the placement the home-keyed removal
+-- and the running-core removal both miss.  Reachable with ordinary syscalls:
+-- pin to core 2, run there, unpin (`none` admits every core, so the
+-- running-thread refusal does not fire), be preempted
+-- (`preemptCurrentOnCore` re-enqueues on the core that ran it).
+-- ----------------------------------------------------------------------------
+
+private def stUnpinnedQueuedRemote : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 none with
+          threadState := .Ready })
+      |>.build)
+  enqueueRunnableOnCore base core2 victimTid
+
+/-- The RETIRED reading, computed here and nowhere else: the removal pair
+`suspendThreadOnCore`'s G4 + G4b ran until WS-RR RR8.6 — at the victim's home
+(`determineTargetCore`) and, when it differs, at the core running it
+(`runningCoreOf?`).  `descheduleThread`'s own pre-RR8.6 state was the first
+half alone.  Kept beside the live reading so the assertions below are known to
+discriminate rather than merely to pass. -/
+private def retiredHomeAndRunningDeschedule (st : SystemState)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  let home := determineTargetCore st tid
+  let st := removeRunnableOnCore st tid home
+  match runningCoreOf? st tid with
+  | some c => if c == home then st else removeRunnableOnCore st tid c
+  | none => st
+
+private def runPlacementDescheduleChecks : IO Unit := do
+  IO.println "--- §3.24 WS-RR RR8.6 the deschedule reads placement, not the home ---"
+  assertBool "setup: the victim is unpinned, so its home is the boot core"
+    (decide (determineTargetCore stUnpinnedQueuedRemote victimTid = bootCoreId))
+  assertBool "setup: ...and it is QUEUED on core 2, current nowhere"
+    (decide (victimTid ∈ stUnpinnedQueuedRemote.scheduler.runQueueOnCore core2)
+      && decide (runningCoreOf? stUnpinnedQueuedRemote victimTid = none))
+  assertBool "the placement resolver finds core 2"
+    (decide (placedCoreOf? stUnpinnedQueuedRemote victimTid = some core2))
+  -- The retired reading, side by side: a removal at the home (boot) is a no-op
+  -- and there is no running core, so the victim stays queued on core 2.
+  let retired := retiredHomeAndRunningDeschedule stUnpinnedQueuedRemote victimTid
+  assertBool "the RETIRED home-and-running reading leaves the victim queued on core 2"
+    (decide (victimTid ∈ retired.scheduler.runQueueOnCore core2))
+  -- The live deschedule primitive.
+  let (st', sgi) := descheduleThread stUnpinnedQueuedRemote victimTid bootCoreId
+  assertBool "descheduleThread removes the victim from core 2's run queue"
+    (decide (victimTid ∉ st'.scheduler.runQueueOnCore core2))
+  assertBool "...and surfaces no SGI: a queued victim needs no poke"
+    (decide (sgi = none))
+  assertBool "...and the victim is placed nowhere afterwards"
+    (decide (placedCoreOf? st' victimTid = none))
+  -- The `.ready` cancellation composite agrees (its teardown is the identity).
+  let tcb := victimTcb stUnpinnedQueuedRemote
+  let (stC, sgiC) := cancelIpcBlockingOnCore victimTid tcb bootCoreId stUnpinnedQueuedRemote
+  assertBool "cancelIpcBlockingOnCore removes the victim from core 2 too, with no SGI"
+    (decide (victimTid ∉ stC.scheduler.runQueueOnCore core2) && decide (sgiC = none))
+  -- The live `.tcbSuspend` operation: the victim ends `.Inactive` and on no core.
+  match victimTid.toValid? with
+  | none => assertBool "setup: victim ValidThreadId" false
+  | some vtid =>
+      match suspendThreadOnCore stUnpinnedQueuedRemote vtid bootCoreId with
+      | .ok (stS, sgiS) =>
+          assertBool "suspendThreadOnCore removes the victim from core 2's run queue"
+            (decide (victimTid ∉ stS.scheduler.runQueueOnCore core2))
+          assertBool "...the victim is placed on no core afterwards"
+            (decide (placedCoreOf? stS victimTid = none))
+          assertBool "...it is .Inactive"
+            (match stS.getTcb? victimTid with
+             | some t => decide (t.threadState = .Inactive)
+             | none => false)
+          assertBool "...and no SGI is surfaced (no core was executing it)"
+            (decide (sgiS = none))
+      | .error _ => assertBool "unpinned-queued-remote suspend succeeds" false
+  -- The scheduler-domain footprints declare the placed core's run-queue lock,
+  -- resolved from the same pre-state expression the transitions read.
+  assertBool "suspend sched footprint covers core 2's run queue (the placement)"
+    (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
+      ∈ suspendThreadOnCoreSchedLockSet bootCoreId bootCoreId bootCoreId bootCoreId
+          (placedCoreOf? stUnpinnedQueuedRemote victimTid)))
+  assertBool "NEGATIVE: the members the retired keying declared here (home = boot, no running core) omit core 2"
+    (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
+      ∉ suspendThreadOnCoreSchedLockSet bootCoreId bootCoreId bootCoreId bootCoreId none))
+  assertBool "cancellation sched footprint covers core 2's run queue (the placement)"
+    (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
+      ∈ cancelIpcBlockingOnCoreSchedLockSet (placedCoreOf? stUnpinnedQueuedRemote victimTid)
+          none))
 
 -- ----------------------------------------------------------------------------
 -- Scenario P (audit closure): the diff seam's EDF deadline dimension and
@@ -1841,20 +1943,20 @@ private def runDonationDoublePopFootprintChecks : IO Unit := do
   let core3 : CoreId := ⟨3, by decide⟩
   assertBool "the victim's own home replenish lock is declared"
     (decide ((SchedLockId.replenishQueue ⟨core1⟩, Concurrency.AccessMode.write)
-      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 core1))
+      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 (some core1)))
   assertBool "...so is the donation owner's home"
     (decide ((SchedLockId.replenishQueue ⟨core2⟩, Concurrency.AccessMode.write)
-      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 core1))
+      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 (some core1)))
   assertBool "...and so is the OUTER caller's home, which the second pop migrates to"
     (decide ((SchedLockId.replenishQueue ⟨core3⟩, Concurrency.AccessMode.write)
-      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 core1))
+      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 (some core1)))
   assertBool "NEGATIVE: a footprint whose outer home is the owner's declares no third"
     (decide ((SchedLockId.replenishQueue ⟨core3⟩, Concurrency.AccessMode.write)
-      ∉ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core2 core1))
+      ∉ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core2 (some core1)))
   -- The segment is sorted, which is what the scheduler bracket acquires in
   -- (WS-OD OD3's `lockAcquireSequence` correction, one domain over).
   assertBool "the three replenish locks are declared without duplication"
-    (decide (((suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 core1).filter
+    (decide (((suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 (some core1)).filter
       (fun p => p.1 matches SchedLockId.replenishQueue _)).length = 3))
 
 -- ----------------------------------------------------------------------------
@@ -2068,6 +2170,7 @@ def runSmpCancellationChecks : IO Unit := do
   runPipDonationDropChecks
   runDisinheritanceSchedulingChecks
   runUnboundRunningSuspendChecks
+  runPlacementDescheduleChecks
   runDiffSeamEdfChecks
   runUnblockFrameStagingChecks
   runDonationDoublePopFootprintChecks
