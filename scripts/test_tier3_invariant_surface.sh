@@ -915,6 +915,43 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_preserve
 # neither a "not blocked on reply" nor an "off every endpoint boundary" premise.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 run_check "INVARIANT" rg -n '^theorem purgedAndRestored_victim_off_endpoint_boundaries' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+# WS-RR RR8.7, the reply arm -- the third and last of the three, and the only one
+# whose arm is a four-step composition rather than one sweep.
+run_check "INVARIANT" rg -n '^structure abortHolderQueueCoherent' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem spliceThreadReplyFrameOut_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+# Relation, not presence: the keystone must take BOTH directions of the local
+# coherence fact.  Neither entails the other and `ipcInvariantFull` entails
+# neither, so a cut that drops either has weakened the statement rather than
+# tidied it -- which is exactly what a presence check on the theorem name would
+# not see.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hOwed : . rid, tcbV.replyObject = some rid . replyFrameHeadHolderDonation st rid v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hHolder : donatedContextIsOwnerFrameHead st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+# ...and it must state the whole bundle on the live arm, not on the composite it
+# happens to be equal to.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull \(Lifecycle.Suspend.cancelIpcBlocking st v tcbV\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+# The live arm is reached by an equation the compiler checks -- all four steps, in
+# order.  A step inserted, dropped or reordered fails this and then fails to
+# elaborate; the keystone alone would not notice.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_reply_arm_eq[^\n]*(\n([ \t][^\n]*)?)*restoredAndConsumed[^\n]*(\n([ \t][^\n]*)?)*spliceThreadReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV\) tcbV\)[^\n]*(\n([ \t][^\n]*)?)*v tcbV \(some Architecture.cancelledIpcFrame\) := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+# NEGATIVE: the abort's "not blocked on reply" premise is DERIVED inside the two
+# arms that abort -- it is false of a general holder, so a hypothesis of that
+# shape on the abort's own carriage would be unsatisfiable rather than merely
+# redundant.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem abortHolderPendingIpc_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hNotReply :" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+# Relation, not presence: the reclaim resolves its own holder from the victim's
+# reply FRAME, so its coherence obligation must be stated *under that resolution*
+# and not of a holder a caller names.  The gated form is the relation; a bare
+# `abortHolderQueueCoherent st holder` would be the binding-driven reading WS-HP
+# HP5.1 retired, reintroduced one level up as a hypothesis.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem returnDonationToCancelledCaller_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*Lifecycle.Suspend.cancelledCallerDonation\? st v tcbV = some \(scId, holder\) .[^\n]*(\n([ \t][^\n]*)?)*abortHolderQueueCoherent st holder" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+# Stated as the positive above and deliberately NOT as a negative on the ungated
+# spelling: that spelling is *legitimately* present on
+# `abortHolderPendingIpc_preserves_ipcInvariantFull`, whose holder really is its own
+# parameter, so such a negative fires on a clean tree.  Measured, not reasoned --
+# the M0 baseline of this block's mutation harness caught it before it shipped.
 # WS-OD OD3.12 / OD3.13: and the two receive-side arms, through the same
 # resolver -- `.replyRecv`'s receive leg *is* `.receive`'s transition.  This is
 # the arm the ceiling moved for: it was at 13 of 13, so declaring the object its

@@ -1,3 +1,99 @@
+## v0.35.82 — WS-RR RR8.7 (second cut): all three cancellation arms carry the IPC bundle
+
+**The reply arm was the last of `cancelIpcBlocking`'s three without an
+`ipcInvariantFull` result, and it is the only one whose arm is a four-step
+composition rather than one whole-store sweep.**
+`cancelIpcBlocking_replyArm_preserves_ipcInvariantFull` closes it.  The
+blocked-on-endpoint arm landed at `v0.34.95` and the notification arm at
+`v0.34.96`; what is still owed is the *composite* over all five arms lifted to
+`cancelIpcBlockingOnCore` (RR8.10).
+
+**Why it needed a different shape.**  The arm is reclaim, reply-frame splice,
+restore, teardown — and `cancelIpcBlocking_reply_arm_eq` pins it to exactly that by
+`rfl`, so a step inserted, dropped or reordered fails to elaborate rather than
+quietly escaping the keystone.  No two of those steps carry the bundle for the same
+reason.  The reclaim (`returnDonationToCancelledCaller_preserves_ipcInvariantFull`)
+composes the holder abort with `returnDonatedSchedContext`'s carriage at the
+*relaxed donation-owner* bundle, the relaxation point being the victim the pop
+rebinds; the splice is three `.reply` stack-link stores
+(`spliceThreadReplyFrameOut_preserves_ipcInvariantFull`, the fold over a thread's
+own reply object); and the restore and the teardown carry it only **as a pair**,
+which is `v0.35.80`.
+
+**Two stated coherence facts, both needed, neither derivable.**  The keystone takes
+`replyFrameHeadHolderDonation` at the victim's reply object — head → binding, which
+the pop's own carriage is stated over — and `donatedContextIsOwnerFrameHead` —
+binding → head, which the no-donation payoff quantifies over.  Measured rather than
+assumed: a frame head whose context is `.bound` to its holder satisfies the second
+and refutes the first, a binding with no frame satisfies the first vacuously, and
+`ipcInvariantFull` entails neither, since `donationOwnerValid` relates a donation to
+no reply object and `donationChainWellFormed` carries no binding clause at all.
+That the head-driven trigger does not witness the binding is WS-HP HP7's own reason
+for keeping the first stated when it retired the other three.  Reusing the reply
+path's predicate rather than spelling a cancellation-side twin is deliberate: the
+two paths' triggers agree on this question
+(`cancelledCallerDonation?_eq_answeredFrameHeadContext?`), so a second predicate
+would be one question with two answers.
+
+**Two things the arm does not take, and one of them would be unsatisfiable.**  The
+abort's "not blocked on reply" premise is *false* of a general holder — a passive
+server that called onward is waiting on its own reply — so it is derived inside each
+of the two arms that abort, from the branch condition itself; hoisting it above the
+case split would be an unsatisfiable hypothesis rather than a redundant one, which
+is the `v0.35.80` defect in miniature, and a Tier 3 negative refuses that shape.  And
+the reclaim resolves its own holder from the victim's reply frame, so
+`abortHolderQueueCoherent` — the endpoint arm's three queue-coherence clauses, for
+that holder — is stated *under* the resolver rather than of a thread a caller names.
+
+**`sweptThreadOffQueueChains` does double duty.**  It is the restore's
+queue-coherence fact, as on the notification arm, and it is also what rules the
+victim out as a queue neighbour of the abort's holder: link integrity turns "the
+holder's `queuePrev` names the victim" into "the victim's `queueNext` names the
+holder", which the fact refutes.  So the victim's TCB crosses the reclaim with
+**only** its binding rewritten, and that one `tcbBindingRewrite`
+(`returnDonationToCancelledCaller_victim_tcb_rewrite`) supplies the blocking state,
+the reply-object agreement and the queue links that the three later steps each need
+separately — one lemma instead of a frame per field.
+
+**Two things this cut measured rather than planned.**  The timeout-budget discipline
+had to cross the reclaim and nothing carried it, so the chain was added —
+`endpointQueueRemove_timeoutBudgetFrame`,
+`abortPendingIpcOnEndpoint_preserves_allTimeoutBudgetsNone`, and the two arm-split
+composites.  Naming the first **retired an inline second derivation of the same
+fact** in `TimeoutAbortPreservation.lean`, which had reached it through the dual
+removal and the two removals' agreement at the cost of `ipcInvariantFull` and
+`dualRemovalEnabled`; the `upToField` route needs neither and is strictly more
+general, so it is the one answer and the bundle proof reads it.  And the arm passes
+the **pre-cancellation** TCB to a teardown running on a state that holds that TCB
+with its binding rewritten, so `restoredAndConsumed_congr` states what the teardown
+actually reads — the reply object, and nothing else of the record.
+
+**One anchor was written and deleted before it shipped, which is the reason to run
+the clean case.**  A negative on the ungated coherence hypothesis
+(`hCoh : abortHolderQueueCoherent st holder`) fires on a clean tree, because that
+spelling is *legitimately* present on `abortHolderPendingIpc_preserves_ipcInvariantFull`,
+whose holder really is its own parameter.  The M0 baseline of this block's mutation
+harness caught it; the positive on the gated form is the relation check instead, and
+the site records why there is no negative beside it.  A first draft also carried a
+negative forbidding `(holder : SeLe4n.ThreadId)` in the reclaim's statement, which
+matched the ∀-bound `holder` inside a hypothesis — a presence check standing in for
+"not a parameter", a question a regex cannot decide and which the operation's own
+signature already settles.
+
+Eleven Tier 3 anchors, each mutation-tested by a change that **keeps every token and
+breaks the relation**: dropping either coherence direction, stating the keystone on
+the composite instead of the live arm, reordering the arm equation so the splice
+precedes the reclaim, and hypothesising the abort's non-reply premise.  Every
+positive fails on exactly its own mutation and the negative fires on exactly its own.
+
+Gates: `lake build` on the three touched modules and `tests.SmpCancellationSuite`;
+`check_ipc_invariant_dethreading.py` (**184** bundle statements, zero post-state
+conjunct bindings — the four new ones carried the documented figure from 180, which
+the gate holds five prose sites to); Tier 0; Tier 3; `test_rust.sh`;
+`test_aarch64_cross_build.sh`.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR8.7
+
 ## v0.35.81 — register the `Lifecycle/Suspend` namespace partition (a finding, not a fix)
 
 **One subsystem's Operations/Invariant pair carries a per-file namespace and the

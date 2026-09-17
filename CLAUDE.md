@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.81.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.82.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,15 +203,15 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~69332 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23604 lines)
+- `CHANGELOG.md` (~69395 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23632 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7786 lines)
 - `SeLe4n/Kernel/API.lean` (~7592 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7459 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6151 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6199 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6140 lines)
 - `SeLe4n/Platform/Boot.lean` (~5780 lines)
 - `SeLe4n/Model/State.lean` (~5695 lines)
@@ -233,6 +233,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Platform/FFI.lean` (~3595 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3428 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~3405 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `tests/OperationChainSuite.lean` (~3289 lines)
@@ -244,7 +245,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3090 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3087 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~2854 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2837 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2661 lines)
@@ -271,7 +271,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2245 lines)
-- `tests/SmpCancellationSuite.lean` (~2183 lines)
+- `tests/SmpCancellationSuite.lean` (~2234 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
@@ -5698,7 +5698,7 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **180**
+  reports **zero** conjuncts bound on a post-state across all **184**
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements, measured over the comment-free code view with the conjunct set,
   the bundle family and each bundle's own pre-state all *derived* rather than
@@ -6372,20 +6372,27 @@ code may assume:
   three-stage composite (`replyRecvBody_preserves_ipcInvariantFull`,
   `IPC/Invariant/DispatchPayoff.lean`, staged with the payoff tier) and the
   `Architecture.stage*` return-frame writes
-  (`IPC/Invariant/DispatchArmPreservation.lean`, production).  What no
-  transition-level bundle covers yet: `cancelIpcBlocking`'s *reply* arm, and the
-  composite over all five arms lifted to `cancelIpcBlockingOnCore` (registered
-  debt, owner RR8 — the sentence here named the notification arm as uncovered
-  for eighteen cuts after v0.34.96 covered it, two sentences below its own
-  retraction, which is the *status claim a later cut must sweep* shape).  Its
-  **blocked-on-endpoint** arm is covered since v0.34.95 —
-  `cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull`,
-  `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (production) —
-  and its **notification** arm since v0.34.96
+  (`IPC/Invariant/DispatchArmPreservation.lean`, production).  **All three
+  `cancelIpcBlocking` arms are covered since RR8.7 (`v0.35.82`)**, each in its own
+  production module: the **blocked-on-endpoint** arm at v0.34.95
+  (`cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull`,
+  `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean`), the
+  **notification** arm at v0.34.96
   (`cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull`,
-  `…/CancellationNotificationShape.lean`).  Each needed its own engine, because
-  each runs a whole-store fold rather than RR7.22's splice.  Two hypotheses
-  beyond the bundle are common to both: the timeout-budget discipline
+  `…/CancellationNotificationShape.lean`), and the **reply** arm at `v0.35.82`
+  (`cancelIpcBlocking_replyArm_preserves_ipcInvariantFull`,
+  `…/CancellationReplyShape.lean`).  What no transition-level bundle covers yet is
+  the *composite* over all five arms lifted to `cancelIpcBlockingOnCore`
+  (registered debt, owner RR8).  The sentence here named the notification arm as
+  uncovered for eighteen cuts after v0.34.96 covered it, two sentences below its
+  own retraction, which is the *status claim a later cut must sweep* shape — so
+  read this list as of its stated versions and sweep it, not around it.  Each arm
+  needed its own engine, because the first two run a whole-store fold rather than
+  RR7.22's splice, and the third is a **four-step composition** — reclaim, splice,
+  restore, teardown — in which no two steps carry the bundle for the same reason
+  (`cancelIpcBlocking_reply_arm_eq` pins the arm to that composition by `rfl`).
+  Two hypotheses beyond the bundle are common to the first two: the
+  timeout-budget discipline
   `allTimeoutBudgetsNone` (unavoidable — the conjunct says a budget-carrying
   thread is *blocked*, and both operations make one `.ready`), and a
   queue-coherence fact `ipcInvariantFull` does not entail, because it constrains
@@ -6393,7 +6400,23 @@ code may assume:
   `sweptThreadQueueCoherent`'s three clauses for the endpoint arm, and
   `sweptThreadOffQueueChains` for the notification arm, which has no splice to
   repair the swept thread's neighbours.  New code must state those rather than
-  assume them.  What is **not** a hypothesis is anything the bundle entails:
+  assume them.  **The reply arm's set is larger, because its steps are** — read it
+  off `cancelIpcBlocking_replyArm_preserves_ipcInvariantFull` rather than off a
+  count here.  Those two, and: `donationChainWellFormed`, which is what makes the
+  pop's fail-closed head validation *resolve*; `cancelDonationStackValid` for the
+  pop's outer caller; `abortHolderQueueCoherent`, the endpoint arm's three clauses
+  again but for the *holder* the reclaim aborts and under the arm gate, since a
+  caller cannot name that thread to state them of it; and **both directions of one
+  local coherence fact** — `replyFrameHeadHolderDonation` at the victim's reply
+  object (head → binding, which the pop's carriage is stated over) and
+  `donatedContextIsOwnerFrameHead` (binding → head, which the no-donation payoff
+  quantifies over).  Neither direction entails the other — a frame head whose
+  context is `.bound` to its holder satisfies the second and refutes the first, and
+  a binding with no frame satisfies the first vacuously — and `ipcInvariantFull`
+  entails neither, which is WS-HP HP7's own reason for keeping the first stated.
+  `sweptThreadOffQueueChains` does double duty here: it is also what rules the
+  victim out as a queue neighbour of that holder, which is what carries the
+  victim's own TCB across the reclaim with only its binding rewritten.  What is **not** a hypothesis is anything the bundle entails:
   `replyObject_none_of_not_blockedOnReply` derives "holds no Reply object" from
   the bundle's own reciprocity, and
   `purgedAndRestored_victim_off_endpoint_boundaries` derives that a

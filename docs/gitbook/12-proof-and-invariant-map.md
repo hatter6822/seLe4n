@@ -121,7 +121,7 @@ make the theorem assume what it claims to prove.
 `scripts/check_ipc_invariant_dethreading.py` (Tier 0) measures this over the
 comment-free code view, deriving the conjunct set and each bundle's own
 pre-state rather than matching binder names, and reports **zero** conjuncts
-bound on a post-state across all **180** statements in the family, with the
+bound on a post-state across all **184** statements in the family, with the
 conjunct set and the bundle family both derived from the sources.  The figure is
 spelled in the form the gate reads, so a cut that grows the family fails until
 this sentence is corrected — it said 146 while the tree measured 170, unwatched,
@@ -409,9 +409,36 @@ thread from the clause (the pair is what the teardown reads).  It stands to
 `donationOwnerValid`.  The **unit** is the restore-and-teardown pair: the restore
 wakes the victim and so breaks reciprocity, the teardown consumes the link that
 wake left dangling, and each is the other's repair — so `restoredAndConsumed` is
-what carries the full bundle end to end.  What the cut leaves owed rather than
+what carries the full bundle end to end.  What that cut leaves owed rather than
 claimed is the splice's own bundle statement, registered in
 `docs/REGISTERED_DEBT.md`.
+
+**And with the arm keystone, all three cancellation arms carry the bundle**
+(WS-RR RR8.7, `v0.35.82`): the blocked-on-endpoint arm since `v0.34.95`, the
+notification arm since `v0.34.96`, and the reply arm at `v0.35.82`
+(`cancelIpcBlocking_replyArm_preserves_ipcInvariantFull`).  Only the composite
+over all five arms lifted to `cancelIpcBlockingOnCore` is still owed.
+
+The reply arm needed a different shape because it is a **four-step composition**
+rather than one sweep — reclaim, splice, restore, teardown, pinned to exactly
+that by `rfl` (`cancelIpcBlocking_reply_arm_eq`), so a step inserted or reordered
+fails to elaborate rather than escaping the keystone.  No two steps carry the
+bundle for the same reason: the reclaim composes the holder abort with the
+donation pop's carriage at the *relaxed donation-owner* bundle, the splice is
+three `.reply` stack-link stores, and the restore and teardown carry it only as
+the pair above.
+
+Its hypothesis set is larger than its siblings', and the load-bearing part is
+that it takes **both directions** of one local coherence fact:
+`replyFrameHeadHolderDonation` at the victim's reply object (head → binding,
+which the pop's carriage is stated over) and `donatedContextIsOwnerFrameHead`
+(binding → head, which the no-donation payoff quantifies over).  Neither entails
+the other and `ipcInvariantFull` entails neither — `donationOwnerValid` relates a
+donation to no reply object, and `donationChainWellFormed` carries no binding
+clause at all.  Two facts it deliberately does **not** take: the abort's "not
+blocked on reply" premise, which is *false* of a general holder and so is derived
+inside each aborting branch rather than hypothesised; and a caller-supplied
+holder, since the reclaim resolves its own from the victim's reply frame.
 
 ### 3.5 Cross-subsystem — `SeLe4n/Kernel/CrossSubsystem.lean`
 

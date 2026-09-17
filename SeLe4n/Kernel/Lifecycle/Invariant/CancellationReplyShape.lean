@@ -8,6 +8,10 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
+-- WS-RR RR8.7: the reclaim ends in `returnDonatedSchedContext`, whose bundle
+-- carriage lives here.  The dependency runs cancellation -> donation and never
+-- the reverse, so no cycle closes.
+import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 
 /-!
 # WS-RR RR7.22 (residual, remediation) — the cancelled caller's donation
@@ -2850,5 +2854,552 @@ theorem restoredAndConsumed_preserves_ipcInvariantFull (st : SystemState)
     (fun ep rt => by rw [restoredTcb_ipcState]; intro hc; cases hc)
     (restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage st v frame tcbV
       epV rtV hInv hLookup hBlocked hBundle hAllBudgetsNone hOff hNotOwner)
+
+
+-- ============================================================================
+-- WS-RR RR8.7 — §12  The holder abort's obligation, and its bundle carriage
+-- ============================================================================
+
+/-- **WS-RR RR8.7: the three queue-coherence facts the holder abort needs.**
+
+`abortPendingIpcOnEndpoint_preserves_ipcInvariantFull` asks for three things
+`ipcInvariantFull` does not entail — the dual removal is enabled at the aborted
+thread's endpoint, the predecessor promoted to tail is blocked on it, and the
+splice leaves the thread out of every endpoint queue.  The reply arm's reclaim
+resolves its holder from the victim's own reply frame, so the arm's callers cannot
+name that thread to state those facts *of* it; this packages them under the arm
+gate the abort itself branches on.
+
+**Why the gate is `lookupTcb` and an `ipcState` disjunction rather than a resolved
+holder.**  The abort is the identity on every arm but `.blockedOnSend` /
+`.blockedOnCall` (`abortHolderPendingIpc_eq_self_of_allowed`), so on the other
+arms there is nothing to be coherent about and a fact stated unconditionally would
+be an obligation a caller could not discharge and the abort would not use.  The
+shape mirrors `sweptThreadQueueCoherent`, which states the same class of fact for
+the endpoint arm's whole-store sweep, and for the same stated reason: the bundle
+constrains a queue only at its boundaries and carries no connectivity. -/
+structure abortHolderQueueCoherent (st : SystemState) (holder : SeLe4n.ThreadId) : Prop where
+  /-- The dual removal is enabled at the endpoint the holder is blocked on. -/
+  removalEnabled : ∀ (holderTcb : TCB) (epId : SeLe4n.ObjId),
+    lookupTcb st holder = some holderTcb →
+    (holderTcb.ipcState = .blockedOnSend epId ∨ holderTcb.ipcState = .blockedOnCall epId) →
+    dualRemovalEnabled epId false holder st
+  /-- A predecessor the splice promotes to tail is blocked on that endpoint. -/
+  predecessorBlocked : ∀ (holderTcb : TCB) (epId : SeLe4n.ObjId),
+    lookupTcb st holder = some holderTcb →
+    (holderTcb.ipcState = .blockedOnSend epId ∨ holderTcb.ipcState = .blockedOnCall epId) →
+    splicePredecessorBlocked false epId st holder
+  /-- After the splice the holder bounds no endpoint queue and nothing points at it. -/
+  leavesDetached : ∀ (holderTcb : TCB) (epId : SeLe4n.ObjId),
+    lookupTcb st holder = some holderTcb →
+    (holderTcb.ipcState = .blockedOnSend epId ∨ holderTcb.ipcState = .blockedOnCall epId) →
+    ∀ st1, endpointQueueRemove epId false holder st = .ok st1 →
+      spliceLeavesThreadDetached st1 holder
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.7: the holder abort carries the whole IPC bundle.**
+
+Four of its five arms are the identity and the fifth is one successful
+`abortPendingIpcOnEndpoint`, so this is that operation's carriage under the arm
+gate — with the refusal arm the identity too, since the abort declines rather than
+diverging.
+
+**`hNotReply` is discharged here, not assumed, and it is FALSE of a general
+holder.**  The engine asks that the aborted thread is not `.blockedOnReply`; a
+holder in general may be (a passive server that called onward and is waiting on
+its own reply), so hoisting the fact above the case split is unprovable.  Under the
+two arms that abort it is immediate from the branch condition, which is why it is
+derived inside each one. -/
+theorem abortHolderPendingIpc_preserves_ipcInvariantFull
+    (st : SystemState) (holder : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hBudgets : allTimeoutBudgetsNone st)
+    (hCoh : abortHolderQueueCoherent st holder) :
+    ipcInvariantFull (Lifecycle.Suspend.abortHolderPendingIpc st holder) := by
+  unfold Lifecycle.Suspend.abortHolderPendingIpc
+  cases hLk : lookupTcb st holder with
+  | none => exact hInv
+  | some holderTcb =>
+    have hObj : st.objects[holder.toObjId]? = some (.tcb holderTcb) :=
+      lookupTcb_some_objects st holder holderTcb hLk
+    have hG' : st.getTcb? holder = some holderTcb :=
+      (SystemState.getTcb?_eq_some_iff st holder holderTcb).mpr hObj
+    have hNotReplyOf : ∀ (epId : SeLe4n.ObjId),
+        (holderTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
+          holderTcb.ipcState = ThreadIpcState.blockedOnCall epId) →
+        ∀ (tcb : TCB), st.getTcb? holder = some tcb →
+          ∀ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+            tcb.ipcState ≠ ThreadIpcState.blockedOnReply ep rt := by
+      intro epId hOr tcb hG ep rt hEq
+      rw [hG'] at hG
+      cases hG
+      rcases hOr with hS | hC
+      · rw [hS] at hEq; cases hEq
+      · rw [hC] at hEq; cases hEq
+    simp only []
+    cases hIp : holderTcb.ipcState with
+    | ready => exact hInv
+    | blockedOnReceive _ => exact hInv
+    | blockedOnNotification _ => exact hInv
+    | blockedOnReply _ _ => exact hInv
+    | blockedOnSend epId =>
+      simp only []
+      cases hAb : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact hInv
+      | ok st' =>
+        exact abortPendingIpcOnEndpoint_preserves_ipcInvariantFull hObjInv hInv hBudgets
+          (hNotReplyOf epId (Or.inl hIp)) (hCoh.removalEnabled holderTcb epId hLk (Or.inl hIp))
+          (hCoh.predecessorBlocked holderTcb epId hLk (Or.inl hIp))
+          (hCoh.leavesDetached holderTcb epId hLk (Or.inl hIp)) hAb
+    | blockedOnCall epId =>
+      simp only []
+      cases hAb : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact hInv
+      | ok st' =>
+        exact abortPendingIpcOnEndpoint_preserves_ipcInvariantFull hObjInv hInv hBudgets
+          (hNotReplyOf epId (Or.inr hIp)) (hCoh.removalEnabled holderTcb epId hLk (Or.inr hIp))
+          (hCoh.predecessorBlocked holderTcb epId hLk (Or.inr hIp))
+          (hCoh.leavesDetached holderTcb epId hLk (Or.inr hIp)) hAb
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.7**: and it keeps every timeout budget `none` — the same arm split
+over `abortPendingIpcOnEndpoint_preserves_allTimeoutBudgetsNone`, which is what the
+restore's keystone reads at the end of the arm. -/
+theorem abortHolderPendingIpc_preserves_allTimeoutBudgetsNone (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hAll : allTimeoutBudgetsNone st) :
+    allTimeoutBudgetsNone (Lifecycle.Suspend.abortHolderPendingIpc st holder) := by
+  unfold Lifecycle.Suspend.abortHolderPendingIpc
+  cases hLk : lookupTcb st holder with
+  | none => exact hAll
+  | some holderTcb =>
+    simp only []
+    cases hIp : holderTcb.ipcState with
+    | ready => exact hAll
+    | blockedOnReceive _ => exact hAll
+    | blockedOnNotification _ => exact hAll
+    | blockedOnReply _ _ => exact hAll
+    | blockedOnSend epId =>
+      simp only []
+      cases hAb : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact hAll
+      | ok st' => exact abortPendingIpcOnEndpoint_preserves_allTimeoutBudgetsNone hObjInv hAll hAb
+    | blockedOnCall epId =>
+      simp only []
+      cases hAb : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact hAll
+      | ok st' => exact abortPendingIpcOnEndpoint_preserves_allTimeoutBudgetsNone hObjInv hAll hAb
+
+-- ============================================================================
+-- WS-RR RR8.7 — §13  The reclaim's bundle carriage
+-- ============================================================================
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.7: the holder the reclaim resolves holds the victim's donation.**
+
+`cancelledCallerDonation?` reads the victim's own reply *frame* and answers
+`(context, holder)` off a `.head` link and that context's `boundThread`; it says
+nothing about `holder`'s **binding**, and the pop's bundle carriage is stated over
+exactly that binding (`replyDonationReturn?`).  So the missing half is supplied by
+the reply path's own stated fact `replyFrameHeadHolderDonation`, applied at the
+victim's reply object — head -> binding, the direction WS-HP HP7 kept live because
+the trigger does not witness it.
+
+**Reusing that predicate rather than spelling a cancellation-side twin is the
+point**: the two paths' triggers agree on this question
+(`cancelledCallerDonation?_eq_answeredFrameHeadContext?`), so a second predicate
+would be one question with two answers, free to drift.  Note this is *not*
+`donatedContextIsOwnerFrameHead`, which runs binding -> head and is what the
+no-donation payoff consumes; the reply arm needs both directions, and neither is
+derivable from the other or from `ipcInvariantFull` — the chain invariant carries
+no binding clause at all. -/
+theorem cancelledCallerDonation?_holder_holds_victim_donation (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (scId : SeLe4n.SchedContextId)
+    (holder : SeLe4n.ThreadId)
+    (hOwed : ∀ rid, tcbV.replyObject = some rid → replyFrameHeadHolderDonation st rid v)
+    (hRes : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder)) :
+    replyDonationReturn? st holder = some (scId, v) := by
+  obtain ⟨⟨ep0, rt0, hIp⟩, rid, _, _, hRO, _, _, _, _, _⟩ :=
+    cancelledCallerDonation?_some st v tcbV scId holder hRes
+  have hHead : replyFrameHeadHolder? st rid = some (scId, holder) := by
+    unfold Lifecycle.Suspend.cancelledCallerDonation? at hRes
+    rw [hIp, hRO] at hRes
+    exact hRes
+  exact hOwed rid hRO scId holder hHead
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.7: the resolved holder is not the victim.**
+
+Read off `donationOwnerValid`: the holder's binding is a donation owed to `v`, and
+that conjunct makes an owner `.unbound` — so were the two the same thread its
+binding would have to be both.  Consumed twice, by the abort's off-queue frame and
+by the victim's TCB rewrite, which is why it is named rather than inlined. -/
+theorem cancelledCallerDonation?_holder_ne_victim (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (scId : SeLe4n.SchedContextId)
+    (holder : SeLe4n.ThreadId)
+    (hOwner : donationOwnerValid st)
+    (hOwed : ∀ rid, tcbV.replyObject = some rid → replyFrameHeadHolderDonation st rid v)
+    (hRes : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder)) :
+    v ≠ holder := by
+  obtain ⟨pTcb, hLkP, hBindP⟩ := replyDonationReturn?_some_lookup st holder scId v
+    (cancelledCallerDonation?_holder_holds_victim_donation st v tcbV scId holder hOwed hRes)
+  obtain ⟨_, vTcb, hVObj, hVUnbound, _⟩ :=
+    hOwner holder pTcb scId v (lookupTcb_some_objects st holder pTcb hLkP) hBindP
+  intro hEq
+  rw [hEq] at hVObj
+  rw [KernelObject.tcb.inj (Option.some.inj
+    (hVObj.symm.trans (lookupTcb_some_objects st holder pTcb hLkP)))] at hVUnbound
+  rw [hBindP] at hVUnbound
+  cases hVUnbound
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.7: the holder abort leaves a thread off every queue chain
+verbatim.**
+
+`abortHolderPendingIpc_other_tcb_eq` needs the key to be neither the holder nor
+either of its queue neighbours.  For a thread the state puts on no chain the last
+two are *derived* rather than assumed: link integrity turns "the holder's
+`queuePrev` names `v`" into "`v`'s `queueNext` names the holder", which
+`sweptThreadOffQueueChains` refutes, and symmetrically for `queueNext`.  That is
+what lets the reply arm carry the victim's `ipcState`, `replyObject` **and** queue
+links across the abort with one lemma rather than a field-by-field frame. -/
+theorem abortHolderPendingIpc_offQueue_tcb_eq (st : SystemState)
+    (holder v : SeLe4n.ThreadId) (tcbV : TCB)
+    (hObjInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
+    (hOff : sweptThreadOffQueueChains st v) (hNe : v ≠ holder)
+    (hLookup : lookupTcb st v = some tcbV) :
+    (Lifecycle.Suspend.abortHolderPendingIpc st holder).objects[v.toObjId]?
+      = some (.tcb tcbV) := by
+  have hAtV : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
+  obtain ⟨hPrevNone, hNextNone⟩ := hOff tcbV hLookup
+  cases hLk : lookupTcb st holder with
+  | none =>
+    rw [Lifecycle.Suspend.abortHolderPendingIpc_eq_self_of_lookup_none st holder hLk]
+    exact hAtV
+  | some holderTcb =>
+    have hAtH : st.objects[holder.toObjId]? = some (.tcb holderTcb) :=
+      lookupTcb_some_objects st holder holderTcb hLk
+    refine abortHolderPendingIpc_other_tcb_eq st holder holderTcb hObjInv hLk
+      v.toObjId tcbV (fun hEq => hNe (SeLe4n.ThreadId.toObjId_injective v holder hEq)) ?_ ?_ hAtV
+    · intro p hp hEq
+      obtain rfl := SeLe4n.ThreadId.toObjId_injective v p hEq
+      obtain ⟨tcbA, hA, hNext⟩ := hLink.2 holder holderTcb hAtH v hp
+      rw [hAtV] at hA
+      obtain rfl := KernelObject.tcb.inj (Option.some.inj hA)
+      rw [hNextNone] at hNext
+      cases hNext
+    · intro n hn hEq
+      obtain rfl := SeLe4n.ThreadId.toObjId_injective v n hEq
+      obtain ⟨tcbB, hB, hPrev⟩ := hLink.1 holder holderTcb hAtH v hn
+      rw [hAtV] at hB
+      obtain rfl := KernelObject.tcb.inj (Option.some.inj hB)
+      rw [hPrevNone] at hPrev
+      cases hPrev
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.7: the reclaim carries the whole IPC bundle.**
+
+`returnDonationToCancelledCaller` is the holder abort followed by
+`returnDonatedSchedContextResolved`, and this composes the two rather than
+re-proving twenty conjuncts: the abort's carriage is §12, and the pop's is
+`returnDonatedSchedContext_establishes_ipcInvariantFull_of_except`.
+
+Five things the composition needs, and where each comes from.  `hOwed` supplies the
+binding the pop's carriage is stated over, transported across the abort because the
+abort writes no `schedContextBinding`
+(`abortHolderPendingIpc_binding_forward`).  `hReplierIdleAllowed` is
+`abortHolderPendingIpc_holder_ipcState_allowed` — the abort is precisely what makes
+a blocked holder's state one `passiveServerIdle` admits, which is why the abort runs
+**first**.  The relaxation point is the victim: the pop rebinds `v`, so the pre-state
+the engine reads is `ipcInvariantFullExceptDonationOwner … v`, obtained from the
+full bundle at the post-abort state.  `hStack` is WS-OD OD4.4's outer-caller
+obligation, threaded through `donationReturnOuterValid_of_stackValid` at whatever the
+resolver answers.  And the resolver *answers* because the chain invariant crosses the
+abort (`abortHolderPendingIpc_donationChainFrame`), the SchedContext the trigger named
+surviving it because the abort writes no SchedContext at all.
+
+**Both refusal arms are the identity**, so the conclusion needs no success argument:
+a pop that declines returns the pre-state, abort and all (WS-OD OD1.4's
+all-or-nothing), and the pre-state carries the bundle by hypothesis. -/
+theorem returnDonationToCancelledCaller_preserves_ipcInvariantFull
+    (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (hObjInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hBundle : ipcInvariantFull st)
+    (hChain : donationChainWellFormed st)
+    (hBudgets : allTimeoutBudgetsNone st)
+    (hOwed : ∀ rid, tcbV.replyObject = some rid → replyFrameHeadHolderDonation st rid v)
+    (hStack : cancelDonationStackValid st v tcbV)
+    (hCoh : ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+      Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder) →
+      abortHolderQueueCoherent st holder) :
+    ipcInvariantFull (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) := by
+  have hGetV : st.getTcb? v = some tcbV := by
+    rw [SystemState.getTcb?_eq_some_iff]; exact lookupTcb_some_objects st v tcbV hLookup
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  rw [hGetV]
+  cases hRes : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
+  | none => exact hBundle
+  | some p =>
+    obtain ⟨scId, holder⟩ := p
+    simp only []
+    obtain ⟨⟨ep0, rt0, hIp⟩, rid, r, sc, hRO, hR, hN, hSc, hRec, hBt⟩ :=
+      cancelledCallerDonation?_some st v tcbV scId holder hRes
+    have hRet : replyDonationReturn? st holder = some (scId, v) :=
+      cancelledCallerDonation?_holder_holds_victim_donation st v tcbV scId holder hOwed hRes
+    obtain ⟨pTcb, hLkP, hBindP⟩ := replyDonationReturn?_some_lookup st holder scId v hRet
+    -- The post-abort state: the pop's own pre-state.
+    have hInvA : (Lifecycle.Suspend.abortHolderPendingIpc st holder).objects.invExt :=
+      Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hObjInv
+    have hBundleA : ipcInvariantFull (Lifecycle.Suspend.abortHolderPendingIpc st holder) :=
+      abortHolderPendingIpc_preserves_ipcInvariantFull st holder hObjInv hBundle hBudgets
+        (hCoh scId holder hRes)
+    have hChainA : donationChainWellFormed (Lifecycle.Suspend.abortHolderPendingIpc st holder) :=
+      donationChainWellFormed_of_frame
+        (Lifecycle.Suspend.abortHolderPendingIpc_donationChainFrame st holder hObjInv) hChain
+    -- The binding the pop reads survives the abort, which writes none.
+    obtain ⟨pTcbA, hAtA, hBindA⟩ :=
+      Lifecycle.Suspend.abortHolderPendingIpc_binding_forward st holder hObjInv holder.toObjId
+        pTcb (lookupTcb_some_objects st holder pTcb hLkP)
+    have hNotRes : ¬ holder.isReserved := lookupTcb_some_not_reserved st holder pTcb hLkP
+    have hLkA : lookupTcb (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder
+        = some pTcbA :=
+      lookupTcb_of_objects_of_not_reserved _ holder pTcbA hAtA hNotRes
+    have hRetA : replyDonationReturn? (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder
+        = some (scId, v) := by
+      unfold replyDonationReturn?
+      rw [hLkA]
+      simp only []
+      rw [hBindA, hBindP]
+    -- The abort is what makes the holder's state one `passiveServerIdle` admits.
+    have hAllowed : ∀ tcb, (Lifecycle.Suspend.abortHolderPendingIpc st holder).getTcb? holder
+        = some tcb → passiveServerIdleAllowed tcb.ipcState :=
+      fun tcb h => Lifecycle.Suspend.abortHolderPendingIpc_holder_ipcState_allowed st holder
+        pTcb hObjInv hBundle.ipcStateQueueMembershipConsistent hLkP tcb h
+    have hNeSent : holder ≠ SeLe4n.ThreadId.sentinel := by
+      intro hc
+      rw [hc] at hNotRes
+      exact hNotRes SeLe4n.ThreadId.sentinel_isReserved
+    -- The context the trigger named survives the abort, so the outer caller resolves.
+    have hScA : (Lifecycle.Suspend.abortHolderPendingIpc st holder).objects[scId.toObjId]?
+        = some (.schedContext sc) :=
+      Lifecycle.Suspend.abortHolderPendingIpc_unwritten_kind_forward st holder hObjInv
+        (fun o => ∃ sc0 : SeLe4n.Kernel.SchedContext, o = .schedContext sc0)
+        (fun _ hc => nomatch hc.choose_spec) (fun _ hc => nomatch hc.choose_spec)
+        scId.toObjId _ ⟨sc, rfl⟩ ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc)
+    obtain ⟨n, hResN⟩ :=
+      replyStackOuterCallerResolves_of_chainWellFormed _ scId hChainA sc hScA
+    rw [returnDonatedSchedContextResolved_of_resolved hResN]
+    cases hPop : returnDonatedSchedContext (Lifecycle.Suspend.abortHolderPendingIpc st holder)
+        holder scId v n with
+    | error _ => exact hBundle
+    | ok st' =>
+      exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except _ st'
+        ⟨holder, hNeSent⟩ scId v hInvA
+        (ipcInvariantFullExceptDonationOwner_of_full v hBundleA) hRetA hAllowed n
+        (donationReturnOuterValid_of_stackValid (hStack scId holder hRes) hResN) hPop
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.7**: and the reclaim keeps every timeout budget `none` — the abort's
+half from §12, the pop's from `returnDonatedSchedContext_tcb_timeoutBudget_backward`,
+which is that operation's `tcbBindingRewrite` reading at one field. -/
+theorem returnDonationToCancelledCaller_preserves_allTimeoutBudgetsNone (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hObjInv : st.objects.invExt)
+    (hAll : allTimeoutBudgetsNone st) :
+    allTimeoutBudgetsNone (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) := by
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  split
+  · rename_i scId holder _ _ _
+    have hAllA : allTimeoutBudgetsNone (Lifecycle.Suspend.abortHolderPendingIpc st holder) :=
+      abortHolderPendingIpc_preserves_allTimeoutBudgetsNone st holder hObjInv hAll
+    have hInvA :=
+      Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hObjInv
+    split
+    · rename_i st' h
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
+      exact allTimeoutBudgetsNone_of_frame
+        (fun t tcb' hT => returnDonatedSchedContext_tcb_timeoutBudget_backward _ st' holder scId v
+          hInvA n hPop t.toObjId tcb' hT) hAllA
+    · exact hAll
+  · exact hAll
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.7: the reclaim rewrites the victim's binding and nothing else of it.**
+
+The abort leaves a thread off every queue chain verbatim (§13 above) and the pop
+rewrites exactly one field of every TCB it touches
+(`returnDonatedSchedContext_tcb_rewrite`), so the victim's `ipcState`,
+`replyObject` **and** queue links all cross the reclaim unchanged.  That is what
+the arm keystone needs at three separate places — the restore's blocking-state
+hypothesis, the teardown's reply-object agreement, and the queue-coherence fact —
+and stating it once as a `tcbBindingRewrite` gives all three rather than a frame
+per field. -/
+theorem returnDonationToCancelledCaller_victim_tcb_rewrite (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (hObjInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
+    (hOwner : donationOwnerValid st)
+    (hOff : sweptThreadOffQueueChains st v) (hLookup : lookupTcb st v = some tcbV)
+    (hOwed : ∀ rid, tcbV.replyObject = some rid → replyFrameHeadHolderDonation st rid v) :
+    ∃ tcbV', (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).objects[v.toObjId]?
+        = some (.tcb tcbV') ∧ tcbBindingRewrite tcbV' tcbV := by
+  have hAtV : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
+  have hGetV : st.getTcb? v = some tcbV := (SystemState.getTcb?_eq_some_iff st v tcbV).mpr hAtV
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  rw [hGetV]
+  cases hRes : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
+  | none => exact ⟨tcbV, hAtV, tcbBindingRewrite.refl tcbV⟩
+  | some p =>
+    obtain ⟨scId, holder⟩ := p
+    simp only []
+    have hNe : v ≠ holder :=
+      cancelledCallerDonation?_holder_ne_victim st v tcbV scId holder hOwner hOwed hRes
+    have hAtVA : (Lifecycle.Suspend.abortHolderPendingIpc st holder).objects[v.toObjId]?
+        = some (.tcb tcbV) :=
+      abortHolderPendingIpc_offQueue_tcb_eq st holder v tcbV hObjInv hLink hOff hNe hLookup
+    have hInvA :=
+      Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hObjInv
+    cases hR : returnDonatedSchedContextResolved
+        (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder scId v with
+    | error _ => exact ⟨tcbV, hAtV, tcbBindingRewrite.refl tcbV⟩
+    | ok st' =>
+      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
+      exact returnDonatedSchedContext_tcb_rewrite _ st' holder scId v hInvA n hPop v.toObjId
+        tcbV hAtVA
+
+-- ============================================================================
+-- WS-RR RR8.7 — §14  The arm keystone
+-- ============================================================================
+
+/-- **WS-RR RR8.7: the teardown pair is a function of the TCB's reply object.**
+
+`consumeReplyLink` reads `tcb.replyObject` and nothing else of the record it is
+handed, so two TCBs agreeing there drive the pair to the same state.  The reply
+arm needs exactly this: it passes the **pre-cancellation** TCB to the teardown
+while the state the teardown runs on holds that TCB with its `schedContextBinding`
+rewritten by the reclaim, and those differ. -/
+theorem restoredAndConsumed_congr (st : SystemState) (v : SeLe4n.ThreadId) (t1 t2 : TCB)
+    (frame : Option Architecture.SyscallReturnFrame) (h : t1.replyObject = t2.replyObject) :
+    restoredAndConsumed st v t1 frame = restoredAndConsumed st v t2 frame := by
+  unfold restoredAndConsumed
+  cases hR : t1.replyObject with
+  | none =>
+    rw [Lifecycle.Suspend.consumeReplyLink_none _ v t1 hR,
+      Lifecycle.Suspend.consumeReplyLink_none _ v t2 (h.symm.trans hR)]
+  | some rid =>
+    rw [Lifecycle.Suspend.consumeReplyLink_some _ v t1 rid hR,
+      Lifecycle.Suspend.consumeReplyLink_some _ v t2 rid (h.symm.trans hR)]
+
+/-- **WS-RR RR8.7: the cancellation's reply arm IS reclaim, splice, then the
+teardown pair** — `rfl`, so the two cannot drift, exactly as
+`cancelIpcBlocking_endpoint_arm_eq` pins the endpoint arm to its sweep.
+
+`restoredAndConsumed`'s `frame` argument is the `.ipcCancelled` frame WS-RR RR7.14
+stages here, `restoreToReadyCancelled` being that instance of the staging restore
+by definition. -/
+theorem cancelIpcBlocking_reply_arm_eq (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (epV : SeLe4n.ObjId) (rtV : Option SeLe4n.ThreadId)
+    (hBlocked : tcbV.ipcState = .blockedOnReply epV rtV) :
+    Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
+      restoredAndConsumed
+        (spliceThreadReplyFrameOut
+          (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV)
+        v tcbV (some Architecture.cancelledIpcFrame) := by
+  unfold Lifecycle.Suspend.cancelIpcBlocking restoredAndConsumed
+  rw [hBlocked]
+  rfl
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.7 — the keystone: the cancellation's reply arm preserves
+`ipcInvariantFull`.**
+
+The last of the three arms.  The endpoint arm's is
+`cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull` and the notification
+arm's `cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull`; this one took
+longer because its arm is a *four-step composition* rather than one sweep — reclaim,
+splice, restore, teardown — and no two of those steps carry the bundle for the same
+reason.  The reclaim's is §13, the splice's is
+`spliceThreadReplyFrameOut_preserves_ipcInvariantFull`, and the restore and teardown
+are `restoredAndConsumed_preserves_ipcInvariantFull`, which is the **pair**: the
+restore alone leaves `ipcInvariantFullExceptReplyLinkage` and the teardown alone
+would clear a still-blocked caller's reply object, so neither half is the unit the
+bundle is about.
+
+**Two stated coherence facts, and both are needed.**  `hOwed` is head -> binding
+(`replyFrameHeadHolderDonation` at the victim's reply object), which the *pop's*
+bundle carriage is stated over; `hHolder` is binding -> head
+(`donatedContextIsOwnerFrameHead`), which the no-donation payoff
+`returnDonationToCancelledCaller_no_donation_to_victim` consumes and which is what
+discharges the restore's `hNotOwner`.  Neither follows from the other: a frame head
+whose context is `.bound` to its holder satisfies the second direction and refutes
+the first, and a binding with no frame satisfies the first vacuously.  Neither
+follows from `ipcInvariantFull` either — `donationOwnerValid` relates a donation to
+no reply object and `donationChainWellFormed` carries no binding clause at all,
+which is WS-HP HP7's own reason for keeping `replyFrameHeadHolderDonation` stated.
+
+`hOff` is the arm's queue-coherence fact, exactly as the notification arm takes it:
+the restore clears the victim's links with nothing to repair a neighbour, and the
+bundle carries no connectivity.  It does double duty here — it is also what rules
+the victim out as a queue neighbour of the abort's holder, so the victim's own TCB
+crosses the reclaim with only its binding rewritten. -/
+theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull
+    (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (epV : SeLe4n.ObjId) (rtV : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hBlocked : tcbV.ipcState = .blockedOnReply epV rtV)
+    (hBundle : ipcInvariantFull st)
+    (hChain : donationChainWellFormed st)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hOff : sweptThreadOffQueueChains st v)
+    (hOwed : ∀ rid, tcbV.replyObject = some rid → replyFrameHeadHolderDonation st rid v)
+    (hHolder : donatedContextIsOwnerFrameHead st v)
+    (hStack : cancelDonationStackValid st v tcbV)
+    (hCoh : ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+      Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder) →
+      abortHolderQueueCoherent st holder) :
+    ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) := by
+  have hLink : tcbQueueLinkIntegrity st := hBundle.dualQueueSystemInvariant.linkIntegrity
+  -- Step 1: the reclaim.
+  have hInvR :=
+    Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt st v tcbV hObjInv
+  have hBundleR := returnDonationToCancelledCaller_preserves_ipcInvariantFull st v tcbV
+    hObjInv hLookup hBundle hChain hAllBudgetsNone hOwed hStack hCoh
+  have hBudgetsR := returnDonationToCancelledCaller_preserves_allTimeoutBudgetsNone st v tcbV
+    hObjInv hAllBudgetsNone
+  obtain ⟨tcbR, hAtR, sb, hEqR⟩ := returnDonationToCancelledCaller_victim_tcb_rewrite st v tcbV
+    hObjInv hLink hBundle.donationOwnerValid hOff hLookup hOwed
+  -- Step 2: the splice, which writes no TCB at all.
+  have hInvS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hInvR
+  have hBundleS := spliceThreadReplyFrameOut_preserves_ipcInvariantFull
+    (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hInvR hBundleR
+  have hBudgetsS := allTimeoutBudgetsNone_of_frame
+    (spliceThreadReplyFrameOut_timeoutBudgetFrame
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hInvR) hBudgetsR
+  have hAtS := spliceThreadReplyFrameOut_tcb_eq
+    (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hInvR v.toObjId tcbR hAtR
+  have hLkS : lookupTcb (spliceThreadReplyFrameOut
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v = some tcbR :=
+    lookupTcb_of_objects_of_not_reserved _ v tcbR hAtS
+      (lookupTcb_some_not_reserved st v tcbV hLookup)
+  -- The restore's no-donation hypothesis, pulled back through the splice.
+  have hNotOwnerS : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+      (spliceThreadReplyFrameOut
+        (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV).objects[tid.toObjId]?
+          = some (.tcb tcb) → tcb.schedContextBinding ≠ .donated scId v := by
+    intro tid tcb scId hAt
+    exact returnDonationToCancelledCaller_no_donation_to_victim st v tcbV hObjInv hLookup
+      hBundle.donationOwnerValid hChain hHolder hStack tid tcb scId
+      (spliceThreadReplyFrameOut_tcb_backward _ tcbV hInvR tid.toObjId tcb hAt)
+  -- And the queue-coherence fact, which survives because only the binding moved.
+  have hOffS : sweptThreadOffQueueChains (spliceThreadReplyFrameOut
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v := by
+    intro t hLk
+    obtain rfl : t = tcbR := Option.some.inj (hLk.symm.trans hLkS)
+    rw [hEqR]
+    exact hOff tcbV hLookup
+  -- Steps 3 and 4: the teardown pair, at the TCB the state actually holds.
+  rw [cancelIpcBlocking_reply_arm_eq st v tcbV epV rtV hBlocked,
+    restoredAndConsumed_congr _ v tcbV tcbR _ (by rw [hEqR])]
+  exact restoredAndConsumed_preserves_ipcInvariantFull _ v tcbR _ epV rtV hInvS hLkS
+    (by rw [hEqR]; exact hBlocked) hBundleS hBudgetsS hOffS hNotOwnerS
 
 end SeLe4n.Kernel

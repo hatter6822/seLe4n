@@ -121,6 +121,29 @@ def spliceLeavesThreadDetached (st : SystemState) (tid : SeLe4n.ThreadId) : Prop
   (∀ (a : SeLe4n.ThreadId) (tcbA : TCB), st.getTcb? a = some tcbA →
       tcbA.queueNext ≠ some tid)
 
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.7: the endpoint-queue removal frames `timeoutBudget`.**
+
+`timeoutBudget` is a *link-free* field — the removal's only TCB writes are the
+neighbour link patches — so this is one instance of
+`endpointQueueRemove_getTcb_backward_upToField` and needs nothing but
+`objects.invExt`.
+
+**Named because the fact had two derivations in this file.**  The bundle proof
+below used to reach the same conclusion through the dual removal and the two
+removals' agreement, which costs `ipcInvariantFull` and `dualRemovalEnabled` and
+is the shape this project retires: one question, two answers, free to drift.  The
+`upToField` route is strictly cheaper *and* strictly more general, so it is the
+one answer and the bundle proof reads it. -/
+theorem endpointQueueRemove_timeoutBudgetFrame
+    {epId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.ThreadId} {st st' : SystemState}
+    (hObjInv : st.objects.invExt)
+    (h : endpointQueueRemove epId isReceiveQ tid st = .ok st') :
+    timeoutBudgetFrame st st' :=
+  fun t tcb' hT =>
+    endpointQueueRemove_getTcb_backward_upToField (fun x => x.timeoutBudget)
+      (fun _ _ _ _ => rfl) epId isReceiveQ tid st st' hObjInv h t.toObjId tcb' hT
+
 /-- **WS-OD OD1.3 — the abort's object-only prefix carries the whole bundle.**
 
 `abortPendingIpcOnEndpoint` is the splice followed by one TCB rewrite, and this
@@ -165,13 +188,8 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
   have hEqS : stS = st1 := by rw [hRem'] at hRem; exact Except.ok.inj hRem
   rw [hEqS] at hAgree
   -- Two frames the dual carries, read through the agreement.
-  have hAllNone1 : allTimeoutBudgetsNone st1 := by
-    intro t tcbT hT
-    rw [hAgree] at hT
-    obtain ⟨tcb0, h0, hEq⟩ :=
-      endpointQueueRemoveDual_timeoutBudgetFrame st stD endpointId isReceiveQ tid hObjInv
-        hDual t tcbT hT
-    rw [← hEq]; exact hAllNone t tcb0 h0
+  have hAllNone1 : allTimeoutBudgetsNone st1 :=
+    allTimeoutBudgetsNone_of_frame (endpointQueueRemove_timeoutBudgetFrame hObjInv hRem) hAllNone
   have hNotReply1 : ∀ (tcbX : TCB), st1.getTcb? tid = some tcbX →
       ∀ ep rt, tcbX.ipcState ≠ .blockedOnReply ep rt := by
     intro tcbX hX ep rt hc
@@ -243,6 +261,35 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
       storeObject_scheduler_eq sRc sStage tid.toObjId _ hStage,
       storeObject_scheduler_eq st1 sRc tid.toObjId _ hStoreRc]
   exact ipcInvariantFull_of_storeAgrees_of_scheduler_eq hAgree2 hSched2 hFullStage
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.7: the abort keeps every timeout budget `none`.**
+
+`allTimeoutBudgetsNone` is the discipline all three cancellation arms' bundle
+keystones take, and the reply arm reaches its restore *through* this abort — so the
+fact has to cross it.  It is not a frame: the abort's own store writes
+`timeoutBudget := none` at the aborted thread, which is a change unless the
+pre-state was already `none`.  So the two halves are read differently — the splice
+through `endpointQueueRemove_timeoutBudgetFrame`, the store through
+`storeObject_modifiedTcb_timeoutBudgetFrame` at an equality the *removal's* own
+conclusion supplies — and the composite needs only `objects.invExt` beside the
+discipline itself. -/
+theorem abortPendingIpcOnEndpoint_preserves_allTimeoutBudgetsNone
+    {st st' : SystemState} {epId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (hAll : allTimeoutBudgetsNone st)
+    (hStep : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    allTimeoutBudgetsNone st' := by
+  obtain ⟨st1, tcb1, hRem, hT1, hStore⟩ := abortPendingIpcOnEndpoint_shape hStep
+  have hAll1 : allTimeoutBudgetsNone st1 :=
+    allTimeoutBudgetsNone_of_frame (endpointQueueRemove_timeoutBudgetFrame hObjInv hRem) hAll
+  have hAt1 : st1.objects[tid.toObjId]? = some (.tcb tcb1) :=
+    lookupTcb_some_objects st1 tid tcb1 hT1
+  have hB1 : tcb1.timeoutBudget = none := hAll1 tid tcb1 hAt1
+  have hI1 :=
+    endpointQueueRemove_preserves_objects_invExt epId isReceiveQ tid st st1 hObjInv hRem
+  exact allTimeoutBudgetsNone_of_frame
+    (storeObject_modifiedTcb_timeoutBudgetFrame st1 st' tid.toObjId tcb1 _ hAt1
+      (by rw [hB1]; rfl) hI1 hStore) hAll1
 
 /-- WS-OD OD1.4: the abort preserves the identity registry's well-formedness.
 

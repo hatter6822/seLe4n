@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.81` (`lakefile.toml`) |
+| **Package version** | `0.35.82` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 386,776 across 331 Lean files |
-| **Test LoC** | 78,841 across 70 Lean test suites |
-| **Proved declarations** | 12,902 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 387,402 across 331 Lean files |
+| **Test LoC** | 78,892 across 70 Lean test suites |
+| **Proved declarations** | 12,917 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4107,7 +4107,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **180** statements in the family (the
+bound on a post-state across all **184** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to
@@ -5212,6 +5212,54 @@ facts and both boundary conjuncts, and `purgedAndRestored_victim_off_endpoint_bo
 is now one application of it.  Writing a second copy under the reply arm would have been
 one question with two answers, in the cut whose whole subject is a statement that read as
 coverage.
+
+#### 8.12.17 All three cancellation arms carry the bundle — WS-RR RR8.7 (`v0.35.82`)
+
+With the reply arm's keystone, every arm of `cancelIpcBlocking` preserves
+`ipcInvariantFull`: the blocked-on-endpoint arm since `v0.34.95`, the notification arm
+since `v0.34.96`, and the **reply** arm at `v0.35.82`
+(`cancelIpcBlocking_replyArm_preserves_ipcInvariantFull`).  What is still owed is the
+*composite* over all five arms lifted to `cancelIpcBlockingOnCore`.
+
+**The reply arm is a four-step composition, which is why it needed a different shape from
+its siblings.**  The other two are one whole-store sweep followed by the restore; this one
+is the reclaim, the reply-frame splice, the restore and the teardown, and
+`cancelIpcBlocking_reply_arm_eq` pins it to exactly that by `rfl`, so a step inserted,
+dropped or reordered fails to elaborate rather than quietly escaping the keystone.  No two
+steps carry the bundle for the same reason.  The reclaim
+(`returnDonationToCancelledCaller_preserves_ipcInvariantFull`) composes the holder abort
+with `returnDonatedSchedContext`'s carriage at the *relaxed* donation-owner bundle, the
+relaxation point being the victim the pop rebinds.  The splice is three `.reply`
+stack-link stores (`spliceThreadReplyFrameOut_preserves_ipcInvariantFull`).  And the
+restore and the teardown carry it only **as a pair**, which is §8.12.16.
+
+**Two stated coherence facts, both needed, and neither derivable.**  The keystone takes
+`replyFrameHeadHolderDonation` at the victim's reply object — head → binding, which the
+pop's own carriage is stated over — and `donatedContextIsOwnerFrameHead` — binding → head,
+which the no-donation payoff quantifies over.  A frame head whose context is `.bound` to
+its holder satisfies the second and refutes the first; a binding with no frame satisfies
+the first vacuously; and `ipcInvariantFull` entails neither, since `donationOwnerValid`
+relates a donation to no reply object and `donationChainWellFormed` carries no binding
+clause at all.  That the head-driven trigger does not witness the binding is WS-HP HP7's
+own reason for keeping `replyFrameHeadHolderDonation` stated when it retired the other
+three coherence facts.
+
+**Two things the arm does not take as hypotheses.**  The abort's "not blocked on reply"
+premise is *false* of a general holder — a passive server that called onward is waiting on
+its own reply — so it is derived inside each of the two arms that abort, from the branch
+condition itself; hoisting it would be an unsatisfiable hypothesis rather than a redundant
+one, and a Tier 3 negative refuses that shape.  And the reclaim resolves its own holder
+from the victim's reply frame, so its queue-coherence obligation
+(`abortHolderQueueCoherent`, the endpoint arm's three clauses for that holder) is stated
+*under* the resolver rather than of a thread a caller names.
+
+`sweptThreadOffQueueChains` does double duty on this arm.  It is the restore's
+queue-coherence fact, as on the notification arm; it is also what rules the victim out as
+a queue neighbour of the abort's holder, which is what carries the victim's own TCB across
+the reclaim with **only** its binding rewritten
+(`returnDonationToCancelledCaller_victim_tcb_rewrite`) — and that one `tcbBindingRewrite`
+supplies the blocking state, the reply-object agreement and the queue links the three later
+steps each need separately.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

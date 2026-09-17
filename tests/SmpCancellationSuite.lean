@@ -368,6 +368,20 @@ open SeLe4n.Testing
 #check @Lifecycle.Suspend.cancelledCallerDonation?
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller
 #check @cancelledCallerDonation?_some
+-- WS-RR RR8.7: the reply arm's own keystone and the four steps it composes.
+#check @abortHolderQueueCoherent
+#check @abortHolderPendingIpc_preserves_ipcInvariantFull
+#check @abortHolderPendingIpc_preserves_allTimeoutBudgetsNone
+#check @cancelledCallerDonation?_holder_holds_victim_donation
+#check @cancelledCallerDonation?_holder_ne_victim
+#check @abortHolderPendingIpc_offQueue_tcb_eq
+#check @returnDonationToCancelledCaller_preserves_ipcInvariantFull
+#check @returnDonationToCancelledCaller_preserves_allTimeoutBudgetsNone
+#check @returnDonationToCancelledCaller_victim_tcb_rewrite
+#check @spliceThreadReplyFrameOut_preserves_ipcInvariantFull
+#check @restoredAndConsumed_congr
+#check @cancelIpcBlocking_reply_arm_eq
+#check @cancelIpcBlocking_replyArm_preserves_ipcInvariantFull
 -- WS-HP HP5.2: the coherence fact re-keyed onto the head-driven trigger, with
 -- both vacuous discharges and the builder that measures what it costs.
 #check @donatedContextIsOwnerFrameHead
@@ -676,6 +690,43 @@ example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
     holderTcb.schedContextBinding ≠ .donated sc victim :=
   cancelIpcBlocking_reply_no_donation_to_victim st victim tcb ep rt hInv hLookup hBlocked
     hOwner hChain hHolder hStack holder holderTcb sc hTcb
+
+/-- **WS-RR RR8.7: the whole bundle across the cancellation's reply arm, applied**
+— the shape a caller sees, and the third of the three arms.
+
+Longer than its endpoint and notification siblings because the arm is a four-step
+composition rather than one sweep, and because it carries **two** stated coherence
+facts: `hOwed` runs head -> binding (the pop's carriage is stated over the binding)
+and `hHolder` runs binding -> head (the no-donation payoff quantifies over
+bindings).  Neither entails the other and `ipcInvariantFull` entails neither, so a
+caller discharges both. -/
+example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st victim = some tcb)
+    (hBlocked : tcb.ipcState = .blockedOnReply ep rt)
+    (hBundle : ipcInvariantFull st) (hChain : donationChainWellFormed st)
+    (hBudgets : allTimeoutBudgetsNone st)
+    (hOff : sweptThreadOffQueueChains st victim)
+    (hOwed : ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim)
+    (hHolder : donatedContextIsOwnerFrameHead st victim)
+    (hStack : cancelDonationStackValid st victim tcb)
+    (hCoh : ∀ (sc : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+      Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (sc, holder) →
+      abortHolderQueueCoherent st holder) :
+    ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
+  cancelIpcBlocking_replyArm_preserves_ipcInvariantFull st victim tcb ep rt hInv hLookup
+    hBlocked hBundle hChain hBudgets hOff hOwed hHolder hStack hCoh
+
+/-- **WS-RR RR8.7**: and the arm *is* that composition — reclaim, splice, then the
+teardown pair — by `rfl`, so a step inserted or reordered fails to elaborate rather
+than quietly escaping the keystone above. -/
+example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
+    (hBlocked : tcb.ipcState = .blockedOnReply ep rt) :
+    Lifecycle.Suspend.cancelIpcBlocking st victim tcb =
+      restoredAndConsumed
+        (spliceThreadReplyFrameOut
+          (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb)
+        victim tcb (some Architecture.cancelledIpcFrame) :=
+  cancelIpcBlocking_reply_arm_eq st victim tcb ep rt hBlocked
 
 /-- WS-RR RR7.22 (residual): the swept thread holds no Reply object, derived from
 the bundle's own reciprocity rather than assumed. -/

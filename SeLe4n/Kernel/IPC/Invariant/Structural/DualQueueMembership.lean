@@ -99,6 +99,19 @@ theorem spliceReplyFrameOutOrSelf_timeoutBudgetFrame
     ⟨tcb', spliceReplyFrameOutOrSelf_tcb_backward st rid hObjInv _ tcb' hT, rfl⟩
 
 open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.7**: and the fold over a thread's **own** reply object frames it too.
+
+The cancellation's reply arm splices at `tcb.replyObject` rather than at a reply
+id it was handed, so its consumers need the frame at that spelling; the splice
+writes no TCB at all, so this is the `_tcb_backward` reading with the budget read
+off the same record. -/
+theorem spliceThreadReplyFrameOut_timeoutBudgetFrame
+    (st : SystemState) (tcb : TCB) (hObjInv : st.objects.invExt) :
+    timeoutBudgetFrame st (spliceThreadReplyFrameOut st tcb) :=
+  fun tid tcb' hT =>
+    ⟨tcb', spliceThreadReplyFrameOut_tcb_backward st tcb hObjInv _ tcb' hT, rfl⟩
+
+open SeLe4n.Model.SystemState in
 theorem spliceReplyFrameOutOrSelf_passiveServerIdleFrame
     (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
     passiveServerIdleFrame st (spliceReplyFrameOutOrSelf st rid) where
@@ -15817,6 +15830,21 @@ theorem spliceReplyFrameOutOrSelf_preserves_ipcInvariantFull
   rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact hInv
   · exact spliceReplyFrameOut_preserves_ipcInvariantFull hObjInv hInv h
+
+/-- **WS-RR RR8.7**: and the fold over a thread's own reply object inherits it.
+
+The cancellation's reply arm splices at `tcb.replyObject`, which is `none` for a
+victim holding no Reply and the `…OrSelf` fold otherwise — so the arm's bundle
+carriage reaches the removal's through this one case split rather than through a
+second copy of the store-frame argument. -/
+theorem spliceThreadReplyFrameOut_preserves_ipcInvariantFull
+    (st : SystemState) (tcb : TCB)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (spliceThreadReplyFrameOut st tcb) := by
+  unfold spliceThreadReplyFrameOut
+  cases tcb.replyObject with
+  | none => exact hInv
+  | some rid => exact spliceReplyFrameOutOrSelf_preserves_ipcInvariantFull st rid hObjInv hInv
 
 /-! ### WS-RR RR8.7 — `removeCallerReplyFrame`'s bundle statement is RETIRED
 
