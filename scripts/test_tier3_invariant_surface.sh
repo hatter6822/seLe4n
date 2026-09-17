@@ -14802,4 +14802,37 @@ run_negative_check "INVARIANT" rg -n 'removeCallerReplyFrame_preserves_ipcInvari
 run_check "INVARIANT" rg -n '^theorem notQueueBlocked_bounds_no_endpoint_queue' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem purgedAndRestored_victim_off_endpoint_boundaries[^\n]*(\n([ \t][^\n]*)?)*notQueueBlocked_bounds_no_endpoint_queue" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 
+# ---------------------------------------------------------------------------
+# WS-RR RR8.8 -- what the endpoint admission gate admits onto one queue.
+#
+# The theorem has no consumer today and is anchored for that reason: it is the
+# refutation of the remedy three cancellation-NI obligations were registered
+# against (an endpoint/notification queue label-uniformity invariant), and a
+# refutation nothing consults reads exactly like one nobody checked.
+#
+# Relation, not presence.  A presence check on the name survives a mutation that
+# keeps the theorem and drops the discriminating conjunct, which is the whole of
+# its content: the gate admits BOTH senders, and the observer sees EXACTLY ONE of
+# them.  Each conjunct is anchored inside the declaration's own bounded gap.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionAdmitsMixedObservability[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate ctx epId \(ctx.threadLabelOf lowerTid\) \(ctx.endpointLabelOf epId\) = true" SeLe4n/Kernel/InformationFlow/Projection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionAdmitsMixedObservability[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate ctx epId \(ctx.threadLabelOf upperTid\) \(ctx.endpointLabelOf epId\) = true" SeLe4n/Kernel/InformationFlow/Projection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionAdmitsMixedObservability[^\n]*(\n([ \t][^\n]*)?)*threadObservable ctx observer lowerTid = true" SeLe4n/Kernel/InformationFlow/Projection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionAdmitsMixedObservability[^\n]*(\n([ \t][^\n]*)?)*threadObservable ctx observer upperTid = false" SeLe4n/Kernel/InformationFlow/Projection.lean'
+# ...and the destination of both gate readings is the ENDPOINT's own label, which
+# is what makes this a statement about what a queue admits rather than about a
+# rendezvous: a mutation that reads a receiver's label instead keeps every token.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionAdmitsMixedObservability[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate ctx epId \(ctx.threadLabelOf (lower|upper)Tid\) \(ctx.threadLabelOf" SeLe4n/Kernel/InformationFlow/Projection.lean'
+# PROSE: the retracted remedy must not come back as a prescription, and the
+# retraction must stay stated.  Both read the real text -- the subject IS the
+# docstring, so the code view would strip it.
+#
+# The retired sentence named the direction the gate makes IMPOSSIBLE (a low
+# endpoint holding a high waiter).  The corrected text quotes that phrase in
+# order to refuse it, so the negative is on the retired ASSERTION, not on the
+# phrase: it matched until v0.35.83 and matches nothing now.
+run_prose_negative_check "INVARIANT" bash -lc 'rg -U -n "a low endpoint\s*\n?\s*holding a high waiter would make the cancellation visible" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_prose_negative_check "INVARIANT" bash -lc 'rg -U -n "label-uniformity invariant(,| and)\s*\n?\s*(\*\*)?establish(ed|ing)(\*\*)? it on every" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+run_prose_check "INVARIANT" rg -n 'unestablishable' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_prose_check "INVARIANT" rg -n 'unestablishable' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+
 finalize_report

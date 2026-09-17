@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.82.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.83.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5887,6 +5887,46 @@ code may assume:
   thread's own observability, and the holder's label is not determined by the
   victim's — discharged outright where no donation is resolved and registered as
   WS-OD debt otherwise.
+- **An endpoint queue's membership lives in its members' TCBs, and those members'
+  labels differ** (WS-RR RR8.8, `v0.35.83`).  Three facts new code must respect,
+  and the first is the one that decides the other two.  (1) **The admission gate
+  is an order, not an equality**: the live send / call gate is
+  `endpointFlowGate ctx ep (threadLabelOf sender) (endpointLabelOf ep)` and the
+  receive gate its mirror, so a *lower*-labelled and a *higher*-labelled sender
+  are both admitted onto one higher-labelled endpoint —
+  `publicLabel → kernelTrusted` being the flow
+  `securityFlowsTo_prevents_label_escalation` documents as intended.
+  `endpointAdmissionAdmitsMixedObservability`
+  (`InformationFlow/Projection.lean`) is that admission as a `decide`-checked
+  theorem, with an observer that sees exactly one of the two.  So **an
+  endpoint/notification queue label-uniformity invariant is unestablishable**, not
+  merely absent; it was the registered closure for `abortHolderProjectionStable`,
+  `abortHolderWakeHigh` and the three queue arms' `hTeardownProj`, and it is
+  retracted.  A proof that reaches for it is asking for a premise the gate
+  refutes.  (2) **What the gate does give is the other direction, and it is
+  enough for everything but the neighbours**: every waiter's label flows to its
+  endpoint's (`endpointFlowGate_implies_securityFlowsTo`, no hypothesis), so an
+  *observable* endpoint has only observable waiters and, contrapositively, the
+  endpoint object is non-observable whenever any waiter is — which covers the
+  endpoint's own queue boundaries, and covers the aborted holder's TCB through
+  `label victim ⊑ label endpoint ⊑ label holder`.  The **queue neighbours** are
+  covered by nothing: their labels are constrained only against the endpoint's.
+  So `abortHolderWakeHigh` closes from the labelling **outright** (it is a single
+  `threadObservable` of the holder), and `abortHolderProjectionStable` and
+  `hTeardownProj` reduce to that one class and no further.  (3) **The residue is
+  representational and the remedy is forced**: `queuePrev` / `queuePPrev` /
+  `queueNext` survive `projectKernelObject`, so an observable thread's projection
+  already names a non-observable one's identity with no operation having run —
+  the same class as the `replyObject` erasure SM6.D landed — and a splice then
+  rewrites an observable field.  *Stripping* the links is **unsound** rather than
+  coarse: the projection would stop determining the next dequeue, so two
+  low-equivalent states would step to states differing in the endpoint's own
+  visible `head` and the step-level NI theorems would become false.  A queue's
+  content must live in an object whose label **dominates** every member's, which
+  the endpoint is and a member's own TCB is not — so the closure is non-intrusive
+  endpoint queues, registered in `docs/REGISTERED_DEBT.md` table C with its
+  measurement.  Until it lands, **v1.0.0 must not claim that a low observer
+  cannot learn a high thread's identity from endpoint queue state.**
 - **...and `passiveServerIdle` is preserved by `cancelIpcBlocking` on every arm**
   (WS-OD OD1.5, v0.34.105) — the theorem OD1 exists to prove, and one that was
   *false* before the abort prefix: the reply arm's reclaim could leave a holder

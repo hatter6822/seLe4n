@@ -1,3 +1,97 @@
+## v0.35.83 — WS-RR RR8.8 (first cut): the queue label-uniformity remedy is refuted
+
+**Three information-flow obligations were registered against an invariant that
+cannot be established, and one of them never needed it.**  RR8.8 set out to
+discharge `abortHolderProjectionStable` beyond the inert case and found its own
+closure refuted, so this cut is the plan, register and prose repair, with the
+refutation itself proved in Lean — ahead of any code written against a remedy
+that does not exist.
+
+`abortHolderProjectionStable` (WS-OD OD1.4), `abortHolderWakeHigh` (OD1.7) and
+the three queue arms' `hTeardownProj` (RR2.18) all read, in the register and in
+their own docstrings, that closing them needs *an endpoint/notification queue
+label-uniformity invariant, established on every enqueue path*.  The live
+send / call gate is
+`endpointFlowGate ctx ep (threadLabelOf sender) (endpointLabelOf ep)`, and the
+receive gate is its mirror: an **order**, not an equality.  So a lower-labelled
+and a higher-labelled sender are both admitted onto one higher-labelled
+endpoint — `publicLabel → kernelTrusted` being the flow
+`securityFlowsTo_prevents_label_escalation` documents as intended — and no
+enqueue path can establish uniformity.  Establishing it would mean narrowing the
+gate to label equality and refusing a lower-labelled client's send to a
+higher-labelled server, which is the flow the lattice exists to permit.
+
+**`endpointAdmissionAdmitsMixedObservability`** (`InformationFlow/Projection.lean`,
+production) is that admission as a `decide`-checked theorem: both senders pass
+the gate, the observer sees exactly one of them, and their labels differ.  The
+retired diagnosis named the direction the gate makes **impossible** — *a low
+endpoint holding a high waiter*, which `endpointFlowGate_implies_securityFlowsTo`
+forbids outright; the reachable direction is a low waiter *beside* a high one on
+a high endpoint.
+
+**What the gate does give settles the scope, and it is most of it.**  Every
+waiter's label flows to its endpoint's, with no hypothesis, so of the abort's
+three write classes two close from the labelling: the **endpoint object**
+(non-observable whenever any waiter is) and the **holder's own TCB** (through the
+donating `Call`'s gate composed with the server's receive gate,
+`label victim ⊑ label endpoint ⊑ label holder`).  The third — the holder's
+**queue neighbours** — closes from nothing, their labels being constrained only
+against the endpoint's.  `abortHolderWakeHigh` therefore closes **outright**: it
+is a single `threadObservable` of the holder, a run-queue insert being filtered
+by the inserted thread's own observability, so it asks nothing about any queue's
+representation and its docstring's claim that it waited on the uniformity
+invariant was wrong on both counts.  RR8.9 is re-rated S and re-pointed at
+RR8.8, which absorbs the donor-dominance fact as the prerequisite the register
+had scheduled against no row at all.
+
+**A finding rides along, and it is standing rather than created by the
+cancellation.**  `TCB.queuePrev` / `queuePPrev` / `queueNext` **survive**
+`projectKernelObject`, so an observable thread's projection already names a
+non-observable one's identity whenever both are admitted onto one endpoint — the
+same class as the `replyObject` erasure SM6.D landed for exactly this reason, on
+a field that names a thread instead of a Reply.  Severity **Medium**: the tree's
+NI theorems stay true and what the leak costs is their *strength* (low-equivalence
+is finer than it should be, so "a low observer cannot distinguish" claims less
+than the prose suggests); nothing boots before SM10.1; and the shipped RPi5
+binding is immune, `confinedLabelingContext` passing `lowTrusted` /
+`highUntrusted`, which are mutually non-flowing, so it admits no cross-label
+endpoint flow and its queues are uniform by construction.  What is exposed is a
+first-class member of the same production family: `indexPartitionedLabelingContext`
+obliges only `lowerLabel ≠ upperLabel`.
+
+**The remedy is representational and it is forced.**  A labelling remedy does not
+exist.  *Stripping* the links at projection time is **unsound** rather than
+merely coarse: the projection would stop determining the next dequeue, so two
+low-equivalent states would step to states differing in the endpoint's own
+visible `head`, and the step-level NI theorems would become false.  A queue's
+content must live in an object whose label **dominates** every member's — which
+the endpoint is and a member's own TCB is not — so the closure is non-intrusive
+endpoint and notification queues, the list in the endpoint object.  Then a
+removal writes only that object, which is non-observable whenever any member is;
+no neighbour TCB is written at all; and an observable endpoint provably has only
+observable members.  Measured before scheduling: **2272 whole-word
+occurrences of `queueNext` / `queuePrev` / `queuePPrev` across 67 tracked
+`.lean` files**, plus the dual-queue invariant surface
+stated over the links — far past RR8, whose remaining rows are bookkeeping, and
+past WS-BP and WS-CB, neither of which may open until RR8 closes.  Registered in
+`docs/REGISTERED_DEBT.md` table C with that measurement, and **v1.0.0 must not
+claim that a low observer cannot learn a high thread's identity from endpoint
+queue state**.
+
+Six prose passages named the refuted invariant and are corrected: five across
+three docstrings in `IPC/CrossCore/CancellationNI.lean` — on
+`abortHolderProjectionStable`, on `abortHolderWakeHigh`, and three inside
+`cancelIpcBlockingOnCore_reply_cancellation_NI`'s own docstring (the queue-arms
+paragraph and the OD1.4 and OD1.7 paragraphs) — and the G3 note in
+`InformationFlow/Invariant/Operations.lean`.  Nine Tier 3
+anchors pin the cut: four positives on the theorem's own discriminating
+conjuncts, a negative refusing a gate reading whose destination is a receiver's
+label rather than the endpoint's, two prose negatives refusing the retired
+diagnosis and the retired prescription, and two prose positives requiring the
+retraction to stay stated.  All nine were mutation-tested in both directions —
+each mutation keeps every token and breaks the relation, and the baseline is
+silent on the clean tree before and after.
+
 ## v0.35.82 — WS-RR RR8.7 (second cut): all three cancellation arms carry the IPC bundle
 
 **The reply arm was the last of `cancelIpcBlocking`'s three without an

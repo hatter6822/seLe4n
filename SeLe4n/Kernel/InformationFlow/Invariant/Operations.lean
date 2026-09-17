@@ -4924,10 +4924,20 @@ theorem cancelDonatedDonation_preserves_projection
       rewrites the victim's queue-NEIGHBOUR TCBs' `queuePrev`/`queueNext`,
       and queue-link fields survive projection — so a high victim spliced
       out from between low-observable neighbours changes the low projection.
-      Discharging this needs the dual-queue endpoint-label invariant already
-      tracked as SM6.B debt (a queue's members share the endpoint's label);
-      the SM6.E cancellation-NI module consumes exactly this obligation as
-      its `hTeardownProj` hypothesis.
+      **WS-RR RR8.8 correction**: the invariant this was tracked against —
+      "a queue's members share the endpoint's label", SM6.B debt — is
+      **unestablishable**.  The live admission gate is
+      `label sender ⊑ label endpoint`, an order rather than an equality, so a
+      low and a high waiter on one high endpoint are both admitted by design
+      (`endpointAdmissionAdmitsMixedObservability`); establishing uniformity
+      would mean narrowing the gate to equality and refusing the one-way flow
+      the lattice exists to permit.  The gate's own direction closes the
+      *endpoint object* (non-observable whenever any waiter is) and closes
+      nothing about the neighbours, so the residue is representational: a
+      queue's content must live in an object whose label dominates every
+      member's, which the endpoint is and a member's own TCB is not.  The
+      SM6.E cancellation-NI module consumes this obligation as its
+      `hTeardownProj` hypothesis; see `docs/REGISTERED_DEBT.md`.
     - **G4 re-lookup**: no state change.
     - **G5 `cancelDonation` (WS-RC R5.A split)**: post-R5.A the G5 step
       dispatches explicitly on `schedContextBinding`:

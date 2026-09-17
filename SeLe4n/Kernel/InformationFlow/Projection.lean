@@ -1173,4 +1173,78 @@ theorem serviceOrchestration_boundary_disjunction
     | none => rfl
     | some v => exfalso; exact h ⟨sid, hObs, by simp [hLookup]⟩
 
+-- ============================================================================
+-- §14 What the endpoint admission gate admits onto a single queue
+-- ============================================================================
+
+/-- **WS-RR RR8.8**: the live endpoint admission gate puts an **observable** and a
+**non-observable** thread on the *same* endpoint queue.
+
+This decides how the cancellation path's two standing projection obligations
+(`abortHolderProjectionStable`, `abortHolderWakeHigh`) and the three queue arms'
+`hTeardownProj` can be closed — and it **refutes the remedy all three were
+registered with**.
+
+The live send / call gate is
+`endpointFlowGate ctx ep (threadLabelOf sender) (endpointLabelOf ep)`
+(`endpointSendCrossCoreDispatchChecked`, `endpointCallCrossCoreDispatchChecked`;
+the receive side is its mirror, `endpointReceiveDualChecked`): a thread is
+admitted onto an endpoint's queue when its own label **flows to** the endpoint's,
+not when it *equals* it.  `securityFlowsTo` is a genuine order rather than
+equality — `publicLabel → kernelTrusted` is permitted *by design*, which
+`securityFlowsTo_prevents_label_escalation` states in as many words — so two
+senders with different labels are both admitted onto one endpoint, and an
+observer cleared for the lower one sees exactly one of them.
+
+Two consequences, both load-bearing.
+
+**An endpoint/notification queue label-uniformity invariant cannot be
+established.**  It was registered as the closure for all three obligations, and
+the enqueue's own admission predicate admits a non-uniform queue, so no enqueue
+path can establish it.  Establishing it would mean narrowing the gate to label
+*equality*, which refuses the canonical one-way flow this lattice exists to
+permit — a lower-labelled client sending to a higher-labelled server.  The
+remedy is retracted; see `docs/REGISTERED_DEBT.md`.
+
+**What the gate does give is the other direction, and it closes two of the three
+write classes.**  Every thread on an endpoint's queue satisfies
+`label thread ⊑ label endpoint` (`endpointFlowGate_implies_securityFlowsTo`,
+which takes no hypothesis at all), so an *observable* endpoint has only
+observable waiters and — contrapositively — the endpoint object is
+non-observable whenever any of its waiters is.  That covers the endpoint's own
+`sendQueue` / `recvQueue` boundaries, and the aborted holder's own TCB is
+covered by the same order run through the donating `Call` and the server's
+receive.  What is left is the **queue neighbours**: their labels are constrained
+only against the *endpoint's*, so nothing relates a neighbour to the thread being
+spliced out, and this theorem exhibits the admission in which they differ.
+`queuePrev` / `queuePPrev` / `queueNext` survive `projectKernelObject`, so the
+splice writes an observable field — which is why the remaining closure is to take
+the queue links **out of the TCB** rather than to constrain labels.
+
+The admission is a first-class member of the production labelling family:
+`indexPartitionedLabelingContext base w publicLabel kernelTrusted` differs from
+the shipped `confinedLabelingContext` only in the two labels applied to it, and
+its label obligation is distinctness (`lowerLabel ≠ upperLabel`), not mutual
+non-flow.  The RPi5 binding passes `lowTrusted` / `highUntrusted`, which are
+mutually non-flowing (`lowTrusted_highUntrusted_mutually_isolated`), so *that*
+deployment admits no cross-label endpoint flow and its queues are uniform by
+construction: the gap is in the general claim, not in the shipped
+configuration. -/
+theorem endpointAdmissionAdmitsMixedObservability
+    (ctx : LabelingContext) (observer : IfObserver) (epId : SeLe4n.ObjId)
+    (lowerTid upperTid : SeLe4n.ThreadId)
+    (hNoOverride : ctx.endpointPolicy.endpointPolicy epId = none)
+    (hEndpoint : ctx.endpointLabelOf epId = SecurityLabel.kernelTrusted)
+    (hClearance : observer.clearance = SecurityLabel.publicLabel)
+    (hLower : ctx.threadLabelOf lowerTid = SecurityLabel.publicLabel)
+    (hUpper : ctx.threadLabelOf upperTid = SecurityLabel.kernelTrusted) :
+    endpointFlowGate ctx epId (ctx.threadLabelOf lowerTid) (ctx.endpointLabelOf epId) = true
+      ∧ endpointFlowGate ctx epId (ctx.threadLabelOf upperTid) (ctx.endpointLabelOf epId) = true
+      ∧ threadObservable ctx observer lowerTid = true
+      ∧ threadObservable ctx observer upperTid = false
+      ∧ ctx.threadLabelOf lowerTid ≠ ctx.threadLabelOf upperTid := by
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;>
+    simp only [endpointFlowGate, endpointOverrideAllows, threadObservable,
+      hNoOverride, hEndpoint, hClearance, hLower, hUpper] <;> decide
+
 end SeLe4n.Kernel

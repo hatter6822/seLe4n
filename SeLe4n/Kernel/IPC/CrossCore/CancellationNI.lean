@@ -312,9 +312,18 @@ non-observable.
 Stated as the policy fact rather than as a projection equality, because that is
 what a deployment can actually establish: a server holding a high caller's
 donated SchedContext is reachable from that caller, so a labeling that admits
-the `Call` in the first place labels the server at least as high.  Closing it as
-a *theorem* needs the endpoint-queue label-uniformity invariant OD1.4's
-obligation also waits on — registered WS-OD debt, not assumed away here.
+the `Call` in the first place labels the server at least as high.
+
+**WS-RR RR8.8 correction.**  Closing it as a *theorem* needs **only** that fact,
+recorded as a state invariant — `label victim ⊑ label endpoint` from the
+donating `Call`'s gate, `label endpoint ⊑ label holder` from the server's own
+receive gate, composed by `securityFlowsTo_trans`.  It does **not** wait on
+anything about queues: this obligation is a single `threadObservable` of the
+holder, and a run-queue insert is filtered by the inserted thread's own
+observability.  This docstring previously said it waited on the endpoint-queue
+label-uniformity invariant OD1.4's obligation also waited on; that invariant is
+unestablishable (`endpointAdmissionAdmitsMixedObservability`) and was never
+needed for this half.  Registered WS-RR RR8.8 debt, not assumed away here.
 
 Discharged outright wherever no donation is resolved
 (`abortHolderWakeHigh_of_no_donation`), which is every arm but a reply arm whose
@@ -631,9 +640,21 @@ survives `projectKernelObject`.  So a low observer that can see the holder's
 endpoint would see a high victim's cancellation through it.
 
 This is **the same gap the three queue arms already carry**, arriving at the
-reply arm through the holder rather than through the victim: closing it needs an
-endpoint/notification queue label-uniformity invariant, established on every
-enqueue path.  Stated as an obligation rather than assumed away, and discharged
+reply arm through the holder rather than through the victim.  Two of the three
+write classes close from the admission gate alone
+(`endpointAdmissionAdmitsMixedObservability`): every waiter's label flows to its
+endpoint's, so the endpoint object is non-observable whenever the holder is, and
+the holder is non-observable whenever the victim is — the donating `Call`'s gate
+composed with the server's own receive gate,
+`label victim ⊑ label endpoint ⊑ label holder`.  The third class is the holder's
+**queue neighbours**, whose labels are constrained only against the *endpoint's*,
+so no labelling fact closes it: a queue label-uniformity invariant is not merely
+absent but **unestablishable**, the gate admitting a non-uniform queue by design
+so that a lower-labelled client can send to a higher-labelled server.  The
+remaining closure is representational — a queue's content must live in an object
+whose label *dominates* every member's, which the endpoint is and a member's own
+TCB is not — and is registered in `docs/REGISTERED_DEBT.md`.  Stated as an
+obligation rather than assumed away, and discharged
 outright wherever the abort is inert (`abortHolderProjectionStable_of_allowed`) —
 which is every state on which the reclaim's `passiveServerIdle` hole did not
 exist in the first place. -/
@@ -867,15 +888,24 @@ Together with `cancelIpcBlockingOnCore_ready_cancellation_NI` (the `.ready`
 victim) this covers the two arms whose write set is confined to the victim's own
 TCB and its Reply object.  The three *queue* arms
 (`.blockedOnSend` / `.blockedOnReceive` / `.blockedOnCall`, and
-`.blockedOnNotification`) still take `hTeardownProj`, and cannot be discharged
-without a labelling invariant this tree does not yet carry: their teardown
-rewrites the endpoint or notification object the victim was queued on and splices
-its queue neighbours' TCBs, and *nothing states that those are high when the
-victim is*.  That is a real gap, not a proof-engineering one — a low endpoint
-holding a high waiter would make the cancellation visible — and closing it means
-introducing an endpoint/notification queue label-uniformity invariant and
-**establishing** it on every enqueue path.  Registered as WS-RR RR3 debt rather
-than papered over here.
+`.blockedOnNotification`) still take `hTeardownProj`, for two write classes of
+which only one is a labelling question: their teardown rewrites the endpoint or
+notification object the victim was queued on, *and* splices the victim's queue
+**neighbours'** TCBs.
+
+The endpoint object closes from the admission gate — every waiter's label flows
+to its endpoint's (`endpointFlowGate_implies_securityFlowsTo`, no hypothesis), so
+the object is non-observable whenever any waiter is.  The neighbours do not, and
+cannot: their labels are constrained only against the *endpoint's*, so nothing
+relates a neighbour to the victim.  The failing direction is therefore **not** "a
+low endpoint holding a high waiter", which the gate makes impossible; it is a low
+waiter beside a high one on a high endpoint, which the gate permits by design so
+that a lower-labelled client can send to a higher-labelled server
+(`endpointAdmissionAdmitsMixedObservability`).  A queue label-uniformity
+invariant is accordingly **unestablishable** rather than merely absent, and the
+closure is representational: a queue's content must live in an object whose label
+*dominates* every member's, which the endpoint is and a member's own TCB is not.
+Registered as WS-RR RR8.8 debt rather than papered over here.
 
 **WS-OD OD1.4 — what this arm now carries, and why it is not the same
 hypothesis.**  The reclaim's holder abort splices a *third* thread out of a
@@ -889,11 +919,13 @@ the resolution rather than over a bound thread.  (2) It is **discharged
 outright** whenever the abort is inert (`abortHolderProjectionStable_of_allowed`),
 which is every state on which the `passiveServerIdle` hole did not arise; no
 information-flow result that held before this remediation is weakened on the
-states it held for.  (3) Closing it in general needs exactly the invariant the
-queue arms need, plus the fact that the holder is high when the victim is —
-which follows from the flow check the donating `Call` passed
-(`label victim ⊑ label holder`, `securityFlowsTo_trans`) rather than from a new
-assumption.  Registered as WS-OD debt beside the queue arms' gap.
+states it held for.  (3) Closing it in general needs the same queue-link
+relocation the queue arms need, and only for the **neighbour** writes.  Its
+*labelling* half is already available: the holder is high when the victim is,
+from the flow check the donating `Call` passed composed with the server's own
+receive gate (`label victim ⊑ label endpoint ⊑ label holder`,
+`securityFlowsTo_trans`), rather than from a new assumption.  Registered as
+WS-RR RR8.8 debt beside the queue arms' gap.
 
 **WS-OD OD1.7** adds `abortHolderWakeHigh`, the scheduler twin of the same gap:
 the reclaim not only aborts the holder's IPC, it now *places* the holder on its
@@ -901,7 +933,10 @@ home core's run queue, and a run-queue insert is filtered by the inserted
 thread's own observability.  All three distinguishing points above apply to it
 unchanged — it quantifies over the same resolution, it is discharged outright
 where no donation is resolved (`abortHolderWakeHigh_of_no_donation`), and it
-closes in general from the same `Call`-time flow check.  Two obligations rather
+closes in general from the same `Call`-time flow check — **entirely**, unlike
+OD1.4's, since a run-queue insert is filtered by the inserted thread's own
+observability and so asks nothing about any queue's representation.  Two
+obligations rather
 than one because they are two writes in two domains: OD1.4's is about the object
 store, this one about the scheduler. -/
 theorem cancelIpcBlockingOnCore_reply_cancellation_NI

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "8c5b4afa5512a64b511d6a2651d634004493f473",
-      "tree_sha": "2e42d64c57c0dd93dfab5f1da07a52c002a3fdbc",
-      "committed_at_utc": "2026-09-17T21:32:33+00:00"
+      "commit_sha": "3f293820bfd0da15b12ae2314d87c749be4b7b23",
+      "tree_sha": "00cc812af5fe029bb7e76723d1a175182ef047b1",
+      "committed_at_utc": "2026-09-17T22:27:11+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "75b50279ac7cb7318403b88e6c176f0a5684764ddf4d7b3d03596cc7268dad8c"
+    "source_digest": "de2c3e0423dcafda0f384b6ad1fc8db62c4c3ae86687de9e609103d24a808a68"
   },
   "summary": {
     "module_count": 401,
-    "declaration_count": 21756
+    "declaration_count": 21757
   },
   "readme_sync": {
-    "version": "0.35.82",
+    "version": "0.35.83",
     "lean_toolchain": "v4.28.0",
     "production_files": 331,
-    "production_loc": 387402,
+    "production_loc": 387521,
     "test_files": 70,
     "test_loc": 78892,
-    "proved_theorem_lemma_decls": 12917,
+    "proved_theorem_lemma_decls": 12918,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -71442,7 +71442,7 @@
         {
           "kind": "def",
           "name": "abortHolderWakeHigh",
-          "line": 322,
+          "line": 331,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71458,7 +71458,7 @@
         {
           "kind": "theorem",
           "name": "abortHolderWakeHigh_of_no_donation",
-          "line": 331,
+          "line": 340,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71476,7 +71476,7 @@
         {
           "kind": "theorem",
           "name": "wakeAbortedDonationHolder_preserves_projection",
-          "line": 341,
+          "line": 350,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71494,7 +71494,7 @@
         {
           "kind": "theorem",
           "name": "wakeAbortedDonationHolder_preserves_projectionOnCore",
-          "line": 354,
+          "line": 363,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71513,7 +71513,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_cancellation_NI",
-          "line": 379,
+          "line": 388,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71536,7 +71536,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_cancellation_NI_smp",
-          "line": 401,
+          "line": 410,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71560,7 +71560,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_ready_cancellation_NI",
-          "line": 428,
+          "line": 437,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71579,7 +71579,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_ready_cancellation_NI_smp",
-          "line": 444,
+          "line": 453,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71600,7 +71600,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonationOnCore_cancellation_NI",
-          "line": 470,
+          "line": 479,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71617,7 +71617,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonationOnCore_cancellation_NI_smp",
-          "line": 489,
+          "line": 498,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71636,7 +71636,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyStaging_preserves_objects_invExt",
-          "line": 537,
+          "line": 546,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -71651,7 +71651,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReady_preserves_objects_invExt",
-          "line": 544,
+          "line": 553,
           "called": [
             "SystemState",
             "ThreadId",
@@ -71665,7 +71665,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyCancelled_preserves_objects_invExt",
-          "line": 550,
+          "line": 559,
           "called": [
             "SystemState",
             "ThreadId",
@@ -71678,7 +71678,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyStaging_preserves_projection_high",
-          "line": 564,
+          "line": 573,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71699,7 +71699,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReady_preserves_projection_high",
-          "line": 577,
+          "line": 586,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71718,7 +71718,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyCancelled_preserves_projection_high",
-          "line": 589,
+          "line": 598,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71736,7 +71736,7 @@
         {
           "kind": "theorem",
           "name": "consumeReplyLink_preserves_projection_high",
-          "line": 607,
+          "line": 616,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71758,7 +71758,7 @@
         {
           "kind": "def",
           "name": "abortHolderProjectionStable",
-          "line": 640,
+          "line": 661,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71776,7 +71776,7 @@
         {
           "kind": "theorem",
           "name": "abortHolderProjectionStable_of_allowed",
-          "line": 655,
+          "line": 676,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71796,7 +71796,7 @@
         {
           "kind": "theorem",
           "name": "returnDonationToCancelledCaller_preserves_projection",
-          "line": 687,
+          "line": 708,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71833,7 +71833,7 @@
         {
           "kind": "theorem",
           "name": "spliceThreadReplyFrameOut_preserves_projection",
-          "line": 766,
+          "line": 787,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71851,7 +71851,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlocking_blockedOnReply_preserves_projection",
-          "line": 798,
+          "line": 819,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71890,7 +71890,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_reply_cancellation_NI",
-          "line": 907,
+          "line": 942,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158977,7 +158977,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_preserves_projection",
-          "line": 4947,
+          "line": 4957,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158991,7 +158991,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_insert",
-          "line": 4966,
+          "line": 4976,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -159010,7 +159010,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_ensureRunnable",
-          "line": 4980,
+          "line": 4990,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -159026,7 +159026,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_preserves_projection",
-          "line": 5005,
+          "line": 5015,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -159040,7 +159040,7 @@
         {
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_preserves_projection",
-          "line": 5025,
+          "line": 5035,
           "called": [
             "CPtr",
             "IfObserver",
@@ -170376,7 +170376,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Projection",
       "path": "SeLe4n/Kernel/InformationFlow/Projection.lean",
-      "declaration_count": 60,
+      "declaration_count": 61,
       "declarations": [
         {
           "kind": "namespace",
@@ -171189,7 +171189,6 @@
           "line": 1162,
           "called": [
             "IfObserver",
-            "Kernel",
             "LabelingContext",
             "SystemState",
             "lookupService",
@@ -171197,6 +171196,25 @@
             "serviceObservable",
             "serviceRegistryAffectsProjection",
             "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointAdmissionAdmitsMixedObservability",
+          "line": 1233,
+          "called": [
+            "IfObserver",
+            "Kernel",
+            "LabelingContext",
+            "ObjId",
+            "ThreadId",
+            "endpointFlowGate",
+            "endpointOverrideAllows",
+            "epId",
+            "kernelTrusted",
+            "none",
+            "publicLabel",
+            "threadObservable"
           ]
         }
       ]
