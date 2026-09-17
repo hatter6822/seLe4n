@@ -21,7 +21,7 @@ store_read_spec          = 4715 (diagnostic)
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 2485
+gettcb_adoption          = 2466
 getschedctx_adoption     = 451
 getendpoint_adoption     = 194
 getnotification_adoption = 87
@@ -2042,7 +2042,7 @@ RAW_MATCH_TOTAL=44
 RAW_MATCH_UNCLASSIFIED=3
 STORE_READ_CODE=0
 STORE_READ_SPEC=4715
-GETTCB_ADOPTION=2485
+GETTCB_ADOPTION=2466
 GETSCHEDCTX_ADOPTION=451
 GETENDPOINT_ADOPTION=194
 GETNOTIFICATION_ADOPTION=87

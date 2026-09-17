@@ -4171,6 +4171,7 @@ theorem retirePendingFaultForResume_preserves_ipcInvariantFull
       | none => simp only [retirePendingFaultForResume, hT, hF]; exact hInv
       | some tf =>
           simp only [retirePendingFaultForResume, hT, hF, applyFaultRestart]
+          rw [SystemState.updateTcb_eq_of_some hT]
           exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
             { tcb.withRestartFrame (Architecture.faultRestartFrameOfContext tf.context) with
                 pendingFault := none } hObjInv hInv
@@ -4188,7 +4189,7 @@ theorem retirePendingFaultForResume_preserves_objects_invExt
       | none => simp only [retirePendingFaultForResume, hT, hF]; exact hObjInv
       | some tf =>
           simp only [retirePendingFaultForResume, hT, hF, applyFaultRestart]
-          exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+          exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
 
 /-- Review round (PR #887): the retire step rewrites none of the fields the
 quiescence pack reads, so the pack transports to the state the resume runs
@@ -4224,14 +4225,15 @@ theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull
     (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') :
     ipcInvariantFull st' := by
   cases hT : st.getTcb? vtid.val with
-  | none => simp [setThreadFaultHandlerOp, hT] at hStep
+  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
   | some tcb =>
       cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e => simp [setThreadFaultHandlerOp, hT, hR] at hStep
+      | error e =>
+          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
       | ok tgt =>
           rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
           cases hStep
-          simp only [installFaultHandler]
+          unfold installFaultHandler SystemState.rewriteObject
           exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st vtid.val tcb
             { tcb with faultHandler := some cptr } hObjInv hInv
             ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
@@ -4244,15 +4246,16 @@ theorem setThreadFaultHandlerOp_preserves_objects_invExt
     (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') :
     st'.objects.invExt := by
   cases hT : st.getTcb? vtid.val with
-  | none => simp [setThreadFaultHandlerOp, hT] at hStep
+  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
   | some tcb =>
       cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e => simp [setThreadFaultHandlerOp, hT, hR] at hStep
+      | error e =>
+          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
       | ok tgt =>
           rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
           cases hStep
-          simp only [installFaultHandler]
-          exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+          unfold installFaultHandler
+          exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hObjInv
 
 /-- `.tcbResume` (dispatch arm): the seam-gated wrapper, both branches. -/
 theorem resumeThreadOnCoreLive_preserves_ipcInvariantFull

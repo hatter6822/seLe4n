@@ -67,8 +67,9 @@ theorem recordPendingFault_preserves_ipcInvariantFull
     ipcInvariantFull (recordPendingFault st tid tf) := by
   unfold recordPendingFault
   cases hT : st.getTcb? tid with
-  | none => exact hInv
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact hInv
   | some tcb =>
+      rw [SystemState.updateTcb_eq_of_some hT]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
         { tcb with pendingFault := some tf } hObjInv hInv
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
@@ -81,9 +82,7 @@ theorem recordPendingFault_preserves_objects_invExt
     (hObjInv : st.objects.invExt) :
     (recordPendingFault st tid tf).objects.invExt := by
   unfold recordPendingFault
-  cases st.getTcb? tid with
-  | none => exact hObjInv
-  | some tcb => exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
 
 /-- WS-RR RR4.9/RR4.17: the deschedule half of the fail-closed dispositions
 preserves the bundle.
@@ -130,12 +129,12 @@ theorem faultSuspendOnCore_preserves_ipcInvariantFull
     ipcInvariantFull (faultSuspendOnCore st tid c) := by
   have hInvR : ipcInvariantFull (removeRunnableOnCore st tid c) :=
     removeRunnableOnCore_preserves_bundle st tid c hAllowed hInv
-  simp only [faultSuspendOnCore]
+  unfold faultSuspendOnCore
   cases hT : (removeRunnableOnCore st tid c).getTcb? tid with
-  | none => simpa only [hT] using hInvR
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact hInvR
   | some tcb =>
-      simpa only [hT] using
-        insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
+      rw [SystemState.updateTcb_eq_of_some hT]
+      exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
           (removeRunnableOnCore st tid c) tid tcb
           { tcb with threadState := .Inactive } hObjInv hInvR
           ((SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT)
@@ -160,13 +159,8 @@ theorem faultSuspendOnCore_preserves_objects_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
     (hObjInv : st.objects.invExt) :
     (faultSuspendOnCore st tid c).objects.invExt := by
-  simp only [faultSuspendOnCore]
-  cases hT : (removeRunnableOnCore st tid c).getTcb? tid with
-  | none => simpa only [hT] using hObjInv
-  | some tcb =>
-      simpa only [hT] using
-        RobinHood.RHTable.insert_preserves_invExt
-          (removeRunnableOnCore st tid c).objects tid.toObjId _ hObjInv
+  unfold faultSuspendOnCore
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
 
 /-- WS-RR RR4.18: the reply-declined disposition preserves the bundle — it
 adds only the `pendingFault` clear to the suspend's writes, and that field is
@@ -180,12 +174,12 @@ theorem faultAbandonOnCore_preserves_ipcInvariantFull
     ipcInvariantFull (faultAbandonOnCore st tid c) := by
   have hInvR : ipcInvariantFull (removeRunnableOnCore st tid c) :=
     removeRunnableOnCore_preserves_bundle st tid c hAllowed hInv
-  simp only [faultAbandonOnCore]
+  unfold faultAbandonOnCore
   cases hT : (removeRunnableOnCore st tid c).getTcb? tid with
-  | none => simpa only [hT] using hInvR
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact hInvR
   | some tcb =>
-      simpa only [hT] using
-        insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
+      rw [SystemState.updateTcb_eq_of_some hT]
+      exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
           (removeRunnableOnCore st tid c) tid tcb
           { tcb with threadState := .Inactive, pendingFault := none } hObjInv hInvR
           ((SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT)
@@ -208,13 +202,8 @@ theorem faultAbandonOnCore_preserves_objects_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
     (hObjInv : st.objects.invExt) :
     (faultAbandonOnCore st tid c).objects.invExt := by
-  simp only [faultAbandonOnCore]
-  cases hT : (removeRunnableOnCore st tid c).getTcb? tid with
-  | none => simpa only [hT] using hObjInv
-  | some tcb =>
-      simpa only [hT] using
-        RobinHood.RHTable.insert_preserves_invExt
-          (removeRunnableOnCore st tid c).objects tid.toObjId _ hObjInv
+  unfold faultAbandonOnCore
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
 
 /-- WS-RR RR4.16/RR4.18: **installing a restart frame preserves the bundle.**
 
@@ -229,8 +218,9 @@ theorem applyFaultRestart_preserves_ipcInvariantFull
     ipcInvariantFull (applyFaultRestart st tid frame) := by
   unfold applyFaultRestart
   cases hT : st.getTcb? tid with
-  | none => exact hInv
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact hInv
   | some tcb =>
+      rw [SystemState.updateTcb_eq_of_some hT]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
         { tcb.withRestartFrame frame with pendingFault := none } hObjInv hInv
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
@@ -242,9 +232,7 @@ theorem applyFaultRestart_preserves_objects_invExt
     (hObjInv : st.objects.invExt) :
     (applyFaultRestart st tid frame).objects.invExt := by
   unfold applyFaultRestart
-  cases st.getTcb? tid with
-  | none => exact hObjInv
-  | some tcb => exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
 
 -- ============================================================================
 -- §2 The Call and Reply chains preserve the object-store invariant
@@ -631,9 +619,9 @@ theorem applyFaultRestart_donationChainFrame (st : SystemState)
     donationChainFrame st (applyFaultRestart st tid frame) := by
   unfold applyFaultRestart
   cases hT : st.getTcb? tid with
-  | none => simp only []; exact donationChainFrame.refl st
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact donationChainFrame.refl st
   | some tcb =>
-      simp only []
+      rw [SystemState.updateTcb_eq_of_some hT]
       exact donationChainFrame_of_objects_insert hObjInv
         (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hT]; rfl)
         (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hT]; rfl)
@@ -654,9 +642,9 @@ theorem faultAbandonOnCore_donationChainFrame (st : SystemState)
   refine hFrameR.trans ?_
   unfold faultAbandonOnCore
   cases hT : (removeRunnableOnCore st tid c).getTcb? tid with
-  | none => simp only [hT]; exact donationChainFrame.refl _
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact donationChainFrame.refl _
   | some tcb =>
-      simp only [hT]
+      rw [SystemState.updateTcb_eq_of_some hT]
       exact donationChainFrame_of_objects_insert hInvR
         (by rw [(SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT]; rfl)
         (by rw [(SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT]; rfl)

@@ -123,11 +123,11 @@ theorem recordPendingFault_preserves_projection (ctx : LabelingContext)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (recordPendingFault st tid tf)
       = projectState ctx observer st := by
-  simp only [recordPendingFault]
+  unfold recordPendingFault
   cases hT : st.getTcb? tid with
-  | none => rfl
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]
   | some tcb =>
-      simp only
+      rw [SystemState.updateTcb_eq_of_some hT]
       have hProj := projectObjects_insert_high ctx observer st
         ({ st with objects := st.objects.insert tid.toObjId (KernelObject.tcb { tcb with pendingFault := some tf }) } : SystemState)
         tid (KernelObject.tcb { tcb with pendingFault := some tf }) rfl hHighObj hObjInv
@@ -150,13 +150,13 @@ theorem faultSuspendOnCore_preserves_projection (ctx : LabelingContext)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (faultSuspendOnCore st tid c)
       = projectState ctx observer st := by
-  simp only [faultSuspendOnCore]
+  unfold faultSuspendOnCore
   cases hT : (removeRunnableOnCore st tid c).getTcb? tid with
   | none =>
-      simp only
+      rw [SystemState.updateTcb_eq_self_of_none hT]
       exact removeRunnableOnCore_preserves_projection ctx observer st tid c hHigh
   | some tcb =>
-      simp only
+      rw [SystemState.updateTcb_eq_of_some hT]
       have hProj := projectObjects_insert_high ctx observer (removeRunnableOnCore st tid c)
         ({ removeRunnableOnCore st tid c with objects := (removeRunnableOnCore st tid c).objects.insert tid.toObjId (KernelObject.tcb { tcb with threadState := .Inactive }) } : SystemState)
         tid (KernelObject.tcb { tcb with threadState := .Inactive }) rfl hHighObj hObjInv
@@ -181,12 +181,8 @@ theorem faultDeliverOnCoreChecked_denied_preserves_projection (ctx : LabelingCon
     projectState ctx observer (faultDeliverOnCoreChecked ctx st tid f fctx c).1
       = projectState ctx observer st := by
   have hSuspObj : (faultSuspendOnCore st tid c).objects.invExt := by
-    simp only [faultSuspendOnCore]
-    cases (removeRunnableOnCore st tid c).getTcb? tid with
-    | none => exact hObjInv
-    | some tcb =>
-        exact RobinHood.RHTable.insert_preserves_invExt
-          (removeRunnableOnCore st tid c).objects tid.toObjId _ hObjInv
+    unfold faultSuspendOnCore
+    exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
   rw [faultDeliverOnCoreChecked_flow_denied ctx st tid f fctx c tgt hRes hDeny]
   simp only
   rw [recordPendingFault_preserves_projection ctx observer _ tid _ hHighObj hSuspObj]

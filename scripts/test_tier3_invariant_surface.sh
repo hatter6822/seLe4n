@@ -2849,7 +2849,7 @@ run_check "INVARIANT" rg -n '^theorem getSchedContextWitnessed\?_val\b' SeLe4n/M
 # theorem may case on a lookup this way elsewhere; these files are where
 # the executable rewrite sites live, and the mutation this refuses keeps the
 # match and makes it dependent again.
-run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean SeLe4n/Kernel/Architecture/SyscallReturn.lean SeLe4n/Platform/FFI.lean SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean SeLe4n/Kernel/Architecture/SyscallReturn.lean SeLe4n/Platform/FFI.lean SeLe4n/Kernel/IPC/Operations/Fault.lean SeLe4n/Kernel/IPC/CrossCore/Fault.lean
 # The scheduler's context-save family and the affinity op are the typed rewrite,
 # or the witnessed lookup around `rewriteObject` -- bounded to each declaration.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.updateTcb outTid fun outTcb" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
@@ -3032,6 +3032,37 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def writeFfiRegistersToTcb\n
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem writeReturnFrameToTcb_id_when_not_tcb[^\n]*(\n([ \t][^\n]*)?)*exact SystemState\.updateTcb_eq_self_of_none hNot _$" SeLe4n/Kernel/Architecture/SyscallReturn.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem writeFaultRegistersToTcb_id_when_not_tcb[^\n]*(\n([ \t][^\n]*)?)*exact SystemState\.updateTcb_eq_self_of_none hNone _$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem writeFfiRegistersToTcb_id_when_not_tcb[^\n]*(\n([ \t][^\n]*)?)*exact SystemState\.updateTcb_eq_self_of_none hNone _$" SeLe4n/Platform/FFI.lean'
+
+# ============================================================================
+# v0.35.70 -- the fault path's seven TCB writers are the typed in-place rewrite
+# ============================================================================
+#
+# `recordPendingFault`, `applyFaultRestart` and the four fail-closed
+# dispositions (`faultSuspend` / `faultAbandon` and their per-core forms) each
+# looked the TCB up and inserted the rewritten record raw; each is `updateTcb`
+# now -- the dispositions over the descheduled state, so the deschedule stays
+# the scheduler-only write it always was.  `installFaultHandler` is handed the
+# TCB the operation already resolved, so it takes the store's witness for it
+# and writes through `rewriteObject` under that proof; the operation resolves
+# the thread once, through the witnessed lookup.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def recordPendingFault \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(tf : ThreadFault\) : SystemState :=\n  st\.updateTcb tid fun tcb => \{ tcb with pendingFault := some tf \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def faultSuspend \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  \(removeRunnable st tid\)\.updateTcb tid fun tcb => \{ tcb with threadState := \.Inactive \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def faultAbandon \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  \(removeRunnable st tid\)\.updateTcb tid fun tcb =>\n    \{ tcb with threadState := \.Inactive, pendingFault := none \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyFaultRestart \(st : SystemState\) \(faulted : SeLe4n\.ThreadId\)\n    \(frame : Architecture\.FaultRestartFrame\) : SystemState :=\n  st\.updateTcb faulted fun tcb => \{ tcb\.withRestartFrame frame with pendingFault := none \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def faultSuspendOnCore \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) \(c : CoreId\) :\n    SystemState :=\n  \(removeRunnableOnCore st tid c\)\.updateTcb tid fun tcb => \{ tcb with threadState := \.Inactive \}$" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def faultAbandonOnCore \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) \(c : CoreId\) :\n    SystemState :=\n  \(removeRunnableOnCore st tid c\)\.updateTcb tid fun tcb =>\n    \{ tcb with threadState := \.Inactive, pendingFault := none \}$" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+# The handed-TCB writer takes the store's witness and writes under it; the
+# operation resolves the thread through the witnessed lookup, once.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def installFaultHandler \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) \(tcb : TCB\)\n    \(hTcb : st\.getTcb\? tid = some tcb\) \(cptr : SeLe4n\.CPtr\) : SystemState :=\n  st\.rewriteObject tid\.toObjId \(\.tcb \{ tcb with faultHandler := some cptr \}\)\n    \(SystemState\.rewriteAdmissible_tcb hTcb _\)$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def setThreadFaultHandlerOp[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? vTargetTid\.val with\n  \| none => \.error \.objectNotFound\n  \| some ⟨tcb, hTcb⟩ =>" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+# NEGATIVE: no raw insert and no bare lookup returning inside any of the eight,
+# bounded to each declaration.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (recordPendingFault|faultSuspend|faultAbandon|applyFaultRestart|installFaultHandler|setThreadFaultHandlerOp) \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*(objects\.insert|match st\.getTcb\? |match st1\.getTcb\? )" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (faultSuspendOnCore|faultAbandonOnCore) \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*(objects\.insert|match st\.getTcb\? |match st1\.getTcb\? )" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+# The two per-core dispositions are still, at the boot core, the single-core
+# forms by definition -- the migration kept the two spellings one.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem faultSuspendOnCore_bootCoreId[^\n]*(\n([ \t][^\n]*)?)*= faultSuspend st tid :=\n  rfl$" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem faultAbandonOnCore_bootCoreId[^\n]*(\n([ \t][^\n]*)?)*= faultAbandon st tid :=\n  rfl$" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
 
 # ============================================================================
 # WS-OD OD6 -- the payoff

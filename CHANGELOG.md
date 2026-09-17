@@ -1,3 +1,54 @@
+## v0.35.70 — The fault path's seven TCB writers are the typed in-place rewrite
+
+**Raw-write migration, seventh cut (C2).**  The fault path rewrote a thread's TCB
+raw at seven sites — `recordPendingFault` (seL4's `tcbFault` set before the fault
+IPC), `applyFaultRestart` (the handler's restart frame and the fault's retirement),
+the fail-closed dispositions `faultSuspend` / `faultAbandon` and their per-core
+forms `faultSuspendOnCore` / `faultAbandonOnCore`, and `installFaultHandler`
+(`seL4_TCB_SetSpace`'s fault endpoint) — each a lookup and an insert of the
+rewritten record at the same key.  Six are `SystemState.updateTcb` now, the four
+dispositions over the descheduled state (`(removeRunnableOnCore st tid c).updateTcb
+tid …`), so the deschedule stays the scheduler-only write it always was and the
+boot-core bridges `faultSuspendOnCore_bootCoreId` / `faultAbandonOnCore_bootCoreId`
+are still `rfl`.  The seventh is the handed-TCB shape: `setThreadFaultHandlerOp`
+resolves the target once, validates the handler against the record it found, and
+hands that record to `installFaultHandler` — which now **takes the store's witness
+for it** (`hTcb : st.getTcb? tid = some tcb`) and writes through `rewriteObject`
+under `rewriteAdmissible_tcb hTcb`, the `v0.35.67` rule for a TCB a transition is
+handed rather than looks up.  The operation matches `getTcbWitnessed?`, and
+`setThreadFaultHandlerOp_ok_eq` carries the witness into its statement.
+
+Twenty-eight proofs across six modules that unfolded a writer were repaired by the
+fixed recipe — `cases hT : … .getTcb? tid`, then `updateTcb_eq_of_some hT` or
+`updateTcb_eq_self_of_none hT` (for the operation: `getTcbWitnessed?_eq_some` /
+`_eq_none` under `simp`) — and every frame is an instance of the `updateTcb_*` or
+`rewriteObject_*` family; the four lookup-read lemmas (`faultSuspend_threadState`,
+`applyFaultRestart_pc`, `setThreadFaultHandlerOp_faultHandler`, and the resume
+retirement) read `updateTcb_getTcb?_self` / `rewriteObject_objects_self`.  No
+statement changed except the witness `installFaultHandler` now carries.
+
+**Measured and left.**  The raw-write population is **32 sites in 26 executable
+declarations across 13 files** outside `SeLe4n/Testing/` (from 39 / 33 / 15).
+`IPC/Operations/Fault.lean` and `IPC/CrossCore/Fault.lean` hold no raw write.
+Next: the SchedContext operations and the priority management (C3), then the
+cancellation spine's suspend, the capability revoke step, the cleanup sweeps and
+the inhabitation witnesses (C4).
+
+**The lookup-adoption floor is re-anchored again, 2485 → 2466**, for the reason
+`v0.35.69` records: seven sites and their twenty-one case-split proofs spelled the
+typed lookup where the primitive now spells it once, and the raw-read inventory
+(`RAW_SITE`, `STORE_READ_CODE = 0`) is byte-identical.
+
+**Tier 3**: positives on each writer's exact spelling — the dispositions over the
+descheduled state, the handed-TCB writer's witness and `rewriteObject` under it,
+the operation's witnessed match — and on the two boot-core bridges staying
+definitional; negatives on a raw insert or a bare lookup anywhere in the eight
+declarations, bounded to each; `CrossCore/Fault.lean` joins the dependent-match
+negative — 9 cases, 19 mutation checks, every mutation keeping the tokens (the
+rewrite before the deschedule, the deschedule on the wrong core, the witness
+weakened to a relation the rewrite cannot consume, the witness discarded at the
+match, the fault's retirement dropped).  Golden trace byte-identical.
+
 ## v0.35.69 — The four register-context writers are the typed in-place rewrite
 
 **Raw-write migration, sixth cut (C1).**  Four transitions rewrote a thread's saved

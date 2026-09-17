@@ -5044,14 +5044,15 @@ theorem setThreadFaultHandlerOp_preserves_projection
     (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   cases hT : st.getTcb? vTargetTid.val with
-  | none => simp [setThreadFaultHandlerOp, hT] at hStep
+  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
   | some tcb =>
       cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e => simp [setThreadFaultHandlerOp, hT, hR] at hStep
+      | error e =>
+          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
       | ok tgt =>
           rw [setThreadFaultHandlerOp_ok_eq st vTargetTid cptr tcb tgt hT hR] at hStep
           cases hStep
-          simp only [installFaultHandler]
+          unfold installFaultHandler SystemState.rewriteObject
           exact objects_insert_preserves_projection_high ctx observer st
             vTargetTid.val.toObjId (.tcb { tcb with faultHandler := some cptr })
             hTargetObjHigh hObjInv

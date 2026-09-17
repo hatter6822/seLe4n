@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "02ac49c1e1dc6b6f172178b40efcb063ea398299",
-      "tree_sha": "ee013a8f879cadfbbf236a8abbe751b6bb24a12d",
-      "committed_at_utc": "2026-09-17T03:18:56+00:00"
+      "commit_sha": "320f91af74f2e47a47822ca7249532f7a26a8331",
+      "tree_sha": "5fd9ff1864b51b02141b625e2abb4f51bb80c273",
+      "committed_at_utc": "2026-09-17T03:43:38+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b528889583f95126082a2d21f7918fe3d046ad887803a26d5f6651b9f8007bdc"
+    "source_digest": "060e3949d68b15c7434a3869f1a1d46fd29c269f031c404d2d6a5d3009c963d2"
   },
   "summary": {
     "module_count": 401,
     "declaration_count": 21731
   },
   "readme_sync": {
-    "version": "0.35.69",
+    "version": "0.35.70",
     "lean_toolchain": "v4.28.0",
     "production_files": 331,
-    "production_loc": 386157,
+    "production_loc": 386124,
     "test_files": 70,
     "test_loc": 78776,
     "proved_theorem_lemma_decls": 12887,
@@ -80433,21 +80433,17 @@
           "line": 90,
           "called": [
             "CoreId",
-            "KernelObject",
             "SystemState",
             "ThreadId",
-            "getTcb",
-            "insert",
-            "none",
             "removeRunnableOnCore",
             "st",
-            "toObjId"
+            "updateTcb"
           ]
         },
         {
           "kind": "theorem",
           "name": "faultSuspendOnCore_bootCoreId",
-          "line": 100,
+          "line": 95,
           "called": [
             "SystemState",
             "ThreadId",
@@ -80460,24 +80456,21 @@
         {
           "kind": "def",
           "name": "faultAbandonOnCore",
-          "line": 106,
+          "line": 101,
           "called": [
             "CoreId",
-            "KernelObject",
             "SystemState",
             "ThreadId",
-            "getTcb",
-            "insert",
             "none",
             "removeRunnableOnCore",
             "st",
-            "toObjId"
+            "updateTcb"
           ]
         },
         {
           "kind": "theorem",
           "name": "faultAbandonOnCore_bootCoreId",
-          "line": 117,
+          "line": 107,
           "called": [
             "SystemState",
             "ThreadId",
@@ -80490,35 +80483,35 @@
         {
           "kind": "theorem",
           "name": "faultSuspendOnCore_scheduler_eq",
-          "line": 123,
+          "line": 113,
           "called": [
             "CoreId",
             "SystemState",
             "ThreadId",
             "faultSuspendOnCore",
-            "getTcb",
             "removeRunnableOnCore",
-            "st"
+            "st",
+            "updateTcb_scheduler"
           ]
         },
         {
           "kind": "theorem",
           "name": "faultAbandonOnCore_scheduler_eq",
-          "line": 130,
+          "line": 120,
           "called": [
             "CoreId",
             "SystemState",
             "ThreadId",
             "faultAbandonOnCore",
-            "getTcb",
             "removeRunnableOnCore",
-            "st"
+            "st",
+            "updateTcb_scheduler"
           ]
         },
         {
           "kind": "theorem",
           "name": "faultSuspendOnCore_not_runnable",
-          "line": 138,
+          "line": 128,
           "called": [
             "CoreId",
             "SystemState",
@@ -80535,7 +80528,7 @@
         {
           "kind": "theorem",
           "name": "faultAbandonOnCore_not_runnable",
-          "line": 147,
+          "line": 137,
           "called": [
             "CoreId",
             "SystemState",
@@ -80552,7 +80545,7 @@
         {
           "kind": "structure",
           "name": "FaultDeliveryResult",
-          "line": 163,
+          "line": 153,
           "called": [
             "CoreId",
             "FaultDisposition",
@@ -80563,7 +80556,7 @@
         {
           "kind": "def",
           "name": "faultDeliverOnCore",
-          "line": 215,
+          "line": 205,
           "called": [
             "CoreId",
             "Fault",
@@ -80590,7 +80583,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCore_suspends_on_unresolvable",
-          "line": 245,
+          "line": 235,
           "called": [
             "CoreId",
             "Fault",
@@ -80608,7 +80601,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCore_suspends_without_handler",
-          "line": 255,
+          "line": 245,
           "called": [
             "CoreId",
             "Fault",
@@ -80629,7 +80622,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCore_suspended_no_sgi",
-          "line": 265,
+          "line": 255,
           "called": [
             "CoreId",
             "Fault",
@@ -80647,7 +80640,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCore_disposition_total",
-          "line": 274,
+          "line": 264,
           "called": [
             "CoreId",
             "Fault",
@@ -80662,7 +80655,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCore_delivered_eq",
-          "line": 287,
+          "line": 277,
           "called": [
             "CapTransferSummary",
             "CoreId",
@@ -80690,7 +80683,7 @@
         {
           "kind": "def",
           "name": "faultReplyApplyOnCore",
-          "line": 313,
+          "line": 303,
           "called": [
             "FaultReplyOutcome",
             "SystemState",
@@ -80705,7 +80698,7 @@
         {
           "kind": "def",
           "name": "faultReplyOnCore",
-          "line": 355,
+          "line": 345,
           "called": [
             "CoreId",
             "FaultReplyOutcome",
@@ -80728,7 +80721,7 @@
         {
           "kind": "theorem",
           "name": "faultReplyOnCore_rejects_unfaulted",
-          "line": 375,
+          "line": 365,
           "called": [
             "CoreId",
             "MessageInfo",
@@ -80746,7 +80739,7 @@
         {
           "kind": "theorem",
           "name": "faultReplyOnCore_rejects_nonThread",
-          "line": 383,
+          "line": 373,
           "called": [
             "CoreId",
             "MessageInfo",
@@ -80763,7 +80756,7 @@
         {
           "kind": "theorem",
           "name": "faultReplyOnCore_outcome_eq",
-          "line": 392,
+          "line": 382,
           "called": [
             "CoreId",
             "FaultReplyOutcome",
@@ -80785,7 +80778,7 @@
         {
           "kind": "theorem",
           "name": "faultReplyOnCore_resume_restores_faultIP",
-          "line": 413,
+          "line": 403,
           "called": [
             "CoreId",
             "FaultReplyOutcome",
@@ -80810,7 +80803,7 @@
         {
           "kind": "theorem",
           "name": "faultReplyOnCore_restart_moves_pc",
-          "line": 430,
+          "line": 420,
           "called": [
             "CoreId",
             "FaultReplyOutcome",
@@ -80837,7 +80830,7 @@
         {
           "kind": "theorem",
           "name": "faultReplyOnCore_abandon_not_runnable",
-          "line": 446,
+          "line": 436,
           "called": [
             "CoreId",
             "FaultReplyOutcome",
@@ -80867,7 +80860,7 @@
         {
           "kind": "def",
           "name": "threadHasPendingFault",
-          "line": 492,
+          "line": 482,
           "called": [
             "SystemState",
             "ThreadId",
@@ -80879,7 +80872,7 @@
         {
           "kind": "theorem",
           "name": "threadHasPendingFault_of_none",
-          "line": 495,
+          "line": 485,
           "called": [
             "SystemState",
             "ThreadId",
@@ -80892,7 +80885,7 @@
         {
           "kind": "theorem",
           "name": "threadHasPendingFault_eq_false_iff",
-          "line": 499,
+          "line": 489,
           "called": [
             "SystemState",
             "ThreadId",
@@ -80905,7 +80898,7 @@
         {
           "kind": "def",
           "name": "replyTransferOnCore",
-          "line": 550,
+          "line": 540,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -80926,7 +80919,7 @@
         {
           "kind": "theorem",
           "name": "replyTransferOnCore_of_no_fault",
-          "line": 566,
+          "line": 556,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -80946,7 +80939,7 @@
         {
           "kind": "theorem",
           "name": "replyTransferOnCore_of_fault",
-          "line": 578,
+          "line": 568,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -80965,7 +80958,7 @@
         {
           "kind": "theorem",
           "name": "replyTransferOnCore_fault_branch_applies",
-          "line": 599,
+          "line": 589,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -80994,7 +80987,7 @@
         {
           "kind": "def",
           "name": "replyTransferOnCoreChecked",
-          "line": 626,
+          "line": 616,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81016,7 +81009,7 @@
         {
           "kind": "theorem",
           "name": "replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed",
-          "line": 643,
+          "line": 633,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81037,7 +81030,7 @@
         {
           "kind": "def",
           "name": "faultDeliverOnCoreChecked",
-          "line": 677,
+          "line": 667,
           "called": [
             "CoreId",
             "Fault",
@@ -81057,7 +81050,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCoreChecked_flow_denied",
-          "line": 697,
+          "line": 687,
           "called": [
             "CoreId",
             "Fault",
@@ -81077,7 +81070,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCoreChecked_denied_not_runnable",
-          "line": 711,
+          "line": 701,
           "called": [
             "CoreId",
             "Fault",
@@ -81100,7 +81093,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCoreChecked_flow_allowed",
-          "line": 727,
+          "line": 717,
           "called": [
             "CoreId",
             "Fault",
@@ -81119,7 +81112,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCoreChecked_delivered_flows",
-          "line": 740,
+          "line": 730,
           "called": [
             "CoreId",
             "Fault",
@@ -95316,15 +95309,15 @@
             "none",
             "retirePendingFaultForResume",
             "st",
+            "updateTcb_eq_of_some",
             "withRestartFrame"
           ]
         },
         {
           "kind": "theorem",
           "name": "retirePendingFaultForResume_preserves_objects_invExt",
-          "line": 4181,
+          "line": 4182,
           "called": [
-            "RHTable.insert_preserves_invExt",
             "SystemState",
             "ThreadId",
             "applyFaultRestart",
@@ -95332,13 +95325,14 @@
             "invExt",
             "none",
             "retirePendingFaultForResume",
-            "st"
+            "st",
+            "updateTcb_preserves_objects_invExt"
           ]
         },
         {
           "kind": "theorem",
           "name": "threadIpcFieldsQuiescent_retirePendingFaultForResume",
-          "line": 4196,
+          "line": 4197,
           "called": [
             "SystemState",
             "ThreadId",
@@ -95355,18 +95349,20 @@
         {
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_preserves_ipcInvariantFull",
-          "line": 4221,
+          "line": 4222,
           "called": [
             "CPtr",
             "SystemState",
             "ValidThreadId",
             "getTcb",
+            "getTcbWitnessed",
             "insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull",
             "installFaultHandler",
             "invExt",
             "ipcInvariantFull",
             "none",
             "resolveFaultHandlerCPtr",
+            "rewriteObject",
             "setThreadFaultHandlerOp",
             "setThreadFaultHandlerOp_ok_eq",
             "st"
@@ -95375,17 +95371,18 @@
         {
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_preserves_objects_invExt",
-          "line": 4241,
+          "line": 4243,
           "called": [
             "CPtr",
-            "RHTable.insert_preserves_invExt",
             "SystemState",
             "ValidThreadId",
             "getTcb",
+            "getTcbWitnessed",
             "installFaultHandler",
             "invExt",
             "none",
             "resolveFaultHandlerCPtr",
+            "rewriteObject_preserves_objects_invExt",
             "setThreadFaultHandlerOp",
             "setThreadFaultHandlerOp_ok_eq",
             "st"
@@ -95394,7 +95391,7 @@
         {
           "kind": "theorem",
           "name": "resumeThreadOnCoreLive_preserves_ipcInvariantFull",
-          "line": 4258,
+          "line": 4261,
           "called": [
             "CoreId",
             "SgiKind",
@@ -95412,7 +95409,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlocking_ready_id",
-          "line": 4275,
+          "line": 4278,
           "called": [
             "SystemState",
             "TCB",
@@ -95424,7 +95421,7 @@
         {
           "kind": "theorem",
           "name": "removeRunnableOnCore_preserves_ipcInvariantFull",
-          "line": 4285,
+          "line": 4288,
           "called": [
             "CoreId",
             "SystemState",
@@ -95456,7 +95453,7 @@
         {
           "kind": "theorem",
           "name": "clearPendingState_getElem_eq_of_quiescent",
-          "line": 4327,
+          "line": 4330,
           "called": [
             "ObjId",
             "RHTable.getElem",
@@ -95478,7 +95475,7 @@
         {
           "kind": "theorem",
           "name": "suspendRescheduleOnCore_preserves_ipcInvariantFull",
-          "line": 4360,
+          "line": 4363,
           "called": [
             "CoreId",
             "SgiKind",
@@ -95494,7 +95491,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonationOnCore_preserves_ipcInvariantFull",
-          "line": 4397,
+          "line": 4400,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -95531,7 +95528,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonationOnCore_preserves_ipcInvariantFull",
-          "line": 4474,
+          "line": 4477,
           "called": [
             "SystemState",
             "TCB",
@@ -95559,7 +95556,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonationOnCore_victim_shape",
-          "line": 4525,
+          "line": 4528,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -95590,7 +95587,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_victim_shape",
-          "line": 4587,
+          "line": 4590,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -95608,7 +95605,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonationOnCore_victim_shape",
-          "line": 4610,
+          "line": 4613,
           "called": [
             "SystemState",
             "TCB",
@@ -95630,7 +95627,7 @@
         {
           "kind": "theorem",
           "name": "suspendClearStore_preserves_ipcInvariantFull",
-          "line": 4657,
+          "line": 4660,
           "called": [
             "RHTable_insert_preserves_invExt",
             "SystemState",
@@ -95654,7 +95651,7 @@
         {
           "kind": "theorem",
           "name": "suspendDescheduleTail_shape",
-          "line": 4696,
+          "line": 4699,
           "called": [
             "CoreId",
             "SystemState",
@@ -95673,7 +95670,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCore_preserves_ipcInvariantFull",
-          "line": 4727,
+          "line": 4730,
           "called": [
             "CoreId",
             "SgiKind",
@@ -95721,7 +95718,7 @@
         {
           "kind": "theorem",
           "name": "stageDeliveredMessage_preserves_ipcInvariantFull",
-          "line": 4935,
+          "line": 4938,
           "called": [
             "SystemState",
             "ThreadId",
@@ -95737,7 +95734,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenDelivery_preserves_ipcInvariantFull",
-          "line": 4952,
+          "line": 4955,
           "called": [
             "SystemState",
             "ThreadId",
@@ -95753,7 +95750,7 @@
         {
           "kind": "theorem",
           "name": "stageDeliveredMessage_preserves_objects_invExt",
-          "line": 4965,
+          "line": 4968,
           "called": [
             "SystemState",
             "ThreadId",
@@ -95768,7 +95765,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenDelivery_preserves_objects_invExt",
-          "line": 4981,
+          "line": 4984,
           "called": [
             "SystemState",
             "ThreadId",
@@ -95783,7 +95780,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_preserves_ipcInvariantFull",
-          "line": 4992,
+          "line": 4995,
           "called": [
             "SystemState",
             "ThreadId",
@@ -95799,7 +95796,7 @@
         {
           "kind": "theorem",
           "name": "stageDeliveredMessage_objects_invExt",
-          "line": 5011,
+          "line": 5014,
           "called": [
             "SystemState",
             "ThreadId",
@@ -95814,7 +95811,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_objects_invExt",
-          "line": 5027,
+          "line": 5030,
           "called": [
             "SystemState",
             "ThreadId",
@@ -95829,7 +95826,7 @@
         {
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_donationChainFrame",
-          "line": 5047,
+          "line": 5050,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -95850,7 +95847,7 @@
         {
           "kind": "theorem",
           "name": "stageDeliveredMessage_donationChainFrame",
-          "line": 5065,
+          "line": 5068,
           "called": [
             "SystemState",
             "ThreadId",
@@ -95867,7 +95864,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_donationChainFrame",
-          "line": 5083,
+          "line": 5086,
           "called": [
             "Kernel",
             "SystemState",
@@ -100578,29 +100575,29 @@
             "ipcInvariantFull",
             "none",
             "recordPendingFault",
-            "st"
+            "st",
+            "updateTcb_eq_of_some",
+            "updateTcb_eq_self_of_none"
           ]
         },
         {
           "kind": "theorem",
           "name": "recordPendingFault_preserves_objects_invExt",
-          "line": 79,
+          "line": 80,
           "called": [
-            "RHTable.insert_preserves_invExt",
             "SystemState",
             "ThreadFault",
             "ThreadId",
-            "getTcb",
             "invExt",
-            "none",
             "recordPendingFault",
-            "st"
+            "st",
+            "updateTcb_preserves_objects_invExt"
           ]
         },
         {
           "kind": "theorem",
           "name": "removeRunnableOnCore_preserves_bundle",
-          "line": 102,
+          "line": 101,
           "called": [
             "CoreId",
             "SystemState",
@@ -100620,7 +100617,7 @@
         {
           "kind": "theorem",
           "name": "faultSuspendOnCore_preserves_ipcInvariantFull",
-          "line": 124,
+          "line": 123,
           "called": [
             "CoreId",
             "SystemState",
@@ -100635,13 +100632,15 @@
             "passiveServerIdleAllowed",
             "removeRunnableOnCore",
             "removeRunnableOnCore_preserves_bundle",
-            "st"
+            "st",
+            "updateTcb_eq_of_some",
+            "updateTcb_eq_self_of_none"
           ]
         },
         {
           "kind": "theorem",
           "name": "faultSuspendOnCore_preserves_ipcInvariantFull_of_ready",
-          "line": 148,
+          "line": 147,
           "called": [
             "CoreId",
             "SystemState",
@@ -100658,25 +100657,21 @@
         {
           "kind": "theorem",
           "name": "faultSuspendOnCore_preserves_objects_invExt",
-          "line": 159,
+          "line": 158,
           "called": [
             "CoreId",
-            "RHTable.insert_preserves_invExt",
             "SystemState",
             "ThreadId",
             "faultSuspendOnCore",
-            "getTcb",
             "invExt",
-            "none",
-            "removeRunnableOnCore",
             "st",
-            "toObjId"
+            "updateTcb_preserves_objects_invExt"
           ]
         },
         {
           "kind": "theorem",
           "name": "faultAbandonOnCore_preserves_ipcInvariantFull",
-          "line": 174,
+          "line": 168,
           "called": [
             "CoreId",
             "SystemState",
@@ -100691,13 +100686,15 @@
             "passiveServerIdleAllowed",
             "removeRunnableOnCore",
             "removeRunnableOnCore_preserves_bundle",
-            "st"
+            "st",
+            "updateTcb_eq_of_some",
+            "updateTcb_eq_self_of_none"
           ]
         },
         {
           "kind": "theorem",
           "name": "faultAbandonOnCore_preserves_ipcInvariantFull_of_ready",
-          "line": 196,
+          "line": 190,
           "called": [
             "CoreId",
             "SystemState",
@@ -100714,25 +100711,21 @@
         {
           "kind": "theorem",
           "name": "faultAbandonOnCore_preserves_objects_invExt",
-          "line": 207,
+          "line": 201,
           "called": [
             "CoreId",
-            "RHTable.insert_preserves_invExt",
             "SystemState",
             "ThreadId",
             "faultAbandonOnCore",
-            "getTcb",
             "invExt",
-            "none",
-            "removeRunnableOnCore",
             "st",
-            "toObjId"
+            "updateTcb_preserves_objects_invExt"
           ]
         },
         {
           "kind": "theorem",
           "name": "applyFaultRestart_preserves_ipcInvariantFull",
-          "line": 226,
+          "line": 215,
           "called": [
             "FaultRestartFrame",
             "SystemState",
@@ -100745,30 +100738,30 @@
             "ipcInvariantFull",
             "none",
             "st",
+            "updateTcb_eq_of_some",
+            "updateTcb_eq_self_of_none",
             "withRestartFrame"
           ]
         },
         {
           "kind": "theorem",
           "name": "applyFaultRestart_preserves_objects_invExt",
-          "line": 240,
+          "line": 230,
           "called": [
             "FaultRestartFrame",
-            "RHTable.insert_preserves_invExt",
             "SystemState",
             "ThreadId",
             "applyFaultRestart",
             "frame",
-            "getTcb",
             "invExt",
-            "none",
-            "st"
+            "st",
+            "updateTcb_preserves_objects_invExt"
           ]
         },
         {
           "kind": "theorem",
           "name": "endpointCallCrossCoreDispatch_preserves_objects_invExt",
-          "line": 257,
+          "line": 245,
           "called": [
             "AccessRightSet",
             "CoreId",
@@ -100790,7 +100783,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyCrossCoreDispatch_preserves_objects_invExt",
-          "line": 290,
+          "line": 278,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -100809,7 +100802,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCore_preserves_ipcInvariantFull",
-          "line": 343,
+          "line": 331,
           "called": [
             "CoreId",
             "Endpoint",
@@ -100846,7 +100839,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCore_preserves_objects_invExt",
-          "line": 409,
+          "line": 397,
           "called": [
             "CoreId",
             "Fault",
@@ -100870,7 +100863,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCoreChecked_preserves_ipcInvariantFull",
-          "line": 445,
+          "line": 433,
           "called": [
             "CoreId",
             "Endpoint",
@@ -100904,7 +100897,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCoreChecked_preserves_objects_invExt",
-          "line": 490,
+          "line": 478,
           "called": [
             "CoreId",
             "Fault",
@@ -100927,7 +100920,7 @@
         {
           "kind": "theorem",
           "name": "faultReplyOnCore_preserves_ipcInvariantFull",
-          "line": 528,
+          "line": 516,
           "called": [
             "CoreId",
             "MessageInfo",
@@ -100967,7 +100960,7 @@
         {
           "kind": "theorem",
           "name": "faultReplyOnCore_preserves_objects_invExt",
-          "line": 589,
+          "line": 577,
           "called": [
             "CoreId",
             "MessageInfo",
@@ -100994,7 +100987,7 @@
         {
           "kind": "theorem",
           "name": "applyFaultRestart_donationChainFrame",
-          "line": 628,
+          "line": 616,
           "called": [
             "FaultRestartFrame",
             "SystemState",
@@ -101007,13 +101000,15 @@
             "invExt",
             "none",
             "refl",
-            "st"
+            "st",
+            "updateTcb_eq_of_some",
+            "updateTcb_eq_self_of_none"
           ]
         },
         {
           "kind": "theorem",
           "name": "faultAbandonOnCore_donationChainFrame",
-          "line": 645,
+          "line": 633,
           "called": [
             "CoreId",
             "SystemState",
@@ -101029,13 +101024,15 @@
             "removeRunnableOnCore",
             "removeRunnableOnCore_preserves_objects",
             "st",
-            "trans"
+            "trans",
+            "updateTcb_eq_of_some",
+            "updateTcb_eq_self_of_none"
           ]
         },
         {
           "kind": "theorem",
           "name": "faultReplyApplyOnCore_donationChainFrame",
-          "line": 667,
+          "line": 655,
           "called": [
             "FaultReplyOutcome",
             "SystemState",
@@ -101053,7 +101050,7 @@
         {
           "kind": "theorem",
           "name": "faultReplyOnCore_preserves_donationChainWellFormed",
-          "line": 696,
+          "line": 684,
           "called": [
             "CoreId",
             "MessageInfo",
@@ -101083,7 +101080,7 @@
         {
           "kind": "theorem",
           "name": "replyTransferOnCore_preserves_donationChainWellFormed",
-          "line": 735,
+          "line": 723,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -138063,71 +138060,58 @@
         {
           "kind": "def",
           "name": "recordPendingFault",
-          "line": 401,
+          "line": 402,
           "called": [
-            "KernelObject",
             "SystemState",
             "ThreadFault",
             "ThreadId",
-            "getTcb",
-            "insert",
-            "none",
             "st",
-            "toObjId"
+            "updateTcb"
           ]
         },
         {
           "kind": "theorem",
           "name": "recordPendingFault_scheduler_eq",
-          "line": 412,
+          "line": 409,
           "called": [
             "SystemState",
             "ThreadFault",
             "ThreadId",
-            "getTcb",
             "recordPendingFault",
-            "st"
+            "st",
+            "updateTcb_scheduler"
           ]
         },
         {
           "kind": "def",
           "name": "faultSuspend",
-          "line": 442,
+          "line": 443,
           "called": [
-            "KernelObject",
             "SystemState",
             "ThreadId",
-            "getTcb",
-            "insert",
-            "none",
             "removeRunnable",
             "st",
-            "toObjId"
+            "updateTcb"
           ]
         },
         {
           "kind": "def",
           "name": "faultAbandon",
-          "line": 468,
+          "line": 464,
           "called": [
-            "KernelObject",
             "SystemState",
             "ThreadId",
-            "getTcb",
-            "insert",
             "none",
             "removeRunnable",
             "st",
-            "toObjId"
+            "updateTcb"
           ]
         },
         {
           "kind": "theorem",
           "name": "faultSuspend_threadState",
-          "line": 479,
+          "line": 470,
           "called": [
-            "RHTable.getElem",
-            "RHTable_getElem",
             "SystemState",
             "TCB",
             "ThreadId",
@@ -138136,39 +138120,39 @@
             "invExt",
             "removeRunnable",
             "st",
-            "toObjId"
+            "updateTcb_getTcb"
           ]
         },
         {
           "kind": "theorem",
           "name": "faultSuspend_scheduler_eq",
-          "line": 493,
+          "line": 481,
           "called": [
             "SystemState",
             "ThreadId",
             "faultSuspend",
-            "getTcb",
             "removeRunnable",
-            "st"
+            "st",
+            "updateTcb_scheduler"
           ]
         },
         {
           "kind": "theorem",
           "name": "faultAbandon_scheduler_eq",
-          "line": 499,
+          "line": 487,
           "called": [
             "SystemState",
             "ThreadId",
             "faultAbandon",
-            "getTcb",
             "removeRunnable",
-            "st"
+            "st",
+            "updateTcb_scheduler"
           ]
         },
         {
           "kind": "theorem",
           "name": "removeRunnable_runQueueOnCore_self",
-          "line": 505,
+          "line": 493,
           "called": [
             "SystemState",
             "ThreadId",
@@ -138182,7 +138166,7 @@
         {
           "kind": "theorem",
           "name": "removeRunnable_currentOnCore_self",
-          "line": 512,
+          "line": 500,
           "called": [
             "SystemState",
             "ThreadId",
@@ -138196,7 +138180,7 @@
         {
           "kind": "theorem",
           "name": "faultSuspend_not_runnable",
-          "line": 522,
+          "line": 510,
           "called": [
             "SystemState",
             "ThreadId",
@@ -138214,7 +138198,7 @@
         {
           "kind": "theorem",
           "name": "faultAbandon_not_runnable",
-          "line": 536,
+          "line": 524,
           "called": [
             "SystemState",
             "ThreadId",
@@ -138232,43 +138216,38 @@
         {
           "kind": "def",
           "name": "applyFaultRestart",
-          "line": 567,
+          "line": 556,
           "called": [
             "FaultRestartFrame",
-            "KernelObject",
             "SystemState",
             "ThreadId",
             "frame",
-            "getTcb",
-            "insert",
             "none",
             "st",
-            "toObjId",
+            "updateTcb",
             "withRestartFrame"
           ]
         },
         {
           "kind": "theorem",
           "name": "applyFaultRestart_scheduler_eq",
-          "line": 579,
+          "line": 563,
           "called": [
             "FaultRestartFrame",
             "SystemState",
             "ThreadId",
             "applyFaultRestart",
             "frame",
-            "getTcb",
-            "st"
+            "st",
+            "updateTcb_scheduler"
           ]
         },
         {
           "kind": "theorem",
           "name": "applyFaultRestart_pc",
-          "line": 589,
+          "line": 573,
           "called": [
             "FaultRestartFrame",
-            "RHTable.getElem",
-            "RHTable_getElem",
             "SystemState",
             "TCB",
             "ThreadId",
@@ -138278,14 +138257,14 @@
             "invExt",
             "none",
             "st",
-            "toObjId",
+            "updateTcb_getTcb",
             "withRestartFrame"
           ]
         },
         {
           "kind": "theorem",
           "name": "applyFaultRestart_clears_pendingFault",
-          "line": 603,
+          "line": 585,
           "called": [
             "FaultRestartFrame",
             "SystemState",
@@ -138303,13 +138282,15 @@
         {
           "kind": "def",
           "name": "installFaultHandler",
-          "line": 621,
+          "line": 609,
           "called": [
             "CPtr",
             "SystemState",
             "TCB",
             "ThreadId",
-            "insert",
+            "getTcb",
+            "rewriteAdmissible_tcb",
+            "rewriteObject",
             "st",
             "toObjId"
           ]
@@ -138317,13 +138298,13 @@
         {
           "kind": "def",
           "name": "setThreadFaultHandlerOp",
-          "line": 650,
+          "line": 638,
           "called": [
             "CPtr",
             "KernelError",
             "SystemState",
             "ValidThreadId",
-            "getTcb",
+            "getTcbWitnessed",
             "installFaultHandler",
             "none",
             "resolveFaultHandlerCPtr",
@@ -138333,7 +138314,7 @@
         {
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_ok_eq",
-          "line": 660,
+          "line": 648,
           "called": [
             "CPtr",
             "FaultHandlerTarget",
@@ -138341,6 +138322,7 @@
             "TCB",
             "ValidThreadId",
             "getTcb",
+            "getTcbWitnessed",
             "installFaultHandler",
             "resolveFaultHandlerCPtr",
             "setThreadFaultHandlerOp",
@@ -138350,7 +138332,7 @@
         {
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_validated",
-          "line": 671,
+          "line": 659,
           "called": [
             "CPtr",
             "SystemState",
@@ -138358,6 +138340,7 @@
             "faultHandlerCapAuthorized",
             "getEndpoint",
             "getTcb",
+            "getTcbWitnessed",
             "none",
             "resolveFaultHandlerCPtr",
             "resolveFaultHandlerCPtr_ok_inv",
@@ -138368,33 +138351,33 @@
         {
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_faultHandler",
-          "line": 689,
+          "line": 678,
           "called": [
             "CPtr",
-            "RHTable.getElem",
-            "RHTable_getElem",
             "SystemState",
             "TCB",
             "ValidThreadId",
             "getTcb",
+            "getTcbWitnessed",
             "installFaultHandler",
             "invExt",
             "resolveFaultHandlerCPtr",
+            "rewriteObject_objects_self",
             "setThreadFaultHandlerOp",
             "setThreadFaultHandlerOp_ok_eq",
-            "st",
-            "toObjId"
+            "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_scheduler_eq",
-          "line": 707,
+          "line": 695,
           "called": [
             "CPtr",
             "SystemState",
             "ValidThreadId",
             "getTcb",
+            "getTcbWitnessed",
             "none",
             "resolveFaultHandlerCPtr",
             "setThreadFaultHandlerOp",
@@ -138405,7 +138388,7 @@
         {
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_rejects",
-          "line": 723,
+          "line": 712,
           "called": [
             "CPtr",
             "KernelError",
@@ -138413,6 +138396,7 @@
             "TCB",
             "ValidThreadId",
             "getTcb",
+            "getTcbWitnessed",
             "resolveFaultHandlerCPtr",
             "setThreadFaultHandlerOp",
             "st"
@@ -138421,7 +138405,7 @@
         {
           "kind": "def",
           "name": "retirePendingFaultForResume",
-          "line": 747,
+          "line": 736,
           "called": [
             "SystemState",
             "ThreadId",
@@ -138435,7 +138419,7 @@
         {
           "kind": "theorem",
           "name": "retirePendingFaultForResume_pendingFault_none",
-          "line": 758,
+          "line": 747,
           "called": [
             "SystemState",
             "TCB",
@@ -138453,7 +138437,7 @@
         {
           "kind": "theorem",
           "name": "retirePendingFaultForResume_of_no_fault",
-          "line": 780,
+          "line": 769,
           "called": [
             "SystemState",
             "TCB",
@@ -138467,7 +138451,7 @@
         {
           "kind": "theorem",
           "name": "retirePendingFaultForResume_scheduler_eq",
-          "line": 790,
+          "line": 779,
           "called": [
             "SystemState",
             "ThreadId",
@@ -138481,7 +138465,7 @@
         {
           "kind": "def",
           "name": "writeFaultRegistersToTcb",
-          "line": 819,
+          "line": 808,
           "called": [
             "FaultRegisterWindow",
             "SystemState",
@@ -138494,7 +138478,7 @@
         {
           "kind": "theorem",
           "name": "writeFaultRegistersToTcb_scheduler",
-          "line": 825,
+          "line": 814,
           "called": [
             "FaultRegisterWindow",
             "SystemState",
@@ -138507,7 +138491,7 @@
         {
           "kind": "theorem",
           "name": "writeFaultRegistersToTcb_id_when_not_tcb",
-          "line": 831,
+          "line": 820,
           "called": [
             "FaultRegisterWindow",
             "SystemState",
@@ -138522,7 +138506,7 @@
         {
           "kind": "theorem",
           "name": "writeFaultRegistersToTcb_getTcb",
-          "line": 837,
+          "line": 826,
           "called": [
             "FaultRegisterWindow",
             "SystemState",
@@ -138539,7 +138523,7 @@
         {
           "kind": "theorem",
           "name": "faultContextOfThread_writeFaultRegistersToTcb",
-          "line": 851,
+          "line": 840,
           "called": [
             "FaultRegisterWindow",
             "Kernel",
@@ -151142,7 +151126,9 @@
             "projectState",
             "recordPendingFault",
             "st",
-            "toObjId"
+            "toObjId",
+            "updateTcb_eq_of_some",
+            "updateTcb_eq_self_of_none"
           ]
         },
         {
@@ -151167,7 +151153,9 @@
             "removeRunnableOnCore_preserves_projection",
             "st",
             "threadObservable",
-            "toObjId"
+            "toObjId",
+            "updateTcb_eq_of_some",
+            "updateTcb_eq_self_of_none"
           ]
         },
         {
@@ -151182,7 +151170,6 @@
             "IfObserver",
             "Kernel",
             "LabelingContext",
-            "RHTable.insert_preserves_invExt",
             "SystemState",
             "ThreadId",
             "endpointFlowGate",
@@ -151190,17 +151177,15 @@
             "faultDeliverOnCoreChecked_flow_denied",
             "faultSuspendOnCore",
             "faultSuspendOnCore_preserves_projection",
-            "getTcb",
             "invExt",
-            "none",
             "objectObservable",
             "projectState",
             "recordPendingFault_preserves_projection",
-            "removeRunnableOnCore",
             "resolveFaultHandler",
             "st",
             "threadObservable",
-            "toObjId"
+            "toObjId",
+            "updateTcb_preserves_objects_invExt"
           ]
         }
       ]
@@ -158858,6 +158843,7 @@
             "SystemState",
             "ValidThreadId",
             "getTcb",
+            "getTcbWitnessed",
             "installFaultHandler",
             "invExt",
             "none",
@@ -158865,6 +158851,7 @@
             "objects_insert_preserves_projection_high",
             "projectState",
             "resolveFaultHandlerCPtr",
+            "rewriteObject",
             "setThreadFaultHandlerOp",
             "setThreadFaultHandlerOp_ok_eq",
             "st",
