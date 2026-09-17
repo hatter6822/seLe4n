@@ -3538,7 +3538,7 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
   unfold SchedContextOps.schedContextUnbind schedContextUnbindWriteSet
     schedContextSubject? at *
   split at hStep
-  · next sc hSc =>
+  · next sc hSc _ =>
     simp only [hSc]
     split at hStep
     · exact absurd hStep (by simp)
@@ -3566,7 +3566,9 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
           (repeat' split) <;>
           -- the replenish-queue setters are not in this transition's footprint;
           -- their five frames were carried here and never fired
-          simp_all [SchedulerState.setCurrentOnCore_runQueueOnCore,
+          simp_all [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler,
+            SystemState.updateTcb_machine, SystemState.rewriteObject_machine,
+            SchedulerState.setCurrentOnCore_runQueueOnCore,
             SchedulerState.setRunQueueOnCore_runQueueOnCore_ne,
             SchedulerState.setCurrentOnCore_currentOnCore_ne,
             SchedulerState.setRunQueueOnCore_currentOnCore,
@@ -3630,7 +3632,7 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
     observableSlotsConfinedToCores st st' (schedContextBindWriteSet st vThreadId.val) := by
   unfold SchedContextOps.schedContextBind at hStep
   split at hStep
-  · next sc hSc =>
+  · next sc hSc _ =>
     split at hStep
     · exact absurd hStep (by simp)
     · -- `v0.35.4`: a context heading a reply stack is refused, so a successful
@@ -3655,6 +3657,10 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
             rw [Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨-, hs⟩ := hStep
             subst hs
+            -- `v0.35.71`: the two typed writes over `st`, reduced to the double
+            -- insert under the pre-state's TCB witness.
+            rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
+              vThreadId.val tcb _ hObjInv hTcb]
             let sc1 : SchedContext := { sc with boundThread := some vThreadId.val,
                                                 donationOrigin := none }
             let scObj : KernelObject := .schedContext sc1
@@ -3940,7 +3946,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                 (hStore := hStore) (hPre := by exact hScRaw) (hObjInv := by exact hObjInv)
               exact h
             split at hStep
-            · next boundTcb hTcbStored =>
+            · next boundTcb hTcbStored _ =>
               have hTcbStoredRaw :
                   stStored.objects.get? boundTid.toObjId = some (.tcb boundTcb) := by
                 simpa using (SystemState.getTcb?_eq_some_iff stStored boundTid boundTcb).mp
@@ -3975,7 +3981,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                 -- rather than backtracking, so the alternatives below carry no
                 -- tactic blocks of their own.
                 (have hNil : c ∉ ([] : List CoreId) := by simp) <;>
-                ((try dsimp only []); repeat' split) <;>
+                ((try dsimp only [SystemState.rewriteObject]); repeat' split) <;>
                 first
                   -- arms that stop at `stStored` / `stWithTcb` (object writes only)
                   | exact hStoredConf.runQueue c hNil
@@ -4099,11 +4105,13 @@ theorem updatePrioritySource_confinedToCores (st : SystemState)
       (SchedContext.PriorityManagement.updatePrioritySource st tid tcb newPriority) [] :=
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
     (by unfold SchedContext.PriorityManagement.updatePrioritySource
-        repeat' split
-        all_goals rfl)
+        split
+        · exact SystemState.updateSchedContext_scheduler _ _ _
+        · exact SystemState.updateTcb_scheduler _ _ _)
     (by unfold SchedContext.PriorityManagement.updatePrioritySource
-        repeat' split
-        all_goals rfl)
+        split
+        · exact SystemState.updateSchedContext_machine _ _ _
+        · exact SystemState.updateTcb_machine _ _ _)
 
 /-- SM8.B.2: the run-queue bucket migration writes exactly the core it is given.
 
@@ -4238,8 +4246,8 @@ theorem setMCPriorityOnCore_confinedToCores (st st' : SystemState)
     split at hStep
     · exact absurd hStep (by simp)
     · split at hStep
-      · next targetTcb hTarget =>
-        simp only [] at hStep
+      · next targetTcb hTarget _ =>
+        dsimp only [SystemState.rewriteObject] at hStep
         -- The ceiling store: an object write, so per-core silent, and not a
         -- migration — which is what lets the mid-state home core be the
         -- pre-state one. Both facts are stated over a *generic* post-state

@@ -435,14 +435,18 @@ theorem insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull
 
 /-- Reduction of `updatePrioritySource` at a binding with **no** priority
 source — `.unbound` and, since WS-OD (v0.35.3), `.donated`.  Both write the
-thread's own TCB. -/
+thread's own TCB — through the typed rewrite since `v0.35.71`, so the reduction
+takes the store's witness for the record the operation was handed. -/
 private theorem updatePrioritySource_tcbTarget_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
-    (hB : tcb.schedContextBinding.ownScId? = none) :
+    (hB : tcb.schedContextBinding.ownScId? = none)
+    (hPre : st.objects[tid.toObjId]? = some (.tcb tcb)) :
     SchedContext.PriorityManagement.updatePrioritySource st tid tcb p
       = { st with objects := st.objects.insert tid.toObjId (.tcb { tcb with priority := p }) } := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
   rw [hB]
+  exact SystemState.updateTcb_eq_of_some
+    ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr hPre) _
 
 /-- Reduction of `updatePrioritySource` at a binding that **does** name a
 priority source — `.bound scId`, and only that since WS-OD (v0.35.3). -/
@@ -455,7 +459,8 @@ private theorem updatePrioritySource_sc_eq (st : SystemState)
       = { st with objects :=
             st.objects.insert scId.toObjId (.schedContext { sc with priority := p }) } := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  rw [hB]; dsimp only []; rw [hSc]
+  rw [hB]
+  exact SystemState.updateSchedContext_eq_of_some hSc _
 
 /-- Reduction of `updatePrioritySource` when the named SchedContext is absent. -/
 private theorem updatePrioritySource_sc_none_eq (st : SystemState)
@@ -465,7 +470,8 @@ private theorem updatePrioritySource_sc_none_eq (st : SystemState)
     (hSc : st.getSchedContext? scId = none) :
     SchedContext.PriorityManagement.updatePrioritySource st tid tcb p = st := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
-  rw [hB]; dsimp only []; rw [hSc]
+  rw [hB]
+  exact SystemState.updateSchedContext_eq_self_of_none hSc _
 
 /-- `updatePrioritySource` writes a priority field — on the thread's own TCB
 unless the binding names a priority source, in which case on that SchedContext —
@@ -478,7 +484,7 @@ theorem updatePrioritySource_preserves_ipcInvariantFull
     ipcInvariantFull (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) := by
   cases hB : tcb.schedContextBinding.ownScId? with
   | none =>
-      rw [updatePrioritySource_tcbTarget_eq st tid tcb p hB]
+      rw [updatePrioritySource_tcbTarget_eq st tid tcb p hB hPre]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
         { tcb with priority := p } hObjInv hInv hPre rfl rfl rfl rfl rfl rfl rfl rfl rfl
   | some scId =>
@@ -606,8 +612,8 @@ theorem setMCPriorityOnCore_preserves_ipcInvariantFull
   · split at hStep
     · contradiction
     · split at hStep
-      · rename_i targetTcb hTarget
-        dsimp only [] at hStep
+      · rename_i targetTcb hTarget _
+        dsimp only [SystemState.rewriteObject] at hStep
         have hPreRaw := (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
         have hInvMcp := insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st
           vTargetTid.val targetTcb { targetTcb with maxControlledPriority := p }
@@ -1298,25 +1304,28 @@ theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
     (hObjInv : stStored.objects.invExt) (hInv : ipcInvariantFull stStored)
     (hBT : stStored.getTcb? boundTid = some boundTcb) :
     ipcInvariantFull (SchedContextOps.schedContextConfigureBoundPropagate stStored scId boundTid
-      boundTcb priority domain) := by
+      boundTcb hBT priority domain) := by
   have hBTRaw := (SystemState.getTcb?_eq_some_iff stStored boundTid boundTcb).mp hBT
   unfold SchedContextOps.schedContextConfigureBoundPropagate
+  -- `v0.35.71`: both writes are `rewriteObject`, which unfolds to the record
+  -- update the bundle levers below are stated over.
+  dsimp only [SystemState.rewriteObject]
   -- WS-OD (v0.35.3): both propagations are gated on the bound thread OWNING this
   -- SchedContext, so the "no write" arms now also cover a donated binding.  The
   -- bundle argument is unchanged on every arm.
   by_cases hPrioEq : boundTcb.priority.val = priority ∨
       ¬ SchedContextOps.schedContextConfigurePropagates boundTcb scId
   · rw [if_pos hPrioEq]
-    dsimp only []
+    try dsimp only []
     split
-    · rename_i currentTcb hCur
+    · rename_i currentTcb hCur _
       have hCEq : boundTcb = currentTcb := Option.some.inj (hBT.symm.trans hCur)
       subst hCEq
       exact domainAlignStep_preserves_ipcInvariantFull stStored boundTid boundTcb domain
         _ hObjInv hInv hBTRaw
     · exact hInv
   · rw [if_neg hPrioEq]
-    dsimp only []
+    try dsimp only []
     have hInvW := insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull stStored
       boundTid boundTcb { boundTcb with priority := ⟨priority⟩ }
       hObjInv hInv hBTRaw rfl rfl rfl rfl rfl rfl rfl rfl rfl
@@ -1339,7 +1348,7 @@ theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
           | some boostPri => ⟨Nat.max priority boostPri.val⟩)
         hInvW hMem
       split
-      · rename_i currentTcb hCur
+      · rename_i currentTcb hCur _
         have hCEq : { boundTcb with priority := ⟨priority⟩ } = currentTcb :=
           Option.some.inj (hSomeW.symm.trans hCur)
         subst hCEq
@@ -1348,7 +1357,7 @@ theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
       · exact hInvR
     · rw [if_neg hMem]
       split
-      · rename_i currentTcb hCur
+      · rename_i currentTcb hCur _
         have hCEq : { boundTcb with priority := ⟨priority⟩ } = currentTcb :=
           Option.some.inj (hSomeW.symm.trans hCur)
         subst hCEq
@@ -1392,7 +1401,7 @@ theorem schedContextConfigure_preserves_ipcInvariantFull
             exact hInvStored
           · rename_i boundTid hBound
             split at hStep
-            · rename_i boundTcb hBT
+            · rename_i boundTcb hBT _
               cases hStep
               exact schedContextConfigureBoundPropagate_preserves_ipcInvariantFull stStored
                 _ boundTid boundTcb priority domain hObjInvStored hInvStored hBT
@@ -1706,7 +1715,7 @@ theorem schedContextBind_preserves_ipcInvariantFull
     ipcInvariantFull st' := by
   unfold SchedContextOps.schedContextBind at hStep
   split at hStep
-  · rename_i sc hSc
+  · rename_i sc hSc _
     split at hStep
     · contradiction
     · rename_i hFreeGuard
@@ -1730,6 +1739,12 @@ theorem schedContextBind_preserves_ipcInvariantFull
         · contradiction
         · split at hStep
           · rename_i hUnbound
+            try dsimp only [] at hStep
+            -- `v0.35.71`: the two typed writes over `st`, reduced to the double
+            -- insert under the pre-state's TCB witness -- the bundle levers
+            -- below are stated over that literal.
+            rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
+              vThreadId.val tcb _ hObjInv hT] at hStep
             try dsimp only [] at hStep
             cases hStep
             have hFree : sc.boundThread = none := by
@@ -2112,12 +2127,22 @@ private theorem schedContextUnbindTail_preserves_ipcInvariantFull
     (sc : SeLe4n.Kernel.SchedContext) (tcb : TCB)
     (c : CoreId) (scIdT : SeLe4n.SchedContextId)
     (idx : RobinHood.RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId))
+    (h : stA.rewriteAdmissible scObj
+      (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none }))
     (hObjInvA : stA.objects.invExt) (hInvA : ipcInvariantFull stA)
     (hPreS : stA.objects[scObj]? = some (.schedContext sc))
     (hPreT : stA.objects[tid.toObjId]? = some (.tcb tcb))
     (hBoundEq : sc.boundThread = some tid)
     (hAllowedIpc : passiveServerIdleAllowed tcb.ipcState) :
-    ipcInvariantFull { SchedContextOps.purgeReplenishmentOnCore { { stA with objects := (stA.objects.insert scObj (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none })) } with objects := ((stA.objects.insert scObj (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none }))).insert tid.toObjId (.tcb { tcb with schedContextBinding := .unbound }) } c scIdT with scThreadIndex := idx } := by
+    ipcInvariantFull { SchedContextOps.purgeReplenishmentOnCore
+      ((stA.rewriteObject scObj
+          (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none })
+          h).updateTcb tid (fun t => { t with schedContextBinding := .unbound }))
+      c scIdT with scThreadIndex := idx } := by
+  -- `v0.35.71`: the two typed writes, reduced to the double insert the levers
+  -- below are stated over.
+  rw [SystemState.updateTcb_after_rewriteObject_schedContext stA scObj _ h tid tcb _ hObjInvA
+    ((SystemState.getTcb?_eq_some_iff stA tid tcb).mpr hPreT)]
   have hScObjEq : (⟨scObj.toNat⟩ : SeLe4n.SchedContextId).toObjId = scObj := rfl
   have hObjInv2 := RobinHood.RHTable.insert_preserves_invExt stA.objects scObj
     (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none }) hObjInvA
@@ -2218,7 +2243,7 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
     ipcInvariantFull st' := by
   unfold SchedContextOps.schedContextUnbind at hStep
   split at hStep
-  · rename_i sc hSc
+  · rename_i sc hSc _
     split at hStep
     · contradiction
     · rename_i tid hBound
@@ -2273,7 +2298,7 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
             cases hStep
           all_goals
             exact schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-              _ _ _ hObjInv hStage hScRaw hTcbRaw hBound hAllowedIpc
+              _ _ _ _ hObjInv hStage hScRaw hTcbRaw hBound hAllowedIpc
         | none =>
           rw [hRC] at hStep
           simp only [Option.isSome_none] at hStep
@@ -2296,17 +2321,19 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
                 intro hpre
                 exact hcur (by rw [SchedulerState.setRunQueueOnCore_currentOnCore]; exact hpre)
             exact schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-              _ _ _ hObjInv hStage hScRaw hTcbRaw hBound hAllowedIpc
+              _ _ _ _ hObjInv hStage hScRaw hTcbRaw hBound hAllowedIpc
           · split at hStep
-            · simp at *
-            · cases hStep
-              exact schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-                _ _ _ hObjInv
-                (unbindSchedulerStage_preserves_ipcInvariantFull st st tid tcb hInv rfl
-                  hTcbRaw hAllowedIpc (fun t _ hm => hm) (fun t _ hcur => hcur))
-                hScRaw hTcbRaw hBound hAllowedIpc
+            all_goals first
+              -- `wasCurrent` is `false` on this arm, so its `if` has one live branch
+              | exact absurd ‹false = true› (by simp)
+              | (cases hStep
+                 exact schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
+                   _ _ _ _ hObjInv
+                   (unbindSchedulerStage_preserves_ipcInvariantFull st _ tid tcb hInv rfl
+                     hTcbRaw hAllowedIpc (fun t _ hm => hm) (fun t _ hcur => hcur))
+                   hScRaw hTcbRaw hBound hAllowedIpc)
       · rename_i hTcbNone
-        dsimp only [] at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
         cases hStep
         have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
           (SchedContextId.ofObjId vScId.val) sc).mp hSc

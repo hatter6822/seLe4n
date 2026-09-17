@@ -3646,15 +3646,23 @@ theorem updatePrioritySource_preserves_projection
   split
   · -- the priority source resolves (`.bound scId`)
     rename_i scId hSrc
-    split
-    · -- some (.schedContext sc) — apply frame lemma
-      exact objects_insert_preserves_projection_high ctx observer st scId.toObjId _
-        (hScHigh scId hSrc) hObjInv
-    · -- absent: state unchanged
-      rfl
+    cases hSc : st.getSchedContext? scId with
+    | some sc =>
+        -- present: the typed rewrite is the insert, and the frame lemma applies
+        rw [SystemState.updateSchedContext_eq_of_some hSc]
+        exact objects_insert_preserves_projection_high ctx observer st scId.toObjId _
+          (hScHigh scId hSrc) hObjInv
+    | none =>
+        -- absent: the typed rewrite is the identity
+        rw [SystemState.updateSchedContext_eq_self_of_none hSc]
   · -- no priority source (`.unbound` / `.donated`): the target's own TCB
-    exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
-      hTcbHigh hObjInv
+    cases hT : st.getTcb? tid with
+    | some t =>
+        rw [SystemState.updateTcb_eq_of_some hT]
+        exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
+          hTcbHigh hObjInv
+    | none =>
+        rw [SystemState.updateTcb_eq_self_of_none hT]
 
 -- ============================================================================
 -- AK6-F.2h/i: VSpace checked+flush wrappers preservation
@@ -4505,7 +4513,7 @@ theorem setMCPriorityOp_preserves_projection
     split at hStep
     · simp at hStep -- validation error
     · split at hStep
-      · rename_i targetTcb hTarget
+      · rename_i targetTcb hTarget _
         -- AN10-B: post-migration `setMCPriorityOp` reads via `getTcb?`;
         -- bridge from the typed-helper hypothesis to the raw lookup
         -- expected by `hScHighForUpdated`.
@@ -4521,7 +4529,7 @@ theorem setMCPriorityOp_preserves_projection
             hTargetObjHigh hObjInv
         have hObjInvMCP : stAfterMCP.objects.invExt :=
           SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
-        simp only at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
         split at hStep
         · -- MCP cap branch: updatePrioritySource + migrate + optional schedule
           have hProj1 :
@@ -4589,7 +4597,7 @@ theorem setMCPriorityOnCore_preserves_projection
   · split at hStep
     · exact absurd hStep (by simp)
     · split at hStep
-      · next targetTcb hTarget =>
+      · next targetTcb hTarget _ =>
         let targetTcb' : TCB := { targetTcb with maxControlledPriority := newMCP }
         let stAfterMCP : SystemState :=
           { st with objects := st.objects.insert vTargetTid.val.toObjId (.tcb targetTcb') }
@@ -4598,7 +4606,7 @@ theorem setMCPriorityOnCore_preserves_projection
             hTargetObjHigh hObjInv
         have hObjInvMCP : stAfterMCP.objects.invExt :=
           SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
-        simp only [] at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
         split at hStep
         · have hProj1 :
               projectState ctx observer

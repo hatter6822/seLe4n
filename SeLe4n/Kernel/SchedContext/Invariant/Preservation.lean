@@ -320,8 +320,9 @@ theorem schedContextConfigure_admission_excludes_eq
     pre-state invariant transfers via standard pointwise reasoning.
     Because the full theorem requires lifting the frame argument through
     the operation's many sequential writes (storeObject of the SC, TCB
-    priority write, RunQueue rebucket, TCB domain write — 4 sequential
-    `objects.insert` calls), the full proof is mechanically substantial;
+    priority write, RunQueue rebucket, TCB domain write — a `storeObject`
+    and two `rewriteObject`s around a run-queue re-bucket), the full proof
+    is mechanically substantial;
     we record the local-witness theorem as the structural anchor and
     leave the closure-form composition to the consumer's proof at use
     site.

@@ -30,21 +30,27 @@ theorem updatePrioritySource_scheduler_eq
     (newPrio : SeLe4n.Priority) :
     (updatePrioritySource st tid tcb newPrio).scheduler = st.scheduler := by
   unfold updatePrioritySource
-  split <;> (first | rfl | (split <;> rfl))
+  split <;> first
+    | rw [SystemState.updateSchedContext_eq_objects_update]
+    | rw [SystemState.updateTcb_eq_objects_update]
 
 theorem updatePrioritySource_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPrio : SeLe4n.Priority) :
     (updatePrioritySource st tid tcb newPrio).serviceRegistry = st.serviceRegistry := by
   unfold updatePrioritySource
-  split <;> (first | rfl | (split <;> rfl))
+  split <;> first
+    | rw [SystemState.updateSchedContext_eq_objects_update]
+    | rw [SystemState.updateTcb_eq_objects_update]
 
 theorem updatePrioritySource_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPrio : SeLe4n.Priority) :
     (updatePrioritySource st tid tcb newPrio).lifecycle = st.lifecycle := by
   unfold updatePrioritySource
-  split <;> (first | rfl | (split <;> rfl))
+  split <;> first
+    | rw [SystemState.updateSchedContext_eq_objects_update]
+    | rw [SystemState.updateTcb_eq_objects_update]
 
 -- ============================================================================
 -- Transport lemmas — migrateRunQueueBucket
@@ -74,21 +80,27 @@ theorem updatePrioritySource_irqHandlers_eq
     (newPrio : SeLe4n.Priority) :
     (updatePrioritySource st tid tcb newPrio).irqHandlers = st.irqHandlers := by
   unfold updatePrioritySource
-  split <;> (first | rfl | (split <;> rfl))
+  split <;> first
+    | rw [SystemState.updateSchedContext_eq_objects_update]
+    | rw [SystemState.updateTcb_eq_objects_update]
 
 theorem updatePrioritySource_machine_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPrio : SeLe4n.Priority) :
     (updatePrioritySource st tid tcb newPrio).machine = st.machine := by
   unfold updatePrioritySource
-  split <;> (first | rfl | (split <;> rfl))
+  split <;> first
+    | rw [SystemState.updateSchedContext_eq_objects_update]
+    | rw [SystemState.updateTcb_eq_objects_update]
 
 theorem updatePrioritySource_objectIndex_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPrio : SeLe4n.Priority) :
     (updatePrioritySource st tid tcb newPrio).objectIndex = st.objectIndex := by
   unfold updatePrioritySource
-  split <;> (first | rfl | (split <;> rfl))
+  split <;> first
+    | rw [SystemState.updateSchedContext_eq_objects_update]
+    | rw [SystemState.updateTcb_eq_objects_update]
 
 -- ============================================================================
 -- Transport lemmas — migrateRunQueueBucket (additional fields)

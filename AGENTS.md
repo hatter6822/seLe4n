@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.70.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.71.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6017,8 +6017,12 @@ code may assume:
   already had the shape of; **32 in 26 across 13** after `v0.35.70` moved the
   fault path's seven — `recordPendingFault`, `applyFaultRestart`, the four
   fail-closed dispositions over their deschedule, and `installFaultHandler`
-  taking the store's witness for the TCB it is handed; five of them the
-  primitives that should be raw).  (6) **A transition that rewrites a TCB it is
+  taking the store's witness for the TCB it is handed; **19 in 19 across 10**
+  after `v0.35.71` moved the SchedContext operations and the priority
+  management — `updatePrioritySource`, `setMCPriorityOp`,
+  `setMCPriorityOnCore`, `schedContextConfigureBoundPropagate`,
+  `schedContextBind`, `schedContextUnbind`, `schedContextYieldTo`; five of
+  them the primitives that should be raw).  (6) **A transition that rewrites a TCB it is
   handed takes the store's witness for it.**  `timerTickBudget` /
   `timerTickBudgetOnCore` (`v0.35.67`) take `(hTcb : st.getTcb? tid = some tcb)`
   beside the TCB — the proof `rewriteAdmissible_tcb` consumes, erased at runtime —
@@ -6045,7 +6049,36 @@ code may assume:
   `timerTickChargeCurrentOnCore` is the shape — the dependent match over a
   parameter, the tick's own match tree non-dependent, the equation `rfl` — a
   consumer reads through `timerTickChargeCurrentOnCore_eq` / `_none` / `_ok`,
-  and Tier 3 refuses any lookup coming back into the tick's body.
+  and Tier 3 refuses any lookup coming back into the tick's body.  (8) **A
+  transition that rewrites two objects performs the first under the witness
+  its own lookup carries and the second through the typed read-modify-write
+  over the rewritten state** (`v0.35.71`).  A witness taken at the pre-state
+  does not carry across a rewrite without `invExt`, which executable code has
+  no proof of — so `schedContextBind` writes the SchedContext through
+  `rewriteObject` under `hSc` and then the TCB through `st1.updateTcb`, and
+  the lambda's record is the stored one with its fields moved, which is what
+  the raw insert wrote from the pre-state lookup on every state the two
+  lookups admit.  The proofs reduce the pair once, from the pre-state's
+  witness and `invExt` (`updateTcb_after_rewriteObject_schedContext` and its
+  three siblings), on the lemma library that makes the reduction a fact
+  rather than a case split: a SchedContext rewrite is invisible to every TCB
+  lookup at *every* key (`rewriteObject_schedContext_getTcb?` — at the key
+  itself the admissibility witness says it held a SchedContext, so no TCB
+  lookup read it), the twin, the typed read-modify-writes inheriting both,
+  and the keys of two typed witnesses distinct with no invariant consulted
+  (`getTcb?_getSchedContext?_keys_distinct`).  Where the second write sits on
+  a state that is a scheduler-only update of the pre-state, the stage is
+  spelled `{ st with scheduler := … }` so its object table is the pre-state's
+  *definitionally* and the witness needs no transport at all
+  (`schedContextUnbind`).  Two things that cut measured.  A `_` field in a
+  `{ s with x := _ }` pattern is filled from `s`, not left as a hole, so a
+  reduction whose base state must be read off the goal is applied with
+  `exact` rather than `rw`.  And a hypothesis a raw insert needed can be one
+  the typed rewrite makes false to need:
+  `updatePrioritySource_donated_preserves_donor_schedContext` lost
+  `tid.toObjId ≠ scId.toObjId`, because the rewrite fires only at a key
+  holding a TCB and reaches no SchedContext at any key — the one way that
+  security statement could have been vacuous is gone with the hypothesis.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at

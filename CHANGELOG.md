@@ -1,3 +1,99 @@
+## v0.35.71 — The SchedContext operations and the priority management are the typed in-place rewrite
+
+**Raw-write migration, eighth cut (C3).**  Seven writers, thirteen raw inserts:
+`updatePrioritySource`, `setMCPriorityOp`, `setMCPriorityOnCore`,
+`schedContextConfigureBoundPropagate` (with `schedContextConfigure`, which hands
+it the TCB), `schedContextBind`, `schedContextUnbind` and `schedContextYieldTo`.
+Three shapes.  `updatePrioritySource` is the typed read-modify-write on both
+arms — the reservation through `updateSchedContext`, whose identity-on-absent
+arm *is* the defensive no-op the site always had, and the thread through
+`updateTcb`; the record handed in classifies the binding, the write rewrites the
+record the store holds.  The two MCP writers resolve their target through
+`getTcbWitnessed?` (the capping rule reads the looked-up record again) and write
+the ceiling through `rewriteObject` under that witness.
+`schedContextConfigureBoundPropagate` is the handed-TCB shape of `v0.35.67` and
+`v0.35.70`: it takes `hBound : stStored.getTcb? boundTid = some boundTcb`,
+`schedContextConfigure` resolves the thread once through the witnessed lookup
+and passes the proof down, and the domain half re-resolves through the witnessed
+lookup with its `if` outside the rewrite, so an unchanged domain is still no
+write.
+
+**The two-object operations are the new shape, and the cut's rule.**
+`schedContextBind`, `schedContextUnbind` and `schedContextYieldTo` each rewrite
+two objects.  The first goes through `rewriteObject` under the witness its own
+lookup carries; the second through the typed read-modify-write over the
+rewritten state — `st1.updateTcb vThreadId.val fun t => { t with
+schedContextBinding := .bound scIdTyped, priority := sc.priority }` — because a
+witness taken at the pre-state does not carry across a rewrite without
+`invExt`, which executable code has no proof of.  The lambda's record is the
+stored one with its fields moved, which is what the raw insert wrote from the
+pre-state lookup on every state the two lookups admit.  The unbind's scheduler
+stage is spelled `{ st with scheduler := sched1 }` — the four scheduler cases
+folded into the field rather than into four states — so the stage's object
+table is the pre-state's *definitionally* and the SchedContext witness needs no
+transport at all.
+
+**The lemma library the proofs reduce that pair with** (`Model/State.lean`,
+eighteen theorems): a SchedContext rewrite is invisible to every TCB lookup at
+*every* key (`rewriteObject_schedContext_getTcb?` — at the key itself the
+admissibility witness says it held a SchedContext, so no TCB lookup read it) and
+the twin `rewriteObject_tcb_getSchedContext?`; the other-key frames and the
+read-backs (`rewriteObject_getTcb?_ne`, `rewriteObject_getSchedContext?_ne`,
+`rewriteObject_tcb_getTcb?_self`, `rewriteObject_schedContext_getSchedContext?_self`);
+the typed read-modify-writes inheriting all of it (`updateTcb_getSchedContext?`,
+`updateSchedContext_getTcb?`, `updateTcb_getTcb?_ne`,
+`updateSchedContext_getSchedContext?_ne`,
+`updateSchedContext_getSchedContext?_self`); the keys of two typed witnesses
+distinct with no invariant consulted (`getTcb?_getSchedContext?_keys_distinct`);
+and the composed reductions `updateTcb_after_rewriteObject_schedContext`,
+`updateSchedContext_after_rewriteObject_tcb`, `updateTcb_after_rewriteObject_ne`
+and `updateSchedContext_after_rewriteObject_ne` (the first two with an
+`_objects` corollary), which hand a consumer the literal double insert the
+invariant surface is stated over, from the pre-state's witness and `invExt`.
+
+**Twenty-six proofs across five modules** were repaired by the fixed recipe plus
+that reduction: `PriorityPreservation`'s six field frames
+(`_eq_objects_update`), `BindingAffinity`'s two characterisations — which now
+take `invExt`, the literal double insert being no fact about the operation
+without it, and apply the `_objects` reduction with `exact`, since a `_` field
+in a `{ s with x := _ }` pattern is filled from `s` rather than left as a hole —
+`DispatchArmPreservation`'s ten (the unbind tail restated over the primitives
+and reduced on its first line), `NonInterferenceCrossCore`'s five and the
+information-flow projection's three.  Two statements are stronger:
+`updatePrioritySource_donated_preserves_donor_schedContext` lost its
+key-distinctness hypothesis, because the typed rewrite fires only at a key
+holding a TCB and reaches no SchedContext at any key — the one way that
+security statement could have been vacuous; and `updatePrioritySource_donated`
+carries the store's witness for the record it names, as a statement about a
+rewrite must.  Two docstrings that described the bind and the budget transfer
+as `objects.insert` say what they write now.
+
+**Measured and left.**  The raw-write population is **19 sites in 19 executable
+declarations across 10 files** outside `SeLe4n/Testing/` (from 32 / 26 / 13).
+`SchedContext/Operations.lean`, `PriorityManagement.lean` and
+`PriorityManagementPerCore.lean` hold no raw write.  Next: the cancellation
+spine's suspend, the capability revoke step, the cleanup sweeps and the
+inhabitation witnesses (C4).
+
+**The reservation-lookup floor is re-anchored, 451 → 450**, for the reason
+`v0.35.69` records of the TCB floor: `updatePrioritySource` spelled the typed
+lookup where `updateSchedContext` now spells it once.  The TCB floor rose
+2466 → 2469 with the witnessed lookups, and the raw-read inventory (`RAW_SITE`,
+`STORE_READ_CODE = 0`) is byte-identical.
+
+**Tier 3**: positives on each writer's exact spelling — the two arms, the
+witnessed target and the ceiling under it, the propagation's witness parameter
+and its condition outside the rewrite, the bind's and the unbind's write order
+over the stage, the transfer's guard before the witnessed match — and on eight
+of the lemma names; negatives on a bare or dependent target lookup in either MCP
+writer, a bare SchedContext lookup in the binding operations, a raw insert in
+the three files, the unbind's writes bypassing the stage, and two hypotheses
+that must not come back; the three files join the dependent-match negative —
+11 cases, 13 mutations, every one keeping the tokens (the arms swapped, the
+witness discarded, the condition moved inside the rewrite, the write order
+swapped, the guard moved below the match, the frame weakened to the other-key
+form).  Golden trace byte-identical.
+
 ## v0.35.70 — The fault path's seven TCB writers are the typed in-place rewrite
 
 **Raw-write migration, seventh cut (C2).**  The fault path rewrote a thread's TCB

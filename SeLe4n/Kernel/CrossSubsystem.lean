@@ -3609,8 +3609,9 @@ theorem schedContextConfigure_crossSubsystemInvariant_bridge
 
 /-- AD4-E (F-08): `schedContextBind` preserves `crossSubsystemInvariant`.
     Updates SchedContext `boundThread` and TCB `schedContextBinding` fields
-    via `objects.insert`. Does not modify `services`, `serviceRegistry`, or
-    `objectIndex`. -/
+    through the typed in-place rewrites (`rewriteObject` under the lookup's
+    witness, then `updateTcb`). Does not modify `services`, `serviceRegistry`,
+    or `objectIndex`. -/
 theorem schedContextBind_crossSubsystemInvariant_bridge
     (st st' : SystemState)
     (hPre : crossSubsystemInvariant st)
@@ -3655,8 +3656,9 @@ theorem schedContextUnbind_crossSubsystemInvariant_bridge
     hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-E (F-08): `schedContextYieldTo` preserves `crossSubsystemInvariant`.
-    Transfers budget between SchedContexts. Modifies SchedContext objects
-    via `objects.insert`. Does not modify `services`, `serviceRegistry`, or
+    Transfers budget between SchedContexts. Rewrites both SchedContext objects
+    in place (`rewriteObject` under the source's witness, then
+    `updateSchedContext`). Does not modify `services`, `serviceRegistry`, or
     `objectIndex`. -/
 theorem schedContextYieldTo_crossSubsystemInvariant_bridge
     (st st' : SystemState)

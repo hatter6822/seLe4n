@@ -5684,6 +5684,216 @@ theorem updateSchedContext_preserves_lifecycleMetadataConsistent (st : SystemSta
   · exact hC
 
 -- ----------------------------------------------------------------------------
+-- What a rewrite of one kind does to the typed lookups (`v0.35.71`)
+-- ----------------------------------------------------------------------------
+
+/-- One key holds one object: the two typed witnesses a multi-object transition
+carries put their keys apart, with no invariant consulted — `objects[k]?` is a
+function.  The kind-disjointness of the store on a reachable state, read off the
+witnesses a site already holds rather than assumed of the state. -/
+theorem getTcb?_getSchedContext?_keys_distinct {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t : TCB} {scId : SeLe4n.SchedContextId} {sc : SeLe4n.Kernel.SchedContext}
+    (hT : st.getTcb? tid = some t) (hS : st.getSchedContext? scId = some sc) :
+    tid.toObjId ≠ scId.toObjId := by
+  intro hEq
+  have hT' := (getTcb?_eq_some_iff st tid t).mp hT
+  have hS' := (getSchedContext?_eq_some_iff st scId sc).mp hS
+  rw [hEq, hS'] at hT'
+  exact absurd (Option.some.inj hT') (fun hx => KernelObject.noConfusion hx)
+
+/-- Rewriting a SchedContext in place is invisible to every TCB lookup: at another
+key by the frame, and at the key itself because the admissibility witness says
+the key held a SchedContext before the rewrite, so no TCB lookup read it. -/
+theorem rewriteObject_schedContext_getTcb? (st : SystemState) (id : SeLe4n.ObjId)
+    (sc' : SeLe4n.Kernel.SchedContext) (h : st.rewriteAdmissible id (.schedContext sc'))
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId) :
+    (st.rewriteObject id (.schedContext sc') h).getTcb? tid = st.getTcb? tid := by
+  by_cases hEq : id = tid.toObjId
+  · subst hEq
+    obtain ⟨old, hOld, hKind, -⟩ := h
+    unfold getTcb?
+    rw [rewriteObject_objects_self st _ _ _ hInv, hOld]
+    cases old <;> simp [KernelObject.objectType] at hKind <;> rfl
+  · unfold getTcb?
+    rw [rewriteObject_objects_ne st _ _ _ _ hEq hInv]
+
+/-- The twin: a TCB rewritten in place is invisible to every SchedContext lookup. -/
+theorem rewriteObject_tcb_getSchedContext? (st : SystemState) (id : SeLe4n.ObjId)
+    (t' : TCB) (h : st.rewriteAdmissible id (.tcb t'))
+    (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    (st.rewriteObject id (.tcb t') h).getSchedContext? scId = st.getSchedContext? scId := by
+  by_cases hEq : id = scId.toObjId
+  · subst hEq
+    obtain ⟨old, hOld, hKind, -⟩ := h
+    unfold getSchedContext?
+    rw [rewriteObject_objects_self st _ _ _ hInv, hOld]
+    cases old <;> simp [KernelObject.objectType] at hKind <;> rfl
+  · unfold getSchedContext?
+    rw [rewriteObject_objects_ne st _ _ _ _ hEq hInv]
+
+/-- A rewrite at another key leaves a TCB lookup alone, whatever it wrote. -/
+theorem rewriteObject_getTcb?_ne (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId)
+    (hNe : id ≠ tid.toObjId) :
+    (st.rewriteObject id new h).getTcb? tid = st.getTcb? tid := by
+  unfold getTcb?
+  rw [rewriteObject_objects_ne st _ _ _ h hNe hInv]
+
+theorem rewriteObject_getSchedContext?_ne (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt)
+    (scId : SeLe4n.SchedContextId) (hNe : id ≠ scId.toObjId) :
+    (st.rewriteObject id new h).getSchedContext? scId = st.getSchedContext? scId := by
+  unfold getSchedContext?
+  rw [rewriteObject_objects_ne st _ _ _ h hNe hInv]
+
+/-- The rewritten TCB reads back. -/
+theorem rewriteObject_tcb_getTcb?_self (st : SystemState) (tid : SeLe4n.ThreadId) (t' : TCB)
+    (h : st.rewriteAdmissible tid.toObjId (.tcb t')) (hInv : st.objects.invExt) :
+    (st.rewriteObject tid.toObjId (.tcb t') h).getTcb? tid = some t' := by
+  unfold getTcb?
+  rw [rewriteObject_objects_self st _ _ h hInv]
+
+theorem rewriteObject_schedContext_getSchedContext?_self (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc' : SeLe4n.Kernel.SchedContext)
+    (h : st.rewriteAdmissible scId.toObjId (.schedContext sc')) (hInv : st.objects.invExt) :
+    (st.rewriteObject scId.toObjId (.schedContext sc') h).getSchedContext? scId = some sc' := by
+  unfold getSchedContext?
+  rw [rewriteObject_objects_self st _ _ h hInv]
+
+-- The same four facts of the typed read-modify-writes.
+
+theorem updateTcb_getSchedContext? (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    (st.updateTcb tid f).getSchedContext? scId = st.getSchedContext? scId := by
+  unfold updateTcb; split
+  · exact rewriteObject_tcb_getSchedContext? st _ _ _ hInv scId
+  · rfl
+
+theorem updateTcb_getTcb?_ne (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (tid' : SeLe4n.ThreadId) (hNe : tid.toObjId ≠ tid'.toObjId) :
+    (st.updateTcb tid f).getTcb? tid' = st.getTcb? tid' := by
+  unfold updateTcb; split
+  · exact rewriteObject_getTcb?_ne st _ _ _ hInv tid' hNe
+  · rfl
+
+theorem updateSchedContext_getTcb? (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt)
+    (tid : SeLe4n.ThreadId) :
+    (st.updateSchedContext scId f).getTcb? tid = st.getTcb? tid := by
+  unfold updateSchedContext; split
+  · exact rewriteObject_schedContext_getTcb? st _ _ _ hInv tid
+  · rfl
+
+theorem updateSchedContext_getSchedContext?_ne (st : SystemState)
+    (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt)
+    (scId' : SeLe4n.SchedContextId) (hNe : scId.toObjId ≠ scId'.toObjId) :
+    (st.updateSchedContext scId f).getSchedContext? scId' = st.getSchedContext? scId' := by
+  unfold updateSchedContext; split
+  · exact rewriteObject_getSchedContext?_ne st _ _ _ hInv scId' hNe
+  · rfl
+
+/-- The rewritten SchedContext reads back through `f`, and an absent one stays
+absent — `updateTcb_getTcb?_self`'s twin. -/
+theorem updateSchedContext_getSchedContext?_self (st : SystemState)
+    (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt) :
+    (st.updateSchedContext scId f).getSchedContext? scId = (st.getSchedContext? scId).map f := by
+  cases hS : st.getSchedContext? scId with
+  | none => rw [updateSchedContext_eq_self_of_none hS, hS]; rfl
+  | some sc =>
+      rw [updateSchedContext_eq_of_some hS]
+      simp only [getSchedContext?, RHTable_getElem?_eq_get?]
+      rw [RHTable.getElem?_insert_self st.objects scId.toObjId _ hInv]
+      rfl
+
+-- ----------------------------------------------------------------------------
+-- Two writes at two keys, reduced to the double insert
+-- ----------------------------------------------------------------------------
+--
+-- A transition that rewrites two objects performs the first under the witness
+-- its own lookup carries and the second through the typed read-modify-write
+-- over the rewritten state: a witness resolved at the pre-state does not carry
+-- across a rewrite without `invExt`, which executable code has no proof of.
+-- The proofs do, so each reduction below takes the pre-state's witness and
+-- `invExt` and hands back the literal double insert the invariant surface is
+-- stated over.
+
+/-- The typed TCB rewrite over a state whose SchedContext at `id` was just
+rewritten in place — a bind, an unbind, a donation hand-off. -/
+theorem updateTcb_after_rewriteObject_schedContext (st : SystemState) (id : SeLe4n.ObjId)
+    (sc' : SeLe4n.Kernel.SchedContext) (h : st.rewriteAdmissible id (.schedContext sc'))
+    (tid : SeLe4n.ThreadId) (t : TCB) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t) :
+    (st.rewriteObject id (.schedContext sc') h).updateTcb tid f
+      = { st with objects :=
+            (st.objects.insert id (.schedContext sc')).insert tid.toObjId (.tcb (f t)) } := by
+  have hT' : (st.rewriteObject id (.schedContext sc') h).getTcb? tid = some t := by
+    rw [rewriteObject_schedContext_getTcb? st id sc' h hInv tid]; exact hT
+  rw [updateTcb_eq_of_some hT']
+  rfl
+
+theorem updateTcb_after_rewriteObject_schedContext_objects (st : SystemState)
+    (id : SeLe4n.ObjId) (sc' : SeLe4n.Kernel.SchedContext)
+    (h : st.rewriteAdmissible id (.schedContext sc'))
+    (tid : SeLe4n.ThreadId) (t : TCB) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t) :
+    ((st.rewriteObject id (.schedContext sc') h).updateTcb tid f).objects
+      = (st.objects.insert id (.schedContext sc')).insert tid.toObjId (.tcb (f t)) := by
+  rw [updateTcb_after_rewriteObject_schedContext st id sc' h tid t f hInv hT]
+
+/-- The typed SchedContext rewrite over a state whose TCB at `id` was just
+rewritten in place. -/
+theorem updateSchedContext_after_rewriteObject_tcb (st : SystemState) (id : SeLe4n.ObjId)
+    (t' : TCB) (h : st.rewriteAdmissible id (.tcb t'))
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext)
+    (hInv : st.objects.invExt) (hS : st.getSchedContext? scId = some sc) :
+    (st.rewriteObject id (.tcb t') h).updateSchedContext scId f
+      = { st with objects :=
+            (st.objects.insert id (.tcb t')).insert scId.toObjId (.schedContext (f sc)) } := by
+  have hS' : (st.rewriteObject id (.tcb t') h).getSchedContext? scId = some sc := by
+    rw [rewriteObject_tcb_getSchedContext? st id t' h hInv scId]; exact hS
+  rw [updateSchedContext_eq_of_some hS']
+  rfl
+
+theorem updateSchedContext_after_rewriteObject_tcb_objects (st : SystemState)
+    (id : SeLe4n.ObjId) (t' : TCB) (h : st.rewriteAdmissible id (.tcb t'))
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext)
+    (hInv : st.objects.invExt) (hS : st.getSchedContext? scId = some sc) :
+    ((st.rewriteObject id (.tcb t') h).updateSchedContext scId f).objects
+      = (st.objects.insert id (.tcb t')).insert scId.toObjId (.schedContext (f sc)) := by
+  rw [updateSchedContext_after_rewriteObject_tcb st id t' h scId sc f hInv hS]
+
+/-- The typed SchedContext rewrite over a state rewritten at a *different* key,
+whatever that key holds — a budget transfer between two reservations. -/
+theorem updateSchedContext_after_rewriteObject_ne (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext)
+    (hInv : st.objects.invExt) (hNe : id ≠ scId.toObjId)
+    (hS : st.getSchedContext? scId = some sc) :
+    (st.rewriteObject id new h).updateSchedContext scId f
+      = { st with objects :=
+            (st.objects.insert id new).insert scId.toObjId (.schedContext (f sc)) } := by
+  have hS' : (st.rewriteObject id new h).getSchedContext? scId = some sc := by
+    rw [rewriteObject_getSchedContext?_ne st id new h hInv scId hNe]; exact hS
+  rw [updateSchedContext_eq_of_some hS']
+  rfl
+
+theorem updateTcb_after_rewriteObject_ne (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new)
+    (tid : SeLe4n.ThreadId) (t : TCB) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (hNe : id ≠ tid.toObjId) (hT : st.getTcb? tid = some t) :
+    (st.rewriteObject id new h).updateTcb tid f
+      = { st with objects := (st.objects.insert id new).insert tid.toObjId (.tcb (f t)) } := by
+  have hT' : (st.rewriteObject id new h).getTcb? tid = some t := by
+    rw [rewriteObject_getTcb?_ne st id new h hInv tid hNe]; exact hT
+  rw [updateTcb_eq_of_some hT']
+  rfl
+
+-- ----------------------------------------------------------------------------
 -- The pure spelling of the store — for a key that may hold nothing
 -- ----------------------------------------------------------------------------
 

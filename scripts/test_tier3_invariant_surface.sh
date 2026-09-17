@@ -2849,7 +2849,7 @@ run_check "INVARIANT" rg -n '^theorem getSchedContextWitnessed\?_val\b' SeLe4n/M
 # theorem may case on a lookup this way elsewhere; these files are where
 # the executable rewrite sites live, and the mutation this refuses keeps the
 # match and makes it dependent again.
-run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean SeLe4n/Kernel/Architecture/SyscallReturn.lean SeLe4n/Platform/FFI.lean SeLe4n/Kernel/IPC/Operations/Fault.lean SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean SeLe4n/Kernel/Architecture/SyscallReturn.lean SeLe4n/Platform/FFI.lean SeLe4n/Kernel/IPC/Operations/Fault.lean SeLe4n/Kernel/IPC/CrossCore/Fault.lean SeLe4n/Kernel/SchedContext/Operations.lean SeLe4n/Kernel/SchedContext/PriorityManagement.lean SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
 # The scheduler's context-save family and the affinity op are the typed rewrite,
 # or the witnessed lookup around `rewriteObject` -- bounded to each declaration.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.updateTcb outTid fun outTcb" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
@@ -3063,6 +3063,91 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (faultSuspendOnCore|faul
 # forms by definition -- the migration kept the two spellings one.
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem faultSuspendOnCore_bootCoreId[^\n]*(\n([ \t][^\n]*)?)*= faultSuspend st tid :=\n  rfl$" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem faultAbandonOnCore_bootCoreId[^\n]*(\n([ \t][^\n]*)?)*= faultAbandon st tid :=\n  rfl$" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+
+# ============================================================================
+# v0.35.71 -- the SchedContext operations and the priority management are the
+# typed in-place rewrite
+# ============================================================================
+#
+# Seven writers, thirteen raw inserts.  Each operation's first write is
+# `rewriteObject` under the witness its own lookup carries (the looked-up
+# record is read for the guards, so the lookup is the witnessed one); a
+# second write at ANOTHER key is the typed read-modify-write over the
+# rewritten state, because a witness taken at the pre-state does not carry
+# across a rewrite without `invExt`, which executable code has no proof of.
+# The proofs reduce that pair with `updateTcb_after_rewriteObject_schedContext`.
+
+# `updatePrioritySource`: both arms are the typed rewrite, the reservation's
+# through `updateSchedContext` (its identity-on-absent arm is the defensive
+# no-op this site always had) and the thread's through `updateTcb`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def updatePrioritySource \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(tcb : TCB\) \(newPriority : SeLe4n\.Priority\) : SystemState :=\n  match tcb\.schedContextBinding\.ownScId\? with\n  \| some scId =>(\n([ \t][^\n]*)?)*    st\.updateSchedContext scId fun sc => \{ sc with priority := newPriority \}\n  \| none =>(\n([ \t][^\n]*)?)*    st\.updateTcb tid fun t => \{ t with priority := newPriority \}$" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+# The donor-reservation statement lost its key-distinctness hypothesis: the
+# typed rewrite fires only at a key holding a TCB, so it reaches no
+# SchedContext at any key.  NEGATIVE: the hypothesis must not come back.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem updatePrioritySource_donated_preserves_donor_schedContext[^\n]*(\n([ \t][^\n]*)?)*exact SystemState\.updateTcb_getSchedContext\? st tid _ hExt scId$" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem updatePrioritySource_donated_preserves_donor_schedContext[^\n]*(\n([ \t][^\n]*)?)*hNe : tid\.toObjId ≠ scId\.toObjId" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+# The two MCP writers: the target is resolved through the witnessed lookup and
+# the ceiling write is `rewriteObject` under its proof.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def setMCPriorityOp[^\n]*(\n([ \t][^\n]*)?)*      match st\.getTcbWitnessed\? vTargetTid\.val with\n      \| some ⟨targetTcb, hTarget⟩ =>\n        let targetTcb'"'"' := \{ targetTcb with maxControlledPriority := newMCP \}(\n([ \t][^\n]*)?)*        let st := st\.rewriteObject vTargetTid\.val\.toObjId \(\.tcb targetTcb'"'"'\)\n          \(SystemState\.rewriteAdmissible_tcb hTarget targetTcb'"'"'\)" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def setMCPriorityOnCore[^\n]*(\n([ \t][^\n]*)?)*      match st\.getTcbWitnessed\? vTargetTid\.val with\n      \| some ⟨targetTcb, hTarget⟩ =>\n        let targetTcb'"'"' := \{ targetTcb with maxControlledPriority := newMCP \}(\n([ \t][^\n]*)?)*        let stMcp := st\.rewriteObject vTargetTid\.val\.toObjId \(\.tcb targetTcb'"'"'\)\n          \(SystemState\.rewriteAdmissible_tcb hTarget targetTcb'"'"'\)" SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean'
+# NEGATIVE: neither MCP writer resolves its target bare, and no declaration in
+# either file inserts raw.  `setPriorityOp` / `setPriorityOnCore` still read
+# the target bare (they write nothing themselves), so the negatives are bound
+# to the two MCP declarations.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def setMCPriorityOp[^\n]*(\n([ \t][^\n]*)?)*match (\w+ : )?st\.getTcb\? vTargetTid\.val" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def setMCPriorityOnCore[^\n]*(\n([ \t][^\n]*)?)*match (\w+ : )?st\.getTcb\? vTargetTid\.val" SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (updatePrioritySource|setPriorityOp|setMCPriorityOp|migrateRunQueueBucketOnCore)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+run_negative_check "INVARIANT" rg -n 'objects\.insert' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean SeLe4n/Kernel/SchedContext/Operations.lean
+# The propagation tail takes the store's witness for the bound TCB it is
+# handed and writes under it; `schedContextConfigure` resolves the thread once,
+# through the witnessed lookup, and passes the proof down.  The domain half
+# re-resolves through the witnessed lookup and keeps its `if` OUTSIDE the
+# rewrite, so an unchanged domain is no write at all.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate \(stStored : SystemState\)\n    \(scId : SeLe4n\.SchedContextId\)\n    \(boundTid : SeLe4n\.ThreadId\) \(boundTcb : TCB\)\n    \(hBound : stStored\.getTcb\? boundTid = some boundTcb\)\n    \(priority domain : Nat\) : SystemState :=" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*        stStored\.rewriteObject boundTid\.toObjId \(KernelObject\.tcb boundTcb2\)\n          \(SystemState\.rewriteAdmissible_tcb hBound boundTcb2\)" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*  match stProp\.getTcbWitnessed\? boundTid with\n  \| some ⟨currentTcb, hCurrent⟩ =>\n    if currentTcb\.domain\.val = domain ∨\n       ¬ schedContextConfigurePropagates boundTcb scId then stProp\n    else(\n([ \t][^\n]*)?)*      stProp\.rewriteObject boundTid\.toObjId \(KernelObject\.tcb currentTcb2\)\n        \(SystemState\.rewriteAdmissible_tcb hCurrent currentTcb2\)\n  \| none => stProp$" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigure \(vScId[^\n]*(\n([ \t][^\n]*)?)*              match stStored\.getTcbWitnessed\? boundTid with\n              \| some ⟨boundTcb, hBound⟩ =>\n                \.ok \(\(\), schedContextConfigureBoundPropagate stStored scIdTyped boundTid\n                  boundTcb hBound priority domain\)" SeLe4n/Kernel/SchedContext/Operations.lean'
+# NEGATIVE: the propagation must not resolve the bound thread bare again, and
+# the domain write must not swallow its condition (a rewrite that runs on
+# every configure re-inserts an unchanged record).
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*match stProp\.getTcb\? boundTid" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*stProp\.rewriteObject boundTid\.toObjId \(KernelObject\.tcb \(if " SeLe4n/Kernel/SchedContext/Operations.lean'
+# The bind: the SchedContext under its lookup's witness, then the TCB through
+# the typed rewrite over the rewritten state.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*    match st\.getSchedContextWitnessed\? \(SchedContextId\.ofObjId vScId\.val\) with\n    \| some ⟨sc, hSc⟩ =>" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*            let st1 := st\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n              \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)\n            let st2 := st1\.updateTcb vThreadId\.val fun t =>\n              \{ t with schedContextBinding := SchedContextBinding\.bound scIdTyped,\n                       priority := sc\.priority \}" SeLe4n/Kernel/SchedContext/Operations.lean'
+# The unbind: the scheduler stage is a scheduler-only update of the pre-state,
+# so the SchedContext witness taken at `st` is the stage's own; the
+# SchedContext rewrite runs OVER THE STAGE under that witness, the TCB through
+# the typed rewrite after it, and the TCB-missing arm rewrites at `st`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*    match st\.getSchedContextWitnessed\? \(SchedContextId\.ofObjId vScId\.val\) with\n    \| some ⟨sc, hSc⟩ =>" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*          let st1 : SystemState := \{ st with scheduler := sched1 \}(\n([ \t][^\n]*)?)*          let st2 := st1\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n            \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)(\n([ \t][^\n]*)?)*          let st3 := st2\.updateTcb tid fun t =>\n            \{ t with schedContextBinding := SchedContextBinding\.unbound \}" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*        \| none =>(\n([ \t][^\n]*)?)*          let st1 := st\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n            \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)" SeLe4n/Kernel/SchedContext/Operations.lean'
+# NEGATIVE: neither binding operation resolves the SchedContext bare, and the
+# unbind's writes do not bypass the scheduler stage.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContext(Bind|Unbind)[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContext\? \(SchedContextId\.ofObjId vScId\.val\) with" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*let st1 : SystemState := \{ st with scheduler := sched1 \}(\n([ \t][^\n]*)?)*let st2 := st\.rewriteObject" SeLe4n/Kernel/SchedContext/Operations.lean'
+# The budget transfer: the source under its lookup's witness, the target
+# through the typed rewrite over the rewritten state -- the self-yield guard
+# is what makes the second key a different one.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextYieldTo[^\n]*(\n([ \t][^\n]*)?)*  if fromScId == targetScId then st else(\n([ \t][^\n]*)?)*  match st\.getSchedContextWitnessed\? fromScId with\n  \| some ⟨fromSc, hFrom⟩ =>(\n([ \t][^\n]*)?)*      let st1 := st\.rewriteObject fromScId\.toObjId \(KernelObject\.schedContext updatedFrom\)\n        \(SystemState\.rewriteAdmissible_schedContext hFrom updatedFrom\)\n      let st2 := st1\.updateSchedContext targetScId fun sc =>\n        \{ sc with budgetRemaining := ⟨newTargetBudget⟩, isActive := newTargetBudget > 0 \}" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextYieldTo[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContext\? fromScId with" SeLe4n/Kernel/SchedContext/Operations.lean'
+# The lemma library the proofs reduce the two-key writes with: a SchedContext
+# rewrite is invisible to every TCB lookup (and the twin), the typed
+# read-modify-writes inherit that, the keys of two typed witnesses are
+# distinct with no invariant consulted, and the composed reductions.
+run_check "INVARIANT" rg -n '^theorem getTcb\?_getSchedContext\?_keys_distinct' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem rewriteObject_schedContext_getTcb\? ' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem rewriteObject_tcb_getSchedContext\? ' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem updateTcb_getSchedContext\? ' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem updateSchedContext_getTcb\? ' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem updateSchedContext_getSchedContext\?_self' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem updateTcb_after_rewriteObject_schedContext ' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem updateSchedContext_after_rewriteObject_tcb ' SeLe4n/Model/State.lean
+# The cross-kind frame is unconditional in the key: a rewrite at the TCB's own
+# key is covered by the admissibility witness, not by a distinctness
+# hypothesis.  NEGATIVE: the frame must not acquire one.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem rewriteObject_schedContext_getTcb\? [^\n]*(\n([ \t][^\n]*)?)*hNe : id ≠ tid\.toObjId" SeLe4n/Model/State.lean'
 
 # ============================================================================
 # WS-OD OD6 -- the payoff

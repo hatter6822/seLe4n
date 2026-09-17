@@ -3850,8 +3850,8 @@ on `targetTcb.schedContextBinding`:
 * `.unbound` **and, since WS-OD (v0.35.3), `.donated`**: writes the
   TARGET TCB's `priority` field (already covered by
   `tcbLock targetTcbTid .write` in the base).
-* `.bound scId`: writes the bound SchedContext's `priority` field via
-  `st.objects.insert scId.toObjId (.schedContext sc')`.
+* `.bound scId`: writes the bound SchedContext's `priority` field through
+  `st.updateSchedContext scId (fun sc => { sc with priority := _ })`.
   Without locking that SC, this transition could race with concurrent
   SchedContext operations on the same object.
 

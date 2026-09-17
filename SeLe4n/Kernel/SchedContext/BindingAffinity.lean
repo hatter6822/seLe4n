@@ -330,6 +330,7 @@ current-clear, the home-queue rebucket — are already erased here: only the
 replenish-queue reading survives, and it is stated per core. -/
 private theorem schedContextUnbind_ok_char
     (vScId : ValidObjId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
     (h : schedContextUnbind vScId st = .ok ((), st')) :
     ∃ sc, st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc ∧
     ∃ tid, sc.boundThread = some tid ∧
@@ -352,9 +353,9 @@ private theorem schedContextUnbind_ok_char
               ⟨vScId.val.toNat⟩))) := by
   simp only [schedContextUnbind] at h
   cases hSc : st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
-  | none => rw [hSc] at h; cases h
+  | none => rw [SystemState.getSchedContextWitnessed?_eq_none hSc] at h; cases h
   | some sc =>
-    rw [hSc] at h; simp only [] at h
+    rw [SystemState.getSchedContextWitnessed?_eq_some hSc] at h; simp only [] at h
     cases hBT : sc.boundThread with
     | none => rw [hBT] at h; cases h
     | some tid =>
@@ -372,26 +373,31 @@ private theorem schedContextUnbind_ok_char
         simp only [hNotDon, Bool.false_eq_true, if_false] at h
         cases h
         refine Or.inl ⟨tcb, rfl, ?_, ?_⟩
-        · -- objects: the two inserts survive the scheduler-only wrappers and the
-          -- purge (whose object component is definitionally the identity).
-          cases hRun : Lifecycle.Suspend.runningCoreOf? st tid <;>
-            (simp only []; repeat' split) <;> rfl
+        · -- objects: the scheduler stage is a scheduler-only update of the
+          -- pre-state, so the two typed writes over it reduce to the double
+          -- insert whatever the stage's scheduler is -- no split needed -- and
+          -- the purge's object component is definitionally the identity.
+          simp only [purgeReplenishmentOnCore_objects]
+          exact SystemState.updateTcb_after_rewriteObject_schedContext_objects
+            _ vScId.val _ _ tid tcb _ hObjInv hTcb
         · -- the replenish queue: only the final home-core purge touches it.
           intro c
           by_cases hHome : determineTargetCore st tid = c
           · rw [if_pos hHome]
             cases hRun : Lifecycle.Suspend.runningCoreOf? st tid <;>
               (simp only []; repeat' split) <;>
-              simp [purgeReplenishmentOnCore, hHome]
+              simp [purgeReplenishmentOnCore, hHome, SystemState.updateTcb_scheduler,
+                SystemState.rewriteObject_scheduler]
           · rw [if_neg hHome]
             cases hRun : Lifecycle.Suspend.runningCoreOf? st tid <;>
               (simp only []; repeat' split) <;>
-              simp [purgeReplenishmentOnCore,
+              simp [purgeReplenishmentOnCore, SystemState.updateTcb_scheduler,
+                SystemState.rewriteObject_scheduler,
                 SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hHome]
       | none =>
         rw [hTcb] at h; simp only [] at h
         have hSt' : _ = st' := congrArg Prod.snd (Except.ok.inj h)
-        dsimp only at hSt'
+        dsimp only [SystemState.rewriteObject] at hSt'
         subst hSt'
         refine Or.inr ⟨by first | exact hTcb | exact rfl, ?_, ?_⟩
         · exact purgeReplenishmentFromAllCores_objects
@@ -505,6 +511,7 @@ untouched**.  The possible home-core run-queue rebucket and the thread-index
 update are erased here: only what the invariant proofs read survives. -/
 private theorem schedContextBind_ok_char
     (vScId : ValidObjId) (vThreadId : ValidThreadId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
     (h : schedContextBind vScId vThreadId st = .ok ((), st')) :
     ∃ sc, st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc ∧
       sc.boundThread = none ∧
@@ -519,9 +526,9 @@ private theorem schedContextBind_ok_char
       (∀ c, st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) := by
   simp only [schedContextBind] at h
   cases hSc : st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
-  | none => rw [hSc] at h; cases h
+  | none => rw [SystemState.getSchedContextWitnessed?_eq_none hSc] at h; cases h
   | some sc =>
-    rw [hSc] at h; simp only [] at h
+    rw [SystemState.getSchedContextWitnessed?_eq_some hSc] at h; simp only [] at h
     cases hBT : sc.boundThread with
     | some tid0 => rw [hBT] at h; simp at h
     | none =>
@@ -556,6 +563,10 @@ private theorem schedContextBind_ok_char
           | donated scb owner => rw [hBind] at h; cases h
           | unbound =>
             rw [hBind] at h; simp only [] at h
+            -- `v0.35.71`: the two typed writes over `st`, reduced to the double
+            -- insert under the pre-state's TCB witness.
+            rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
+              vThreadId.val tcb _ hObjInv hTcb] at h
             cases h
             refine ⟨?_, ?_⟩
             · -- objects: both rebucket arms share the double-insert store.
@@ -584,7 +595,7 @@ private theorem schedContextBind_read_frame
     (∃ sc, st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc ∧
         sc.boundThread = none) := by
   obtain ⟨sc, hSc, hBT, tcb, hTcb, hObjEq, hQEq⟩ :=
-    schedContextBind_ok_char vScId vThreadId st st' h
+    schedContextBind_ok_char vScId vThreadId st st' hObjInv h
   have hScRaw : st.objects.get? vScId.val = some (KernelObject.schedContext sc) :=
     (getSchedContext?_eq_some_iff st _ sc).mp hSc
   have hTcbRaw : st.objects.get? vThreadId.val.toObjId = some (KernelObject.tcb tcb) :=
@@ -659,7 +670,7 @@ theorem schedContextBind_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (h : schedContextBind vScId vThreadId st = .ok ((), st')) :
     st'.objects.invExt := by
-  obtain ⟨sc, _, _, tcb, _, hObjEq, _⟩ := schedContextBind_ok_char vScId vThreadId st st' h
+  obtain ⟨sc, _, _, tcb, _, hObjEq, _⟩ := schedContextBind_ok_char vScId vThreadId st st' hObjInv h
   rw [hObjEq]
   exact (st.objects.insert _ _).insert_preserves_invExt _ _
     (st.objects.insert_preserves_invExt _ _ hObjInv)
@@ -672,7 +683,7 @@ theorem schedContextUnbind_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (h : schedContextUnbind vScId st = .ok ((), st')) :
     st'.objects.invExt := by
-  obtain ⟨sc, _, tid, _, hArm⟩ := schedContextUnbind_ok_char vScId st st' h
+  obtain ⟨sc, _, tid, _, hArm⟩ := schedContextUnbind_ok_char vScId st st' hObjInv h
   rcases hArm with ⟨tcb, _, hObjEq, _⟩ | ⟨_, hObjEq, _⟩ <;> rw [hObjEq]
   · exact (st.objects.insert _ _).insert_preserves_invExt _ _
       (st.objects.insert_preserves_invExt _ _ hObjInv)
@@ -689,7 +700,7 @@ theorem schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp
     (hCons : replenishQueueAffinityConsistent_smp st)
     (h : schedContextUnbind vScId st = .ok ((), st')) :
     replenishQueueAffinityConsistent_smp st' := by
-  obtain ⟨sc, hSc, tid, hBT, hArm⟩ := schedContextUnbind_ok_char vScId st st' h
+  obtain ⟨sc, hSc, tid, hBT, hArm⟩ := schedContextUnbind_ok_char vScId st st' hObjInv h
   have hScRaw : st.objects.get? vScId.val = some (KernelObject.schedContext sc) :=
     (getSchedContext?_eq_some_iff st _ sc).mp hSc
   rcases hArm with ⟨tcb, hTcb, hObjEq, hQEq⟩ | ⟨hTcb, hObjEq, hQEq⟩
@@ -742,7 +753,7 @@ theorem schedContextUnbind_preserves_replenishQueueEntriesBound_smp
     (hOrphan : replenishQueueEntriesBound_smp st)
     (h : schedContextUnbind vScId st = .ok ((), st')) :
     replenishQueueEntriesBound_smp st' := by
-  obtain ⟨sc, hSc, tid, hBT, hArm⟩ := schedContextUnbind_ok_char vScId st st' h
+  obtain ⟨sc, hSc, tid, hBT, hArm⟩ := schedContextUnbind_ok_char vScId st st' hObjInv h
   have hScRaw : st.objects.get? vScId.val = some (KernelObject.schedContext sc) :=
     (getSchedContext?_eq_some_iff st _ sc).mp hSc
   rcases hArm with ⟨tcb, hTcb, hObjEq, hQEq⟩ | ⟨hTcb, hObjEq, hQEq⟩

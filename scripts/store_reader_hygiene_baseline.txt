@@ -17,12 +17,12 @@ raw_match_cnode          = 0
 raw_match_vspaceroot     = 14
 raw_match_total          = 44
 raw_match_unclassified   = 3
-store_read_spec          = 4715 (diagnostic)
+store_read_spec          = 4716 (diagnostic)
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 2466
-getschedctx_adoption     = 451
+gettcb_adoption          = 2469
+getschedctx_adoption     = 450
 getendpoint_adoption     = 194
 getnotification_adoption = 87
 getuntyped_adoption      = 16
@@ -695,6 +695,7 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|un
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|unboundQueuedThreadsIdleAllowed|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|unboundQueuedThreadsIdleAllowed_of_tcbFieldUpdate|4
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|updatePrioritySource_preserves_ipcInvariantFull|1
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|updatePrioritySource_tcbTarget_eq|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|vspaceRootWrite_preserves_ipcInvariantFull|6
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|writeReturnFrameToTcb_preserves_ipcInvariantFull|4
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean|dispatchSyscallChecked_preserves_ipcInvariantFull|2
@@ -2041,9 +2042,9 @@ RAW_MATCH_VSPACEROOT=14
 RAW_MATCH_TOTAL=44
 RAW_MATCH_UNCLASSIFIED=3
 STORE_READ_CODE=0
-STORE_READ_SPEC=4715
-GETTCB_ADOPTION=2466
-GETSCHEDCTX_ADOPTION=451
+STORE_READ_SPEC=4716
+GETTCB_ADOPTION=2469
+GETSCHEDCTX_ADOPTION=450
 GETENDPOINT_ADOPTION=194
 GETNOTIFICATION_ADOPTION=87
 GETUNTYPED_ADOPTION=16
