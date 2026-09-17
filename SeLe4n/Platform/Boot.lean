@@ -538,23 +538,21 @@ def installBootVSpaceRoot (ist : IntermediateState)
       unfold SystemState.allTablesInvExtK at h ⊢
       refine ⟨h.1, h.2.1,
               RHTable.insert_preserves_invExtK _ _ _ h.2.2.1,
-              h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.2.2.2.1,
               h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
               h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+              h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
     hPerObjectSlots := by
       intro oid cn hLookup
       exact withObj.hPerObjectSlots oid cn hLookup
     hPerObjectMappings := by
       intro oid vs hLookup
       exact withObj.hPerObjectMappings oid vs hLookup
-    hLifecycleConsistent := by
-      rcases withObj.hLifecycleConsistent with ⟨hObjType, hCapRef⟩
-      exact ⟨hObjType, hCapRef⟩ }
+    hLifecycleConsistent := withObj.hLifecycleConsistent }
 
 /-- **WS-RC R3**: `installBootVSpaceRoot` registers `vsr` in the object
     store at `id`.  Witnesses the post-state object-store entry for
@@ -697,8 +695,8 @@ theorem bootFromPlatform_perObjectMappings (config : PlatformConfig) :
   (bootFromPlatform config).hPerObjectMappings
 
 /-- Q3-C: The booted state satisfies lifecycle metadata consistency. -/
-theorem bootFromPlatform_lifecycleConsistent (config : PlatformConfig) :
-    SystemState.lifecycleMetadataConsistent (bootFromPlatform config).state :=
+theorem bootFromPlatform_objectTypeMetadataConsistent (config : PlatformConfig) :
+    SystemState.objectTypeMetadataConsistent (bootFromPlatform config).state :=
   (bootFromPlatform config).hLifecycleConsistent
 
 /-- Q3-C: Master validity theorem — boot produces a fully valid state. -/
@@ -707,11 +705,11 @@ theorem bootFromPlatform_valid (config : PlatformConfig) :
     ist.state.allTablesInvExtK ∧
     perObjectSlotsInvariant ist.state ∧
     perObjectMappingsInvariant ist.state ∧
-    SystemState.lifecycleMetadataConsistent ist.state :=
+    SystemState.objectTypeMetadataConsistent ist.state :=
   ⟨bootFromPlatform_allTablesInvExtK config,
    bootFromPlatform_perObjectSlots config,
    bootFromPlatform_perObjectMappings config,
-   bootFromPlatform_lifecycleConsistent config⟩
+   bootFromPlatform_objectTypeMetadataConsistent config⟩
 
 /-- U6-E: Empty IRQ list has no duplicates. -/
 theorem irqsUnique_empty : irqsUnique [] = true := by
@@ -2375,9 +2373,6 @@ or satisfy the boot preconditions.
     (createObject ist id obj hS hM).state.tlb = ist.state.tlb := rfl
 @[simp] private theorem createObject_machine (ist : IntermediateState) id obj hS hM :
     (createObject ist id obj hS hM).state.machine = ist.state.machine := rfl
-@[simp] private theorem createObject_capabilityRefs (ist : IntermediateState) id obj hS hM :
-    (createObject ist id obj hS hM).state.lifecycle.capabilityRefs =
-    ist.state.lifecycle.capabilityRefs := rfl
 @[simp] private theorem createObject_irqHandlers (ist : IntermediateState) id obj hS hM :
     (createObject ist id obj hS hM).state.irqHandlers = ist.state.irqHandlers := rfl
 @[simp] private theorem createObject_cdtNodeSlot (ist : IntermediateState) id obj hS hM :
@@ -2625,13 +2620,6 @@ private theorem foldObjects_declassificationTaint (objs : List ObjectEntry)
 
 private theorem foldObjects_machine (objs : List ObjectEntry) (ist : IntermediateState) :
     (foldObjects objs ist).state.machine = ist.state.machine := by
-  induction objs generalizing ist with
-  | nil => rfl
-  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
-
-private theorem foldObjects_capabilityRefs (objs : List ObjectEntry) (ist : IntermediateState) :
-    (foldObjects objs ist).state.lifecycle.capabilityRefs =
-    ist.state.lifecycle.capabilityRefs := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -3083,7 +3071,7 @@ theorem bootFromPlatformWithIdleThreads_valid (config : PlatformConfig) :
     ist.state.allTablesInvExtK ∧
     perObjectSlotsInvariant ist.state ∧
     perObjectMappingsInvariant ist.state ∧
-    SystemState.lifecycleMetadataConsistent ist.state :=
+    SystemState.objectTypeMetadataConsistent ist.state :=
   ⟨(bootFromPlatformWithIdleThreads config).hAllTables,
    (bootFromPlatformWithIdleThreads config).hPerObjectSlots,
    (bootFromPlatformWithIdleThreads config).hPerObjectMappings,
@@ -3163,11 +3151,11 @@ theorem foldl_installIdleThread_domainSchedule
     and a hand-written run-queue write — held to the kernel model's by a
     docstring sentence ("mirrors `enqueueIdleThreadOnCore` … definitionally
     parallel"), which was true of `objects` and the run queue and false of the
-    bookkeeping: the builder skips `capabilityRefs` and `asidTable`, the store
-    (`withObjectStored`) filters the one and maintains the other.  On a
-    successful checked boot both are inert — `capabilityRefs` is the default's
-    throughout boot (`bootFromPlatform_capabilityRefs_eq`) and an idle slot is
-    fresh (`bootFromPlatformChecked_ok_idleSlotsFreshAt`) — so the derivation
+    bookkeeping: the builder skips `asidTable`, the store (`withObjectStored`)
+    maintains it — and, until `v0.35.78` retired it, the capability-reference
+    table too.  On a successful checked boot the ASID write is inert — an idle
+    slot is fresh (`bootFromPlatformChecked_ok_idleSlotsFreshAt`) — so the
+    derivation
     changes no boot state, which is exactly the case in which a derivation is
     taken rather than a pin.  `enqueueIdleThread_state` is the definitional
     equation; every frame below is an instance of the kernel model's.
@@ -3199,7 +3187,7 @@ def enqueueIdleThread (ist : IntermediateState)
     ist.hAllTables.1.1 ist.hPerObjectSlots
   hPerObjectMappings := enqueueIdleThreadOnCore_preserves_perObjectMappingsInvariant ist.state c
     ist.hAllTables.1.1 ist.hPerObjectMappings
-  hLifecycleConsistent := enqueueIdleThreadOnCore_preserves_lifecycleMetadataConsistent
+  hLifecycleConsistent := enqueueIdleThreadOnCore_preserves_objectTypeMetadataConsistent
     ist.state c ist.hAllTables ist.hLifecycleConsistent
 
 /-- **v0.35.68** (the derivation, pinned): the boot's idle install *is* the
@@ -4411,26 +4399,6 @@ theorem bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull (config : P
     rw [hDS] at he
     exact (List.not_mem_nil he).elim
 
-/-- Fold-level: foldIrqs preserves capabilityRefs. -/
-private theorem foldIrqs_capabilityRefs (irqs : List IrqEntry) (ist : IntermediateState) :
-    (foldIrqs irqs ist).state.lifecycle.capabilityRefs =
-    ist.state.lifecycle.capabilityRefs := by
-  have h := foldIrqs_lifecycle irqs ist
-  exact congrArg (·.capabilityRefs) h
-
-/-- V4-A5: The post-boot state preserves capabilityRefs from default. -/
-private theorem applyMachineConfig_capabilityRefs_eq (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.lifecycle.capabilityRefs =
-    ist.state.lifecycle.capabilityRefs := rfl
-
-theorem bootFromPlatform_capabilityRefs_eq (config : PlatformConfig) :
-    (bootFromPlatform config).state.lifecycle.capabilityRefs =
-    (default : SystemState).lifecycle.capabilityRefs := by
-  show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_capabilityRefs_eq, foldObjects_capabilityRefs, foldIrqs_capabilityRefs]
-  rw [show mkEmptyIntermediateState.state.lifecycle.capabilityRefs =
-        (default : SystemState).lifecycle.capabilityRefs from rfl]
-
 /-- V4-A5b: The post-boot state preserves cdtNodeSlot from default. -/
 theorem bootFromPlatform_cdtNodeSlot_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.cdtNodeSlot =
@@ -4786,7 +4754,7 @@ references back to the default state where the component is already proved.
 
 The key technical mechanism: each invariant component reads only fields that
 are either (a) unchanged from default (scheduler, CDT, services, registries,
-ASID table, TLB, machine, capabilityRefs) or (b) irrelevant to the component.
+ASID table, TLB, machine) or (b) irrelevant to the component.
 By rewriting the post-boot state's fields to default values, we reduce each
 component to the already-proved `default_*` case.
 -/
@@ -4948,8 +4916,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       exact absurd hTgt (((hBS oid _ hObj).2.2.1 cn rfl).2.2.2.2 slot cap rid hLookupSlot)
   -- 5. lifecycleInvariantBundle
   have hLifeBundle : lifecycleInvariantBundle (bootFromPlatform config).state :=
-    lifecycleInvariantBundle_of_metadata_consistent _
-      (bootFromPlatform config).hLifecycleConsistent
+    (bootFromPlatform config).hLifecycleConsistent
   -- 3. ipcInvariantFull (WS-RC R4.C.7: 15 sub-components after uniqueWaiters retirement)
   have hIpcFull : ipcInvariantFull (bootFromPlatform config).state := by
     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -5254,11 +5221,11 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
             | _ => simp [PriorityInheritance.blockingServer, SystemState.getTcb?, hObj]
         simp [hServer] at hMem
     · -- AM4-F (AL6-C.hygiene): lifecycleObjectTypeLockstep at boot.
-      -- `bootFromPlatform_lifecycleConsistent` already witnesses
+      -- `bootFromPlatform_objectTypeMetadataConsistent` already witnesses
       -- `objectTypeMetadataConsistent`, which is semantically stronger
       -- than (and directly implies) the lockstep predicate.
       intro oid obj hObj
-      have hMeta := (bootFromPlatform_lifecycleConsistent config).1
+      have hMeta := bootFromPlatform_objectTypeMetadataConsistent config
       -- objectTypeMetadataConsistent: ∀ oid, lookupObjectTypeMeta st oid
       --   = (st.objects[oid]?).map KernelObject.objectType
       -- With hObj : st.objects[oid]? = some obj, the RHS is

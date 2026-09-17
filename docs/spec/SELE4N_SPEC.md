@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.77` (`lakefile.toml`) |
+| **Package version** | `0.35.78` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 386,726 across 331 Lean files |
-| **Test LoC** | 78,776 across 70 Lean test suites |
-| **Proved declarations** | 12,913 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 385,487 across 331 Lean files |
+| **Test LoC** | 78,725 across 70 Lean test suites |
+| **Proved declarations** | 12,853 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2542,8 +2542,9 @@ The simulation platform contract (`Sim/Contract.lean`) uses a permissive
 runtime contract (`True` for register context stability and memory access)
 but substantive boot and interrupt contracts (AI5-A/B, v0.27.11).
 
-**Boot contract** (`simBootContract`): Validates empty initial object store
-and empty capability reference table — matching the RPi5 production pattern.
+**Boot contract** (`simBootContract`): Validates the empty initial object
+store — matching the RPi5 production pattern.  (Its capability-reference-table
+clause was retired with the table at `v0.35.78`.)
 
 **Interrupt contract** (`simInterruptContract`): Restricts supported IRQs
 to GIC-400 INTID range 0–223, with handler mapping required for supported
@@ -3355,10 +3356,10 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   rather than `storeObject`: its body is the
   bare table insert with the admissibility proof erased, so the hot
   scheduler and IPC paths pay one insert, and the bookkeeping `storeObject`
-  maintains — the index, the kind table, the capability references, the
-  ASID table — is proved unchanged once, of the primitive
+  maintains — the index, the kind table, the ASID table — is proved
+  unchanged once, of the primitive
   (`rewriteObject_preserves_objectIndexSetComplete`,
-  `rewriteObject_preserves_lifecycleMetadataConsistent`,
+  `rewriteObject_preserves_objectTypeMetadataConsistent`,
   `rewriteObject_preserves_asidTableConsistent`,
   `rewriteObject_preservesFieldsOutside`).  CNodes and VSpace roots are
   refused by `KernelObjectType.rewriteNeutral`, because their contents are
@@ -5577,7 +5578,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
 8. top-level import hygiene: `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface.
 9. syscall capability-checking: `SyscallGate` + `syscallLookupCap` model the seL4 CSpace-lookup + rights-check pattern; production path `syscallEntry` -> `dispatchSyscall` -> `syscallInvoke` -> `dispatchWithCap` (S5-A: deprecated `api*` wrappers removed); 3 soundness theorems prove capability requirements; 34 `SyscallId` variants (V2 added `notificationSignal`=14, `notificationWait`=15, `replyRecv`=16; growth through WS-SM SM9's `declassifySignal`=33); `MessageInfo` label bounded to 20 bits (seL4 convention).
-10. Hash-store equality for `VSpaceRoot` and `CNode` is order-independent (size + fold containment), and the migrated state stores (`services`, `irqHandlers`, `capabilityRefs`, `cdtSlotNode`, `cdtNodeSlot`) are backed by the verified Robin Hood table (`RHTable`, WS-Q2 — `CNode.slots` via `UniqueSlotMap` since WS-RC R4.A; no closure-chain metadata stores).
+10. Hash-store equality for `VSpaceRoot` and `CNode` is order-independent (size + fold containment), and the migrated state stores (`services`, `irqHandlers`, `cdtSlotNode`, `cdtNodeSlot`; `capabilityRefs` was among them until its retirement at `v0.35.78`) are backed by the verified Robin Hood table (`RHTable`, WS-Q2 — `CNode.slots` via `UniqueSlotMap` since WS-RC R4.A; no closure-chain metadata stores).
 
 ---
 

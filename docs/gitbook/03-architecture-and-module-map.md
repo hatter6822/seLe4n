@@ -255,7 +255,7 @@ inventory was written:
 - `SeLe4n/Model/IntermediateState.lean` (Q3-A)
   - `IntermediateState` — builder-phase state wrapping `SystemState` with four
     invariant witnesses (`allTablesInvExt`, `perObjectSlotsInvariant`,
-    `perObjectMappingsInvariant`, `lifecycleMetadataConsistent`).
+    `perObjectMappingsInvariant`, `objectTypeMetadataConsistent`).
   - `mkEmptyIntermediateState` — empty state constructor.
 
 - `SeLe4n/Model/Builder.lean` (Q3-B)
@@ -416,7 +416,7 @@ equivalence theorems (M-01), error asymmetry documentation (L-18).
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` — D1: `suspendThread`/`resumeThread` with run-queue cleanup and state transitions.
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`
   - step-3 lifecycle invariant components and bundle layering,
-  - AN4-B (H-03): the redundant `lifecycleIdentityNoTypeAliasConflict` conjunct (derivable in one step from `lifecycleIdentityTypeExact` via lookup determinism) was removed; `lifecycleIdentityAliasingInvariant` is now an `abbrev` for the exactness witness. The capability-reference side of the bundle remains a distinct conjunct.
+  - AN4-B (H-03): the redundant `lifecycleIdentityNoTypeAliasConflict` conjunct (derivable in one step from `lifecycleIdentityTypeExact` via lookup determinism) was removed; `lifecycleIdentityAliasingInvariant` is now an `abbrev` for the exactness witness. The capability-reference side of the bundle was retired at v0.35.78 — every predicate in it was stated over a reader that read the object store, so each was a tautology — and `lifecycleInvariantBundle` is the exactness witness alone.
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` — D1: transport lemmas for suspend/resume across all subsystem invariants.
 
 ### Service subsystem *(seLe4n extension — not present in seL4)*

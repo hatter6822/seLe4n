@@ -159,36 +159,6 @@ theorem replyCapPointsToValidReply_of_objects_eq {st st' : SystemState}
   unfold replyCapPointsToValidReply SystemState.getReply? at h ⊢
   rw [hObjs]; exact h
 
-/-- WS-SM SM6.D / PR #822 review (#02/#13 — "cover replyCap targets in lifecycle invariants"):
-the Lifecycle-layer `lifecycleCapabilityRefReplyCapBacked` predicate is **implied** by the
-step-preserved `replyCapPointsToValidReply` (the 7th `capabilityInvariantBundle` conjunct, #1.a).
-Lifecycle capability-reference metadata is *derived* from the slot cap
-(`lookupCapabilityRefMeta st ref = (lookupSlotCap st ref).map (·.target)`), so a `.replyCap rid`
-metadata witnesses a CNode slot holding that reply cap (`lookupSlotCap` resolves a CNode via
-`lookupCNode` + `CNode.lookup`), which `replyCapPointsToValidReply` backs.  This closes the
-review's residual — the lifecycle stale-reference family is no longer blind to reply caps —
-without rippling the Lifecycle-layer preservation surface, since the reply-backing fact is owned
-by the capability layer and the lifecycle predicate is a proven consequence of it. -/
-theorem lifecycleCapabilityRefReplyCapBacked_of_replyCapPointsToValidReply
-    (st : SystemState) (hRCPV : replyCapPointsToValidReply st) :
-    lifecycleCapabilityRefReplyCapBacked st := by
-  intro ref rid hMeta
-  unfold SystemState.lookupCapabilityRefMeta at hMeta
-  cases hCap : SystemState.lookupSlotCap st ref with
-  | none => rw [hCap] at hMeta; simp at hMeta
-  | some cap =>
-      rw [hCap] at hMeta
-      -- `(some cap).map Capability.target` reduces to `some cap.target`.
-      have hTgt : cap.target = .replyCap rid := by simpa using hMeta
-      rw [SystemState.lookupSlotCap] at hCap
-      cases hCN : SystemState.lookupCNode st ref.cnode with
-      | none => rw [hCN] at hCap; exact absurd hCap (by simp)
-      | some cn =>
-          rw [hCN] at hCap
-          have hObjCN : st.objects[ref.cnode]? = some (.cnode cn) :=
-            (SystemState.lookupCNode_eq_some_iff st ref.cnode cn).1 hCN
-          exact hRCPV ref.cnode cn ref.slot cap rid hObjCN hCap hTgt
-
 /-- Composed capability invariant bundle entrypoint.
 
 The active lifecycle slice extends the M2 foundation bundle with security-meaningful
@@ -691,22 +661,6 @@ theorem cdtMapsConsistent_of_detachSlotFromCdt
   · exact hCon  -- none case: state unchanged
   · exact hCon  -- some case: only cdtSlotNode/cdtNodeSlot modified, cdt unchanged
 
-/-- M4-B bridge bundle: ties stale-reference exclusion to lifecycle transition authority
-monotonicity so composition proofs can depend on a single named assumption.
-
-WS-F6/D1: `lifecycleAuthorityMonotonicity` is an operation-correctness lemma (proved
-by `lifecycleAuthorityMonotonicity_holds`), not extracted from a bundle. -/
-def lifecycleCapabilityStaleAuthorityInvariant (st : SystemState) : Prop :=
-  lifecycleStaleReferenceExclusionInvariant st ∧ lifecycleAuthorityMonotonicity st
-
-theorem lifecycleCapabilityStaleAuthorityInvariant_of_bundles
-    (st : SystemState)
-    (hLifecycle : lifecycleInvariantBundle st)
-    (_hCap : capabilityInvariantBundle st)
-    (hMono : lifecycleAuthorityMonotonicity st) :
-    lifecycleCapabilityStaleAuthorityInvariant st :=
-  ⟨lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle st hLifecycle, hMono⟩
-
 -- ============================================================================
 -- WS-H4: Extraction theorems for new bundle components
 -- ============================================================================
@@ -907,23 +861,6 @@ private theorem storeTcbIpcStateAndMessage_cdt_eq
       exact ⟨storeObject_cdt_eq st pair.2 tid.toObjId _ hStore,
              (storeObject_cdtNodeSlot_eq st pair.2 tid.toObjId _ hStore).1,
              (storeObject_cdtNodeSlot_eq st pair.2 tid.toObjId _ hStore).2⟩
-
-/-- WS-H4: storeCapabilityRef preserves CDT fields. -/
-theorem storeCapabilityRef_cdt_eq
-    (st st' : SystemState) (ref : SlotRef) (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot ∧
-    st'.cdtSlotNode = st.cdtSlotNode ∧ st'.objects = st.objects := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; exact ⟨rfl, rfl, rfl, rfl⟩
-
-/-- S3-D: `storeCapabilityRef` preserves `cdtMapsConsistent` (CDT unchanged). -/
-theorem cdtMapsConsistent_of_storeCapabilityRef
-    (st st' : SystemState) (ref : SlotRef) (target : Option CapTarget)
-    (hCon : cdtMapsConsistent st)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    cdtMapsConsistent st' :=
-  cdtMapsConsistent_of_cdt_eq st st' hCon (storeCapabilityRef_cdt_eq st st' ref target hStep).1
 
 /-- WS-H4: Transfer all three new predicates through a storeObject that is
 not a CNode. Combines cspaceSlotCountBounded + cdtCompleteness + cdtAcyclicity. -/

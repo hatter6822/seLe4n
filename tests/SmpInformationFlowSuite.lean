@@ -275,7 +275,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @nonInterference_perCore_to_singleCore
 #check @trace_preserves_projectionOnCore
 #check @storeObject_confinedToCore
-#check @storeCapabilityRef_confinedToCore
 #check @storeTcbIpcState_confinedToCore
 #check @storeTcbIpcStateAndMessage_confinedToCore
 #check @storeTcbQueueLinks_confinedToCore

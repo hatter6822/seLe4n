@@ -743,27 +743,27 @@ theorem lookup_freeze_asidTable (ist : IntermediateState) (k : SeLe4n.ASID) :
 /-- Q6-A: serviceRegistry lookup preserved by freeze. -/
 theorem lookup_freeze_serviceRegistry (ist : IntermediateState) (k : SeLe4n.ServiceId) :
     ist.state.serviceRegistry.get? k = (freeze ist).serviceRegistry.get? k := by
-  exact freezeMap_get?_eq ist.state.serviceRegistry k ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.1.1
+  exact freezeMap_get?_eq ist.state.serviceRegistry k ist.hAllTables.2.2.2.2.2.2.2.2.2.2.1.1
 
 /-- Q6-A: interfaceRegistry lookup preserved by freeze. -/
 theorem lookup_freeze_interfaceRegistry (ist : IntermediateState) (k : SeLe4n.InterfaceId) :
     ist.state.interfaceRegistry.get? k = (freeze ist).interfaceRegistry.get? k := by
-  exact freezeMap_get?_eq ist.state.interfaceRegistry k ist.hAllTables.2.2.2.2.2.2.2.2.2.2.1.1
+  exact freezeMap_get?_eq ist.state.interfaceRegistry k ist.hAllTables.2.2.2.2.2.2.2.2.2.1.1
 
 /-- Q6-A: services lookup preserved by freeze. -/
 theorem lookup_freeze_services (ist : IntermediateState) (k : SeLe4n.ServiceId) :
     ist.state.services.get? k = (freeze ist).services.get? k := by
-  exact freezeMap_get?_eq ist.state.services k ist.hAllTables.2.2.2.2.2.2.2.2.2.1.1
+  exact freezeMap_get?_eq ist.state.services k ist.hAllTables.2.2.2.2.2.2.2.2.1.1
 
 /-- Q6-A: cdtChildMap lookup preserved by freeze. -/
 theorem lookup_freeze_cdtChildMap (ist : IntermediateState) (k : CdtNodeId) :
     ist.state.cdt.childMap.get? k = (freeze ist).cdtChildMap.get? k := by
-  exact freezeMap_get?_eq ist.state.cdt.childMap k ist.hAllTables.2.2.2.2.2.2.2.1.1
+  exact freezeMap_get?_eq ist.state.cdt.childMap k ist.hAllTables.2.2.2.2.2.2.1.1
 
 /-- Q6-A: cdtParentMap lookup preserved by freeze. -/
 theorem lookup_freeze_cdtParentMap (ist : IntermediateState) (k : CdtNodeId) :
     ist.state.cdt.parentMap.get? k = (freeze ist).cdtParentMap.get? k := by
-  exact freezeMap_get?_eq ist.state.cdt.parentMap k ist.hAllTables.2.2.2.2.2.2.2.2.1.1
+  exact freezeMap_get?_eq ist.state.cdt.parentMap k ist.hAllTables.2.2.2.2.2.2.2.1.1
 
 /-- Q6-A: cdtSlotNode lookup preserved by freeze. -/
 theorem lookup_freeze_cdtSlotNode (ist : IntermediateState) (k : SlotRef) :
@@ -780,24 +780,19 @@ theorem lookup_freeze_objectTypes (ist : IntermediateState) (k : SeLe4n.ObjId) :
     ist.state.lifecycle.objectTypes.get? k = (freeze ist).objectTypes.get? k := by
   exact freezeMap_get?_eq ist.state.lifecycle.objectTypes k ist.hAllTables.2.2.2.2.2.1.1
 
-/-- Q6-A: capabilityRefs lookup preserved by freeze. -/
-theorem lookup_freeze_capabilityRefs (ist : IntermediateState) (k : SlotRef) :
-    ist.state.lifecycle.capabilityRefs.get? k = (freeze ist).capabilityRefs.get? k := by
-  exact freezeMap_get?_eq ist.state.lifecycle.capabilityRefs k ist.hAllTables.2.2.2.2.2.2.1.1
-
 /-- Q6-A: objectIndexSet membership preserved by freeze. -/
 theorem lookup_freeze_objectIndexSet (ist : IntermediateState) (k : SeLe4n.ObjId) :
     ist.state.objectIndexSet.table.get? k =
       (freeze ist).objectIndexSet.get? k := by
   exact freezeMap_get?_eq ist.state.objectIndexSet.table k
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
 
 /-- S-05/PERF-O1: Lookup equivalence for scThreadIndex across freeze. -/
 theorem lookup_freeze_scThreadIndex (ist : IntermediateState) (k : SeLe4n.SchedContextId) :
     ist.state.scThreadIndex.get? k =
       (freeze ist).scThreadIndex.get? k := by
   exact freezeMap_get?_eq ist.state.scThreadIndex k
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 -- ============================================================================
 -- AK7-B (F-H02 / HIGH): Lookup-equivalence for scheduler runQueue sub-maps
@@ -810,14 +805,14 @@ theorem lookup_freeze_byPriority (ist : IntermediateState) (p : SeLe4n.Priority)
     (ist.state.scheduler.runQueueOnCore bootCoreId).byPriority.get? p =
       (freeze ist).scheduler.byPriority.get? p := by
   exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).byPriority p
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.1.1
 
 /-- AK7-B: Lookup equivalence for `runQueue.threadPriority` across freeze. -/
 theorem lookup_freeze_threadPriority (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
     (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid =
       (freeze ist).scheduler.threadPriority.get? tid := by
   exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriority tid
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.1.1
 
 /-- AK7-B: Lookup equivalence for `runQueue.membership` (RHSet) across freeze.
 `membership` wraps an underlying `RHTable κ Unit`; the freeze discards the
@@ -826,7 +821,7 @@ theorem lookup_freeze_membership (ist : IntermediateState) (tid : SeLe4n.ThreadI
     (ist.state.scheduler.runQueueOnCore bootCoreId).membership.table.get? tid =
       (freeze ist).scheduler.membership.get? tid := by
   exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).membership.table tid
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
 
 -- ============================================================================
 -- Q6-B: CNode Radix Lookup Equivalence
@@ -1389,7 +1384,7 @@ The conjuncts cover every field of `FrozenSystemState`:
 - **Map fields (lookup-equivalent via `freezeMap`):** `objects` (with
   `freezeObject`), `irqHandlers`, `asidTable`, `serviceRegistry`,
   `interfaceRegistry`, `services`, `cdtChildMap`, `cdtParentMap`,
-  `cdtSlotNode`, `cdtNodeSlot`, `objectTypes`, `capabilityRefs`,
+  `cdtSlotNode`, `cdtNodeSlot`, `objectTypes`,
   `objectIndexSet`, `scThreadIndex`, plus scheduler sub-maps
   (`byPriority`, `threadPriority`, `membership`).
 - **Bitwise non-map fields:** `machine`, `objectIndex`, `tlb`,
@@ -1431,8 +1426,6 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     -- Lifecycle metadata
     (∀ (oid : ObjId),
         sst.lifecycle.objectTypes.get? oid = fst.objectTypes.get? oid) ∧
-    (∀ (ref : SlotRef),
-        sst.lifecycle.capabilityRefs.get? ref = fst.capabilityRefs.get? ref) ∧
     -- Shadow indices
     (∀ (oid : ObjId),
         sst.objectIndexSet.table.get? oid = fst.objectIndexSet.get? oid) ∧
@@ -1500,9 +1493,9 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     (hInv : SeLe4n.Kernel.apiInvariantBundle ist.state) :
     apiInvariantBundle_frozenDirectFull (freeze ist) := by
   refine ⟨ist.state, hInv,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  -- Map fields (17)
+  -- Map fields (16)
   · exact fun oid => lookup_freeze_objects ist oid
   · exact fun irq => lookup_freeze_irqHandlers ist irq
   · exact fun asid => lookup_freeze_asidTable ist asid
@@ -1514,13 +1507,12 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact fun k => lookup_freeze_cdtSlotNode ist k
   · exact fun k => lookup_freeze_cdtNodeSlot ist k
   · exact fun oid => lookup_freeze_objectTypes ist oid
-  · exact fun ref => lookup_freeze_capabilityRefs ist ref
   · exact fun oid => lookup_freeze_objectIndexSet ist oid
   · exact fun scId => lookup_freeze_scThreadIndex ist scId
   · exact fun p => lookup_freeze_byPriority ist p
   · exact fun tid => lookup_freeze_threadPriority ist tid
   · exact fun tid => lookup_freeze_membership ist tid
-  -- Non-map fields (17)
+  -- Non-map fields (20)
   · exact (freeze_preserves_machine ist).symm
   · exact (freeze_preserves_objectIndex ist).symm
   · exact (freeze_preserves_tlb ist).symm

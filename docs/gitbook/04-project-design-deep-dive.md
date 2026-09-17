@@ -211,13 +211,14 @@ execution phase (future Q5) freezes the state into dense arrays.
 `IntermediateState` (defined in `Model/IntermediateState.lean`) is a
 dependently-typed wrapper around `SystemState` carrying four invariant witnesses:
 
-1. **`hAllTables`** — all 16 `RHTable` and 2 `RHSet` fields satisfy `invExt`
+1. **`hAllTables`** — all 14 `RHTable` and 2 `RHSet` fields (the 16 conjuncts of `allTablesInvExtK`) satisfy `invExt`
    (WF + distCorrect + noDupKeys + probeChainDominant).
 2. **`hPerObjectSlots`** — every CNode in the object store has `slotsUnique`
    (invExt + size < capacity + 4 ≤ capacity).
 3. **`hPerObjectMappings`** — every VSpaceRoot's `mappings` satisfies `invExt`.
-4. **`hLifecycleConsistent`** — lifecycle metadata (objectTypes, capabilityRefs)
-   is consistent with the object store.
+4. **`hLifecycleConsistent`** — lifecycle metadata (`objectTypes`; the
+   capability-reference table beside it was retired at v0.35.78) is consistent
+   with the object store (`objectTypeMetadataConsistent`).
 
 Because Lean erases proofs at runtime, `IntermediateState` has exactly the same
 runtime representation as `SystemState` — the witnesses exist only for the

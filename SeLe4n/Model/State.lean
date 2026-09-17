@@ -461,14 +461,32 @@ def SchedulerState.domainScheduleAllPositive (schedule : List DomainScheduleEntr
 
 /-- Lifecycle metadata required by the first M4-A transition story.
 
-`objectTypes` keeps object-store identity explicit, while `capabilityRefs` records the target
-named by each populated capability slot reference.
+`objectTypes` keeps object-store identity explicit: the retype path reads it
+(`Lifecycle/Operations/RetypeWrappers.lean` refuses a retype whose target's
+recorded type disagrees with the stored object) and
+`objectTypeMetadataConsistent` is the relation it is held to.
+
+`v0.35.78`: the capability-reference table — `capabilityRefs : RHTable SlotRef
+CapTarget`, "the target named by each populated capability slot reference" —
+is **retired**, together with its two slot-level writers (`storeCapabilityRef`,
+`revokeAndClearRefsState`), its reader (`lookupCapabilityRefMeta`) and the
+conjunct named for it (`capabilityRefMetadataConsistent`).  Measured before
+deciding: no executable code read the table; every consumer of a slot's
+target reads the slot itself through `SystemState.lookupSlotCap`, which
+resolves in `O(1)` and yields the whole capability, and a target-to-slots
+query has no answer in a forward table at all; the reader was defined over
+the object store, so the invariant was definitionally true and every
+lifecycle-layer predicate built on it was a tautology; the boot builder never
+populated the table while installing populated CNodes; and every CNode store
+paid a fold over the CNode's slots to maintain it, twice.  A cache of a
+projection that is already `O(1)`-addressable at its source buys no reader
+anything.  `docs/REGISTERED_DEBT.md` records the measurement and the
+decision.
 
 WS-G2/WS-H7: metadata maps are HashMap-backed for O(1) amortized lookup,
 eliminating closure-chain growth from repeated updates. -/
 structure LifecycleMetadata where
   objectTypes : RHTable SeLe4n.ObjId KernelObjectType
-  capabilityRefs : RHTable SlotRef CapTarget
 
 /-- R7-A.1/M-17: A single TLB entry caching an address translation.
 
@@ -1173,7 +1191,6 @@ instance : Inhabited SystemState where
     irqHandlers := {}
     lifecycle := {
       objectTypes := {}
-      capabilityRefs := {}
     }
     asidTable := {}
     interfaceRegistry := {}
@@ -1255,7 +1272,7 @@ satisfies the Robin Hood invariant extension (WF ∧ distCorrect ∧ noDupKeys �
 probeChainDominant). This is the global well-formedness condition for the
 builder-phase state representation.
 
-AI6-D (L-02): This predicate uses a 17-deep conjunction (∧-chain) over all
+AI6-D (L-02): This predicate uses a 16-deep conjunction (∧-chain) over all
 RHTable/RHSet instances in the state. Tuple projection (e.g., `h.2.2.1`) is
 structurally fragile — adding a new table field shifts all subsequent
 projection indices. Named extractors (Builder.lean:30-116) provide
@@ -1273,7 +1290,6 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   st.cdtNodeSlot.invExtK ∧
   -- LifecycleMetadata
   st.lifecycle.objectTypes.invExtK ∧
-  st.lifecycle.capabilityRefs.invExtK ∧
   -- CDT
   st.cdt.childMap.invExtK ∧
   st.cdt.parentMap.invExtK ∧
@@ -1293,7 +1309,6 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
 /-- The default SystemState satisfies `allTablesInvExtK` because all tables are
 empty, and empty RHTables with capacity 16 trivially satisfy `invExtK`. -/
 theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := by
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
@@ -1737,7 +1752,7 @@ theorem allObjectLocksUnheld_of_pointwise (st : SystemState)
 -- they reference its definitional reduction.
 
 /-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
-    This theorem destructures `allTablesInvExtK` into exactly 17 named conjuncts.
+    This theorem destructures `allTablesInvExtK` into exactly 16 named conjuncts.
     If a new RHTable field is added to `SystemState` and included in
     `allTablesInvExtK` without updating this witness, the proof fails. -/
 theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
@@ -1747,7 +1762,6 @@ theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
     st.cdtSlotNode.invExtK ∧
     st.cdtNodeSlot.invExtK ∧
     st.lifecycle.objectTypes.invExtK ∧
-    st.lifecycle.capabilityRefs.invExtK ∧
     st.cdt.childMap.invExtK ∧
     st.cdt.parentMap.invExtK ∧
     st.services.invExtK ∧
@@ -1856,21 +1870,12 @@ of O(n) list membership scan.
 WS-G3/F-P06: Maintains `asidTable` — erases old ASID when overwriting a
 VSpaceRoot, inserts new ASID when storing a VSpaceRoot.
 
-`v0.35.77` (the raw-write migration's D2): the capability-reference table is
-maintained by an **erase over the displaced CNode's populated slots** — when
-the key held a CNode, one `RHTable.erase` per populated slot of that CNode,
-otherwise nothing — followed by one insert per populated slot of a stored
-CNode.  The whole-table `filter (fun ref _ => ref.cnode ≠ id)` it replaces paid
-`O(|capabilityRefs|)` on **every** store, CNode or not, which is what made the
-store too expensive for the hot paths the migration moved onto
-`rewriteObject`; a store of a non-CNode object at a key holding no CNode now
-leaves the table structurally unchanged
-(`storeObject_capabilityRefs_of_not_cnode`).  The two spellings agree on every
-state in which each reference at `id` names a populated slot of the CNode
-stored at `id`; no invariant in this tree *states* that relation —
-`capabilityRefMetadataConsistent` reads the object store rather than this
-table and is definitionally true — and no executable code reads the table at
-all.  Both facts are registered in `docs/REGISTERED_DEBT.md` (table C).
+`v0.35.78`: the store maintains **one** lifecycle table, `objectTypes`.  Up to
+`v0.35.77` it also maintained the capability-reference table — a whole-table
+filter on every store until D2, then an erase over the displaced CNode's slots
+plus an insert over the stored CNode's — and that table is retired (see
+`LifecycleMetadata`): a CNode store is `O(1)` in the CNode's slot count now,
+which is what a capability insert, delete, mutate, or revoke should cost.
 
 S4-B/U2-L: Capacity enforcement is performed at the allocation boundary
 (`retypeFromUntyped` in Lifecycle/Operations.lean), not here. The
@@ -1912,17 +1917,6 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
         objectIndexSet := st.objectIndexSet.insert id
         lifecycle := {
           objectTypes := st.lifecycle.objectTypes.insert id obj.objectType
-          capabilityRefs :=
-            let cleared := match st.objects[id]? with
-              | some (.cnode oldCn) =>
-                  oldCn.slots.fold (init := st.lifecycle.capabilityRefs) fun acc slot _ =>
-                    acc.erase { cnode := id, slot := slot }
-              | _ => st.lifecycle.capabilityRefs
-            match obj with
-            | .cnode cn =>
-                cn.slots.fold (init := cleared) fun refs slot cap =>
-                  refs.insert { cnode := id, slot := slot } cap.target
-            | _ => cleared
         }
         asidTable :=
           let cleared := match st.objects[id]? with
@@ -2300,184 +2294,6 @@ theorem storeObject_capacity_safe_of_existing
 -- - `storeObject_capacity_safe_of_existing` (composition)
 -- for the machine-checked assurance that capacity is always gated.
 
-/-- Record or clear a slot-to-target lifecycle reference mapping. -/
-def storeCapabilityRef (ref : SlotRef) (target : Option CapTarget) : Kernel Unit :=
-  fun st =>
-    let lifecycle' : LifecycleMetadata :=
-      {
-        st.lifecycle with
-          capabilityRefs :=
-            match target with
-            | some t => st.lifecycle.capabilityRefs.insert ref t
-            | none => st.lifecycle.capabilityRefs.erase ref
-      }
-    .ok ((), { st with lifecycle := lifecycle' })
-
-/-- M-P01: Fused revoke — filter CNode slots matching the revoke target and clear
-their capability refs in a single `RHTable.fold` pass, eliminating the intermediate
-refs-list allocation and second traversal of the legacy two-pass revoke path. -/
-def revokeAndClearRefsState
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) : SystemState :=
-  cn.slots.fold st (fun stAcc s c =>
-    if s != sourceSlot && c.target == target then
-      { stAcc with lifecycle := { stAcc.lifecycle with
-          capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
-            { cnode := cnodeId, slot := s } } }
-    else stAcc)
-
-/-- M-P01: Fold body for `revokeAndClearRefsState` preserves objects. -/
-private theorem revokeAndClearRefsFoldBody_preserves_objects
-    (pairs : List (SeLe4n.Slot × Capability))
-    (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (pairs.foldl (fun stAcc (p : SeLe4n.Slot × Capability) =>
-      if p.1 != sourceSlot && p.2.target == target then
-        { stAcc with lifecycle := { stAcc.lifecycle with
-            capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
-              { cnode := cnodeId, slot := p.1 } } }
-      else stAcc) st).objects = st.objects := by
-  induction pairs generalizing st with
-  | nil => rfl
-  | cons p rest ih => simp only [List.foldl_cons]; split <;> exact ih _
-
-/-- M-P01: `revokeAndClearRefsState` preserves `objects` (only modifies `lifecycle`). -/
-theorem revokeAndClearRefsState_preserves_objects
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).objects = st.objects := by
-  unfold revokeAndClearRefsState
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _ (fun acc => acc.objects = st.objects)
-    rfl (fun acc s c hAcc => by simp only []; split <;> exact hAcc)
-
-private theorem revokeAndClearRefsFoldBody_preserves_cdt
-    (pairs : List (SeLe4n.Slot × Capability))
-    (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (pairs.foldl (fun stAcc (p : SeLe4n.Slot × Capability) =>
-      if p.1 != sourceSlot && p.2.target == target then
-        { stAcc with lifecycle := { stAcc.lifecycle with
-            capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
-              { cnode := cnodeId, slot := p.1 } } }
-      else stAcc) st).cdt = st.cdt ∧
-    (pairs.foldl (fun stAcc (p : SeLe4n.Slot × Capability) =>
-      if p.1 != sourceSlot && p.2.target == target then
-        { stAcc with lifecycle := { stAcc.lifecycle with
-            capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
-              { cnode := cnodeId, slot := p.1 } } }
-      else stAcc) st).cdtNodeSlot = st.cdtNodeSlot ∧
-    (pairs.foldl (fun stAcc (p : SeLe4n.Slot × Capability) =>
-      if p.1 != sourceSlot && p.2.target == target then
-        { stAcc with lifecycle := { stAcc.lifecycle with
-            capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
-              { cnode := cnodeId, slot := p.1 } } }
-      else stAcc) st).cdtSlotNode = st.cdtSlotNode := by
-  induction pairs generalizing st with
-  | nil => exact ⟨rfl, rfl, rfl⟩
-  | cons p rest ih =>
-      simp only [List.foldl_cons]
-      split
-      · exact ih _
-      · exact ih _
-
-/-- M-P01: `revokeAndClearRefsState` preserves CDT fields and objects. -/
-theorem revokeAndClearRefsState_cdt_eq
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).cdt = st.cdt ∧
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).cdtNodeSlot = st.cdtNodeSlot ∧
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).cdtSlotNode = st.cdtSlotNode ∧
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).objects = st.objects := by
-  unfold revokeAndClearRefsState
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
-    (fun acc => acc.cdt = st.cdt ∧ acc.cdtNodeSlot = st.cdtNodeSlot ∧
-      acc.cdtSlotNode = st.cdtSlotNode ∧ acc.objects = st.objects)
-    ⟨rfl, rfl, rfl, rfl⟩
-    (fun acc s c ⟨h1, h2, h3, h4⟩ => by simp only []; split <;> exact ⟨h1, h2, h3, h4⟩)
-
-/-- M-P01: Fold body preserves scheduler, machine, services, irqHandlers, objectIndex fields. -/
-private theorem revokeAndClearRefsFoldBody_preserves_fields
-    (pairs : List (SeLe4n.Slot × Capability))
-    (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    let r := pairs.foldl (fun stAcc (p : SeLe4n.Slot × Capability) =>
-      if p.1 != sourceSlot && p.2.target == target then
-        { stAcc with lifecycle := { stAcc.lifecycle with
-            capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
-              { cnode := cnodeId, slot := p.1 } } }
-      else stAcc) st
-    r.scheduler = st.scheduler ∧
-    r.machine = st.machine ∧
-    r.services = st.services ∧
-    r.irqHandlers = st.irqHandlers ∧
-    r.objectIndex = st.objectIndex ∧
-    r.objectIndexSet = st.objectIndexSet ∧
-    r.asidTable = st.asidTable := by
-  induction pairs generalizing st with
-  | nil => exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-  | cons p rest ih =>
-      simp only [List.foldl_cons]
-      split <;> exact ih _
-
-/-- Helper tactic macro: uses `RHTable.fold_preserves` to show fold body preserves fields. -/
-private theorem revokeAndClearRefsState_preserves_allFields
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    let r := revokeAndClearRefsState cn sourceSlot target cnodeId st
-    r.scheduler = st.scheduler ∧ r.machine = st.machine ∧
-    r.services = st.services ∧ r.irqHandlers = st.irqHandlers ∧
-    r.objectIndex = st.objectIndex ∧ r.objectIndexSet = st.objectIndexSet := by
-  unfold revokeAndClearRefsState
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
-    (fun acc => acc.scheduler = st.scheduler ∧ acc.machine = st.machine ∧
-      acc.services = st.services ∧ acc.irqHandlers = st.irqHandlers ∧
-      acc.objectIndex = st.objectIndex ∧ acc.objectIndexSet = st.objectIndexSet)
-    ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-    (fun acc s c ⟨h1, h2, h3, h4, h5, h6⟩ => by
-      simp only []; split <;> exact ⟨h1, h2, h3, h4, h5, h6⟩)
-
-/-- M-P01: `revokeAndClearRefsState` preserves scheduler. -/
-theorem revokeAndClearRefsState_preserves_scheduler
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).scheduler = st.scheduler :=
-  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).1
-
-/-- M-P01: `revokeAndClearRefsState` preserves machine state. -/
-theorem revokeAndClearRefsState_preserves_machine
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).machine = st.machine :=
-  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.1
-
-/-- M-P01: `revokeAndClearRefsState` preserves services. -/
-theorem revokeAndClearRefsState_preserves_services
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).services = st.services :=
-  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.2.1
-
-/-- M-P01: `revokeAndClearRefsState` preserves irqHandlers. -/
-theorem revokeAndClearRefsState_preserves_irqHandlers
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).irqHandlers = st.irqHandlers :=
-  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.2.2.1
-
-/-- M-P01: `revokeAndClearRefsState` preserves objectIndex. -/
-theorem revokeAndClearRefsState_preserves_objectIndex
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).objectIndex = st.objectIndex :=
-  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.2.2.2.1
-
-/-- M-P01: `revokeAndClearRefsState` preserves objectIndexSet. -/
-theorem revokeAndClearRefsState_preserves_objectIndexSet
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).objectIndexSet = st.objectIndexSet :=
-  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.2.2.2.2
-
 def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     let sched := st.scheduler.setCurrentOnCore bootCoreId tid
@@ -2486,15 +2302,6 @@ def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
 /-- Read one service graph entry. -/
 def lookupService (st : SystemState) (sid : ServiceId) : Option ServiceGraphEntry :=
   st.services[sid]?
-
-/-- M-P01: `revokeAndClearRefsState` preserves lookupService. -/
-theorem revokeAndClearRefsState_lookupService
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) (sid : ServiceId) :
-    lookupService (revokeAndClearRefsState cn sourceSlot target cnodeId st) sid =
-    lookupService st sid := by
-  unfold lookupService
-  rw [revokeAndClearRefsState_preserves_services]
 
 /-- Determine whether `sid` lists `dependency` as a declared dependency edge. -/
 def hasServiceDependency (st : SystemState) (sid dependency : ServiceId) : Bool :=
@@ -2544,82 +2351,6 @@ theorem storeObject_preserves_services
     st'.services = st.services := by
   unfold storeObject at hStore; cases hStore
   rfl
-
-theorem storeCapabilityRef_preserves_scheduler
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.scheduler = st.scheduler := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; rfl
-
-theorem storeCapabilityRef_preserves_services
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.services = st.services := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; rfl
-
-theorem storeCapabilityRef_preserves_objects
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.objects = st.objects := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; rfl
-
-/-- WS-F3: storeCapabilityRef preserves IRQ handler mappings. -/
-theorem storeCapabilityRef_preserves_irqHandlers
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.irqHandlers = st.irqHandlers := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; rfl
-
-/-- WS-F3: storeCapabilityRef preserves the object index. -/
-theorem storeCapabilityRef_preserves_objectIndex
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.objectIndex = st.objectIndex := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; rfl
-
-/-- storeCapabilityRef preserves machine state. -/
-theorem storeCapabilityRef_preserves_machine
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.machine = st.machine := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; rfl
-
-theorem storeCapabilityRef_lookup_eq
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hCapRefsInv : st.lifecycle.capabilityRefs.invExt)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.lifecycle.capabilityRefs[ref]? = target := by
-  unfold storeCapabilityRef at hStep
-  cases hTarget : target with
-  | none =>
-      simp [hTarget] at hStep
-      cases hStep
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable.getElem?_erase_self _ _ hCapRefsInv
-  | some t =>
-      simp [hTarget] at hStep
-      cases hStep
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable.getElem?_insert_self _ _ _ hCapRefsInv
-
 
 theorem storeObject_objects_eq'
     (st : SystemState)
@@ -4608,11 +4339,6 @@ def ownedSlots (st : SystemState) (owner : CSpaceOwner) : List (SeLe4n.Slot × C
 def lookupObjectTypeMeta (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObjectType :=
   st.lifecycle.objectTypes[id]?
 
-/-- Lifecycle metadata view of capability slot reference mapping. -/
-def lookupCapabilityRefMeta (st : SystemState) (ref : SlotRef) : Option CapTarget :=
-  (lookupSlotCap st ref).map Capability.target
-
-
 /-- Read the stable CDT node currently referenced by a CSpace slot, if any. -/
 def lookupCdtNodeOfSlot (st : SystemState) (ref : SlotRef) : Option CdtNodeId :=
   st.cdtSlotNode[ref]?
@@ -4793,17 +4519,16 @@ theorem lookupSlotCap_eq_of_objects_eq
     lookupSlotCap st₁ ref = lookupSlotCap st₂ ref := by
   simp [lookupSlotCap, lookupCNode, hObj]
 
-/-- Object-type lifecycle metadata is exact for every object-store id. -/
+/-- Object-type lifecycle metadata is exact for every object-store id.
+
+This is the whole of the M4-A metadata-consistency surface.  `v0.35.78`
+retired its second conjunct, `capabilityRefMetadataConsistent`, and the bundle
+`lifecycleMetadataConsistent` that carried the two: the reader that conjunct
+was stated over read the object store rather than the capability-reference
+table, so the conjunct was definitionally true, and a bundle of one conjunct
+is the conjunct.  See `LifecycleMetadata`. -/
 def objectTypeMetadataConsistent (st : SystemState) : Prop :=
   ∀ oid, lookupObjectTypeMeta st oid = (st.objects[oid]?).map KernelObject.objectType
-
-/-- Capability-reference lifecycle metadata is exact for every slot reference. -/
-def capabilityRefMetadataConsistent (st : SystemState) : Prop :=
-  ∀ ref, lookupCapabilityRefMeta st ref = (lookupSlotCap st ref).map Capability.target
-
-/-- M4-A state-model metadata consistency bundle. -/
-def lifecycleMetadataConsistent (st : SystemState) : Prop :=
-  objectTypeMetadataConsistent st ∧ capabilityRefMetadataConsistent st
 
 theorem lookupSlotCap_eq_none_of_lookupCNode_eq_none
     (st : SystemState)
@@ -4852,96 +4577,15 @@ theorem storeObject_preserves_objectTypeMetadataConsistent
         RHTable.getElem?_insert_ne _ _ _ _ h1 hObjInv]
     exact hConsistent oid'
 
-theorem storeObject_preserves_capabilityRefMetadataConsistent
-    (st st' : SystemState)
-    (oid : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (_hConsistent : SystemState.capabilityRefMetadataConsistent st)
-    (_hStep : storeObject oid obj st = .ok ((), st')) :
-    SystemState.capabilityRefMetadataConsistent st' := by
-  intro ref
-  simp [SystemState.lookupCapabilityRefMeta]
-
-theorem storeObject_preserves_lifecycleMetadataConsistent
-    (st st' : SystemState)
-    (oid : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (hConsistent : SystemState.lifecycleMetadataConsistent st)
-    (hObjInv : st.objects.invExt)
-    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
-    (hStep : storeObject oid obj st = .ok ((), st')) :
-    SystemState.lifecycleMetadataConsistent st' := by
-  rcases hConsistent with ⟨hObjType, hCapRef⟩
-  exact ⟨storeObject_preserves_objectTypeMetadataConsistent st st' oid obj hObjType hObjInv hObjTypesInv hStep,
-    storeObject_preserves_capabilityRefMetadataConsistent st st' oid obj hCapRef hStep⟩
-
--- ============================================================================
--- The reference table's two folds preserve invExtK (`v0.35.77`: the erase fold
--- replaces the whole-table filter; T2-H's filter lemma and T2-I's `invExt`
--- twin, neither consumed, retired with it)
--- ============================================================================
-
-/-- `v0.35.77` (D2): the references the displaced CNode held are erased slot by
-    slot — one `RHTable.erase` per populated slot of the old CNode, composed by
-    `RHTable.fold_preserves` — and each erase preserves `invExtK`
-    (`RHTable.erase_preserves_invExtK`).  This is the reference table's clearing
-    half of `storeObject_preserves_allTablesInvExtK`. -/
-theorem capabilityRefs_eraseFold_preserves_invExtK
-    (oldCn : CNode)
-    (refs : RHTable SlotRef CapTarget)
-    (id : SeLe4n.ObjId)
-    (hInvK : refs.invExtK) :
-    (oldCn.slots.fold (init := refs) fun acc slot _ =>
-      acc.erase { cnode := id, slot := slot }).invExtK :=
-  RHTable.fold_preserves oldCn.slots.table refs _ (fun t => t.invExtK) hInvK
-    (fun acc _ _ hAcc => RHTable.erase_preserves_invExtK acc _ hAcc)
-
-/-- V3-B: capabilityRefs fold insert preserves invExtK. -/
-theorem capabilityRefs_fold_preserves_invExtK
-    (cn : CNode)
-    (cleared : RHTable SlotRef CapTarget)
-    (id : SeLe4n.ObjId)
-    (hInvK : cleared.invExtK) :
-    (cn.slots.fold (init := cleared) fun refs slot cap =>
-      refs.insert { cnode := id, slot := slot } cap.target).invExtK :=
-  RHTable.fold_preserves cn.slots.table cleared _ (fun t => t.invExtK) hInvK
-    (fun acc _ _ hAcc => RHTable.insert_preserves_invExtK acc _ _ hAcc)
-
-/-- `v0.35.77` (D2): a store of a non-CNode object at a key holding no CNode
-    leaves the capability-reference table **structurally unchanged** — no
-    erase, no insert, the same table.  This is the cost the raw-write
-    migration's D2 buys on the IPC paths: every endpoint, notification, TCB and
-    SchedContext store used to pay a filter over the whole table.  The
-    hypotheses are the two arms the body branches on, stated as refutations so
-    a consumer discharges them from whatever lookup it holds. -/
-theorem storeObject_capabilityRefs_of_not_cnode
-    (st st' : SystemState)
-    (id : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (hOld : ∀ cn, st.objects[id]? ≠ some (.cnode cn))
-    (hNew : ∀ cn, obj ≠ .cnode cn)
-    (hStep : storeObject id obj st = .ok ((), st')) :
-    st'.lifecycle.capabilityRefs = st.lifecycle.capabilityRefs := by
-  unfold storeObject at hStep; cases hStep
-  dsimp only
-  -- `obj` is a variable, so the outer split substitutes it: the CNode arm is
-  -- refuted by `hNew` at `rfl`.  The inner discriminant is a lookup, so its arm
-  -- carries the equation `hOld` refutes.
-  split
-  · exact absurd rfl (hNew _)
-  · split
-    · rename_i oldCn hEq; exact absurd hEq (hOld oldCn)
-    · rfl
-
 -- ============================================================================
 -- T2-G (M-NEW-2): Bundled storeObject preserves allTablesInvExt
 -- ============================================================================
 
 /-- T2-G (M-NEW-2): Bundled preservation theorem for `storeObject`.
 
-    Composes the 17 component preservation proofs (objects, objectIndex,
-    objectIndexSet, lifecycle.objectTypes, lifecycle.capabilityRefs, asidTable,
-    scThreadIndex, etc.) into a single theorem. Callers can invoke this instead
+    Composes the 16 component preservation proofs (objects, objectIndex,
+    objectIndexSet, lifecycle.objectTypes, asidTable, scThreadIndex, etc.) into
+    a single theorem. Callers can invoke this instead
     of manually composing each component.
 
     The proof works by showing that `storeObject` only modifies fields via
@@ -4965,44 +4609,20 @@ theorem storeObject_preserves_allTablesInvExtK
   have hCdtSN := hAll.2.2.2.1
   have hCdtNS := hAll.2.2.2.2.1
   have hObjTypes := hAll.2.2.2.2.2.1
-  have hCapRefs := hAll.2.2.2.2.2.2.1
-  have hChildMap := hAll.2.2.2.2.2.2.2.1
-  have hParentMap := hAll.2.2.2.2.2.2.2.2.1
-  have hServices := hAll.2.2.2.2.2.2.2.2.2.1
-  have hIfaceReg := hAll.2.2.2.2.2.2.2.2.2.2.1
-  have hSvcReg := hAll.2.2.2.2.2.2.2.2.2.2.2.1
-  have hByPri := hAll.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hThreadPri := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hObjIdxSet := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hMembership := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hScThreadIdx := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  have hChildMap := hAll.2.2.2.2.2.2.1
+  have hParentMap := hAll.2.2.2.2.2.2.2.1
+  have hServices := hAll.2.2.2.2.2.2.2.2.1
+  have hIfaceReg := hAll.2.2.2.2.2.2.2.2.2.1
+  have hSvcReg := hAll.2.2.2.2.2.2.2.2.2.2.1
+  have hByPri := hAll.2.2.2.2.2.2.2.2.2.2.2.1
+  have hThreadPri := hAll.2.2.2.2.2.2.2.2.2.2.2.2.1
+  have hObjIdxSet := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  have hMembership := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  have hScThreadIdx := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
   -- Prove objects insert preserves invExtK
   have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
   -- Prove objectTypes insert preserves invExtK
   have hObjTypes' := RHTable.insert_preserves_invExtK st.lifecycle.objectTypes id obj.objectType hObjTypes
-  -- Prove capabilityRefs erase-fold + insert-fold preserves invExtK (`v0.35.77`:
-  -- the displaced CNode's slots are erased one by one; the whole-table filter
-  -- is gone)
-  have hCapRefs' : (let cleared := match st.objects[id]? with
-        | some (.cnode oldCn) =>
-            oldCn.slots.fold (init := st.lifecycle.capabilityRefs) fun acc slot _ =>
-              acc.erase { cnode := id, slot := slot }
-        | _ => st.lifecycle.capabilityRefs
-      match obj with
-      | .cnode cn => cn.slots.fold (init := cleared) fun refs slot cap =>
-          refs.insert { cnode := id, slot := slot } cap.target
-      | _ => cleared).invExtK := by
-    have hCleared : (match st.objects[id]? with
-        | some (.cnode oldCn) =>
-            oldCn.slots.fold (init := st.lifecycle.capabilityRefs) fun acc slot _ =>
-              acc.erase { cnode := id, slot := slot }
-        | _ => st.lifecycle.capabilityRefs).invExtK := by
-      split
-      · rename_i oldCn _; exact capabilityRefs_eraseFold_preserves_invExtK oldCn _ id hCapRefs
-      · exact hCapRefs
-    cases obj with
-    | cnode cn => exact capabilityRefs_fold_preserves_invExtK cn _ id hCleared
-    | _ => exact hCleared
   -- Prove objectIndexSet insert preserves invExtK
   have hObjIdxSet' := RHSet.insert_preserves_invExtK st.objectIndexSet id hObjIdxSet
   -- Prove asidTable preserves invExtK (erase + insert depending on obj type)
@@ -5022,8 +4642,8 @@ theorem storeObject_preserves_allTablesInvExtK
     cases obj with
     | vspaceRoot vs => exact RHTable.insert_preserves_invExtK _ _ _ hCleared
     | _ => exact hCleared
-  -- Compose all 17 components (S-05/PERF-O1: scThreadIndex added)
-  exact ⟨hObj', hIrq, hAsid', hCdtSN, hCdtNS, hObjTypes', hCapRefs',
+  -- Compose all 16 components (S-05/PERF-O1: scThreadIndex added)
+  exact ⟨hObj', hIrq, hAsid', hCdtSN, hCdtNS, hObjTypes',
          hChildMap, hParentMap, hServices, hIfaceReg, hSvcReg,
          hByPri, hThreadPri, hObjIdxSet', hMembership, hScThreadIdx⟩
 
@@ -5031,24 +4651,20 @@ theorem storeObject_preserves_allTablesInvExtK
 -- L-06/WS-E3: Default SystemState initialization proof
 -- ============================================================================
 
-/-- L-06/WS-E3: The default (empty) `SystemState` satisfies `lifecycleMetadataConsistent`.
-Both metadata maps return `none` for all inputs, and `objects` returns `none`
-for all IDs, so the consistency conditions hold trivially. This provides the
-base case for invariant induction — the system starts in a valid state. -/
-theorem default_systemState_lifecycleConsistent :
-    SystemState.lifecycleMetadataConsistent (default : SystemState) := by
-  constructor
-  · -- objectTypeMetadataConsistent: both HashMaps are empty → both get? return none
-    intro oid
-    simp only [SystemState.lookupObjectTypeMeta]
-    have h₁ : (default : SystemState).lifecycle.objectTypes[oid]? = none :=
-      RHTable.getElem?_empty _ _ _
-    have h₂ : (default : SystemState).objects[oid]? = none :=
-      RHTable.getElem?_empty _ _ _
-    rw [h₁, h₂]; rfl
-  · -- capabilityRefMetadataConsistent: `lookupCapabilityRefMeta` is definitionally exact.
-    intro ref
-    simp [SystemState.lookupCapabilityRefMeta, SystemState.lookupSlotCap, SystemState.lookupCNode]
+/-- L-06/WS-E3: The default (empty) `SystemState` satisfies
+`objectTypeMetadataConsistent`.  The metadata map returns `none` for all
+inputs, and `objects` returns `none` for all IDs, so the consistency condition
+holds trivially. This provides the base case for invariant induction — the
+system starts in a valid state. -/
+theorem default_systemState_objectTypeMetadataConsistent :
+    SystemState.objectTypeMetadataConsistent (default : SystemState) := by
+  intro oid
+  simp only [SystemState.lookupObjectTypeMeta]
+  have h₁ : (default : SystemState).lifecycle.objectTypes[oid]? = none :=
+    RHTable.getElem?_empty _ _ _
+  have h₂ : (default : SystemState).objects[oid]? = none :=
+    RHTable.getElem?_empty _ _ _
+  rw [h₁, h₂]; rfl
 
 -- ============================================================================
 -- M-09/WS-E3: storeObject metadata sync correctness for type-changing stores
@@ -5065,31 +4681,6 @@ theorem storeObject_metadata_sync_type_change
     (hStep : storeObject oid obj st = .ok ((), st')) :
     st'.lifecycle.objectTypes[oid]? = some obj.objectType :=
   storeObject_updates_objectTypeMeta st st' oid obj hObjTypesInv hStep
-
-/-- M-09/WS-E3: `storeObject` correctly synchronizes capability-reference metadata
-when the stored object changes from a CNode to a non-CNode (or vice versa).
-After storing a non-CNode, all capability references pointing into `oid` are
-cleared; after storing a CNode, they reflect the new CNode's slot contents.
-
-This closes the metadata sync hazard: for type-changing stores (e.g., replacing
-a CNode with a TCB), `storeObject` correctly clears all capability-reference
-metadata for the replaced CNode's slots (the `| _ => none` branch), maintaining
-the invariant that metadata reflects the actual object store. -/
-theorem storeObject_metadata_sync_capref_at_stored
-    (st st' : SystemState)
-    (oid : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (slot : SeLe4n.Slot)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeObject oid obj st = .ok ((), st')) :
-    SystemState.lookupCapabilityRefMeta st' { cnode := oid, slot := slot } =
-      match obj with
-      | .cnode cn => (cn.lookup slot).map Capability.target
-      | _ => none := by
-  unfold SystemState.lookupCapabilityRefMeta SystemState.lookupSlotCap SystemState.lookupCNode
-  unfold storeObject at hStep; cases hStep
-  simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjInv]
-  cases obj <;> simp [CNode.lookup]
 
 -- ============================================================================
 -- L-05/WS-E6: objectIndex monotonicity
@@ -5175,16 +4766,20 @@ theorem storeObject_preserves_objectIndexLive
 
 /-- The object kinds whose only *derived* bookkeeping is the kind itself.
 
-`storeObject` maintains four things beside the object table: the object index
-(`objectIndex` / `objectIndexSet`), the kind table (`lifecycle.objectTypes`),
-the capability-reference table (`lifecycle.capabilityRefs`, derived from a
-CNode's **slots**) and the ASID table (`asidTable`, derived from a VSpace root's
-**ASID**).  Rewriting an existing object of an unchanged kind leaves the first
-two exactly as they are, and the last two depend on the object's *contents* for
-CNodes and VSpace roots and on nothing for the rest.  So those two kinds are
-written through `storeObject` only, and every other kind may be rewritten in
-place (`SystemState.rewriteObject`) with the lookup the site already performed
-standing as the proof that no bookkeeping moves.
+`storeObject` maintains three things beside the object table: the object index
+(`objectIndex` / `objectIndexSet`), the kind table (`lifecycle.objectTypes`)
+and the ASID table (`asidTable`, derived from a VSpace root's **ASID**).
+Rewriting an existing object of an unchanged kind leaves the first two exactly
+as they are, and the ASID table depends on the object's *contents* for VSpace
+roots and on nothing for the rest.  So VSpace roots are written through
+`storeObject` only, and every neutral kind may be rewritten in place
+(`SystemState.rewriteObject`) with the lookup the site already performed
+standing as the proof that no bookkeeping moves.  CNodes are not neutral
+either, and since `v0.35.78` not for a bookkeeping reason — the
+capability-reference table their slots used to feed is retired — but because
+no writer needs the rewrite: every capability operation stores the CNode it
+looked up, and that store is `O(1)` now.  Admitting the kind would add a second
+CNode write path with no consumer.
 
 Enumerated constructor by constructor rather than with a wildcard: a kind added
 to `KernelObjectType` fails to elaborate here until it is classified, where a
@@ -5399,17 +4994,6 @@ theorem rewriteObject_preserves_objectTypeMetadataConsistent (st : SystemState)
   · rw [rewriteObject_objects_ne st id oid new h hEq hInv]
     exact hC'
 
-theorem rewriteObject_preserves_capabilityRefMetadataConsistent (st : SystemState)
-    (id : SeLe4n.ObjId) (new : KernelObject) (h : st.rewriteAdmissible id new) :
-    capabilityRefMetadataConsistent (st.rewriteObject id new h) :=
-  fun _ => rfl
-
-theorem rewriteObject_preserves_lifecycleMetadataConsistent (st : SystemState)
-    (id : SeLe4n.ObjId) (new : KernelObject) (h : st.rewriteAdmissible id new)
-    (hInv : st.objects.invExt) (hC : lifecycleMetadataConsistent st) :
-    lifecycleMetadataConsistent (st.rewriteObject id new h) :=
-  ⟨rewriteObject_preserves_objectTypeMetadataConsistent st id new h hInv hC.1,
-   rewriteObject_preserves_capabilityRefMetadataConsistent st id new h⟩
 
 -- ----------------------------------------------------------------------------
 -- The witnessed lookups: the typed read with its own equation
@@ -5617,12 +5201,12 @@ theorem updateTcb_preserves_objectIndexLive (st : SystemState) (tid : SeLe4n.Thr
   · exact rewriteObject_preserves_objectIndexLive _ _ _ _ hInv hL
   · exact hL
 
-theorem updateTcb_preserves_lifecycleMetadataConsistent (st : SystemState)
+theorem updateTcb_preserves_objectTypeMetadataConsistent (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : TCB → TCB) (hInv : st.objects.invExt)
-    (hC : lifecycleMetadataConsistent st) :
-    lifecycleMetadataConsistent (st.updateTcb tid f) := by
+    (hC : objectTypeMetadataConsistent st) :
+    objectTypeMetadataConsistent (st.updateTcb tid f) := by
   unfold updateTcb; split
-  · exact rewriteObject_preserves_lifecycleMetadataConsistent _ _ _ _ hInv hC
+  · exact rewriteObject_preserves_objectTypeMetadataConsistent _ _ _ _ hInv hC
   · exact hC
 
 /-- Rewrite the SchedContext at `scId` in place through `f`; the identity when
@@ -5723,13 +5307,13 @@ theorem updateSchedContext_preserves_objectIndexSetComplete (st : SystemState)
   · exact rewriteObject_preserves_objectIndexSetComplete _ _ _ _ hInv hC
   · exact hC
 
-theorem updateSchedContext_preserves_lifecycleMetadataConsistent (st : SystemState)
+theorem updateSchedContext_preserves_objectTypeMetadataConsistent (st : SystemState)
     (scId : SeLe4n.SchedContextId)
     (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt)
-    (hC : lifecycleMetadataConsistent st) :
-    lifecycleMetadataConsistent (st.updateSchedContext scId f) := by
+    (hC : objectTypeMetadataConsistent st) :
+    objectTypeMetadataConsistent (st.updateSchedContext scId f) := by
   unfold updateSchedContext; split
-  · exact rewriteObject_preserves_lifecycleMetadataConsistent _ _ _ _ hInv hC
+  · exact rewriteObject_preserves_objectTypeMetadataConsistent _ _ _ _ hInv hC
   · exact hC
 
 
@@ -6089,11 +5673,11 @@ theorem withObjectStored_preserves_objectIndexLive (st : SystemState) (id : SeLe
   storeObject_preserves_objectIndexLive st _ id obj hL hInv
     (storeObject_eq_withObjectStored st id obj)
 
-theorem withObjectStored_preserves_lifecycleMetadataConsistent (st : SystemState)
+theorem withObjectStored_preserves_objectTypeMetadataConsistent (st : SystemState)
     (id : SeLe4n.ObjId) (obj : KernelObject) (hInv : st.objects.invExt)
-    (hObjTypesInv : st.lifecycle.objectTypes.invExt) (hC : lifecycleMetadataConsistent st) :
-    lifecycleMetadataConsistent (st.withObjectStored id obj) :=
-  storeObject_preserves_lifecycleMetadataConsistent st _ id obj hC hInv hObjTypesInv
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt) (hC : objectTypeMetadataConsistent st) :
+    objectTypeMetadataConsistent (st.withObjectStored id obj) :=
+  storeObject_preserves_objectTypeMetadataConsistent st _ id obj hC hInv hObjTypesInv
     (storeObject_eq_withObjectStored st id obj)
 
 theorem withObjectStored_preserves_allTablesInvExtK (st : SystemState) (id : SeLe4n.ObjId)

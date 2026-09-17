@@ -118,7 +118,7 @@ seL4-MCS reply caps are **rights-less**, so `mintReplyCap` now mints
 ## #1 — `replyCapPointsToValidReply`  ✅ LANDED (v0.31.144–146, lifecycle-coverage follow-on v0.31.149)
 
 **Problem (closed).** The step-preserved `capabilityInvariantBundle` (and
-`lifecycleStaleReferenceExclusionInvariant`) only constrained `.object` cap targets; a
+`lifecycleStaleReferenceExclusionInvariant`, retired at v0.35.78) only constrained `.object` cap targets; a
 `.replyCap rid` slot pointing at an absent/non-Reply object satisfied them while live
 `.reply` rejects it. The model admitted a dangling reply cap. (The runtime check
 `cspaceSlotCoherencyChecks` in `Testing/InvariantChecks.lean` already validated
@@ -169,7 +169,9 @@ named-projection idiom: tuple + `structure CapabilityInvariantBundle` field
   `lifecycleCapabilityRefReplyCapBacked_of_replyCapPointsToValidReply`: the Lifecycle-layer
   stale-reference family (whose `.replyCap` metadata is *derived* from the slot cap) is
   **implied** by the step-preserved #1 conjunct, closing the review residual without a
-  parallel lifecycle predicate.
+  parallel lifecycle predicate.  (Both the family and this bridge were retired at
+  v0.35.78: the metadata reader they were stated over was `lookupSlotCap`'s target
+  projection, so the implication was an instance of #1 itself.)
 
 **Residual debt — ✅ RESOLVED.** The `capabilityInvariantBundle` doc-comment
 (`Capability/Invariant/Defs.lean`) now correctly reads "the bundle now has **7** conjuncts"

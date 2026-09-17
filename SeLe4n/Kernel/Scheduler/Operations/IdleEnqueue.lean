@@ -27,7 +27,8 @@ same operation — `Builder.createObject` for the TCB and a hand-written run-que
 write — held to this one by a docstring sentence (*"mirrors
 `enqueueIdleThreadOnCore` … definitionally parallel"*), which was true of
 `objects` and the run queue and false of the bookkeeping: the builder skips
-`capabilityRefs` and `asidTable`, the store maintains both.  Two bodies for one
+`asidTable` (and, until `v0.35.78`, the capability-reference table), the store
+maintains it.  Two bodies for one
 question is the duplication this project spends its length retiring, and the
 boot's *only* reason to differ was that the kernel-model definition lived in a
 staged module (`Scheduler/Operations/PerCoreIdle.lean`) that itself imports
@@ -247,7 +248,7 @@ theorem enqueueIdleThreadOnCore_objectIndex_length_le (st : SystemState) (c : Co
   SystemState.withObjectStored_objectIndex_length_le st (idleThreadId c).toObjId
     (KernelObject.tcb (queuedIdleThread c))
 
-/-- The enqueue preserves `allTablesInvExtK`.  Fourteen of the seventeen
+/-- The enqueue preserves `allTablesInvExtK`.  Thirteen of the sixteen
 conjuncts are the store's (`withObjectStored_preserves_allTablesInvExtK`); the
 other three are the **boot core's run-queue tables** (`byPriority`,
 `threadPriority`, `membership.table`), which the run-queue write may replace —
@@ -261,11 +262,11 @@ theorem enqueueIdleThreadOnCore_preserves_allTablesInvExtK (st : SystemState) (c
     (idleThreadId c).toObjId (KernelObject.tcb (queuedIdleThread c)) hAll
   unfold SystemState.allTablesInvExtK at h ⊢
   refine ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
-    h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-    h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
-    h.2.2.2.2.2.2.2.2.2.2.2.1, ?_, ?_,
-    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, ?_,
-    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+    h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
+    h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
+    h.2.2.2.2.2.2.2.2.2.2.1, ?_, ?_,
+    h.2.2.2.2.2.2.2.2.2.2.2.2.2.1, ?_,
+    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
   · exact RunQueue.byPrio_invExtK _
   · exact RunQueue.threadPrio_invExtK _
   · exact RunQueue.mem_invExtK _
@@ -300,13 +301,12 @@ theorem enqueueIdleThreadOnCore_preserves_perObjectMappingsInvariant (st : Syste
 /-- The enqueue preserves the lifecycle metadata's consistency with the object
 store — the store's own theorem, since the scheduler write beside it touches
 neither the store nor the metadata. -/
-theorem enqueueIdleThreadOnCore_preserves_lifecycleMetadataConsistent (st : SystemState)
+theorem enqueueIdleThreadOnCore_preserves_objectTypeMetadataConsistent (st : SystemState)
     (c : CoreId) (hAll : st.allTablesInvExtK)
-    (hC : SystemState.lifecycleMetadataConsistent st) :
-    SystemState.lifecycleMetadataConsistent (enqueueIdleThreadOnCore st c) := by
-  have h := SystemState.withObjectStored_preserves_lifecycleMetadataConsistent st
+    (hC : SystemState.objectTypeMetadataConsistent st) :
+    SystemState.objectTypeMetadataConsistent (enqueueIdleThreadOnCore st c) :=
+  SystemState.withObjectStored_preserves_objectTypeMetadataConsistent st
     (idleThreadId c).toObjId (KernelObject.tcb (queuedIdleThread c))
     hAll.1.1 hAll.2.2.2.2.2.1.1 hC
-  exact ⟨h.1, h.2⟩
 
 end SeLe4n.Kernel

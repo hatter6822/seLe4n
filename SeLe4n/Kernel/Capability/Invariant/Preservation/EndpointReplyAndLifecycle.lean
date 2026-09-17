@@ -1354,66 +1354,12 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
         | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hRevoke
         | cnode preCn =>
           simp [hObj] at hRevoke
-          cases hStore : storeObject cleanup.cnode
-              (.cnode (preCn.revokeTargetLocal cleanup.slot parent.target)) st with
-          | error e => simp [hStore] at hRevoke
-          | ok pair =>
-            obtain ⟨_, stMid⟩ := pair; simp [hStore] at hRevoke; rw [← hRevoke]
-            have hNSMid := (storeObject_cdtNodeSlot_eq st stMid cleanup.cnode _ hStore).1
-            have ⟨_, hNSClear, _, _⟩ := revokeAndClearRefsState_cdt_eq preCn cleanup.slot parent.target cleanup.cnode stMid
-            rw [hNSClear, hNSMid]
+          exact (storeObject_cdtNodeSlot_eq st _ cleanup.cnode _ hRevoke).1
   have hDeleted : capabilityInvariantBundle stDeleted :=
     cspaceDeleteSlot_preserves_capabilityInvariantBundle stRevoked stDeleted cleanup hRevoked
       (hRevokedNS ▸ hNodeSlotK) hDelete
   exact lifecycleRetypeObject_preserves_capabilityInvariantBundle stDeleted st' authority target newObj
     hDeleted hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hReplyBacked' hRetype
-
-theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant
-    (st st' : SystemState)
-    (authority cleanup : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (hCap : capabilityInvariantBundle st)
-    (hNewObjCNodeUniq : ∀ cn, newObj = .cnode cn → cn.slotsUnique)
-    (hNewObjCNodeBounded : ∀ cn, newObj = .cnode cn → cn.slotCountBounded)
-    (hNewObjCNodeDepth : ∀ cn, newObj = .cnode cn →
-      cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
-    (hLifecycleAfterCleanup :
-      ∀ stRevoked stDeleted,
-        cspaceRevoke cleanup st = .ok ((), stRevoked) →
-        cspaceDeleteSlot cleanup stRevoked = .ok ((), stDeleted) →
-        cspaceLookupSlot cleanup stDeleted = .error .invalidCapability →
-        lifecycleInvariantBundle stDeleted)
-    (hObjInvAfterCleanup :
-      ∀ stRevoked stDeleted,
-        cspaceRevoke cleanup st = .ok ((), stRevoked) →
-        cspaceDeleteSlot cleanup stRevoked = .ok ((), stDeleted) →
-        stDeleted.objects.invExt)
-    (hObjTypesInvAfterCleanup :
-      ∀ stRevoked stDeleted,
-        cspaceRevoke cleanup st = .ok ((), stRevoked) →
-        cspaceDeleteSlot cleanup stRevoked = .ok ((), stDeleted) →
-        stDeleted.lifecycle.objectTypes.invExt)
-    (hReplyBacked' : replyCapPointsToValidReply st')
-    (hNodeSlotK : st.cdtNodeSlot.invExtK)
-    (hObjInvFinal : st'.objects.invExt)
-    (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
-    lifecycleCapabilityStaleAuthorityInvariant st' := by
-  rcases lifecycleRevokeDeleteRetype_ok_implies_staged_steps st st' authority cleanup target newObj hStep with
-    ⟨stRevoked, stDeleted, _hNe, hRevoke, hDelete, hLookupDeleted, hRetype⟩
-  have hCap' : capabilityInvariantBundle st' :=
-    lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle st st' authority cleanup target
-      newObj hCap hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hReplyBacked' hNodeSlotK hStep
-  have hLifecycleDeleted : lifecycleInvariantBundle stDeleted :=
-    hLifecycleAfterCleanup stRevoked stDeleted hRevoke hDelete hLookupDeleted
-  have hLifecycle' : lifecycleInvariantBundle st' :=
-    SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle stDeleted st' authority target
-      newObj hLifecycleDeleted
-      (hObjInvAfterCleanup stRevoked stDeleted hRevoke hDelete)
-      (hObjTypesInvAfterCleanup stRevoked stDeleted hRevoke hDelete)
-      hRetype
-  exact lifecycleCapabilityStaleAuthorityInvariant_of_bundles st' hLifecycle' hCap'
-    (lifecycleAuthorityMonotonicity_holds st' hObjInvFinal)
 
 theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle
     (st : SystemState)

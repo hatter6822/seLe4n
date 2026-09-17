@@ -93,9 +93,8 @@ theorem cspaceMint_preserves_badgeWellFormed
             | ok storeResult =>
               obtain ⟨_, stMid⟩ := storeResult
               simp [hStore] at hStep
-              -- hStep : storeCapabilityRef dst (some child.target) stMid = .ok ((), st')
-              have hObjEq := storeCapabilityRef_preserves_objects
-                stMid st' dst (some child.target) hStep
+              -- hStep : stMid = st'
+              have hObjEq : st'.objects = stMid.objects := by rw [hStep]
               apply badgeWellFormed_of_objects_eq stMid st' hObjEq
               -- Extract child.badge from mintDerivedCap. AN4-E (H-06)
               -- refactors the body to wrap the `.ok` in a second `if` that
@@ -155,9 +154,8 @@ theorem cspaceMutate_preserves_badgeWellFormed
           | ok storeResult =>
             obtain ⟨_, stMid⟩ := storeResult
             simp [hStore] at hStep
-            -- hStep : storeCapabilityRef addr (some pair.1.target) stMid = .ok ((), st')
-            have hObjEq := storeCapabilityRef_preserves_objects
-              stMid st' addr (some pair.1.target) hStep
+            -- hStep : stMid = st'
+            have hObjEq : st'.objects = stMid.objects := by rw [hStep]
             apply badgeWellFormed_of_objects_eq stMid st' hObjEq
             constructor
             · exact storeObject_cnode_preserves_notificationBadgesWellFormed
@@ -478,9 +476,7 @@ theorem cspaceDeleteSlotCore_preserves_cdtMapsConsistent
         rcases pair with ⟨_, stMid⟩
         have h1 := storeObject_cdt_eq st stMid addr.cnode _ hStore
         simp only [hStore] at hStep
-        -- storeCapabilityRef preserves CDT
-        unfold storeCapabilityRef at hStep
-        simp at hStep; rcases hStep with ⟨_, rfl⟩
+        simp at hStep; subst hStep
         -- detachSlotFromCdt doesn't modify cdt
         unfold SystemState.detachSlotFromCdt
         split
@@ -516,9 +512,8 @@ theorem cspaceMove_preserves_cdtMapsConsistent
     (_hStep : cspaceMove src dst st = .ok ((), st')) :
     cdtMapsConsistent st' := hCdtMapsPost
 
-/-- S3-D: `cspaceRevoke` preserves `cdtMapsConsistent`. Revoke uses
-    `revokeTargetLocal` + `revokeAndClearRefsState`, neither of which
-    modifies the CDT structure. -/
+/-- S3-D: `cspaceRevoke` preserves `cdtMapsConsistent`. Revoke stores the
+    CNode `revokeTargetLocal` leaves, which does not modify the CDT structure. -/
 theorem cspaceRevoke_preserves_cdtMapsConsistent
     (st st' : SystemState) (addr : CSpaceAddr)
     (hCon : cdtMapsConsistent st)
@@ -539,15 +534,7 @@ theorem cspaceRevoke_preserves_cdtMapsConsistent
         | cnode cn =>
           simp [hPre] at hStep
           -- revokeTargetLocal modifies the CNode, not the CDT
-          cases hStore : storeObject addr.cnode (.cnode (cn.revokeTargetLocal addr.slot parent.target)) st with
-          | error e => simp [hStore] at hStep
-          | ok pair =>
-            rcases pair with ⟨_, stMid⟩
-            have hConMid := cdtMapsConsistent_of_storeObject st stMid addr.cnode _ hCon hStore
-            -- revokeAndClearRefsState preserves CDT
-            simp [hStore] at hStep; cases hStep
-            have hCdtEq := (revokeAndClearRefsState_cdt_eq cn addr.slot parent.target addr.cnode stMid).1
-            exact cdtMapsConsistent_of_cdt_eq stMid _ hConMid hCdtEq
+          exact cdtMapsConsistent_of_storeObject st st' addr.cnode _ hCon hStep
         | _ => simp [hPre] at hStep
 
 -- ============================================================================

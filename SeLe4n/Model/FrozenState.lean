@@ -487,7 +487,6 @@ structure FrozenSystemState where
 
   -- Lifecycle metadata (FrozenMap)
   objectTypes       : FrozenMap SeLe4n.ObjId KernelObjectType
-  capabilityRefs    : FrozenMap SlotRef CapTarget
 
   -- Non-map fields (retained as-is)
   machine           : SeLe4n.MachineState
@@ -698,7 +697,6 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     cdtNextNode := st.cdtNextNode
     scheduler := freezeScheduler st.scheduler
     objectTypes := freezeMap st.lifecycle.objectTypes
-    capabilityRefs := freezeMap st.lifecycle.capabilityRefs
     machine := st.machine
     objectIndex := st.objectIndex
     objectIndexSet := freezeMap st.objectIndexSet.table

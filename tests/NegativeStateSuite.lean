@@ -123,7 +123,6 @@ private def baseState : SystemState :=
     |>.withLifecycleObjectType ⟨9⟩ .tcb
     |>.withLifecycleObjectType notificationId .notification
     |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
-    |>.withLifecycleCapabilityRef slot0 (.object endpointId)
     |>.withRunnable [⟨6⟩, ⟨7⟩, ⟨8⟩, ⟨9⟩]
     |>.buildChecked)
 
@@ -213,7 +212,6 @@ private def f2UntypedState : SystemState :=
     })
     |>.withLifecycleObjectType f2UntypedObjId .untyped
     |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
-    |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
     |>.buildChecked)
 
 private def f2DeviceUntypedId : SeLe4n.ObjId := ⟨83⟩
@@ -242,7 +240,6 @@ private def f2DeviceState : SystemState :=
     })
     |>.withLifecycleObjectType f2DeviceUntypedId .untyped
     |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
-    |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2DeviceUntypedId)
     |>.buildChecked)
 
 /-- Baseline `cspaceLookup*` negative checks (wrong type, depth/guard mismatch).
@@ -1193,7 +1190,6 @@ private def runUntypedF2NegativeChecks : IO Unit := do
       })
       |>.withLifecycleObjectType f2UntypedObjId .untyped
       |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
-      |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
       |>.buildChecked)
   expectErr "misaligned base for VSpace root"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
@@ -1462,7 +1458,6 @@ private def runH2NegativeChecks : IO Unit := do
       })
       |>.withLifecycleObjectType f2UntypedObjId .untyped
       |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
-      |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
       |>.buildChecked)
   expectErr "H2 childId collision with untyped child"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId ⟨60⟩
@@ -1626,10 +1621,12 @@ private def runWSH7Checks : IO Unit := do
     | .error err =>
         panic! s!"unexpected storeObject failure in WS-H7 check (cnode phase): {toString err}"
 
-  if SystemState.lookupCapabilityRefMeta stAfterCnode { cnode := ⟨500⟩, slot := SeLe4n.Slot.ofNat 0 } = some capA.target then
-    IO.println "positive check passed [WS-H7 storeObject syncs capabilityRef metadata for stored CNode slot]"
+  -- `v0.35.78`: stated over `lookupSlotCap`, the one slot-target reader — the
+  -- retired `lookupCapabilityRefMeta` was that lookup's target projection.
+  if (SystemState.lookupSlotCap stAfterCnode { cnode := ⟨500⟩, slot := SeLe4n.Slot.ofNat 0 }).map Capability.target = some capA.target then
+    IO.println "positive check passed [WS-H7 storeObject makes a stored CNode's slot resolve to its capability]"
   else
-    throw <| IO.userError "storeObject syncs capabilityRef metadata for stored CNode slot: expected some target"
+    throw <| IO.userError "storeObject makes a stored CNode's slot resolve to its capability: expected some target"
 
   let stAfterOverwrite :=
     match storeObject ⟨500⟩ lifecycleEndpoint stAfterCnode with
@@ -1637,10 +1634,10 @@ private def runWSH7Checks : IO Unit := do
     | .error err =>
         panic! s!"unexpected storeObject failure in WS-H7 check (overwrite phase): {toString err}"
 
-  if SystemState.lookupCapabilityRefMeta stAfterOverwrite { cnode := ⟨500⟩, slot := SeLe4n.Slot.ofNat 0 } = none then
-    IO.println "positive check passed [WS-H7 storeObject clears capabilityRef metadata when overwriting CNode]"
+  if (SystemState.lookupSlotCap stAfterOverwrite { cnode := ⟨500⟩, slot := SeLe4n.Slot.ofNat 0 }).map Capability.target = none then
+    IO.println "positive check passed [WS-H7 storeObject overwriting a CNode leaves its slots unresolvable]"
   else
-    throw <| IO.userError "storeObject clears capabilityRef metadata when overwriting CNode: expected none"
+    throw <| IO.userError "storeObject overwriting a CNode leaves its slots unresolvable: expected none"
 
   IO.println "regression checks passed"
 
@@ -2021,12 +2018,6 @@ def runWSH15PlatformChecks : IO Unit := do
   else
     throw <| IO.userError "H15 rpi5BootContract objectTypeMetadataConsistent should hold"
 
-  -- H15-PLAT-07: RPi5 boot contract — capabilityRefMetadata verified by theorem
-  if ({} : SeLe4n.Kernel.RobinHood.RHTable SlotRef CapTarget).size == 0 then
-    IO.println "positive check passed [H15 rpi5BootContract capabilityRefMetadata]"
-  else
-    throw <| IO.userError "H15 rpi5BootContract capabilityRefMetadataConsistent should hold"
-
   IO.println "all WS-H15 platform contract checks passed"
 
 /-- WS-H16/M-18: Lifecycle operations negative tests.
@@ -2075,8 +2066,6 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleObjectType h16TargetId .endpoint
       |>.withLifecycleObjectType h16CnodeId .cnode
       |>.withLifecycleObjectType h16TcbId .tcb
-      |>.withLifecycleCapabilityRef h16AuthSlot (.object h16TargetId)
-      |>.withLifecycleCapabilityRef h16CleanupSlot (.object h16TargetId)
       |>.buildChecked)
 
   -- H16-NEG-01: lifecycleRetypeObject with non-existent target → objectNotFound
@@ -2106,7 +2095,6 @@ def runWSH16LifecycleChecks : IO Unit := do
       -- (check 2b would reject). Tests kernel handling of metadata mismatch.
       |>.withLifecycleObjectType h16TargetId .tcb  -- mismatch: object is endpoint but metadata says tcb
       |>.withLifecycleObjectType h16CnodeId .cnode
-      |>.withLifecycleCapabilityRef h16AuthSlot (.object h16TargetId)
       |>.build)
   expectErr "H16 lifecycleRetypeObject metadata mismatch"
     (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }) h16MismatchState)
@@ -2163,7 +2151,6 @@ def runWSH16LifecycleChecks : IO Unit := do
       })
       |>.withLifecycleObjectType h16ExhaustedUntypedId .untyped
       |>.withLifecycleObjectType h16ExhaustedCnodeId .cnode
-      |>.withLifecycleCapabilityRef h16ExhaustedAuthSlot (.object h16ExhaustedUntypedId)
       |>.buildChecked)
   expectErr "H16 retypeFromUntyped exhausted untyped"
     (SeLe4n.Kernel.retypeFromUntyped h16ExhaustedAuthSlot h16ExhaustedUntypedId ⟨162⟩
@@ -2207,7 +2194,6 @@ def runWSH16LifecycleChecks : IO Unit := do
       })
       |>.withLifecycleObjectType h16DeviceUntypedId .untyped
       |>.withLifecycleObjectType h16DeviceCnodeId .cnode
-      |>.withLifecycleCapabilityRef h16DeviceAuthSlot (.object h16DeviceUntypedId)
       |>.buildChecked)
   expectErr "H16 retypeFromUntyped device untyped restriction"
     (SeLe4n.Kernel.retypeFromUntyped h16DeviceAuthSlot h16DeviceUntypedId ⟨165⟩
@@ -2254,7 +2240,6 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
         ] })
       |>.withLifecycleObjectType a5RetypeTcbId .tcb
       |>.withLifecycleObjectType a5CnodeId .cnode
-      |>.withLifecycleCapabilityRef a5AuthSlot (.object a5RetypeTcbId)
       |>.withRunnable [a5Tcb.tid]
       |>.buildChecked)
 
@@ -3777,7 +3762,6 @@ private def runS2HLifecycleErrorTests : IO Unit := do
       })
       |>.withLifecycleObjectType exhaustedUntypedId .untyped
       |>.withLifecycleObjectType exhaustedAuthCnode .cnode
-      |>.withLifecycleCapabilityRef exhaustedAuthSlot (.object exhaustedUntypedId)
       |>.buildChecked)
   expectErr "retypeFromUntyped region exhausted"
     (SeLe4n.Kernel.retypeFromUntyped exhaustedAuthSlot exhaustedUntypedId ⟨93⟩

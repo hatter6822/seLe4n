@@ -181,17 +181,6 @@ theorem frozenStoreObject_preserves_objectTypes
   | some objects' => simp [hSet] at hOk; rw [← hOk]
   | none => simp [hSet] at hOk
 
-/-- Q7-D: `frozenStoreObject` preserves capability refs metadata. -/
-theorem frozenStoreObject_preserves_capabilityRefs
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st st' : FrozenSystemState)
-    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.capabilityRefs = st.capabilityRefs := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' => simp [hSet] at hOk; rw [← hOk]
-  | none => simp [hSet] at hOk
-
 /-- Q7-D: `frozenStoreObject` preserves interface registry. -/
 theorem frozenStoreObject_preserves_interfaceRegistry
     (id : SeLe4n.ObjId) (obj : FrozenKernelObject)

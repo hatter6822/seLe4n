@@ -1,3 +1,127 @@
+## v0.35.78 — The capability-reference table is retired, on measurement
+
+**The register row `v0.35.77` opened is closed by deleting the table it named.**
+`LifecycleMetadata.capabilityRefs` was maintained by three writers —
+`storeObject` (a stored CNode's references re-derived from its slots, the
+displaced CNode's erased slot by slot since D2), `storeCapabilityRef` beside
+every capability-slot write, and `revokeAndClearRefsState` on the revoke sweep
+— and read by nothing: `lookupCapabilityRefMeta`, the one function named as its
+reader, had been `(lookupSlotCap st ref).map Capability.target` since the
+repository's root, a read of the **object store**.  So
+`capabilityRefMetadataConsistent` was definitionally true,
+`storeObject_preserves_capabilityRefMetadataConsistent` was `simp` with both
+hypotheses unused, and every predicate stated over the reader — the lifecycle
+layer's `lifecycleCapabilityRefExact` / `…ObjectTargetBacked` /
+`…ReplyCapBacked` / `…ObjectTargetTypeAligned` / `…NoTypeAliasConflict` and
+the three bundles built over them, the capability layer's
+`lifecycleCapabilityStaleAuthorityInvariant`, the policy surface's
+`policyOwnerAuthorityRefRecorded → policyOwnerAuthoritySlotPresent` — was an
+instance of `x = x`, of lookup determinism, or of
+`objectTypeMetadataConsistent`.
+
+**Why retire rather than wire.**  The row's remedy said *wire or retire, and
+the rule says wire*, and the measurement is what decided it.  (1) No
+executable code reads the table; every slot-target query in the tree holds or
+fetches the CNode already, and `lookupSlotCap` is `O(1)` and yields the whole
+capability, so a slot→target cache buys nothing over the read it would cache.
+(2) The one consumer the row proposed — a revocation sweep over a *target*,
+which folds every CNode's slots — asks a target→slots question, which a table
+keyed by `SlotRef` cannot answer without the same fold; the consumer that
+would justify a table is an index in the other direction, and nothing in the
+tree asks for one.  (3) The boot builder installed populated CNodes and never
+populated the table, and the frozen mirror never maintained it, so on every
+state the boot reaches and every frozen state the table already disagreed with
+the slots it was named for, with nothing to notice.  (4) Every CNode store
+paid a fold over the CNode's slots for it, and a revoke paid it twice.
+*Implement the improvement* has no improvement to implement when no reader can
+be named; a cache nothing reads is a second answer to a question the object
+store already answers, and the rule for that is deletion.
+
+**What is deleted.**  In `Model/State.lean`: the field, `storeCapabilityRef`
+with its frame lemmas, `revokeAndClearRefsState` with its lemmas,
+`lookupCapabilityRefMeta`, `capabilityRefMetadataConsistent`,
+`lifecycleMetadataConsistent`, the D2 erase-fold lemmas
+(`capabilityRefs_eraseFold_preserves_invExtK`,
+`storeObject_capabilityRefs_of_not_cnode`,
+`storeObject_metadata_sync_capref_at_stored`) and the two `rewriteObject`
+bundle lemmas over the retired names.  In `Lifecycle/Invariant.lean`: the
+capability-reference and stale-reference families with every bridge and
+preservation theorem stated over them; `lifecycleInvariantBundle` **is**
+`lifecycleIdentityAliasingInvariant`.  In `Capability/Invariant/Defs.lean`:
+`lifecycleCapabilityStaleAuthorityInvariant`, its `_of_bundles`, the reply-cap
+bridge and the `storeCapabilityRef` CDT frames; in
+`Preservation/EndpointReplyAndLifecycle.lean` the retype's preservation of the
+retired bundle.  In `Service/Invariant/Policy.lean`:
+`policyOwnerAuthorityRefRecorded`, `policyOwnerAuthoritySlotPresent` and their
+two bridges; `servicePolicySurfaceInvariant` is the typing component.  In the
+boot: `BootBoundaryContract` loses its capability-reference field and both
+bindings their `_capabilityRef_holds`; `Platform/Boot.lean` loses five
+`capabilityRefs` frames.  The frozen surface loses the field,
+`lookup_freeze_capabilityRefs` and `frozenStoreObject_preserves_capabilityRefs`;
+the state builders and the trace harness lose `withLifecycleCapabilityRef`;
+`IpcBufferValidation` loses `setIPCBufferOp_capabilityRefs_eq`;
+`NonInterferencePerCore` loses `storeCapabilityRef_confinedToCore`;
+`CrossSubsystem` loses `storeCapabilityRef_preservesFieldsOutside`.  Renamed
+for what they state: `default_systemState_objectTypeMetadataConsistent`,
+`withObjectStored_` / `updateTcb_` / `updateSchedContext_` /
+`enqueueIdleThreadOnCore_` / `retypeFromUntyped_preserves_objectTypeMetadataConsistent`,
+`bootFromPlatform_objectTypeMetadataConsistent`; and
+`IntermediateState.hLifecycleConsistent` is
+`objectTypeMetadataConsistent state`.
+
+**What changed in the operations.**  `cspaceInsertSlot`, `cspaceRevoke` and
+`cspaceMutate` end in one `storeObject`; `cspaceDeleteSlotCore` is the store
+then `detachSlotFromCdt`.  `storeObject`'s lifecycle write is
+`objectTypes.insert` alone, so `allTablesInvExtK` is **sixteen** conjuncts
+(its completeness witness destructures exactly sixteen) and every positional
+projection past the sixth — in `Builder.lean`, `Boot.lean`'s VSpace-root
+install, `FreezeProofs.lean`, `IdleEnqueue.lean` and `State.lean` — shifted by
+one.  Proofs over the four capability operations collapse from a two-writer
+composition to one `storeObject_*` frame lemma each (`Insert.lean`,
+`Delete.lean`, `CopyMoveMutate.lean`, `BadgeIpcCapsAndCdtMaps.lean`,
+`Revoke.lean`, `EndpointReplyAndLifecycle.lean`, `Authority.lean`,
+`DispatchArmPreservation.lean`, `Composition.lean`, `PerOperation.lean`,
+`InformationFlow/Invariant/Operations.lean`, `NonInterferencePerCore.lean`,
+`Helpers.lean`, `CrossSubsystem.lean`).  Two mechanical notes from the
+collapse.  `simp [hStore] at hStep` normalises
+`badge.orElse (fun _ => cap.badge)` to `badge.or cap.badge` **before** it tries
+`hStore`, whose left-hand side still spells `orElse`, so the rewrite silently
+does not fire; the mutate proofs use
+`simp only [hStore, Except.ok.injEq, Prod.mk.injEq]`, which rewrites without
+normalising.  And once the revoke's post-state is `storeObject`'s record
+itself, `congr 1` on the projected observable state closes the runnable,
+current and services components by assumption — the record's `scheduler` and
+`services` fields are the pre-state's definitionally — so the revoke
+low-equivalence proof carries bullets for the seven components that remain.
+
+**Behaviour.**  No kernel decision read the table, so no transition's result
+moves and the golden trace is byte-identical.  `tests/NegativeStateSuite.lean`'s
+WS-H7 store checks are restated over `lookupSlotCap` (a stored CNode's slot
+resolves to its capability; overwriting the CNode makes its slots
+unresolvable), the H15-PLAT-07 contract check is deleted with the contract
+field, the frozen fixtures and `FreezeProofSuite`'s empty-table expectation
+lose the field, and `tests/ModelIntegritySuite.lean`'s
+`lifecycle_reply_cap_metadata_backed` is deleted — its surviving content, a
+reply cap is backed iff its Reply resolves, is
+`replyCapPointsToValidReply_distinguishes_backed_and_dangling` beside it.
+
+**Gates and documentation.**  Tier 3: the anchors on every deleted symbol are
+gone, the renamed theorems are repointed, and a `v0.35.78` block refuses every
+retired name tree-wide — the table's field in the five modules that carried
+it, the two writers, the reader, the two conjuncts, the lifecycle families,
+the policy implication, the builder helper and the D2 lemmas — pins
+`storeObject`'s lifecycle write as the object-type insert alone,
+`LifecycleMetadata` as the one-field structure, `lifecycleInvariantBundle` as
+the identity layer and `servicePolicySurfaceInvariant` as the typing
+component, and names the `objectTypeMetadataConsistent` lemmas every former
+consumer carries; each negative was mutation-tested by putting the retired
+spelling back.  `scripts/store_reader_hygiene_baseline.txt` is re-anchored:
+the `STORE_READ_SPEC_SITE` rows naming deleted declarations are gone and every
+floor is unmoved.  The register row is closed with the decision and the
+measurement, `CLAUDE.md` / `AGENTS.md` carry a standing-constraint bullet, and
+the spec, GitBook 03/04/08/11/12, the fine-lock migration plan and the
+reply-objects plan are swept of the retired names.
+
 ## v0.35.77 — The store's reference maintenance is an erase over the displaced CNode's slots, and the raw-write row closes
 
 **Raw-write migration, fourteenth and last cut (D2).**  `SystemState.storeObject`

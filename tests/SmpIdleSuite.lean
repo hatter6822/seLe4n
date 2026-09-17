@@ -88,7 +88,7 @@ open SeLe4n.Testing
 #check @enqueueIdleThreadOnCore_preserves_allTablesInvExtK
 #check @enqueueIdleThreadOnCore_preserves_perObjectSlotsInvariant
 #check @enqueueIdleThreadOnCore_preserves_perObjectMappingsInvariant
-#check @enqueueIdleThreadOnCore_preserves_lifecycleMetadataConsistent
+#check @enqueueIdleThreadOnCore_preserves_objectTypeMetadataConsistent
 #check @enqueueIdleThreadOnCore_objectIndex_length_le
 example (ist : SeLe4n.Model.IntermediateState) (c : CoreId) :
     (SeLe4n.Platform.Boot.enqueueIdleThread ist c).state = enqueueIdleThreadOnCore ist.state c :=

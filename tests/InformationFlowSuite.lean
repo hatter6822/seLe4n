@@ -56,7 +56,7 @@ private def sampleState : SystemState :=
     |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := some (SeLe4n.Badge.ofNatMasked 7) })
     |>.withService ⟨1⟩ sampleServiceEntry
     |>.withService ⟨2⟩ publicServiceEntry
-    -- Y3-A: current thread set for projection tests (not in runnable → check 8 passes).
+    -- Y3-A: current thread set for projection tests (not in runnable → check 7 passes).
     -- No runnable list needed: information flow projection doesn't use scheduler state.
     |>.withCurrent (some ⟨2⟩)
     |>.buildChecked)

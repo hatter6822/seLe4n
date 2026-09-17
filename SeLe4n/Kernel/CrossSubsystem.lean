@@ -1191,7 +1191,7 @@ theorem crossSubsystem_pairwise_coverage_complete :
 -- ============================================================================
 
 /-- W2-A1: Fields modified by `storeObject`. Updates the object table,
-    associated indices, and lifecycle metadata (objectTypes + capabilityRefs).
+    associated indices, and lifecycle metadata (`objectTypes`).
 
     **WS-RR RR7.19: and `asidTable`**, which this list omitted.  `storeObject`'s
     record update erases the *outgoing* object's ASID entry when it was a
@@ -1608,19 +1608,6 @@ theorem storeObject_preservesFieldsOutside_capability
   preservesFieldsOutside_mono (fun _ hf => List.mem_append_left _ hf)
     (storeObject_preservesFieldsOutside id obj st st' hStep)
 
-theorem storeCapabilityRef_preservesFieldsOutside
-    (ref : SlotRef) (target : Option CapTarget) (st st' : SystemState)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    preservesFieldsOutside capabilityOp_modifiedFields st st' := by
-  unfold storeCapabilityRef at hStep
-  simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-  obtain ⟨-, hEq⟩ := hStep
-  subst hEq
-  intro f hf
-  cases f <;> first
-    | rfl
-    | exact (hf (by decide)).elim
-
 theorem detachSlotFromCdt_preservesFieldsOutside (st : SystemState) (ref : SlotRef) :
     preservesFieldsOutside capabilityOp_modifiedFields st (st.detachSlotFromCdt ref) := by
   unfold SystemState.detachSlotFromCdt
@@ -1663,13 +1650,7 @@ theorem cspaceInsertSlot_preservesFieldsOutside
   split at hStep
   · split at hStep
     · cases hStep
-    · split at hStep
-      · cases hStep
-      · rename_i u st₁ hStore
-        cases u
-        exact preservesFieldsOutside_trans
-          (storeObject_preservesFieldsOutside_capability _ _ _ _ hStore)
-          (storeCapabilityRef_preservesFieldsOutside _ _ _ _ hStep)
+    · exact storeObject_preservesFieldsOutside_capability _ _ _ _ hStep
   · cases hStep
 
 theorem cspaceDeleteSlotCore_preservesFieldsOutside
@@ -1683,17 +1664,12 @@ theorem cspaceDeleteSlotCore_preservesFieldsOutside
     · cases hStep
     · rename_i u st₁ hStore
       cases u
-      split at hStep
-      · cases hStep
-      · rename_i st₂ hRef
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨-, hEq⟩ := hStep
-        subst hEq
-        exact preservesFieldsOutside_trans
-          (storeObject_preservesFieldsOutside_capability _ _ _ _ hStore)
-          (preservesFieldsOutside_trans
-            (storeCapabilityRef_preservesFieldsOutside _ _ _ _ hRef)
-            (detachSlotFromCdt_preservesFieldsOutside _ _))
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨-, hEq⟩ := hStep
+      subst hEq
+      exact preservesFieldsOutside_trans
+        (storeObject_preservesFieldsOutside_capability _ _ _ _ hStore)
+        (detachSlotFromCdt_preservesFieldsOutside _ _)
   · cases hStep
 
 theorem cspaceDeleteSlot_preservesFieldsOutside

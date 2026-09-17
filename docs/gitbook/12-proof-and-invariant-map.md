@@ -378,11 +378,16 @@ unmoved at **14**.
 
 ### 3.4 Lifecycle — `SeLe4n/Kernel/Lifecycle/Invariant/`
 
-`lifecycleInvariantBundle` covers identity aliasing, stale-reference exclusion
-and capability-reference validity across retype, suspend, resume and cleanup.
+`lifecycleInvariantBundle` is the identity/aliasing invariant — the
+object-type metadata is exact for every object id — preserved across retype,
+suspend, resume and cleanup.  (The stale-reference and capability-reference
+layers it once conjoined were retired at v0.35.78: every predicate in them was
+stated over a reader that read the object store, so each was a tautology.)
 Retype is the sharp edge: `retypeFromUntyped` must not overlap an existing
-region (`untypedRegionsDisjoint`, §3.5) and must not leave a stale reference to
-the object it consumed.
+region (`untypedRegionsDisjoint`, §3.5), and `lifecycleRevokeDeleteRetype`
+revokes every capability naming the object before it is retyped, so no slot
+carries authority over the consumed object into its successor (the
+capability layer's revoke theorems, §3.2).
 
 ### 3.5 Cross-subsystem — `SeLe4n/Kernel/CrossSubsystem.lean`
 

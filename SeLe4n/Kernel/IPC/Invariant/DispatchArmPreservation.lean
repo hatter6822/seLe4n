@@ -863,14 +863,8 @@ private theorem cspaceInsertSlot_cnode_shape
       | some c => simp [hLk] at hStep
       | none =>
         simp only [hLk] at hStep
-        split at hStep
-        · contradiction
-        · rename_i st1 hStore
-          have h1 := storeObject_objects_eq st st1 addr.cnode
-            (.cnode (cn.insert addr.slot cap)) hObjInv hStore
-          unfold storeCapabilityRef at hStep
-          cases hStep
-          exact ⟨cn, rfl, h1⟩
+        exact ⟨cn, rfl, storeObject_objects_eq st st' addr.cnode
+          (.cnode (cn.insert addr.slot cap)) hObjInv hStep⟩
     | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
     | schedContext _ | reply _ => simp [hObj] at hStep
 
@@ -927,8 +921,6 @@ private theorem cspaceDeleteSlotCore_shape
       split at hStep
       · contradiction
       · rename_i st1 hStore
-        unfold storeCapabilityRef at hStep
-        dsimp only [] at hStep
         cases hStep
         refine ⟨cn, rfl, ?_, ?_, ?_⟩
         · rw [SystemState.detachSlotFromCdt_objects_eq]

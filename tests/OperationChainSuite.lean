@@ -66,7 +66,6 @@ private def chain1RetypeMintRevoke : IO Unit := do
         })
       |>.withLifecycleObjectType targetId .notification
       |>.withLifecycleObjectType cnodeId .cnode
-      |>.withLifecycleCapabilityRef authSlot (.object targetId)
       |>.buildChecked)
 
   let (_, st1) ← expectOkSt "chain1: lifecycleRetypeObject"
@@ -1545,8 +1544,8 @@ private def revokeConsumesPendingTransfer : IO Unit := do
 slot the *local* sweep emptied must not install either.
 
 `cspaceRevoke` clears every sibling naming the revoked target
-(`revokeTargetLocal` filters them out of the CNode) but `revokeAndClearRefsState`
-deliberately preserves the CDT maps.  So the swept sibling's node kept pointing
+(`revokeTargetLocal` filters them out of the CNode) but stores the swept CNode
+without touching the CDT maps.  So the swept sibling's node kept pointing
 at a slot that no longer holds anything, and the install-time check -- which
 asked only whether the node still *mapped* to a slot -- let the transfer through.
 Nothing could revoke the installed copy afterwards: `cspaceRevokeCdt` on an empty
@@ -2693,7 +2692,7 @@ private def chain26BootSequence : IO Unit := do
   let _ := ist.hAllTables           -- allTablesInvExt
   let _ := ist.hPerObjectSlots      -- perObjectSlotsInvariant
   let _ := ist.hPerObjectMappings   -- perObjectMappingsInvariant
-  let _ := ist.hLifecycleConsistent -- lifecycleMetadataConsistent
+  let _ := ist.hLifecycleConsistent -- objectTypeMetadataConsistent
   -- The master validity theorem `bootFromPlatform_valid` produces a Prop-valued
   -- conjunction.  Its type-correctness is verified at compile time (Lean's kernel
   -- rejects `sorry`).  We reference it here so the compiler elaborates it.

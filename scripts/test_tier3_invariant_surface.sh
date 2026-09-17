@@ -381,9 +381,12 @@ run_check "INVARIANT" rg -n '^\s*sendQ\s*:\s*IntrusiveQueue' SeLe4n/Model/Object
 run_check "INVARIANT" rg -n '^\s*receiveQ\s*:\s*IntrusiveQueue' SeLe4n/Model/Object/Types.lean
 
 
-# M4-A step-1 lifecycle metadata anchors must remain present.
-run_check "INVARIANT" rg -n '^structure LifecycleMetadata' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^def lifecycleMetadataConsistent' SeLe4n/Model/State.lean
+# M4-A step-1 lifecycle metadata anchors must remain present.  v0.35.78: the
+# metadata is the object-type table alone and its invariant is
+# `objectTypeMetadataConsistent`; the bundle-of-two `lifecycleMetadataConsistent`
+# and the table it bundled are retired (see the v0.35.78 block below).
+run_check "INVARIANT" rg -U -n '^structure LifecycleMetadata where\n  objectTypes : RHTable SeLe4n\.ObjId KernelObjectType\n$' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^def objectTypeMetadataConsistent' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^def cspaceRevoke' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevoke_local_target_reduction' SeLe4n/Kernel/Capability/Invariant/Authority.lean
 
@@ -393,30 +396,12 @@ run_check "INVARIANT" rg -n '^theorem cspaceRevoke_local_target_reduction' SeLe4
 # `lifecycleIdentityNoTypeAliasConflict` conjunct is derivable in one step
 # from exactness and was removed).
 run_check "INVARIANT" rg -n '^abbrev lifecycleIdentityAliasingInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^def lifecycleCapabilityReferenceInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^def lifecycleCapabilityRefObjectTargetBacked' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^def lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleCapabilityRefObjectTargetBacked_of_exact' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleInvariantBundle_of_metadata_consistent' SeLe4n/Kernel/Lifecycle/Invariant.lean
-
-# M4-B WS-B invariant hardening anchors must remain present.
-run_check "INVARIANT" rg -n '^def lifecycleCapabilityRefObjectTargetTypeAligned' SeLe4n/Kernel/Lifecycle/Invariant.lean
-# AN4-B (H-03): `lifecycleCapabilityRefNoTypeAliasConflict` the standalone
-# `def` is retained (it takes a reference+oid pair; the removed predicate was
-# the identity-side `lifecycleIdentityNoTypeAliasConflict`). Match unchanged.
-run_check "INVARIANT" rg -n '^def lifecycleCapabilityRefNoTypeAliasConflict' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^def lifecycleStaleReferenceExclusionInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^def lifecycleIdentityStaleReferenceInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleCapabilityRefObjectTargetTypeAligned_of_exact' SeLe4n/Kernel/Lifecycle/Invariant.lean
-# AN4-B (H-03): the bridge theorem was renamed from `_of_identity` to
-# `_of_exact` because the intermediate `lifecycleIdentityNoTypeAliasConflict`
-# predicate was removed (derivable in one step from exactness).
-run_check "INVARIANT" rg -n '^theorem lifecycleCapabilityRefNoTypeAliasConflict_of_exact' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^def lifecycleCapabilityStaleAuthorityInvariant' SeLe4n/Kernel/Capability/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleCapabilityStaleAuthorityInvariant_of_bundles' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+# v0.35.78: the bundle IS the identity/aliasing layer -- the capability-reference
+# layer it was conjoined with was a family of tautologies over a reader that read
+# the object store, retired with that reader (see the v0.35.78 block below).
+run_check "INVARIANT" rg -U -n '^def lifecycleInvariantBundle \(st : SystemState\) : Prop :=\n  lifecycleIdentityAliasingInvariant st$' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem scrubObjectMemory_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
 
 # M4-A step-5 lifecycle preservation entrypoint anchors must remain present.
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
@@ -430,7 +415,6 @@ run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleC
 # M4-B WS-C preservation theorem expansion anchors must remain present.
 run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
 
 # M4-B WS-A composition transition anchors must remain present.
@@ -467,12 +451,11 @@ run_check "INVARIANT" rg -n '^\s*\| dependencyViolation' SeLe4n/Model/KernelErro
 # M5-C policy-surface anchors must remain present.
 run_check "INVARIANT" rg -n '^abbrev ServicePolicyPredicate' SeLe4n/Kernel/Service/Invariant/Policy.lean
 run_check "INVARIANT" rg -n '^def policyBackingObjectTyped' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^def policyOwnerAuthorityRefRecorded' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^def policyOwnerAuthoritySlotPresent' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^def servicePolicySurfaceInvariant' SeLe4n/Kernel/Service/Invariant/Policy.lean
+# v0.35.78: the surface is the typing component alone -- its second component
+# was an implication whose antecedent read `lookupSlotCap` through the retired
+# `lookupCapabilityRefMeta`, i.e. a tautology (see the v0.35.78 block below).
+run_check "INVARIANT" rg -U -n '^def servicePolicySurfaceInvariant \(st : SystemState\) : Prop :=\n  ∀ sid svc,\n    lookupService st sid = some svc →\n      policyBackingObjectTyped st svc$' SeLe4n/Kernel/Service/Invariant/Policy.lean
 run_check "INVARIANT" rg -n '^theorem policyBackingObjectTyped_of_lifecycleInvariant' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem policyOwnerAuthoritySlotPresent_of_lifecycleInvariant' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem policyOwnerAuthoritySlotPresent_of_capabilityLookup' SeLe4n/Kernel/Service/Invariant/Policy.lean
 run_check "INVARIANT" rg -n '^theorem servicePolicySurfaceInvariant_of_lifecycleInvariant' SeLe4n/Kernel/Service/Invariant/Policy.lean
 # M5-D/Q1: proof-package anchors (lifecycle preservation theorems removed in Q1).
 run_check "INVARIANT" rg -n '^def serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
@@ -671,7 +654,7 @@ run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_allocSizeTooSmall'
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_regionExhausted' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^def untypedMemoryInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem default_systemState_untypedMemoryInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_lifecycleMetadataConsistent' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_objectTypeMetadataConsistent' SeLe4n/Kernel/Lifecycle/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
 run_check "INVARIANT" rg -n '^\s*\| untypedRegionExhausted' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^\s*\| untypedTypeMismatch' SeLe4n/Model/KernelError.lean
@@ -2790,7 +2773,6 @@ run_check "INVARIANT" rg -n '^theorem storeObject_eq_withObjectStored\b' SeLe4n/
 run_check "INVARIANT" rg -n '^theorem rewriteObject_preserves_objectIndexSetComplete\b' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem rewriteObject_preserves_objectIndexLive\b' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem rewriteObject_preserves_objectTypeMetadataConsistent\b' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^theorem rewriteObject_preserves_lifecycleMetadataConsistent\b' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem rewriteObject_preserves_asidTableConsistent\b' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 run_check "INVARIANT" rg -n '^theorem rewriteObject_preservesFieldsOutside\b' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n '^theorem updateTcb_preservesFieldsOutside\b' SeLe4n/Kernel/CrossSubsystem.lean
@@ -2987,7 +2969,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThread \(ist 
 run_check "INVARIANT" rg -n '^theorem enqueueIdleThreadOnCore_preserves_allTablesInvExtK\b' SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean
 run_check "INVARIANT" rg -n '^theorem enqueueIdleThreadOnCore_preserves_perObjectSlotsInvariant\b' SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean
 run_check "INVARIANT" rg -n '^theorem enqueueIdleThreadOnCore_preserves_perObjectMappingsInvariant\b' SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean
-run_check "INVARIANT" rg -n '^theorem enqueueIdleThreadOnCore_preserves_lifecycleMetadataConsistent\b' SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean
+run_check "INVARIANT" rg -n '^theorem enqueueIdleThreadOnCore_preserves_objectTypeMetadataConsistent\b' SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThread \(ist : IntermediateState\)[^\n]*(\n([ \t][^\n]*)?)*hAllTables := enqueueIdleThreadOnCore_preserves_allTablesInvExtK ist\.state c ist\.hAllTables" SeLe4n/Platform/Boot.lean'
 # The store's index bound is hypothesis-free, and the boot's capacity theorem
 # reads it through the operation rather than through the builder.
@@ -3368,25 +3350,39 @@ run_prose_check "INVARIANT" rg -n '^-- STATUS: staged for the fine-lock migratio
 run_prose_negative_check "INVARIANT" rg -U -n '^-- [^\n]*: PRODUCTION\b' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 
 # ============================================================================
-# v0.35.77 -- storeObject clears the displaced CNode's references slot by slot
+# v0.35.78 -- the capability-reference table is retired
 # ============================================================================
 #
-# The raw-write migration's last cut (D2): the whole-table filter
-# `capabilityRefs.filter (fun ref _ => ref.cnode ≠ id)` that every store paid
-# is an erase over the displaced CNode's populated slots, so a non-CNode store
-# at a key holding no CNode leaves the reference table structurally unchanged
-# (`storeObject_capabilityRefs_of_not_cnode`), and the erase fold's `invExtK`
-# lemma is the table's half of the bundled store invariant.  The filter, its
-# two unconsumed lemmas and the filter-era name of the IPC-buffer theorem must
-# not come back; the spelled-out revoke post-states follow the body.
-run_check "INVARIANT" rg -U -n '^            let cleared := match st\.objects\[id\]\? with\n              \| some \(\.cnode oldCn\) =>\n                  oldCn\.slots\.fold \(init := st\.lifecycle\.capabilityRefs\) fun acc slot _ =>\n                    acc\.erase \{ cnode := id, slot := slot \}\n              \| _ => st\.lifecycle\.capabilityRefs$' SeLe4n/Model/State.lean
-run_negative_check "INVARIANT" rg -n 'capabilityRefs\.filter \(fun ref _ => ref\.cnode ≠' SeLe4n/Model/State.lean
-run_negative_check "INVARIANT" rg -n 'capabilityRefs\.filter \(fun ref _ => ref\.cnode ≠' SeLe4n/Kernel/Capability/Invariant/Authority.lean
-run_check "INVARIANT" rg -n '^theorem capabilityRefs_eraseFold_preserves_invExtK$' SeLe4n/Model/State.lean
-run_negative_check "INVARIANT" rg -n '^theorem capabilityRefs_(filter_preserves_invExt|fold_preserves_invExt)\b' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -U -n '^theorem storeObject_capabilityRefs_of_not_cnode\n    \(st st. : SystemState\)\n    \(id : SeLe4n\.ObjId\)\n    \(obj : KernelObject\)\n    \(hOld : ∀ cn, st\.objects\[id\]\? ≠ some \(\.cnode cn\)\)\n    \(hNew : ∀ cn, obj ≠ \.cnode cn\)\n    \(hStep : storeObject id obj st = \.ok \(\(\), st.\)\) :\n    st.\.lifecycle\.capabilityRefs = st\.lifecycle\.capabilityRefs := by$' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -U -n '^theorem setIPCBufferOp_capabilityRefs_eq\n(.|\n)*?\n    st.\.lifecycle\.capabilityRefs = st\.lifecycle\.capabilityRefs := by$' SeLe4n/Kernel/Architecture/IpcBufferValidation.lean
-run_negative_check "INVARIANT" rg -n 'setIPCBufferOp_capabilityRefs_cleaned' SeLe4n/Kernel/Architecture/IpcBufferValidation.lean
+# `LifecycleMetadata.capabilityRefs` was written by three writers and read by no
+# executable code: its reader `lookupCapabilityRefMeta` was *defined* as
+# `(lookupSlotCap st ref).map Capability.target`, a read of the object store, so
+# `capabilityRefMetadataConsistent` was definitionally true, every predicate in
+# the lifecycle capability-reference family was a tautology over it, and every
+# CNode store paid a fold over the CNode's slots for a table nothing consulted
+# (the boot builder never populated it while installing populated CNodes, and the
+# frozen mirror never maintained it).  The table, its writers, its reader, the
+# vacuous conjunct, the bundle-of-one `lifecycleMetadataConsistent`, the
+# lifecycle capability-reference and stale-reference families, the capability
+# layer's stale-authority bundle, the policy surface's owner-authority
+# implication and the builders' `withLifecycleCapabilityRef` are deleted -- not
+# kept beside their replacements -- and must not come back.  The store's
+# lifecycle write is the object-type insert alone, and the metadata is the
+# object-type table alone.
+run_check "INVARIANT" rg -U -n '^        lifecycle := \{\n          objectTypes := st\.lifecycle\.objectTypes\.insert id obj\.objectType\n        \}$' SeLe4n/Model/State.lean
+run_negative_check "INVARIANT" rg -n 'capabilityRefs' SeLe4n/Model/State.lean SeLe4n/Model/FrozenState.lean SeLe4n/Model/FreezeProofs.lean SeLe4n/Testing/StateBuilder.lean SeLe4n/Platform/Boot.lean
+run_negative_check "INVARIANT" rg -n 'lookupCapabilityRefMeta|capabilityRefMetadataConsistent|lifecycleMetadataConsistent' SeLe4n tests
+run_negative_check "INVARIANT" rg -n '\bstoreCapabilityRef\b|revokeAndClearRefsState' SeLe4n tests
+run_negative_check "INVARIANT" rg -n 'lifecycleCapabilityRef(Exact|ObjectTargetBacked|ReplyCapBacked|ObjectTargetTypeAligned|NoTypeAliasConflict)|lifecycleCapabilityReferenceInvariant|lifecycleStaleReferenceExclusionInvariant|lifecycleIdentityStaleReferenceInvariant|lifecycleCapabilityStaleAuthorityInvariant' SeLe4n tests
+run_negative_check "INVARIANT" rg -n 'policyOwnerAuthorityRefRecorded|policyOwnerAuthoritySlotPresent|withLifecycleCapabilityRef' SeLe4n tests
+run_negative_check "INVARIANT" rg -n 'capabilityRefs_(eraseFold|filter|fold)_preserves_invExt|storeObject_capabilityRefs_of_not_cnode|setIPCBufferOp_capabilityRefs_(eq|cleaned)' SeLe4n tests
+# The lifecycle bundle is the identity layer and `objectTypeMetadataConsistent`
+# is what every former `lifecycleMetadataConsistent` consumer carries.
+run_check "INVARIANT" rg -n '^theorem storeObject_preserves_objectTypeMetadataConsistent\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem withObjectStored_preserves_objectTypeMetadataConsistent\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem default_systemState_objectTypeMetadataConsistent\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatform_objectTypeMetadataConsistent\b' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  hLifecycleConsistent : SystemState\.objectTypeMetadataConsistent state$' SeLe4n/Model/IntermediateState.lean
+run_negative_check "INVARIANT" rg -n 'lifecycleInvariantBundle_of_metadata_consistent|lifecycleMetadataConsistent_of_lifecycleInvariantBundle|default_systemState_lifecycleConsistent' SeLe4n tests
 
 # ============================================================================
 # WS-OD OD6 -- the payoff
@@ -4925,7 +4921,6 @@ run_check "INVARIANT" rg -n '^theorem composedNonInterference_step_perCore' SeLe
 run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_to_singleCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem trace_preserves_projectionOnCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem storeObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem storeCapabilityRef_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem storeTcbIpcState_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
@@ -8337,8 +8332,8 @@ run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_sourceRevoked_preserv
 # PR #873 round 18: that check asked whether the node still MAPPED to a slot, on
 # the premise that every destroyer severs the mapping.  Delete, CNode retype and
 # the descendant sweep do; the LOCAL sibling sweep does not -- `revokeTargetLocal`
-# empties every sibling naming the revoked target while `revokeAndClearRefsState`
-# deliberately preserves the CDT maps.  So the mapping outlived the capability, a
+# empties every sibling naming the revoked target while the swept CNode is
+# stored without touching the CDT maps.  So the mapping outlived the capability, a
 # transfer parked against a swept sibling installed, and nothing could revoke the
 # copy afterwards: `cspaceRevokeCdt` on an empty slot fails at `cspaceLookupSlot`.
 run_check "INVARIANT" rg -n '^def cdtNodeIsRevocable' SeLe4n/Kernel/Capability/Operations.lean

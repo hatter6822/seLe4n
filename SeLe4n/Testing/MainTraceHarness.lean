@@ -151,9 +151,6 @@ def bootstrapState : SystemState :=
     |>.withLifecycleObjectType demoEndpoint .endpoint
     |>.withLifecycleObjectType demoNotification .notification
     |>.withLifecycleObjectType demoUntyped .untyped
-    |>.withLifecycleCapabilityRef rootSlot (.object ⟨1⟩)
-    |>.withLifecycleCapabilityRef lifecycleAuthSlot (.object ⟨12⟩)
-    |>.withLifecycleCapabilityRef untypedAuthSlot (.object demoUntyped)
   ).buildChecked
 
 private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
@@ -1605,7 +1602,6 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       })
       |>.withLifecycleObjectType ksdEpId .endpoint
       |>.withLifecycleObjectType ksdCnodeId .cnode
-      |>.withLifecycleCapabilityRef ksdSrcSlot (.object ksdEpId)
       |>.buildChecked)
   -- Decode mint args from msgRegs: srcSlot=0, dstSlot=1, rights=1(read), badge=42
   let mintDecoded : SyscallDecodeResult := {
@@ -1897,7 +1893,6 @@ private def runCspaceMoveTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO 
       })
       |>.withLifecycleObjectType moveEpId .endpoint
       |>.withLifecycleObjectType moveCnId .cnode
-      |>.withLifecycleCapabilityRef moveSrc (.object moveEpId)
       |>.buildChecked)
 
   -- Decode move args: srcSlot=0, dstSlot=2
@@ -2064,7 +2059,6 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
       |>.withLifecycleObjectType ⟨1⟩ .tcb
       |>.withLifecycleObjectType ⟨12⟩ .tcb
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
-      |>.withLifecycleCapabilityRef lcAuthSlot (.object lcEpId)
     ).buildChecked
   -- B1: Block both senders on the endpoint's sendQ
   let msg1 : IpcMessage := { registers := #[⟨10⟩, ⟨20⟩], caps := #[], badge := none }

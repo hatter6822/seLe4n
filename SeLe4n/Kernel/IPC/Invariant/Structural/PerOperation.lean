@@ -101,7 +101,7 @@ theorem badgeWellFormed_of_objects_eq
 
 /-- IPC de-threading D8: `cspaceInsertSlot` preserves `badgeWellFormed` when the
 inserted cap has a valid badge. The only object write is the receiver CNode
-`cn.insert addr.slot cap`; `storeCapabilityRef` leaves objects unchanged. -/
+`cn.insert addr.slot cap`. -/
 theorem cspaceInsertSlot_preserves_badgeWellFormed
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
@@ -119,24 +119,18 @@ theorem cspaceInsertSlot_preserves_badgeWellFormed
       simp only [hObj] at hStep
       split at hStep
       · simp at hStep
-      · cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
-        | error e => simp [hStore] at hStep
-        | ok storeResult =>
-          obtain ⟨_, stMid⟩ := storeResult
-          simp [hStore] at hStep
-          have hObjEqRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
-          refine badgeWellFormed_of_objects_eq stMid st' hObjEqRef ⟨?_, ?_⟩
-          · exact storeObject_cnode_preserves_notificationBadgesWellFormed st stMid addr.cnode _
-              hNtfn hObjInv hStore
-          · exact storeObject_cnode_preserves_capabilityBadgesWellFormed st stMid addr.cnode _
-              hCap hObjInv hStore
-              (fun slot' cap' badge' hLk hBdg => by
-                by_cases hSlotEq : addr.slot = slot'
-                · subst hSlotEq
-                  rw [CNode.lookup_insert_eq cn addr.slot cap hUniq] at hLk
-                  cases hLk; exact hCapValid badge' hBdg
-                · rw [CNode.lookup_insert_ne cn addr.slot slot' cap hSlotEq hUniq] at hLk
-                  exact hCap addr.cnode cn slot' cap' badge' hObj hLk hBdg)
+      · refine ⟨?_, ?_⟩
+        · exact storeObject_cnode_preserves_notificationBadgesWellFormed st st' addr.cnode _
+            hNtfn hObjInv hStep
+        · exact storeObject_cnode_preserves_capabilityBadgesWellFormed st st' addr.cnode _
+            hCap hObjInv hStep
+            (fun slot' cap' badge' hLk hBdg => by
+              by_cases hSlotEq : addr.slot = slot'
+              · subst hSlotEq
+                rw [CNode.lookup_insert_eq cn addr.slot cap hUniq] at hLk
+                cases hLk; exact hCapValid badge' hBdg
+              · rw [CNode.lookup_insert_ne cn addr.slot slot' cap hSlotEq hUniq] at hLk
+                exact hCap addr.cnode cn slot' cap' badge' hObj hLk hBdg)
     | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
     | schedContext _ | reply _ => simp [hObj] at hStep
 

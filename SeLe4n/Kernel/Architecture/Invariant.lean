@@ -429,7 +429,7 @@ private theorem default_ipcInvariant :
 
 private theorem default_lifecycleInvariantBundle :
     lifecycleInvariantBundle (default : SystemState) :=
-  lifecycleInvariantBundle_of_metadata_consistent _ default_systemState_lifecycleConsistent
+  default_systemState_objectTypeMetadataConsistent
 
 private theorem default_ipcSchedulerContractPredicates :
     ipcSchedulerContractPredicates (default : SystemState) := by

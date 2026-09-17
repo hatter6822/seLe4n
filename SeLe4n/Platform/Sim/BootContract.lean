@@ -53,9 +53,6 @@ def simMaxIrqId : Nat := 224
     Object-type metadata consistency: the default (initial) object store is
     empty — no pre-existing kernel objects at boot time.
 
-    Capability-ref metadata consistency: the default capability reference table
-    is empty — no pre-existing capability derivations at boot time.
-
     These predicates replace the prior vacuously-true (`True`) contract and
     validate real properties of the initial state, catching configuration
     errors that would otherwise go undetected during simulation. -/
@@ -63,8 +60,6 @@ def simBootContract : BootBoundaryContract :=
   {
     objectTypeMetadataConsistent :=
       (default : SystemState).objects.size = 0
-    capabilityRefMetadataConsistent :=
-      (default : SystemState).lifecycle.capabilityRefs.size = 0
     -- AJ3-D (M-19) / AK9-B (P-H02): Simulation starts with empty object
     -- store by design. The state builder adds objects programmatically after
     -- boot. Verifiable structural fact, not a vacuous `True`. Field was
@@ -101,13 +96,6 @@ theorem simBootContract_irqRangeValid_holds :
 theorem simBootContract_objectType_holds :
     simBootContract.objectTypeMetadataConsistent := by
   show ({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject).size = 0
-  rfl
-
-/-- AI5-A (H-01): Simulation boot contract capability-ref predicate holds for
-    the default state. The default `RHTable` is empty by construction. -/
-theorem simBootContract_capabilityRef_holds :
-    simBootContract.capabilityRefMetadataConsistent := by
-  show ({} : SeLe4n.Kernel.RobinHood.RHTable SlotRef CapTarget).size = 0
   rfl
 
 /-- AI5-B (H-02): Simulation interrupt contract with GIC-400 range validation.

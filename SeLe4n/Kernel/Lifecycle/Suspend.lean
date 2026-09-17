@@ -554,11 +554,10 @@ theorem consumeReplyLink_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.Thr
 -- WS-RR RR8.5: `consumeReplyLink_lifecycle_eq` — and the `clear*_lifecycle_eq`
 -- pair it composed — is retired rather than restated.  The teardown writes
 -- through `storeObject` now, exactly as the donation return on the same arm has
--- since WS-RR RR7.22, and `storeObject` rewrites `lifecycle.objectTypes` and
--- filters `lifecycle.capabilityRefs` at the stored key, so a *definitional*
--- lifecycle frame is false of it — which `cancelIpcBlocking_lifecycle_eq`'s own
--- docstring had already recorded for the return.  The semantic content (the same
--- types, a filter that removes nothing at a Reply or TCB key) is what the
+-- since WS-RR RR7.22, and `storeObject` rewrites `lifecycle.objectTypes` at the
+-- stored key, so a *definitional* lifecycle frame is false of it — which
+-- `cancelIpcBlocking_lifecycle_eq`'s own docstring had already recorded for the
+-- return.  The semantic content (the same types at every key) is what the
 -- lifecycle invariant's preservation states; nothing in the tree consumed the
 -- definitional form.
 

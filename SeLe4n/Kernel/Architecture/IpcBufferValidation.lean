@@ -127,8 +127,8 @@ def setIPCBufferOp (st : SystemState) (vtid : ValidThreadId)
     | some tcb =>
       -- AH3-B (L-08): Delegate to `storeObject` instead of manual struct-with.
       -- `storeObject` handles objects/objectIndex/objectIndexSet/lifecycle/asidTable
-      -- uniformly. For TCB-to-TCB updates, asidTable is a no-op and capabilityRefs
-      -- filter is a no-op (TCBs are never CNodes), producing identical state.
+      -- uniformly. For TCB-to-TCB updates, asidTable is a no-op (TCBs are never
+      -- VSpace roots), producing identical state.
       let tcb' := { tcb with ipcBuffer := addr }
       match storeObject vtid.val.toObjId (.tcb tcb') st with
       | .ok ((), st') => .ok st'
@@ -324,39 +324,6 @@ theorem setIPCBufferOp_asidTable_eq
         (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hLookup
       unfold storeObject at hOk; simp only [] at hOk; cases hOk
       simp only [hRaw]
-    · contradiction
-
-/-- D3-F/AH3-B: `setIPCBufferOp` delegates to `storeObject`, and a TCB store
-    leaves the capability-reference table **structurally unchanged**
-    (`storeObject_capabilityRefs_of_not_cnode`, `v0.35.77`): the key holds the
-    TCB being rewritten, so no CNode is displaced, and a TCB has no slots to
-    insert references for.  Until `v0.35.77` the store filtered the whole table
-    on every write and this theorem stated that filter's result, which for a
-    TCB is the identity only up to the table's own consistency; the erase over
-    the displaced CNode's slots makes it the identity outright. -/
-theorem setIPCBufferOp_capabilityRefs_eq
-    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st vtid addr = .ok st') :
-    st'.lifecycle.capabilityRefs = st.lifecycle.capabilityRefs := by
-  unfold setIPCBufferOp at hOk
-  split at hOk
-  · contradiction
-  · split at hOk
-    · rename_i tcb hLookup
-      have hRaw : st.objects[vtid.val.toObjId]? = some (.tcb tcb) :=
-        (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hLookup
-      -- The store's own match: its `.ok` arm carries the step the payoff
-      -- theorem consumes; the key holds a TCB (`hRaw`) and a TCB is stored.
-      -- `dsimp` discharges the `let tcb'` binder the split cannot see past.
-      dsimp only at hOk
-      split at hOk
-      · rename_i stMid hStore
-        -- `cases` on the arm's `.ok stMid = .ok st'` identifies the two states.
-        cases hOk
-        exact storeObject_capabilityRefs_of_not_cnode st _ _ _
-          (fun cn h => by rw [hRaw] at h; cases h)
-          (fun cn h => by cases h) hStore
-      · contradiction
     · contradiction
 
 /-- D3-F: `setIPCBufferOp` determinism — the operation is a pure function

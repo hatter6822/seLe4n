@@ -63,7 +63,7 @@ private theorem storeObject_preserves_projectObjectIndex
   · rw [List.filter_cons]; simp [hOidHigh]
 
 /-- WS-F3: cspaceInsertSlot at a non-observable CNode preserves the projected object index.
-Follows from storeObject + storeCapabilityRef frame lemmas. -/
+Follows from the store's frame lemma. -/
 theorem cspaceInsertSlot_preserves_projectObjectIndex
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hOidHigh : objectObservable ctx observer addr.cnode = false)
@@ -81,17 +81,8 @@ theorem cspaceInsertSlot_preserves_projectObjectIndex
           | some _ => simp [hLookup] at hStep
           | none =>
               simp [hLookup] at hStep
-              cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
-              | error e => simp [hStore] at hStep
-              | ok pair =>
-                  obtain ⟨_, stMid⟩ := pair
-                  simp [hStore] at hStep
-                  have hMid := storeObject_preserves_projectObjectIndex ctx observer st stMid
-                    addr.cnode _ hOidHigh hStore
-                  have hRef := storeCapabilityRef_preserves_objectIndex stMid st' addr (some cap.target) hStep
-                  rw [show projectObjectIndex ctx observer st' = stMid.objectIndex.filter (objectObservable ctx observer) from by
-                    simp [projectObjectIndex, hRef]]
-                  exact hMid
+              exact storeObject_preserves_projectObjectIndex ctx observer st st'
+                addr.cnode _ hOidHigh hStep
 
 -- ============================================================================
 -- Shared non-interference proof infrastructure
@@ -204,30 +195,6 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     simpa [projectServiceRegistry] using hSvcRegLow
   unfold lowEquivalent
   simp [projectState, hObj', hRun', hCur', hSvc', hDom', hIrq', hIdx', hDTR, hDS, hDSI, hMR, hMem, hSvcReg]
-
-/-- M-P01: revokeAndClearRefsState preserves the observer projection. -/
-theorem revokeAndClearRefsState_preserves_projectState
-    (ctx : LabelingContext) (observer : IfObserver)
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    projectState ctx observer (revokeAndClearRefsState cn sourceSlot target cnodeId st) =
-      projectState ctx observer st := by
-  simp only [projectState]; congr 1
-  · funext oid; simp [projectObjects, revokeAndClearRefsState_preserves_objects, SystemState.getObject?]
-  · simp [projectRunnable, revokeAndClearRefsState_preserves_scheduler]
-  · simp [projectCurrent, revokeAndClearRefsState_preserves_scheduler]
-  · funext sid; simp [projectServicePresence, revokeAndClearRefsState_lookupService]
-  · simp [projectActiveDomain, revokeAndClearRefsState_preserves_scheduler]
-  · funext irq; simp [projectIrqHandlers, revokeAndClearRefsState_preserves_irqHandlers]
-  · simp [projectObjectIndex, revokeAndClearRefsState_preserves_objectIndex]
-  · simp [projectDomainTimeRemaining, revokeAndClearRefsState_preserves_scheduler]
-  · simp [projectDomainSchedule, revokeAndClearRefsState_preserves_scheduler]
-  · simp [projectDomainScheduleIndex, revokeAndClearRefsState_preserves_scheduler]
-  · simp [projectMachineRegs, revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_machine]
-  · exact projectMemory_eq_of_memory_eq ctx observer _ st
-      (by rw [revokeAndClearRefsState_preserves_machine])
-  · exact projectServiceRegistry_eq_of_services_eq ctx observer _ st
-      (revokeAndClearRefsState_preserves_services cn sourceSlot target cnodeId st)
 
 -- ============================================================================
 -- WS-E3/H-09: Multi-step operation helpers for non-interference
@@ -1156,6 +1123,11 @@ theorem cspaceRevoke_preserves_lowEquivalent
               simp [hL₂, hC₂, storeObject] at hStep₂
               cases hStep₁; cases hStep₂
               unfold lowEquivalent projectState
+              -- `v0.35.78`: the post-state is `storeObject`'s record itself (the
+              -- revoke stores once), so its `scheduler` and `services` fields are
+              -- `s₁`'s / `s₂`'s definitionally and `congr 1` closes the runnable,
+              -- current and services components from `hRunLow`, `hCurLow` and
+              -- `hSvcLow` by assumption; the bullets below are the rest.
               congr 1
               · funext oid
                 by_cases hObs : objectObservable ctx observer oid
@@ -1164,33 +1136,20 @@ theorem cspaceRevoke_preserves_lowEquivalent
                   have hBase : projectObjects ctx observer s₁ oid = projectObjects ctx observer s₂ oid :=
                     congrFun hObjLow oid
                   simp [projectObjects, hObs, SystemState.getObject?] at hBase ⊢
-                  rw [revokeAndClearRefsState_preserves_objects, revokeAndClearRefsState_preserves_objects]
                   simp only [RHTable_getElem?_eq_get?]
                   rw [RHTable_getElem?_insert _ _ _ hObjInv₁, RHTable_getElem?_insert _ _ _ hObjInv₂]
                   simp [Ne.symm hNe]
                   exact hBase
                 · simp [projectObjects, hObs]
-              · simp only [projectRunnable]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
-                simpa [projectRunnable] using hRunLow
-              · simp only [projectCurrent]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
-                simpa [projectCurrent] using hCurLow
-              · funext sid
-                simp only [projectServicePresence, revokeAndClearRefsState_lookupService]
-                exact congrFun (congrArg ObservableState.services hLow) sid
               · -- activeDomain
                 simp only [projectActiveDomain]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 exact congrArg ObservableState.activeDomain hLow
               · -- irqHandlers
                 funext irq
                 simp only [projectIrqHandlers]
-                rw [revokeAndClearRefsState_preserves_irqHandlers, revokeAndClearRefsState_preserves_irqHandlers]
                 exact congrFun (congrArg ObservableState.irqHandlers hLow) irq
               · -- objectIndex
                 simp only [projectObjectIndex]
-                rw [revokeAndClearRefsState_preserves_objectIndex, revokeAndClearRefsState_preserves_objectIndex]
                 have hIdx := congrArg ObservableState.objectIndex hLow
                 -- Both sides: if objectIndexSet.contains addr.cnode then idx else addr.cnode :: idx
                 -- Since hCNodeHigh filters addr.cnode out, prepending it is invisible
@@ -1201,27 +1160,21 @@ theorem cspaceRevoke_preserves_lowEquivalent
                 · rw [List.filter_cons, List.filter_cons]; simp [hCNodeHigh]; exact hIdx
               · -- domainTimeRemaining
                 simp only [projectDomainTimeRemaining]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 exact congrArg ObservableState.domainTimeRemaining hLow
               · -- domainSchedule
                 simp only [projectDomainSchedule]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 exact congrArg ObservableState.domainSchedule hLow
               · -- domainScheduleIndex
                 simp only [projectDomainScheduleIndex]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 exact congrArg ObservableState.domainScheduleIndex hLow
               · -- machineRegs
                 simp only [projectMachineRegs]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler,
-                    revokeAndClearRefsState_preserves_machine, revokeAndClearRefsState_preserves_machine]
                 exact congrArg ObservableState.machineRegs hLow
               · -- R5-C.1: memory
-                funext paddr; simp only [projectMemory,
-                  revokeAndClearRefsState_preserves_machine]
+                funext paddr; simp only [projectMemory]
                 exact congrFun (congrArg ObservableState.memory hLow) paddr
               · -- V6-E: serviceRegistry
-                funext sid; simp only [projectServiceRegistry, revokeAndClearRefsState_lookupService]
+                funext sid; simp only [projectServiceRegistry]
                 exact congrFun (congrArg ObservableState.serviceRegistry hLow) sid
 
 -- ============================================================================

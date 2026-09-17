@@ -30,7 +30,7 @@ Each helper function preserves non-object state fields:
 
 Note: `cancelDonation` does NOT preserve lifecycle in the `.donated` case
 because `returnDonatedSchedContext` calls `storeObject`, which updates
-`lifecycle.objectTypes` and `lifecycle.capabilityRefs`. The `cancelIpcBlocking`
+`lifecycle.objectTypes`. The `cancelIpcBlocking`
 and `clearPendingState` helpers DO preserve lifecycle because they only use
 direct record-with updates on the `objects` field.
 -/

@@ -59,8 +59,8 @@ The six closure-form arms, in stabilising-recipe order:
      cancel + TCB-state transition + optional schedule.
   6. `lifecycleRetype_preserves_projection` = composite at
      `lifecycleRetypeDirectWithCleanup_preserves_projection` (AK6F.16)
-     — cross-subsystem retype touches objects, CDT, lifecycle,
-     capabilityRefs, and optionally scheduler.
+     — cross-subsystem retype touches objects, CDT, lifecycle
+     object-type metadata, and optionally scheduler.
 
 **Shared proof-sketch template** (apply per arm):
 
@@ -1117,17 +1117,6 @@ theorem vspaceLookup_preserves_lowEquivalent
 -- WS-H9: CSpace NI proofs (Part C)
 -- ============================================================================
 
-/-- WS-H9: storeCapabilityRef preserves projection (modifies only lifecycle). -/
-theorem storeCapabilityRef_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (ref : SlotRef) (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    projectState ctx observer st' = projectState ctx observer st := by
-  unfold storeCapabilityRef at hStep
-  simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-  have hEq := hStep.2.symm; subst hEq
-  simp only [projectState]; congr 1
-
 /-- Core: cspaceDeleteSlotCore at a non-observable CNode preserves projection. -/
 theorem cspaceDeleteSlotCore_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -1147,21 +1136,16 @@ theorem cspaceDeleteSlotCore_preserves_projection
       cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
       | error e => simp [hStore] at hStep
       | ok pair₁ =>
-        simp only [hStore] at hStep
-        cases hRef : storeCapabilityRef addr none pair₁.2 with
-        | error e => simp [hRef] at hStep
-        | ok pair₂ =>
-          simp only [hRef] at hStep; cases hStep
-          -- detachSlotFromCdt only modifies CDT (not in projection)
-          have hDetach : projectState ctx observer (SystemState.detachSlotFromCdt pair₂.2 addr) =
-              projectState ctx observer pair₂.2 := by
-            simp only [projectState, SystemState.detachSlotFromCdt]
-            split
-            · rfl
-            · congr 1
-          rw [hDetach,
-              storeCapabilityRef_preserves_projection ctx observer pair₁.2 pair₂.2 addr none hRef,
-              storeObject_preserves_projection ctx observer st pair₁.2 addr.cnode _ hAddrHigh hObjInv hStore]
+        simp only [hStore] at hStep; cases hStep
+        -- detachSlotFromCdt only modifies CDT (not in projection)
+        have hDetach : projectState ctx observer (SystemState.detachSlotFromCdt pair₁.2 addr) =
+            projectState ctx observer pair₁.2 := by
+          simp only [projectState, SystemState.detachSlotFromCdt]
+          split
+          · rfl
+          · congr 1
+        rw [hDetach,
+            storeObject_preserves_projection ctx observer st pair₁.2 addr.cnode _ hAddrHigh hObjInv hStore]
 
 /-- WS-H9: cspaceDeleteSlot at a non-observable CNode preserves projection (guarded wrapper). -/
 theorem cspaceDeleteSlot_preserves_projection
@@ -1216,7 +1200,6 @@ theorem cspaceRevoke_preserves_projection
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hL, hC] at hStep
       | cnode cn =>
         simp [hL, hC, storeObject] at hStep; cases hStep
-        rw [revokeAndClearRefsState_preserves_projectState]
         simp only [projectState]; congr 1
         · funext oid; by_cases hObs : objectObservable ctx observer oid
           · simp [projectObjects, hObs, SystemState.getObject?]
@@ -3052,7 +3035,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
   rcases lifecycleRetypeObject_ok_as_storeObject stDeleted st' authority target newObj hRetype with
     ⟨_, _, _, _, _, _, hStore⟩
   -- Propagate invExt through cspaceRevoke: cspaceRevoke does cspaceLookupSlot (preserves state)
-  -- + storeObject (preserves invExt) + revokeAndClearRefsState (preserves objects)
+  -- + storeObject (preserves invExt)
   have hObjInvRevoked : stRevoked.objects.invExt := by
     unfold cspaceRevoke SystemState.getCNode? at hRevoke
     cases hL : cspaceLookupSlot cleanup st with
@@ -3068,9 +3051,8 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
         | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hL, hC] at hRevoke
         | cnode cn =>
           simp [hL, hC, storeObject] at hRevoke; cases hRevoke
-          rw [revokeAndClearRefsState_preserves_objects]
           exact RHTable_insert_preserves_invExt st.objects _ _ hObjInv
-  -- Propagate invExt through cspaceDeleteSlot: cspaceDeleteSlot does storeObject + storeCapabilityRef + detachSlotFromCdt
+  -- Propagate invExt through cspaceDeleteSlot: cspaceDeleteSlot does storeObject + detachSlotFromCdt
   have hObjInvDeleted : stDeleted.objects.invExt := by
     unfold cspaceDeleteSlot at hDelete
     -- U-H03: Discharge CDT children guard
@@ -3089,15 +3071,11 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
           | ok pair₁ =>
             simp only [hSt] at hDelete
             have hInvPair := storeObject_preserves_objects_invExt stRevoked pair₁.2 cleanup.cnode _ hObjInvRevoked hSt
-            cases hRef : storeCapabilityRef cleanup none pair₁.2 with
-            | error e => simp [hRef] at hDelete
-            | ok pair₂ =>
-              simp only [hRef] at hDelete; cases hDelete
-              -- detachSlotFromCdt only modifies CDT, storeCapabilityRef preserves objects
-              have hRefObjs := storeCapabilityRef_preserves_objects pair₁.2 pair₂.2 cleanup none hRef
-              simp only [SystemState.detachSlotFromCdt]; split
-              · exact hRefObjs ▸ hInvPair
-              · exact hRefObjs ▸ hInvPair
+            cases hDelete
+            -- detachSlotFromCdt only modifies CDT
+            simp only [SystemState.detachSlotFromCdt]; split
+            · exact hInvPair
+            · exact hInvPair
   rw [storeObject_preserves_projection ctx observer stDeleted st' target newObj hTargetHigh hObjInvDeleted hStore,
       cspaceDeleteSlot_preserves_projection ctx observer cleanup stRevoked stDeleted hCleanupHigh hObjInvRevoked hDelete,
       cspaceRevoke_preserves_projection ctx observer cleanup st stRevoked hCleanupHigh hObjInv hRevoke]

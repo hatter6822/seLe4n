@@ -502,20 +502,11 @@ theorem step_preserves_projection
       · simp [hNull] at hOp
       simp only [hNull, Bool.false_eq_true, ↓reduceIte] at hOp
       split at hOp
-      · -- rights subset: storeObject + storeCapabilityRef
+      · -- rights subset: the store of the mutated CNode
         split at hOp
         · -- some (.cnode cn)
           next cn =>
-          split at hOp
-          · -- storeObject error
-            next e hStore => simp at hOp
-          · -- storeObject ok
-            next stMid hStore =>
-            have hProjMid := storeObject_preserves_projection ctx observer st stMid
-                addr.cnode _ hAH hObjInv hStore
-            have hProjFinal := storeCapabilityRef_preserves_projection ctx observer stMid st'
-                addr (some _) hOp
-            rw [hProjFinal, hProjMid]
+          exact storeObject_preserves_projection ctx observer st st' addr.cnode _ hAH hObjInv hOp
         · -- not a cnode
           simp at hOp
       · -- rights not subset: error

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.77.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.78.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6002,8 +6002,7 @@ code may assume:
   `rewriteObject_preserves_objectIndexLive`,
   `rewriteObject_preserves_objectIndexBounded`,
   `rewriteObject_preserves_objectIndexSetSync`,
-  `rewriteObject_preserves_objectTypeMetadataConsistent` and
-  `rewriteObject_preserves_lifecycleMetadataConsistent` in `Model/State.lean`,
+  `rewriteObject_preserves_objectTypeMetadataConsistent` in `Model/State.lean`,
   `rewriteObject_preserves_asidTableConsistent` in
   `Architecture/VSpaceInvariant.lean`, `rewriteObject_preservesFieldsOutside`
   against the one-field `rewriteObject_modifiedFields` in
@@ -6082,19 +6081,15 @@ code may assume:
   `v0.35.76` that is **enforced**: `STORE_WRITE_CODE` is a Tier 0
   `ZERO_METRICS` entry, those six bodies are `WRITE_PRIMITIVE_BODIES`,
   reconciled in both directions, and a raw write reappearing in an
-  executable position fails on the day it is written).  Since `v0.35.77` (D2)
-  `storeObject`'s own capability-reference maintenance is an **erase over the
-  displaced CNode's populated slots** rather than a filter over the whole
-  table (`capabilityRefs_eraseFold_preserves_invExtK` is its half of
-  `storeObject_preserves_allTablesInvExtK`, and
-  `storeObject_capabilityRefs_of_not_cnode` states the payoff: a non-CNode
-  store at a key holding no CNode leaves the table structurally unchanged,
-  where every IPC-path store used to pay `O(|capabilityRefs|)`), and the
-  register row is **closed**.  What landing it found is its own row
-  (`docs/REGISTERED_DEBT.md`, table C): the table is read by no executable
-  code, and `capabilityRefMetadataConsistent` — the invariant named for it —
-  reads the object store instead, so it is definitionally true and its
-  `storeObject` preservation proof consumes no hypothesis.  (6) **A transition that rewrites a TCB it is
+  executable position fails on the day it is written).  At `v0.35.77` (D2)
+  `storeObject`'s capability-reference maintenance became an erase over the
+  displaced CNode's populated slots rather than a filter over the whole
+  table, and the register row was **closed**; what landing it found — the
+  table was read by no executable code, and `capabilityRefMetadataConsistent`,
+  the invariant named for it, read the object store instead, so it was
+  definitionally true and its `storeObject` preservation proof consumed no
+  hypothesis — is closed at `v0.35.78` by **retiring the table** (the
+  *capability-reference table* bullet below).  (6) **A transition that rewrites a TCB it is
   handed takes the store's witness for it.**  `timerTickBudget` /
   `timerTickBudgetOnCore` (`v0.35.67`) take `(hTcb : st.getTcb? tid = some tcb)`
   beside the TCB — the proof `rewriteAdmissible_tcb` consumes, erased at runtime —
@@ -6151,6 +6146,50 @@ code may assume:
   `tid.toObjId ≠ scId.toObjId`, because the rewrite fires only at a key
   holding a TCB and reaches no SchedContext at any key — the one way that
   security statement could have been vacuous is gone with the hypothesis.
+- **There is no capability-reference table** (`v0.35.78`, closing the row
+  `v0.35.77` registered).  `LifecycleMetadata` is the object-type table alone,
+  `lifecycleInvariantBundle` is `objectTypeMetadataConsistent` under two names
+  (`lifecycleIdentityTypeExact`, `lifecycleIdentityAliasingInvariant`),
+  `IntermediateState.hLifecycleConsistent` is that predicate of the builder
+  state, and a slot's target is read through `lookupSlotCap` — the one
+  slot-target reader, `O(1)`, which yields the whole capability.  The register
+  row's remedy said *wire or retire, and the rule says wire*; the decision was
+  **retire, on measurement**.  `lookupCapabilityRefMeta`, the reader the table
+  was named for, had been `(lookupSlotCap st ref).map Capability.target` since
+  the repository's root, so no executable code had ever read the table; every
+  slot-target query in the tree holds or fetches the CNode already; the one
+  consumer the remedy proposed — a revocation sweep over a *target* — is a
+  target→slots question a table keyed by slot cannot answer; the boot builder
+  installed populated CNodes without ever populating it; the frozen mirror
+  never maintained it; and every CNode store paid a fold over the CNode's slots
+  for it.  A cache nothing reads is not a cache, and *implement the
+  improvement* has no improvement to implement when no reader can be named.
+  Four things new code must respect.  (1) **A conjunct whose proof consumes
+  no hypothesis is deleted, and so is everything stated over it**:
+  `capabilityRefMetadataConsistent`, the bundle-of-one
+  `lifecycleMetadataConsistent`, the lifecycle capability-reference and
+  stale-reference families (`lifecycleCapabilityRefExact` through
+  `lifecycleIdentityStaleReferenceInvariant`), the capability layer's
+  `lifecycleCapabilityStaleAuthorityInvariant`, the policy surface's
+  owner-authority implication (`policyOwnerAuthorityRefRecorded →
+  policyOwnerAuthoritySlotPresent`) and the builders' `withLifecycleCapabilityRef`
+  — each an instance of `x = x`, of lookup determinism or of
+  `objectTypeMetadataConsistent` — with Tier 3 refusing every name tree-wide.
+  (2) **`storeObject`'s lifecycle write is the object-type insert alone**, so
+  a CNode store is `O(1)` on the lifecycle side rather than a fold over its
+  slots, and `allTablesInvExtK` is **sixteen** conjuncts: the positional
+  projections in `Builder.lean`, `Boot.lean`, `FreezeProofs.lean` and
+  `IdleEnqueue.lean` shifted by one at every position past the sixth, which
+  is the fragility their docstrings already record.  (3) **The capability
+  operations store once**: `cspaceInsertSlot`, `cspaceRevoke` and
+  `cspaceMutate` end in `storeObject`, `cspaceDeleteSlotCore` in the store
+  then `detachSlotFromCdt`; the second writer `storeCapabilityRef` and the
+  fused `revokeAndClearRefsState` are gone, and a proof over one of these
+  operations is one `storeObject_*` frame lemma rather than a composition of
+  two.  (4) **The one substantive fact the layer had restated is owned where
+  it always was**: a reply cap is backed iff its Reply resolves, which is the
+  capability layer's step-preserved `replyCapPointsToValidReply`, exhibited
+  by `replyCapPointsToValidReply_distinguishes_backed_and_dangling`.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at
