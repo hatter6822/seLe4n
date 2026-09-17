@@ -591,7 +591,7 @@
   "SeLe4n/Kernel/Architecture/Invariant.lean": 6
  },
  "h16AuthSlot": {
-  "tests/NegativeStateSuite.lean": 10
+  "tests/NegativeStateSuite.lean": 8
  },
  "h16BadAuthSlot": {
   "tests/NegativeStateSuite.lean": 2
@@ -600,13 +600,13 @@
   "tests/NegativeStateSuite.lean": 2
  },
  "h16CleanupSlot": {
-  "tests/NegativeStateSuite.lean": 3
+  "tests/NegativeStateSuite.lean": 2
  },
  "h16CnodeId": {
   "tests/NegativeStateSuite.lean": 9
  },
  "h16DeviceAuthSlot": {
-  "tests/NegativeStateSuite.lean": 3
+  "tests/NegativeStateSuite.lean": 2
  },
  "h16DeviceCnodeId": {
   "tests/NegativeStateSuite.lean": 4
@@ -615,10 +615,10 @@
   "tests/NegativeStateSuite.lean": 2
  },
  "h16DeviceUntypedId": {
-  "tests/NegativeStateSuite.lean": 6
+  "tests/NegativeStateSuite.lean": 5
  },
  "h16ExhaustedAuthSlot": {
-  "tests/NegativeStateSuite.lean": 3
+  "tests/NegativeStateSuite.lean": 2
  },
  "h16ExhaustedCnodeId": {
   "tests/NegativeStateSuite.lean": 4
@@ -627,7 +627,7 @@
   "tests/NegativeStateSuite.lean": 2
  },
  "h16ExhaustedUntypedId": {
-  "tests/NegativeStateSuite.lean": 6
+  "tests/NegativeStateSuite.lean": 5
  },
  "h16MismatchState": {
   "tests/NegativeStateSuite.lean": 2
@@ -639,7 +639,7 @@
   "tests/NegativeStateSuite.lean": 8
  },
  "h16TargetId": {
-  "tests/NegativeStateSuite.lean": 17
+  "tests/NegativeStateSuite.lean": 14
  },
  "h16TcbId": {
   "tests/NegativeStateSuite.lean": 3
