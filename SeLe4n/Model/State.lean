@@ -2050,18 +2050,32 @@ theorem storeObject_preserves_allObjectLocksUnheld (st : SystemState)
       rw [hOff] at hLookup
       exact hInv.2 id' o hLookup
 
-/-- S4-B: `storeObject` preserves `objectCount_le_maxObjects` — overwriting an
-    existing object does not increase the object index length, and inserting
-    a new object increments it by at most 1 (which is bounded by the
-    allocation-time capacity check in `retypeFromUntyped`). -/
-theorem storeObject_preserves_objectIndexBounded
+/-- The store adds at most one index entry: a key already in the index leaves
+    it alone, a new key is consed onto it.  Hypothesis-free — the bound is a
+    fact about the write, not about the pre-state's capacity — so a pure
+    transition built on `withObjectStored` (the boot's idle enqueue, through
+    `withObjectStored_objectIndex_length_le`) can read it without carrying
+    `objectIndexBounded`, which it neither has nor needs. -/
+theorem storeObject_objectIndex_length_le
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
-    (_hBound : objectIndexBounded st)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.objectIndex.length ≤ st.objectIndex.length + 1 := by
   unfold storeObject at hStore; cases hStore
   simp only
   split <;> simp [List.length] <;> omega
+
+/-- S4-B: `storeObject` preserves `objectCount_le_maxObjects` — overwriting an
+    existing object does not increase the object index length, and inserting
+    a new object increments it by at most 1 (which is bounded by the
+    allocation-time capacity check in `retypeFromUntyped`).  The bound itself
+    is `storeObject_objectIndex_length_le`; this is its instance at a bounded
+    pre-state, kept under the name its consumers cite. -/
+theorem storeObject_preserves_objectIndexBounded
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (_hBound : objectIndexBounded st)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objectIndex.length ≤ st.objectIndex.length + 1 :=
+  storeObject_objectIndex_length_le st st' id obj hStore
 
 /-- AC3-E / F-03: Capacity-checked variant of `storeObject`. Rejects new object
     insertions that would exceed `maxObjects`. Updates to existing objects are
@@ -5740,6 +5754,16 @@ theorem withObjectStored_preserves_lifecycleMetadataConsistent (st : SystemState
     lifecycleMetadataConsistent (st.withObjectStored id obj) :=
   storeObject_preserves_lifecycleMetadataConsistent st _ id obj hC hInv hObjTypesInv
     (storeObject_eq_withObjectStored st id obj)
+
+theorem withObjectStored_preserves_allTablesInvExtK (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) (hAll : st.allTablesInvExtK) :
+    (st.withObjectStored id obj).allTablesInvExtK :=
+  storeObject_preserves_allTablesInvExtK st _ id obj hAll (storeObject_eq_withObjectStored st id obj)
+
+theorem withObjectStored_objectIndex_length_le (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) :
+    (st.withObjectStored id obj).objectIndex.length ≤ st.objectIndex.length + 1 :=
+  storeObject_objectIndex_length_le st _ id obj (storeObject_eq_withObjectStored st id obj)
 
 end SystemState
 

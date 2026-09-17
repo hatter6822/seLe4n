@@ -1264,7 +1264,7 @@ private def runPerCoreIdleDispatchTrace : IO Unit := do
   let idleTid := SeLe4n.Kernel.idleThreadId bootCoreId
   let stIdle : SystemState :=
     (BootstrapBuilder.empty.withObject idleTid.toObjId
-      (.tcb (SeLe4n.Platform.Boot.createIdleThread bootCoreId))).build
+      (.tcb (SeLe4n.Kernel.createIdleThread bootCoreId))).build
   IO.println s!"[IDLE-001] boot-core idle thread installed (id): {reprStr idleTid.toNat}"
   IO.println s!"[IDLE-002] pre-dispatch current: {reprStr ((stIdle.scheduler.currentOnCore bootCoreId).map SeLe4n.ThreadId.toNat)}"
   IO.println s!"[IDLE-003] idle dispatchable on boot core: {reprStr (SeLe4n.Kernel.idleDispatchableOnCore stIdle bootCoreId)}"

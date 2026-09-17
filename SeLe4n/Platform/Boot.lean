@@ -14,6 +14,10 @@ import SeLe4n.Kernel.API
 -- the per-core dispatcher can reference them; the boot installers below consume
 -- them.  Explicit import (also reachable transitively via `Kernel.API`).
 import SeLe4n.Kernel.Scheduler.IdleThread
+-- v0.35.68: the production boot's idle install IS the kernel model's enqueue —
+-- `enqueueIdleThread` below runs `enqueueIdleThreadOnCore` on the intermediate
+-- state's `state`, so the module holding that operation sits upstream of here.
+import SeLe4n.Kernel.Scheduler.Operations.IdleEnqueue
 -- WS-RC R3 (DEEP-BOOT-01): boot-VSpaceRoot threading reaches into the
 -- canonical RPi5 boot root + boot-safety predicate so that
 -- `bootSafeObjectCheck` can admit a well-formed boot VSpaceRoot.
@@ -917,8 +921,9 @@ def bootObjectReferencesReservedIdleSlot (obj : KernelObject) : Bool :=
     duplicate object id.
 
     The production boot (`bootFromPlatformCheckedWithIdleThreads`) installs an
-    idle TCB at every one of those slots through `Builder.createObject`, whose
-    insert *overwrites* on key collision.  Without this check an otherwise valid
+    idle TCB at every one of those slots through the kernel model's own enqueue
+    (`enqueueIdleThreadOnCore`, a store), whose insert *overwrites* on key
+    collision.  Without this check an otherwise valid
     config that placed an object there was accepted by the checked boot and then
     silently lost that object to the idle fold — the preservation theorem
     (`bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects`) was
@@ -2664,10 +2669,14 @@ theorem bootFromPlatform_scheduler_eq (config : PlatformConfig) :
 -- `_toObjId_ne`) were moved upstream to `SeLe4n.Kernel.Scheduler.IdleThread`
 -- (namespace `SeLe4n.Kernel`) so the per-core dispatcher `scheduleEffectiveOnCore`
 -- (`Scheduler/Operations/Core.lean`, upstream of `Platform.Boot`) can run a
--- core's idle thread.  They resolve unqualified here via `open SeLe4n.Kernel`.
--- The idle *TCB constructor* (`createIdleThread`) and the boot *installers*
--- (`installIdleThread`, `bootFromPlatformWithIdleThreads`) stay below — they
--- need the `IntermediateState` / `Builder` machinery.
+-- core's idle thread.  v0.35.68 moved the idle *TCB* there too
+-- (`createIdleThread`, `queuedIdleThread`, and their field lemmas), because the
+-- kernel model's enqueue (`enqueueIdleThreadOnCore`,
+-- `Scheduler/Operations/IdleEnqueue.lean`) builds the TCB it stores and is now
+-- what the production boot runs.  All of it resolves unqualified here via
+-- `open SeLe4n.Kernel`.  Only the boot *installers* (`installIdleThread`,
+-- `bootFromPlatformWithIdleThreads`, `enqueueIdleThread`) stay below — they
+-- carry the `IntermediateState` witnesses through the write.
 
 -- ============================================================================
 -- WS-SM SM4.E.2: SMP-shape boot witness (replaces the retired
@@ -2739,64 +2748,9 @@ theorem bootFromPlatform_smp_witness
 -- WS-SM SM4.G: per-core idle-thread bootstrap (plan §3.7)
 -- ============================================================================
 
-/-- **WS-SM SM4.G** (plan §3.7) / **WS-SM SM5.E.2** (plan §3.5): the per-core
-    idle thread control block.
-
-    Idle threads are the lowest-priority threads each core runs when nothing
-    else is runnable.  Fields: `priority := ⟨0⟩` (lowest, so any runnable user
-    thread always outranks idle — idle never starves a higher-priority thread),
-    `domain := ⟨0⟩` (the boot active domain, so `currentThreadInActiveDomain`
-    holds when the idle thread is current), `threadState := .Running` (it is the
-    running thread when scheduled), `tid := idleThreadId c` (the per-core
-    identity), and — **SM5.E.2** — `cpuAffinity := some c`: the idle thread is
-    **pinned to its own core**.
-
-    The affinity binding is the SM5.E.2 improvement.  `createIdleThread`
-    predates `TCB.cpuAffinity` (which landed at SM5.B.4); now that the field
-    exists, binding the idle thread to `some c` is what makes
-    `idleThread_core_locality`
-    (`Scheduler/Operations/PerCoreIdle.lean`) a *substantive* theorem rather
-    than a frame fact: a thread bound to `some c` is not admitted onto any other
-    core `c' ≠ c` (`affinityAdmitsCore`), so core `c`'s idle thread can never
-    appear on core `c'`'s run queue.  `cspaceRoot` / `vspaceRoot` are
-    `ObjId.sentinel`: an idle thread runs in kernel context and holds no
-    capabilities, so it has no CSpace/VSpace root (this is semantically
-    faithful, and the scheduler invariants never read these fields).  All other
-    fields take their structure defaults. -/
-def createIdleThread (c : SeLe4n.Kernel.Concurrency.CoreId) : TCB :=
-  { tid          := idleThreadId c
-    priority     := ⟨0⟩
-    domain       := ⟨0⟩
-    cspaceRoot   := SeLe4n.ObjId.sentinel
-    vspaceRoot   := SeLe4n.ObjId.sentinel
-    ipcBuffer    := default
-    threadState  := .Running
-    cpuAffinity  := some c }
-
-/-- **WS-RR RR5.11** (PR #889 review): the idle TCB as it is **enqueued** —
-    `createIdleThread c` with `threadState := .Ready`.
-
-    `createIdleThread` is the *dispatched* form: SM4.G's `installIdleThread`
-    points a core's current slot at it, so `.Running` is the state the
-    classification infers for it (`inferThreadState`: current on some core).  The
-    production boot (`enqueueIdleThread`) does the opposite — it puts idle on the
-    core's run queue and leaves the current slot `none` — and the classification
-    infers `.Ready` for a queued, non-current thread.  Storing the dispatched form
-    on the enqueue path made every successful production boot violate
-    `threadStateConsistent` on every core, which the harness never saw because
-    `assertStateInvariantsFor` syncs the field before it checks it.  The stored
-    field now says what the state says
-    (`bootFromPlatformCheckedWithIdleThreads_idle_threadState`).
-
-    Every other field is `createIdleThread`'s, so the enqueue-side theorems that
-    read priority, domain, affinity or id go through by `rfl` exactly as before. -/
-def queuedIdleThread (c : SeLe4n.Kernel.Concurrency.CoreId) : TCB :=
-  { createIdleThread c with threadState := .Ready }
-
-/-- **WS-RR RR5.11**: the queued idle TCB's state is `.Ready` — the fact the
-    consistency theorem rewrites with. -/
-theorem queuedIdleThread_threadState (c : SeLe4n.Kernel.Concurrency.CoreId) :
-    (queuedIdleThread c).threadState = .Ready := rfl
+-- The idle TCB (`createIdleThread`, the dispatched form; `queuedIdleThread`, the
+-- enqueued form) is defined in `SeLe4n.Kernel.Scheduler.IdleThread` since
+-- v0.35.68 — see the banner above.
 
 /-- **WS-SM SM4.G** (plan §3.7): install core `c`'s idle thread into a boot
     `IntermediateState` — create the idle TCB in the object store (via the
@@ -3198,26 +3152,31 @@ theorem foldl_installIdleThread_domainSchedule
 -- ============================================================================
 
 /-- **WS-RR RR5.11**: install core `c`'s idle TCB into a boot `IntermediateState`
-    and **enqueue it on core `c`'s own run queue**.
+    and **enqueue it on core `c`'s own run queue** — by running the kernel
+    model's own enqueue, `enqueueIdleThreadOnCore`
+    (`Scheduler/Operations/IdleEnqueue.lean`), on the intermediate state's
+    `state`, and carrying the four structural witnesses through it with that
+    operation's own preservation theorems.
 
-    The operation `installIdleThread` is not.  That one creates the idle TCB and
-    points core `c`'s *current* slot at it; it never touches `runQueueOnCore`, so
-    on the state it produces `idleThreadEnqueuedOnCore` — the premise
-    `chooseThreadOnCore_always_succeeds` consumes and `schedulerNoStall_smp`
-    takes by hypothesis — is **false** on every core.  `enqueueIdleThreadOnCore`
-    (`Scheduler/Operations/PerCoreIdle.lean`) does the right thing but exists
-    only over `SystemState`, which the boot path does not have: boot builds an
-    `IntermediateState`, whose four structural witnesses have to carry through
-    every write.  So there was no operation that put a boot idle thread on its
-    own core's queue, and the no-stall guarantee had no reachable state.
+    **One body, not two** (`v0.35.68`).  Until then this was a second
+    implementation of the same operation — `Builder.createObject` for the TCB
+    and a hand-written run-queue write — held to the kernel model's by a
+    docstring sentence ("mirrors `enqueueIdleThreadOnCore` … definitionally
+    parallel"), which was true of `objects` and the run queue and false of the
+    bookkeeping: the builder skips `capabilityRefs` and `asidTable`, the store
+    (`withObjectStored`) filters the one and maintains the other.  On a
+    successful checked boot both are inert — `capabilityRefs` is the default's
+    throughout boot (`bootFromPlatform_capabilityRefs_eq`) and an idle slot is
+    fresh (`bootFromPlatformChecked_ok_idleSlotsFreshAt`) — so the derivation
+    changes no boot state, which is exactly the case in which a derivation is
+    taken rather than a pin.  `enqueueIdleThread_state` is the definitional
+    equation; every frame below is an instance of the kernel model's.
 
-    This is that operation: `Builder.createObject` for the TCB — the **queued**
-    form `queuedIdleThread`, whose `threadState` is `.Ready`, because a thread on
-    a run queue and in no current slot is what the classification calls `.Ready`
-    (PR #889 review) — (so
-    `allTablesInvExtK`, the per-object CNode-slot and VSpace-mapping invariants
-    and the lifecycle metadata all carry forward exactly as for
-    `installBootVSpaceRoot`), then core `c`'s run-queue slot.
+    The operation `installIdleThread` is not this.  That one creates the idle
+    TCB and points core `c`'s *current* slot at it; it never touches
+    `runQueueOnCore`, so on the state it produces `idleThreadEnqueuedOnCore` —
+    the premise `chooseThreadOnCore_always_succeeds` consumes and
+    `schedulerNoStall_smp` takes by hypothesis — is **false** on every core.
 
     **It deliberately does not write `currentOnCore`.**  Writing both would make
     the boot state violate `queueCurrentConsistent`, which says a core's current
@@ -3229,69 +3188,46 @@ theorem foldl_installIdleThread_domainSchedule
     dispatching idle at boot without enqueuing it — is what `installIdleThread`
     does, and it is exactly the state on which the no-stall premise fails.
 
-    The `remove`-then-`insert` mirrors `enqueueIdleThreadOnCore`: on a fresh boot
-    queue `remove` is a no-op, and keeping the two operations definitionally
-    parallel means a re-enqueue refreshes idle's priority bucket to `0` rather
-    than leaving a stale one (`RunQueue.insert` is an identity for existing
-    members). -/
+    The stored TCB is the **queued** form `queuedIdleThread`, whose `threadState`
+    is `.Ready`, because a thread on a run queue and in no current slot is what
+    the classification calls `.Ready` (PR #889 review). -/
 def enqueueIdleThread (ist : IntermediateState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId) : IntermediateState :=
-  let withTcb : IntermediateState :=
-    Builder.createObject ist (idleThreadId c).toObjId
-      (KernelObject.tcb (queuedIdleThread c))
-      (fun _ hEq => by cases hEq) (fun _ hEq => by cases hEq)
-  { state := { withTcb.state with
-      scheduler := withTcb.state.scheduler.setRunQueueOnCore c
-        (((withTcb.state.scheduler.runQueueOnCore c).remove (idleThreadId c)).insert
-          (idleThreadId c) (queuedIdleThread c).priority) }
-    -- Three of `allTablesInvExtK`'s seventeen conjuncts are the **boot core's
-    -- run-queue tables** (`byPriority`, `threadPriority`, `membership.table`),
-    -- so unlike `installIdleThread` — whose `setCurrentOnCore` write leaves
-    -- every table alone — this witness cannot transport by defeq.  It does not
-    -- have to be re-derived either: `RunQueue` is a structure that *carries*
-    -- those three proofs as fields, so `remove` and `insert` hand the new queue
-    -- back with its own invariants already discharged, and the three conjuncts
-    -- are field projections on whatever queue the boot core ends up with.  The
-    -- other fourteen come from `withTcb`.
-    hAllTables := by
-      have h := withTcb.hAllTables
-      unfold SystemState.allTablesInvExtK at h ⊢
-      refine ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
-        h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-        h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
-        h.2.2.2.2.2.2.2.2.2.2.2.1, ?_, ?_,
-        h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, ?_,
-        h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
-      · exact SeLe4n.Kernel.RunQueue.byPrio_invExtK _
-      · exact SeLe4n.Kernel.RunQueue.threadPrio_invExtK _
-      · exact SeLe4n.Kernel.RunQueue.mem_invExtK _
-    hPerObjectSlots := by
-      intro oid cn hLookup
-      exact withTcb.hPerObjectSlots oid cn hLookup
-    hPerObjectMappings := by
-      intro oid vs hLookup
-      exact withTcb.hPerObjectMappings oid vs hLookup
-    hLifecycleConsistent := by
-      rcases withTcb.hLifecycleConsistent with ⟨hObjType, hCapRef⟩
-      exact ⟨hObjType, hCapRef⟩ }
+    (c : SeLe4n.Kernel.Concurrency.CoreId) : IntermediateState where
+  state := enqueueIdleThreadOnCore ist.state c
+  hAllTables := enqueueIdleThreadOnCore_preserves_allTablesInvExtK ist.state c ist.hAllTables
+  hPerObjectSlots := enqueueIdleThreadOnCore_preserves_perObjectSlotsInvariant ist.state c
+    ist.hAllTables.1.1 ist.hPerObjectSlots
+  hPerObjectMappings := enqueueIdleThreadOnCore_preserves_perObjectMappingsInvariant ist.state c
+    ist.hAllTables.1.1 ist.hPerObjectMappings
+  hLifecycleConsistent := enqueueIdleThreadOnCore_preserves_lifecycleMetadataConsistent
+    ist.state c ist.hAllTables ist.hLifecycleConsistent
 
-/-- **WS-RR RR5.11** (frame): the enqueue's object-store write — the analogue of
-    `installIdleThread_objects`, definitional for the same reason (the scheduler
-    record update leaves `objects` untouched). -/
+/-- **v0.35.68** (the derivation, pinned): the boot's idle install *is* the
+    kernel model's enqueue on the intermediate state's `state`.  Definitional —
+    and decisive: a second body here, however faithfully it mirrored the
+    kernel model's, would not be `rfl` to it. -/
+theorem enqueueIdleThread_state (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (enqueueIdleThread ist c).state = enqueueIdleThreadOnCore ist.state c := rfl
+
+/-- **WS-RR RR5.11** (frame): the enqueue's object-store write — the kernel
+    model's `enqueueIdleThreadOnCore_objects`, at the boot's state. -/
 theorem enqueueIdleThread_objects (ist : IntermediateState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
     (enqueueIdleThread ist c).state.objects =
       ist.state.objects.insert (idleThreadId c).toObjId
-        (KernelObject.tcb (queuedIdleThread c)) := rfl
+        (KernelObject.tcb (queuedIdleThread c)) :=
+  enqueueIdleThreadOnCore_objects ist.state c
 
-/-- **WS-RR RR5.11** (frame): the enqueue's scheduler write — the analogue of
-    `installIdleThread_scheduler`. -/
+/-- **WS-RR RR5.11** (frame): the enqueue's scheduler write — the kernel model's
+    `enqueueIdleThreadOnCore_scheduler`, at the boot's state. -/
 theorem enqueueIdleThread_scheduler (ist : IntermediateState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
     (enqueueIdleThread ist c).state.scheduler =
       ist.state.scheduler.setRunQueueOnCore c
         (((ist.state.scheduler.runQueueOnCore c).remove (idleThreadId c)).insert
-          (idleThreadId c) (queuedIdleThread c).priority) := rfl
+          (idleThreadId c) (queuedIdleThread c).priority) :=
+  enqueueIdleThreadOnCore_scheduler ist.state c
 
 /-- **WS-RR RR5.11**: after the enqueue, core `c`'s run queue is the old one with
     idle `c` inserted at priority `0`. -/
@@ -3299,9 +3235,8 @@ theorem enqueueIdleThread_runQueueOnCore_self (ist : IntermediateState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
     (enqueueIdleThread ist c).state.scheduler.runQueueOnCore c =
       ((ist.state.scheduler.runQueueOnCore c).remove (idleThreadId c)).insert
-        (idleThreadId c) (queuedIdleThread c).priority := by
-  rw [enqueueIdleThread_scheduler]
-  exact SchedulerState.setRunQueueOnCore_runQueueOnCore_self _ _ _
+        (idleThreadId c) (queuedIdleThread c).priority :=
+  enqueueIdleThreadOnCore_runQueueOnCore_self ist.state c
 
 /-- **WS-RR RR5.11** (cross-core frame, the analogue of
     `installIdleThread_currentOnCore_ne`): enqueuing idle `c` leaves every
@@ -3311,9 +3246,8 @@ theorem enqueueIdleThread_runQueueOnCore_self (ist : IntermediateState)
 theorem enqueueIdleThread_runQueueOnCore_ne (ist : IntermediateState)
     (c c' : SeLe4n.Kernel.Concurrency.CoreId) (h : c ≠ c') :
     (enqueueIdleThread ist c).state.scheduler.runQueueOnCore c' =
-      ist.state.scheduler.runQueueOnCore c' := by
-  rw [enqueueIdleThread_scheduler]
-  exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ h
+      ist.state.scheduler.runQueueOnCore c' :=
+  enqueueIdleThreadOnCore_runQueueOnCore_ne ist.state c c' h
 
 /-- **WS-RR RR5.11** (frame): the enqueue writes no core's *current* slot.  This
     is the frame that keeps `queueCurrentConsistent` true of the boot state — see
@@ -3322,43 +3256,37 @@ theorem enqueueIdleThread_runQueueOnCore_ne (ist : IntermediateState)
 theorem enqueueIdleThread_currentOnCore (ist : IntermediateState)
     (c c' : SeLe4n.Kernel.Concurrency.CoreId) :
     (enqueueIdleThread ist c).state.scheduler.currentOnCore c' =
-      ist.state.scheduler.currentOnCore c' := by
-  rw [enqueueIdleThread_scheduler]
-  exact SchedulerState.setRunQueueOnCore_currentOnCore _ _ _ _
+      ist.state.scheduler.currentOnCore c' :=
+  enqueueIdleThreadOnCore_currentOnCore ist.state c c'
 
 /-- **WS-RR RR5.11** (frame): the enqueue writes no core's active domain. -/
 theorem enqueueIdleThread_activeDomainOnCore (ist : IntermediateState)
     (c c' : SeLe4n.Kernel.Concurrency.CoreId) :
     (enqueueIdleThread ist c).state.scheduler.activeDomainOnCore c' =
-      ist.state.scheduler.activeDomainOnCore c' := by
-  rw [enqueueIdleThread_scheduler]
-  exact SchedulerState.setRunQueueOnCore_activeDomainOnCore _ _ _ _
+      ist.state.scheduler.activeDomainOnCore c' :=
+  enqueueIdleThreadOnCore_activeDomainOnCore ist.state c c'
 
 /-- **WS-RR RR5.11** (frame): the enqueue frames the machine state. -/
 theorem enqueueIdleThread_machine (ist : IntermediateState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
-    (enqueueIdleThread ist c).state.machine = ist.state.machine := rfl
+    (enqueueIdleThread ist c).state.machine = ist.state.machine :=
+  enqueueIdleThreadOnCore_machine ist.state c
 
 /-- **WS-RR RR5.11**: after the enqueue, core `c`'s idle slot holds the idle
     TCB — the analogue of `installIdleThread_objects_self`. -/
 theorem enqueueIdleThread_objects_self (ist : IntermediateState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
     (enqueueIdleThread ist c).state.objects[(idleThreadId c).toObjId]? =
-      some (KernelObject.tcb (queuedIdleThread c)) := by
-  rw [enqueueIdleThread_objects]
-  have hObjK : ist.state.objects.invExtK := ist.hAllTables.1
-  exact RHTable.getElem?_insert_self ist.state.objects (idleThreadId c).toObjId _ hObjK.1
+      some (KernelObject.tcb (queuedIdleThread c)) :=
+  enqueueIdleThreadOnCore_objects_self ist.state c ist.hAllTables.1.1
 
 /-- **WS-RR RR5.11**: the enqueue frames the object-store slot of any *distinct*
     ObjId — the analogue of `installIdleThread_objects_ne`. -/
 theorem enqueueIdleThread_objects_ne (ist : IntermediateState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) (oid : SeLe4n.ObjId)
     (h : (idleThreadId c).toObjId ≠ oid) :
-    (enqueueIdleThread ist c).state.objects[oid]? = ist.state.objects[oid]? := by
-  rw [enqueueIdleThread_objects]
-  have hObjK : ist.state.objects.invExtK := ist.hAllTables.1
-  have hNe : ¬(((idleThreadId c).toObjId == oid) = true) := fun heq => h (eq_of_beq heq)
-  exact RHTable.getElem?_insert_ne ist.state.objects (idleThreadId c).toObjId oid _ hNe hObjK.1
+    (enqueueIdleThread ist c).state.objects[oid]? = ist.state.objects[oid]? :=
+  enqueueIdleThreadOnCore_objects_ne ist.state c oid ist.hAllTables.1.1 h
 
 /-- **WS-RR RR5.11** (fold frame): folding `enqueueIdleThread` over a list of
     cores all distinct from `c` frames core `c`'s run queue. -/
@@ -3911,9 +3839,7 @@ theorem bootFromPlatformChecked_ok_declaredCoreCount (config : PlatformConfig)
 theorem enqueueIdleThread_objectIndex_length_le (ist : IntermediateState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
     (enqueueIdleThread ist c).state.objectIndex.length ≤ ist.state.objectIndex.length + 1 :=
-  createObject_objectIndex_length_le ist (idleThreadId c).toObjId
-    (KernelObject.tcb (queuedIdleThread c)) (fun _ hEq => by cases hEq)
-    (fun _ hEq => by cases hEq)
+  enqueueIdleThreadOnCore_objectIndex_length_le ist.state c
 
 /-- ...so the fold adds at most one per core. -/
 theorem foldl_enqueueIdleThread_objectIndex_length_le

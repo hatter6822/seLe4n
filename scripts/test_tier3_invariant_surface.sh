@@ -2849,7 +2849,7 @@ run_check "INVARIANT" rg -n '^theorem getSchedContextWitnessed\?_val\b' SeLe4n/M
 # theorem may case on a lookup this way elsewhere; these files are where
 # the executable rewrite sites live, and the mutation this refuses keeps the
 # match and makes it dependent again.
-run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean
+run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean
 # The scheduler's context-save family and the affinity op are the typed rewrite,
 # or the witnessed lookup around `rewriteObject` -- bounded to each declaration.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.updateTcb outTid fun outTcb" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
@@ -2952,12 +2952,61 @@ run_check "INVARIANT" rg -n '^theorem timerTickChargeCurrentOnCore_none\b' SeLe4
 run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCorePreempts \(st : SystemState\) \(c : CoreId\) \(tid : SeLe4n\.ThreadId\)\n    \(tcb : TCB\) \(hTcb : st\.getTcb\? tid = some tcb\) : Prop :=" SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean'
 # The idle enqueue is a STORE -- the key may hold nothing, and a store is what
 # registers a new object in the index -- with the run-queue write beside it.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThreadOnCore \(st : SystemState\) \(c : CoreId\) : SystemState :=\n  \{ st\.withObjectStored \(idleThreadId c\)\.toObjId \(KernelObject\.tcb \(queuedIdleThread c\)\) with" SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThreadOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThreadOnCore \(st : SystemState\) \(c : CoreId\) : SystemState :=\n  \{ st\.withObjectStored \(idleThreadId c\)\.toObjId \(KernelObject\.tcb \(queuedIdleThread c\)\) with" SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThreadOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean'
 # The timer suite charges a thread the fixture STORES and resolves it through
 # the witnessed lookup; a TCB fabricated beside the state cannot be charged.
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def budgetPreempts \(st : SystemState\) \(c : CoreId\) \(tid : SeLe4n\.ThreadId\) : Bool :=\n  match st\.getTcbWitnessed\? tid with" tests/SmpTimerSuite.lean'
 run_negative_check "INVARIANT" rg -n 'timerTickBudgetOnCore \S+ \S+ \S+ \(mkUnboundTcb' tests/SmpTimerSuite.lean
+
+# ============================================================================
+# v0.35.68 -- the boot's idle install IS the kernel model's enqueue
+# ============================================================================
+#
+# `Platform.Boot.enqueueIdleThread` used to be a second body of
+# `enqueueIdleThreadOnCore` -- `Builder.createObject` plus a hand-written
+# run-queue write, held to the kernel model's body by a docstring sentence and
+# differing from it in the bookkeeping fields.  It is now that operation on the
+# intermediate state's `state`, with the four `IntermediateState` witnesses the
+# operation's own theorems.  The definition therefore moved to a production
+# module upstream of the boot (`Operations/IdleEnqueue.lean`), and the idle TCB
+# to `Scheduler/IdleThread.lean` beside its identities.
+#
+# The boot's state field is the kernel-model call -- the exact spelling, and the
+# definitional equation that pins it.  A second body, however faithful, is not
+# `rfl` to the kernel model's, so the mutation that decides this keeps every
+# token and rebuilds the state field by hand.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThread \(ist : IntermediateState\)\n    \(c : SeLe4n\.Kernel\.Concurrency\.CoreId\) : IntermediateState where\n  state := enqueueIdleThreadOnCore ist\.state c\n" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem enqueueIdleThread_state \(ist : IntermediateState\)[^\n]*(\n([ \t][^\n]*)?)*\(enqueueIdleThread ist c\)\.state = enqueueIdleThreadOnCore ist\.state c := rfl$" SeLe4n/Platform/Boot.lean'
+# NEGATIVE: the boot's idle install builds no object of its own and writes no
+# table raw -- bounded to the declaration, so a builder call or a raw insert
+# reintroduced anywhere in its body fires.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThread \(ist : IntermediateState\)[^\n]*(\n([ \t][^\n]*)?)*(Builder\.createObject|objects\.insert|setRunQueueOnCore)" SeLe4n/Platform/Boot.lean'
+# The four witnesses are stated of the operation, once, where it is defined; the
+# boot reads them rather than re-deriving them.
+run_check "INVARIANT" rg -n '^theorem enqueueIdleThreadOnCore_preserves_allTablesInvExtK\b' SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean
+run_check "INVARIANT" rg -n '^theorem enqueueIdleThreadOnCore_preserves_perObjectSlotsInvariant\b' SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean
+run_check "INVARIANT" rg -n '^theorem enqueueIdleThreadOnCore_preserves_perObjectMappingsInvariant\b' SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean
+run_check "INVARIANT" rg -n '^theorem enqueueIdleThreadOnCore_preserves_lifecycleMetadataConsistent\b' SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThread \(ist : IntermediateState\)[^\n]*(\n([ \t][^\n]*)?)*hAllTables := enqueueIdleThreadOnCore_preserves_allTablesInvExtK ist\.state c ist\.hAllTables" SeLe4n/Platform/Boot.lean'
+# The store's index bound is hypothesis-free, and the boot's capacity theorem
+# reads it through the operation rather than through the builder.
+run_check "INVARIANT" rg -n '^theorem storeObject_objectIndex_length_le\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem enqueueIdleThread_objectIndex_length_le \(ist : IntermediateState\)[^\n]*(\n([ \t][^\n]*)?)*enqueueIdleThreadOnCore_objectIndex_length_le ist\.state c$" SeLe4n/Platform/Boot.lean'
+# The idle TCB lives with its identities, and nowhere else: one definition each,
+# in the module upstream of both consumers.
+run_check "INVARIANT" rg -n '^def createIdleThread \(c : CoreId\) : SeLe4n\.Model\.TCB :=' SeLe4n/Kernel/Scheduler/IdleThread.lean
+run_check "INVARIANT" rg -n '^def queuedIdleThread \(c : CoreId\) : SeLe4n\.Model\.TCB :=' SeLe4n/Kernel/Scheduler/IdleThread.lean
+run_negative_check "INVARIANT" rg -n '^def (createIdleThread|queuedIdleThread|enqueueIdleThreadOnCore)\b' SeLe4n/Platform/Boot.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean
+# The primitive is production: reached from the boot, and so outside the staged
+# allowlist -- the partition gate holds the closure, this holds the declaration.
+# The negative asks for an allowlist ENTRY (the module name at the start of a
+# line, which is what the partition gate's parser reads), not a mention: the
+# `PerCoreIdle` entry's description legitimately names the module it consumes.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Scheduler\.Operations\.IdleEnqueue$' SeLe4n/Platform/Boot.lean
+run_negative_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.Scheduler\.Operations\.IdleEnqueue\b' scripts/staged_module_allowlist.txt
+# The suite pins the derivation at the type level, beside the surface anchors.
+run_check "INVARIANT" rg -n '^#check @SeLe4n\.Platform\.Boot\.enqueueIdleThread_state$' tests/SmpIdleSuite.lean
 
 # ============================================================================
 # WS-OD OD6 -- the payoff
@@ -9284,7 +9333,7 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.harnessDeploymentLabeling
 -- Review round: the enqueued idle TCB is the queued form and the production boot
 -- state is thread-state consistent; the checked boot reserves the idle slots.
-#check @SeLe4n.Platform.Boot.queuedIdleThread
+#check @SeLe4n.Kernel.queuedIdleThread
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_threadState
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_threadStateConsistent
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadStateConsistent
@@ -12257,8 +12306,9 @@ run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.S
 # chooseThreadOnCore_always_succeeds (+ idleThreadEnqueuedOnCore discharge +
 # enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds non-vacuity witness), and the
 # SM5.E.4 idleThread_core_locality (affinity-based + frame companion).  The idle
-# definitions live in Platform.Boot (SM4.G).  A rename / removal of any SM5.E
-# symbol fails here at elaboration time before the test suite.
+# TCB lives in Scheduler/IdleThread.lean and the enqueue primitive in the
+# production module Scheduler/Operations/IdleEnqueue.lean (v0.35.68).  A rename /
+# removal of any SM5.E symbol fails here at elaboration time before the test suite.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch'
 # WS-SM SM5.E: build the SM5.E theorem inventory so a renamed / removed
@@ -12273,8 +12323,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch
 open SeLe4n.Kernel
-open SeLe4n.Platform.Boot (createIdleThread)
--- SM5.E.1/.2/.5 idle definitions + field lemmas.
+-- SM5.E.1/.2/.5 idle definitions + field lemmas (in Scheduler/IdleThread.lean).
 #check @idleThreadId
 #check @createIdleThread
 #check @idleThread_priority_zero

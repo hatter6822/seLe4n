@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.67.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.68.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~68192 lines)
+- `CHANGELOG.md` (~68290 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23592 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -212,9 +212,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7305 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6133 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6076 lines)
-- `SeLe4n/Platform/Boot.lean` (~5887 lines)
-- `SeLe4n/Model/State.lean` (~5746 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6083 lines)
+- `SeLe4n/Platform/Boot.lean` (~5813 lines)
+- `SeLe4n/Model/State.lean` (~5770 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5350 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5111 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5056 lines)
@@ -362,7 +362,7 @@ To find files that need pagination today, run:
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1126 lines)
-- `tests/SmpIdleSuite.lean` (~1105 lines)
+- `tests/SmpIdleSuite.lean` (~1118 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1092 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
@@ -418,7 +418,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 - `docs/DEVELOPMENT.md` (~803 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean` (~802 lines)
 - `SeLe4n/Kernel/SchedContext/Operations.lean` (~800 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
@@ -6009,8 +6008,10 @@ code may assume:
   `enqueueRunnableOnCore`, `updatePipBoostOnCore`, `timerTick`,
   `refillSchedContext` and `handleYieldWithBudget`; **43 in 37 across 17** after
   `v0.35.67` moved `timerTickBudget`, `timerTickBudgetOnCore`,
-  `enqueueIdleThreadOnCore` and the trace model's `stepPost`; five of them the
-  primitives that should be raw).  (6) **A transition that rewrites a TCB it is
+  `enqueueIdleThreadOnCore` and the trace model's `stepPost`; unchanged at
+  `v0.35.68`, which migrated no site but *derived* the boot's idle install from
+  `enqueueIdleThreadOnCore`, so the boot performs no raw write of its own
+  through it; five of them the primitives that should be raw).  (6) **A transition that rewrites a TCB it is
   handed takes the store's witness for it.**  `timerTickBudget` /
   `timerTickBudgetOnCore` (`v0.35.67`) take `(hTcb : st.getTcb? tid = some tcb)`
   beside the TCB — the proof `rewriteAdmissible_tcb` consumes, erased at runtime —
@@ -6384,7 +6385,21 @@ code may assume:
   `bootFromPlatformCheckedWithIdleThreads`, a thin composition over
   `bootFromPlatformChecked` (same validation, same rejections, the seven results
   characterizing it unchanged) that folds a per-core idle enqueue over
-  `allCores`.  So `∀ c, idleThreadEnqueuedOnCore st c` holds of the live boot
+  `allCores`.  **That enqueue is the kernel model's own** (`v0.35.68`):
+  `Platform.Boot.enqueueIdleThread ist c` has `state := enqueueIdleThreadOnCore
+  ist.state c` (`enqueueIdleThread_state`, by `rfl`), with the four
+  `IntermediateState` witnesses the operation's own preservation theorems and
+  every boot-level frame an instance of the kernel model's — it was a second
+  body (`Builder.createObject` plus a hand-written run-queue write) held to the
+  first by a docstring sentence, differing in the bookkeeping the store
+  maintains and the builder skips.  The operation therefore lives in the
+  production module `Scheduler/Operations/IdleEnqueue.lean`, upstream of the
+  boot, and the idle TCB (`createIdleThread`, `queuedIdleThread`) in
+  `Scheduler/IdleThread.lean` beside its identities; `PerCoreIdle.lean` (staged)
+  keeps the per-core-invariant theorems and consumes both.  New code adding a
+  boot-time write of an object the kernel model can already write runs the
+  kernel model's operation on `ist.state` and carries the witnesses through its
+  theorems, never a builder-side copy of its body.  So `∀ c, idleThreadEnqueuedOnCore st c` holds of the live boot
   state (`bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore`),
   discharging the premise `chooseThreadOnCore_always_succeeds` consumes and
   `schedulerNoStall_smp`'s `hIdle` took by hypothesis — which no reachable state

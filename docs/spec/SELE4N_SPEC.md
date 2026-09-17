@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.67` (`lakefile.toml`) |
+| **Package version** | `0.35.68` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 385,998 across 330 Lean files |
-| **Test LoC** | 78,763 across 70 Lean test suites |
-| **Proved declarations** | 12,876 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 386,190 across 331 Lean files |
+| **Test LoC** | 78,776 across 70 Lean test suites |
+| **Proved declarations** | 12,887 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2448,7 +2448,14 @@ Hardware-mode kernel state lives in two `IO.Ref` cells:
   idle slots are reserved by `PlatformConfig.wellFormed`
   (`idleSlotsReserved`), so a successful checked boot has them empty
   (`bootFromPlatformChecked_ok_idleSlotsFreshAt`) and the idle fold
-  overwrites no config object.  That consistency is a **boot-state
+  overwrites no config object.  Since `v0.35.68` the per-core enqueue
+  the boot folds **is** the kernel model's `enqueueIdleThreadOnCore`
+  applied to the intermediate state's `state`
+  (`Platform.Boot.enqueueIdleThread_state`, by `rfl`), with the four
+  `IntermediateState` witnesses the operation's own preservation
+  theorems — one body for the boot and the scheduler, where the boot
+  used to carry a builder-side copy that differed in the bookkeeping
+  the store maintains.  That consistency is a **boot-state
   theorem**, not a preserved invariant (PR #889 review round 2): the
   dispatch writes no `threadState`, so the relation the live decisions
   read — the stored flag says `.Inactive` iff the classification does —

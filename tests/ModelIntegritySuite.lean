@@ -1982,7 +1982,7 @@ example :
         { irqTable := []
           initialObjects :=
             [{ id := SeLe4n.ObjId.ofNat 5
-               obj := KernelObject.tcb (SeLe4n.Platform.Boot.createIdleThread bootCoreId)
+               obj := KernelObject.tcb (SeLe4n.Kernel.createIdleThread bootCoreId)
                hSlots := (fun _ h => by cases h)
                hMappings := (fun _ h => by cases h) }] }) :=
   SeLe4n.Platform.Boot.idleSlotsFreshAt_of_initialObjects_below_base _
@@ -2023,7 +2023,7 @@ def bootFromPlatform_smp_witness_reachable : IO Unit := do
   -- boot folds.
   let idleObj : SeLe4n.Platform.Boot.ObjectEntry :=
     { id := SeLe4n.ObjId.ofNat 5
-      obj := KernelObject.tcb (SeLe4n.Platform.Boot.createIdleThread bootCoreId)
+      obj := KernelObject.tcb (SeLe4n.Kernel.createIdleThread bootCoreId)
       hSlots := (fun _ h => by cases h)
       hMappings := (fun _ h => by cases h) }
   let cfgNonEmpty : SeLe4n.Platform.Boot.PlatformConfig :=
@@ -2057,9 +2057,9 @@ def bootFromPlatform_smp_witness_reachable : IO Unit := do
   -- plain `bootFromPlatform` bundle discharges vacuously (`current = none`) but
   -- the idle path discharges against a real TCB.
   expect "SM4.G: boot-core idle TCB has positive time-slice (currentTimeSlicePositive)"
-    (decide ((SeLe4n.Platform.Boot.createIdleThread bootCoreId).timeSlice > 0))
+    (decide ((SeLe4n.Kernel.createIdleThread bootCoreId).timeSlice > 0))
   expect "SM4.G: boot-core idle TCB resides in the boot active domain"
-    ((SeLe4n.Platform.Boot.createIdleThread bootCoreId).domain ==
+    ((SeLe4n.Kernel.createIdleThread bootCoreId).domain ==
       bootedIdle.scheduler.activeDomainOnCore bootCoreId)
   -- The idle threads are per-core-distinct (no aliasing across cores).
   expect "SM4.G: idle thread ids are distinct across cores"

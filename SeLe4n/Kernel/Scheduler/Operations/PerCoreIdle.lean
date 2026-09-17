@@ -7,6 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
+import SeLe4n.Kernel.Scheduler.Operations.IdleEnqueue
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread
 import SeLe4n.Platform.Boot
 
@@ -18,25 +19,26 @@ Per-core idle-thread theorems (plan §3.5 / §4.3 of
 idle TCB — the lowest-priority thread it runs when nothing else is runnable —
 bound to its own core and never migrating.
 
-The idle-thread *definitions* (`idleThreadId`, `createIdleThread`) and the
-*boot installer* (`installIdleThread`, `bootFromPlatformWithIdleThreads`) live
-in `SeLe4n.Platform.Boot` (where they landed at WS-SM SM4.G, alongside the
-`IntermediateState` / `Builder` machinery the install needs).  This module —
-which can see both the idle definitions *and* the SM5.A `chooseThreadOnCore`
-selection theorems — adds the scheduler-level idle properties that close SM5.E:
+The idle thread's *identities* and its *TCB* (`idleThreadId`, `createIdleThread`,
+`queuedIdleThread`, with the SM5.E.5 field lemmas `idleThread_priority_zero`,
+`createIdleThread_domain_zero`, `createIdleThread_cpuAffinity`,
+`createIdleThread_tid`) live in `SeLe4n.Kernel.Scheduler.IdleThread`, and the
+**SM5.E.3 run-queue primitive** `enqueueIdleThreadOnCore` — with its definitional
+frames, its object-store frames and the `IntermediateState` witnesses — lives in
+`SeLe4n.Kernel.Scheduler.Operations.IdleEnqueue`, a production module upstream
+of the boot, because since `v0.35.68` that primitive *is* the production boot's
+idle install (`Platform.Boot.enqueueIdleThread` runs it on the intermediate
+state's `state`).  The boot *installers* (`installIdleThread`,
+`bootFromPlatformWithIdleThreads`, `enqueueIdleThread`) live in
+`SeLe4n.Platform.Boot`.  This module — which can see all of that *and* the
+SM5.A `chooseThreadOnCore` selection theorems — adds the scheduler-level idle
+properties that close SM5.E:
 
-* **SM5.E.5** `idleThread_priority_zero` — the idle thread is priority `⟨0⟩`
-  (the lowest), so a runnable user thread always outranks it; idle never
-  starves a higher-priority thread.  Plus the companion field lemmas
-  (`createIdleThread_domain_zero`, `createIdleThread_cpuAffinity`,
-  `createIdleThread_tid`).
-
-* **SM5.E.3 (run-queue form)** `enqueueIdleThreadOnCore` — the per-core
-  primitive that makes core `c`'s idle thread *available in its run queue* (the
-  SM4.G boot installer makes it *current*; for the selection to fall back to
-  idle, idle must be a run-queue member, which `chooseThreadOnCore` reads).
-  Its frame / membership / preservation lemmas mirror the SM5.C
-  `enqueueRunnableOnCore` surface.
+* **SM5.E.3 (the per-core invariant surface)** — the preservation lemmas over
+  the SM4.C per-core invariant vocabulary (`runnableThreadsAreTCBsOnCore`,
+  `currentThreadValidOnCore`, `queueCurrentConsistentOnCore`,
+  `currentThreadInActiveDomainOnCore`) that the SM5.I dispatch loop threads
+  through an idle enqueue, and the enqueue's declared lock footprint.
 
 * **SM5.E.6** `chooseThreadOnCore_always_succeeds` — when core `c`'s idle thread
   is enqueued and in its active domain (the SM5.E discharge predicate
@@ -64,211 +66,13 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
--- WS-SM SM5.E: `idleThreadId` + injectivity witnesses now live in
--- `SeLe4n.Kernel.Scheduler.IdleThread` (namespace `SeLe4n.Kernel`), so they
--- resolve unqualified here; only the idle TCB constructor still lives in `Boot`.
-open SeLe4n.Platform.Boot (createIdleThread queuedIdleThread)
 
 -- ============================================================================
--- §1  Idle-thread field lemmas (SM5.E.5 + companions)
+-- §1  Per-core scheduler-invariant preservation (SM5.I consumption surface)
 -- ============================================================================
-
-/-- WS-SM SM5.E.5 (plan §3.5, Theorem `idleThread_priority_zero`): the idle
-thread is priority `⟨0⟩` — the lowest schedulable priority.  Consequence: a
-runnable user thread (priority `> 0`, or even `0` with an earlier FIFO
-position) is never displaced by idle; idle is only selected when no
-higher-priority thread is eligible.  `rfl` from `createIdleThread`. -/
-@[simp] theorem idleThread_priority_zero (c : CoreId) :
-    (createIdleThread c).priority = ⟨0⟩ := rfl
-
-/-- WS-SM SM5.E.5: the idle thread is in scheduling domain `⟨0⟩` (the boot
-active domain).  So when core `c`'s active domain is the boot domain (the RPi5
-v1.0.0 single-domain case, where `domainSchedule = []`), the idle thread is
-in-domain and hence an eligible selection candidate. -/
-@[simp] theorem createIdleThread_domain_zero (c : CoreId) :
-    (createIdleThread c).domain = ⟨0⟩ := rfl
-
-/-- WS-SM SM5.E.2 (plan §3.5): the idle thread for core `c` is pinned to core
-`c` via `cpuAffinity = some c`.  This is the field that makes
-`idleThread_core_locality` substantive — `affinityAdmitsCore (createIdleThread
-c) c' = (c == c')`, so idle `c` is not admitted on any `c' ≠ c`. -/
-@[simp] theorem createIdleThread_cpuAffinity (c : CoreId) :
-    (createIdleThread c).cpuAffinity = some c := rfl
-
-/-- WS-SM SM5.E.1: the idle thread's id is `idleThreadId c`. -/
-@[simp] theorem createIdleThread_tid (c : CoreId) :
-    (createIdleThread c).tid = idleThreadId c := rfl
-
-/-- **WS-RR RR5.11** (PR #889 review): the **queued** idle TCB — what the enqueue
-surface stores — has `createIdleThread`'s priority, domain, affinity and id; only
-`threadState` differs (`.Ready`, `Platform.Boot.queuedIdleThread_threadState`),
-because a thread on a run queue and in no current slot is what `inferThreadState`
-classifies `.Ready`.  Each is `rfl`, so every enqueue-side theorem below reads the
-field through these exactly as it read `createIdleThread`'s before. -/
-@[simp] theorem queuedIdleThread_priority (c : CoreId) :
-    (queuedIdleThread c).priority = ⟨0⟩ := rfl
-
-@[simp] theorem queuedIdleThread_domain (c : CoreId) :
-    (queuedIdleThread c).domain = ⟨0⟩ := rfl
-
-@[simp] theorem queuedIdleThread_cpuAffinity (c : CoreId) :
-    (queuedIdleThread c).cpuAffinity = some c := rfl
-
-@[simp] theorem queuedIdleThread_tid (c : CoreId) :
-    (queuedIdleThread c).tid = idleThreadId c := rfl
-
-@[simp] theorem queuedIdleThread_threadState (c : CoreId) :
-    (queuedIdleThread c).threadState = .Ready := rfl
-
-/-- **WS-RR RR5.11**: the queued form differs from the dispatched form in the
-one field the state determines — the negative pin, so the two cannot silently
-collapse into one. -/
-theorem queuedIdleThread_ne_createIdleThread (c : CoreId) :
-    queuedIdleThread c ≠ createIdleThread c := by
-  intro h
-  have hState : ThreadState.Ready = ThreadState.Running := congrArg TCB.threadState h
-  cases hState
-
--- ============================================================================
--- §2  `enqueueIdleThreadOnCore` — make core `c`'s idle thread run-queue-resident
--- ============================================================================
-
-/-- WS-SM SM5.E.3 (run-queue form, plan §3.5): make core `c`'s idle thread
-*available in its run queue*.
-
-The SM4.G boot installer (`installIdleThread`) makes idle `c` the **current**
-thread on core `c` (`current = some (idleThreadId c)`, run queue empty); the
-production scheduler (`scheduleEffectiveOnCore`) then models a subsequently-idle
-core as `current = none`.  For `chooseThreadOnCore` — which reads only the run
-queue — to *fall back to idle*, the idle thread must be a run-queue *member*.
-`enqueueIdleThreadOnCore` is the primitive that ensures this: it (a) creates /
-refreshes the idle TCB in the object store at `(idleThreadId c).toObjId` — through
-the pure store `SystemState.withObjectStored` (`v0.35.67`), because the key may
-hold nothing and a store is what registers a new object in `objectIndex`,
-`objectIndexSet` and the kind table; the raw insert it replaced left a fixture's
-idle thread outside the index, which no boot state is — and (b) `remove`s then
-re-`insert`s `idleThreadId c` into core `c`'s run queue at the idle priority `⟨0⟩`
-(`= (queuedIdleThread c).priority`, which equals its effective run-queue priority
-since idle carries no PIP boost).
-
-The `remove`-then-`insert` (rather than a bare `insert`) is deliberate: a
-*re-enqueue* of an already-resident idle thread must refresh its priority bucket
-to `0`, but `RunQueue.insert` is an identity for existing members — a bare insert
-would leave a stale `byPriority` bucket if idle were ever resident at a non-`0`
-priority, so bucket-first selection could pick idle ahead of lower-bucket user
-threads.  `remove`-then-`insert` makes the refresh sound for *every* prior state
-(the membership set is unchanged — still `runQueue ∪ {idle}` — only idle's bucket
-is canonicalised to `0`).
-
-Footprint: WRITES the object-store slot `(idleThreadId c).toObjId` and core
-`c`'s run-queue slot.  Every other object-store key and every other core's
-scheduler slot is framed out (the lemmas below).  The store's index bookkeeping
-is the object store's own, guarded by the table-level `objStore` lock the
-footprint (`enqueueIdleThreadOnCoreLockSet`) already names in write mode — no
-finer lock exists for it, and none is declared elsewhere.  Mirrors the SM5.C
-`enqueueRunnableOnCore` shape; the difference is that idle threads are created
-here (they need not pre-exist), so there is no `getTcb?`-resolves precondition
-and no fail-closed branch. -/
-def enqueueIdleThreadOnCore (st : SystemState) (c : CoreId) : SystemState :=
-  { st.withObjectStored (idleThreadId c).toObjId (KernelObject.tcb (queuedIdleThread c)) with
-      scheduler := st.scheduler.setRunQueueOnCore c
-        (((st.scheduler.runQueueOnCore c).remove (idleThreadId c)).insert (idleThreadId c)
-          (queuedIdleThread c).priority) }
-
-/-- WS-SM SM5.E.3: the idle-enqueue's object-store write (definitional). -/
-theorem enqueueIdleThreadOnCore_objects (st : SystemState) (c : CoreId) :
-    (enqueueIdleThreadOnCore st c).objects =
-      st.objects.insert (idleThreadId c).toObjId (KernelObject.tcb (queuedIdleThread c)) := rfl
-
-/-- WS-SM SM5.E.3: the idle-enqueue's scheduler write (definitional).  The
-run-queue write is `remove`-then-`insert` so a *re-enqueue* of an already-resident
-idle thread refreshes its priority bucket to `0` rather than leaving a stale
-bucket (`RunQueue.insert` is an identity for existing members). -/
-theorem enqueueIdleThreadOnCore_scheduler (st : SystemState) (c : CoreId) :
-    (enqueueIdleThreadOnCore st c).scheduler =
-      st.scheduler.setRunQueueOnCore c
-        (((st.scheduler.runQueueOnCore c).remove (idleThreadId c)).insert (idleThreadId c)
-          (queuedIdleThread c).priority) := rfl
-
-/-- WS-SM SM5.E.3: after the enqueue, core `c`'s run queue is the old one with
-the idle thread inserted. -/
-theorem enqueueIdleThreadOnCore_runQueueOnCore_self (st : SystemState) (c : CoreId) :
-    (enqueueIdleThreadOnCore st c).scheduler.runQueueOnCore c =
-      ((st.scheduler.runQueueOnCore c).remove (idleThreadId c)).insert (idleThreadId c)
-        (queuedIdleThread c).priority := by
-  rw [enqueueIdleThreadOnCore_scheduler]
-  exact SchedulerState.setRunQueueOnCore_runQueueOnCore_self _ _ _
-
-/-- WS-SM SM5.E.3/.4 (cross-core frame): enqueuing idle `c` leaves every *other*
-core `c' ≠ c`'s run queue untouched — it never adds idle `c` to another core's
-queue.  The operational half of `idleThread_core_locality`. -/
-theorem enqueueIdleThreadOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId) (h : c ≠ c') :
-    (enqueueIdleThreadOnCore st c).scheduler.runQueueOnCore c' =
-      st.scheduler.runQueueOnCore c' := by
-  rw [enqueueIdleThreadOnCore_scheduler]
-  exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ h
-
-/-- WS-SM SM5.E.3 (frame): the enqueue does not touch any core's active domain. -/
-theorem enqueueIdleThreadOnCore_activeDomainOnCore (st : SystemState) (c c' : CoreId) :
-    (enqueueIdleThreadOnCore st c).scheduler.activeDomainOnCore c' =
-      st.scheduler.activeDomainOnCore c' := by
-  rw [enqueueIdleThreadOnCore_scheduler]; simp
-
-/-- WS-SM SM5.E.3 (frame): the enqueue does not touch any core's current slot. -/
-theorem enqueueIdleThreadOnCore_currentOnCore (st : SystemState) (c c' : CoreId) :
-    (enqueueIdleThreadOnCore st c).scheduler.currentOnCore c' =
-      st.scheduler.currentOnCore c' := by
-  rw [enqueueIdleThreadOnCore_scheduler]; simp
-
--- ============================================================================
--- §3  Membership, resolution, and invariant preservation
--- ============================================================================
-
-/-- WS-SM SM5.E.3 (membership): after the enqueue, core `c`'s idle thread is a
-member of core `c`'s run queue.  The substantive "the idle thread is genuinely
-available as a fallback" content. -/
-theorem enqueueIdleThreadOnCore_mem_runQueueOnCore_self (st : SystemState) (c : CoreId) :
-    idleThreadId c ∈ ((enqueueIdleThreadOnCore st c).scheduler.runQueueOnCore c).toList := by
-  rw [enqueueIdleThreadOnCore_runQueueOnCore_self, RunQueue.mem_toList_iff_mem]
-  exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inr rfl)
-
-/-- WS-SM SM5.E.3 (resolution): after the enqueue, core `c`'s idle thread
-resolves to the idle TCB in the object store.  Requires the object-store
-invariant so the insert lookup is exact. -/
-theorem enqueueIdleThreadOnCore_getTcb?_self (st : SystemState) (c : CoreId)
-    (hInv : st.objects.invExt) :
-    (enqueueIdleThreadOnCore st c).getTcb? (idleThreadId c) = some (queuedIdleThread c) := by
-  rw [SystemState.getTcb?_eq_some_iff, enqueueIdleThreadOnCore_objects, RHTable_getElem?_eq_get?]
-  exact RHTable_get?_insert_self st.objects (idleThreadId c).toObjId _ hInv
-
-/-- WS-SM SM5.E.3 (frame): the enqueue leaves every *other* thread's TCB
-resolution unchanged — its only object-store write is at the idle thread's key.
-AK7-clean (routes through the typed `getTcb?` accessor + the `.get?`-method form
-of `RHTable.getElem?_insert_ne`). -/
-theorem enqueueIdleThreadOnCore_getTcb?_ne (st : SystemState) (c : CoreId)
-    (other : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hNe : other ≠ idleThreadId c) :
-    (enqueueIdleThreadOnCore st c).getTcb? other = st.getTcb? other := by
-  have hNeO : ¬ ((idleThreadId c).toObjId == other.toObjId) = true := fun he =>
-    hNe (ThreadId.toObjId_injective _ _ (by simpa using he)).symm
-  simp only [SystemState.getTcb?, enqueueIdleThreadOnCore_objects, RHTable_getElem?_eq_get?]
-  rw [RHTable_get?_insert_ne st.objects (idleThreadId c).toObjId other.toObjId _ hNeO hInv]
-
-/-- WS-SM SM5.E.3 (preservation): the enqueue preserves the object-store
-RobinHood invariant — its only object-store write is an `insert`, which
-preserves `invExt`. -/
-theorem enqueueIdleThreadOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
-    (hInv : st.objects.invExt) : (enqueueIdleThreadOnCore st c).objects.invExt := by
-  rw [enqueueIdleThreadOnCore_objects]
-  exact RHTable_insert_preserves_invExt st.objects _ _ hInv
-
-/-- WS-SM SM5.E.3 (preservation): the enqueue preserves core `c`'s run-queue
-well-formedness — the only run-queue mutation is the idle `insert`, which
-preserves `RunQueue.wellFormed`. -/
-theorem enqueueIdleThreadOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState) (c : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
-    ((enqueueIdleThreadOnCore st c).scheduler.runQueueOnCore c).wellFormed := by
-  rw [enqueueIdleThreadOnCore_runQueueOnCore_self]
-  exact RunQueue.insert_preserves_wellFormed _ (RunQueue.remove_preserves_wellFormed _ hwf _) _ _
+--
+-- The operation and its Model-level frames are in `Operations/IdleEnqueue.lean`;
+-- what follows is stated over the SM4.C per-core invariant vocabulary.
 
 /-- WS-SM SM5.E.3 (preservation): the enqueue preserves the per-core
 "every runnable thread resolves to a TCB" invariant.  The new run-queue member
@@ -293,7 +97,7 @@ theorem enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore (st : Sys
     exact ⟨tcb, by rw [enqueueIdleThreadOnCore_getTcb?_ne st c tid hInv hEq]; exact htcb⟩
 
 -- ============================================================================
--- §3b  Per-core scheduler-invariant preservation (SM5.I consumption surface)
+-- §1b  The conditional preservations (SM5.I consumption surface, continued)
 -- ============================================================================
 --
 -- The structural per-core invariants the SM5.I dispatch loop threads through an
@@ -368,15 +172,6 @@ theorem enqueueIdleThreadOnCore_preserves_currentThreadInActiveDomainOnCore (st 
     have hNe : t ≠ idleThreadId c := fun heq => hNotCur (congrArg some heq)
     simp only [enqueueIdleThreadOnCore_getTcb?_ne st c t hInv hNe]
     exact hDom
-
-/-- WS-SM SM5.E.3 (idempotency): the run-queue membership effect of enqueuing the
-idle thread is idempotent — after one enqueue the idle thread is already a member,
-and `RunQueue.insert`'s internal `contains` guard makes a second enqueue add no
-duplicate.  So a dispatch loop may call it repeatedly without growing the queue. -/
-theorem enqueueIdleThreadOnCore_mem_idempotent (st : SystemState) (c : CoreId) :
-    idleThreadId c ∈
-      ((enqueueIdleThreadOnCore (enqueueIdleThreadOnCore st c) c).scheduler.runQueueOnCore c).toList := by
-  exact enqueueIdleThreadOnCore_mem_runQueueOnCore_self (enqueueIdleThreadOnCore st c) c
 
 -- ============================================================================
 -- §4  `chooseThreadOnCore_always_succeeds` (SM5.E.6)

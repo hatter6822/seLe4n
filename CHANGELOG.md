@@ -1,3 +1,90 @@
+## v0.35.68 — The boot's idle install is the kernel model's enqueue, and the idle TCB lives with its identities
+
+**Raw-write migration, fifth cut — a derivation rather than a migration.**
+`Platform/Boot.lean`'s `enqueueIdleThread` — the per-core idle install the
+production boot folds over every declared core — was a **second body** of the
+kernel model's `enqueueIdleThreadOnCore`: `Builder.createObject` for the TCB and a
+hand-written run-queue write, held to the kernel model's operation by one docstring
+sentence (*"mirrors `enqueueIdleThreadOnCore` … definitionally parallel"*) that was
+true of `objects` and the run queue and false of the bookkeeping — the builder
+skips `capabilityRefs` and `asidTable`, and since `v0.35.67` the kernel-model body
+goes through the full store (`withObjectStored`), which filters the one and
+maintains the other.  Registered at `v0.35.67` from the maintainer's question
+(*is boot handling idle installation separately from the kernel model's
+`enqueueIdleThreadOnCore` best practice?*), and closed here the way the register
+prescribed: **derive**.  `enqueueIdleThread ist c` now has
+`state := enqueueIdleThreadOnCore ist.state c`, and its four `IntermediateState`
+witnesses are the operation's own preservation theorems —
+`enqueueIdleThreadOnCore_preserves_allTablesInvExtK` (fourteen conjuncts from the
+store's `withObjectStored_preserves_allTablesInvExtK`, the three boot-core run-queue
+tables from the queue's own carried proofs), `…_preserves_perObjectSlotsInvariant`
+and `…_preserves_perObjectMappingsInvariant` (the one key written now holds a TCB,
+which is neither a CNode nor a VSpace root; every other key is framed by
+`enqueueIdleThreadOnCore_objects_ne`), and `…_preserves_lifecycleMetadataConsistent`
+(the store's, since the scheduler write beside it touches neither the store nor the
+metadata).  `enqueueIdleThread_state` is the definitional equation, and it is
+**decisive**: a second body in the boot, however faithfully it mirrored the kernel
+model's, is not `rfl` to it.  Every boot-level frame (`enqueueIdleThread_objects`,
+`_scheduler`, `_runQueueOnCore_self` / `_ne`, `_currentOnCore`,
+`_activeDomainOnCore`, `_machine`, `_objects_self` / `_ne`,
+`_objectIndex_length_le`) is now an instance of the kernel model's at the boot's
+state rather than a proof of its own.
+
+**The layering that made the derivation possible.**  The kernel-model definition
+lived in `Scheduler/Operations/PerCoreIdle.lean`, which is *staged* and itself
+imports `Platform.Boot` for the RR5.12 boot theorems — so the boot could not reach
+the operation it should have been running.  The definition, its definitional and
+object-store frames, its run-queue well-formedness and the four witnesses above now
+live in a new **production** module, `Scheduler/Operations/IdleEnqueue.lean`,
+upstream of the boot (reached from `SeLe4n.lean` through `Platform.Boot`, so
+outside the staged allowlist and inside every root-derived census); `PerCoreIdle`
+imports it and keeps what is stated over the SM4.C per-core invariant vocabulary —
+the `runnableThreadsAreTCBsOnCore` / `currentThreadValidOnCore` /
+`queueCurrentConsistentOnCore` / `currentThreadInActiveDomainOnCore` preservations,
+the SM5.E.6 keystone, the locality theorems and the lock footprint.  The idle TCB
+itself (`createIdleThread`, `queuedIdleThread`, `queuedIdleThread_threadState`, and
+the SM5.E.5 field lemmas) moved from `Platform.Boot` and `PerCoreIdle` to
+`Scheduler/IdleThread.lean`, beside `idleThreadId`, because the operation builds
+the TCB it stores and must sit upstream of both consumers; the eleven qualified
+references (`SeLe4n.Platform.Boot.createIdleThread` in the harness, three suites
+and the SM5.E inventory) were swept to `SeLe4n.Kernel.createIdleThread`, and the
+two copies of `queuedIdleThread_threadState` — one per namespace — became one.
+Nothing survives under the old names: a Tier 3 negative refuses a definition of
+`createIdleThread`, `queuedIdleThread` or `enqueueIdleThreadOnCore` in either of
+the modules they left.
+
+**The store's index bound is hypothesis-free.**  The boot's capacity theorem read
+the idle enqueue's `objectIndex` bound through `createObject_objectIndex_length_le`;
+the store had only `storeObject_preserves_objectIndexBounded`, whose statement is
+the same length bound under an `objectIndexBounded` hypothesis it never uses.
+`storeObject_objectIndex_length_le` (`Model/State.lean`) states the bound with no
+hypothesis — it is a fact about the write, not about the pre-state's capacity —
+the bounded form is its instance, and `withObjectStored_objectIndex_length_le` /
+`withObjectStored_preserves_allTablesInvExtK` are the pure spellings the operation
+reads.
+
+**No boot state changed, and that is the argument for deriving.**  On a successful
+checked boot the two bookkeeping fields the builder skipped are inert:
+`capabilityRefs` is the default's throughout boot (`bootFromPlatform_capabilityRefs_eq`)
+and every idle slot is fresh (`bootFromPlatformChecked_ok_idleSlotsFreshAt`), so
+the store's filter and its ASID clear are the identity there.  The golden trace is
+byte-identical.  The raw-write population is unchanged — **43 sites in 37 executable
+declarations across 17 files** outside `SeLe4n/Testing/` — because the boot's
+install performed its raw write *through* the builder, which stays the boot's
+primitive for config objects (it registers ASIDs separately, and is one of the five
+raw sites that should stay raw).
+
+**Tier 3**: positives on the boot's state field being the kernel-model call, the
+`rfl` equation, the four witnesses read from the operation, the hypothesis-free
+store bound and the boot's capacity theorem reading it, the idle TCB defined beside
+its identities, the boot importing the production module and the suite's type-level
+pin; negatives on a builder call, a raw insert or a raw run-queue write anywhere in
+the boot's install, on the retired definitions in the modules they left, and on the
+new module entering the staged allowlist — the two `v0.35.67` idle-enqueue anchors
+repointed to the new module — 12 cases, 25 mutation checks, every mutation keeping
+the tokens and breaking the relation (the decisive one rebuilds the boot's state
+field by hand from the operation's parts).
+
 ## v0.35.67 — The two budget ticks charge the TCB the store holds, the idle enqueue is a store, and the per-core tick's charge is a named witnessed step
 
 **Raw-write migration, fourth cut.**  `timerTickBudget` and `timerTickBudgetOnCore`

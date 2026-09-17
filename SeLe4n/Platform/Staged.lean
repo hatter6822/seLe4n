@@ -324,8 +324,12 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerInventory
 -- `chooseThreadOnCore_always_succeeds` (+ the `idleThreadEnqueuedOnCore` discharge
 -- predicate, its constructive establishment, and the end-to-end non-vacuity
 -- witness), and the SM5.E.4 `idleThread_core_locality` (affinity-based + frame
--- companion).  The idle *definitions* live in `Platform.Boot` (SM4.G); SM5.I's
--- per-core dispatch loop is the first runtime exerciser.
+-- companion).  The idle *TCB* and its identities live in
+-- `Kernel/Scheduler/IdleThread.lean` and the enqueue primitive
+-- `enqueueIdleThreadOnCore` in the production module
+-- `Kernel/Scheduler/Operations/IdleEnqueue.lean` (v0.35.68: it is what the
+-- boot runs), which this module consumes; SM5.I's per-core dispatch loop is
+-- the first runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
 -- WS-SM SM5.E: the per-core idle-aware dispatcher (`scheduleOrIdleOnCore`, the
 -- SM5.I dispatch-loop seed) establishment theorems — the headline
