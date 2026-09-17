@@ -843,27 +843,26 @@ theorem removeFromAllEndpointQueues_nonEndpoint (st : SystemState) (tid : SeLe4n
       | endpoint ep =>
         simp only
         split
-        · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-          by_cases hK : k' = k
-          · subst hK
-            constructor
-            · intro hx
-              have hx' : (acc.objects.insert k' _).get? k' = some o := hx
-              rw [RHTable.getElem?_insert_self acc.objects k' _ hE] at hx'
-              exact absurd (Option.some.inj hx').symm (hNotEp _)
-            · intro hx
-              have hx2 : (spliceOutMidQueueNode st tid).objects.get? k' = some o := hx
-              rw [hGet] at hx2
-              exact absurd (Option.some.inj hx2).symm (hNotEp ep)
-          · constructor
-            · intro hx
-              have hx' : (acc.objects.insert k' _).get? k = some o := hx
-              rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE] at hx'
-              exact hA.mp hx'
-            · intro hx
-              show (acc.objects.insert k' _).get? k = some o
-              rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE]
-              exact hA.mpr hx
+        · split
+          · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
+            by_cases hK : k' = k
+            · subst hK
+              constructor
+              · intro hx
+                have hx' := (SystemState.rewriteObject_objects_self acc k' _ _ hE).symm.trans hx
+                exact absurd (Option.some.inj hx').symm (hNotEp _)
+              · intro hx
+                have hx2 : (spliceOutMidQueueNode st tid).objects.get? k' = some o := hx
+                rw [hGet] at hx2
+                exact absurd (Option.some.inj hx2).symm (hNotEp ep)
+            · constructor
+              · intro hx
+                have hx' := (SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE).symm.trans hx
+                exact hA.mp hx'
+              · intro hx
+                rw [SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE]
+                exact hA.mpr hx
+          · exact ⟨hE, hA⟩
         · exact ⟨hE, hA⟩
       | _ => exact ⟨hE, hA⟩)).2
 
@@ -1258,14 +1257,16 @@ theorem removeFromAllEndpointQueues_endpoint_forward (st : SystemState) (tid : S
       | endpoint ep =>
         simp only
         split
-        · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-          by_cases hK : k' = k
-          · subst hK
-            exact ⟨_, RHTable.getElem?_insert_self acc.objects k' _ hE⟩
-          · refine ⟨e, ?_⟩
-            show (acc.objects.insert k' _).get? k = _
-            rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE]
-            exact hA
+        · split
+          · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
+            by_cases hK : k' = k
+            · subst hK
+              exact ⟨_, SystemState.rewriteObject_objects_self acc k' _ _ hE⟩
+            · refine ⟨e, ?_⟩
+              show (acc.rewriteObject k' _ _).objects[k]? = _
+              rw [SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE]
+              exact hA
+          · exact ⟨hE, e, hA⟩
         · exact ⟨hE, e, hA⟩
       | _ => exact ⟨hE, e, hA⟩)).2
 

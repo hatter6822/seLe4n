@@ -1,3 +1,81 @@
+## v0.35.74 — The two queue sweeps read the accumulator's record through the witnessed lookup and rewrite it under the store's proof
+
+**Raw-write migration, eleventh cut (C4c) — the last two kernel transitions
+writing the object table raw.**  `removeFromAllEndpointQueues` and
+`removeFromAllNotificationWaitLists` are folds over the object table whose
+bodies dispatched on the enumerated object and rewrote it in place with a raw
+insert.  Each body now dispatches on the enumerated object's **kind** and reads
+the record from the **accumulator** through the new witnessed lookups
+`getEndpointWitnessed?` / `getNotificationWitnessed?` (`Model/State.lean`, the
+TCB and SchedContext twins' shape: `getEndpoint?` carrying its own equation,
+matched on the store and erased to the value), so the write-set-honesty guard
+(PR #831 review 4) and the rewrite decide on **one** record, and the write is
+`rewriteObject` under the witness that lookup carries.  The guard stays outside
+the rewrite, so an endpoint the victim does not bound and a notification it
+does not wait on are no write at all.  The accumulator's record at a key the
+fold reaches is the enumerated one — each key is visited once and only its own
+key is written — so the fold computes what it always did, and the golden trace
+is byte-identical.  The named bodies `endpointSweepBody` and
+`notificationPurgeBody` are the same text, and the two `rfl` pins that hold
+each operation to its named body are untouched.
+
+**Twenty-four proofs across four modules** were repaired by the fixed recipe with
+one more case split — the witnessed match's `some`/`none` arms sit between the
+kind split and the guard split — and by two facts that replace the raw table
+lemmas: `rewriteObject_objects_self` for the visited key and
+`rewriteObject_objects_ne` for every other.  The whole-accumulator engines
+(`_tcb_lookup`, `_no_tcb`, `_preserves_ipcInvariant`, `_nonEndpoint`,
+`_nonNotification`, `_notification_badge`, `_endpoint_forward`, the six field
+frames and the two `invExt` preservations) read the **accumulator's** record
+where they used to read the enumerated one: the notification purge's
+well-formedness now comes from the accumulator's own `ipcInvariant`
+(`hAccIpc x notif …`) rather than the source table's, and its badge origin from
+the accumulator's own trace-back (`hA n' …`), which is exactly what the fold
+invariant carries.  The pointwise engine (`_endpoint_value`, with `_off_boundary` its
+untouched corollary, and `_tcb_frame`, `_tcb_source`, `_endpoint_source`)
+supplies the witnessed lookup's answer at the visit from `Pre` — the accumulator still holds the table's own
+value there — and `simp only [getEndpointWitnessed?_eq_some hAccEp]` reduces the
+body's own match.  The dispatch payoff's two identity lemmas
+(`_id_of_unqueued`, `_id_of_no_waits`) reduce the witnessed match the same way.
+
+**The typed updates were written and then deleted.**  `updateEndpoint` /
+`updateNotification` — `updateTcb`'s twins — were drafted for this cut and
+taken out before it landed, because the sweeps use the looked-up record for
+more than the write (the guard), which is the case rule (8) sends to the
+witnessed lookup around `rewriteObject`; a typed update with no consumer is the
+shape this project's retired-code rule refuses on the day it is written.  The
+two witnessed lookups are registered as accessor bodies in
+`scripts/lean_store_read_census.py` (they read the table by definition, as the
+TCB and SchedContext twins do), so `STORE_READ_CODE` stays at **zero**.
+
+**Measured: the executable raw-write population outside the primitives is
+ZERO.**  The raw-write census reports **5 sites in 5 executable declarations
+across 4 files** outside `SeLe4n/Testing/` (from 9 / 9 / 6), and all five are
+the primitives that should be raw: `SystemState.storeObject` and
+`SystemState.rewriteObject` (the two store writes every other site goes
+through), `Builder.createObject` (the boot-time population), `updateObjectAt`
+(the lock domain's kind-agnostic read-modify-write, which cannot be a rewrite
+because CNodes and VSpace roots are not rewrite-neutral) and the frozen store's
+`frozenUpdatePipBoost`.  Every kernel transition, every witness and every sweep
+now writes the object table through a primitive whose bookkeeping-neutrality or
+bookkeeping is a theorem.  What is left of the register's row is Cut D: the
+Tier 0 write census that holds this population at zero, the row's closure, and
+`storeObject`'s capability-reference filter as an erase.  The endpoint-lookup
+floor rose by one (194 → 195) with the witnessed lookup's own equation.
+
+**Tier 3**: positives on both sweeps' spellings (the kind dispatch on `_`, the
+witnessed match, the guard on the witnessed record, the rewrite under its
+proof, the `none` arm), on the two named bodies reading through the same
+lookups and the two `rfl` pins, and on the two witnessed lookups with their
+four equations; negatives on any raw insert in `Cleanup.lean` (file-wide, the
+module holds none now) and in either named body (declaration-bounded), on a
+guard over the enumerated record (the pre-migration shape, where the guard and
+the write read two records), on a bare or dependent record lookup in either
+sweep, and on a guard folded into the rewritten value — 10 cases, 8 mutations,
+every one keeping the tokens (each sweep restored to its pre-migration body,
+each guard folded into the value, each record resolved by a dependent match,
+each named body restored to the raw insert).  Golden trace byte-identical.
+
 ## v0.35.73 — The seven inhabitation witnesses are the store and the rewrite
 
 **Raw-write migration, tenth cut (C4b).**  The dispatch payoff's four pack

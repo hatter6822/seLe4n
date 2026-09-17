@@ -101,7 +101,8 @@ theorem removeFromAllEndpointQueues_preserves
                 acc.lifecycle = st.lifecycle ∧
                 acc.serviceRegistry = st.serviceRegistry)
     hSplice
-    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+    (fun acc _ _ hAcc => by
+      split <;> first | exact hAcc | (split <;> first | exact hAcc | (split <;> exact hAcc)))
 
 /-- R4-A.1 + T5-E: removeFromAllEndpointQueues preserves the scheduler. -/
 theorem removeFromAllEndpointQueues_scheduler_eq
@@ -133,7 +134,8 @@ theorem removeFromAllEndpointQueues_tlbShootdown_eq
     (spliceOutMidQueueNode st tid).objects (spliceOutMidQueueNode st tid) _
     (fun acc => acc.tlbShootdown = st.tlbShootdown)
     hSplice
-    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+    (fun acc _ _ hAcc => by
+      split <;> first | exact hAcc | (split <;> first | exact hAcc | (split <;> exact hAcc)))
 
 /-- WS-SM SM8.B: removeFromAllEndpointQueues only modifies `objects` — the
 machine is framed.  Same fold-preservation argument as
@@ -147,7 +149,8 @@ theorem removeFromAllEndpointQueues_machine_eq
     (spliceOutMidQueueNode st tid).objects (spliceOutMidQueueNode st tid) _
     (fun acc => acc.machine = st.machine)
     hSplice
-    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+    (fun acc _ _ hAcc => by
+      split <;> first | exact hAcc | (split <;> first | exact hAcc | (split <;> exact hAcc)))
 
 /-- W6-B: removeFromAllNotificationWaitLists only modifies `objects`, preserving
     scheduler, lifecycle, and serviceRegistry simultaneously. -/
@@ -161,7 +164,8 @@ theorem removeFromAllNotificationWaitLists_preserves
     (fun acc => acc.scheduler = st.scheduler ∧ acc.lifecycle = st.lifecycle ∧
                 acc.serviceRegistry = st.serviceRegistry)
     ⟨rfl, rfl, rfl⟩
-    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+    (fun acc _ _ hAcc => by
+      split <;> first | exact hAcc | (split <;> first | exact hAcc | (split <;> exact hAcc)))
 
 /-- WS-SM SM8.B: removeFromAllNotificationWaitLists only modifies `objects` —
 the machine is framed. -/
@@ -172,7 +176,8 @@ theorem removeFromAllNotificationWaitLists_machine_eq
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
     (fun acc => acc.machine = st.machine)
     rfl
-    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+    (fun acc _ _ hAcc => by
+      split <;> first | exact hAcc | (split <;> first | exact hAcc | (split <;> exact hAcc)))
 
 /-- R4-A.2: removeFromAllNotificationWaitLists preserves the scheduler. -/
 theorem removeFromAllNotificationWaitLists_scheduler_eq
@@ -201,7 +206,8 @@ theorem removeFromAllNotificationWaitLists_tlbShootdown_eq
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
     (fun acc => acc.tlbShootdown = st.tlbShootdown)
     rfl
-    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+    (fun acc _ _ hAcc => by
+      split <;> first | exact hAcc | (split <;> first | exact hAcc | (split <;> exact hAcc)))
 
 /-- **WS-HP HP10.5**: the reservation-origin scrub touches `objects` and nothing
 else — the frames `cleanupTcbReferences`'s own proofs rewrite through.
@@ -329,7 +335,9 @@ theorem removeFromAllEndpointQueues_preserves_objects_invExt
     (fun acc _ _ hAcc => by
       split
       · split
-        · exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAcc
+        · split
+          · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hAcc
+          · exact hAcc
         · exact hAcc
       · exact hAcc)
 
@@ -346,7 +354,9 @@ theorem removeFromAllNotificationWaitLists_preserves_objects_invExt
     (fun acc _ _ hAcc => by
       split
       · split
-        · exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAcc
+        · split
+          · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hAcc
+          · exact hAcc
         · exact hAcc
       · exact hAcc)
 
@@ -520,17 +530,17 @@ theorem removeFromAllEndpointQueues_tcb_lookup
         -- endpoint's head/tail slots (PR #831 review 4); the untouched arm
         -- is the identity.
         split
-        · have hNe : ¬(x == k) = true := fun hbeq => by
-            have hxk : x = k := eq_of_beq hbeq
-            subst hxk
-            have hclash := hL1.symm.trans hV
-            injection hclash with h
-            injection h
-          exact ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAccInv,
-            t',
-            (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
-              hNe hAccInv).trans hL',
-            hAff'⟩
+        · split
+          · have hNe : x ≠ k := fun hxk => by
+              subst hxk
+              have hclash := hL1.symm.trans hV
+              injection hclash with h
+              injection h
+            exact ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hAccInv,
+              t',
+              (SystemState.rewriteObject_objects_ne _ _ _ _ _ hNe hAccInv).trans hL',
+              hAff'⟩
+          · exact ⟨hAccInv, t', hL', hAff'⟩
         · exact ⟨hAccInv, t', hL', hAff'⟩
       · exact ⟨hAccInv, t', hL', hAff'⟩)
 
@@ -557,17 +567,17 @@ theorem removeFromAllNotificationWaitLists_tcb_lookup
       · -- write-set-honest sweep (PR #831 review 4): the insert arm is
         -- guarded by waiter membership; the untouched arm is the identity.
         split
-        · have hNe : ¬(x == k) = true := fun hbeq => by
-            have hxk : x = k := eq_of_beq hbeq
-            subst hxk
-            have hclash := hPre.symm.trans hV
-            injection hclash with h
-            injection h
-          exact ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAccInv,
-            t',
-            (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
-              hNe hAccInv).trans hL',
-            hAff'⟩
+        · split
+          · have hNe : x ≠ k := fun hxk => by
+              subst hxk
+              have hclash := hPre.symm.trans hV
+              injection hclash with h
+              injection h
+            exact ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hAccInv,
+              t',
+              (SystemState.rewriteObject_objects_ne _ _ _ _ _ hNe hAccInv).trans hL',
+              hAff'⟩
+          · exact ⟨hAccInv, t', hL', hAff'⟩
         · exact ⟨hAccInv, t', hL', hAff'⟩
       · exact ⟨hAccInv, t', hL', hAff'⟩)
 
@@ -622,18 +632,19 @@ theorem removeFromAllEndpointQueues_no_tcb
       · -- write-set-honest sweep (PR #831 review 4): the insert arm is
         -- guarded; the untouched arm is the identity.
         split
-        · refine ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAccInv,
-            fun t h => ?_⟩
-          by_cases hx : (x == tid.toObjId) = true
-          · -- The swept key itself is rewritten to an `.endpoint` — not a TCB.
-            have hxk : x = tid.toObjId := eq_of_beq hx
-            subst hxk
-            have hclash := (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
-              acc.objects tid.toObjId _ hAccInv).symm.trans h
-            injection hclash with hclash
-            injection hclash
-          · exact hNoT t ((SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
-              acc.objects x tid.toObjId _ hx hAccInv).symm.trans h)
+        · split
+          · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hAccInv,
+              fun t h => ?_⟩
+            by_cases hx : x = tid.toObjId
+            · -- The swept key itself is rewritten in its own kind — not to a TCB.
+              subst hx
+              have hclash := (SystemState.rewriteObject_objects_self
+                acc tid.toObjId _ _ hAccInv).symm.trans h
+              injection hclash with hclash
+              injection hclash
+            · exact hNoT t ((SystemState.rewriteObject_objects_ne
+                acc x tid.toObjId _ _ hx hAccInv).symm.trans h)
+          · exact ⟨hAccInv, hNoT⟩
         · exact ⟨hAccInv, hNoT⟩
       · exact ⟨hAccInv, hNoT⟩)
 
@@ -659,17 +670,19 @@ theorem removeFromAllNotificationWaitLists_no_tcb
       · -- write-set-honest sweep (PR #831 review 4): the insert arm is
         -- guarded; the untouched arm is the identity.
         split
-        · refine ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAccInv,
-            fun t h => ?_⟩
-          by_cases hx : (x == tid.toObjId) = true
-          · have hxk : x = tid.toObjId := eq_of_beq hx
-            subst hxk
-            have hclash := (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
-              acc.objects tid.toObjId _ hAccInv).symm.trans h
-            injection hclash with hclash
-            injection hclash
-          · exact hNoT t ((SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
-              acc.objects x tid.toObjId _ hx hAccInv).symm.trans h)
+        · split
+          · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hAccInv,
+              fun t h => ?_⟩
+            by_cases hx : x = tid.toObjId
+            · -- The swept key itself is rewritten in its own kind — not to a TCB.
+              subst hx
+              have hclash := (SystemState.rewriteObject_objects_self
+                acc tid.toObjId _ _ hAccInv).symm.trans h
+              injection hclash with hclash
+              injection hclash
+            · exact hNoT t ((SystemState.rewriteObject_objects_ne
+                acc x tid.toObjId _ _ hx hAccInv).symm.trans h)
+          · exact ⟨hAccInv, hNoT⟩
         · exact ⟨hAccInv, hNoT⟩
       · exact ⟨hAccInv, hNoT⟩)
 
@@ -831,8 +844,10 @@ theorem removeFromAllEndpointQueues_preserves_ipcInvariant
     (fun acc _ _ hAcc => by
       split
       · split
-        · exact ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAcc.1,
-            ipcInvariant_insert_endpoint acc _ _ hAcc.1 hAcc.2⟩
+        · split
+          · exact ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hAcc.1,
+              ipcInvariant_insert_endpoint acc _ _ hAcc.1 hAcc.2⟩
+          · exact hAcc
         · exact hAcc
       · exact hAcc)).2
 
@@ -884,36 +899,36 @@ theorem removeFromAllNotificationWaitLists_preserves_ipcInvariant
   exact (SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup st.objects st _
     (fun acc => acc.objects.invExt ∧ ipcInvariant acc)
     hInv ⟨hInv, hIpc⟩
-    (fun acc x v hV hAcc => by
+    (fun acc x _ _hV hAcc => by
       obtain ⟨hAccInv, hAccIpc⟩ := hAcc
       split
-      · -- `.notification notif` step: the corrected rewrite is well-formed
-        -- from the SOURCE table's invariant (`hIpc` at the visited key).
+      · -- `.notification` step: the record is the ACCUMULATOR's, read through
+        -- the witnessed lookup, and its corrected rewrite is well-formed from
+        -- the accumulator's own invariant (`hAccIpc` at the visited key).
         -- Write-set-honest sweep (PR #831 review 4): the insert arm is
         -- guarded by waiter membership; the untouched arm is the identity.
-        rename_i notif
         split
-        · refine ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAccInv,
-            ?_⟩
-          have hWF : notificationInvariant
-              { notif with
-                  waitingThreads := notif.waitingThreads.filter (· != tid)
-                  state := if notif.state = .waiting
-                      ∧ (notif.waitingThreads.filter (· != tid)).val.isEmpty then .idle
-                    else notif.state } :=
-            notificationQueueWellFormed_filter_correct notif tid (hIpc x notif hV)
-          intro oid ntfn hL
-          by_cases hx : (x == oid) = true
-          · have hk : x = oid := eq_of_beq hx
-            subst hk
-            have hEq := (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
-              acc.objects x _ hAccInv).symm.trans hL
-            injection hEq with hEq
-            injection hEq with hEq
-            exact hEq ▸ hWF
-          · exact hAccIpc oid ntfn
-              ((SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
-                acc.objects x oid _ hx hAccInv).symm.trans hL)
+        · rename_i notif hN _
+          split
+          · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hAccInv, ?_⟩
+            have hWF : notificationInvariant
+                { notif with
+                    waitingThreads := notif.waitingThreads.filter (· != tid)
+                    state := if notif.state = .waiting
+                        ∧ (notif.waitingThreads.filter (· != tid)).val.isEmpty then .idle
+                      else notif.state } :=
+              notificationQueueWellFormed_filter_correct notif tid
+                (hAccIpc x notif ((SystemState.getNotification?_eq_some_iff acc x notif).mp hN))
+            intro oid ntfn hL
+            by_cases hx : x = oid
+            · subst hx
+              have hEq := (SystemState.rewriteObject_objects_self acc x _ _ hAccInv).symm.trans hL
+              injection hEq with hEq
+              injection hEq with hEq
+              exact hEq ▸ hWF
+            · exact hAccIpc oid ntfn
+                ((SystemState.rewriteObject_objects_ne acc x oid _ _ hx hAccInv).symm.trans hL)
+          · exact ⟨hAccInv, hAccIpc⟩
         · exact ⟨hAccInv, hAccIpc⟩
       · exact ⟨hAccInv, hAccIpc⟩)).2
 
@@ -2110,14 +2125,17 @@ not depend on the fold's iteration order. -/
 def endpointSweepBody (stSpliced : SystemState) (tid : SeLe4n.ThreadId)
     (acc : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject) : SystemState :=
   match obj with
-  | .endpoint ep =>
-      if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
-          || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
-        let ep' : Endpoint := {
-          sendQ := removeThreadFromQueue stSpliced ep.sendQ tid,
-          receiveQ := removeThreadFromQueue stSpliced ep.receiveQ tid }
-        { acc with objects := acc.objects.insert oid (.endpoint ep') }
-      else acc
+  | .endpoint _ =>
+      match acc.getEndpointWitnessed? oid with
+      | some ⟨ep, hEp⟩ =>
+        if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
+            || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
+          let ep' : Endpoint := {
+            sendQ := removeThreadFromQueue stSpliced ep.sendQ tid,
+            receiveQ := removeThreadFromQueue stSpliced ep.receiveQ tid }
+          acc.rewriteObject oid (.endpoint ep') (SystemState.rewriteAdmissible_endpoint hEp ep')
+        else acc
+      | none => acc
   | _ => acc
 
 /-- **WS-RR RR7.22 (residual)**: the sweep *is* the fold of that body.
@@ -2141,16 +2159,20 @@ ill-formed. -/
 def notificationPurgeBody (tid : SeLe4n.ThreadId)
     (acc : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject) : SystemState :=
   match obj with
-  | .notification notif =>
-    if notif.waitingThreads.val.contains tid then
-      let wt' := notif.waitingThreads.filter (· != tid)
-      let notif' : Notification := {
-        notif with
-          waitingThreads := wt'
-          state := if notif.state = .waiting ∧ wt'.val.isEmpty then .idle
-                   else notif.state }
-      { acc with objects := acc.objects.insert oid (.notification notif') }
-    else acc
+  | .notification _ =>
+    match acc.getNotificationWitnessed? oid with
+    | some ⟨notif, hN⟩ =>
+      if notif.waitingThreads.val.contains tid then
+        let wt' := notif.waitingThreads.filter (· != tid)
+        let notif' : Notification := {
+          notif with
+            waitingThreads := wt'
+            state := if notif.state = .waiting ∧ wt'.val.isEmpty then .idle
+                     else notif.state }
+        acc.rewriteObject oid (.notification notif')
+          (SystemState.rewriteAdmissible_notification hN notif')
+      else acc
+    | none => acc
   | _ => acc
 
 /-- The purge *is* that fold.  `rfl`, the pin — same discipline as the endpoint
@@ -2245,11 +2267,12 @@ theorem removeFromAllEndpointQueues_endpoint_value (st : SystemState) (tid : SeL
     | endpoint ep =>
       simp only
       split
-      · exact ⟨RHTable.insert_preserves_invExt _ _ _ hE, by
-          show (acc.objects.insert o' _).get? o = _
-          rw [RHTable.getElem?_insert_ne acc.objects o' o _
-            (by simpa using fun h => hne h.symm) hE]
-          exact hA⟩
+      · split
+        · exact ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, by
+            show (acc.rewriteObject o' _ _).objects[o]? = _
+            rw [SystemState.rewriteObject_objects_ne acc o' o _ _ (fun h => hne h.symm) hE]
+            exact hA⟩
+        · exact ⟨hE, hA⟩
       · exact ⟨hE, hA⟩
     | _ => exact ⟨hE, hA⟩
   · rintro acc o v hGet ⟨hE, hA⟩
@@ -2257,14 +2280,15 @@ theorem removeFromAllEndpointQueues_endpoint_value (st : SystemState) (tid : SeL
     cases v with
     | endpoint ep =>
       simp only
+      -- At the visit the accumulator still holds the enumerated record (`Pre`),
+      -- so the witnessed lookup answers it and the body's own match reduces.
+      have hAccEp : acc.getEndpoint? o = some ep :=
+        (SystemState.getEndpoint?_eq_some_iff acc o ep).mpr (hA.trans hGet)
+      simp only [SystemState.getEndpointWitnessed?_eq_some hAccEp]
       split
-      · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
+      · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
         intro e he e0 he0
-        have he' : (acc.objects.insert o (KernelObject.endpoint
-            { sendQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.sendQ tid,
-              receiveQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.receiveQ tid })).get? o
-            = some (KernelObject.endpoint e) := he
-        rw [RHTable.getElem?_insert_self acc.objects o _ hE] at he'
+        have he' := (SystemState.rewriteObject_objects_self acc o _ _ hE).symm.trans he
         obtain rfl := KernelObject.endpoint.inj (Option.some.inj he')
         have hGet' : (spliceOutMidQueueNode st tid).objects[o]?
             = some (KernelObject.endpoint ep) := hGet
@@ -2294,15 +2318,13 @@ theorem removeFromAllEndpointQueues_endpoint_value (st : SystemState) (tid : SeL
     | endpoint ep =>
       simp only
       split
-      · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-        intro e he
-        have he' : (acc.objects.insert o' (KernelObject.endpoint
-            { sendQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.sendQ tid,
-              receiveQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.receiveQ tid })).get? o
-            = some (KernelObject.endpoint e) := he
-        rw [RHTable.getElem?_insert_ne acc.objects o' o _
-          (by simpa using fun h => hne h.symm) hE] at he'
-        exact hQ e he'
+      · split
+        · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
+          intro e he
+          have he' := (SystemState.rewriteObject_objects_ne acc o' o _ _
+            (fun h => hne h.symm) hE).symm.trans he
+          exact hQ e he'
+        · exact ⟨hE, hQ⟩
       · exact ⟨hE, hQ⟩
     | _ => exact ⟨hE, hQ⟩
 
@@ -2352,19 +2374,21 @@ theorem removeFromAllEndpointQueues_tcb_frame (st : SystemState) (tid : SeLe4n.T
       | endpoint ep =>
         simp only
         split
-        · have hNe : k' ≠ k := by
-            intro hEq
-            have h2 : (spliceOutMidQueueNode st tid).objects.get? k'
-                = some (KernelObject.endpoint ep) := hGet
-            rw [hEq] at h2
-            have h3 : (spliceOutMidQueueNode st tid).objects.get? k
-                = some (KernelObject.tcb t0) := h
-            rw [h3] at h2
-            cases h2
-          refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-          show (acc.objects.insert k' _).get? k = _
-          rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hNe) hE]
-          exact hA
+        · split
+          · have hNe : k' ≠ k := by
+              intro hEq
+              have h2 : (spliceOutMidQueueNode st tid).objects.get? k'
+                  = some (KernelObject.endpoint ep) := hGet
+              rw [hEq] at h2
+              have h3 : (spliceOutMidQueueNode st tid).objects.get? k
+                  = some (KernelObject.tcb t0) := h
+              rw [h3] at h2
+              cases h2
+            refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
+            show (acc.rewriteObject k' _ _).objects[k]? = _
+            rw [SystemState.rewriteObject_objects_ne acc k' k _ _ hNe hE]
+            exact hA
+          · exact ⟨hE, hA⟩
         · exact ⟨hE, hA⟩
       | _ => exact ⟨hE, hA⟩)).2
 
@@ -2388,16 +2412,16 @@ theorem removeFromAllEndpointQueues_tcb_source (st : SystemState) (tid : SeLe4n.
   | endpoint ep' =>
     simp only
     split
-    · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-      intro t ht
-      by_cases hK : k' = k
-      · subst hK
-        have ht' : (acc.objects.insert k' _).get? k' = some (KernelObject.tcb t) := ht
-        rw [RHTable.getElem?_insert_self acc.objects k' _ hE] at ht'
-        cases ht'
-      · have ht' : (acc.objects.insert k' _).get? k = some (KernelObject.tcb t) := ht
-        rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE] at ht'
-        exact hA t ht'
+    · split
+      · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
+        intro t ht
+        by_cases hK : k' = k
+        · subst hK
+          have ht' := (SystemState.rewriteObject_objects_self acc k' _ _ hE).symm.trans ht
+          cases ht'
+        · have ht' := (SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE).symm.trans ht
+          exact hA t ht'
+      · exact ⟨hE, hA⟩
     · exact ⟨hE, hA⟩
   | _ => exact ⟨hE, hA⟩
 
@@ -2420,14 +2444,15 @@ theorem removeFromAllEndpointQueues_endpoint_source (st : SystemState) (tid : Se
   | endpoint ep' =>
     simp only
     split
-    · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-      intro e he
-      by_cases hK : k' = k
-      · subst hK
-        exact ⟨ep', hGet⟩
-      · have he' : (acc.objects.insert k' _).get? k = some (KernelObject.endpoint e) := he
-        rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE] at he'
-        exact hA e he'
+    · split
+      · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
+        intro e he
+        by_cases hK : k' = k
+        · subst hK
+          exact ⟨ep', hGet⟩
+        · have he' := (SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE).symm.trans he
+          exact hA e he'
+      · exact ⟨hE, hA⟩
     · exact ⟨hE, hA⟩
   | _ => exact ⟨hE, hA⟩
 

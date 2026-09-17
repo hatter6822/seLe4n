@@ -74,27 +74,26 @@ theorem removeFromAllNotificationWaitLists_nonNotification (st : SystemState)
       | notification n =>
         simp only
         split
-        · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-          by_cases hK : k' = k
-          · subst hK
-            constructor
-            · intro hx
-              have hx' : (acc.objects.insert k' _).get? k' = some o := hx
-              rw [RHTable.getElem?_insert_self acc.objects k' _ hE] at hx'
-              exact absurd (Option.some.inj hx').symm (hNotN _)
-            · intro hx
-              have hx2 : st.objects.get? k' = some o := hx
-              rw [hGet] at hx2
-              exact absurd (Option.some.inj hx2).symm (hNotN n)
-          · constructor
-            · intro hx
-              have hx' : (acc.objects.insert k' _).get? k = some o := hx
-              rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE] at hx'
-              exact hA.mp hx'
-            · intro hx
-              show (acc.objects.insert k' _).get? k = some o
-              rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE]
-              exact hA.mpr hx
+        · split
+          · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
+            by_cases hK : k' = k
+            · subst hK
+              constructor
+              · intro hx
+                have hx' := (SystemState.rewriteObject_objects_self acc k' _ _ hE).symm.trans hx
+                exact absurd (Option.some.inj hx').symm (hNotN _)
+              · intro hx
+                have hx2 : st.objects.get? k' = some o := hx
+                rw [hGet] at hx2
+                exact absurd (Option.some.inj hx2).symm (hNotN n)
+            · constructor
+              · intro hx
+                have hx' := (SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE).symm.trans hx
+                exact hA.mp hx'
+              · intro hx
+                rw [SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE]
+                exact hA.mpr hx
+          · exact ⟨hE, hA⟩
         · exact ⟨hE, hA⟩
       | _ => exact ⟨hE, hA⟩)).2
 
@@ -114,20 +113,25 @@ theorem removeFromAllNotificationWaitLists_notification_badge (st : SystemState)
   rintro acc k' v' hGet ⟨hE, hA⟩
   unfold notificationPurgeBody
   cases v' with
-  | notification n' =>
+  | notification _ =>
     simp only
     split
-    · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-      intro m hm
-      by_cases hK : k' = k
-      · subst hK
-        have hm' : (acc.objects.insert k' _).get? k' = some (KernelObject.notification m) := hm
-        rw [RHTable.getElem?_insert_self acc.objects k' _ hE] at hm'
-        have hx := KernelObject.notification.inj (Option.some.inj hm')
-        exact ⟨n', hGet, by rw [← hx]⟩
-      · have hm' : (acc.objects.insert k' _).get? k = some (KernelObject.notification m) := hm
-        rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE] at hm'
-        exact hA m hm'
+    · rename_i n' hN' _
+      split
+      · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
+        intro m hm
+        by_cases hK : k' = k
+        · subst hK
+          -- The rewritten record is the ACCUMULATOR's, so its origin is what the
+          -- accumulator's own reading already traces back to.
+          have hm' := (SystemState.rewriteObject_objects_self acc k' _ _ hE).symm.trans hm
+          have hx := KernelObject.notification.inj (Option.some.inj hm')
+          obtain ⟨m0, hm0, hb⟩ :=
+            hA n' ((SystemState.getNotification?_eq_some_iff acc k' n').mp hN')
+          exact ⟨m0, hm0, by rw [← hx]; exact hb⟩
+        · have hm' := (SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE).symm.trans hm
+          exact hA m hm'
+      · exact ⟨hE, hA⟩
     · exact ⟨hE, hA⟩
   | _ => exact ⟨hE, hA⟩
 

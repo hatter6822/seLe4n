@@ -3244,6 +3244,47 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private theorem (witnessSt[1
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessInv(1|2|4)[^\n]*(\n([ \t][^\n]*)?)*\?_ \?_ rfl" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
 
 # ============================================================================
+# v0.35.74 -- the two queue sweeps read the accumulator's record through the
+# witnessed lookup and rewrite it under the store's proof
+# ============================================================================
+#
+# `removeFromAllEndpointQueues` and `removeFromAllNotificationWaitLists` were
+# the last two kernel transitions writing the object table raw.  Their fold
+# bodies dispatch on the ENUMERATED object's kind and then read the record from
+# the ACCUMULATOR through `getEndpointWitnessed?` / `getNotificationWitnessed?`,
+# so the write-set-honesty guard and the rewrite decide on one record, and the
+# write is `rewriteObject` under the witness that lookup carries.  The guard
+# stays outside the rewrite: a context the victim does not touch is no write.
+# The named bodies in `CleanupPreservation.lean` are the same text, pinned by
+# the two `rfl` equations.
+
+run_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAllEndpointQueues[^\n]*(\n([ \t][^\n]*)?)*    \| \.endpoint _ =>(\n([ \t][^\n]*)?)*      match acc\.getEndpointWitnessed\? oid with\n      \| some ⟨ep, hEp⟩ =>(\n([ \t][^\n]*)?)*        if ep\.sendQ\.head == some tid \|\| ep\.sendQ\.tail == some tid\n            \|\| ep\.receiveQ\.head == some tid \|\| ep\.receiveQ\.tail == some tid then(\n([ \t][^\n]*)?)*          acc\.rewriteObject oid \(\.endpoint ep'"'"'\) \(SystemState\.rewriteAdmissible_endpoint hEp ep'"'"'\)\n        else acc\n      \| none => acc" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAllNotificationWaitLists[^\n]*(\n([ \t][^\n]*)?)*    \| \.notification _ =>(\n([ \t][^\n]*)?)*      match acc\.getNotificationWitnessed\? oid with\n      \| some ⟨notif, hN⟩ =>(\n([ \t][^\n]*)?)*        if notif\.waitingThreads\.val\.contains tid then(\n([ \t][^\n]*)?)*          acc\.rewriteObject oid \(\.notification notif'"'"'\)\n            \(SystemState\.rewriteAdmissible_notification hN notif'"'"'\)\n        else acc\n      \| none => acc" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# The named bodies read through the same witnessed lookups, and the two `rfl`
+# pins still hold the operation to its named body.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointSweepBody[^\n]*(\n([ \t][^\n]*)?)*      match acc\.getEndpointWitnessed\? oid with\n      \| some ⟨ep, hEp⟩ =>" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def notificationPurgeBody[^\n]*(\n([ \t][^\n]*)?)*    match acc\.getNotificationWitnessed\? oid with\n    \| some ⟨notif, hN⟩ =>" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeFromAllEndpointQueues_eq_fold[^\n]*(\n([ \t][^\n]*)?)*        \(endpointSweepBody \(spliceOutMidQueueNode st tid\) tid\) := rfl$" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeFromAllNotificationWaitLists_eq_fold[^\n]*(\n([ \t][^\n]*)?)*      st\.objects\.fold st \(notificationPurgeBody tid\) := rfl$" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# The two witnessed lookups and their equations, beside the TCB's.
+run_check "INVARIANT" rg -n '^@\[inline\] def getEndpointWitnessed\? \(st : SystemState\) \(id : SeLe4n\.ObjId\)' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def getNotificationWitnessed\? \(st : SystemState\) \(id : SeLe4n\.ObjId\)' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem getEndpointWitnessed\?_eq_(some|none)' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem getNotificationWitnessed\?_eq_(some|none)' SeLe4n/Model/State.lean
+# NEGATIVE: the cleanup module holds no raw insert at all now, and neither
+# named body does (bounded to the declaration -- the module around them states
+# the raw insert in theorems about the store).
+run_negative_check "INVARIANT" rg -n 'objects\.insert' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (endpointSweepBody|notificationPurgeBody)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# NEGATIVE: neither sweep guards on the ENUMERATED record (the pre-migration
+# shape, where the guard and the write read two records), resolves the record
+# bare or by a dependent match, or folds its guard into the rewritten value.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAllEndpointQueues[^\n]*(\n([ \t][^\n]*)?)*    \| \.endpoint ep =>" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAllNotificationWaitLists[^\n]*(\n([ \t][^\n]*)?)*    \| \.notification notif =>" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAll(EndpointQueues|NotificationWaitLists)[^\n]*(\n([ \t][^\n]*)?)*match (\w+ : )?acc\.get(Endpoint|Notification)\? " SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAll(EndpointQueues|NotificationWaitLists)[^\n]*(\n([ \t][^\n]*)?)*rewriteObject oid \(\.(endpoint|notification) \(if " SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+
+# ============================================================================
 # WS-OD OD6 -- the payoff
 # ============================================================================
 #

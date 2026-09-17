@@ -5683,6 +5683,69 @@ theorem updateSchedContext_preserves_lifecycleMetadataConsistent (st : SystemSta
   · exact rewriteObject_preserves_lifecycleMetadataConsistent _ _ _ _ hInv hC
   · exact hC
 
+
+-- ============================================================================
+-- The endpoint and notification twins of the witnessed lookup (`v0.35.74`) —
+-- what the two queue sweeps read before they rewrite
+-- ============================================================================
+
+/-- `getEndpoint?` with its own equation — `getTcbWitnessed?`'s twin for the
+endpoint kind, keyed by the object id the endpoint sits under (there is no typed
+endpoint id in this model).  Matched on the store and erased to the value, for
+exactly the reasons `getTcbWitnessed?` records. -/
+@[inline] def getEndpointWitnessed? (st : SystemState) (id : SeLe4n.ObjId) :
+    Option { ep : Endpoint // st.getEndpoint? id = some ep } :=
+  match hx : st.objects[id]? with
+  | some (.endpoint ep) => some ⟨ep, (getEndpoint?_eq_some_iff st id ep).mpr hx⟩
+  | _ => none
+
+theorem getEndpointWitnessed?_eq_some {st : SystemState} {id : SeLe4n.ObjId} {ep : Endpoint}
+    (h : st.getEndpoint? id = some ep) :
+    st.getEndpointWitnessed? id = some ⟨ep, h⟩ := by
+  have hx := (getEndpoint?_eq_some_iff st id ep).mp h
+  unfold getEndpointWitnessed?
+  split
+  · next ep' hx' =>
+      obtain rfl : ep = ep' := KernelObject.endpoint.inj (Option.some.inj (hx.symm.trans hx'))
+      rfl
+  · next hne => exact absurd hx (hne ep)
+
+theorem getEndpointWitnessed?_eq_none {st : SystemState} {id : SeLe4n.ObjId}
+    (h : st.getEndpoint? id = none) :
+    st.getEndpointWitnessed? id = none := by
+  unfold getEndpointWitnessed?
+  split
+  · next ep hx => exact absurd ((getEndpoint?_eq_some_iff st id ep).mpr hx) (by rw [h]; simp)
+  · rfl
+
+/-- `getNotification?` with its own equation — the notification twin. -/
+@[inline] def getNotificationWitnessed? (st : SystemState) (id : SeLe4n.ObjId) :
+    Option { n : Notification // st.getNotification? id = some n } :=
+  match hx : st.objects[id]? with
+  | some (.notification n) => some ⟨n, (getNotification?_eq_some_iff st id n).mpr hx⟩
+  | _ => none
+
+theorem getNotificationWitnessed?_eq_some {st : SystemState} {id : SeLe4n.ObjId}
+    {n : Notification} (h : st.getNotification? id = some n) :
+    st.getNotificationWitnessed? id = some ⟨n, h⟩ := by
+  have hx := (getNotification?_eq_some_iff st id n).mp h
+  unfold getNotificationWitnessed?
+  split
+  · next n' hx' =>
+      obtain rfl : n = n' :=
+        KernelObject.notification.inj (Option.some.inj (hx.symm.trans hx'))
+      rfl
+  · next hne => exact absurd hx (hne n)
+
+theorem getNotificationWitnessed?_eq_none {st : SystemState} {id : SeLe4n.ObjId}
+    (h : st.getNotification? id = none) :
+    st.getNotificationWitnessed? id = none := by
+  unfold getNotificationWitnessed?
+  split
+  · next n hx =>
+      exact absurd ((getNotification?_eq_some_iff st id n).mpr hx) (by rw [h]; simp)
+  · rfl
+
 -- ----------------------------------------------------------------------------
 -- What a rewrite of one kind does to the typed lookups (`v0.35.71`)
 -- ----------------------------------------------------------------------------

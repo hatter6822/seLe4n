@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.73.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.74.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5944,7 +5944,9 @@ code may assume:
   `updateSchedContext`** — a plain match on the **witnessed lookup**
   `getTcbWitnessed?` / `getSchedContextWitnessed?` (`v0.35.65`: `getTcb?`
   carrying its own equation, `Option { t // st.getTcb? tid = some t }`, matched
-  on the store and erased to the value) whose witness is the rewrite's proof —
+  on the store and erased to the value; `getEndpointWitnessed?` /
+  `getNotificationWitnessed?` are the endpoint and notification twins since
+  `v0.35.74`) whose witness is the rewrite's proof —
   or that witnessed lookup around `rewriteObject` with `rewriteAdmissible_tcb`
   (one such lemma per neutral kind) when the looked-up value is used for more
   than the write; never a raw `objects.insert`, and never a dependent
@@ -6028,8 +6030,13 @@ code may assume:
   across 6** after `v0.35.73` made the seven inhabitation witnesses the
   store on each fresh key and the rewrite on the bind's two in-place writes
   — `witnessSt1`–`witnessSt4`, `chainWitnessSt1`, `chainWitnessSt2`,
-  `donationChainWitness`; five of
-  them the primitives that should be raw).  (6) **A transition that rewrites a TCB it is
+  `donationChainWitness`; **5 in 5 across 4** after `v0.35.74` moved the two
+  queue sweeps — `removeFromAllEndpointQueues`,
+  `removeFromAllNotificationWaitLists` — onto the witnessed lookup around
+  `rewriteObject`, and those five are the primitives that should be raw:
+  `storeObject`, `rewriteObject`, `Builder.createObject`, `updateObjectAt`
+  and the frozen store, so the executable population outside them is
+  **zero**).  (6) **A transition that rewrites a TCB it is
   handed takes the store's witness for it.**  `timerTickBudget` /
   `timerTickBudgetOnCore` (`v0.35.67`) take `(hTcb : st.getTcb? tid = some tcb)`
   beside the TCB — the proof `rewriteAdmissible_tcb` consumes, erased at runtime —

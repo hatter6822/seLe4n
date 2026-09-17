@@ -248,21 +248,30 @@ def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : Sys
   let stSpliced := spliceOutMidQueueNode st tid
   stSpliced.objects.fold stSpliced fun acc oid obj =>
     match obj with
-    | .endpoint ep =>
-      -- PR #831 review 4 (write-set honesty): rewrite ONLY the endpoints the
-      -- victim's removal actually changes — `removeThreadFromQueue` is the
-      -- identity unless a head/tail slot holds the victim, so re-inserting an
-      -- untouched endpoint was a spurious store write outside the declared
-      -- cancellation footprint (the interior links are the separate
-      -- `spliceOutMidQueueNode` step, which writes only the two neighbour
-      -- TCBs).
-      if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
-          || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
-        let ep' : Endpoint := {
-          sendQ := removeThreadFromQueue stSpliced ep.sendQ tid,
-          receiveQ := removeThreadFromQueue stSpliced ep.receiveQ tid }
-        { acc with objects := acc.objects.insert oid (.endpoint ep') }
-      else acc
+    | .endpoint _ =>
+      -- `v0.35.74`: the enumeration selects the kind; the record is read from
+      -- the accumulator through the witnessed lookup, so the guard and the
+      -- rewrite decide on ONE record and the write is `rewriteObject` under
+      -- the store's own proof.  The accumulator's record at a key the fold
+      -- reaches is the enumerated one -- each key is visited once and only
+      -- its own key is written -- so the fold computes what it always did.
+      match acc.getEndpointWitnessed? oid with
+      | some ⟨ep, hEp⟩ =>
+        -- PR #831 review 4 (write-set honesty): rewrite ONLY the endpoints the
+        -- victim's removal actually changes — `removeThreadFromQueue` is the
+        -- identity unless a head/tail slot holds the victim, so re-inserting an
+        -- untouched endpoint was a spurious store write outside the declared
+        -- cancellation footprint (the interior links are the separate
+        -- `spliceOutMidQueueNode` step, which writes only the two neighbour
+        -- TCBs).
+        if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
+            || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
+          let ep' : Endpoint := {
+            sendQ := removeThreadFromQueue stSpliced ep.sendQ tid,
+            receiveQ := removeThreadFromQueue stSpliced ep.receiveQ tid }
+          acc.rewriteObject oid (.endpoint ep') (SystemState.rewriteAdmissible_endpoint hEp ep')
+        else acc
+      | none => acc
     | _ => acc
 
 /-- R4-A.2 (M-12): Remove a ThreadId from all notification waiting lists.
@@ -284,21 +293,29 @@ def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : Sys
 def removeFromAllNotificationWaitLists (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   st.objects.fold st fun acc oid obj =>
     match obj with
-    | .notification notif =>
-      -- PR #831 review 4 (write-set honesty): rewrite ONLY the notifications
-      -- the victim actually waits on — the filter (and the sole-waiter state
-      -- correction) is the identity for every other notification, so
-      -- re-inserting it was a spurious store write outside the declared
-      -- cancellation footprint.
-      if notif.waitingThreads.val.contains tid then
-        let wt' := notif.waitingThreads.filter (· != tid)
-        let notif' : Notification := {
-          notif with
-            waitingThreads := wt'
-            state := if notif.state = .waiting ∧ wt'.val.isEmpty then .idle
-                     else notif.state }
-        { acc with objects := acc.objects.insert oid (.notification notif') }
-      else acc
+    | .notification _ =>
+      -- `v0.35.74`: the enumeration selects the kind, the accumulator's record
+      -- is read through the witnessed lookup, and the write is `rewriteObject`
+      -- under the store's own proof -- the endpoint sweep's shape, for the
+      -- same reason.
+      match acc.getNotificationWitnessed? oid with
+      | some ⟨notif, hN⟩ =>
+        -- PR #831 review 4 (write-set honesty): rewrite ONLY the notifications
+        -- the victim actually waits on — the filter (and the sole-waiter state
+        -- correction) is the identity for every other notification, so
+        -- re-inserting it was a spurious store write outside the declared
+        -- cancellation footprint.
+        if notif.waitingThreads.val.contains tid then
+          let wt' := notif.waitingThreads.filter (· != tid)
+          let notif' : Notification := {
+            notif with
+              waitingThreads := wt'
+              state := if notif.state = .waiting ∧ wt'.val.isEmpty then .idle
+                       else notif.state }
+          acc.rewriteObject oid (.notification notif')
+            (SystemState.rewriteAdmissible_notification hN notif')
+        else acc
+      | none => acc
     | _ => acc
 
 /-- Z7-P / AJ1-A (M-14): Return donated SchedContext before destroying a thread.

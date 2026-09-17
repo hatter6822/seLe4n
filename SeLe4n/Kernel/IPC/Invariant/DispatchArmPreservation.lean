@@ -3531,7 +3531,8 @@ private theorem removeFromAllEndpointQueues_id_of_unqueued
               || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid) = false := by
             simp only [Bool.or_eq_false_iff, beq_eq_false_iff_ne]
             exact ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩
-          simp only [hG]
+          simp only [SystemState.getEndpointWitnessed?_eq_some
+            ((SystemState.getEndpoint?_eq_some_iff st oid ep).mpr hEp), hG]
           rfl
       | tcb _ | notification _ | cnode _ | vspaceRoot _ | untyped _
       | schedContext _ | reply _ => rfl)
@@ -3554,7 +3555,8 @@ private theorem removeFromAllNotificationWaitLists_id_of_no_waits
             rw [RHTable_getElem?_eq_get?]; exact hGet
           have hC : n.waitingThreads.val.contains tid = false := by
             simp [hNoWait oid n hN]
-          simp only [hC]
+          simp only [SystemState.getNotificationWitnessed?_eq_some
+            ((SystemState.getNotification?_eq_some_iff st oid n).mpr hN), hC]
           rfl
       | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _
       | schedContext _ | reply _ => rfl)
