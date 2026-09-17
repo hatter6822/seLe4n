@@ -3582,20 +3582,20 @@ theorem scheduleDomain_preserves_schedulerInvariantBundleFull
 theorem timerTickBudget_unbound_nopreempt_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
     (hUnbound : tcb.schedContextBinding = .unbound)
-    (hNotExpired : ¬(tcb.timeSlice ≤ 1))
-    (hStep : timerTickBudget st tid tcb = .ok (st', false)) :
+    (hNotExpired : ¬(tcb.timeSlice ≤ 1)) (hTcb : st.getTcb? tid = some tcb)
+    (hStep : timerTickBudget st tid tcb hTcb = .ok (st', false)) :
     st'.scheduler = st.scheduler := by
-  simp [timerTickBudget, hUnbound, hNotExpired] at hStep
+  simp [timerTickBudget, hUnbound, hNotExpired, SystemState.rewriteObject] at hStep
   cases hStep; rfl
 
 /-- Z4-Q2: `timerTickBudget` unbound preempt preserves replenishQueue. -/
 theorem timerTickBudget_unbound_preempt_replenishQueue_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
     (hUnbound : tcb.schedContextBinding = .unbound)
-    (hExpired : tcb.timeSlice ≤ 1)
-    (hStep : timerTickBudget st tid tcb = .ok (st', true)) :
+    (hExpired : tcb.timeSlice ≤ 1) (hTcb : st.getTcb? tid = some tcb)
+    (hStep : timerTickBudget st tid tcb hTcb = .ok (st', true)) :
     (st'.scheduler.replenishQueueOnCore bootCoreId) = (st.scheduler.replenishQueueOnCore bootCoreId) := by
-  simp [timerTickBudget, hUnbound, hExpired] at hStep
+  simp [timerTickBudget, hUnbound, hExpired, SystemState.rewriteObject] at hStep
   cases hStep; rfl
 
 -- Z4-R: Replenishment queue preservation.
@@ -3660,10 +3660,10 @@ only writes `.tcb tcb'`. The inserted key is `tid.toObjId`. -/
 theorem timerTickBudget_unbound_nopreempt_objects_key
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
     (hUnbound : tcb.schedContextBinding = .unbound)
-    (hNotExpired : ¬(tcb.timeSlice ≤ 1))
-    (hStep : timerTickBudget st tid tcb = .ok (st', false)) :
+    (hNotExpired : ¬(tcb.timeSlice ≤ 1)) (hTcb : st.getTcb? tid = some tcb)
+    (hStep : timerTickBudget st tid tcb hTcb = .ok (st', false)) :
     ∃ tcb', st'.objects = st.objects.insert tid.toObjId (.tcb tcb') := by
-  unfold timerTickBudget SystemState.getSchedContext? at hStep
+  unfold timerTickBudget at hStep
   rw [hUnbound, if_neg hNotExpired] at hStep
   have hinj := Except.ok.inj hStep
   have hfst := congrArg Prod.fst hinj
@@ -3676,10 +3676,10 @@ object store. All SchedContext objects are untouched. -/
 theorem timerTickBudget_unbound_preempt_objects_key
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
     (hUnbound : tcb.schedContextBinding = .unbound)
-    (hExpired : tcb.timeSlice ≤ 1)
-    (hStep : timerTickBudget st tid tcb = .ok (st', true)) :
+    (hExpired : tcb.timeSlice ≤ 1) (hTcb : st.getTcb? tid = some tcb)
+    (hStep : timerTickBudget st tid tcb hTcb = .ok (st', true)) :
     ∃ tcb', st'.objects = st.objects.insert tid.toObjId (.tcb tcb') := by
-  unfold timerTickBudget SystemState.getSchedContext? at hStep
+  unfold timerTickBudget at hStep
   rw [hUnbound, if_pos hExpired] at hStep
   have hinj := Except.ok.inj hStep
   have hfst := congrArg Prod.fst hinj

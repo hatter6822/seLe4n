@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "fccde56ec7be7916be7aa6d6a1b8ade69464a942",
-      "tree_sha": "98303f8cc8b1b5579d709a5a97d69cba53fb6f4c",
-      "committed_at_utc": "2026-09-17T00:25:18+00:00"
+      "commit_sha": "8c7d89a038ef5de485ecb38f7dd5b2c4542e6881",
+      "tree_sha": "1ea0dfdf9c4e3d2530cddf9073709f1482daa6d0",
+      "committed_at_utc": "2026-09-17T01:15:40+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "94915d93ce2a16b2e6f1cbeb77c1bdbc7e030ec4cd26aff7ae048bd9ba3b3bc6"
+    "source_digest": "e7577213dc64022ba5efddb7d5ab7ae015dd6aa56b2f6d0d18fd6efed80c9473"
   },
   "summary": {
     "module_count": 400,
-    "declaration_count": 21712
+    "declaration_count": 21718
   },
   "readme_sync": {
-    "version": "0.35.66",
+    "version": "0.35.67",
     "lean_toolchain": "v4.28.0",
     "production_files": 330,
-    "production_loc": 385892,
+    "production_loc": 385998,
     "test_files": 70,
-    "test_loc": 78722,
-    "proved_theorem_lemma_decls": 12873,
+    "test_loc": 78763,
+    "proved_theorem_lemma_decls": 12876,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -199729,12 +199729,14 @@
             "allThreadsTimeSlicePositive_of_objects_eq",
             "cbsUpdateDeadline",
             "consumeBudget",
+            "getTcb",
             "insert",
             "invExt",
             "replenishOnCore",
             "replenishOnCore_objects",
             "replenishOnCore_preserves_objects_invExt",
             "resolveInsertPriority",
+            "rewriteObject",
             "runQueueOnCore",
             "scId",
             "scheduleReplenishment",
@@ -199748,7 +199750,7 @@
         {
           "kind": "theorem",
           "name": "replenishOnCore_preserves_runQueueSafetyOnCore",
-          "line": 3774,
+          "line": 3776,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -199765,7 +199767,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_preserves_runQueueSafetyOnCore",
-          "line": 3789,
+          "line": 3791,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -199793,6 +199795,7 @@
             "replenishOnCore_preserves_objects_invExt",
             "replenishOnCore_preserves_runQueueSafetyOnCore",
             "resolveInsertPriority",
+            "rewriteObject",
             "runQueueOnCore",
             "runQueueOnCoreWellFormed",
             "runQueueSafetyOnCore",
@@ -199812,7 +199815,7 @@
         {
           "kind": "theorem",
           "name": "refillSchedContext_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 3984,
+          "line": 3988,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -199829,7 +199832,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 3995,
+          "line": 3999,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -199848,7 +199851,7 @@
         {
           "kind": "theorem",
           "name": "foldl_processOneReplenishment_preserves_runnableThreadsAreTCBs",
-          "line": 4013,
+          "line": 4017,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -199867,7 +199870,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 4030,
+          "line": 4034,
           "called": [
             "CoreId",
             "SystemState",
@@ -199882,7 +199885,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 4043,
+          "line": 4047,
           "called": [
             "CoreId",
             "SystemState",
@@ -199897,7 +199900,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_getTcb",
-          "line": 4057,
+          "line": 4061,
           "called": [
             "CoreId",
             "SystemState",
@@ -199915,7 +199918,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_getTcb",
-          "line": 4072,
+          "line": 4076,
           "called": [
             "CoreId",
             "SystemState",
@@ -199933,7 +199936,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_contextMatchesCurrentOnCore_anyCore",
-          "line": 4086,
+          "line": 4090,
           "called": [
             "CoreId",
             "SystemState",
@@ -199954,7 +199957,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_preserves_contextMatchesCurrentOnCore",
-          "line": 4107,
+          "line": 4111,
           "called": [
             "CoreId",
             "SystemState",
@@ -199971,7 +199974,7 @@
         {
           "kind": "theorem",
           "name": "refillSchedContext_preserves_contextMatchesCurrentOnCore",
-          "line": 4117,
+          "line": 4121,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -199991,7 +199994,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_preserves_contextMatchesCurrentOnCore",
-          "line": 4131,
+          "line": 4135,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -200010,7 +200013,7 @@
         {
           "kind": "theorem",
           "name": "foldl_processOneReplenishment_preserves_contextMatchesCurrentOnCore",
-          "line": 4149,
+          "line": 4153,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -200029,7 +200032,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_preserves_contextMatchesCurrentOnCore",
-          "line": 4166,
+          "line": 4170,
           "called": [
             "CoreId",
             "SystemState",
@@ -200044,7 +200047,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_preserves_contextMatchesCurrentOnCore",
-          "line": 4178,
+          "line": 4182,
           "called": [
             "CoreId",
             "SystemState",
@@ -200059,7 +200062,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore",
-          "line": 4197,
+          "line": 4201,
           "called": [
             "CoreId",
             "SgiKind",
@@ -200089,7 +200092,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_of_pre",
-          "line": 4245,
+          "line": 4249,
           "called": [
             "CoreId",
             "SgiKind",
@@ -200115,7 +200118,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_preserves_runQueueSafetyOnCore",
-          "line": 4279,
+          "line": 4283,
           "called": [
             "CoreId",
             "SystemState",
@@ -200131,7 +200134,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed",
-          "line": 4300,
+          "line": 4304,
           "called": [
             "CoreId",
             "SgiKind",
@@ -200152,7 +200155,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_configDefaultTimeSlice",
-          "line": 4329,
+          "line": 4333,
           "called": [
             "CoreId",
             "SystemState",
@@ -200164,7 +200167,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_configDefaultTimeSlice",
-          "line": 4342,
+          "line": 4346,
           "called": [
             "CoreId",
             "SystemState",
@@ -200178,7 +200181,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_configDefaultTimeSlice",
-          "line": 4351,
+          "line": 4355,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -200193,7 +200196,7 @@
         {
           "kind": "theorem",
           "name": "foldl_processOneReplenishment_configDefaultTimeSlice",
-          "line": 4364,
+          "line": 4368,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -200209,7 +200212,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_configDefaultTimeSlice",
-          "line": 4378,
+          "line": 4382,
           "called": [
             "CoreId",
             "SystemState",
@@ -200221,7 +200224,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_configDefaultTimeSlice",
-          "line": 4388,
+          "line": 4392,
           "called": [
             "CoreId",
             "SystemState",
@@ -200233,7 +200236,7 @@
         {
           "kind": "theorem",
           "name": "refillSchedContext_preserves_allThreadsTimeSlicePositive",
-          "line": 4397,
+          "line": 4401,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -200248,7 +200251,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_preserves_allThreadsTimeSlicePositive",
-          "line": 4407,
+          "line": 4411,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -200267,7 +200270,7 @@
         {
           "kind": "theorem",
           "name": "foldl_processOneReplenishment_preserves_allThreadsTimeSlicePositive",
-          "line": 4425,
+          "line": 4429,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -200286,7 +200289,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_preserves_allThreadsTimeSlicePositive",
-          "line": 4442,
+          "line": 4446,
           "called": [
             "CoreId",
             "SystemState",
@@ -200300,7 +200303,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_preserves_allThreadsTimeSlicePositive",
-          "line": 4452,
+          "line": 4456,
           "called": [
             "CoreId",
             "SystemState",
@@ -200314,7 +200317,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_preserves_allThreadsTimeSlicePositive",
-          "line": 4461,
+          "line": 4465,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -200339,7 +200342,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive",
-          "line": 4500,
+          "line": 4504,
           "called": [
             "CoreId",
             "SystemState",
@@ -200355,7 +200358,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_preserves_allThreadsTimeSlicePositive",
-          "line": 4516,
+          "line": 4520,
           "called": [
             "CoreId",
             "SystemState",
@@ -200372,7 +200375,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_preserves_allThreadsTimeSlicePositive",
-          "line": 4537,
+          "line": 4541,
           "called": [
             "CoreId",
             "SystemState",
@@ -200389,7 +200392,7 @@
         {
           "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_preserves_allThreadsTimeSlicePositive",
-          "line": 4547,
+          "line": 4551,
           "called": [
             "CoreId",
             "SystemState",
@@ -200405,7 +200408,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_allThreadsTimeSlicePositive",
-          "line": 4574,
+          "line": 4578,
           "called": [
             "CoreId",
             "SgiKind",
@@ -200423,6 +200426,8 @@
             "timerTickBudgetOnCore",
             "timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive",
             "timerTickBudgetOnCore_preserves_objects_invExt",
+            "timerTickChargeCurrentOnCore_eq",
+            "timerTickChargeCurrentOnCore_none",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCorePrepared_configDefaultTimeSlice",
@@ -200434,7 +200439,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_allThreadsTimeSlicePositive",
-          "line": 4647,
+          "line": 4651,
           "called": [
             "CoreId",
             "SystemState",
@@ -200449,7 +200454,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_preserves_allThreadsTimeSlicePositive",
-          "line": 4656,
+          "line": 4660,
           "called": [
             "CoreId",
             "SystemState",
@@ -200465,7 +200470,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomainOnCore_preserves_allThreadsTimeSlicePositive",
-          "line": 4674,
+          "line": 4678,
           "called": [
             "CoreId",
             "SystemState",
@@ -200483,7 +200488,7 @@
         {
           "kind": "theorem",
           "name": "scheduleOrIdleOnCore_preserves_allThreadsTimeSlicePositive",
-          "line": 4698,
+          "line": 4702,
           "called": [
             "CoreId",
             "SystemState",
@@ -200497,7 +200502,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariantStrong_smp",
-          "line": 4720,
+          "line": 4724,
           "called": [
             "SystemState",
             "allThreadsTimeSlicePositive",
@@ -200508,7 +200513,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantStrong_smp_to_regNodup_smp",
-          "line": 4723,
+          "line": 4727,
           "called": [
             "SystemState",
             "schedulerInvariantStrong_smp",
@@ -200519,7 +200524,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantStrong_smp_to_allThreads",
-          "line": 4726,
+          "line": 4730,
           "called": [
             "SystemState",
             "allThreadsTimeSlicePositive",
@@ -200530,7 +200535,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantStrong_smp_to_timeSlicePositive",
-          "line": 4731,
+          "line": 4735,
           "called": [
             "CoreId",
             "SystemState",
@@ -200543,7 +200548,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantStrong_smp_to_currentTimeSlicePositive",
-          "line": 4737,
+          "line": 4741,
           "called": [
             "CoreId",
             "SystemState",
@@ -200556,7 +200561,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_smp_and_allThreads_to_strong",
-          "line": 4743,
+          "line": 4747,
           "called": [
             "SystemState",
             "allThreadsTimeSlicePositive",
@@ -200569,7 +200574,7 @@
         {
           "kind": "theorem",
           "name": "default_schedulerInvariantStrong_smp",
-          "line": 4749,
+          "line": 4753,
           "called": [
             "SystemState",
             "default",
@@ -200582,7 +200587,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_preserves_schedulerInvariantStrong_smp",
-          "line": 4760,
+          "line": 4764,
           "called": [
             "CoreId",
             "SystemState",
@@ -200596,7 +200601,7 @@
         {
           "kind": "theorem",
           "name": "replenishOnCore_preserves_schedulerInvariantStrong_smp",
-          "line": 4766,
+          "line": 4770,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -200612,7 +200617,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_preserves_schedulerInvariantStrong_smp",
-          "line": 4773,
+          "line": 4777,
           "called": [
             "CoreId",
             "SystemState",
@@ -200626,7 +200631,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_schedulerInvariantStrong_smp",
-          "line": 4779,
+          "line": 4783,
           "called": [
             "CoreId",
             "SystemState",
@@ -200643,7 +200648,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_preserves_schedulerInvariantStrong_smp",
-          "line": 4787,
+          "line": 4791,
           "called": [
             "CoreId",
             "SystemState",
@@ -200661,7 +200666,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_preserves_schedulerInvariantStrong_smp",
-          "line": 4795,
+          "line": 4799,
           "called": [
             "CoreId",
             "SystemState",
@@ -200676,7 +200681,7 @@
         {
           "kind": "theorem",
           "name": "scheduleOrIdleOnCore_preserves_schedulerInvariantStrong_smp",
-          "line": 4802,
+          "line": 4806,
           "called": [
             "CoreId",
             "SystemState",
@@ -200691,7 +200696,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_preserves_schedulerInvariantStrong_smp",
-          "line": 4809,
+          "line": 4813,
           "called": [
             "CoreId",
             "SystemState",
@@ -200707,7 +200712,7 @@
         {
           "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_preserves_schedulerInvariantStrong_smp",
-          "line": 4817,
+          "line": 4821,
           "called": [
             "CoreId",
             "SystemState",
@@ -200722,7 +200727,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_schedulerInvariantStrong_smp",
-          "line": 4824,
+          "line": 4828,
           "called": [
             "CoreId",
             "SystemState",
@@ -200739,7 +200744,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_preserves_schedulerInvariantStrong_smp",
-          "line": 4832,
+          "line": 4836,
           "called": [
             "CoreId",
             "SystemState",
@@ -200754,7 +200759,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomainOnCore_preserves_schedulerInvariantStrong_smp",
-          "line": 4839,
+          "line": 4843,
           "called": [
             "CoreId",
             "Kernel",
@@ -204009,6 +204014,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
             "st",
             "timerTickBudget"
           ]
@@ -204024,6 +204030,8 @@
             "TCB",
             "ThreadId",
             "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
             "scId",
             "st",
             "timerTickBudget",
@@ -204033,7 +204041,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudget_donated_succeeds",
-          "line": 43,
+          "line": 44,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -204041,6 +204049,8 @@
             "TCB",
             "ThreadId",
             "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
             "scId",
             "st",
             "timerTickBudget",
@@ -204050,7 +204060,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_val_eq",
-          "line": 57,
+          "line": 59,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -204060,7 +204070,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_one_le",
-          "line": 63,
+          "line": 65,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -204070,7 +204080,7 @@
         {
           "kind": "def",
           "name": "maxPreemptionInterval",
-          "line": 74,
+          "line": 76,
           "called": [
             "SchedContext",
             "TCB",
@@ -204080,7 +204090,7 @@
         {
           "kind": "theorem",
           "name": "maxPreemptionInterval_unbound",
-          "line": 82,
+          "line": 84,
           "called": [
             "SchedContext",
             "TCB",
@@ -204090,7 +204100,7 @@
         {
           "kind": "theorem",
           "name": "maxPreemptionInterval_bound",
-          "line": 89,
+          "line": 91,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -204102,7 +204112,7 @@
         {
           "kind": "theorem",
           "name": "maxPreemptionInterval_pos",
-          "line": 98,
+          "line": 100,
           "called": [
             "SchedContext",
             "TCB",
@@ -204186,10 +204196,9 @@
             "SchedulerStep",
             "SystemState",
             "bootCoreId",
-            "getSchedContext",
+            "getTcbWitnessed",
             "handleYield",
             "handleYieldWithBudget",
-            "insert",
             "none",
             "popDue",
             "processReplenishments",
@@ -204204,13 +204213,13 @@
             "timeoutBlockedThreads",
             "timerTick",
             "timerTickBudget",
-            "toObjId"
+            "updateSchedContext"
           ]
         },
         {
           "kind": "inductive",
           "name": "ValidTrace",
-          "line": 127,
+          "line": 132,
           "called": [
             "SchedulerStep",
             "SchedulerTrace",
@@ -204224,7 +204233,7 @@
         {
           "kind": "def",
           "name": "traceStateAt",
-          "line": 141,
+          "line": 146,
           "called": [
             "SchedulerTrace",
             "SystemState",
@@ -204235,7 +204244,7 @@
         {
           "kind": "def",
           "name": "selectedAt",
-          "line": 147,
+          "line": 152,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -204249,7 +204258,7 @@
         {
           "kind": "def",
           "name": "runnableAt",
-          "line": 157,
+          "line": 162,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -204264,7 +204273,7 @@
         {
           "kind": "def",
           "name": "budgetAvailableAt",
-          "line": 167,
+          "line": 172,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -204278,7 +204287,7 @@
         {
           "kind": "theorem",
           "name": "selectedAt_implies_not_in_runQueue",
-          "line": 182,
+          "line": 187,
           "called": [
             "SystemState",
             "ThreadId",
@@ -204292,7 +204301,7 @@
         {
           "kind": "theorem",
           "name": "budget_always_available_unbound",
-          "line": 198,
+          "line": 203,
           "called": [
             "SystemState",
             "TCB",
@@ -204303,7 +204312,7 @@
         {
           "kind": "theorem",
           "name": "budget_available_when_positive",
-          "line": 206,
+          "line": 211,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -204320,7 +204329,7 @@
         {
           "kind": "def",
           "name": "resolveEffectivePriority",
-          "line": 232,
+          "line": 237,
           "called": [
             "Deadline",
             "DomainId",
@@ -204336,7 +204345,7 @@
         {
           "kind": "def",
           "name": "countHigherOrEqualEffectivePriority",
-          "line": 240,
+          "line": 245,
           "called": [
             "DomainId",
             "Priority",
@@ -204352,7 +204361,7 @@
         {
           "kind": "def",
           "name": "maxBudgetInBand",
-          "line": 252,
+          "line": 257,
           "called": [
             "DomainId",
             "Priority",
@@ -204370,7 +204379,7 @@
         {
           "kind": "def",
           "name": "maxPeriodInBand",
-          "line": 275,
+          "line": 280,
           "called": [
             "DomainId",
             "Priority",
@@ -204388,7 +204397,7 @@
         {
           "kind": "def",
           "name": "bucketPosition",
-          "line": 296,
+          "line": 301,
           "called": [
             "SystemState",
             "ThreadId",
@@ -204402,7 +204411,7 @@
         {
           "kind": "theorem",
           "name": "countHigherOrEqual_empty",
-          "line": 311,
+          "line": 316,
           "called": [
             "DomainId",
             "Priority",
@@ -204416,7 +204425,7 @@
         {
           "kind": "def",
           "name": "selectedAtOnCore",
-          "line": 334,
+          "line": 339,
           "called": [
             "CoreId",
             "SchedulerTrace",
@@ -204430,7 +204439,7 @@
         {
           "kind": "theorem",
           "name": "selectedAt_eq_onCore_bootCore",
-          "line": 340,
+          "line": 345,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -204442,7 +204451,7 @@
         {
           "kind": "def",
           "name": "runnableAtOnCore",
-          "line": 345,
+          "line": 350,
           "called": [
             "CoreId",
             "SchedulerTrace",
@@ -204457,7 +204466,7 @@
         {
           "kind": "theorem",
           "name": "runnableAt_eq_onCore_bootCore",
-          "line": 351,
+          "line": 356,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -204469,7 +204478,7 @@
         {
           "kind": "def",
           "name": "countHigherOrEqualEffectivePriorityOnCore",
-          "line": 357,
+          "line": 362,
           "called": [
             "CoreId",
             "DomainId",
@@ -204485,7 +204494,7 @@
         {
           "kind": "theorem",
           "name": "countHigherOrEqualEffectivePriority_eq_onCore_bootCore",
-          "line": 368,
+          "line": 373,
           "called": [
             "DomainId",
             "Priority",
@@ -204499,7 +204508,7 @@
         {
           "kind": "def",
           "name": "maxBudgetInBandOnCore",
-          "line": 376,
+          "line": 381,
           "called": [
             "CoreId",
             "DomainId",
@@ -204517,7 +204526,7 @@
         {
           "kind": "theorem",
           "name": "maxBudgetInBand_eq_onCore_bootCore",
-          "line": 396,
+          "line": 401,
           "called": [
             "DomainId",
             "Priority",
@@ -204531,7 +204540,7 @@
         {
           "kind": "def",
           "name": "maxPeriodInBandOnCore",
-          "line": 404,
+          "line": 409,
           "called": [
             "CoreId",
             "DomainId",
@@ -204549,7 +204558,7 @@
         {
           "kind": "theorem",
           "name": "maxPeriodInBand_eq_onCore_bootCore",
-          "line": 424,
+          "line": 429,
           "called": [
             "DomainId",
             "Priority",
@@ -204563,7 +204572,7 @@
         {
           "kind": "def",
           "name": "bucketPositionOnCore",
-          "line": 431,
+          "line": 436,
           "called": [
             "CoreId",
             "SystemState",
@@ -204577,7 +204586,7 @@
         {
           "kind": "theorem",
           "name": "bucketPosition_eq_onCore_bootCore",
-          "line": 441,
+          "line": 446,
           "called": [
             "SystemState",
             "ThreadId",
@@ -204590,7 +204599,7 @@
         {
           "kind": "theorem",
           "name": "countHigherOrEqualOnCore_empty",
-          "line": 446,
+          "line": 451,
           "called": [
             "CoreId",
             "DomainId",
@@ -204983,7 +204992,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.Core",
       "path": "SeLe4n/Kernel/Scheduler/Operations/Core.lean",
-      "declaration_count": 99,
+      "declaration_count": 103,
       "declarations": [
         {
           "kind": "namespace",
@@ -205328,7 +205337,7 @@
         {
           "kind": "def",
           "name": "timerTickBudget",
-          "line": 610,
+          "line": 617,
           "called": [
             "Budget",
             "KernelError",
@@ -205339,11 +205348,15 @@
             "bootCoreId",
             "cbsUpdateDeadline",
             "consumeBudget",
-            "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
             "insert",
             "none",
             "replenishQueueOnCore",
             "resolveInsertPriority",
+            "rewriteAdmissible_schedContext",
+            "rewriteAdmissible_tcb",
+            "rewriteObject",
             "runQueueOnCore",
             "scId",
             "scheduleReplenishment",
@@ -205359,7 +205372,7 @@
         {
           "kind": "def",
           "name": "scheduleEffective",
-          "line": 707,
+          "line": 717,
           "called": [
             "Kernel",
             "activeDomainOnCore",
@@ -205379,12 +205392,12 @@
         {
           "kind": "def",
           "name": "timerTickWithBudget",
-          "line": 744,
+          "line": 754,
           "called": [
             "Kernel",
             "bootCoreId",
             "currentOnCore",
-            "getTcb",
+            "getTcbWitnessed",
             "none",
             "processReplenishmentsDue",
             "scheduleEffective",
@@ -205397,7 +205410,7 @@
         {
           "kind": "def",
           "name": "handleYieldWithBudget",
-          "line": 784,
+          "line": 794,
           "called": [
             "Budget",
             "Kernel",
@@ -205427,7 +205440,7 @@
         {
           "kind": "def",
           "name": "chooseThreadInDomain",
-          "line": 831,
+          "line": 841,
           "called": [
             "Kernel",
             "ThreadId",
@@ -205437,7 +205450,7 @@
         {
           "kind": "def",
           "name": "switchDomain",
-          "line": 860,
+          "line": 870,
           "called": [
             "Kernel",
             "boostedPriority",
@@ -205462,7 +205475,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_in_bounds",
-          "line": 902,
+          "line": 912,
           "called": [
             "DomainScheduleEntry",
             "cons",
@@ -205473,7 +205486,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_lookup_isSome",
-          "line": 914,
+          "line": 924,
           "called": [
             "DomainScheduleEntry",
             "getElem",
@@ -205485,7 +205498,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_objects_invExt",
-          "line": 924,
+          "line": 934,
           "called": [
             "SystemState",
             "cons",
@@ -205498,7 +205511,7 @@
         {
           "kind": "def",
           "name": "scheduleDomain",
-          "line": 941,
+          "line": 951,
           "called": [
             "Kernel",
             "bootCoreId",
@@ -205512,7 +205525,7 @@
         {
           "kind": "def",
           "name": "decrementDomainTimeOnCore",
-          "line": 1003,
+          "line": 1013,
           "called": [
             "CoreId",
             "SystemState",
@@ -205524,7 +205537,7 @@
         {
           "kind": "def",
           "name": "saveOutgoingContextOnCore",
-          "line": 1013,
+          "line": 1023,
           "called": [
             "CoreId",
             "SystemState",
@@ -205538,7 +205551,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_scheduler",
-          "line": 1022,
+          "line": 1032,
           "called": [
             "CoreId",
             "SystemState",
@@ -205550,7 +205563,7 @@
         {
           "kind": "def",
           "name": "idleDispatchableOnCore",
-          "line": 1041,
+          "line": 1051,
           "called": [
             "CoreId",
             "SystemState",
@@ -205565,7 +205578,7 @@
         {
           "kind": "def",
           "name": "dispatchIdleOnCore",
-          "line": 1052,
+          "line": 1062,
           "called": [
             "CoreId",
             "SystemState",
@@ -205581,7 +205594,7 @@
         {
           "kind": "theorem",
           "name": "dispatchIdleOnCore_currentOnCore",
-          "line": 1059,
+          "line": 1069,
           "called": [
             "CoreId",
             "SystemState",
@@ -205595,7 +205608,7 @@
         {
           "kind": "theorem",
           "name": "dispatchIdleOnCore_objects",
-          "line": 1064,
+          "line": 1074,
           "called": [
             "CoreId",
             "SystemState",
@@ -205607,7 +205620,7 @@
         {
           "kind": "theorem",
           "name": "dispatchIdleOnCore_runQueueOnCore",
-          "line": 1070,
+          "line": 1080,
           "called": [
             "CoreId",
             "SystemState",
@@ -205624,7 +205637,7 @@
         {
           "kind": "theorem",
           "name": "dispatchIdleOnCore_activeDomainOnCore",
-          "line": 1077,
+          "line": 1087,
           "called": [
             "CoreId",
             "SystemState",
@@ -205639,7 +205652,7 @@
         {
           "kind": "theorem",
           "name": "dispatchIdleOnCore_getTcb",
-          "line": 1084,
+          "line": 1094,
           "called": [
             "CoreId",
             "SystemState",
@@ -205653,7 +205666,7 @@
         {
           "kind": "theorem",
           "name": "dispatchIdleOnCore_machine_regsOnCore_self",
-          "line": 1093,
+          "line": 1103,
           "called": [
             "CoreId",
             "SystemState",
@@ -205669,7 +205682,7 @@
         {
           "kind": "def",
           "name": "idleFallbackOnCore",
-          "line": 1105,
+          "line": 1115,
           "called": [
             "CoreId",
             "SystemState",
@@ -205683,7 +205696,7 @@
         {
           "kind": "theorem",
           "name": "idleFallbackOnCore_objects",
-          "line": 1111,
+          "line": 1121,
           "called": [
             "CoreId",
             "SystemState",
@@ -205695,7 +205708,7 @@
         {
           "kind": "theorem",
           "name": "idleFallbackOnCore_getTcb",
-          "line": 1119,
+          "line": 1129,
           "called": [
             "CoreId",
             "SystemState",
@@ -205709,7 +205722,7 @@
         {
           "kind": "theorem",
           "name": "idleFallbackOnCore_runQueueOnCore_mem",
-          "line": 1127,
+          "line": 1137,
           "called": [
             "CoreId",
             "SystemState",
@@ -205725,7 +205738,7 @@
         {
           "kind": "def",
           "name": "scheduleEffectiveOnCore",
-          "line": 1154,
+          "line": 1164,
           "called": [
             "CoreId",
             "KernelError",
@@ -205747,7 +205760,7 @@
         {
           "kind": "def",
           "name": "scheduleOrIdleOnCore",
-          "line": 1189,
+          "line": 1199,
           "called": [
             "CoreId",
             "KernelError",
@@ -205759,7 +205772,7 @@
         {
           "kind": "def",
           "name": "replenishWakeTarget",
-          "line": 1204,
+          "line": 1214,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -205774,7 +205787,7 @@
         {
           "kind": "def",
           "name": "processOneReplenishmentOnCore",
-          "line": 1247,
+          "line": 1257,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -205794,7 +205807,7 @@
         {
           "kind": "def",
           "name": "processReplenishmentsDueOnCore",
-          "line": 1286,
+          "line": 1296,
           "called": [
             "CoreId",
             "SgiKind",
@@ -205811,7 +205824,7 @@
         {
           "kind": "def",
           "name": "replenishOnCore",
-          "line": 1300,
+          "line": 1310,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -205826,7 +205839,7 @@
         {
           "kind": "def",
           "name": "timerTickBudgetOnCore",
-          "line": 1336,
+          "line": 1346,
           "called": [
             "Budget",
             "CoreId",
@@ -205838,10 +205851,15 @@
             "boostedPriority",
             "cbsUpdateDeadline",
             "consumeBudget",
-            "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
             "insert",
+            "none",
             "replenishOnCore",
             "resolveInsertPriority",
+            "rewriteAdmissible_schedContext",
+            "rewriteAdmissible_tcb",
+            "rewriteObject",
             "runQueueOnCore",
             "scId",
             "scheduleReplenishment",
@@ -205854,28 +205872,90 @@
         },
         {
           "kind": "def",
+          "name": "timerTickChargeCurrentOnCore",
+          "line": 1418,
+          "called": [
+            "CoreId",
+            "KernelError",
+            "SgiKind",
+            "SystemState",
+            "ThreadId",
+            "getTcbWitnessed",
+            "none",
+            "st",
+            "timerTickBudgetOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTickChargeCurrentOnCore_ok",
+          "line": 1427,
+          "called": [
+            "CoreId",
+            "SgiKind",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "st",
+            "timerTickBudgetOnCore",
+            "timerTickChargeCurrentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTickChargeCurrentOnCore_eq",
+          "line": 1439,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "getTcbWitnessed",
+            "st",
+            "timerTickBudgetOnCore",
+            "timerTickChargeCurrentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTickChargeCurrentOnCore_none",
+          "line": 1446,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "getTcbWitnessed",
+            "none",
+            "st",
+            "timerTickChargeCurrentOnCore"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "timerTickOnCore",
-          "line": 1429,
+          "line": 1499,
           "called": [
             "CoreId",
             "KernelError",
             "SgiKind",
             "SystemState",
             "currentOnCore",
-            "getTcb",
             "handleRescheduleSgiOnCore",
             "none",
             "processReplenishmentsDueOnCore",
             "scheduleEffectiveOnCore",
             "setLastTimeoutErrorsOnCore",
             "st",
-            "timerTickBudgetOnCore"
+            "timerTickChargeCurrentOnCore"
           ]
         },
         {
           "kind": "def",
           "name": "switchDomainOnCore",
-          "line": 1511,
+          "line": 1578,
           "called": [
             "CoreId",
             "KernelError",
@@ -205900,7 +205980,7 @@
         {
           "kind": "def",
           "name": "scheduleDomainOnCore",
-          "line": 1563,
+          "line": 1630,
           "called": [
             "CoreId",
             "KernelError",
@@ -205915,7 +205995,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomainOnCore_singleDomain_inert",
-          "line": 1581,
+          "line": 1648,
           "called": [
             "CoreId",
             "SystemState",
@@ -205926,7 +206006,7 @@
         {
           "kind": "def",
           "name": "threadRunningOnSomeCore",
-          "line": 1613,
+          "line": 1680,
           "called": [
             "SystemState",
             "ThreadId",
@@ -205937,7 +206017,7 @@
         {
           "kind": "def",
           "name": "threadQueuedOnSomeCore",
-          "line": 1625,
+          "line": 1692,
           "called": [
             "SystemState",
             "ThreadId",
@@ -205948,7 +206028,7 @@
         {
           "kind": "theorem",
           "name": "threadRunningOnSomeCore_eq_runningOnSomeCore",
-          "line": 1631,
+          "line": 1698,
           "called": [
             "SystemState",
             "ThreadId",
@@ -205960,7 +206040,7 @@
         {
           "kind": "theorem",
           "name": "threadQueuedOnSomeCore_eq_runnableOnSomeCore",
-          "line": 1636,
+          "line": 1703,
           "called": [
             "SystemState",
             "ThreadId",
@@ -205972,7 +206052,7 @@
         {
           "kind": "def",
           "name": "inferThreadState",
-          "line": 1665,
+          "line": 1732,
           "called": [
             "SystemState",
             "TCB",
@@ -205986,7 +206066,7 @@
         {
           "kind": "def",
           "name": "syncThreadStates",
-          "line": 1680,
+          "line": 1747,
           "called": [
             "SystemState",
             "fold",
@@ -205999,7 +206079,7 @@
         {
           "kind": "def",
           "name": "threadStateConsistent",
-          "line": 1695,
+          "line": 1762,
           "called": [
             "ObjId",
             "SystemState",
@@ -206012,7 +206092,7 @@
         {
           "kind": "def",
           "name": "threadInactiveFlagConsistent",
-          "line": 1725,
+          "line": 1792,
           "called": [
             "ObjId",
             "SystemState",
@@ -206025,7 +206105,7 @@
         {
           "kind": "theorem",
           "name": "threadStateConsistent_implies_threadInactiveFlagConsistent",
-          "line": 1732,
+          "line": 1799,
           "called": [
             "SystemState",
             "st",
@@ -206036,7 +206116,7 @@
         {
           "kind": "theorem",
           "name": "inferThreadState_running_of_currentOnCore",
-          "line": 1742,
+          "line": 1809,
           "called": [
             "CoreId",
             "SystemState",
@@ -206053,7 +206133,7 @@
         {
           "kind": "theorem",
           "name": "inferThreadState_ready_of_runQueueOnCore",
-          "line": 1753,
+          "line": 1820,
           "called": [
             "CoreId",
             "SystemState",
@@ -206071,7 +206151,7 @@
         {
           "kind": "theorem",
           "name": "threadRunningOnSomeCore_eq_bootCore_of_secondaries_quiescent",
-          "line": 1772,
+          "line": 1839,
           "called": [
             "CoreId",
             "SystemState",
@@ -206088,7 +206168,7 @@
         {
           "kind": "theorem",
           "name": "threadQueuedOnSomeCore_eq_bootCore_of_secondaries_quiescent",
-          "line": 1791,
+          "line": 1858,
           "called": [
             "CoreId",
             "SystemState",
@@ -206104,7 +206184,7 @@
         {
           "kind": "theorem",
           "name": "inferThreadState_eq_bootCore_of_secondaries_quiescent",
-          "line": 1815,
+          "line": 1882,
           "called": [
             "CoreId",
             "SystemState",
@@ -206123,7 +206203,7 @@
         {
           "kind": "def",
           "name": "threadPlacedOnSomeCore",
-          "line": 1853,
+          "line": 1920,
           "called": [
             "SystemState",
             "ThreadId",
@@ -206135,7 +206215,7 @@
         {
           "kind": "theorem",
           "name": "inferThreadState_eq_inactive_iff",
-          "line": 1856,
+          "line": 1923,
           "called": [
             "SystemState",
             "TCB",
@@ -206150,7 +206230,7 @@
         {
           "kind": "theorem",
           "name": "threadInactiveFlagConsistent_of_frame",
-          "line": 1866,
+          "line": 1933,
           "called": [
             "ObjId",
             "SystemState",
@@ -206164,7 +206244,7 @@
         {
           "kind": "theorem",
           "name": "threadInactiveFlagConsistent_of_frame_placing",
-          "line": 1880,
+          "line": 1947,
           "called": [
             "ObjId",
             "SystemState",
@@ -206182,7 +206262,7 @@
         {
           "kind": "theorem",
           "name": "threadPlacedOnSomeCore_congr",
-          "line": 1912,
+          "line": 1979,
           "called": [
             "CoreId",
             "SystemState",
@@ -206201,7 +206281,7 @@
         {
           "kind": "theorem",
           "name": "threadRunningOnSomeCore_of_currentOnCore",
-          "line": 1928,
+          "line": 1995,
           "called": [
             "CoreId",
             "SystemState",
@@ -206216,7 +206296,7 @@
         {
           "kind": "theorem",
           "name": "objects_insert_tcb_frame",
-          "line": 1936,
+          "line": 2003,
           "called": [
             "ObjId",
             "RHTable.getElem",
@@ -206232,7 +206312,7 @@
         {
           "kind": "theorem",
           "name": "threadPlacedOnSomeCore_save_and_reenqueue",
-          "line": 1959,
+          "line": 2026,
           "called": [
             "CoreId",
             "KernelObject",
@@ -206260,7 +206340,7 @@
         {
           "kind": "theorem",
           "name": "threadInactiveFlagConsistent_save_and_reenqueue",
-          "line": 1998,
+          "line": 2065,
           "called": [
             "CoreId",
             "Priority",
@@ -206285,7 +206365,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_preserves_threadInactiveFlagConsistent",
-          "line": 2019,
+          "line": 2086,
           "called": [
             "CoreId",
             "SystemState",
@@ -206301,7 +206381,7 @@
         {
           "kind": "theorem",
           "name": "threadPlacedOnSomeCore_eq_true_iff",
-          "line": 2037,
+          "line": 2104,
           "called": [
             "CoreId",
             "SystemState",
@@ -206320,7 +206400,7 @@
         {
           "kind": "theorem",
           "name": "threadQueuedOnSomeCore_eq_true_iff",
-          "line": 2052,
+          "line": 2119,
           "called": [
             "CoreId",
             "SystemState",
@@ -206335,7 +206415,7 @@
         {
           "kind": "theorem",
           "name": "threadInactiveFlagConsistent_dispatch",
-          "line": 2070,
+          "line": 2137,
           "called": [
             "CoreId",
             "SystemState",
@@ -206366,7 +206446,7 @@
         {
           "kind": "theorem",
           "name": "threadInactiveFlagConsistent_congr",
-          "line": 2134,
+          "line": 2201,
           "called": [
             "SystemState",
             "st",
@@ -206378,7 +206458,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_threadPlacedOnSomeCore",
-          "line": 2146,
+          "line": 2213,
           "called": [
             "CoreId",
             "SystemState",
@@ -206393,7 +206473,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_objects_frame",
-          "line": 2161,
+          "line": 2228,
           "called": [
             "CoreId",
             "ObjId",
@@ -206414,7 +206494,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_preserves_threadInactiveFlagConsistent",
-          "line": 2197,
+          "line": 2264,
           "called": [
             "CoreId",
             "SystemState",
@@ -206452,7 +206532,7 @@
         {
           "kind": "def",
           "name": "replenishScOnCore",
-          "line": 2282,
+          "line": 2349,
           "called": [
             "CoreId",
             "SchedContext",
@@ -206465,7 +206545,7 @@
         {
           "kind": "def",
           "name": "migrateSchedContextReplenishment",
-          "line": 2290,
+          "line": 2357,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -206483,7 +206563,7 @@
         {
           "kind": "def",
           "name": "migrateRunQueueOnAffinityChange",
-          "line": 2314,
+          "line": 2381,
           "called": [
             "CoreId",
             "SystemState",
@@ -206503,7 +206583,7 @@
         {
           "kind": "def",
           "name": "runningCoreOf",
-          "line": 2351,
+          "line": 2418,
           "called": [
             "CoreId",
             "SystemState",
@@ -206515,7 +206595,7 @@
         {
           "kind": "def",
           "name": "setThreadCpuAffinityWithMigration",
-          "line": 2384,
+          "line": 2451,
           "called": [
             "CoreId",
             "KernelError",
@@ -206541,7 +206621,7 @@
         {
           "kind": "def",
           "name": "affinityUnbindMarker",
-          "line": 2432,
+          "line": 2499,
           "called": [
             "numCores"
           ]
@@ -206549,7 +206629,7 @@
         {
           "kind": "def",
           "name": "decodeAffinity",
-          "line": 2435,
+          "line": 2502,
           "called": [
             "CoreId",
             "KernelError",
@@ -206561,7 +206641,7 @@
         {
           "kind": "def",
           "name": "setThreadCpuAffinityOnCore",
-          "line": 2459,
+          "line": 2526,
           "called": [
             "CoreId",
             "KernelError",
@@ -206575,7 +206655,7 @@
         {
           "kind": "def",
           "name": "setThreadCpuAffinityOp",
-          "line": 2474,
+          "line": 2541,
           "called": [
             "CoreId",
             "KernelError",
@@ -206589,7 +206669,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityOnCore_state_core_independent",
-          "line": 2483,
+          "line": 2550,
           "called": [
             "CoreId",
             "SystemState",
@@ -206602,7 +206682,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityOp_eq_onCore_state",
-          "line": 2498,
+          "line": 2565,
           "called": [
             "CoreId",
             "Kernel",
@@ -208193,8 +208273,11 @@
             "TCB",
             "ThreadId",
             "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
             "replenishOnCore",
             "replenishQueueOnCore",
+            "rewriteObject",
             "scId",
             "setLastTimeoutErrorsOnCore_replenishQueueOnCore",
             "setRunQueueOnCore_replenishQueueOnCore",
@@ -208206,15 +208289,17 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_replenishQueueOnCore_ne",
-          "line": 1569,
+          "line": 1570,
           "called": [
             "CoreId",
             "SgiKind",
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
             "replenishOnCore_replenishQueueOnCore_ne",
             "replenishQueueOnCore",
+            "rewriteObject",
             "setLastTimeoutErrorsOnCore_replenishQueueOnCore",
             "setRunQueueOnCore_replenishQueueOnCore",
             "st",
@@ -208225,7 +208310,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_donated_exhausted_replenish_eq",
-          "line": 1607,
+          "line": 1610,
           "called": [
             "CoreId",
             "SchedContext",
@@ -208235,8 +208320,11 @@
             "TCB",
             "ThreadId",
             "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
             "replenishOnCore",
             "replenishQueueOnCore",
+            "rewriteObject",
             "scId",
             "setLastTimeoutErrorsOnCore_replenishQueueOnCore",
             "setRunQueueOnCore_replenishQueueOnCore",
@@ -208248,7 +208336,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_preserves_replenishQueueValidOnCore",
-          "line": 1627,
+          "line": 1631,
           "called": [
             "CoreId",
             "SgiKind",
@@ -208256,10 +208344,13 @@
             "TCB",
             "ThreadId",
             "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
             "none",
             "replenishOnCore_preserves_replenishQueueValid_smp",
             "replenishQueueValidOnCore",
             "replenishQueueValidOnCore_frame",
+            "rewriteObject",
             "scId",
             "st",
             "timerTickBudgetOnCore",
@@ -208270,7 +208361,7 @@
         {
           "kind": "theorem",
           "name": "affinityMigrationOrdering_synchronizesWith",
-          "line": 1690,
+          "line": 1695,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -208284,7 +208375,7 @@
         {
           "kind": "theorem",
           "name": "affinityMigrationOrdering_happensBefore",
-          "line": 1705,
+          "line": 1710,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -208298,7 +208389,7 @@
         {
           "kind": "theorem",
           "name": "migrateRunQueueOnAffinityChange_getTcb",
-          "line": 1728,
+          "line": 1733,
           "called": [
             "CoreId",
             "SystemState",
@@ -208313,7 +208404,7 @@
         {
           "kind": "theorem",
           "name": "migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore",
-          "line": 1738,
+          "line": 1743,
           "called": [
             "CoreId",
             "SystemState",
@@ -208337,7 +208428,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_getTcb",
-          "line": 1802,
+          "line": 1807,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -208357,7 +208448,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_preserves_schedContextRunQueueConsistent_perCore",
-          "line": 1818,
+          "line": 1823,
           "called": [
             "CoreId",
             "SystemState",
@@ -208379,7 +208470,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore",
-          "line": 1855,
+          "line": 1860,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -208398,7 +208489,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsistent_perCore",
-          "line": 1874,
+          "line": 1879,
           "called": [
             "CoreId",
             "SgiKind",
@@ -208421,7 +208512,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityWithMigration_sgi_eq",
-          "line": 1917,
+          "line": 1922,
           "called": [
             "CoreId",
             "SgiKind",
@@ -208441,7 +208532,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityWithMigration_no_sgi_if_local",
-          "line": 1940,
+          "line": 1945,
           "called": [
             "CoreId",
             "SgiKind",
@@ -208460,7 +208551,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityWithMigration_emits_reschedule_of_remote_runnable",
-          "line": 1955,
+          "line": 1960,
           "called": [
             "CoreId",
             "SgiKind",
@@ -208480,7 +208571,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityWithMigration_sgi_happensBefore",
-          "line": 1975,
+          "line": 1980,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -212363,7 +212454,7 @@
         {
           "kind": "def",
           "name": "enqueueIdleThreadOnCore",
-          "line": 165,
+          "line": 172,
           "called": [
             "CoreId",
             "SystemState",
@@ -212374,13 +212465,14 @@
             "runQueueOnCore",
             "setRunQueueOnCore",
             "st",
-            "toObjId"
+            "toObjId",
+            "withObjectStored"
           ]
         },
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_objects",
-          "line": 174,
+          "line": 179,
           "called": [
             "CoreId",
             "SystemState",
@@ -212395,7 +212487,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_scheduler",
-          "line": 182,
+          "line": 187,
           "called": [
             "CoreId",
             "SystemState",
@@ -212412,7 +212504,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_runQueueOnCore_self",
-          "line": 190,
+          "line": 195,
           "called": [
             "CoreId",
             "SystemState",
@@ -212430,7 +212522,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_runQueueOnCore_ne",
-          "line": 200,
+          "line": 205,
           "called": [
             "CoreId",
             "SystemState",
@@ -212444,7 +212536,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_activeDomainOnCore",
-          "line": 207,
+          "line": 212,
           "called": [
             "CoreId",
             "SystemState",
@@ -212457,7 +212549,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_currentOnCore",
-          "line": 213,
+          "line": 218,
           "called": [
             "CoreId",
             "SystemState",
@@ -212470,7 +212562,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_mem_runQueueOnCore_self",
-          "line": 225,
+          "line": 230,
           "called": [
             "CoreId",
             "SystemState",
@@ -212487,13 +212579,14 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_getTcb",
-          "line": 233,
+          "line": 238,
           "called": [
             "CoreId",
             "RHTable_get",
             "RHTable_getElem",
             "SystemState",
             "enqueueIdleThreadOnCore",
+            "enqueueIdleThreadOnCore_objects",
             "getTcb",
             "idleThreadId",
             "invExt",
@@ -212505,7 +212598,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_getTcb",
-          "line": 243,
+          "line": 248,
           "called": [
             "CoreId",
             "RHTable_get",
@@ -212514,6 +212607,7 @@
             "ThreadId",
             "ThreadId.toObjId_injective",
             "enqueueIdleThreadOnCore",
+            "enqueueIdleThreadOnCore_objects",
             "getTcb",
             "idleThreadId",
             "invExt",
@@ -212525,7 +212619,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_objects_invExt",
-          "line": 254,
+          "line": 259,
           "called": [
             "CoreId",
             "RHTable_insert_preserves_invExt",
@@ -212539,7 +212633,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_runQueueOnCore_wellFormed",
-          "line": 262,
+          "line": 267,
           "called": [
             "CoreId",
             "SystemState",
@@ -212555,7 +212649,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 275,
+          "line": 280,
           "called": [
             "CoreId",
             "SystemState",
@@ -212576,7 +212670,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_currentThreadValidOnCore",
-          "line": 309,
+          "line": 314,
           "called": [
             "CoreId",
             "SystemState",
@@ -212595,7 +212689,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_queueCurrentConsistentOnCore",
-          "line": 331,
+          "line": 336,
           "called": [
             "CoreId",
             "SystemState",
@@ -212615,7 +212709,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_currentThreadInActiveDomainOnCore",
-          "line": 352,
+          "line": 357,
           "called": [
             "CoreId",
             "SystemState",
@@ -212634,7 +212728,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_mem_idempotent",
-          "line": 371,
+          "line": 376,
           "called": [
             "CoreId",
             "SystemState",
@@ -212649,7 +212743,7 @@
         {
           "kind": "def",
           "name": "idleThreadEnqueuedOnCore",
-          "line": 391,
+          "line": 396,
           "called": [
             "CoreId",
             "SystemState",
@@ -212665,7 +212759,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore",
-          "line": 401,
+          "line": 406,
           "called": [
             "CoreId",
             "SystemState",
@@ -212683,7 +212777,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_always_succeeds",
-          "line": 421,
+          "line": 426,
           "called": [
             "CoreId",
             "SystemState",
@@ -212701,7 +212795,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds",
-          "line": 435,
+          "line": 440,
           "called": [
             "CoreId",
             "SystemState",
@@ -212722,7 +212816,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore",
-          "line": 472,
+          "line": 477,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -212739,7 +212833,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_runnableThreadsAreTCBsOnCore",
-          "line": 492,
+          "line": 497,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -212754,7 +212848,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds",
-          "line": 515,
+          "line": 520,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -212772,7 +212866,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_idle",
-          "line": 536,
+          "line": 541,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -212791,7 +212885,7 @@
         {
           "kind": "def",
           "name": "runQueueAffinityConsistentOnCore",
-          "line": 562,
+          "line": 567,
           "called": [
             "CoreId",
             "SystemState",
@@ -212806,7 +212900,7 @@
         {
           "kind": "theorem",
           "name": "idleThread_core_locality",
-          "line": 578,
+          "line": 583,
           "called": [
             "CoreId",
             "SystemState",
@@ -212825,7 +212919,7 @@
         {
           "kind": "theorem",
           "name": "idleThread_core_locality_of_enqueue",
-          "line": 592,
+          "line": 597,
           "called": [
             "CoreId",
             "SystemState",
@@ -212840,7 +212934,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_runQueueAffinityConsistentOnCore_self",
-          "line": 609,
+          "line": 614,
           "called": [
             "CoreId",
             "SystemState",
@@ -212862,7 +212956,7 @@
         {
           "kind": "theorem",
           "name": "idleThread_core_locality_forall",
-          "line": 630,
+          "line": 635,
           "called": [
             "SystemState",
             "getTcb",
@@ -212878,7 +212972,7 @@
         {
           "kind": "def",
           "name": "enqueueIdleThreadOnCoreLockSet",
-          "line": 645,
+          "line": 650,
           "called": [
             "AccessMode",
             "CoreId",
@@ -212889,7 +212983,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_length",
-          "line": 650,
+          "line": 655,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet",
@@ -212899,7 +212993,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_write_only",
-          "line": 654,
+          "line": 659,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet"
@@ -212908,7 +213002,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_contains_objStore_write",
-          "line": 662,
+          "line": 667,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet",
@@ -212918,7 +213012,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_contains_runQueue_write",
-          "line": 669,
+          "line": 674,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet"
@@ -212927,7 +213021,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_object_before_runQueue",
-          "line": 676,
+          "line": 681,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -212938,7 +213032,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_keys_nodup",
-          "line": 683,
+          "line": 688,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet"
@@ -212947,7 +213041,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_pairwise_le",
-          "line": 691,
+          "line": 696,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -212960,7 +213054,7 @@
         {
           "kind": "theorem",
           "name": "idleThread_no_starvation",
-          "line": 713,
+          "line": 718,
           "called": [
             "CoreId",
             "SystemState",
@@ -212982,7 +213076,7 @@
         {
           "kind": "def",
           "name": "idleAvailableOnCoreB",
-          "line": 737,
+          "line": 742,
           "called": [
             "CoreId",
             "SystemState",
@@ -212998,7 +213092,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_always_succeeds_of_idleAvailableB",
-          "line": 748,
+          "line": 753,
           "called": [
             "CoreId",
             "SystemState",
@@ -213020,7 +213114,7 @@
         {
           "kind": "theorem",
           "name": "idleThreadEnqueuedOnCore_idleAvailableOnCoreB",
-          "line": 769,
+          "line": 774,
           "called": [
             "CoreId",
             "SystemState",
@@ -213034,7 +213128,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_selection_inputs_framed",
-          "line": 788,
+          "line": 793,
           "called": [
             "CoreId",
             "Kernel",
@@ -215222,6 +215316,7 @@
             "TCB",
             "ThreadId",
             "currentOnCore",
+            "getTcb",
             "handleRescheduleSgiOnCore_preserves_replenishQueueAffinityConsistentOnCore",
             "invExt",
             "replenishQueueAffinityConsistentOnCore",
@@ -215229,6 +215324,7 @@
             "st",
             "timerTickBudgetOnCore",
             "timerTickBudgetOnCore_preserves_objects_invExt",
+            "timerTickChargeCurrentOnCore_ok",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCorePrepared_preserves_objects_invExt",
@@ -215249,6 +215345,7 @@
             "ThreadId",
             "currentOnCore",
             "getSchedContext",
+            "getTcb",
             "invExt",
             "perCoreCbsInvariant",
             "replenishQueueAffinityConsistentOnCore",
@@ -215444,6 +215541,7 @@
             "scheduleEffectiveOnCore_replenishQueueOnCore",
             "st",
             "timerTickBudgetOnCore_preserves_replenishQueueValidOnCore",
+            "timerTickChargeCurrentOnCore_ok",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCorePrepared_preserves_replenishQueueValidOnCore",
@@ -215453,7 +215551,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_machine",
-          "line": 250,
+          "line": 249,
           "called": [
             "SystemState",
             "ThreadId",
@@ -215464,7 +215562,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_machine",
-          "line": 259,
+          "line": 258,
           "called": [
             "CoreId",
             "SystemState",
@@ -215476,7 +215574,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_machine_timer",
-          "line": 267,
+          "line": 266,
           "called": [
             "SystemState",
             "ThreadId",
@@ -215488,7 +215586,7 @@
         {
           "kind": "theorem",
           "name": "timeoutThread_machine",
-          "line": 283,
+          "line": 282,
           "called": [
             "CoreId",
             "ObjId",
@@ -215507,7 +215605,7 @@
         {
           "kind": "theorem",
           "name": "timeoutBlockedThreads_machine",
-          "line": 310,
+          "line": 309,
           "called": [
             "CoreId",
             "KernelError",
@@ -215532,14 +215630,16 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_machine",
-          "line": 344,
+          "line": 343,
           "called": [
             "CoreId",
             "SgiKind",
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
             "replenishOnCore",
+            "rewriteObject",
             "st",
             "timeoutBlockedThreads_machine",
             "timerTickBudgetOnCore"
@@ -215548,7 +215648,7 @@
         {
           "kind": "theorem",
           "name": "dispatchIdleOnCore_machine_timer",
-          "line": 371,
+          "line": 372,
           "called": [
             "CoreId",
             "SystemState",
@@ -215560,7 +215660,7 @@
         {
           "kind": "theorem",
           "name": "idleFallbackOnCore_machine_timer",
-          "line": 376,
+          "line": 377,
           "called": [
             "CoreId",
             "SystemState",
@@ -215572,7 +215672,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_machine_timer",
-          "line": 385,
+          "line": 386,
           "called": [
             "CoreId",
             "SystemState",
@@ -215589,7 +215689,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_machine_timer_eq",
-          "line": 412,
+          "line": 413,
           "called": [
             "CoreId",
             "SgiKind",
@@ -215598,6 +215698,7 @@
             "scheduleEffectiveOnCore_machine_timer",
             "st",
             "timerTickBudgetOnCore_machine",
+            "timerTickChargeCurrentOnCore_ok",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCorePrepared_machine_eq",
@@ -215692,6 +215793,8 @@
             "TCB",
             "ThreadId",
             "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
             "none",
             "pipeline_frame_of_queue_timer_eq",
             "replenishOnCore",
@@ -215699,6 +215802,7 @@
             "replenishOnCore_preserves_replenishmentPipelineOrderOnCore",
             "replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne",
             "replenishmentPipelineOrderOnCore",
+            "rewriteObject",
             "scId",
             "st",
             "timerTickBudgetOnCore",
@@ -215710,7 +215814,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_replenishmentPipelineOrderOnCore",
-          "line": 599,
+          "line": 600,
           "called": [
             "CoreId",
             "SgiKind",
@@ -215724,6 +215828,7 @@
             "scheduleEffectiveOnCore_preserves_replenishmentPipelineOrderOnCore",
             "st",
             "timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore",
+            "timerTickChargeCurrentOnCore_ok",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCorePrepared_preserves_replenishmentPipelineOrderOnCore",
@@ -215878,6 +215983,7 @@
             "setLastTimeoutErrorsOnCore_replenishQueueOnCore",
             "st",
             "timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore",
+            "timerTickChargeCurrentOnCore_ok",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCorePrepared_machine_eq",
@@ -215887,7 +215993,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self",
-          "line": 930,
+          "line": 929,
           "called": [
             "CoreId",
             "Kernel",
@@ -216909,7 +217015,9 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
             "invExt",
+            "rewriteObject",
             "st",
             "timeoutBlockedThreads_preserves_objects_invExt",
             "timerTickBudgetOnCore"
@@ -216918,13 +217026,15 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_unbound_not_preempted",
-          "line": 907,
+          "line": 909,
           "called": [
             "CoreId",
             "SgiKind",
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
+            "rewriteObject",
             "st",
             "symm",
             "timerTickBudgetOnCore"
@@ -216933,13 +217043,15 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_unbound_preempts",
-          "line": 919,
+          "line": 922,
           "called": [
             "CoreId",
             "SgiKind",
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
+            "rewriteObject",
             "st",
             "symm",
             "timerTickBudgetOnCore"
@@ -216948,7 +217060,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_bound_preempts",
-          "line": 931,
+          "line": 935,
           "called": [
             "CoreId",
             "SchedContext",
@@ -216958,6 +217070,9 @@
             "TCB",
             "ThreadId",
             "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
+            "rewriteObject",
             "scId",
             "st",
             "symm",
@@ -216967,7 +217082,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_bound_not_preempted",
-          "line": 945,
+          "line": 950,
           "called": [
             "CoreId",
             "SchedContext",
@@ -216977,6 +217092,9 @@
             "TCB",
             "ThreadId",
             "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
+            "rewriteObject",
             "scId",
             "st",
             "symm",
@@ -216986,7 +217104,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_donated_preempts",
-          "line": 959,
+          "line": 965,
           "called": [
             "CoreId",
             "SchedContext",
@@ -216996,6 +217114,9 @@
             "TCB",
             "ThreadId",
             "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
+            "rewriteObject",
             "scId",
             "st",
             "symm",
@@ -217005,7 +217126,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_preserves_objects_invExt",
-          "line": 972,
+          "line": 979,
           "called": [
             "CoreId",
             "SystemState",
@@ -217018,7 +217139,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_objects_eq",
-          "line": 981,
+          "line": 988,
           "called": [
             "SystemState",
             "ThreadId",
@@ -217030,7 +217151,7 @@
         {
           "kind": "theorem",
           "name": "idleFallbackOnCore_establishes_currentThreadValidOnCore",
-          "line": 994,
+          "line": 1001,
           "called": [
             "CoreId",
             "SystemState",
@@ -217049,7 +217170,7 @@
         {
           "kind": "theorem",
           "name": "idleFallbackOnCore_establishes_queueCurrentConsistentOnCore",
-          "line": 1010,
+          "line": 1017,
           "called": [
             "CoreId",
             "SystemState",
@@ -217066,7 +217187,7 @@
         {
           "kind": "theorem",
           "name": "idleFallbackOnCore_establishes_currentThreadInActiveDomainOnCore",
-          "line": 1023,
+          "line": 1030,
           "called": [
             "CoreId",
             "SystemState",
@@ -217086,7 +217207,7 @@
         {
           "kind": "theorem",
           "name": "idleFallbackOnCore_preserves_runQueueOnCoreWellFormed",
-          "line": 1040,
+          "line": 1047,
           "called": [
             "CoreId",
             "SystemState",
@@ -217102,7 +217223,7 @@
         {
           "kind": "theorem",
           "name": "dispatchIdleOnCore_establishes_contextMatchesCurrentOnCore",
-          "line": 1054,
+          "line": 1061,
           "called": [
             "CoreId",
             "RegisterFile.beq_self",
@@ -217122,7 +217243,7 @@
         {
           "kind": "theorem",
           "name": "idleFallbackOnCore_establishes_contextMatchesCurrentOnCore",
-          "line": 1072,
+          "line": 1079,
           "called": [
             "CoreId",
             "SystemState",
@@ -217136,7 +217257,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_preserves_objects_invExt",
-          "line": 1084,
+          "line": 1091,
           "called": [
             "CoreId",
             "SystemState",
@@ -217151,7 +217272,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_singleDomain_noop",
-          "line": 1113,
+          "line": 1120,
           "called": [
             "CoreId",
             "SystemState",
@@ -217162,7 +217283,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_preserves_objects_invExt",
-          "line": 1122,
+          "line": 1129,
           "called": [
             "CoreId",
             "SystemState",
@@ -217176,7 +217297,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_sets_currentOnCore_none",
-          "line": 1138,
+          "line": 1145,
           "called": [
             "CoreId",
             "SystemState",
@@ -217194,7 +217315,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_rotates",
-          "line": 1158,
+          "line": 1165,
           "called": [
             "CoreId",
             "DomainScheduleEntry",
@@ -217213,7 +217334,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomainOnCore_decrements",
-          "line": 1184,
+          "line": 1191,
           "called": [
             "CoreId",
             "SystemState",
@@ -217228,7 +217349,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomainOnCore_preserves_objects_invExt",
-          "line": 1200,
+          "line": 1207,
           "called": [
             "CoreId",
             "SystemState",
@@ -217242,7 +217363,7 @@
         {
           "kind": "theorem",
           "name": "refillSchedContext_scheduler_eq",
-          "line": 1229,
+          "line": 1236,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -217255,7 +217376,7 @@
         {
           "kind": "theorem",
           "name": "refillSchedContext_machine_eq",
-          "line": 1235,
+          "line": 1242,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -217268,7 +217389,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_machine_eq",
-          "line": 1242,
+          "line": 1249,
           "called": [
             "CoreId",
             "SystemState",
@@ -217280,7 +217401,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_lastTimeoutErrorsOnCore",
-          "line": 1250,
+          "line": 1257,
           "called": [
             "CoreId",
             "SystemState",
@@ -217294,7 +217415,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_machine_eq",
-          "line": 1261,
+          "line": 1268,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -217310,7 +217431,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_lastTimeoutErrorsOnCore_eq",
-          "line": 1273,
+          "line": 1280,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -217327,7 +217448,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_machine_eq",
-          "line": 1288,
+          "line": 1295,
           "called": [
             "CoreId",
             "SgiKind",
@@ -217346,7 +217467,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_lastTimeoutErrorsOnCore_eq",
-          "line": 1305,
+          "line": 1312,
           "called": [
             "CoreId",
             "SgiKind",
@@ -217367,7 +217488,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_currentOnCore_eq",
-          "line": 1327,
+          "line": 1334,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -217384,7 +217505,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_currentOnCore_eq",
-          "line": 1350,
+          "line": 1357,
           "called": [
             "CoreId",
             "SgiKind",
@@ -217405,7 +217526,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_lastTimeoutErrorsOnCore",
-          "line": 1371,
+          "line": 1378,
           "called": [
             "CoreId",
             "SystemState",
@@ -217418,7 +217539,7 @@
         {
           "kind": "def",
           "name": "timerTickOnCorePreDomain",
-          "line": 1381,
+          "line": 1388,
           "called": [
             "CoreId",
             "SystemState",
@@ -217430,7 +217551,7 @@
         {
           "kind": "def",
           "name": "timerTickOnCorePrepared",
-          "line": 1395,
+          "line": 1402,
           "called": [
             "CoreId",
             "SgiKind",
@@ -217443,7 +217564,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_fst_eq",
-          "line": 1402,
+          "line": 1409,
           "called": [
             "CoreId",
             "SystemState",
@@ -217455,17 +217576,16 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_eq_prepared",
-          "line": 1410,
+          "line": 1422,
           "called": [
             "CoreId",
             "SystemState",
             "currentOnCore",
-            "getTcb",
             "handleRescheduleSgiOnCore",
             "none",
             "scheduleEffectiveOnCore",
             "st",
-            "timerTickBudgetOnCore",
+            "timerTickChargeCurrentOnCore",
             "timerTickOnCore",
             "timerTickOnCorePrepared"
           ]
@@ -217473,7 +217593,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_machine_eq",
-          "line": 1438,
+          "line": 1447,
           "called": [
             "CoreId",
             "SystemState",
@@ -217485,7 +217605,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_lastTimeoutErrors_eq",
-          "line": 1446,
+          "line": 1455,
           "called": [
             "CoreId",
             "SystemState",
@@ -217499,7 +217619,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_currentOnCore_eq",
-          "line": 1454,
+          "line": 1463,
           "called": [
             "CoreId",
             "SystemState",
@@ -217513,7 +217633,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_cannot_dispatch_vacated_core",
-          "line": 1485,
+          "line": 1494,
           "called": [
             "CoreId",
             "SgiKind",
@@ -217530,7 +217650,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_objects_invExt",
-          "line": 1499,
+          "line": 1508,
           "called": [
             "CoreId",
             "SystemState",
@@ -217543,7 +217663,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_idle",
-          "line": 1512,
+          "line": 1521,
           "called": [
             "CoreId",
             "SystemState",
@@ -217558,7 +217678,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_idle_local_wake_reschedules",
-          "line": 1527,
+          "line": 1536,
           "called": [
             "CoreId",
             "SystemState",
@@ -217574,7 +217694,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_advances_per_core",
-          "line": 1546,
+          "line": 1555,
           "called": [
             "CoreId",
             "SgiKind",
@@ -217591,7 +217711,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_clears_lastTimeoutErrors",
-          "line": 1557,
+          "line": 1566,
           "called": [
             "CoreId",
             "SgiKind",
@@ -217609,7 +217729,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preempts_local",
-          "line": 1580,
+          "line": 1589,
           "called": [
             "CoreId",
             "SgiKind",
@@ -217621,6 +217741,7 @@
             "scheduleEffectiveOnCore",
             "st",
             "timerTickBudgetOnCore",
+            "timerTickChargeCurrentOnCore_eq",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCore_eq_prepared"
@@ -217629,7 +217750,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_objects_invExt",
-          "line": 1597,
+          "line": 1606,
           "called": [
             "CoreId",
             "SgiKind",
@@ -217639,6 +217760,7 @@
             "scheduleEffectiveOnCore_preserves_objects_invExt",
             "st",
             "timerTickBudgetOnCore_preserves_objects_invExt",
+            "timerTickChargeCurrentOnCore_ok",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCorePrepared_objects_invExt",
@@ -217648,7 +217770,7 @@
         {
           "kind": "def",
           "name": "timerTickOnCoreSucceeds",
-          "line": 1654,
+          "line": 1662,
           "called": [
             "CoreId",
             "SystemState",
@@ -217658,8 +217780,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1659>",
-          "line": 1659,
+          "name": "<anonymous:instance:1667>",
+          "line": 1667,
           "called": [
             "CoreId",
             "SystemState",
@@ -217671,7 +217793,7 @@
         {
           "kind": "def",
           "name": "timerTickOnCoreEmitsSgi",
-          "line": 1665,
+          "line": 1673,
           "called": [
             "CoreId",
             "SystemState",
@@ -217681,8 +217803,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1670>",
-          "line": 1670,
+          "name": "<anonymous:instance:1678>",
+          "line": 1678,
           "called": [
             "CoreId",
             "SystemState",
@@ -217694,25 +217816,27 @@
         {
           "kind": "def",
           "name": "timerTickBudgetOnCorePreempts",
-          "line": 1678,
+          "line": 1687,
           "called": [
             "CoreId",
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
             "st",
             "timerTickBudgetOnCore"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1684>",
-          "line": 1684,
+          "name": "<anonymous:instance:1693>",
+          "line": 1693,
           "called": [
             "CoreId",
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
             "st",
             "timerTickBudgetOnCore",
             "timerTickBudgetOnCorePreempts"
@@ -217721,7 +217845,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_preserves_currentThreadValidOnCore",
-          "line": 1712,
+          "line": 1722,
           "called": [
             "CoreId",
             "SystemState",
@@ -217736,7 +217860,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore",
-          "line": 1722,
+          "line": 1732,
           "called": [
             "CoreId",
             "SystemState",
@@ -217750,7 +217874,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 1731,
+          "line": 1741,
           "called": [
             "CoreId",
             "SystemState",
@@ -217765,7 +217889,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed",
-          "line": 1741,
+          "line": 1751,
           "called": [
             "CoreId",
             "SystemState",
@@ -217778,7 +217902,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_scheduler_eq",
-          "line": 1752,
+          "line": 1762,
           "called": [
             "CoreId",
             "SystemState",
@@ -217790,7 +217914,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_getTcb",
-          "line": 1763,
+          "line": 1773,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -217814,7 +217938,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_getTcb",
-          "line": 1797,
+          "line": 1807,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -217839,7 +217963,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_objects_eq",
-          "line": 1838,
+          "line": 1848,
           "called": [
             "CoreId",
             "SystemState",
@@ -217856,7 +217980,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_getTcb",
-          "line": 1862,
+          "line": 1872,
           "called": [
             "CoreId",
             "SystemState",
@@ -217873,7 +217997,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed",
-          "line": 1874,
+          "line": 1884,
           "called": [
             "CoreId",
             "SystemState",
@@ -217895,7 +218019,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_establishes_currentThreadValidOnCore",
-          "line": 1905,
+          "line": 1915,
           "called": [
             "CoreId",
             "SystemState",
@@ -217914,7 +218038,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomainOnCore_preserves_currentThreadValidOnCore",
-          "line": 1940,
+          "line": 1950,
           "called": [
             "CoreId",
             "SystemState",
@@ -217930,7 +218054,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore",
-          "line": 1966,
+          "line": 1976,
           "called": [
             "CoreId",
             "SystemState",
@@ -217952,7 +218076,7 @@
         {
           "kind": "theorem",
           "name": "restoreThenSetCurrent_establishes_contextMatchesCurrentOnCore",
-          "line": 2001,
+          "line": 2011,
           "called": [
             "CoreId",
             "RegisterFile.beq_self",
@@ -217972,7 +218096,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_establishes_contextMatchesCurrentOnCore",
-          "line": 2036,
+          "line": 2046,
           "called": [
             "CoreId",
             "SystemState",
@@ -217991,7 +218115,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_runQueue_toList_subset",
-          "line": 2066,
+          "line": 2076,
           "called": [
             "CoreId",
             "SystemState",
@@ -218015,7 +218139,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 2098,
+          "line": 2108,
           "called": [
             "CoreId",
             "SystemState",
@@ -218030,7 +218154,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_scheduler_eq",
-          "line": 2112,
+          "line": 2122,
           "called": [
             "CoreId",
             "SgiKind",
@@ -218038,7 +218162,10 @@
             "TCB",
             "ThreadId",
             "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
             "none",
+            "rewriteObject",
             "scId",
             "st",
             "timerTickBudgetOnCore"
@@ -218047,7 +218174,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_getTcb",
-          "line": 2147,
+          "line": 2158,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -218059,9 +218186,11 @@
             "ThreadId",
             "get",
             "getSchedContext",
+            "getSchedContextWitnessed",
             "getTcb",
             "invExt",
             "none",
+            "rewriteObject",
             "scId",
             "st",
             "timerTickBudgetOnCore",
@@ -218071,7 +218200,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_currentThreadValidOnCore",
-          "line": 2214,
+          "line": 2226,
           "called": [
             "CoreId",
             "SgiKind",
@@ -218090,6 +218219,8 @@
             "timerTickBudgetOnCore_notPreempted_getTcb",
             "timerTickBudgetOnCore_notPreempted_scheduler_eq",
             "timerTickBudgetOnCore_preserves_objects_invExt",
+            "timerTickChargeCurrentOnCore_eq",
+            "timerTickChargeCurrentOnCore_none",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCorePrepared_objects_invExt",
@@ -218099,7 +218230,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_runQueueOnCore_wellFormed",
-          "line": 2287,
+          "line": 2299,
           "called": [
             "CoreId",
             "SystemState",
@@ -218114,7 +218245,7 @@
         {
           "kind": "theorem",
           "name": "runningOnSomeCore_eq_false_currentOnCore_ne",
-          "line": 2299,
+          "line": 2311,
           "called": [
             "CoreId",
             "SystemState",
@@ -218128,7 +218259,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_preserves_queueCurrentConsistentOnCore",
-          "line": 2312,
+          "line": 2324,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -218146,7 +218277,7 @@
         {
           "kind": "theorem",
           "name": "foldl_processOneReplenishment_preserves_queueCurrentConsistentOnCore",
-          "line": 2329,
+          "line": 2341,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -218163,7 +218294,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_preserves_queueCurrentConsistentOnCore",
-          "line": 2346,
+          "line": 2358,
           "called": [
             "CoreId",
             "SystemState",
@@ -218178,7 +218309,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_preserves_queueCurrentConsistentOnCore",
-          "line": 2356,
+          "line": 2368,
           "called": [
             "CoreId",
             "SystemState",
@@ -218193,7 +218324,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_preserves_runQueueUnique",
-          "line": 2368,
+          "line": 2380,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -218210,7 +218341,7 @@
         {
           "kind": "theorem",
           "name": "foldl_processOneReplenishment_preserves_runQueueUnique",
-          "line": 2384,
+          "line": 2396,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -218227,7 +218358,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_preserves_runQueueUnique",
-          "line": 2399,
+          "line": 2411,
           "called": [
             "CoreId",
             "SystemState",
@@ -218241,7 +218372,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_preserves_runQueueUnique",
-          "line": 2408,
+          "line": 2420,
           "called": [
             "CoreId",
             "SystemState",
@@ -218255,13 +218386,14 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed",
-          "line": 2422,
+          "line": 2434,
           "called": [
             "CoreId",
             "SgiKind",
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
             "runQueueOnCore",
             "st",
             "timerTickBudgetOnCore",
@@ -218272,7 +218404,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_runQueueOnCoreWellFormed",
-          "line": 2441,
+          "line": 2454,
           "called": [
             "CoreId",
             "SgiKind",
@@ -218287,6 +218419,8 @@
             "scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed",
             "st",
             "timerTickBudgetOnCore",
+            "timerTickChargeCurrentOnCore_eq",
+            "timerTickChargeCurrentOnCore_none",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCorePrepared_runQueueOnCore_wellFormed",
@@ -218297,7 +218431,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_getTcb",
-          "line": 2511,
+          "line": 2524,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -218310,9 +218444,11 @@
             "ThreadId.toObjId_injective",
             "get",
             "getSchedContext",
+            "getSchedContextWitnessed",
             "getTcb",
             "invExt",
             "none",
+            "rewriteObject",
             "scId",
             "st",
             "symm",
@@ -218323,13 +218459,14 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 2577,
+          "line": 2591,
           "called": [
             "CoreId",
             "SgiKind",
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
             "invExt",
             "runnableThreadsAreTCBsOnCore",
             "st",
@@ -218341,7 +218478,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 2596,
+          "line": 2611,
           "called": [
             "CoreId",
             "SgiKind",
@@ -218361,6 +218498,8 @@
             "timerTickBudgetOnCore_notPreempted_getTcb",
             "timerTickBudgetOnCore_notPreempted_scheduler_eq",
             "timerTickBudgetOnCore_preserves_objects_invExt",
+            "timerTickChargeCurrentOnCore_eq",
+            "timerTickChargeCurrentOnCore_none",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCore_eq_prepared"
@@ -218369,7 +218508,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_regsOnCore_eq",
-          "line": 2676,
+          "line": 2691,
           "called": [
             "CoreId",
             "SgiKind",
@@ -218377,8 +218516,11 @@
             "TCB",
             "ThreadId",
             "getSchedContext",
+            "getSchedContextWitnessed",
+            "getTcb",
             "none",
             "regsOnCore",
+            "rewriteObject",
             "scId",
             "st",
             "timerTickBudgetOnCore"
@@ -218387,7 +218529,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_getTcb",
-          "line": 2709,
+          "line": 2725,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -218399,9 +218541,11 @@
             "ThreadId",
             "get",
             "getSchedContext",
+            "getSchedContextWitnessed",
             "getTcb",
             "invExt",
             "none",
+            "rewriteObject",
             "scId",
             "st",
             "timerTickBudgetOnCore",
@@ -218411,7 +218555,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_preserves_contextMatchesCurrentOnCore",
-          "line": 2767,
+          "line": 2784,
           "called": [
             "CoreId",
             "SgiKind",
@@ -218432,7 +218576,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_contextMatchesCurrentOnCore",
-          "line": 2788,
+          "line": 2806,
           "called": [
             "CoreId",
             "SgiKind",
@@ -218450,6 +218594,8 @@
             "timerTickBudgetOnCore",
             "timerTickBudgetOnCore_notPreempted_preserves_contextMatchesCurrentOnCore",
             "timerTickBudgetOnCore_preserves_objects_invExt",
+            "timerTickChargeCurrentOnCore_eq",
+            "timerTickChargeCurrentOnCore_none",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCore_eq_prepared"
@@ -218458,7 +218604,7 @@
         {
           "kind": "theorem",
           "name": "idleFallbackOnCore_preserves_runQueueOnCore_nodup",
-          "line": 2864,
+          "line": 2882,
           "called": [
             "CoreId",
             "SystemState",
@@ -218473,7 +218619,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_preserves_runQueueOnCore_nodup",
-          "line": 2875,
+          "line": 2893,
           "called": [
             "CoreId",
             "SystemState",
@@ -218494,13 +218640,14 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCore_nodup",
-          "line": 2904,
+          "line": 2922,
           "called": [
             "CoreId",
             "SgiKind",
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
             "runQueueOnCore",
             "st",
             "timerTickBudgetOnCore",
@@ -218510,7 +218657,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_runQueueUniqueOnCore",
-          "line": 2918,
+          "line": 2937,
           "called": [
             "CoreId",
             "SgiKind",
@@ -218526,6 +218673,8 @@
             "scheduleEffectiveOnCore_preserves_runQueueOnCore_nodup",
             "st",
             "timerTickBudgetOnCore",
+            "timerTickChargeCurrentOnCore_eq",
+            "timerTickChargeCurrentOnCore_none",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCore_eq_prepared"
@@ -218534,7 +218683,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_queueCurrentConsistentOnCore",
-          "line": 2986,
+          "line": 3005,
           "called": [
             "CoreId",
             "SgiKind",
@@ -218550,6 +218699,8 @@
             "st",
             "timerTickBudgetOnCore",
             "timerTickBudgetOnCore_notPreempted_scheduler_eq",
+            "timerTickChargeCurrentOnCore_eq",
+            "timerTickChargeCurrentOnCore_none",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCore_eq_prepared"
@@ -218558,7 +218709,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_getTcb",
-          "line": 3057,
+          "line": 3076,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -218583,7 +218734,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_getTcb",
-          "line": 3084,
+          "line": 3103,
           "called": [
             "CoreId",
             "SystemState",
@@ -218601,7 +218752,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore",
-          "line": 3095,
+          "line": 3114,
           "called": [
             "CoreId",
             "SystemState",
@@ -218626,7 +218777,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_getTcb",
-          "line": 3130,
+          "line": 3149,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -218638,9 +218789,11 @@
             "ThreadId",
             "get",
             "getSchedContext",
+            "getSchedContextWitnessed",
             "getTcb",
             "invExt",
             "none",
+            "rewriteObject",
             "scId",
             "st",
             "timerTickBudgetOnCore",
@@ -218650,7 +218803,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_currentThreadInActiveDomainOnCore",
-          "line": 3185,
+          "line": 3205,
           "called": [
             "CoreId",
             "Kernel",
@@ -218670,6 +218823,8 @@
             "timerTickBudgetOnCore_notPreempted_getTcb",
             "timerTickBudgetOnCore_notPreempted_scheduler_eq",
             "timerTickBudgetOnCore_preserves_objects_invExt",
+            "timerTickChargeCurrentOnCore_eq",
+            "timerTickChargeCurrentOnCore_none",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCorePrepared_objects_invExt",
@@ -223364,6 +223519,8 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
+            "rewriteObject",
             "st",
             "timerTickBudget"
           ]
@@ -223377,7 +223534,9 @@
             "TCB",
             "ThreadId",
             "bootCoreId",
+            "getTcb",
             "replenishQueueOnCore",
+            "rewriteObject",
             "st",
             "timerTickBudget"
           ]
@@ -223450,7 +223609,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
-            "getSchedContext",
+            "getTcb",
             "insert",
             "st",
             "timerTickBudget",
@@ -223465,7 +223624,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
-            "getSchedContext",
+            "getTcb",
             "insert",
             "st",
             "timerTickBudget",
@@ -224224,6 +224383,7 @@
             "setLastTimeoutErrorsOnCore_replenishQueueOnCore",
             "st",
             "timerTickBudgetOnCore_replenishQueueOnCore_ne",
+            "timerTickChargeCurrentOnCore_ok",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
             "timerTickOnCore_eq_prepared"
@@ -224232,7 +224392,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStep_replenishQueueOnCore_ne",
-          "line": 121,
+          "line": 119,
           "called": [
             "CoreId",
             "SystemState",
@@ -224252,7 +224412,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStep_coversWrites",
-          "line": 147,
+          "line": 145,
           "called": [
             "CoreId",
             "SystemState",
@@ -224270,7 +224430,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickStepWithClockAdvance_coversWrites",
-          "line": 167,
+          "line": 165,
           "called": [
             "Kernel",
             "SystemState",
@@ -285990,7 +286150,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 96,
+      "declaration_count": 95,
       "declarations": [
         {
           "kind": "instance",
@@ -287672,22 +287832,14 @@
         },
         {
           "kind": "def",
-          "name": "r5eOrphanedTcb",
+          "name": "runR5EOrphanedSchedContextChecks",
           "line": 4255,
           "called": [
-            "TCB",
-            "ofNat",
-            "r5eOrphanedTid",
-            "toObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "runR5EOrphanedSchedContextChecks",
-          "line": 4265,
-          "called": [
+            "KernelError",
+            "SystemState",
+            "getTcbWitnessed",
+            "none",
             "r5eOrphanedBoundState",
-            "r5eOrphanedTcb",
             "r5eOrphanedTid",
             "throw",
             "timerTickBudget"
@@ -287696,7 +287848,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 4288,
+          "line": 4284,
           "called": [
             "runAC1BudgetFailClosedChecks",
             "runAC1CdtTrackingChecks",
@@ -298974,6 +299126,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "getTcb",
             "replenishQueueValidOnCore",
             "st",
             "timerTickBudgetOnCore",
@@ -298982,8 +299135,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:320>",
-          "line": 320,
+          "name": "<anonymous:example:321>",
+          "line": 321,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -298999,8 +299152,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:328>",
-          "line": 328,
+          "name": "<anonymous:example:329>",
+          "line": 329,
           "called": [
             "SchedContext",
             "applyRefill",
@@ -299010,7 +299163,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 336,
+          "line": 337,
           "called": [
             "CoreId"
           ]
@@ -299018,7 +299171,7 @@
         {
           "kind": "def",
           "name": "scId0",
-          "line": 337,
+          "line": 338,
           "called": [
             "SchedContextId",
             "ofNat"
@@ -299027,7 +299180,7 @@
         {
           "kind": "def",
           "name": "tid0",
-          "line": 338,
+          "line": 339,
           "called": [
             "ThreadId",
             "ofNat"
@@ -299036,7 +299189,7 @@
         {
           "kind": "def",
           "name": "sc0",
-          "line": 341,
+          "line": 342,
           "called": [
             "SchedContext",
             "scId",
@@ -299047,7 +299200,7 @@
         {
           "kind": "def",
           "name": "tcb0",
-          "line": 347,
+          "line": 348,
           "called": [
             "TCB",
             "core1",
@@ -299059,7 +299212,7 @@
         {
           "kind": "def",
           "name": "stCbs",
-          "line": 355,
+          "line": 356,
           "called": [
             "SystemState",
             "build",
@@ -299076,7 +299229,7 @@
         {
           "kind": "def",
           "name": "sizeConsistentB",
-          "line": 362,
+          "line": 363,
           "called": [
             "ReplenishQueue",
             "length",
@@ -299086,7 +299239,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 364,
+          "line": 365,
           "called": [
             "throw"
           ]
@@ -299094,7 +299247,7 @@
         {
           "kind": "def",
           "name": "runReplenishScenarios",
-          "line": 372,
+          "line": 373,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -299112,7 +299265,7 @@
         {
           "kind": "def",
           "name": "runMigrationScenarios",
-          "line": 389,
+          "line": 390,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -299130,7 +299283,7 @@
         {
           "kind": "def",
           "name": "runCompositeScenarios",
-          "line": 414,
+          "line": 415,
           "called": [
             "SystemState",
             "affinityUnbindMarker",
@@ -299161,7 +299314,7 @@
         {
           "kind": "def",
           "name": "runBudgetScenarios",
-          "line": 476,
+          "line": 477,
           "called": [
             "applyRefill",
             "assertBool",
@@ -299175,7 +299328,7 @@
         {
           "kind": "def",
           "name": "runAffinityScenarios",
-          "line": 494,
+          "line": 495,
           "called": [
             "SystemState",
             "all",
@@ -299194,7 +299347,7 @@
         {
           "kind": "def",
           "name": "stSingleCore",
-          "line": 517,
+          "line": 518,
           "called": [
             "SystemState",
             "stCbs"
@@ -299203,7 +299356,7 @@
         {
           "kind": "def",
           "name": "runDeclaredCoreScenarios",
-          "line": 520,
+          "line": 521,
           "called": [
             "RPi5Platform",
             "SimSingleCorePlatform",
@@ -299225,7 +299378,7 @@
         {
           "kind": "def",
           "name": "runRunQueueMigrationScenarios",
-          "line": 578,
+          "line": 579,
           "called": [
             "SystemState",
             "assertBool",
@@ -299250,14 +299403,16 @@
         {
           "kind": "def",
           "name": "runLiveTickScenarios",
-          "line": 628,
+          "line": 629,
           "called": [
             "SchedContext",
             "SystemState",
             "assertBool",
             "contains",
             "core1",
+            "getTcbWitnessed",
             "insert",
+            "none",
             "replenishOnCore",
             "replenishQueueOnCore",
             "sc0",
@@ -299273,7 +299428,7 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 659,
+          "line": 673,
           "called": [
             "assertBool",
             "filter",
@@ -299283,7 +299438,7 @@
         {
           "kind": "def",
           "name": "runSm5hCompletionScenarios",
-          "line": 689,
+          "line": 703,
           "called": [
             "SystemState",
             "assertBool",
@@ -299304,7 +299459,7 @@
         {
           "kind": "section",
           "name": "Sm5iAffinityAnchors",
-          "line": 720,
+          "line": 734,
           "called": [
             "affinityConsistent_transfer",
             "determineTargetCore_insert_tcb",
@@ -299319,8 +299474,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:733>",
-          "line": 733,
+          "name": "<anonymous:example:747>",
+          "line": 747,
           "called": [
             "CoreId",
             "SystemState",
@@ -299332,7 +299487,7 @@
         {
           "kind": "def",
           "name": "runSm5iTickCbsChecks",
-          "line": 743,
+          "line": 757,
           "called": [
             "all",
             "assertBool",
@@ -299369,8 +299524,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:791>",
-          "line": 791,
+          "name": "<anonymous:example:805>",
+          "line": 805,
           "called": [
             "SystemState",
             "ValidObjId",
@@ -299385,8 +299540,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:800>",
-          "line": 800,
+          "name": "<anonymous:example:814>",
+          "line": 814,
           "called": [
             "SystemState",
             "ValidObjId",
@@ -299400,8 +299555,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:808>",
-          "line": 808,
+          "name": "<anonymous:example:822>",
+          "line": 822,
           "called": [
             "SystemState",
             "ValidObjId",
@@ -299414,8 +299569,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:815>",
-          "line": 815,
+          "name": "<anonymous:example:829>",
+          "line": 829,
           "called": [
             "SystemState",
             "ValidObjId",
@@ -299429,8 +299584,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:824>",
-          "line": 824,
+          "name": "<anonymous:example:838>",
+          "line": 838,
           "called": [
             "CoreId",
             "SgiKind",
@@ -299445,8 +299600,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:833>",
-          "line": 833,
+          "name": "<anonymous:example:847>",
+          "line": 847,
           "called": [
             "CoreId",
             "SgiKind",
@@ -299462,8 +299617,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:845>",
-          "line": 845,
+          "name": "<anonymous:example:859>",
+          "line": 859,
           "called": [
             "SystemState",
             "default",
@@ -299474,7 +299629,7 @@
         {
           "kind": "def",
           "name": "scIdLifecycle",
-          "line": 853,
+          "line": 867,
           "called": [
             "SchedContextId",
             "ofNat"
@@ -299483,7 +299638,7 @@
         {
           "kind": "def",
           "name": "tidLifecycle",
-          "line": 854,
+          "line": 868,
           "called": [
             "ThreadId",
             "ofNat"
@@ -299492,7 +299647,7 @@
         {
           "kind": "def",
           "name": "scLifecycle",
-          "line": 858,
+          "line": 872,
           "called": [
             "SchedContext",
             "none",
@@ -299503,7 +299658,7 @@
         {
           "kind": "def",
           "name": "tcbLifecycle",
-          "line": 864,
+          "line": 878,
           "called": [
             "TCB",
             "core1",
@@ -299514,7 +299669,7 @@
         {
           "kind": "def",
           "name": "stLifecycle",
-          "line": 871,
+          "line": 885,
           "called": [
             "SystemState",
             "build",
@@ -299533,7 +299688,7 @@
         {
           "kind": "def",
           "name": "scIdLifecycleValid",
-          "line": 879,
+          "line": 893,
           "called": [
             "ValidObjId",
             "toObjId"
@@ -299542,7 +299697,7 @@
         {
           "kind": "def",
           "name": "tidLifecycleValid",
-          "line": 880,
+          "line": 894,
           "called": [
             "ValidThreadId",
             "tidLifecycle"
@@ -299551,7 +299706,7 @@
         {
           "kind": "def",
           "name": "scId0Valid",
-          "line": 881,
+          "line": 895,
           "called": [
             "ValidObjId",
             "toObjId"
@@ -299560,7 +299715,7 @@
         {
           "kind": "def",
           "name": "core2",
-          "line": 883,
+          "line": 897,
           "called": [
             "CoreId"
           ]
@@ -299568,7 +299723,7 @@
         {
           "kind": "def",
           "name": "tidDangling",
-          "line": 892,
+          "line": 906,
           "called": [
             "ThreadId",
             "ofNat"
@@ -299577,7 +299732,7 @@
         {
           "kind": "def",
           "name": "scIdDangling",
-          "line": 893,
+          "line": 907,
           "called": [
             "SchedContextId",
             "ofNat"
@@ -299586,7 +299741,7 @@
         {
           "kind": "def",
           "name": "scDangling",
-          "line": 894,
+          "line": 908,
           "called": [
             "SchedContext",
             "scId",
@@ -299597,7 +299752,7 @@
         {
           "kind": "def",
           "name": "stDangling",
-          "line": 898,
+          "line": 912,
           "called": [
             "SystemState",
             "build",
@@ -299614,7 +299769,7 @@
         {
           "kind": "def",
           "name": "scIdDanglingValid",
-          "line": 905,
+          "line": 919,
           "called": [
             "ValidObjId",
             "toObjId"
@@ -299623,7 +299778,7 @@
         {
           "kind": "def",
           "name": "runBindingLifecycleScenarios",
-          "line": 913,
+          "line": 927,
           "called": [
             "ThreadId",
             "all",
@@ -299657,7 +299812,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 983,
+          "line": 997,
           "called": [
             "runAffinityScenarios",
             "runBindingLifecycleScenarios",
@@ -299676,7 +299831,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1001,
+          "line": 1015,
           "called": []
         }
       ]
@@ -315204,7 +315359,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 295,
+          "line": 296,
           "called": [
             "CoreId"
           ]
@@ -315212,7 +315367,7 @@
         {
           "kind": "def",
           "name": "tidA",
-          "line": 296,
+          "line": 297,
           "called": [
             "ThreadId",
             "ofNat"
@@ -315221,7 +315376,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 298,
+          "line": 299,
           "called": [
             "TCB",
             "ofNat"
@@ -315230,7 +315385,7 @@
         {
           "kind": "def",
           "name": "stEmpty",
-          "line": 304,
+          "line": 305,
           "called": [
             "SystemState",
             "build"
@@ -315239,7 +315394,7 @@
         {
           "kind": "def",
           "name": "stRun",
-          "line": 307,
+          "line": 308,
           "called": [
             "SystemState",
             "build",
@@ -315253,7 +315408,7 @@
         {
           "kind": "def",
           "name": "stRunRotated",
-          "line": 312,
+          "line": 313,
           "called": [
             "SystemState",
             "advanceDomainOnCore",
@@ -315264,7 +315419,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 314,
+          "line": 315,
           "called": [
             "throw"
           ]
@@ -315272,7 +315427,7 @@
         {
           "kind": "def",
           "name": "runDefaultChecks",
-          "line": 324,
+          "line": 325,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -315286,7 +315441,7 @@
         {
           "kind": "def",
           "name": "runFramingChecks",
-          "line": 336,
+          "line": 337,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -315302,7 +315457,7 @@
         {
           "kind": "def",
           "name": "runWakeChecks",
-          "line": 350,
+          "line": 351,
           "called": [
             "SystemState",
             "ThreadId",
@@ -315325,7 +315480,7 @@
         {
           "kind": "def",
           "name": "tidB1",
-          "line": 364,
+          "line": 365,
           "called": [
             "ThreadId",
             "ofNat"
@@ -315334,7 +315489,7 @@
         {
           "kind": "def",
           "name": "stMultiCore",
-          "line": 371,
+          "line": 372,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -315352,7 +315507,7 @@
         {
           "kind": "def",
           "name": "stMultiCoreBank1Written",
-          "line": 387,
+          "line": 388,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -315365,7 +315520,7 @@
         {
           "kind": "def",
           "name": "runMultiCoreRegisterBankChecks",
-          "line": 395,
+          "line": 396,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -315380,7 +315535,7 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 414,
+          "line": 415,
           "called": [
             "assertBool",
             "filter",
@@ -315390,7 +315545,7 @@
         {
           "kind": "def",
           "name": "runTimerTickChecks",
-          "line": 432,
+          "line": 433,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -315404,8 +315559,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:447>",
-          "line": 447,
+          "name": "<anonymous:example:448>",
+          "line": 448,
           "called": [
             "SystemState",
             "default",
@@ -315415,8 +315570,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:449>",
-          "line": 449,
+          "name": "<anonymous:example:450>",
+          "line": 450,
           "called": [
             "CoreId",
             "SystemState",
@@ -315428,8 +315583,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:451>",
-          "line": 451,
+          "name": "<anonymous:example:452>",
+          "line": 452,
           "called": [
             "CoreId",
             "SystemState",
@@ -315442,7 +315597,7 @@
         {
           "kind": "def",
           "name": "runStrongInvariantChecks",
-          "line": 458,
+          "line": 459,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -315458,7 +315613,7 @@
         {
           "kind": "def",
           "name": "runAllChecks",
-          "line": 474,
+          "line": 475,
           "called": [
             "runDefaultChecks",
             "runFramingChecks",
@@ -315472,7 +315627,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 487,
+          "line": 488,
           "called": [
             "runAllChecks"
           ]
@@ -322591,7 +322746,7 @@
     {
       "module": "tests.SmpTimerSuite",
       "path": "tests/SmpTimerSuite.lean",
-      "declaration_count": 44,
+      "declaration_count": 47,
       "declarations": [
         {
           "kind": "namespace",
@@ -322935,13 +323090,55 @@
         },
         {
           "kind": "def",
+          "name": "stUnbound",
+          "line": 306,
+          "called": [
+            "SystemState",
+            "build",
+            "mkUnboundTcb",
+            "ofNat",
+            "toObjId",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "budgetPreempts",
-          "line": 302,
+          "line": 312,
           "called": [
             "CoreId",
             "SystemState",
-            "TCB",
             "ThreadId",
+            "getTcbWitnessed",
+            "none",
+            "st",
+            "timerTickBudgetOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "budgetPreemptsDecided",
+          "line": 321,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "getTcbWitnessed",
+            "none",
+            "st",
+            "timerTickBudgetOnCorePreempts"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "budgetTickKeepsTimer",
+          "line": 327,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "getTcbWitnessed",
+            "none",
             "st",
             "timerTickBudgetOnCore"
           ]
@@ -322949,7 +323146,7 @@
         {
           "kind": "def",
           "name": "tickOk",
-          "line": 307,
+          "line": 335,
           "called": [
             "CoreId",
             "SystemState",
@@ -322960,7 +323157,7 @@
         {
           "kind": "def",
           "name": "tickMachineTimer",
-          "line": 312,
+          "line": 340,
           "called": [
             "CoreId",
             "SystemState",
@@ -322972,7 +323169,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 317,
+          "line": 345,
           "called": [
             "throw"
           ]
@@ -322980,7 +323177,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 326,
+          "line": 354,
           "called": [
             "all",
             "assertBool",
@@ -322994,7 +323191,7 @@
         {
           "kind": "def",
           "name": "runWcrtChecks",
-          "line": 351,
+          "line": 379,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -323008,7 +323205,7 @@
         {
           "kind": "def",
           "name": "runDomainDecrementChecks",
-          "line": 362,
+          "line": 390,
           "called": [
             "activeDomainOnCore",
             "assertBool",
@@ -323021,7 +323218,7 @@
         {
           "kind": "def",
           "name": "runDomainRotateChecks",
-          "line": 376,
+          "line": 404,
           "called": [
             "activeDomainOnCore",
             "assertBool",
@@ -323037,22 +323234,22 @@
         {
           "kind": "def",
           "name": "runBudgetPreemptChecks",
-          "line": 403,
+          "line": 431,
           "called": [
             "assertBool",
             "bootCoreId",
             "budgetPreempts",
-            "mkUnboundTcb",
+            "budgetPreemptsDecided",
+            "budgetTickKeepsTimer",
+            "getTcbWitnessed",
             "ofNat",
-            "stIdle",
-            "timerTickBudgetOnCore",
-            "timerTickBudgetOnCorePreempts"
+            "stUnbound"
           ]
         },
         {
           "kind": "def",
           "name": "runIdleTickChecks",
-          "line": 423,
+          "line": 453,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -323070,7 +323267,7 @@
         {
           "kind": "def",
           "name": "runReplenishChecks",
-          "line": 441,
+          "line": 471,
           "called": [
             "SchedContextId",
             "assertBool",
@@ -323089,7 +323286,7 @@
         {
           "kind": "def",
           "name": "runRunLoopStepChecks",
-          "line": 463,
+          "line": 493,
           "called": [
             "KernelError",
             "SystemState",
@@ -323113,7 +323310,7 @@
         {
           "kind": "def",
           "name": "stSingleDomain",
-          "line": 522,
+          "line": 552,
           "called": [
             "SystemState",
             "build",
@@ -323123,7 +323320,7 @@
         {
           "kind": "def",
           "name": "runDomainRedispatchChecks",
-          "line": 528,
+          "line": 558,
           "called": [
             "activeDomainOnCore",
             "assertBool",
@@ -323141,7 +323338,7 @@
         {
           "kind": "def",
           "name": "tidHigh",
-          "line": 557,
+          "line": 587,
           "called": [
             "ThreadId",
             "ofNat"
@@ -323150,7 +323347,7 @@
         {
           "kind": "def",
           "name": "tidLow",
-          "line": 558,
+          "line": 588,
           "called": [
             "ThreadId",
             "ofNat"
@@ -323159,7 +323356,7 @@
         {
           "kind": "def",
           "name": "stBoundaryBusy",
-          "line": 564,
+          "line": 594,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -323177,7 +323374,7 @@
         {
           "kind": "def",
           "name": "runEmptyBoundaryRequeueChecks",
-          "line": 583,
+          "line": 613,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -323197,7 +323394,7 @@
         {
           "kind": "def",
           "name": "runClockAdvanceFlagChecks",
-          "line": 627,
+          "line": 657,
           "called": [
             "assertBool",
             "length",
@@ -323210,7 +323407,7 @@
         {
           "kind": "def",
           "name": "runClockAdvanceReplenishChecks",
-          "line": 667,
+          "line": 697,
           "called": [
             "SchedContextId",
             "assertBool",
@@ -323227,7 +323424,7 @@
         {
           "kind": "def",
           "name": "runLocalReplenishRescheduleChecks",
-          "line": 704,
+          "line": 734,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -323256,7 +323453,7 @@
         {
           "kind": "def",
           "name": "mkTimeoutWakeState",
-          "line": 761,
+          "line": 791,
           "called": [
             "CoreId",
             "Endpoint",
@@ -323284,7 +323481,7 @@
         {
           "kind": "def",
           "name": "runAffinityTimeoutWakeChecks",
-          "line": 793,
+          "line": 823,
           "called": [
             "CoreId",
             "assertBool",
@@ -323306,7 +323503,7 @@
         {
           "kind": "def",
           "name": "runTimeoutFrameStagingChecks",
-          "line": 844,
+          "line": 874,
           "called": [
             "assertBool",
             "cancelledIpcFrame",
@@ -323324,7 +323521,7 @@
         {
           "kind": "def",
           "name": "runAll",
-          "line": 883,
+          "line": 913,
           "called": [
             "runAffinityTimeoutWakeChecks",
             "runBudgetPreemptChecks",
@@ -323346,7 +323543,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 904,
+          "line": 934,
           "called": [
             "runAll"
           ]

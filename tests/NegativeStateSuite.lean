@@ -4252,20 +4252,16 @@ private def r5eOrphanedBoundState : SystemState :=
 construction is broken (the stub triggers the runtime-failure
 `.invalidArgument` rather than `.missingSchedContext`, which would surface
 the misconstructed fixture rather than silently masking it). -/
-private def r5eOrphanedTcb : TCB :=
-  match r5eOrphanedBoundState.objects[r5eOrphanedTid.toObjId]? with
-  | some (.tcb t) => t
-  | _ =>
-    -- Fallback stub — fixture broken; the resulting test will see this
-    -- shape and surface a meaningful error rather than panic at compile.
-    { tid := r5eOrphanedTid, priority := ⟨0⟩, domain := ⟨0⟩,
-      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
-      ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
-
 private def runR5EOrphanedSchedContextChecks : IO Unit := do
   IO.println "\n=== WS-RC R5.E (DEEP-SCH-04): missingSchedContext surface ==="
-  let result := SeLe4n.Kernel.timerTickBudget
-    r5eOrphanedBoundState r5eOrphanedTid r5eOrphanedTcb
+  -- `timerTickBudget` takes the witness that its TCB is the stored one
+  -- (`v0.35.67`), so the fixture's TCB is read through the witnessed lookup; a
+  -- fixture that resolves no TCB is reported as such rather than run on a stub.
+  let result : Except KernelError (SystemState × Bool) :=
+    match r5eOrphanedBoundState.getTcbWitnessed? r5eOrphanedTid with
+    | some ⟨tcb, hTcb⟩ =>
+        SeLe4n.Kernel.timerTickBudget r5eOrphanedBoundState r5eOrphanedTid tcb hTcb
+    | none => .error .invalidArgument
   match result with
   | .ok _ =>
       throw <| IO.userError

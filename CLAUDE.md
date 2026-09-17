@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.66.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.67.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~67915 lines)
+- `CHANGELOG.md` (~68192 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23592 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12166 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -212,20 +212,20 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7305 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6133 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6073 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6076 lines)
 - `SeLe4n/Platform/Boot.lean` (~5887 lines)
-- `SeLe4n/Model/State.lean` (~5655 lines)
+- `SeLe4n/Model/State.lean` (~5746 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5350 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5103 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5079 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4842 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5111 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5056 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~4476 lines)
-- `tests/NegativeStateSuite.lean` (~4314 lines)
+- `tests/NegativeStateSuite.lean` (~4310 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4225 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3925 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3898 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3811 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3803 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
@@ -236,11 +236,11 @@ To find files that need pagination today, run:
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3260 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3275 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3247 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3118 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3123 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3074 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
@@ -253,8 +253,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2614 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2575 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2515 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `tests/ModelIntegritySuite.lean` (~2487 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
@@ -270,7 +270,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2244 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2182 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2171 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~2092 lines)
@@ -279,18 +279,18 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2050 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2048 lines)
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2031 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
-- `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2027 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2024 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~2006 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~1999 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1960 lines)
 - `tests/LockSetSuite.lean` (~1951 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1914 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1909 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `tests/InformationFlowSuite.lean` (~1895 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1894 lines)
@@ -307,8 +307,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1748 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1727 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1720 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1675 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
@@ -325,11 +325,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1430 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1424 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1410 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1397 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1398 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
@@ -349,7 +349,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1239 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1236 lines)
-- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1210 lines)
+- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1224 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1176 lines)
@@ -371,8 +371,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `tests/PriorityManagementSuite.lean` (~1035 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
+- `tests/SmpCbsSuite.lean` (~1015 lines)
 - `tests/DeadlockFreedomSuite.lean` (~1007 lines)
-- `tests/SmpCbsSuite.lean` (~1001 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
@@ -383,16 +383,16 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~960 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~957 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~951 lines)
 - `tests/SmpCrossCoreNotificationSuite.lean` (~937 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `SeLe4n/Kernel/InformationFlow/Declassification.lean` (~935 lines)
+- `tests/SmpTimerSuite.lean` (~934 lines)
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
-- `tests/SmpTimerSuite.lean` (~904 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~900 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
@@ -418,6 +418,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 - `docs/DEVELOPMENT.md` (~803 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean` (~802 lines)
 - `SeLe4n/Kernel/SchedContext/Operations.lean` (~800 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
@@ -6006,10 +6007,37 @@ code may assume:
   `saveOutgoingContextOnCore`, `preemptCurrentOnCore` — and
   `setThreadCpuAffinity`; **53 in 41 across 20** after `v0.35.66` moved
   `enqueueRunnableOnCore`, `updatePipBoostOnCore`, `timerTick`,
-  `refillSchedContext` and `handleYieldWithBudget`; five of them the primitives
-  that should be raw), and `enqueueIdleThreadOnCore` waits for the scheduler cut
-  because a *store* grows the index, which its declared lock footprint does not
-  name.
+  `refillSchedContext` and `handleYieldWithBudget`; **43 in 37 across 17** after
+  `v0.35.67` moved `timerTickBudget`, `timerTickBudgetOnCore`,
+  `enqueueIdleThreadOnCore` and the trace model's `stepPost`; five of them the
+  primitives that should be raw).  (6) **A transition that rewrites a TCB it is
+  handed takes the store's witness for it.**  `timerTickBudget` /
+  `timerTickBudgetOnCore` (`v0.35.67`) take `(hTcb : st.getTcb? tid = some tcb)`
+  beside the TCB — the proof `rewriteAdmissible_tcb` consumes, erased at runtime —
+  so a caller cannot charge a TCB the store does not hold (both suites did, with a
+  TCB fabricated at an unstored id, and the tick then wrote it into the store);
+  every caller resolves the thread through `getTcbWitnessed?` and hands the
+  witness on.  A consumer statement carries it as an implicit
+  `{hW : st.getTcb? tid = some tcb}` beside its `hStep` — positional applications
+  are unchanged, and a pre-state hypothesis of the same type stays revertible,
+  the two being interchangeable by proof irrelevance — an arrow-chain hypothesis
+  names its binder (`∀ (hTcb : …), timerTickBudgetOnCore … tcb hTcb = .ok … → …`),
+  and a `split` on the witnessed SchedContext match yields three inaccessibles,
+  `rename_i sc hSc _`, in the bullet form as well as the bare one.  (7) **A
+  dependent match lives in a definition whose state is a parameter, never inline
+  under a `let`.**  Lean elaborates a `let` whose body's type does not depend on
+  it as a `have`, and a dependent match — one whose alternative's type names the
+  scrutinised state, which every witnessed lookup is — under a `have` binder, or
+  over a stuck projection, is opaque to definitional unification: two spellings
+  of one match tree unify only when the state is a variable.  Measured
+  (`v0.35.67`, eleven isolated experiments): with the witnessed lookup inline,
+  `timerTickOnCore_eq_prepared`'s `rfl` failed on every restatement but a
+  verbatim copy of the body, a phase definition over the prepared triple failed
+  the same way, and a `split`-based proof splits the two sides independently.
+  `timerTickChargeCurrentOnCore` is the shape — the dependent match over a
+  parameter, the tick's own match tree non-dependent, the equation `rfl` — a
+  consumer reads through `timerTickChargeCurrentOnCore_eq` / `_none` / `_ok`,
+  and Tier 3 refuses any lookup coming back into the tick's body.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at

@@ -1541,10 +1541,11 @@ theorem timerTickBudgetOnCore_bound_exhausted_replenish_eq
     (hSc : st.getSchedContext? scId = some sc)
     (hBudget : sc.budgetRemaining.val ≤ 1)
     {sgis : List (CoreId × SgiKind)}
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) (c' : CoreId) :
+    {hW : st.getTcb? tid = some tcb}
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis)) (c' : CoreId) :
     st'.scheduler.replenishQueueOnCore c'
       = (replenishOnCore st c scId (st.machine.timer + sc.period.val)).scheduler.replenishQueueOnCore c' := by
-  simp only [timerTickBudgetOnCore, hBound, hSc, if_pos hBudget, Except.ok.injEq,
+  simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hBound, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hBudget, Except.ok.injEq,
     Prod.mk.injEq] at hStep
   obtain ⟨hst, _⟩ := hStep
   subst hst
@@ -1569,9 +1570,11 @@ does not move a replenishment. -/
 theorem timerTickBudgetOnCore_replenishQueueOnCore_ne (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState) (b : Bool)
     {sgis : List (CoreId × SgiKind)} (c' : CoreId) (hne : c ≠ c')
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) :
+    {hW : st.getTcb? tid = some tcb}
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis)) :
     st'.scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c' := by
   unfold timerTickBudgetOnCore at hStep
+  dsimp only [SystemState.rewriteObject] at hStep
   split at hStep
   · -- unbound: both arms write objects and (possibly) core `c`'s run queue
     split at hStep <;>
@@ -1612,10 +1615,11 @@ theorem timerTickBudgetOnCore_donated_exhausted_replenish_eq
     (hSc : st.getSchedContext? scId = some sc)
     (hBudget : sc.budgetRemaining.val ≤ 1)
     {sgis : List (CoreId × SgiKind)}
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) (c' : CoreId) :
+    {hW : st.getTcb? tid = some tcb}
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis)) (c' : CoreId) :
     st'.scheduler.replenishQueueOnCore c'
       = (replenishOnCore st c scId (st.machine.timer + sc.period.val)).scheduler.replenishQueueOnCore c' := by
-  simp only [timerTickBudgetOnCore, hDonated, hSc, if_pos hBudget, Except.ok.injEq,
+  simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hDonated, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hBudget, Except.ok.injEq,
     Prod.mk.injEq] at hStep
   obtain ⟨hst, _⟩ := hStep
   subst hst
@@ -1629,11 +1633,12 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
     (st' : SystemState) (b : Bool) (c' : CoreId)
     (hValid : ∀ c'', replenishQueueValidOnCore st c'')
     {sgis : List (CoreId × SgiKind)}
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) :
+    {hW : st.getTcb? tid = some tcb}
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis)) :
     replenishQueueValidOnCore st' c' := by
   match hB : tcb.schedContextBinding with
   | .unbound =>
-      simp only [timerTickBudgetOnCore, hB] at hStep
+      simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hB] at hStep
       split at hStep <;>
         · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hst, _⟩ := hStep; subst hst
@@ -1645,12 +1650,12 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
           · rw [(replenishQueueValidOnCore_frame (timerTickBudgetOnCore_bound_exhausted_replenish_eq
               st c tid tcb scId sc st' b hB hSc hBud hStep c'))]
             exact replenishOnCore_preserves_replenishQueueValid_smp st c scId _ hValid c'
-          · simp only [timerTickBudgetOnCore, hB, hSc, if_neg hBud, Except.ok.injEq,
+          · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
             refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); rfl
       | none =>
-          simp only [timerTickBudgetOnCore, hB, hSc] at hStep
+          simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc] at hStep
           exact absurd hStep (by simp)
   | .donated scId owner =>
       match hSc : st.getSchedContext? scId with
@@ -1659,12 +1664,12 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
           · rw [(replenishQueueValidOnCore_frame (timerTickBudgetOnCore_donated_exhausted_replenish_eq
               st c tid tcb scId owner sc st' b hB hSc hBud hStep c'))]
             exact replenishOnCore_preserves_replenishQueueValid_smp st c scId _ hValid c'
-          · simp only [timerTickBudgetOnCore, hB, hSc, if_neg hBud, Except.ok.injEq,
+          · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
             refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); rfl
       | none =>
-          simp only [timerTickBudgetOnCore, hB, hSc] at hStep
+          simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc] at hStep
           exact absurd hStep (by simp)
 
 -- ============================================================================

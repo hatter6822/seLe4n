@@ -606,8 +606,16 @@ Dispatches on the current thread's `schedContextBinding`:
   (re-enqueue + reschedule).
 
 Returns `(updatedState, wasPreempted)`. Callers use `wasPreempted` to decide
-whether to call `schedule`. -/
+whether to call `schedule`.
+
+`hTcb` is the witness that `tcb` is the TCB stored at `tid` (`v0.35.67`): the
+TCB writes are `SystemState.rewriteObject` under it, so the update is one
+in-place table insert whose admissibility proof is erased — and the precondition
+the raw insert used to trust silently (a caller passing the stored TCB) is the
+signature's.  A caller supplies it from `getTcbWitnessed?`.  The SchedContext
+writes are the rewrite under the witnessed lookup of the binding's context. -/
 def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb)
     : Except KernelError (SystemState × Bool) :=
   match tcb.schedContextBinding with
   | .unbound =>
@@ -616,8 +624,9 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     -- matching the updated `timerTick`. See timerTick for proof chain details.
     if tcb.timeSlice ≤ 1 then
       let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
-      let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
-                           machine := tick st.machine }
+      let st' := { st.rewriteObject tid.toObjId (.tcb tcb')
+                     (SystemState.rewriteAdmissible_tcb hTcb tcb') with
+                   machine := tick st.machine }
       -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
       -- `tcb.boostedPriority`. This is the `.unbound` branch so
       -- `TCB.boostedPriority` is unambiguously correct (no SchedContext
@@ -627,11 +636,12 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
       .ok (st'', true)
     else
       let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
-      .ok ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
-                      machine := tick st.machine }, false)
+      .ok ({ st.rewriteObject tid.toObjId (.tcb tcb')
+               (SystemState.rewriteAdmissible_tcb hTcb tcb') with
+             machine := tick st.machine }, false)
   | .bound scId | .donated scId _ =>
-    match st.getSchedContext? scId with
-    | some sc =>
+    match st.getSchedContextWitnessed? scId with
+    | some ⟨sc, hSc⟩ =>
       if sc.budgetRemaining.val ≤ 1 then
         -- Z4-F3: Budget exhausted — schedule replenishment and preempt.
         -- CBS semantics: `consumedAmount` is the full remaining budget (not 1 tick),
@@ -643,9 +653,9 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
         let sc' := consumeBudget sc 1
         let sc'' := scheduleReplenishment sc' now consumedAmount
         let sc''' := cbsUpdateDeadline sc'' now true
-        -- Write updated SchedContext back
-        let st' := { st with
-          objects := st.objects.insert scId.toObjId (.schedContext sc'''),
+        -- Write updated SchedContext back (the in-place rewrite under the witnessed lookup)
+        let st' := { st.rewriteObject scId.toObjId (.schedContext sc''')
+                       (SystemState.rewriteAdmissible_schedContext hSc sc''') with
           machine := tick st.machine }
         -- Insert into system replenish queue for future refill
         let rq := (st'.scheduler.replenishQueueOnCore bootCoreId).insert scId (now + sc.period.val)
@@ -670,8 +680,8 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
       else
         -- Z4-F2: Budget remains — decrement and continue
         let sc' := consumeBudget sc 1
-        let st' := { st with
-          objects := st.objects.insert scId.toObjId (.schedContext sc'),
+        let st' := { st.rewriteObject scId.toObjId (.schedContext sc')
+                       (SystemState.rewriteAdmissible_schedContext hSc sc') with
           machine := tick st.machine }
         .ok (st', false)
     | none =>
@@ -756,9 +766,9 @@ def timerTickWithBudget : Kernel Unit :=
       -- No current thread: just advance the timer
       .ok ((), { stReplenished with machine := tick stReplenished.machine })
     | some tid =>
-      match stReplenished.getTcb? tid with
-      | some tcb =>
-        match timerTickBudget stReplenished tid tcb with
+      match stReplenished.getTcbWitnessed? tid with
+      | some ⟨tcb, hTcb⟩ =>
+        match timerTickBudget stReplenished tid tcb hTcb with
         | .error e => .error e
         | .ok (st', true) =>
           -- Preempted: reschedule using effective selection
@@ -1334,28 +1344,32 @@ queues.
 read-only w.r.t. the shared global tick counter (see the SM5.D section header —
 global-timer ownership). -/
 def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) : Except KernelError (SystemState × Bool × List (CoreId × SgiKind)) :=
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    : Except KernelError (SystemState × Bool × List (CoreId × SgiKind)) :=
   match tcb.schedContextBinding with
   | .unbound =>
     if tcb.timeSlice ≤ 1 then
       let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
-      let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+      let st' := st.rewriteObject tid.toObjId (.tcb tcb')
+        (SystemState.rewriteAdmissible_tcb hTcb tcb')
       let rq := (st'.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)
       let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
       .ok (st'', true, [])
     else
       let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
-      .ok ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') }, false, [])
+      .ok (st.rewriteObject tid.toObjId (.tcb tcb')
+             (SystemState.rewriteAdmissible_tcb hTcb tcb'), false, [])
   | .bound scId | .donated scId _ =>
-    match st.getSchedContext? scId with
-    | some sc =>
+    match st.getSchedContextWitnessed? scId with
+    | some ⟨sc, hSc⟩ =>
       if sc.budgetRemaining.val ≤ 1 then
         let now := st.machine.timer
         let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
         let sc' := consumeBudget sc 1
         let sc'' := scheduleReplenishment sc' now consumedAmount
         let sc''' := cbsUpdateDeadline sc'' now true
-        let st' := { st with objects := st.objects.insert scId.toObjId (.schedContext sc''') }
+        let st' := st.rewriteObject scId.toObjId (.schedContext sc''')
+          (SystemState.rewriteAdmissible_schedContext hSc sc''')
         -- WS-SM SM5.H.2: schedule the CBS replenishment via the named primitive
         -- `replenishOnCore` (load-bearing — the live tick calls it, not merely proven
         -- equal); `stReplenished` is defeq to the prior open-coded
@@ -1371,13 +1385,69 @@ def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId
         .ok (st'''', true, timeoutSgis)
       else
         let sc' := consumeBudget sc 1
-        let st' := { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
+        let st' := st.rewriteObject scId.toObjId (.schedContext sc')
+          (SystemState.rewriteAdmissible_schedContext hSc sc')
         .ok (st', false, [])
-    | _ =>
+    | none =>
       -- R5.E fail-closed: SchedContext lookup failed for a bound-budget thread.
       -- Unreachable under `schedContextStoreConsistent`; surfaced explicitly
       -- rather than advancing on stale budget state.
       .error .missingSchedContext
+
+/-- WS-SM SM5.D.5 (raw-write migration Cut B2): charge core `c`'s current thread
+`tid` one tick, **resolved from the store** — the witnessed lookup
+`getTcbWitnessed?` supplies `timerTickBudgetOnCore` the proof its in-place rewrite
+consumes, and a current thread that resolves to no TCB is a scheduler-invariant
+violation (fail-closed, `.schedulerInvariantViolation`), exactly the arm the tick
+carried inline before.
+
+**Why this is a definition rather than the tick's own `match`.**  The lookup is a
+*dependent* match — the `some ⟨tcb, hTcb⟩` alternative's type names the state
+scrutinised — and Lean elaborates a `let` whose body's type does not depend on it
+as a `have`, so inside `timerTickOnCore` the tick's state `st1` is a `have`-bound
+name.  A dependent match under a `have` binder, and equally a dependent match over
+a stuck projection such as `(timerTickOnCorePrepared st c).1`, is opaque to
+definitional unification: two spellings of the same match tree do not unify, and
+`timerTickOnCore_eq_prepared` — the `rfl` equation every SM5.D.2 headline is a
+corollary of — stopped elaborating with the lookup inline, on every restatement
+except a verbatim copy of the body (measured, not reasoned).  Over a **parameter**
+the match is ordinary, and the tick's own match tree stays non-dependent, which is
+what keeps that equation `rfl`.  The frame every consumer reads is
+`timerTickChargeCurrentOnCore_ok`: a successful charge *is* a successful
+`timerTickBudgetOnCore` at the witnessed TCB. -/
+def timerTickChargeCurrentOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    Except KernelError (SystemState × Bool × List (CoreId × SgiKind)) :=
+  match st.getTcbWitnessed? tid with
+  | some ⟨tcb, hTcb⟩ => timerTickBudgetOnCore st c tid tcb hTcb
+  | none => .error .schedulerInvariantViolation
+
+/-- A successful charge is a successful `timerTickBudgetOnCore` at the TCB the
+store holds for `tid`, under the store's own witness — the shape every composite
+over the tick destructures. -/
+theorem timerTickChargeCurrentOnCore_ok {st : SystemState} {c : CoreId}
+    {tid : SeLe4n.ThreadId} {r : SystemState × Bool × List (CoreId × SgiKind)}
+    (h : timerTickChargeCurrentOnCore st c tid = .ok r) :
+    ∃ (tcb : TCB) (hTcb : st.getTcb? tid = some tcb),
+      timerTickBudgetOnCore st c tid tcb hTcb = .ok r := by
+  unfold timerTickChargeCurrentOnCore at h
+  split at h
+  · rename_i tcb hTcb _
+    exact ⟨tcb, hTcb, h⟩
+  · cases h
+
+/-- The converse: the charge at a resolving thread is the budget tick at its TCB. -/
+theorem timerTickChargeCurrentOnCore_eq {st : SystemState} {c : CoreId}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hTcb : st.getTcb? tid = some tcb) :
+    timerTickChargeCurrentOnCore st c tid = timerTickBudgetOnCore st c tid tcb hTcb := by
+  unfold timerTickChargeCurrentOnCore
+  rw [SystemState.getTcbWitnessed?_eq_some hTcb]
+
+/-- A thread the store does not hold cannot be charged. -/
+theorem timerTickChargeCurrentOnCore_none {st : SystemState} {c : CoreId}
+    {tid : SeLe4n.ThreadId} (hNone : st.getTcb? tid = none) :
+    timerTickChargeCurrentOnCore st c tid = .error .schedulerInvariantViolation := by
+  unfold timerTickChargeCurrentOnCore
+  rw [SystemState.getTcbWitnessed?_eq_none hNone]
 
 /-- WS-SM SM5.D.2 (plan §3.4): the per-core timer tick — the full per-core
 analogue of `timerTickWithBudget`.
@@ -1468,31 +1538,28 @@ def timerTickOnCore (st : SystemState) (c : CoreId) :
       else
         .ok (st1, replenishSgis)
   | some tid =>
-      match st1.getTcb? tid with
-      | some tcb =>
-          match timerTickBudgetOnCore st1 c tid tcb with
-          | .error e => .error e
-          | .ok (st2, preempted, timeoutSgis) =>
-              -- PR #880 round 8: the bound-exhausted arm's timeout wakes are
-              -- target-aware; their remote-poke SGIs join the replenish
-              -- drain's in the tick's emission list.
-              if preempted then
-                match scheduleEffectiveOnCore st2 c with
-                | .error e => .error e
-                | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
-              else if localReplenishWake then
-                -- PR #880 round 7: the drain woke a thread on this very core and
-                -- the charge did not preempt — run the receiver-side reschedule
-                -- decision locally (switch only if the refilled candidate
-                -- outranks the running thread; identity otherwise).  The
-                -- preempted arm needs no such step: `scheduleEffectiveOnCore`
-                -- already re-selects over the refilled queue.
-                match handleRescheduleSgiOnCore st2 c with
-                | .error e => .error e
-                | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
-              else
-                .ok (st2, replenishSgis ++ timeoutSgis)
-      | none => .error .schedulerInvariantViolation
+      match timerTickChargeCurrentOnCore st1 c tid with
+      | .error e => .error e
+      | .ok (st2, preempted, timeoutSgis) =>
+          -- PR #880 round 8: the bound-exhausted arm's timeout wakes are
+          -- target-aware; their remote-poke SGIs join the replenish
+          -- drain's in the tick's emission list.
+          if preempted then
+            match scheduleEffectiveOnCore st2 c with
+            | .error e => .error e
+            | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
+          else if localReplenishWake then
+            -- PR #880 round 7: the drain woke a thread on this very core and
+            -- the charge did not preempt — run the receiver-side reschedule
+            -- decision locally (switch only if the refilled candidate
+            -- outranks the running thread; identity otherwise).  The
+            -- preempted arm needs no such step: `scheduleEffectiveOnCore`
+            -- already re-selects over the refilled queue.
+            match handleRescheduleSgiOnCore st2 c with
+            | .error e => .error e
+            | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
+          else
+            .ok (st2, replenishSgis ++ timeoutSgis)
 
 -- ─ SM5.D.6 (separate per-core domain-boundary re-dispatch, faithful to the
 --   single-core `switchDomain` / `scheduleDomain` split) ─

@@ -2846,10 +2846,10 @@ run_check "INVARIANT" rg -n '^theorem getSchedContextWitnessed\?_eq_none\b' SeLe
 run_check "INVARIANT" rg -n '^theorem getSchedContextWitnessed\?_val\b' SeLe4n/Model/State.lean
 # NEGATIVE: in the migrated files the dependent match on a typed lookup is
 # confined to the two witnessed definitions (which match on the store).  A
-# theorem may case on a lookup this way elsewhere; these five files are where
+# theorem may case on a lookup this way elsewhere; these files are where
 # the executable rewrite sites live, and the mutation this refuses keeps the
 # match and makes it dependent again.
-run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean
 # The scheduler's context-save family and the affinity op are the typed rewrite,
 # or the witnessed lookup around `rewriteObject` -- bounded to each declaration.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.updateTcb outTid fun outTcb" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
@@ -2903,6 +2903,61 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def refillSchedContext \(st 
 run_check "INVARIANT" bash -lc 'rg -U -n "^def handleYieldWithBudget : Kernel Unit :=[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContextWitnessed\? scId with" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def handleYieldWithBudget : Kernel Unit :=[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject scId\.toObjId \(\.schedContext sc\x27\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def handleYieldWithBudget : Kernel Unit :=[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+
+# ----------------------------------------------------------------------------
+# v0.35.67 -- the two budget ticks charge the TCB the STORE holds, the idle
+# enqueue is a store, and the per-core tick's charge is a named witnessed step
+# ----------------------------------------------------------------------------
+#
+# `timerTickBudget` / `timerTickBudgetOnCore` take the store's own witness that
+# `tid` resolves to `tcb` -- the proof their in-place rewrites consume -- so a
+# caller cannot hand them a TCB beside the state.  The signature is the whole
+# content: the witness sits right after the TCB.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudget \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) \(tcb : TCB\)\n    \(hTcb : st\.getTcb\? tid = some tcb\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCore \(st : SystemState\) \(c : CoreId\) \(tid : SeLe4n\.ThreadId\)\n    \(tcb : TCB\) \(hTcb : st\.getTcb\? tid = some tcb\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+# Both TCB writes of each tick are the rewrite under that witness; both
+# SchedContext writes are the rewrite under the witnessed SchedContext lookup.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudget \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb tcb\x27\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb tcb\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudget \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContextWitnessed\? scId with[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject scId\.toObjId \(\.schedContext sc\x27\x27\x27\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject scId\.toObjId \(\.schedContext sc\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb tcb\x27\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb tcb\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContextWitnessed\? scId with[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject scId\.toObjId \(\.schedContext sc\x27\x27\x27\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject scId\.toObjId \(\.schedContext sc\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+# NEGATIVE, per declaration: neither tick carries a raw store write any more.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudget \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+# The legacy boot-core tick and the trace model's step both resolve the charged
+# thread through the witnessed lookup and hand the witness on.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickWithBudget : Kernel Unit :=[^\n]*(\n([ \t][^\n]*)?)*match stReplenished\.getTcbWitnessed\? tid with[^\n]*(\n([ \t][^\n]*)?)*timerTickBudget stReplenished tid tcb hTcb" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def stepPost \(step : SchedulerStep\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? tid with[^\n]*(\n([ \t][^\n]*)?)*timerTickBudget st tid tcb hTcb" SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean'
+# ...and the trace model's replenishment fold is a typed update, not a raw
+# SchedContext insert (the fold's `none` arm was the update's `none` arm).
+run_check "INVARIANT" bash -lc 'rg -U -n "^def stepPost \(step : SchedulerStep\)[^\n]*(\n([ \t][^\n]*)?)*acc\.updateSchedContext scId fun sc => processReplenishments sc currentTime" SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def stepPost \(step : SchedulerStep\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean'
+# The per-core tick's charge is ONE definition, spelled exactly: the witnessed
+# lookup handing `timerTickBudgetOnCore` its proof, and the fail-closed arm.
+# A dependent match inline in the tick -- under its `have`-bound state -- is
+# opaque to definitional unification and broke `timerTickOnCore_eq_prepared`'s
+# `rfl`; the tick's own match tree stays non-dependent, so the negatives refuse
+# both the witnessed and the typed lookup coming back into it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickChargeCurrentOnCore \(st : SystemState\) \(c : CoreId\) \(tid : SeLe4n\.ThreadId\) :\n    Except KernelError \(SystemState × Bool × List \(CoreId × SgiKind\)\) :=\n  match st\.getTcbWitnessed\? tid with\n  \| some ⟨tcb, hTcb⟩ => timerTickBudgetOnCore st c tid tcb hTcb\n  \| none => \.error \.schedulerInvariantViolation" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match timerTickChargeCurrentOnCore st1 c tid with" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*getTcb(Witnessed)?\?" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+# The equation every SM5.D.2 headline is a corollary of is still `rfl`, and
+# reads the charge through the named step.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem timerTickOnCore_eq_prepared[^\n]*(\n([ \t][^\n]*)?)*match timerTickChargeCurrentOnCore \(timerTickOnCorePrepared st c\)\.1 c tid with[^\n]*(\n([ \t][^\n]*)?)*\) := rfl$" SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean'
+# The three frames a consumer reads the charge through.
+run_check "INVARIANT" rg -n '^theorem timerTickChargeCurrentOnCore_ok\b' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^theorem timerTickChargeCurrentOnCore_eq\b' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^theorem timerTickChargeCurrentOnCore_none\b' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+# The decidable preemption predicate is stated over the witness, as the tick is.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCorePreempts \(st : SystemState\) \(c : CoreId\) \(tid : SeLe4n\.ThreadId\)\n    \(tcb : TCB\) \(hTcb : st\.getTcb\? tid = some tcb\) : Prop :=" SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean'
+# The idle enqueue is a STORE -- the key may hold nothing, and a store is what
+# registers a new object in the index -- with the run-queue write beside it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThreadOnCore \(st : SystemState\) \(c : CoreId\) : SystemState :=\n  \{ st\.withObjectStored \(idleThreadId c\)\.toObjId \(KernelObject\.tcb \(queuedIdleThread c\)\) with" SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThreadOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean'
+# The timer suite charges a thread the fixture STORES and resolves it through
+# the witnessed lookup; a TCB fabricated beside the state cannot be charged.
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def budgetPreempts \(st : SystemState\) \(c : CoreId\) \(tid : SeLe4n\.ThreadId\) : Bool :=\n  match st\.getTcbWitnessed\? tid with" tests/SmpTimerSuite.lean'
+run_negative_check "INVARIANT" rg -n 'timerTickBudgetOnCore \S+ \S+ \S+ \(mkUnboundTcb' tests/SmpTimerSuite.lean
 
 # ============================================================================
 # WS-OD OD6 -- the payoff

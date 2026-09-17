@@ -3667,9 +3667,11 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
     (st3 : SystemState) (b : Bool) {sgis : List (CoreId × SgiKind)}
     (hInv : st.objects.invExt)
     (hConfigTS : st.scheduler.configDefaultTimeSlice > 0)
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st3, b, sgis))
+    {hW : st.getTcb? tid = some tcb}
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st3, b, sgis))
     (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive st3 := by
   unfold timerTickBudgetOnCore at hStep
+  dsimp only [SystemState.rewriteObject] at hStep
   split at hStep
   · -- unbound
     split at hStep
@@ -3685,7 +3687,7 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
   · -- bound
     rename_i scId heqB
     split at hStep
-    · rename_i sc hSc
+    · rename_i sc hSc _
       split at hStep
       · -- case #3: budget exhausted
         simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -3728,7 +3730,7 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
   · -- donated (identical body to bound)
     rename_i scId _o heqB
     split at hStep
-    · rename_i sc hSc
+    · rename_i sc hSc _
       split at hStep
       · -- case #3: budget exhausted
         simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -3792,12 +3794,14 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
     (hInv : st.objects.invExt)
     (hTid : st.getTcb? tid = some tcb)
     (h : runQueueSafetyOnCore st c)
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st3, b, sgis)) :
+    {hW : st.getTcb? tid = some tcb}
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st3, b, sgis)) :
     runQueueSafetyOnCore st3 c := by
   -- The bound/donated bodies are identical; both bind `scId`.  `boundAux`
   -- (below) factors them — it re-unfolds `timerTickBudgetOnCore`, so the
   -- `match`-aux is shared (no matcher mismatch).
   unfold timerTickBudgetOnCore at hStep
+  dsimp only [SystemState.rewriteObject] at hStep
   split at hStep
   · -- unbound
     split at hStep
@@ -3835,7 +3839,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
     rename_i scId heqB
     split at hStep
     · -- some sc
-      rename_i sc hSc
+      rename_i sc hSc _
       have hOldSc : st.objects.get? scId.toObjId = some (.schedContext sc) := by
         rw [← RHTable_getElem?_eq_get?]
         exact (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
@@ -3907,7 +3911,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
     rename_i scId _o heqB
     split at hStep
     · -- some sc
-      rename_i sc hSc
+      rename_i sc hSc _
       have hOldSc : st.objects.get? scId.toObjId = some (.schedContext sc) := by
         rw [← RHTable_getElem?_eq_get?]
         exact (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
@@ -4205,18 +4209,18 @@ theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore
     (hPrepNd : ((timerTickOnCorePrepared st c).1.scheduler.runQueueOnCore c).toList.Nodup)
     (hBudgetRqWf : ∀ tid tcb st3 b sgis3,
        (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b, sgis3) →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
        (st3.scheduler.runQueueOnCore c).wellFormed)
     (hBudgetRat : ∀ tid tcb st3 b sgis3,
        (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b, sgis3) →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
        runnableThreadsAreTCBsOnCore st3 c)
     (hBudgetNd : ∀ tid tcb st3 b sgis3,
        (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b, sgis3) →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
        (st3.scheduler.runQueueOnCore c).toList.Nodup)
     (hStep : timerTickOnCore st c = .ok (st', sgis)) :
     schedulerInvariantStructuralRegNodup_perCore st' c := by
@@ -4249,18 +4253,18 @@ theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_o
     (hPre : schedulerInvariantStructuralRegNodup_perCore st c)
     (hBudgetRqWf : ∀ tid tcb st3 b sgis3,
        (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b, sgis3) →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
        (st3.scheduler.runQueueOnCore c).wellFormed)
     (hBudgetRat : ∀ tid tcb st3 b sgis3,
        (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b, sgis3) →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
        runnableThreadsAreTCBsOnCore st3 c)
     (hBudgetNd : ∀ tid tcb st3 b sgis3,
        (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b, sgis3) →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
        (st3.scheduler.runQueueOnCore c).toList.Nodup)
     (hStep : timerTickOnCore st c = .ok (st', sgis)) :
     schedulerInvariantStructuralRegNodup_perCore st' c := by
@@ -4601,10 +4605,10 @@ theorem timerTickOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
         rw [← h1]; exact hPrep
   | some tid =>
       cases htcb : (timerTickOnCorePrepared st c).1.getTcb? tid with
-      | none => simp [hcur, htcb] at hStep
+      | none => simp [hcur, timerTickChargeCurrentOnCore_none htcb] at hStep
       | some tcb =>
-          cases hbud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb with
-          | error e => simp [hcur, htcb, hbud] at hStep
+          cases hbud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb htcb with
+          | error e => simp [hcur, timerTickChargeCurrentOnCore_eq htcb, hbud] at hStep
           | ok r =>
               obtain ⟨st3, preempted, tsgis⟩ := r
               have hBudAll : allThreadsTimeSlicePositive st3 :=
@@ -4615,7 +4619,7 @@ theorem timerTickOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
                   (timerTickOnCorePrepared st c).1 c tid tcb st3 preempted hPrepInv hbud
               cases preempted with
               | false =>
-                  simp only [hcur, htcb, hbud, Bool.false_eq_true, if_false] at hStep
+                  simp only [hcur, timerTickChargeCurrentOnCore_eq htcb, hbud, Bool.false_eq_true, if_false] at hStep
                   split at hStep
                   · cases hH : handleRescheduleSgiOnCore st3 c with
                     | error e => simp [hH] at hStep
@@ -4630,9 +4634,9 @@ theorem timerTickOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
                     rw [← h1]; exact hBudAll
               | true =>
                   cases hsched : scheduleEffectiveOnCore st3 c with
-                  | error e => simp [hcur, htcb, hbud, hsched] at hStep
+                  | error e => simp [hcur, timerTickChargeCurrentOnCore_eq htcb, hbud, hsched] at hStep
                   | ok st4 =>
-                      simp only [hcur, htcb, hbud, if_true, hsched,
+                      simp only [hcur, timerTickChargeCurrentOnCore_eq htcb, hbud, if_true, hsched,
                         Except.ok.injEq, Prod.mk.injEq] at hStep
                       obtain ⟨rfl, _⟩ := hStep
                       exact scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive

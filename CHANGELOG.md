@@ -1,3 +1,99 @@
+## v0.35.67 — The two budget ticks charge the TCB the store holds, the idle enqueue is a store, and the per-core tick's charge is a named witnessed step
+
+**Raw-write migration, fourth cut.**  `timerTickBudget` and `timerTickBudgetOnCore`
+(`Scheduler/Operations/Core.lean`) took the charged thread's TCB **by value beside
+the state**, with nothing tying the two together: a caller could charge a TCB the
+store did not hold and the tick then *wrote* it into the store — which is exactly
+how `tests/SmpTimerSuite.lean` §3.5 and `tests/SmpCbsSuite.lean` §3.7 drove them,
+with a TCB fabricated at a thread id the fixture never stored.  Both now take the
+store's own witness, `(hTcb : st.getTcb? tid = some tcb)` — the proof the in-place
+rewrite consumes, erased at runtime — so every TCB write is `rewriteObject` under it
+and every SchedContext write is the rewrite under the witnessed SchedContext lookup.
+Every caller resolves the thread through `getTcbWitnessed?` and hands the witness
+on: `timerTickWithBudget`, the per-core tick, the trace model's `stepPost`
+(`Scheduler/Liveness/TraceModel.lean`, whose replenishment fold became a plain
+`updateSchedContext` in the same cut), `tests/NegativeStateSuite.lean`'s R5.E
+scenario, and the two suites — which now **store** the thread they charge and
+assert that the fixture resolves, so a verdict is about a charge that ran rather
+than a lookup that declined.  The theorem surface follows one rule: a consumer
+statement carries the witness as an implicit `{hW : st.getTcb? tid = some tcb}`
+beside its `hStep`, so positional applications are unchanged and a pre-state
+hypothesis of the same type stays revertible; an arrow-chain hypothesis names its
+binder (`∀ (hTcb : …), timerTickBudgetOnCore … tcb hTcb = .ok … → …`), and the two
+affinity chains that never carried the resolution antecedent gained it.  Seven
+modules and three suites, 139 mechanical edits made by one transformer and reviewed
+line by line, plus `timerTickBudgetOnCorePreempts` and its `Decidable` instance.
+
+**The per-core tick's charge is a named step, and why.**  With the witnessed lookup
+inline in `timerTickOnCore`, `timerTickOnCore_eq_prepared` — the `rfl` equation
+every SM5.D.2 headline is a corollary of — stopped elaborating.  Measured in eleven
+isolated experiments rather than reasoned: Lean elaborates a `let` whose body's type
+does not depend on it as a `have`, and a *dependent* match — the `some ⟨tcb, hTcb⟩`
+alternative's type names the scrutinised state — under a `have` binder, or over a
+stuck projection such as `(timerTickOnCorePrepared st c).1`, is opaque to
+definitional unification: two spellings of one match tree unify only when the state
+is a variable, or when the restatement is a verbatim copy of the body.  A phase
+definition over the prepared triple did not help (the same match over the
+projection still fails), and no case-analysis proof does either, because `split`
+splits the two sides' matches independently.  What works is
+`timerTickChargeCurrentOnCore st c tid`: the witnessed lookup handing
+`timerTickBudgetOnCore` its proof, with the fail-closed
+`.schedulerInvariantViolation` arm the tick used to carry inline, stated over a
+**parameter** — so the tick's own match tree stays non-dependent and the equation
+is `rfl` again.  A consumer reads the budget tick through
+`timerTickChargeCurrentOnCore_eq hTcb` / `_none hTcb`, and a split-based composite
+destructures `timerTickChargeCurrentOnCore_ok`.
+
+**The idle enqueue is a store.**  `enqueueIdleThreadOnCore`
+(`Scheduler/Operations/PerCoreIdle.lean`) writes the idle TCB through
+`SystemState.withObjectStored`: the key may hold nothing, and a store is what
+registers a new object in `objectIndex`, `objectIndexSet` and the kind table — the
+raw insert it replaced left a fixture's idle thread outside the index, which no
+boot state is.  Its declared footprint is unchanged: the index bookkeeping is the
+object store's own, under the table-level `objStore` lock the footprint already
+names in write mode.
+
+**Measured and left.**  The raw-write population is **43 sites in 37 executable
+declarations across 17 files** outside `SeLe4n/Testing/` (from 53 / 41 / 20).  The
+fault path, the SchedContext operations, the priority management, the capability
+revoke step, the cleanup sweeps, the return-frame staging and the FFI spill are the
+next cut.
+
+**The AK7 typed-lookup ratchet is re-anchored, three lines down, after a
+documented refactor.**  `GETSCHEDCTX_ADOPTION` counts the lines that name
+`getSchedContext?` or its witnessed form.  The trace model's replenishment fold
+collapsed a lookup-then-insert into one `updateSchedContext` — the typed update
+encapsulates the lookup, so one line fewer names it and one raw write is gone —
+and two proofs in `Scheduler/Operations/Preservation.lean` stopped unfolding the
+accessor, because the witnessed match reduces by its equation lemma instead.
+Fewer textual mentions, more of the discipline the counter exists to grow; the
+baseline follows (454 → 451), and `GETTCB_ADOPTION` rose 2453 → 2502 in the same
+regeneration.
+
+**The boot's idle install is a second body, registered.**  Asked whether the boot
+handling idle installation separately from the kernel model's
+`enqueueIdleThreadOnCore` is best practice: it is not.  `Platform/Boot.lean`'s
+`enqueueIdleThread` (over `IntermediateState`) is a hand-written mirror held to the
+kernel model by a docstring sentence, and the two differ in the bookkeeping fields
+today — `Builder.createObject` skips `capabilityRefs` and `asidTable`, the store
+filters and maintains them.  The remedy is to derive: the boot's `state` field
+becomes the kernel-model call and its four witnesses come from the store's
+preservation lemmas.  It is its own cut because `PerCoreIdle.lean` is staged and
+imports `Platform.Boot`, so the definition must first move to a production module
+upstream of the boot.  Registered in `docs/REGISTERED_DEBT.md` with the measurement.
+
+**Tier 3.**  Positives pin both ticks' witness in the signature, their two TCB
+rewrites and the witnessed SchedContext lookup with its two rewrites, the legacy
+tick's and the trace model's witnessed lookups, the trace model's typed update, the
+charge step's exact body, the tick calling it, the equation reading it and still
+ending in `rfl`, the preemption predicate's witness, the idle enqueue as a store,
+and the timer suite resolving from the store; negatives refuse a raw insert in each
+migrated declaration, any lookup — witnessed or typed — inside the tick's own body,
+a dependent match in the trace model and the idle module, and a fabricated TCB
+charged by the timer suite.  Every anchor mutation-tested in both directions with
+the token kept and the relation broken (twenty-two cases, forty-five checks).
+Golden trace and fixtures byte-identical.
+
 ## v0.35.66 — The wake, the PIP boost update, the legacy tick, the refill and the budgeted yield on the rewrite; the single-thread PIP update has one body
 
 **Raw-write migration, third cut.**  Six executable declarations stop writing the

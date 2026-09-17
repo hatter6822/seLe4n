@@ -142,10 +142,14 @@ production scheduler (`scheduleEffectiveOnCore`) then models a subsequently-idle
 core as `current = none`.  For `chooseThreadOnCore` — which reads only the run
 queue — to *fall back to idle*, the idle thread must be a run-queue *member*.
 `enqueueIdleThreadOnCore` is the primitive that ensures this: it (a) creates /
-refreshes the idle TCB in the object store at `(idleThreadId c).toObjId`, and
-(b) `remove`s then re-`insert`s `idleThreadId c` into core `c`'s run queue at the
-idle priority `⟨0⟩` (`= (queuedIdleThread c).priority`, which equals its effective
-run-queue priority since idle carries no PIP boost).
+refreshes the idle TCB in the object store at `(idleThreadId c).toObjId` — through
+the pure store `SystemState.withObjectStored` (`v0.35.67`), because the key may
+hold nothing and a store is what registers a new object in `objectIndex`,
+`objectIndexSet` and the kind table; the raw insert it replaced left a fixture's
+idle thread outside the index, which no boot state is — and (b) `remove`s then
+re-`insert`s `idleThreadId c` into core `c`'s run queue at the idle priority `⟨0⟩`
+(`= (queuedIdleThread c).priority`, which equals its effective run-queue priority
+since idle carries no PIP boost).
 
 The `remove`-then-`insert` (rather than a bare `insert`) is deliberate: a
 *re-enqueue* of an already-resident idle thread must refresh its priority bucket
@@ -158,14 +162,15 @@ is canonicalised to `0`).
 
 Footprint: WRITES the object-store slot `(idleThreadId c).toObjId` and core
 `c`'s run-queue slot.  Every other object-store key and every other core's
-scheduler slot is framed out (the lemmas below).  Mirrors the SM5.C
+scheduler slot is framed out (the lemmas below).  The store's index bookkeeping
+is the object store's own, guarded by the table-level `objStore` lock the
+footprint (`enqueueIdleThreadOnCoreLockSet`) already names in write mode — no
+finer lock exists for it, and none is declared elsewhere.  Mirrors the SM5.C
 `enqueueRunnableOnCore` shape; the difference is that idle threads are created
 here (they need not pre-exist), so there is no `getTcb?`-resolves precondition
 and no fail-closed branch. -/
 def enqueueIdleThreadOnCore (st : SystemState) (c : CoreId) : SystemState :=
-  { st with
-      objects := st.objects.insert (idleThreadId c).toObjId
-        (KernelObject.tcb (queuedIdleThread c)),
+  { st.withObjectStored (idleThreadId c).toObjId (KernelObject.tcb (queuedIdleThread c)) with
       scheduler := st.scheduler.setRunQueueOnCore c
         (((st.scheduler.runQueueOnCore c).remove (idleThreadId c)).insert (idleThreadId c)
           (queuedIdleThread c).priority) }
@@ -233,7 +238,7 @@ invariant so the insert lookup is exact. -/
 theorem enqueueIdleThreadOnCore_getTcb?_self (st : SystemState) (c : CoreId)
     (hInv : st.objects.invExt) :
     (enqueueIdleThreadOnCore st c).getTcb? (idleThreadId c) = some (queuedIdleThread c) := by
-  simp only [enqueueIdleThreadOnCore, SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
+  rw [SystemState.getTcb?_eq_some_iff, enqueueIdleThreadOnCore_objects, RHTable_getElem?_eq_get?]
   exact RHTable_get?_insert_self st.objects (idleThreadId c).toObjId _ hInv
 
 /-- WS-SM SM5.E.3 (frame): the enqueue leaves every *other* thread's TCB
@@ -245,7 +250,7 @@ theorem enqueueIdleThreadOnCore_getTcb?_ne (st : SystemState) (c : CoreId)
     (enqueueIdleThreadOnCore st c).getTcb? other = st.getTcb? other := by
   have hNeO : ¬ ((idleThreadId c).toObjId == other.toObjId) = true := fun he =>
     hNe (ThreadId.toObjId_injective _ _ (by simpa using he)).symm
-  simp only [enqueueIdleThreadOnCore, SystemState.getTcb?, RHTable_getElem?_eq_get?]
+  simp only [SystemState.getTcb?, enqueueIdleThreadOnCore_objects, RHTable_getElem?_eq_get?]
   rw [RHTable_get?_insert_ne st.objects (idleThreadId c).toObjId other.toObjId _ hNeO hInv]
 
 /-- WS-SM SM5.E.3 (preservation): the enqueue preserves the object-store

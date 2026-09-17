@@ -283,7 +283,8 @@ example (st st3 : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) 
     {sgis3 : List (CoreId × SgiKind)}
     (hInv : st.objects.invExt) (hTid : st.getTcb? tid = some tcb)
     (h : runQueueSafetyOnCore st c)
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st3, b, sgis3)) :
+    {hW : st.getTcb? tid = some tcb}
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st3, b, sgis3)) :
     runQueueSafetyOnCore st3 c :=
   timerTickBudgetOnCore_preserves_runQueueSafetyOnCore st c tid tcb st3 b hInv hTid h hStep
 

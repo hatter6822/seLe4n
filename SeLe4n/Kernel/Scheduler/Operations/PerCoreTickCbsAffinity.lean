@@ -440,7 +440,8 @@ theorem timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore (st : S
     (hBudgetAffinity : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (st3 : SystemState) (b : Bool)
       (sgis3 : List (CoreId × SgiKind)),
       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-      timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b, sgis3) →
+      ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
+      timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
       replenishQueueAffinityConsistentOnCore (timerTickOnCorePrepared st c).1 c' →
       replenishQueueAffinityConsistentOnCore st3 c')
     (hStep : timerTickOnCore st c = .ok (st', sgis)) :
@@ -464,32 +465,31 @@ theorem timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore (st : S
       obtain ⟨hst, _⟩ := hStep; subst hst; exact hPrep c'
   · rename_i tid hCur
     split at hStep
-    · split at hStep
-      · simp at hStep
-      · rename_i st3 b tsgis hbud
-        have h3 : replenishQueueAffinityConsistentOnCore st3 c' :=
-          hBudgetAffinity _ _ _ _ _ hCur hbud (hPrep c')
-        have h3Inv : st3.objects.invExt :=
-          timerTickBudgetOnCore_preserves_objects_invExt _ c _ _ _ _ hPrepInv hbud
-        split at hStep
+    · simp at hStep
+    · rename_i st3 b tsgis hbud
+      obtain ⟨tcb, hTcb, hbud⟩ := timerTickChargeCurrentOnCore_ok hbud
+      have h3 : replenishQueueAffinityConsistentOnCore st3 c' :=
+        hBudgetAffinity _ _ _ _ _ hCur hTcb hbud (hPrep c')
+      have h3Inv : st3.objects.invExt :=
+        timerTickBudgetOnCore_preserves_objects_invExt _ c _ _ _ _ hPrepInv hbud
+      split at hStep
+      · split at hStep
+        · simp at hStep
+        · rename_i st4 hsched
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨hst, _⟩ := hStep; subst hst
+          exact scheduleEffectiveOnCore_preserves_replenishQueueAffinityConsistentOnCore
+            _ c _ c' h3Inv hsched h3
+      · split at hStep
         · split at hStep
           · simp at hStep
-          · rename_i st4 hsched
+          · rename_i st4 hH
             simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
-            exact scheduleEffectiveOnCore_preserves_replenishQueueAffinityConsistentOnCore
-              _ c _ c' h3Inv hsched h3
-        · split at hStep
-          · split at hStep
-            · simp at hStep
-            · rename_i st4 hH
-              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨hst, _⟩ := hStep; subst hst
-              exact handleRescheduleSgiOnCore_preserves_replenishQueueAffinityConsistentOnCore
-                _ c _ c' h3Inv hH h3
-          · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨hst, _⟩ := hStep; subst hst; exact h3
-    · simp at hStep
+            exact handleRescheduleSgiOnCore_preserves_replenishQueueAffinityConsistentOnCore
+              _ c _ c' h3Inv hH h3
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨hst, _⟩ := hStep; subst hst; exact h3
 
 /-- WS-SM SM5.I (aggregate, strengthened): the **live per-core timer tick** preserves
 the per-core CBS invariant `perCoreCbsInvariant` — discharging all three conjuncts
@@ -510,7 +510,8 @@ theorem timerTickOnCore_preserves_perCoreCbsInvariant_discharged (st : SystemSta
     (hBudgetAffinity : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (st3 : SystemState) (b : Bool)
       (sgis3 : List (CoreId × SgiKind)),
       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-      timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b, sgis3) →
+      ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
+      timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
       replenishQueueAffinityConsistentOnCore (timerTickOnCorePrepared st c).1 c' →
       replenishQueueAffinityConsistentOnCore st3 c')
     (hStep : timerTickOnCore st c = .ok (st', sgis)) :
