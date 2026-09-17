@@ -2945,13 +2945,9 @@ theorem suspendDequeues_confinedToCores (s : SystemState) (tid : SeLe4n.ThreadId
 store write. -/
 theorem suspendInactiveStore_confinedToCores (s : SystemState) (tid : SeLe4n.ThreadId) :
     observableSlotsConfinedToCores s
-      (match s.getTcb? tid with
-       | some t =>
-         { s with objects := s.objects.insert tid.toObjId (.tcb { t with
-             threadState := .Inactive }) }
-       | none => s) [] :=
+      (s.updateTcb tid fun t => { t with threadState := .Inactive }) [] :=
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-    (by split <;> rfl) (by split <;> rfl)
+    (SystemState.updateTcb_scheduler _ _ _) (SystemState.updateTcb_machine _ _ _)
 
 /-- SM8.B.2: whichever donation-cancellation arm the victim's binding selects,
 the step is per-core silent. -/

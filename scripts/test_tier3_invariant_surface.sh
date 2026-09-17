@@ -2849,7 +2849,7 @@ run_check "INVARIANT" rg -n '^theorem getSchedContextWitnessed\?_val\b' SeLe4n/M
 # theorem may case on a lookup this way elsewhere; these files are where
 # the executable rewrite sites live, and the mutation this refuses keeps the
 # match and makes it dependent again.
-run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean SeLe4n/Kernel/Architecture/SyscallReturn.lean SeLe4n/Platform/FFI.lean SeLe4n/Kernel/IPC/Operations/Fault.lean SeLe4n/Kernel/IPC/CrossCore/Fault.lean SeLe4n/Kernel/SchedContext/Operations.lean SeLe4n/Kernel/SchedContext/PriorityManagement.lean SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
+run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean SeLe4n/Kernel/Architecture/SyscallReturn.lean SeLe4n/Platform/FFI.lean SeLe4n/Kernel/IPC/Operations/Fault.lean SeLe4n/Kernel/IPC/CrossCore/Fault.lean SeLe4n/Kernel/SchedContext/Operations.lean SeLe4n/Kernel/SchedContext/PriorityManagement.lean SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean SeLe4n/Kernel/Capability/Operations.lean SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 # The scheduler's context-save family and the affinity op are the typed rewrite,
 # or the witnessed lookup around `rewriteObject` -- bounded to each declaration.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.updateTcb outTid fun outTcb" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
@@ -3148,6 +3148,56 @@ run_check "INVARIANT" rg -n '^theorem updateSchedContext_after_rewriteObject_tcb
 # key is covered by the admissibility witness, not by a distinctness
 # hypothesis.  NEGATIVE: the frame must not acquire one.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem rewriteObject_schedContext_getTcb\? [^\n]*(\n([ \t][^\n]*)?)*hNe : id ≠ tid\.toObjId" SeLe4n/Model/State.lean'
+
+# ============================================================================
+# v0.35.72 -- the cancellation spine's suspend, the capability revoke step and
+# the destroy path's origin scrub are the typed in-place rewrite
+# ============================================================================
+#
+# Three writers, three raw inserts, three shapes.  The cross-core suspend's
+# G6 (`threadState := .Inactive`) is `updateTcb` -- the single-core suspend's
+# G6 since `v0.35.64`, and identity on an absent thread exactly as the raw
+# store's own match was.  The revoke sweep's step resolves the blocked sender
+# through the witnessed lookup (its guards read the looked-up record) and
+# rewrites the filtered message under that witness.  The origin scrub's fold
+# arm is `updateSchedContext` on the enumerated key, with its guard OUTSIDE the
+# rewrite so a context naming no origin is no write at all.
+
+# The suspend's G6 follows the pending-state clear, as a typed rewrite.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*      let st := clearPendingStateValid st vtid(\n([ \t][^\n]*)?)*      let st := st\.updateTcb tid fun t => \{ t with threadState := \.Inactive \}" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# NEGATIVE: the suspend declaration inserts nothing raw (the raw inserts left
+# in that file are theorem STATEMENTS about the store, in their own
+# declarations, which a declaration-bounded gap cannot reach).
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The stage lemma the composite consumes: a typed rewrite is one
+# `IpcInvariantStage`, decided by the primitive's own match.  The composite
+# reaches for it with the thread in the second position; `tcbStoreOrIdentity_*`
+# -- the store-or-identity shape it replaced -- is retired and must not return.
+run_check "INVARIANT" rg -n '^theorem updateTcb_ipcInvariantStage \(s : SystemState\) \(tid : SeLe4n\.ThreadId\)' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_ipcInvariantStage[^\n]*(\n([ \t][^\n]*)?)*            refine IpcInvariantStage\.trans \(clearPendingState_ipcInvariantStage _ vtid\.val\) \?_\n            exact updateTcb_ipcInvariantStage _ vtid\.val _" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" rg -n 'tcbStoreOrIdentity_ipcInvariantStage' SeLe4n/ tests/
+# The two consumer statements are stated over the primitive, not over a
+# re-spelled match: the confinement in the per-core NI surface and the
+# dispatch payoff's suspend-clear bundle.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendInactiveStore_confinedToCores \(s : SystemState\) \(tid : SeLe4n\.ThreadId\) :\n    observableSlotsConfinedToCores s\n      \(s\.updateTcb tid fun t => \{ t with threadState := \.Inactive \}\) \[\] :=" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem suspendClearStore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*    ipcInvariantFull \(\(Lifecycle\.Suspend\.clearPendingState stR2 tid\)\.updateTcb tid fun t => \{ t with threadState := \.Inactive \}\) ∧\n    \(\(Lifecycle\.Suspend\.clearPendingState stR2 tid\)\.updateTcb tid fun t => \{ t with threadState := \.Inactive \}\)\.objects\.invExt := by" SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean'
+# The revoke step: the blocked sender through the witnessed lookup, the
+# filtered message written under its witness.
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def revokePendingTransfersStep[^\n]*(\n([ \t][^\n]*)?)*  match stAcc\.getTcbWitnessed\? \(SeLe4n\.ThreadId\.ofNat oid\.toNat\) with\n  \| some ⟨tcb, hTcb⟩ =>(\n([ \t][^\n]*)?)*                let tcb'"'"' : TCB := \{ tcb with pendingMessage := some msg'"'"' \}\n                stAcc\.rewriteObject \(SeLe4n\.ThreadId\.ofNat oid\.toNat\)\.toObjId \(\.tcb tcb'"'"'\)\n                  \(SystemState\.rewriteAdmissible_tcb hTcb tcb'"'"'\)" SeLe4n/Kernel/Capability/Operations.lean'
+# NEGATIVE: the step neither resolves the sender bare or dependently (the
+# receiver is the accumulator, which the tree-wide dependent-match negative
+# does not spell) nor inserts raw; the `_cases` theorem's literal insert is a
+# statement in its own declaration.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private def revokePendingTransfersStep[^\n]*(\n([ \t][^\n]*)?)*match (\w+ : )?stAcc\.getTcb\? " SeLe4n/Kernel/Capability/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private def revokePendingTransfersStep[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Capability/Operations.lean'
+# The origin scrub: the guard outside, the typed rewrite on the enumerated key
+# inside, the untouched accumulator on the other arm.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def clearDonationOriginReferences[^\n]*(\n([ \t][^\n]*)?)*      if sc\.donationOrigin == some tid then(\n([ \t][^\n]*)?)*        acc\.updateSchedContext \(SchedContextId\.ofObjId oid\) fun s =>\n          \{ s with donationOrigin := none \}\n      else acc" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# NEGATIVE: the scrub inserts nothing raw, and no conditional opens after the
+# rewrite's lambda does -- a guard folded into the lambda rewrites every
+# context the fold visits, unchanged records included.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def clearDonationOriginReferences[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def clearDonationOriginReferences[^\n]*(\n([ \t][^\n]*)?)*acc\.updateSchedContext \(SchedContextId\.ofObjId oid\) fun s =>(\n([ \t][^\n]*)?)*if " SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 
 # ============================================================================
 # WS-OD OD6 -- the payoff

@@ -4589,11 +4589,10 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
         | some c => if c == home then st else removeRunnableOnCore st tid c
         | none => st
       let st := clearPendingStateValid st vtid
-      let st := match st.getTcb? tid with
-        | some tcb'' =>
-          { st with objects := st.objects.insert tid.toObjId (.tcb { tcb'' with
-              threadState := .Inactive }) }
-        | none => st
+      -- G6 (`v0.35.72`): the typed in-place rewrite -- the single-core
+      -- `suspendThread`'s G6 since `v0.35.64`, and the identity on an absent
+      -- thread, exactly as the raw store's own match was.
+      let st := st.updateTcb tid fun t => { t with threadState := .Inactive }
       -- Local-disinheritance recheck (PR #831 review 2): the executing core's
       -- entry-time current thread is STILL current and its effective priority
       -- dropped across the pipeline (the G2b revert deboosted it) — a ready
@@ -5242,16 +5241,17 @@ theorem removeRunnableOnCoreOpt_ipcInvariantStage (s s' : SystemState)
       · exact IpcInvariantStage.refl s
       · exact removeRunnableOnCore_ipcInvariantStage s tid c
 
-/-- WS-RR RR2.17: a stage that is either the identity or a single TCB store.
-The suspend's running-core deschedule, pending-state clear and `.Inactive` store
-all take this shape, and stating it once keeps the composite's assembly free of
-their internal case splits. -/
-theorem tcbStoreOrIdentity_ipcInvariantStage (s s' : SystemState) (tid : SeLe4n.ThreadId)
-    (hShape : s' = s ∨ ∃ t : TCB, s' = { s with objects := s.objects.insert tid.toObjId (.tcb t) }) :
-    IpcInvariantStage s s' := by
-  rcases hShape with hEq | ⟨t, hEq⟩
-  · rw [hEq]; exact IpcInvariantStage.refl s
-  · exact tcbStore_ipcInvariantStage s s' tid t hEq
+/-- `v0.35.72`: the typed in-place rewrite of one TCB is a stage — the shape the
+suspend's `threadState := .Inactive` write takes since the raw store became
+`updateTcb`.  Store-or-identity, decided by the primitive's own match rather
+than by a case split at the composite. -/
+theorem updateTcb_ipcInvariantStage (s : SystemState) (tid : SeLe4n.ThreadId)
+    (f : TCB → TCB) :
+    IpcInvariantStage s (s.updateTcb tid f) := by
+  unfold SystemState.updateTcb
+  split
+  · exact tcbStore_ipcInvariantStage s _ tid _ rfl
+  · exact IpcInvariantStage.refl s
 
 
 /-- **WS-RR RR2.17: the operation the live `.tcbSuspend` arm runs is one
@@ -5313,10 +5313,7 @@ theorem suspendThreadOnCore_ipcInvariantStage
               (removeRunnableOnCoreOpt_ipcInvariantStage _ _ vtid.val
                 (determineTargetCore st vtid.val) (runningCoreOf? st vtid.val) rfl) ?_
             refine IpcInvariantStage.trans (clearPendingState_ipcInvariantStage _ vtid.val) ?_
-            repeat' split
-            all_goals first
-              | exact tcbStoreOrIdentity_ipcInvariantStage _ _ vtid.val (Or.inr ⟨_, rfl⟩)
-              | exact IpcInvariantStage.refl _
+            exact updateTcb_ipcInvariantStage _ vtid.val _
   exact hChain
 
 /-- **WS-RR RR2.17: the live `.tcbSuspend` arm preserves the object-store

@@ -398,8 +398,12 @@ def clearDonationOriginReferences (st : SystemState) (tid : SeLe4n.ThreadId) : S
     match obj with
     | .schedContext sc =>
       if sc.donationOrigin == some tid then
-        { acc with objects :=
-            acc.objects.insert oid (.schedContext { sc with donationOrigin := none }) }
+        -- `v0.35.72`: the typed in-place rewrite of the accumulator's record,
+        -- which is the enumerated one -- the fold visits each key once and
+        -- writes only its own.  The guard stays outside the rewrite, so a
+        -- context that names no origin is no write at all.
+        acc.updateSchedContext (SchedContextId.ofObjId oid) fun s =>
+          { s with donationOrigin := none }
       else acc
     | _ => acc
 

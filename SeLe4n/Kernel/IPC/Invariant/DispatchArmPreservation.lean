@@ -4691,8 +4691,8 @@ private theorem suspendClearStore_preserves_ipcInvariantFull
       tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧ tcbX.timeoutBudget = none ∧
       tcbX.queuePrev = none ∧ tcbX.queueNext = none ∧ tcbX.queuePPrev = none)
     (hInvR : ipcInvariantFull stR2) :
-    ipcInvariantFull (match (Lifecycle.Suspend.clearPendingState stR2 tid).getTcb? tid with | some tcb'' => { Lifecycle.Suspend.clearPendingState stR2 tid with objects := (Lifecycle.Suspend.clearPendingState stR2 tid).objects.insert tid.toObjId (.tcb { tcb'' with threadState := .Inactive }) } | none => Lifecycle.Suspend.clearPendingState stR2 tid) ∧
-    (match (Lifecycle.Suspend.clearPendingState stR2 tid).getTcb? tid with | some tcb'' => { Lifecycle.Suspend.clearPendingState stR2 tid with objects := (Lifecycle.Suspend.clearPendingState stR2 tid).objects.insert tid.toObjId (.tcb { tcb'' with threadState := .Inactive }) } | none => Lifecycle.Suspend.clearPendingState stR2 tid).objects.invExt := by
+    ipcInvariantFull ((Lifecycle.Suspend.clearPendingState stR2 tid).updateTcb tid fun t => { t with threadState := .Inactive }) ∧
+    ((Lifecycle.Suspend.clearPendingState stR2 tid).updateTcb tid fun t => { t with threadState := .Inactive }).objects.invExt := by
   have hFields : ∀ tcbX : TCB, stR2.getTcb? tid = some tcbX →
       tcbX.pendingMessage = none ∧ tcbX.timeoutBudget = none ∧
       tcbX.queuePrev = none ∧ tcbX.queueNext = none ∧ tcbX.queuePPrev = none :=
@@ -4711,8 +4711,9 @@ private theorem suspendClearStore_preserves_ipcInvariantFull
     rw [hSchedC] at hNQ hNC
     exact hInvR.passiveServerIdle t tcbT hT hUnb hNQ hNC
   cases hLkC : (Lifecycle.Suspend.clearPendingState stR2 tid).getTcb? tid with
-  | none => exact ⟨hInvC, hObjInvC⟩
+  | none => rw [SystemState.updateTcb_eq_self_of_none hLkC]; exact ⟨hInvC, hObjInvC⟩
   | some tcb2 =>
+      rw [SystemState.updateTcb_eq_of_some hLkC]
       constructor
       · exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
           (Lifecycle.Suspend.clearPendingState stR2 tid) tid tcb2
@@ -4819,7 +4820,7 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
             ∀ (c2 ecX : CoreId) (wc ld : Bool) (stO : SystemState)
               (sgiO : Option (CoreId × Concurrency.SgiKind)),
             Lifecycle.Suspend.suspendRescheduleOnCore
-              (match (Lifecycle.Suspend.clearPendingState stR2 vtid.val).getTcb? vtid.val with | some tcb'' => { Lifecycle.Suspend.clearPendingState stR2 vtid.val with objects := (Lifecycle.Suspend.clearPendingState stR2 vtid.val).objects.insert vtid.val.toObjId (.tcb { tcb'' with threadState := .Inactive }) } | none => Lifecycle.Suspend.clearPendingState stR2 vtid.val)
+              ((Lifecycle.Suspend.clearPendingState stR2 vtid.val).updateTcb vtid.val fun t => { t with threadState := .Inactive })
               c2 ecX wc ld = .ok (stO, sgiO) →
             ipcInvariantFull stO := by
           intro stD _ _ _ stR2 hObjInvR hInvR hShapeR c2 ecX wc ld stO sgiO hStepO

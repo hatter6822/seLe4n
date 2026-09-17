@@ -1015,8 +1015,10 @@ private def revokePendingTransfersStep (nodes : List CdtNodeId)
   -- frame lemma below compose: each step establishes for itself that the key it
   -- writes already held a TCB, instead of resting on the enumeration being
   -- faithful to the store it came from.
-  match stAcc.getTcb? (SeLe4n.ThreadId.ofNat oid.toNat) with
-  | some tcb =>
+  -- ...through the witnessed lookup (`v0.35.72`), so the write below is the
+  -- typed in-place rewrite under the store's own proof for the record it read.
+  match stAcc.getTcbWitnessed? (SeLe4n.ThreadId.ofNat oid.toNat) with
+  | some ⟨tcb, hTcb⟩ =>
       match tcb.ipcState with
       | .blockedOnSend _ | .blockedOnCall _ =>
           match tcb.pendingMessage with
@@ -1026,8 +1028,8 @@ private def revokePendingTransfersStep (nodes : List CdtNodeId)
                 let msg' : IpcMessage :=
                   { msg with caps := msg.caps.filter (fun tc => !nodes.contains tc.srcNode) }
                 let tcb' : TCB := { tcb with pendingMessage := some msg' }
-                { stAcc with objects :=
-                    stAcc.objects.insert (SeLe4n.ThreadId.ofNat oid.toNat).toObjId (.tcb tcb') }
+                stAcc.rewriteObject (SeLe4n.ThreadId.ofNat oid.toNat).toObjId (.tcb tcb')
+                  (SystemState.rewriteAdmissible_tcb hTcb tcb')
               else stAcc
       | _ => stAcc
   | none => stAcc

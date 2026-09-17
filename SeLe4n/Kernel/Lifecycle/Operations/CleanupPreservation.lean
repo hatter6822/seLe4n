@@ -220,7 +220,12 @@ theorem clearDonationOriginReferences_preserves
     (fun acc => acc.scheduler = st.scheduler ∧ acc.lifecycle = st.lifecycle ∧
       acc.serviceRegistry = st.serviceRegistry)
     ⟨rfl, rfl, rfl⟩
-    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+    (fun acc _ _ hAcc => by
+      split <;> first
+        | exact hAcc
+        | (split <;> first
+            | exact hAcc
+            | (rw [SystemState.updateSchedContext_eq_objects_update]; exact hAcc)))
 
 theorem clearDonationOriginReferences_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -244,7 +249,12 @@ theorem clearDonationOriginReferences_machine_eq
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
     (fun acc => acc.machine = st.machine)
     rfl
-    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+    (fun acc _ _ hAcc => by
+      split <;> first
+        | exact hAcc
+        | (split <;> first
+            | exact hAcc
+            | (rw [SystemState.updateSchedContext_eq_objects_update]; exact hAcc)))
 
 theorem clearDonationOriginReferences_tlbShootdown_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -253,7 +263,12 @@ theorem clearDonationOriginReferences_tlbShootdown_eq
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
     (fun acc => acc.tlbShootdown = st.tlbShootdown)
     rfl
-    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+    (fun acc _ _ hAcc => by
+      split <;> first
+        | exact hAcc
+        | (split <;> first
+            | exact hAcc
+            | (rw [SystemState.updateSchedContext_eq_objects_update]; exact hAcc)))
 
 /-- WS-SM SM7.B: the composed TCB reference scrub only modifies scheduler
 and `objects` — the TLB-shootdown state is framed. -/

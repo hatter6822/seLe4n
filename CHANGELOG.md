@@ -1,3 +1,77 @@
+## v0.35.72 — The cross-core suspend's G6, the revoke sweep's step and the origin scrub are the typed in-place rewrite
+
+**Raw-write migration, ninth cut (C4a).**  Three writers, three raw inserts,
+three shapes.  `suspendThreadOnCore`'s G6 — the `threadState := .Inactive`
+write after the pending-state clear — is `st.updateTcb tid fun t => { t with
+threadState := .Inactive }`, the shape the single-core `suspendThread` took at
+`v0.35.64`, and the identity on an absent thread exactly as the raw store's own
+match was.  `revokePendingTransfersStep` — the fold step of the revoke sweep
+that strips a revoked derivation out of a blocked sender's parked message —
+resolves the sender through `getTcbWitnessed?` (its two guards read the
+looked-up record, so the lookup is the witnessed one) and rewrites the filtered
+message through `rewriteObject` under that witness;
+`revokePendingTransfersStep_cases`, the store-shape case analysis every revoke
+frame rests on, proves unchanged, since the witness is exactly the
+`some (.tcb tcb)` fact it used to recover from the match.
+`clearDonationOriginReferences`'s fold arm is `acc.updateSchedContext
+(SchedContextId.ofObjId oid) fun s => { s with donationOrigin := none }` under
+its unchanged guard: the fold visits each key once and writes only its own, so
+the accumulator's record at the enumerated key *is* the enumerated record, and
+the guard stays outside the rewrite so a context naming no origin is no write
+at all.
+
+**One stage lemma replaces one, and the replaced one is deleted.**  The
+cross-core suspend's `IpcInvariantStage` composite consumed
+`tcbStoreOrIdentity_ipcInvariantStage` — "a stage that is either the identity
+or a single TCB store", discharged at the G6 by a `repeat' split` over the raw
+match — and it is gone with its only consumer: `updateTcb_ipcInvariantStage`
+says the typed rewrite is a stage, decided by the primitive's own match rather
+than by a case split at the composite, and the composite's last line is one
+`exact`.  Tier 3 refuses the retired name tree-wide.  The two consumer
+statements that spelled the G6's raw match in their own types —
+`suspendInactiveStore_confinedToCores` (the per-core NI confinement) and the
+dispatch payoff's `suspendClearStore_preserves_ipcInvariantFull`, with the
+`hTail` it feeds — are stated over `updateTcb`, the first discharged by the
+primitive's scheduler and machine frames where it used to split the match, the
+second by the fixed recipe (`updateTcb_eq_of_some` / `_eq_self_of_none`).  The
+three fold-preservation proofs over the origin scrub gained one branch each
+(`updateSchedContext_eq_objects_update`).
+
+**Measured and left.**  The raw-write population is **16 sites in 16 executable
+declarations across 8 files** outside `SeLe4n/Testing/` (from 19 / 19 / 10).
+`IPC/CrossCore/Cancellation.lean` and `Capability/Operations.lean` hold no raw
+write in an executable body.  What remains: the seven inhabitation witnesses in
+`IPC/Invariant/{DispatchPayoff,Reachability}.lean`, the two endpoint and
+notification queue sweeps in `Lifecycle/Operations/Cleanup.lean` with their two
+named bodies in `CleanupPreservation.lean`, and the five primitives that should
+be raw (`storeObject`, `rewriteObject`, `Builder.createObject`,
+`updateObjectAt`, the frozen store).  Next: the witnesses (C4b), then the two
+sweeps (C4c), which need the endpoint and notification twins of the witnessed
+lookup and the typed rewrite.
+
+**The TCB-lookup floor is re-anchored, 2469 → 2464**, for the reason
+`v0.35.69` and `v0.35.71` record: five spellings of the typed lookup — the
+G6's own, the three in the two consumer statements and the one in the `hTail`
+they feed — are spelled once, inside `updateTcb`.  The reservation floor and
+the raw-read inventory (`RAW_SITE`, `STORE_READ_CODE = 0`) are byte-identical.
+
+**Tier 3**: positives on the G6 following the pending-state clear as a typed
+rewrite, on the stage lemma and the composite consuming it at the thread, on
+the two consumer statements over the primitive, on the revoke step's witnessed
+lookup and the rewrite under it, and on the scrub's guard outside its rewrite;
+negatives on a raw insert in each of the three declarations (bounded to the
+declaration, since the raw inserts left in two of the files are theorem
+statements), on a bare or dependent sender lookup in the revoke step (whose
+receiver is the accumulator, which the tree-wide dependent-match negative does
+not spell), on a conditional opening after the scrub's rewrite lambda, and on
+the retired stage lemma tree-wide; `Capability/Operations.lean` and
+`Lifecycle/Operations/Cleanup.lean` join the dependent-match negative — 12
+cases, 12 mutations, every one keeping the tokens (the written state changed,
+the pre-migration match restored under the same field, the stage lemma's
+arguments reordered, the retired lemma reached for, the witness discarded for a
+bare read-modify-write, the sender resolved bare and dependently, the guard
+folded into the lambda).  Golden trace byte-identical.
+
 ## v0.35.71 — The SchedContext operations and the priority management are the typed in-place rewrite
 
 **Raw-write migration, eighth cut (C3).**  Seven writers, thirteen raw inserts:
