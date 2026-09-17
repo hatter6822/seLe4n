@@ -610,13 +610,16 @@ the write out of `machine` is part of what makes the RA.B.10 projection
 preservation hold for every observer.
 
 Total: a non-TCB target returns the state unchanged, mirroring
-`writeFfiRegistersToTcb`'s posture (the caller surfaces the error). -/
+`writeFfiRegistersToTcb`'s posture (the caller surfaces the error).
+
+The write is the typed in-place rewrite `SystemState.updateTcb` (`v0.35.69`):
+the witnessed lookup around `rewriteObject`, whose bookkeeping-neutrality is a
+theorem, so the staging cannot register, unregister or re-kind anything — and
+the identity where the thread resolves to no TCB, which is the totality
+posture stated above (`writeReturnFrameToTcb_id_when_not_tcb`). -/
 def writeReturnFrameToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : SyscallReturnFrame) : SystemState :=
-  match st.getTcb? tid with
-  | some tcb =>
-      { st with objects := st.objects.insert tid.toObjId (.tcb (tcb.withReturnFrame frame)) }
-  | none => st
+  st.updateTcb tid (·.withReturnFrame frame)
 
 /-- WS-RA RA.B.2: read the staged return frame back out of a thread's
 register context — `Platform.FFI.readReturnValue` generalised to the
@@ -643,13 +646,14 @@ theorem readReturnFrame_writeReturnFrame
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
     (hObjInv : st.objects.invExt) :
     readReturnFrame (writeReturnFrameToTcb st tid frame) tid = frame := by
-  unfold writeReturnFrameToTcb readReturnFrame
-  rw [hTcb]
+  have hRead : (writeReturnFrameToTcb st tid frame).getTcb? tid
+      = some (tcb.withReturnFrame frame) := by
+    unfold writeReturnFrameToTcb
+    rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]
+    rfl
+  unfold readReturnFrame
+  rw [hRead]
   simp only
-  unfold SystemState.getTcb?
-  rw [RHTable_getElem?_eq_get?,
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId
-        (KernelObject.tcb (tcb.withReturnFrame frame)) hObjInv]
   have hReads := (tcb.registerContext).stageReturnFrame_reads_back frame
   obtain ⟨h0, h1, h2, h3, h4, h5⟩ := hReads
   simp only [SeLe4n.Model.TCB.withReturnFrame_registerContext, h0, h1, h2, h3, h4, h5]
@@ -663,15 +667,8 @@ theorem writeReturnFrameToTcb_objects_ne
     (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
     (hObjInv : st.objects.invExt) :
     (writeReturnFrameToTcb st tid frame).objects[oid]? = st.objects[oid]? := by
-  have hNe' : ¬(tid.toObjId == oid) = true := by
-    simp only [beq_iff_eq]
-    exact fun h => hNe h.symm
   unfold writeReturnFrameToTcb
-  cases h : st.getTcb? tid with
-  | none => rfl
-  | some tcb =>
-    exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
-        st.objects tid.toObjId oid _ hNe' hObjInv
+  exact SystemState.updateTcb_objects_ne st tid _ oid (fun h => hNe h.symm) hObjInv
 
 /-- WS-RA RA.B.1 frame lemma: the scheduler is untouched. -/
 theorem writeReturnFrameToTcb_scheduler_eq
@@ -679,9 +676,7 @@ theorem writeReturnFrameToTcb_scheduler_eq
     (frame : SyscallReturnFrame) :
     (writeReturnFrameToTcb st tid frame).scheduler = st.scheduler := by
   unfold writeReturnFrameToTcb
-  cases h : st.getTcb? tid with
-  | none => rfl
-  | some tcb => rfl
+  exact SystemState.updateTcb_scheduler st tid _
 
 /-- WS-RA RA.B.1 frame lemma: the machine is untouched — the staging
 writes the TCB's saved context only, never the machine mirror. -/
@@ -690,9 +685,7 @@ theorem writeReturnFrameToTcb_machine_eq
     (frame : SyscallReturnFrame) :
     (writeReturnFrameToTcb st tid frame).machine = st.machine := by
   unfold writeReturnFrameToTcb
-  cases h : st.getTcb? tid with
-  | none => rfl
-  | some tcb => rfl
+  exact SystemState.updateTcb_machine st tid _
 
 /-- WS-SM SM9.C.8 frame lemma: the declassification audit trail is untouched.
 
@@ -708,9 +701,7 @@ theorem writeReturnFrameToTcb_declassificationAuditLog_eq
     (writeReturnFrameToTcb st tid frame).declassificationAuditLog =
       st.declassificationAuditLog := by
   unfold writeReturnFrameToTcb
-  cases h : st.getTcb? tid with
-  | none => rfl
-  | some tcb => rfl
+  rw [SystemState.updateTcb_eq_objects_update]
 
 /-- WS-RA RA.B.1: staging a frame for a target that is not a TCB is the
 identity — the totality witness, mirroring
@@ -721,7 +712,7 @@ theorem writeReturnFrameToTcb_id_when_not_tcb
     (hNot : st.getTcb? tid = none) :
     writeReturnFrameToTcb st tid frame = st := by
   unfold writeReturnFrameToTcb
-  rw [hNot]
+  exact SystemState.updateTcb_eq_self_of_none hNot _
 
 /-- WS-RA RA.B.6: stage the message a completed receive-shaped syscall
 delivered into the **caller's own** `pendingMessage` — the arm-level
@@ -1200,7 +1191,7 @@ theorem stageTimeoutFrame_eq_withReturnFrame (st : SystemState)
           objects := st.objects.insert tid.toObjId
               (.tcb (tcb.withReturnFrame timeoutFrame)) } := by
   unfold stageTimeoutFrame writeReturnFrameToTcb
-  rw [hTcb]
+  exact SystemState.updateTcb_eq_of_some hTcb _
 
 /-- **WS-RR RR7.14**: and the cancellation twin. -/
 theorem stageCancelledIpcFrame_eq_withReturnFrame (st : SystemState)
@@ -1210,7 +1201,7 @@ theorem stageCancelledIpcFrame_eq_withReturnFrame (st : SystemState)
           objects := st.objects.insert tid.toObjId
               (.tcb (tcb.withReturnFrame cancelledIpcFrame)) } := by
   unfold stageCancelledIpcFrame writeReturnFrameToTcb
-  rw [hTcb]
+  exact SystemState.updateTcb_eq_of_some hTcb _
 
 /-- **WS-RR RR7.14**: what a timed-out thread reads back is the timeout error,
 not its own stale request registers. -/
@@ -1534,13 +1525,12 @@ def _root_.SeLe4n.Model.TCB.withRestartFrame (tcb : TCB) (f : FaultRestartFrame)
 
 /-- WS-RR RR4.16: stage a restart frame into a thread's saved register
 context — the state-level writeback, mirroring `writeReturnFrameToTcb` down
-to its totality posture (a non-TCB target returns the state unchanged). -/
+to its totality posture (a non-TCB target returns the state unchanged) and,
+since `v0.35.69`, to its primitive: the typed in-place rewrite
+`SystemState.updateTcb`. -/
 def writeRestartFrameToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : FaultRestartFrame) : SystemState :=
-  match st.getTcb? tid with
-  | some tcb =>
-      { st with objects := st.objects.insert tid.toObjId (.tcb (tcb.withRestartFrame frame)) }
-  | none => st
+  st.updateTcb tid (·.withRestartFrame frame)
 
 /-- WS-RR RR4.16 (frame): the restart writeback never touches the scheduler —
 restarting a thread installs registers; making it runnable again is the
@@ -1548,7 +1538,7 @@ separate act the delivery's counterpart performs. -/
 @[simp] theorem writeRestartFrameToTcb_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame) :
     (writeRestartFrameToTcb st tid frame).scheduler = st.scheduler := by
-  unfold writeRestartFrameToTcb; cases st.getTcb? tid <;> rfl
+  unfold writeRestartFrameToTcb; exact SystemState.updateTcb_scheduler st tid _
 
 /-- WS-RR RR4.16 (frame): nor the machine mirror — same posture as
 `writeReturnFrameToTcb`, and for the same reason (the SM10.1 context restore
@@ -1556,14 +1546,14 @@ owns that mirror). -/
 @[simp] theorem writeRestartFrameToTcb_machine_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame) :
     (writeRestartFrameToTcb st tid frame).machine = st.machine := by
-  unfold writeRestartFrameToTcb; cases st.getTcb? tid <;> rfl
+  unfold writeRestartFrameToTcb; exact SystemState.updateTcb_machine st tid _
 
 /-- WS-RR RR4.16 (frame): nor the declassification audit trail. -/
 @[simp] theorem writeRestartFrameToTcb_declassificationAuditLog_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame) :
     (writeRestartFrameToTcb st tid frame).declassificationAuditLog
       = st.declassificationAuditLog := by
-  unfold writeRestartFrameToTcb; cases st.getTcb? tid <;> rfl
+  unfold writeRestartFrameToTcb; rw [SystemState.updateTcb_eq_objects_update]
 
 /-- WS-RR RR4.16 (frame): every object but the restarted thread's is
 untouched — the restart is a single-TCB write. -/
@@ -1572,15 +1562,8 @@ theorem writeRestartFrameToTcb_objects_ne
     (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
     (hObjInv : st.objects.invExt) :
     (writeRestartFrameToTcb st tid frame).objects[oid]? = st.objects[oid]? := by
-  have hNe' : ¬(tid.toObjId == oid) = true := by
-    simp only [beq_iff_eq]
-    exact fun h => hNe h.symm
   unfold writeRestartFrameToTcb
-  cases h : st.getTcb? tid with
-  | none => rfl
-  | some tcb =>
-    exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
-        st.objects tid.toObjId oid _ hNe' hObjInv
+  exact SystemState.updateTcb_objects_ne st tid _ oid (fun h => hNe h.symm) hObjInv
 
 /-- WS-RR RR4.16: the restarted thread's saved `pc` is the frame's — the
 statement RR4.19's progress argument consumes, since "the thread does not
@@ -1595,12 +1578,8 @@ theorem writeRestartFrameToTcb_pc
     (tcb.withRestartFrame frame).registerContext.pc = ⟨frame.pc.toNat⟩ := by
   refine ⟨?_, rfl⟩
   unfold writeRestartFrameToTcb
-  rw [hTcb]
-  simp only
-  unfold SystemState.getTcb?
-  rw [RHTable_getElem?_eq_get?,
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId
-        (KernelObject.tcb (tcb.withRestartFrame frame)) hObjInv]
+  rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]
+  rfl
 
 -- ============================================================================
 -- §7  The ABI version pin (RA.A.7, plan §3.6)

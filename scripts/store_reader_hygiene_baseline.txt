@@ -17,11 +17,11 @@ raw_match_cnode          = 0
 raw_match_vspaceroot     = 14
 raw_match_total          = 44
 raw_match_unclassified   = 3
-store_read_spec          = 4712 (diagnostic)
+store_read_spec          = 4715 (diagnostic)
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 2502
+gettcb_adoption          = 2485
 getschedctx_adoption     = 451
 getendpoint_adoption     = 194
 getnotification_adoption = 87
@@ -1793,6 +1793,8 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|threadInactive
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|threadInactiveFlagConsistent_of_frame|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|threadInactiveFlagConsistent_of_frame_placing|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|threadStateConsistent|1
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean|enqueueIdleThreadOnCore_objects_ne|2
+STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean|enqueueIdleThreadOnCore_objects_self|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean|setThreadCpuAffinity_getSchedContext?|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean|chooseBestInBucketEffective_ok_of_allTcb|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean|chooseBestInBucketEffective_result_eligible|1
@@ -2039,8 +2041,8 @@ RAW_MATCH_VSPACEROOT=14
 RAW_MATCH_TOTAL=44
 RAW_MATCH_UNCLASSIFIED=3
 STORE_READ_CODE=0
-STORE_READ_SPEC=4712
-GETTCB_ADOPTION=2502
+STORE_READ_SPEC=4715
+GETTCB_ADOPTION=2485
 GETSCHEDCTX_ADOPTION=451
 GETENDPOINT_ADOPTION=194
 GETNOTIFICATION_ADOPTION=87

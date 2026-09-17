@@ -2849,7 +2849,7 @@ run_check "INVARIANT" rg -n '^theorem getSchedContextWitnessed\?_val\b' SeLe4n/M
 # theorem may case on a lookup this way elsewhere; these files are where
 # the executable rewrite sites live, and the mutation this refuses keeps the
 # match and makes it dependent again.
-run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean
+run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean SeLe4n/Kernel/Architecture/SyscallReturn.lean SeLe4n/Platform/FFI.lean SeLe4n/Kernel/IPC/Operations/Fault.lean
 # The scheduler's context-save family and the affinity op are the typed rewrite,
 # or the witnessed lookup around `rewriteObject` -- bounded to each declaration.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.updateTcb outTid fun outTcb" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
@@ -3007,6 +3007,31 @@ run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Scheduler\.Operations\.Idle
 run_negative_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.Scheduler\.Operations\.IdleEnqueue\b' scripts/staged_module_allowlist.txt
 # The suite pins the derivation at the type level, beside the surface anchors.
 run_check "INVARIANT" rg -n '^#check @SeLe4n\.Platform\.Boot\.enqueueIdleThread_state$' tests/SmpIdleSuite.lean
+
+# ============================================================================
+# v0.35.69 -- the four register-context writers are the typed in-place rewrite
+# ============================================================================
+#
+# `writeReturnFrameToTcb`, `writeRestartFrameToTcb` (Architecture),
+# `writeFfiRegistersToTcb` (the SVC seam's argument spill) and
+# `writeFaultRegistersToTcb` (the fault seam's window spill) each looked the
+# TCB up and inserted the rewritten record raw.  Each is `st.updateTcb tid f`
+# now -- the witnessed lookup around `rewriteObject` -- so the write is
+# bookkeeping-neutral by theorem and the identity on a miss by definition.
+# Positives pin the spelling per declaration; negatives refuse a raw insert or
+# a bare lookup returning inside any of the four, bounded to the declaration.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def writeReturnFrameToTcb \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(frame : SyscallReturnFrame\) : SystemState :=\n  st\.updateTcb tid \(·\.withReturnFrame frame\)$" SeLe4n/Kernel/Architecture/SyscallReturn.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def writeRestartFrameToTcb \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(frame : FaultRestartFrame\) : SystemState :=\n  st\.updateTcb tid \(·\.withRestartFrame frame\)$" SeLe4n/Kernel/Architecture/SyscallReturn.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def writeFaultRegistersToTcb \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(w : FaultRegisterWindow\) : SystemState :=\n  st\.updateTcb tid fun tcb => \{ tcb with registerContext := w\.spill tcb\.registerContext \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def writeFfiRegistersToTcb\n[^\n]*(\n([ \t][^\n]*)?)*\(x0 x1 x2 x3 x4 x5 : UInt64\) : SystemState :=\n  st\.updateTcb tid fun tcb =>" SeLe4n/Platform/FFI.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (writeReturnFrameToTcb|writeRestartFrameToTcb) \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*(objects\.insert|match st\.getTcb\?)" SeLe4n/Kernel/Architecture/SyscallReturn.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def writeFaultRegistersToTcb \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*(objects\.insert|match st\.getTcb\?)" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def writeFfiRegistersToTcb\n[^\n]*(\n([ \t][^\n]*)?)*(objects\.insert|match st\.getTcb\?)" SeLe4n/Platform/FFI.lean'
+# The totality posture is now the primitive's own: each identity-on-a-miss
+# lemma reads `updateTcb_eq_self_of_none` rather than re-deriving it by cases.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem writeReturnFrameToTcb_id_when_not_tcb[^\n]*(\n([ \t][^\n]*)?)*exact SystemState\.updateTcb_eq_self_of_none hNot _$" SeLe4n/Kernel/Architecture/SyscallReturn.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem writeFaultRegistersToTcb_id_when_not_tcb[^\n]*(\n([ \t][^\n]*)?)*exact SystemState\.updateTcb_eq_self_of_none hNone _$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem writeFfiRegistersToTcb_id_when_not_tcb[^\n]*(\n([ \t][^\n]*)?)*exact SystemState\.updateTcb_eq_self_of_none hNone _$" SeLe4n/Platform/FFI.lean'
 
 # ============================================================================
 # WS-OD OD6 -- the payoff

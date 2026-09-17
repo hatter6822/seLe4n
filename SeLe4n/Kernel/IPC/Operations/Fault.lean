@@ -813,27 +813,25 @@ syscalls, holds the *last syscall's* arguments; the fault context has to be
 built from what the thread held **at the trap**, because the unknown-syscall
 message reports that window and a resume reinstalls it
 (`applyFaultRestart`).  Total: a target that is not a TCB returns the state
-unchanged, and the delivery then fails closed on its own lookup. -/
+unchanged, and the delivery then fails closed on its own lookup.  The write is
+the typed in-place rewrite `SystemState.updateTcb` (`v0.35.69`), as the SVC
+seam's spill and the return-frame staging are. -/
 def writeFaultRegistersToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
     (w : FaultRegisterWindow) : SystemState :=
-  match st.getTcb? tid with
-  | some tcb =>
-      let tcb' : TCB := { tcb with registerContext := w.spill tcb.registerContext }
-      { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
-  | none => st
+  st.updateTcb tid fun tcb => { tcb with registerContext := w.spill tcb.registerContext }
 
 /-- The spill touches no scheduler state — it is a register write, and the
 delivery it precedes is what deschedules the thread. -/
 @[simp] theorem writeFaultRegistersToTcb_scheduler (st : SystemState)
     (tid : SeLe4n.ThreadId) (w : FaultRegisterWindow) :
     (writeFaultRegistersToTcb st tid w).scheduler = st.scheduler := by
-  unfold writeFaultRegistersToTcb; cases st.getTcb? tid <;> rfl
+  unfold writeFaultRegistersToTcb; exact SystemState.updateTcb_scheduler st tid _
 
 /-- A target that is not a TCB is left alone. -/
 theorem writeFaultRegistersToTcb_id_when_not_tcb (st : SystemState)
     (tid : SeLe4n.ThreadId) (w : FaultRegisterWindow) (hNone : st.getTcb? tid = none) :
     writeFaultRegistersToTcb st tid w = st := by
-  unfold writeFaultRegistersToTcb; simp [hNone]
+  unfold writeFaultRegistersToTcb; exact SystemState.updateTcb_eq_self_of_none hNone _
 
 /-- The spilled thread's saved context is the spill of what it was. -/
 theorem writeFaultRegistersToTcb_getTcb? (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -842,12 +840,8 @@ theorem writeFaultRegistersToTcb_getTcb? (st : SystemState) (tid : SeLe4n.Thread
     (writeFaultRegistersToTcb st tid w).getTcb? tid
       = some { tcb with registerContext := w.spill tcb.registerContext } := by
   unfold writeFaultRegistersToTcb
-  rw [hTcb]
-  simp only
-  unfold SystemState.getTcb?
-  rw [RHTable_getElem?_eq_get?,
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId
-        (KernelObject.tcb { tcb with registerContext := w.spill tcb.registerContext }) hObjInv]
+  rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]
+  rfl
 
 /-- **The fault context the entry delivers is the trap frame's**, word for
 word: `sp` and `lr` are the saved `SP_EL0` and `x30`, and `x0`-`x7` are the

@@ -135,13 +135,8 @@ theorem writeReturnFrameToTcb_preserves_objects_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId) (frame : Architecture.SyscallReturnFrame)
     (hObjInv : st.objects.invExt) :
     (Architecture.writeReturnFrameToTcb st tid frame).objects.invExt := by
-  cases hT : st.getTcb? tid with
-  | none =>
-      rw [Architecture.writeReturnFrameToTcb_id_when_not_tcb st tid frame hT]
-      exact hObjInv
-  | some tcb =>
-      simp only [Architecture.writeReturnFrameToTcb, hT]
-      exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+  unfold Architecture.writeReturnFrameToTcb
+  exact SystemState.updateTcb_preserves_objects_invExt st tid _ hObjInv
 
 /-- Return-frame staging rewrites exactly one TCB's `registerContext` — a
 field no conjunct reads — so the whole bundle transports.  This is the lever
@@ -162,7 +157,7 @@ theorem writeReturnFrameToTcb_preserves_ipcInvariantFull
       have hAt : (Architecture.writeReturnFrameToTcb st tid frame).objects[tid.toObjId]?
           = some (.tcb (tcb.withReturnFrame frame)) := by
         unfold Architecture.writeReturnFrameToTcb
-        rw [hT]
+        rw [SystemState.updateTcb_eq_of_some hT]
         exact RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hObjInv
       have hFrame : ∀ oid : SeLe4n.ObjId, oid ≠ tid.toObjId →
           (Architecture.writeReturnFrameToTcb st tid frame).objects[oid]? = st.objects[oid]? :=
@@ -5026,11 +5021,7 @@ theorem stageDeliveredMessage_objects_invExt
       · cases tcb.pendingMessage with
         | none => exact hObjInv
         | some msg =>
-            unfold Architecture.writeReturnFrameToTcb
-            cases hLk2 : st.getTcb? tid with
-            | none => exact hObjInv
-            | some tcb2 =>
-                exact RHTable_insert_preserves_invExt _ _ _ hObjInv
+            exact writeReturnFrameToTcb_preserves_objects_invExt st tid _ hObjInv
       · exact hObjInv
 
 theorem stageWokenSendCompletion_objects_invExt
@@ -5047,10 +5038,7 @@ theorem stageWokenSendCompletion_objects_invExt
       | some tcb =>
           dsimp only []
           split
-          · unfold Architecture.writeReturnFrameToTcb
-            cases st.getTcb? tid with
-            | none => exact hObjInv
-            | some tcb2 => exact RHTable_insert_preserves_invExt _ _ _ hObjInv
+          · exact writeReturnFrameToTcb_preserves_objects_invExt st tid _ hObjInv
           · exact hObjInv
 
 /-- **WS-RM (`v0.35.6`)**: a return-frame writeback carries no chain data.  Its
@@ -5060,11 +5048,13 @@ theorem writeReturnFrameToTcb_donationChainFrame
     (st : SystemState) (tid : SeLe4n.ThreadId) (frame : Architecture.SyscallReturnFrame)
     (hObjInv : st.objects.invExt) :
     donationChainFrame st (Architecture.writeReturnFrameToTcb st tid frame) := by
-  unfold Architecture.writeReturnFrameToTcb
   cases hLk : st.getTcb? tid with
-  | none => simp only []; exact donationChainFrame.refl st
+  | none =>
+      rw [Architecture.writeReturnFrameToTcb_id_when_not_tcb st tid frame hLk]
+      exact donationChainFrame.refl st
   | some tcb =>
-      simp only []
+      unfold Architecture.writeReturnFrameToTcb
+      rw [SystemState.updateTcb_eq_of_some hLk]
       exact donationChainFrame_of_objects_insert hObjInv
         (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk]; rfl)
         (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk]; rfl)

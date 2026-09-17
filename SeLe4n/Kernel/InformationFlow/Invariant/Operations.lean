@@ -614,12 +614,13 @@ theorem writeReturnFrameToTcb_preserves_projection
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (Architecture.writeReturnFrameToTcb st tid frame)
       = projectState ctx observer st := by
-  simp only [Architecture.writeReturnFrameToTcb]
   cases hTcb : st.getTcb? tid with
-  | none => rfl
+  | none => rw [Architecture.writeReturnFrameToTcb_id_when_not_tcb st tid frame hTcb]
   | some tcb =>
       have hRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
         (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+      unfold Architecture.writeReturnFrameToTcb
+      rw [SystemState.updateTcb_eq_of_some hTcb]
       simp only [projectState]
       congr 1
       · exact funext (fun oid => by

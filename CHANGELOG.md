@@ -1,3 +1,56 @@
+## v0.35.69 — The four register-context writers are the typed in-place rewrite
+
+**Raw-write migration, sixth cut (C1).**  Four transitions rewrote a thread's saved
+register context by looking the TCB up and inserting the rewritten record raw:
+`Architecture.writeReturnFrameToTcb` (the return-frame staging every dispatch arm
+ends in), `Architecture.writeRestartFrameToTcb` (the fault reply's restart),
+`Platform.FFI.writeFfiRegistersToTcb` (the SVC seam's argument spill) and
+`Kernel.writeFaultRegistersToTcb` (the fault seam's window spill).  All four had
+exactly the shape of `SystemState.updateTcb` — a lookup, the rewritten TCB at the
+same key, the identity on a miss — and each is now that one call: the witnessed
+lookup around `rewriteObject`, so the write is bookkeeping-neutral by theorem
+(`rewriteObject_preservesFieldsOutside` and its instances) and the totality
+posture each docstring states is the primitive's own
+(`updateTcb_eq_self_of_none`), read rather than re-derived.  Every frame lemma
+over them is an instance of the `updateTcb_*` family now — `_scheduler`,
+`_machine`, `_objects_ne`, `_preserves_objects_invExt`, the two audit-log frames
+through `updateTcb_eq_objects_update` — and the four lookup-read lemmas
+(`readReturnFrame_writeReturnFrame`, `writeRestartFrameToTcb_pc`,
+`writeFaultRegistersToTcb_getTcb?`, the seam's blocked-outcome theorem) read
+`updateTcb_getTcb?_self`.  The twelve proofs in five modules that unfolded a writer
+and case-split its lookup were repaired by the recipe the migration fixed at
+`v0.35.64`: `cases hT : st.getTcb? tid`, then `updateTcb_eq_of_some hT` or
+`updateTcb_eq_self_of_none hT`, and the old proof continues on the literal record.
+No statement changed.
+
+**Measured and left.**  The raw-write population is **39 sites in 33 executable
+declarations across 15 files** outside `SeLe4n/Testing/` (from 43 / 37 / 15 files
+gained none).  `Architecture/SyscallReturn.lean` and `Platform/FFI.lean` hold no
+raw write at all now.  Next: the fault path proper (`recordPendingFault`,
+`faultSuspend`, `faultAbandon`, `applyFaultRestart`, `installFaultHandler`, and the
+two cross-core arms), the SchedContext operations and the priority management, then
+the cancellation spine's suspend, the capability revoke step, the cleanup sweeps and
+the inhabitation witnesses.
+
+**The lookup-adoption floor is re-anchored, 2502 → 2485, and why that is not a
+regression.**  `GETTCB_ADOPTION` counts lines mentioning the typed TCB lookup over
+the code view, and a site that migrates from *its own* `match st.getTcb? tid with`
+plus a raw insert onto `st.updateTcb tid f` spells the lookup **once, inside the
+primitive**, where the four definitions and their eleven case-split proofs spelled
+it seventeen times.  The gate's own docstring records the floor as a proxy for the
+inventory; the inventory (`RAW_SITE`, `STORE_READ_CODE = 0`) is byte-identical, and
+the four sites are now *further* from a raw read than the floor can express.  The
+baseline is regenerated on that reading; `STORE_READ_SPEC` moves 4712 → 4715 for
+the two `v0.35.68` object-frame theorems, which the diagnostic rows now list.
+
+**Tier 3**: positives on each writer's exact `updateTcb` spelling and on the three
+totality lemmas reading the primitive's identity; negatives on a raw insert or a
+bare `match st.getTcb?` anywhere in any of the four, bounded to the declaration;
+the three files join the dependent-match negative — 8 cases, 16 mutation checks,
+every mutation keeping the tokens (a second decision of the lookup around the
+rewrite, the rewrite applied twice, the store in place of the rewrite, the
+pre-migration body under the new docstring).  Golden trace byte-identical.
+
 ## v0.35.68 — The boot's idle install is the kernel model's enqueue, and the idle TCB lives with its identities
 
 **Raw-write migration, fifth cut — a derivation rather than a migration.**
