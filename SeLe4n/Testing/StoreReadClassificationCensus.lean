@@ -2,10 +2,11 @@
 # The store-read classifier, reconciled against the elaborator
 
 `scripts/lean_store_read_census.py` decides two structural questions about every
-raw object-store read it finds: **which declaration owns this line**, and **is
-that declaration executable**.  It decides both by reading text, because it runs
-in Tier 0 — before any build — and the metric it produces (`STORE_READ_CODE`, a
-`ZERO_METRICS` entry) is consumed there.
+raw object-store read — and, since `v0.35.76`, every raw object-table write —
+it finds: **which declaration owns this line**, and **is that declaration
+executable**.  It decides both by reading text, because it runs in Tier 0 —
+before any build — and the metrics it produces (`STORE_READ_CODE` and
+`STORE_WRITE_CODE`, both `ZERO_METRICS` entries) are consumed there.
 
 Text is the wrong instrument for both questions, and this project has the
 receipts: across three review rounds of one PR the classifier was taught a
@@ -29,10 +30,23 @@ silently misfiling a read.  It does **not** make the read *recogniser* complete
 meaning, which the environment has no opinion on (`CLAUDE.md` records that a
 result-type derivation classified `FrozenMap.set`, a write, as a read).  That
 half stays a stated floor, and `STORE_READ_SCOPE` says so.
+
+**And the domain is reconciled, not assumed** (`v0.35.76`).  The classifier's
+domain is the filesystem — every `SeLe4n/**/*.lean` — while this check's is the
+environment, and a declaration outside the import closure is indistinguishable
+from one that does not exist.  Until `v0.35.76` a row in such a file was counted
+as "outside any declaration" beside a `#eval` line, a diagnostic; and **every**
+`SeLe4n/Testing/` module was outside the closure, so the first row the write
+census produced there (the reply-stack census's planted witness) was the first
+row this check silently could not judge.  A row in a file no module of the
+environment declares anything in now FAILS the build, naming the module to
+import (`orphanFiles`), and `SeLe4n.Testing.ReplyStackWriteCensus` is imported
+for exactly that reason.
 -/
 import Lean
 import SeLe4n
 import SeLe4n.Platform.Staged
+import SeLe4n.Testing.ReplyStackWriteCensus
 
 open Lean Elab Command Meta
 
@@ -88,10 +102,15 @@ def isSpecDeclaration (ci : ConstantInfo) : MetaM Bool := do
 def moduleRelPath (m : Name) : String :=
   String.intercalate "/" (m.components.map fun c => c.toString) ++ ".lean"
 
-/-- Parse one `STORE_READ_ATTRIB=<file>|<line>|<decl>|<0|1>` row. -/
+/-- Parse one `STORE_ACCESS_ATTRIB=<file>|<line>|<decl>|<0|1>|<region>` row.
+
+One stream for the read and the write census since `v0.35.76`: the two
+structural answers judged here — which declaration owns the line, and whether it
+is executable — do not depend on which access the line carries, so a line
+carrying both is one row and the reconciliation reads it once. -/
 def parseRow (s : String) : Option Attribution := do
-  let body ← if s.startsWith "STORE_READ_ATTRIB=" then
-      some (s.drop "STORE_READ_ATTRIB=".length).toString else none
+  let body ← if s.startsWith "STORE_ACCESS_ATTRIB=" then
+      some (s.drop "STORE_ACCESS_ATTRIB=".length).toString else none
   match body.splitOn "|" with
   | [f, l, d, p, r] => do
       let n ← l.toNat?
@@ -159,13 +178,23 @@ def narrowestSpan (cs : Array Span) : Option Span :=
   else some (cs.foldl (init := cs[0]!) fun acc sp =>
     if sp.stop - sp.start < acc.stop - acc.start then sp else acc)
 
+/-- The files the classifier attributed rows to and no declaration of which is in
+the environment: the classifier's domain minus this check's.  Every such file is
+a module outside the import closure, and a row there is one this reconciliation
+cannot judge at all — so the caller fails on a non-empty answer rather than
+counting it as diagnostic residue (`v0.35.76`).  A file with rows is the only
+kind that matters: a scanned file holding no raw access has nothing to judge. -/
+def orphanFiles (spans : Std.HashMap String (Array Span)) (rows : Array Attribution) :
+    List String :=
+  (rows.filter fun a => !spans.contains a.file).toList.map (·.file) |>.eraseDups
+
 /-- The verdict, as a pure function of the two inventories, so it can be
 exercised on synthetic input.
 
 **It has to be, because on this tree it cannot fire.**  The enforced claim is
 one-directional — a line filed SPEC, in a declaration's body, where the
-elaborator says that declaration is executable — and `STORE_READ_CODE` is **0**,
-so no such line exists to find.  A mutation of the classifier that makes `def`
+elaborator says that declaration is executable — and `STORE_READ_CODE` and
+`STORE_WRITE_CODE` are both **0**, so no such line exists to find.  A mutation of the classifier that makes `def`
 bodies specification changes nothing, since no read sits in a `def` body at all.
 That is the same position `SeLe4n/Testing/BootEntryContract.lean` is in, and it
 takes the same remedy: the witnesses below make the check decisive *before* the
@@ -262,6 +291,32 @@ run_cmd Command.liftTermElabM do
   if rows.isEmpty then
     throwError "store-read classification census: the classifier emitted no attribution \
       rows, so this reconciliation would pass by measuring nothing"
+
+  -- **The classifier's domain is reconciled against this check's.**  Witnessed
+  -- first, on synthetic input, because on the tree as imported the check
+  -- cannot fire: a row in a file the environment declares nothing in is an
+  -- orphan, and a row in a file it does is not.
+  let orphanSpans : Std.HashMap String (Array Span) :=
+    Std.HashMap.emptyWithCapacity.insert "F.lean"
+      #[{ start := 1, stop := 10, isProp := false, name := `aDef }]
+  let orphanRow : Attribution :=
+    { file := "G.lean", line := 3, decl := "d", isProp := false, region := "body" }
+  let placedRow : Attribution :=
+    { file := "F.lean", line := 3, decl := "d", isProp := false, region := "body" }
+  unless orphanFiles orphanSpans #[orphanRow, placedRow] == ["G.lean"] do
+    throwError "store-read classification census: a row in a file outside the \
+      environment was not reported as an orphan, so a module outside the import \
+      closure would be judged by being skipped"
+  unless (orphanFiles orphanSpans #[placedRow]).isEmpty do
+    throwError "store-read classification census: a row in a file the environment \
+      declares in was reported as an orphan"
+  let orphans := orphanFiles spans rows
+  unless orphans.isEmpty do
+    throwError "store-read classification census: the classifier attributed rows in \
+      {orphans}, but no declaration of those modules is in this environment, so \
+      their rows cannot be judged — import each module here (the module is outside \
+      the closure of `SeLe4n` and `SeLe4n.Platform.Staged`), or the classifier's \
+      domain is wider than this reconciliation's and the gap is silent"
 
   -- **The witnesses, on synthetic input, before the real comparison.**  A check
   -- that cannot fire on the current tree and carries no witness is

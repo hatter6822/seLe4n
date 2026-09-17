@@ -17,7 +17,11 @@
 # `ZERO_METRICS` entry -- at zero a cardinality and a set say the same thing,
 # and this file must not answer one question twice.  Its site rows survive as
 # the failure message's locator and as the total's consistency check, not as a
-# floor.)
+# floor.  `STORE_WRITE_CODE` (`v0.35.76`) is the same shape for raw object-table
+# WRITES: the raw-write migration drove every executable write onto the store
+# primitives before the census existed, so it is a `ZERO_METRICS` entry from the
+# day it was first measured, with the primitives registered in the census rather
+# than exempted here.)
 # That is the shape `scripts/identifier_naming_baseline.json` already uses, for
 # the same reason -- a set of pairs alone cannot see a second occurrence inside
 # a file that already contains one, and a count alone cannot see the first
@@ -112,8 +116,9 @@ BASELINE_FILE="${STORE_READER_BASELINE_FILE:-scripts/store_reader_hygiene_baseli
 #   st_case         — the INVENTORY mutations.  Every scalar is inherited from
 #                     the baseline verbatim and the harness asserts it, so the
 #                     case is provably about the per-key floor.
-#   st_census_case  — the CENSUS mutations, for `STORE_READ_CODE`, which is a
-#                     zero-floor rather than an inventory.  Here the scalars
+#   st_census_case  — the CENSUS mutations, for `STORE_READ_CODE` and (since
+#                     `v0.35.76`) `STORE_WRITE_CODE`, each a zero floor rather
+#                     than an inventory.  Here the scalars
 #                     move and the harness asserts the fixture is internally
 #                     consistent (the total equals the sum of its site rows) --
 #                     otherwise the case would be testing a capture the gate is
@@ -143,6 +148,8 @@ RAW_MATCH_TOTAL=3
 RAW_MATCH_UNCLASSIFIED=3
 STORE_READ_CODE=0
 STORE_READ_SPEC=9
+STORE_WRITE_CODE=0
+STORE_WRITE_SPEC=4
 GETTCB_ADOPTION=0
 GETSCHEDCTX_ADOPTION=0
 GETENDPOINT_ADOPTION=0
@@ -165,17 +172,17 @@ SELFTEST_BASELINE
     local name="$1" expect="$2" rows="$3"
     local cur="$st_tmp/current.txt"
     printf '%s\n' "$rows" > "$cur"
-    grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=' "$st_base" >> "$cur"
-    if diff -q <(grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=' "$st_base") \
-                <(grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=' "$cur") >/dev/null; then
+    grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=\|^STORE_WRITE_CODE_SITE=\|^STORE_WRITE_SPEC_SITE=' "$st_base" >> "$cur"
+    if diff -q <(grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=\|^STORE_WRITE_CODE_SITE=\|^STORE_WRITE_SPEC_SITE=' "$st_base") \
+                <(grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=\|^STORE_WRITE_CODE_SITE=\|^STORE_WRITE_SPEC_SITE=' "$cur") >/dev/null; then
       : # scalars identical, as required
     else
       echo "  SELF-TEST BROKEN: case '$name' perturbed a scalar metric" >&2
       st_failed=1
       return
     fi
-    if diff -q <(grep '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=' "$st_base" | sort) \
-                <(grep '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=' "$cur" | sort) >/dev/null \
+    if diff -q <(grep '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=\|^STORE_WRITE_CODE_SITE=\|^STORE_WRITE_SPEC_SITE=' "$st_base" | sort) \
+                <(grep '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=\|^STORE_WRITE_CODE_SITE=\|^STORE_WRITE_SPEC_SITE=' "$cur" | sort) >/dev/null \
        && [[ "$expect" == "fail" ]]; then
       echo "  SELF-TEST BROKEN: case '$name' is inert (mutation changed nothing)" >&2
       st_failed=1
@@ -196,12 +203,16 @@ SELFTEST_BASELINE
     fi
   }
 
-  # `<name> <expect> <baseline STORE_READ_CODE> <current STORE_READ_CODE>
-  #  <current STORE_READ_SPEC> <current-inventory rows> [unchanged]`.  The
-  # census metrics MOVE here, which is the point, so the harness's assertion is
-  # the other one: the fixture must be internally consistent (each total equal
-  # to the sum of its own site rows), or the case would be exercising a capture
-  # the gate rejects as a defect rather than the property under test.
+  # `<name> <expect> <baseline STORE_<kind>_CODE> <current STORE_<kind>_CODE>
+  #  <current STORE_<kind>_SPEC> <current-inventory rows> [unchanged] [kind]`.
+  # `kind` is `READ` (the default) or `WRITE` (`v0.35.76`) and selects which
+  # census the case moves; the OTHER census's totals are inherited from the
+  # baseline verbatim, so a write case is provably about the write floor and
+  # not about the read one.  The selected census's metrics MOVE here, which is
+  # the point, so the harness's assertion is the other one: the fixture must be
+  # internally consistent (each census total equal to the sum of its own site
+  # rows, for BOTH censuses), or the case would be exercising a capture the gate
+  # rejects as a defect rather than the property under test.
   #
   # A seventh argument `unchanged` declares that the case's current file is the
   # baseline, deliberately -- the zero-floor case, where "the baseline says the
@@ -210,36 +221,39 @@ SELFTEST_BASELINE
   # content, so it does not pass a case on row order.
   st_census_case() {
     local name="$1" expect="$2" base_code="$3" cur_code="$4" cur_spec="$5" rows="$6"
-    local unchanged="${7:-}"
+    local unchanged="${7:-}" kind="${8:-READ}"
     local base="$st_tmp/census_baseline.txt" cur="$st_tmp/census_current.txt"
     local scalars
-    scalars="$(grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=\|^STORE_READ_CODE=\|^STORE_READ_SPEC=' \
-      "$st_base" || true)"
+    scalars="$(grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=\|^STORE_WRITE_CODE_SITE=\|^STORE_WRITE_SPEC_SITE=' \
+      "$st_base" | grep -v "^STORE_${kind}_CODE=\|^STORE_${kind}_SPEC=" || true)"
     { printf '%s\n' "$scalars"
       printf 'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2\n'
       printf 'RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1\n'
-      printf 'STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9\n'
+      printf 'STORE_%s_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9\n' "$kind"
       if (( base_code > 0 )); then
-        printf 'STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|%s\n' "$base_code"
+        printf 'STORE_%s_CODE_SITE=SeLe4n/Kernel/A.lean|step|%s\n' "$kind" "$base_code"
       fi
-      printf 'STORE_READ_CODE=%s\nSTORE_READ_SPEC=9\n' "$base_code"
+      printf 'STORE_%s_CODE=%s\nSTORE_%s_SPEC=9\n' "$kind" "$base_code" "$kind"
     } > "$base"
     { printf '%s\n' "$scalars"
       printf '%s\n' "$rows"
-      printf 'STORE_READ_CODE=%s\nSTORE_READ_SPEC=%s\n' "$cur_code" "$cur_spec"
+      printf 'STORE_%s_CODE=%s\nSTORE_%s_SPEC=%s\n' "$kind" "$cur_code" "$kind" "$cur_spec"
     } > "$cur"
-    # The fixture must be internally consistent, or the case would exercise the
-    # gate-defect branch rather than the property under test.
-    local f declared summed
+    # The fixture must be internally consistent -- for BOTH censuses, since the
+    # gate reconciles both -- or the case would exercise the gate-defect branch
+    # rather than the property under test.
+    local f k declared summed
     for f in "$base" "$cur"; do
-      declared="$(grep '^STORE_READ_CODE=' "$f" | cut -d= -f2)"
-      summed="$(grep '^STORE_READ_CODE_SITE=' "$f" 2>/dev/null || true)"
-      summed="$(printf '%s\n' "$summed" | awk -F'|' 'NF > 1 {s += $NF} END {print s + 0}')"
-      if [[ "$declared" != "$summed" ]]; then
-        echo "  SELF-TEST BROKEN: case '$name' fixture is inconsistent (CODE=$declared, sites sum to $summed)" >&2
-        st_failed=1
-        return
-      fi
+      for k in READ WRITE; do
+        declared="$(grep "^STORE_${k}_CODE=" "$f" | cut -d= -f2)"
+        summed="$(grep "^STORE_${k}_CODE_SITE=" "$f" 2>/dev/null || true)"
+        summed="$(printf '%s\n' "$summed" | awk -F'|' 'NF > 1 {s += $NF} END {print s + 0}')"
+        if [[ "$declared" != "$summed" ]]; then
+          echo "  SELF-TEST BROKEN: case '$name' fixture is inconsistent (${k} CODE=$declared, sites sum to $summed)" >&2
+          st_failed=1
+          return
+        fi
+      done
     done
     if diff -q <(sort "$base") <(sort "$cur") >/dev/null 2>&1; then
       if [[ "$unchanged" != "unchanged" ]]; then
@@ -337,28 +351,60 @@ RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
 STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9' unchanged
 
+  # ---- census cases: the write zero floor (`v0.35.76`) -------------------
+  #
+  # The same three shapes over the WRITE census, because it is the same claim
+  # about a different access: a raw object-table write moving from a theorem's
+  # vocabulary into a transition keeps the two populations' sum, a new theorem
+  # about the store must not be a failure, and a baseline that carries the
+  # executable write is no licence for it.  The read totals are inherited
+  # verbatim, so each case is decided by the write floor alone -- the third is
+  # the one that verifies `STORE_WRITE_CODE` is a `ZERO_METRICS` entry rather
+  # than a ceiling.
+  st_census_case "a store write moved from a proposition into a transition" fail 0 1 8 \
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
+STORE_WRITE_CODE_SITE=SeLe4n/Kernel/A.lean|step|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|8' "" WRITE
+
+  st_census_case "a new proposition states a store write" pass 0 0 10 \
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|10' "" WRITE
+
+  st_census_case "an executable write the baseline also carries" fail 1 1 9 \
+'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2
+RAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1
+STORE_WRITE_CODE_SITE=SeLe4n/Kernel/A.lean|step|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9' unchanged WRITE
+
   # The total and the inventory are two readings of one census.  A capture
   # claiming the population is empty while naming a live site is a gate defect
   # -- the shape a hand-edited or truncated baseline takes -- and must be
-  # refused rather than passed on the strength of the total alone.
+  # refused rather than passed on the strength of the total alone.  Once per
+  # census (`<kind>` is `READ` or `WRITE`), because the reconciliation below is
+  # run per census and a check that covers one of two is a check the other lacks.
   st_inconsistent_case() {
+    local kind="$1" what
+    what="$(printf '%s' "$kind" | tr '[:upper:]' '[:lower:]')"
     local base="$st_tmp/incons_baseline.txt" cur="$st_tmp/incons_current.txt"
-    grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=' "$st_base" > "$base"
+    grep -v '^RAW_SITE=\|^STORE_READ_CODE_SITE=\|^STORE_READ_SPEC_SITE=\|^STORE_WRITE_CODE_SITE=\|^STORE_WRITE_SPEC_SITE=' "$st_base" > "$base"
     printf 'RAW_SITE=SeLe4n/Kernel/A.lean|foo|tcb|2\nRAW_SITE=SeLe4n/Kernel/B.lean|bar|tcb|1\n' >> "$base"
     printf 'STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9\n' >> "$base"
     cp "$base" "$cur"
-    printf 'STORE_READ_CODE_SITE=SeLe4n/Kernel/A.lean|step|1\n' >> "$cur"
+    printf 'STORE_%s_CODE_SITE=SeLe4n/Kernel/A.lean|step|1\n' "$kind" >> "$cur"
     local status=0
     STORE_READER_BASELINE_FILE="$base" STORE_READER_SELFTEST_CURRENT="$cur" \
       bash "$0" --internal-compare >/dev/null 2>&1 || status=$?
     if (( status == 0 )); then
-      echo "  SELF-TEST FAIL: 'a site row the total does not count' should have been rejected" >&2
+      echo "  SELF-TEST FAIL: 'a ${what} site row the total does not count' should have been rejected" >&2
       st_failed=1
     else
-      echo "  OK   self-test 'a site row the total does not count' (fail)"
+      echo "  OK   self-test 'a ${what} site row the total does not count' (fail)"
     fi
   }
-  st_inconsistent_case
+  st_inconsistent_case READ
+  st_inconsistent_case WRITE
 
   # ---- presence cases: a metric that was not measured -------------------
   #
@@ -396,6 +442,7 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9' unchanged
   # The reported shape: the census invocation drops out, so the enforced zero
   # is satisfied by there being nothing to enforce it on.
   st_presence_case "a zero-floor metric the capture never emits" '/^STORE_READ_CODE=/d'
+  st_presence_case "the write zero-floor metric the capture never emits" '/^STORE_WRITE_CODE=/d'
   # Its two siblings, which rode on the same default.
   st_presence_case "SORRY_COUNT absent from the capture" '/^SORRY_COUNT=/d'
   # A should-drop metric absent reads as `0 <= baseline`, which passes.
@@ -408,9 +455,10 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/A.lean|frame|9' unchanged
     echo "[ak7-monotonicity] Self-test FAILED." >&2
     exit 1
   fi
-  echo "[ak7-monotonicity] Self-test passed (14 cases: 6 inventory mutations with"
-  echo "                   every scalar held fixed, 3 census mutations, 1 inconsistent"
-  echo "                   capture, 4 absent-or-duplicated metrics)."
+  echo "[ak7-monotonicity] Self-test passed (19 cases: 6 inventory mutations with"
+  echo "                   every scalar held fixed, 3 read-census and 3 write-census"
+  echo "                   mutations, 2 inconsistent captures, 5 absent-or-duplicated"
+  echo "                   metrics)."
   exit 0
 fi
 
@@ -523,7 +571,10 @@ METRICS=(
   # cannot be phrased through a variant accessor without weakening it), so
   # holding it to a drop would make writing an invariant a hard Tier 0 failure.
   # It is reported by the baseline for readers, exactly as
-  # `RAW_MATCH_UNCLASSIFIED` is.
+  # `RAW_MATCH_UNCLASSIFIED` is.  `STORE_WRITE_CODE` / `STORE_WRITE_SPEC`
+  # (`v0.35.76`) are the same pair for raw object-table WRITES and get the same
+  # treatment: the executable population is a `ZERO_METRICS` entry below and
+  # the specification population is a diagnostic.
   #
   # This pair replaced `RAW_LOOKUP_TID`, which summed both populations into one
   # number that was 96.9% specification -- so it rose on every invariant cut
@@ -554,10 +605,21 @@ METRICS=(
 # accessors are defined and the raw read IS their body -- now sits in a
 # proposition.  So a raw read appearing in an executable position is not "one
 # more than before", it is the first, and the gate says so.
+#
+# `STORE_WRITE_CODE` joined at `v0.35.76`, and never had a ceiling to give up:
+# by the time it was first measured the raw-write migration
+# (`v0.35.64`..`v0.35.75`) had driven every executable object-table write onto
+# the store primitives -- `storeObject`, `withObjectStored`, `rewriteObject` and
+# the typed updates over it -- so the honest first figure was zero, with the
+# primitives themselves and one planted census witness registered in the census
+# (`WRITE_PRIMITIVE_BODIES`, reconciled in both directions) rather than
+# exempted here.  A raw write in an executable position is therefore the first,
+# not one more.
 ZERO_METRICS=(
   "SORRY_COUNT"
   "AXIOM_COUNT"
   "STORE_READ_CODE"
+  "STORE_WRITE_CODE"
 )
 
 failed=0
@@ -670,8 +732,9 @@ check_inventory() {
 
 check_inventory "RAW_SITE" "raw variant-discriminating reads"
 
-# `STORE_READ_CODE` gets no inventory floor, because at zero a cardinality and
-# a set say the same thing and this file must not answer one question twice.
+# `STORE_READ_CODE` and `STORE_WRITE_CODE` get no inventory floor, because at
+# zero a cardinality and a set say the same thing and this file must not answer
+# one question twice.
 # What it gets instead is the relation between them, asserted rather than
 # assumed: the total is the sum over the site rows.  Both are read out of the
 # same file here, so a hand-edited or truncated capture claiming `=0` beside a
@@ -684,22 +747,24 @@ site_sum() {
   printf '%s\n' "$rows" | awk -F'|' 'NF > 1 {s += $NF} END {print s + 0}'
 }
 
-for file_label in "baseline:$BASELINE_FILE" "current:$CURRENT_FILE"; do
-  label="${file_label%%:*}"
-  file="${file_label#*:}"
-  if ! require_metric "STORE_READ_CODE" "$file" "$label"; then
-    failed=1
-    continue
-  fi
-  declared=$(read_metric "STORE_READ_CODE" "$file")
-  summed=$(site_sum "STORE_READ_CODE_SITE" "$file")
-  if (( declared != summed )); then
-    echo "  GATE DEFECT: ${label} STORE_READ_CODE=${declared} but its site rows sum to ${summed}" >&2
-    echo "    The total and the inventory are two readings of one census and" >&2
-    echo "    must agree; a capture where they do not is not evidence of" >&2
-    echo "    anything." >&2
-    failed=1
-  fi
+for census_total in STORE_READ_CODE STORE_WRITE_CODE; do
+  for file_label in "baseline:$BASELINE_FILE" "current:$CURRENT_FILE"; do
+    label="${file_label%%:*}"
+    file="${file_label#*:}"
+    if ! require_metric "$census_total" "$file" "$label"; then
+      failed=1
+      continue
+    fi
+    declared=$(read_metric "$census_total" "$file")
+    summed=$(site_sum "${census_total}_SITE" "$file")
+    if (( declared != summed )); then
+      echo "  GATE DEFECT: ${label} ${census_total}=${declared} but its site rows sum to ${summed}" >&2
+      echo "    The total and the inventory are two readings of one census and" >&2
+      echo "    must agree; a capture where they do not is not evidence of" >&2
+      echo "    anything." >&2
+      failed=1
+    fi
+  done
 done
 
 for metric in "${ZERO_METRICS[@]}"; do
@@ -720,6 +785,17 @@ for metric in "${ZERO_METRICS[@]}"; do
       echo "    kind-agnostic.  Sites:" >&2
       grep "^STORE_READ_CODE_SITE=" "$CURRENT_FILE" 2>/dev/null \
         | sed 's/^STORE_READ_CODE_SITE=/      /' >&2
+    elif [[ "$metric" == "STORE_WRITE_CODE" ]]; then
+      echo "    A raw object-table write has appeared in an executable position." >&2
+      echo "    Write through the store (\`storeObject\` in a \`Kernel\` step," >&2
+      echo "    \`withObjectStored\` in a pure transition) or, for an object of" >&2
+      echo "    the same rewrite-neutral kind, through \`rewriteObject\` under" >&2
+      echo "    its proof (\`updateTcb\`, \`updateSchedContext\`, or the witnessed" >&2
+      echo "    lookup around it).  A new store PRIMITIVE is registered in" >&2
+      echo "    \`WRITE_PRIMITIVE_BODIES\` (scripts/lean_store_read_census.py)," >&2
+      echo "    where it is reconciled in both directions.  Sites:" >&2
+      grep "^STORE_WRITE_CODE_SITE=" "$CURRENT_FILE" 2>/dev/null \
+        | sed 's/^STORE_WRITE_CODE_SITE=/      /' >&2
     fi
     failed=1
   else
@@ -736,9 +812,9 @@ if (( failed != 0 )); then
   echo "[ak7-monotonicity] re-anchor the baseline:" >&2
   echo "  bash scripts/ak7_cascade_baseline.sh > $BASELINE_FILE" >&2
   echo "[ak7-monotonicity] For a should-stay-zero metric -- SORRY_COUNT," >&2
-  echo "[ak7-monotonicity] AXIOM_COUNT, STORE_READ_CODE -- re-anchoring does" >&2
-  echo "[ak7-monotonicity] NOTHING: the floor is zero, not the recorded value," >&2
-  echo "[ak7-monotonicity] and only fixing the tree clears it." >&2
+  echo "[ak7-monotonicity] AXIOM_COUNT, STORE_READ_CODE, STORE_WRITE_CODE --" >&2
+  echo "[ak7-monotonicity] re-anchoring does NOTHING: the floor is zero, not" >&2
+  echo "[ak7-monotonicity] the recorded value, and only fixing the tree clears it." >&2
   exit 1
 fi
 

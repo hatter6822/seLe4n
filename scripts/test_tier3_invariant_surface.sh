@@ -3305,6 +3305,69 @@ run_negative_check "INVARIANT" rg -n 'objects\.(insert|erase)' SeLe4n/Testing/Ma
 run_negative_check "INVARIANT" rg -n 'objectIndexSet := .*\.insert|objectIndex := .* :: ' SeLe4n/Testing/MainTraceHarness.lean
 
 # ============================================================================
+# v0.35.76 -- the Tier 0 write census: STORE_WRITE_CODE, a zero floor
+# ============================================================================
+#
+# `scripts/lean_store_read_census.py` runs its classifier a second time over
+# the raw WRITE spellings (`.objects.insert` / `.objects.erase`, and the
+# qualified `RHTable`/`FrozenMap` calls) and emits `STORE_WRITE_CODE` /
+# `STORE_WRITE_SPEC` beside the read pair; the six bodies that write raw by
+# design are `WRITE_PRIMITIVE_BODIES`, reconciled in both directions.  The
+# Tier 1 reconciliation reads one attribution stream for both censuses and
+# refuses a row in a module its environment does not contain -- which found
+# five non-test modules outside both library roots (three promoted, two
+# staged).  The two AK7 shell gates are pinned by their EXECUTED self-tests
+# (Tier 0) rather than by anchors here: the zero floor, the per-census
+# reconciliation and the presence check are cases of the monotonic gate's
+# self-test, and the derivation of each total from its own rows is a case of
+# the baseline script's.  The census script and the allowlist are not Lean,
+# so the overlay links them whole and those anchors read raw text; the two
+# STATUS markers are comments, so they are prose checks.
+#
+# The write recogniser: both spellings, and the erase.
+run_check "INVARIANT" rg -U -n '^WRITE = re\.compile\(\n    r"\\\.objects\\\.\(\?:insert\|erase\)\\b"[^\n]*\n    r"\|\\b\(\?:RHTable\|FrozenMap\)\\\.\(\?:insert\|erase\|set\)\\s\+\[\\w.\.\]\*\\\.objects\\b"' scripts/lean_store_read_census.py
+# The write census runs over its own registry and is reconciled both ways.
+run_check "INVARIANT" rg -n '^    wcode, wspec, wexempt_hits, wattribution, _ = census\(view, WRITE, WRITE_PRIMITIVE_BODIES\)$' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -n '^             \+ accessor_registry_violations\(wcode, wexempt_hits, WRITE_PRIMITIVE_BODIES, "write"\)\)$' scripts/lean_store_read_census.py
+# The rows and totals reach the baseline; one attribution stream feeds Tier 1.
+run_check "INVARIANT" rg -U -n 'print\(f"STORE_WRITE_CODE_SITE=\{f\}\|\{d\}\|\{n\}"\)(.|\n)*print\(f"STORE_WRITE_CODE=\{sum\(wcode\.values\(\)\)\}"\)' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -U -n '^        for rel, lineno, decl, is_prop, region in sorted\(set\(attribution\) \| set\(wattribution\)\):\n            print\(f"STORE_ACCESS_ATTRIB=\{rel\}\|\{lineno\}\|\{decl\}\|\{1 if is_prop else 0\}\|\{region\}"\)$' scripts/lean_store_read_census.py
+# The six bodies that write raw by design, each registered by name.
+run_check "INVARIANT" rg -U -n '^    \("SeLe4n/Model/State\.lean", "storeObject"\):\n        "the object-store write: the insert plus its bookkeeping",$' scripts/lean_store_read_census.py
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -U -n '^    \("SeLe4n/Model/State\.lean", "rewriteObject"\):\n        "the proof-carrying in-place rewrite: the bare insert under `rewriteAdmissible`",$' scripts/lean_store_read_census.py
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -U -n '^    \("SeLe4n/Model/Builder\.lean", "createObject"\):\n        "the boot-time population, capacity-bounded by `PlatformConfig`",$' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -U -n '^    \("SeLe4n/Kernel/Concurrency/Locks/WithLockSet\.lean", "updateObjectAt"\):\n        "lock-domain read-modify-write; kind-agnostic, so not a rewrite",$' scripts/lean_store_read_census.py
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -U -n '^    \("SeLe4n/Kernel/FrozenOps/Core\.lean", "frozenUpdatePipBoost"\):\n        "the frozen surface.s own store, over `FrozenMap`",$' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -U -n '^    \("SeLe4n/Testing/ReplyStackWriteCensus\.lean", "censusWitnessRawTableWrite"\):\n        "the reply-stack write census.s planted raw-table witness",$' scripts/lean_store_read_census.py
+# The Lean side reads the shared tag; the retired read-only tag is gone.
+run_check "INVARIANT" rg -U -n '^  let body ← if s\.startsWith "STORE_ACCESS_ATTRIB=" then\n      some \(s\.drop "STORE_ACCESS_ATTRIB="\.length\)\.toString else none$' SeLe4n/Testing/StoreReadClassificationCensus.lean
+run_negative_check "INVARIANT" rg -n 'STORE_READ_ATTRIB' SeLe4n/Testing/StoreReadClassificationCensus.lean
+run_negative_check "INVARIANT" rg -n 'STORE_READ_ATTRIB' scripts/lean_store_read_census.py
+# The reconciliation's domain: the reply-stack census imported, and a row in a
+# module outside the environment fails the build (`orphanFiles`).
+run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.ReplyStackWriteCensus$' SeLe4n/Testing/StoreReadClassificationCensus.lean
+run_check "INVARIANT" rg -U -n '^  let orphans := orphanFiles spans rows\n  unless orphans\.isEmpty do$' SeLe4n/Testing/StoreReadClassificationCensus.lean
+run_check "INVARIANT" rg -U -n '^def orphanFiles \(spans : Std\.HashMap String \(Array Span\)\) \(rows : Array Attribution\) :\n    List String :=\n  \(rows\.filter fun a => !spans\.contains a\.file\)\.toList\.map \(·\.file\) \|>\.eraseDups$' SeLe4n/Testing/StoreReadClassificationCensus.lean
+# The five modules the domain check found outside both roots: three promoted...
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Scheduler\.PriorityInheritance$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.FrozenOps$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Scheduler\.PriorityInheritance\.ChainFootprint$' SeLe4n.lean
+# ...and two staged, each allowlisted with a STATUS marker (prose: a marker is a
+# comment), with the promoted dependency gone from the allowlist and the
+# PRODUCTION claim gone from the walk-interior footprint's header.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.VSpaceARMv8$' SeLe4n/Platform/Staged.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Capability\.CSpaceWalkFootprint$' SeLe4n/Platform/Staged.lean
+run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.Architecture\.VSpaceARMv8 +# marker \(' scripts/staged_module_allowlist.txt
+run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.Capability\.CSpaceWalkFootprint +# marker \(' scripts/staged_module_allowlist.txt
+run_negative_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.Concurrency\.Locks\.DynamicChainExtension\b' scripts/staged_module_allowlist.txt
+run_prose_check "INVARIANT" rg -n '^-- STATUS: staged for the RPi5 VSpaceBackend selection \(SELE4N_SPEC\.md §8\.15\.1, roadmap item 3;' SeLe4n/Kernel/Architecture/VSpaceARMv8.lean
+run_prose_check "INVARIANT" rg -n '^-- STATUS: staged for the fine-lock migration.s Track C \(SMP_FINE_LOCK_MIGRATION_PLAN\.md\)$' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_prose_negative_check "INVARIANT" rg -U -n '^-- [^\n]*: PRODUCTION\b' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+
+# ============================================================================
 # WS-OD OD6 -- the payoff
 # ============================================================================
 #

@@ -18,6 +18,7 @@ raw_match_vspaceroot     = 14
 raw_match_total          = 44
 raw_match_unclassified   = 3
 store_read_spec          = 4719 (diagnostic)
+store_write_spec         = 298 (diagnostic)
 
 ## Typed-helper adoption (should-grow)
 
@@ -47,6 +48,7 @@ kerrormatrix_rows        = 47
 sorry_count              = 0
 axiom_count              = 0
 store_read_code          = 0
+store_write_code         = 0
 
 ## Machine-diffable block
 ##
@@ -57,12 +59,14 @@ store_read_code          = 0
 ## leaves a per-file row unmoved, which is the movement the inventory exists to
 ## catch.
 ##
-## STORE_READ_CODE_SITE rows get no inventory floor, because STORE_READ_CODE is
-## enforced at zero and at zero a cardinality and a set say the same thing.
+## STORE_READ_CODE_SITE and STORE_WRITE_CODE_SITE rows get no inventory floor,
+## because STORE_READ_CODE and STORE_WRITE_CODE are enforced at zero and at zero
+## a cardinality and a set say the same thing.
 ## They are emitted anyway, for two reasons: the gate asserts that the total is
 ## their sum, so a capture claiming "none" beside a live row is refused as a
 ## defect rather than passed; and when the zero is broken they are what tells
-## the reader WHERE.  STORE_READ_SPEC_SITE rows are recorded but not enforced.
+## the reader WHERE.  STORE_READ_SPEC_SITE and STORE_WRITE_SPEC_SITE rows are
+## recorded but not enforced.
 ## The scalars below are derived from these rows.
 
 RAW_SITE=SeLe4n/Kernel/Architecture/VSpace.lean|vspaceMapPage_entry_consistent_frame|vspaceRoot|1
@@ -2031,6 +2035,142 @@ STORE_READ_SPEC_SITE=SeLe4n/Platform/RPi5/RuntimeContract.lean|registerContextSt
 STORE_READ_SPEC_SITE=SeLe4n/Platform/RPi5/RuntimeContract.lean|registerContextStableCheck_ipcReady|1
 STORE_READ_SPEC_SITE=SeLe4n/Platform/RPi5/RuntimeContract.lean|registerContextStableCheck_register_match|1
 STORE_READ_SPEC_SITE=SeLe4n/Platform/RPi5/RuntimeContract.lean|registerContextStableCheck_timeSlice_positive|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Architecture/SyscallReturn.lean|stageCancelledIpcFrame_eq_withReturnFrame|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Architecture/SyscallReturn.lean|stageTimeoutFrame_eq_withReturnFrame|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Capability/Invariant/Authority.lean|cspaceRevoke_local_target_reduction|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Capability/Invariant/Authority.lean|cspaceRevoke_preserves_source|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Capability/Operations.lean|revokePendingTransfersStep_cases|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean|acquireLockOnObject_preserves_blockingServer|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean|updateObjectLockAt_lookup_self|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean|updateObjectLockAt_objects_getElem?_of_ne|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean|updateObjectAt_get?|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/CrossSubsystem.lean|storeObject_sameRegion_untyped_preserves_untypedRegionsDisjoint|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean|tcbInsert_notification_backward|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean|tcbStore_ipcInvariantStage|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointCallNI.lean|projectObjects_insert_high|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean|wakeThread_bootCore_eq_ensureRunnable|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/DualQueue/Core.lean|endpointQueueRemove_getTcb_upToField|4
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/Defs.lean|donationChainFrame_of_objects_insert|5
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|cancelBoundDonationOnCore_preserves_ipcInvariantFull|14
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|cancelBoundDonationOnCore_victim_shape|10
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|domainAlignStep_preserves_ipcInvariantFull|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|enqueueRunnableOnCore_preserves_ipcInvariantFull|4
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|insertObjects_getElem_ne|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|insertObjects_getElem_self|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|insertObjects_schedContextClear_preserves_ipcInvariantFull|4
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull|4
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|resumeReadyMidState_getTcb_ready|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|schedContextBind_preserves_ipcInvariantFull|12
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|schedContextConfigureBoundPropagate_preserves_ipcInvariantFull|4
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|schedContextUnbindTail_preserves_ipcInvariantFull|8
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|setThreadCpuAffinityOnCore_preserves_ipcInvariantFull|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|updatePrioritySource_sc_eq|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean|updatePrioritySource_tcbTarget_eq|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean|witnessSt3_lookup|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean|endpointQueueRemove_ok_headLast|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean|endpointQueueRemove_ok_headMore|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean|endpointQueueRemove_ok_midLast|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean|endpointQueueRemove_ok_midMore|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean|storeObject_agrees_insert|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean|storeTcbQueueLinks_agrees_insert|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/FaultFlow.lean|faultSuspendOnCore_preserves_projection|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/FaultFlow.lean|recordPendingFault_preserves_projection|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/FineLockFlow.lean|updateObjectAt_lockWritesOnly|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean|insert_tick_preserves_projection|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean|objects_insert_preserves_projection_high|3
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean|objects_insert_preserves_projection_of_proj_eq|3
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean|resumeThread_frame_insert|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean|setMCPriorityOnCore_preserves_projection|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean|setMCPriorityOp_preserves_projection|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean|timerTick_preserves_projection|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean|schedContextBind_confinedToCores|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean|schedContextConfigure_confinedToCores|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean|setMCPriorityOnCore_confinedToCores|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean|restoreToReadyStaging_eq|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean|restoreToReadyStaging_objects_ne|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean|restoreToReady_blockingServer_subgraph|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean|restoreToReady_objects_eq_at_tid|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean|saveOutgoingContext_getSchedContext?_eq|3
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean|saveOutgoingContext_lookup_equiv|3
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean|ipcInvariant_insert_endpoint|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean|ipcInvariant_insert_no_notification|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean|ipcInvariant_insert_tcb|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean|spliceOutMidQueueNode_preserves_ipcInvariant|4
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean|spliceOutMidQueueNode_tcb_lookup|3
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/BindingAffinity.lean|double_insert_read_frame|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/BindingAffinity.lean|getSchedContext?_insert_schedContext_ne|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/BindingAffinity.lean|getSchedContext?_insert_schedContext_self|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/BindingAffinity.lean|sc_insert_read_frame|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/BindingAffinity.lean|schedContextBind_ok_char|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/BindingAffinity.lean|schedContextBind_preserves_objects_invExt|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/BindingAffinity.lean|schedContextBind_read_frame|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/BindingAffinity.lean|schedContextUnbind_ok_char|4
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/BindingAffinity.lean|schedContextUnbind_preserves_objects_invExt|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/BindingAffinity.lean|schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/BindingAffinity.lean|schedContextUnbind_preserves_replenishQueueEntriesBound_smp|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean|schedContextConfigure_preserves_boundThreadDomainConsistent|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean|schedContextConfigure_preserves_boundThreadDomainConsistent_caseC|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean|schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly|13
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/SchedContext/PriorityManagement.lean|updatePrioritySource_donated|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent|17
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant.lean|objects_update_sync_domain_preserves_boundThreadDomainConsistent|3
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|allThreadsTimeSlicePositive_of_insert_pos|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|allThreadsTimeSlicePositive_of_insert_schedContext|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|endpointQueueRemove_preserves_allThreadsTimeSlicePositive|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|getTcb?_isSome_insert_tcb|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|objects_insert_tcb_sameReg_preserves_schedulerInvariantStructuralRegNodup_smp|5
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive|16
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|timerTickBudgetOnCore_preserves_runQueueSafetyOnCore|20
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|updatePipBoost_preserves_runQueueSafetyOnCore|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp|4
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean|updatePipBoost_self_timeSlice|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|objects_insert_tcb_frame|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|preemptCurrentOnCore_objects_frame|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|threadInactiveFlagConsistent_save_and_reenqueue|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|threadPlacedOnSomeCore_save_and_reenqueue|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean|enqueueIdleThreadOnCore_objects|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean|setThreadCpuAffinity_getSchedContext?|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean|determineTargetCore_insert_tcb|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean|getSchedContext?_boundThread_insert_schedContext|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean|getSchedContext?_insert_tcb_eq|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean|getTcb?_insert_schedContext_eq|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean|preemptCurrentOnCore_boundThread|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean|preemptCurrentOnCore_determineTargetCore|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsAffinity.lean|saveOutgoingContextOnCore_boundThread|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsAffinity.lean|saveOutgoingContextOnCore_determineTargetCore|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean|enqueueRunnableOnCore_objects_getElem_eq_of_ready|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|timerTickBudget_unbound_nopreempt_objects_key|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|timerTickBudget_unbound_preempt_objects_key|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|timerTick_preserves_currentTimeSlicePositive|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|timerTick_preserves_edfCurrentHasEarliestDeadline|4
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|timerTick_preserves_schedulerInvariantBundle|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Preservation.lean|timerTick_preserves_timeSlicePositive|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/Preservation.lean|updatePipBoost_objects_ne|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean|updatePipBoostOnCore_objects_at|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean|updatePipBoostOnCore_objects_ne|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean|updatePipBoost_ipcState_frame|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean|updatePipBoost_preserves_blockingServer|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean|updatePipBoost_self_ipcState|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/FreezeProofs.lean|thread_store_commutes_at_key|2
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/State.lean|rewriteObject_objects|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/State.lean|storeObject_preserves_objectIndexSetComplete|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/State.lean|storeObject_preserves_objectLockOf_off_target|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/State.lean|updateSchedContext_after_rewriteObject_ne|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/State.lean|updateSchedContext_after_rewriteObject_tcb|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/State.lean|updateSchedContext_after_rewriteObject_tcb_objects|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/State.lean|updateSchedContext_eq_of_some|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/State.lean|updateTcb_after_rewriteObject_ne|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/State.lean|updateTcb_after_rewriteObject_schedContext|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/State.lean|updateTcb_after_rewriteObject_schedContext_objects|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/State.lean|updateTcb_eq_of_some|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Model/State.lean|withObjectStored_objects|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Platform/Boot.lean|createObject_objects|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Platform/Boot.lean|enqueueIdleThread_objects|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Platform/Boot.lean|installBootVSpaceRoot_objects_lookup|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Platform/Boot.lean|installBootVSpaceRoot_objects_ne|1
+STORE_WRITE_SPEC_SITE=SeLe4n/Platform/Boot.lean|installIdleThread_objects|1
 
 RAW_MATCH_TCB=22
 RAW_MATCH_SCHEDCONTEXT=7
@@ -2043,6 +2183,8 @@ RAW_MATCH_TOTAL=44
 RAW_MATCH_UNCLASSIFIED=3
 STORE_READ_CODE=0
 STORE_READ_SPEC=4719
+STORE_WRITE_CODE=0
+STORE_WRITE_SPEC=298
 GETTCB_ADOPTION=2465
 GETSCHEDCTX_ADOPTION=451
 GETENDPOINT_ADOPTION=195

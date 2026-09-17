@@ -1,3 +1,132 @@
+## v0.35.76 — The Tier 0 write census: every executable object-table write goes through a store primitive, enforced at zero
+
+**Raw-write migration, thirteenth cut (D1).**  `scripts/lean_store_read_census.py`
+runs its classifier a second time, over the raw **write** spellings —
+`st.objects.insert k v` / `st.objects.erase k` and the qualified
+`RHTable.insert st.objects k v` / `FrozenMap.set st.objects k v` — and emits
+`STORE_WRITE_CODE` / `STORE_WRITE_SPEC` beside the read pair.  The write census
+is the read census with one argument (`classify(…, pattern=WRITE)`): which
+declaration owns a line, whether that declaration is executable and which region
+the access sits in are the same three structural decisions, so a second parser
+would have been this project's *one question, two answers* shape inside the gate
+written to close it.  The six declarations that write raw by design —
+`SystemState.storeObject`, `SystemState.rewriteObject`, `Builder.createObject`,
+`Concurrency.updateObjectAt`, the frozen surface's `frozenUpdatePipBoost` and the
+reply-stack write census's planted witness `censusWitnessRawTableWrite` — are
+`WRITE_PRIMITIVE_BODIES`, reconciled in both directions exactly as
+`ACCESSOR_BODIES` is: an entry that stops writing raw is a stale exemption and
+fails, and a raw write anywhere else under `SeLe4n/` is a `STORE_WRITE_CODE`
+violation.  Live: `STORE_WRITE_CODE=0`, `STORE_WRITE_SPEC=298` (the raw write as
+a proposition's vocabulary, across 136 declarations — diagnostic, for the reason
+the read pair's specification half is: a theorem about the store has no helper
+form).
+
+**`STORE_WRITE_CODE` is a `ZERO_METRICS` entry from its first measurement**,
+never a ceiling: by D0 the migration had driven every executable write onto the
+primitives, so the honest first figure was zero, and regenerating the baseline
+cannot clear a regression — only fixing the tree does, which the gate's failure
+epilogue says, naming the remedy (`storeObject` in a `Kernel` step,
+`withObjectStored` in a pure transition, `rewriteObject` under its proof for a
+same-kind rewrite, or a registration in `WRITE_PRIMITIVE_BODIES` for a genuinely
+new primitive) and listing the `STORE_WRITE_CODE_SITE` rows.
+`scripts/ak7_cascade_baseline.sh` derives all four scalars through **one**
+function (`census_total`, keyed by the row prefix) and self-tests it on rows
+whose four sums all differ — the mutation the live reconciliation cannot see
+while both executable totals are zero is a derivation reading the *other*
+census's rows, and that now answers the wrong number in Tier 0 — and
+`scripts/ak7_cascade_check_monotonic.sh` asserts **per census** that the total is
+the sum of its own site rows, so a hand-edited capture claiming "none" beside a
+live write row is a gate defect rather than a pass.  The gate's self-test grew
+from 14 to 19 cases: the three census shapes over the write floor (a write moved
+from a proposition into a transition with the two populations' sum held fixed; a
+new proposition stating a store write, which must pass; an executable write the
+baseline also carries, which a ceiling accepts and a zero floor must refuse — the
+case that verifies the `ZERO_METRICS` entry), the inconsistent capture once per
+census, and the write floor's absence from the capture.  The census helper takes
+the census it moves as an argument and inherits the *other* census's totals
+verbatim, so a write case is decided by the write floor alone; its
+fixture-consistency check runs over both censuses, since the gate reconciles
+both.
+
+**One attribution stream, and a domain the write rows found open.**  The Tier 1
+reconciliation (`SeLe4n/Testing/StoreReadClassificationCensus.lean`) reads
+`STORE_ACCESS_ATTRIB=` rows — the union of the read rows and the write rows, a
+line carrying both emitted once — because the two structural answers it judges
+do not depend on which access a line carries; the retired `STORE_READ_ATTRIB`
+tag is refused on both sides.  With the write rows in it judges 2411 body lines
+in both directions, up from 2216 on the read rows alone — and its first run
+reported **one row outside any declaration** where the read census had reported
+none.  That row is the planted witness in `SeLe4n/Testing/ReplyStackWriteCensus.lean`,
+and it was "outside any declaration" because **no `SeLe4n/Testing/` module is in
+the closure of `SeLe4n` and `SeLe4n.Platform.Staged`**: the classifier's domain
+is the filesystem, the reconciliation's is the environment, and every row in a
+Testing module was a row this check silently could not judge — invisible for as
+long as the read census produced none there, which is the *surface outside every
+derived domain* shape `v0.35.60` closed for `FrozenOps`, one tier over.  The
+census now reconciles the two domains: `orphanFiles` is the set of files with
+rows and no declaration in the environment, a non-empty answer **fails the
+build** naming the module to import, it is witnessed on synthetic input in both
+directions, and `SeLe4n.Testing.ReplyStackWriteCensus` is imported so the
+witness row is judged (mutation-verified: with the import removed the build
+fails on exactly that file).  "Outside any declaration" now means a line in an
+imported module that no declaration covers, and is a diagnostic again.
+
+**Its first run named a kernel module, and the sweep found five.**  With the
+import in place the check fired again, on
+`SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean` — whose two
+read rows are signature rows, which the reconciliation deliberately does not
+judge, so the read census had never noticed that the module was outside both
+library roots.  Its RR7.40 header says PRODUCTION; no root imported it.
+Re-measuring with the two roots as the criterion — the criterion every Tier 1
+census's environment actually uses, where `v0.35.60`'s count accepted a
+`lean_exe` as reach — found **five** non-test modules outside both `SeLe4n` and
+`SeLe4n.Platform.Staged`, none in the staged allowlist: `ChainFootprint`; its
+RR7.41 sibling `Capability/CSpaceWalkFootprint`, with the same PRODUCTION
+header; the `FrozenOps` and `Scheduler/PriorityInheritance` re-export hubs,
+each reached by test suites alone (RadixTree's shape: a hub naming a deleted
+submodule was checked as a unit by nothing in CI); and
+`Architecture/VSpaceARMv8`, which §8.15.1 of the spec records as *test-anchored,
+not production-imported*.  Three go into the root: both hubs (their submodules
+were already there), and `ChainFootprint` together with its only staged
+dependency `Locks/DynamicChainExtension` — every import of which was already
+production, and whose allowlist rationale was "infra", so RR7.40's own
+classification is honoured rather than corrected.  Two are staged, each with a
+`STATUS` marker and an allowlist entry: `CSpaceWalkFootprint`, because
+`cspaceWalk_conflicts_with_delete` is stated against SM3.E's
+`ktiSharesConflictingLock`, so its chain runs through `Serializability` →
+`Deadlock`, which the RR7.18 decision keeps out of the kernel image (the
+`ResolvedFootprintBounds` rationale, three allowlist rows above it), and its
+header is corrected to say so; and `VSpaceARMv8`, because it is on no execution
+path until §8.15.1's roadmap item 3.  The staged-only count is 68 (67 − 1 + 2),
+the partition gate passes, and a header's PRODUCTION is now a claim the import
+chain decides: the census refuses the next module that carries rows outside
+both roots on the day it is written, whatever its header says.
+
+**Tier 3**: positives on the write recogniser (both spellings and the erase), the
+write census running over its own registry, the registry reconciled in both
+directions, each of the six registered bodies, the write rows and totals
+emitted, the shared attribution stream and its tag on both sides, the census's
+import of the reply-stack census, `orphanFiles` and the build-failing check
+over it, the three root imports, the two staged imports, the two allowlist
+entries and the two status markers (prose checks: a marker is a comment);
+negatives on the retired tag on either side, on `DynamicChainExtension` back in
+the allowlist and on a PRODUCTION claim in the walk-interior footprint's header
+— 28 cases, 30 mutations, every one keeping the tokens (the erase dropped from
+the recogniser, the write census run with the read pattern, the write total
+emitted under the read total's key, the Lean parser reverted to the read-only
+tag, the orphan check and the orphan filter each inverted, an import demoted
+to a comment of the same spelling, a marker's `staged` rewritten as
+`production`).  The two AK7 shell gates carry **no** text anchor: the zero
+floor, the per-census reconciliation and the presence check are cases of the
+monotonic gate's self-test and the derivation of each total from its own rows
+is a case of the baseline script's, both run in Tier 0 — an executed
+self-test decides the relation an anchor could only find the spelling of, and
+the two scripts' names carry a grandfathered workstream code the naming gate
+refuses in any new reference.
+
+Not in this cut: D2 — `storeObject`'s capability-reference filter as an erase
+over the displaced CNode's slots — and the debt row's closure.
+
 ## v0.35.75 — The trace harness builds every fixture through the store
 
 **Raw-write migration, twelfth cut (D0).**  `SeLe4n/Testing/MainTraceHarness.lean`

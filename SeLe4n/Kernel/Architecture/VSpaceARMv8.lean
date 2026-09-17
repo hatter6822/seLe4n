@@ -7,6 +7,8 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
+-- STATUS: staged for the RPi5 VSpaceBackend selection (SELE4N_SPEC.md §8.15.1, roadmap item 3; test-anchored since AG6-C, staged at v0.35.76)
+
 import SeLe4n.Kernel.Architecture.PageTable
 import SeLe4n.Kernel.Architecture.VSpaceBackend
 

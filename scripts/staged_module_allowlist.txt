@@ -46,6 +46,7 @@
 
 SeLe4n.Kernel.Architecture.ExceptionModel     # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.InterruptDispatch  # transitively-staged via ExceptionModel
+SeLe4n.Kernel.Architecture.VSpaceARMv8        # marker (AG6-C/AG6-D ARMv8 VSpaceBackend instance + refinement proof; integrated into no execution path — SELE4N_SPEC.md §8.15.1 item 4 — and in no library root until v0.35.76, when the store-access census's domain reconciliation found it built by tests/WxDefenseSuite.lean alone)
 SeLe4n.Kernel.Architecture.TimerModel         # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Concurrency.Assumptions         # infra (SMP-latent assumption inventory)
 SeLe4n.Kernel.Concurrency.Anchors             # infra (WS-SM SM0.C inventory build anchor; SMP-H3 closure)
@@ -55,11 +56,11 @@ SeLe4n.Kernel.Concurrency.LockPrimitives      # infra (WS-SM SM2.D.7 25-theorem 
 SeLe4n.Kernel.Concurrency.LockSet             # infra (WS-SM SM3.B LockSet re-export hub; SM3.C first runtime exerciser)
 SeLe4n.Kernel.Concurrency.PhaseTheoremManifest # infra (WS-RR RR0.6 SMP completion-phase theorem manifest; the SM10 theorem marker, derived from the per-phase inventories rather than hand-summed; cross-checked by scripts/generate_smp_theorem_manifest.py --check)
 SeLe4n.Kernel.Concurrency.Locks.LockSetInventory # infra (WS-SM SM3.B 109-theorem inventory aggregator; mirrors SM3.A's PerObjectLockInventory)
-SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension # infra (WS-SM SM3.C.11 dynamic PIP-chain-walk locking under SM0.I total order)
 SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory # infra (WS-SM SM3.C 86-theorem inventory aggregator; mirrors SM3.A/SM3.B inventories)
 SeLe4n.Kernel.Concurrency.Locks.Deadlock      # infra (WS-SM SM3.D deadlock-freedom: KernelExecution model, Theorem 2.1.9, wait-graph acyclicity, bounded-wait; SM3.E first runtime exerciser)
 SeLe4n.Kernel.Concurrency.Locks.DeadlockInventory # infra (WS-SM SM3.D 66-theorem inventory aggregator; mirrors SM3.A/SM3.B/SM3.C inventories)
 SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds # infra (WS-RR RR7.18: size bounds for the STATE-RESOLVED footprints the live bracket acquires; staged because it cites Deadlock.lean's constant, and a production module importing that would pull the WCRT model into the kernel image)
+SeLe4n.Kernel.Capability.CSpaceWalkFootprint  # marker (WS-RR RR7.41 walk-interior CSpace footprint; staged at v0.35.76 for RR7.18's reason — its conflict theorem is stated against SM3.E's `ktiSharesConflictingLock`, so its chain runs through Serializability → Deadlock, which no kernel image links; its header claimed PRODUCTION from v0.34.90 while no library root imported it, and the store-access census's domain reconciliation found it)
 SeLe4n.Kernel.Concurrency.Locks.Serializability # infra (WS-SM SM3.E serializability: KernelTransitionInstance schedule model, Theorem 2.1.10, conflict-graph acyclicity, commutativity lemmas, Cor 2.1.11; SM5+ first runtime exerciser)
 SeLe4n.Kernel.Concurrency.Locks.SerializabilityInventory # infra (WS-SM SM3.E 111-theorem inventory aggregator; mirrors SM3.A/SM3.B/SM3.C/SM3.D inventories)
 SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement # infra (WS-SM SM2.C.20 RwLock refinement bridge; Lean→Rust bit-packed-state simulation; staged-only — not yet wired to a runtime consumer)

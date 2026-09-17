@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.75` (`lakefile.toml`) |
+| **Package version** | `0.35.76` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 386,569 across 331 Lean files |
+| **Production LoC** | 386,656 across 331 Lean files |
 | **Test LoC** | 78,776 across 70 Lean test suites |
 | **Proved declarations** | 12,913 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -1880,7 +1880,15 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    alone before, and forty executable reads were in the method form.
    The frozen execution surface is in scope on the same footing and is
    also at zero, through the accessor family in
-   `SeLe4n/Model/FrozenState.lean`.)
+   `SeLe4n/Model/FrozenState.lean`.  Since v0.35.76 the same classifier
+   also counts raw object-table *writes* (`objects.insert` /
+   `objects.erase`, method or qualified spelling): `STORE_WRITE_CODE` is
+   the executable population, **zero** and enforced as zero from its
+   first measurement, with the six bodies that write raw by design
+   (`storeObject`, `rewriteObject`, `Builder.createObject`,
+   `updateObjectAt`, the frozen store and the reply-stack write census's
+   planted witness) registered as `WRITE_PRIMITIVE_BODIES` and
+   reconciled in both directions, and `STORE_WRITE_SPEC` the diagnostic.)
 
    **Axiom budget for SM3.C**: 0 Lean axioms, 0 sorries.  Every
    theorem depends only on the standard Lean foundational axioms

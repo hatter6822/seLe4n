@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "677c1d638f36756d3f7038d1892fc24ac20b824c",
-      "tree_sha": "8dc0f8e3067ae9bc551556a888b12cc013ecaab3",
-      "committed_at_utc": "2026-09-17T07:03:21+00:00"
+      "commit_sha": "20fcdd56c9b046b8504026c70b757005c0186dce",
+      "tree_sha": "81cc4e067ad030f691a890fbf05db10e35ba1597",
+      "committed_at_utc": "2026-09-17T07:27:18+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d00be472cdb8f1790dcb46e79866f7a5292653f0a09a6388d4d1afbd4d030836"
+    "source_digest": "df8a4f3c858877a313eeafa3e861e525cce7ade8fc2d8705b9841e1dc3927a16"
   },
   "summary": {
     "module_count": 401,
-    "declaration_count": 21759
+    "declaration_count": 21760
   },
   "readme_sync": {
-    "version": "0.35.75",
+    "version": "0.35.76",
     "lean_toolchain": "v4.28.0",
     "production_files": 331,
-    "production_loc": 386569,
+    "production_loc": 386656,
     "test_files": 70,
     "test_loc": 78776,
     "proved_theorem_lemma_decls": 12913,
@@ -25700,13 +25700,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture",
-          "line": 53,
+          "line": 55,
           "called": []
         },
         {
           "kind": "structure",
           "name": "BumpAllocator",
-          "line": 95,
+          "line": 97,
           "called": [
             "PAddr"
           ]
@@ -25714,7 +25714,7 @@
         {
           "kind": "def",
           "name": "BumpAllocator.allocate",
-          "line": 102,
+          "line": 104,
           "called": [
             "BumpAllocator",
             "PAddr",
@@ -25726,7 +25726,7 @@
         {
           "kind": "structure",
           "name": "ARMv8VSpace",
-          "line": 111,
+          "line": 113,
           "called": [
             "ASID",
             "BumpAllocator",
@@ -25738,7 +25738,7 @@
         {
           "kind": "def",
           "name": "writeByte",
-          "line": 123,
+          "line": 125,
           "called": [
             "Memory",
             "PAddr",
@@ -25748,7 +25748,7 @@
         {
           "kind": "def",
           "name": "writeUInt64",
-          "line": 127,
+          "line": 129,
           "called": [
             "Memory",
             "PAddr",
@@ -25761,7 +25761,7 @@
         {
           "kind": "def",
           "name": "writeDescriptor",
-          "line": 138,
+          "line": 140,
           "called": [
             "Memory",
             "PAddr",
@@ -25776,7 +25776,7 @@
         {
           "kind": "def",
           "name": "zeroPage",
-          "line": 144,
+          "line": 146,
           "called": [
             "Memory",
             "PAddr",
@@ -25787,7 +25787,7 @@
         {
           "kind": "def",
           "name": "ARMv8VSpace.hwLookupPage",
-          "line": 156,
+          "line": 158,
           "called": [
             "ARMv8VSpace",
             "PAddr",
@@ -25799,7 +25799,7 @@
         {
           "kind": "def",
           "name": "ARMv8VSpace.hwLookupAddr",
-          "line": 161,
+          "line": 163,
           "called": [
             "ARMv8VSpace",
             "PAddr",
@@ -25810,7 +25810,7 @@
         {
           "kind": "def",
           "name": "fromPagePermissions",
-          "line": 182,
+          "line": 184,
           "called": [
             "PageAttributes",
             "PagePermissions",
@@ -25820,7 +25820,7 @@
         {
           "kind": "theorem",
           "name": "fromPagePermissions_wx_excludes_W_and_X",
-          "line": 202,
+          "line": 204,
           "called": [
             "PageAttributes",
             "PagePermissions",
@@ -25830,7 +25830,7 @@
         {
           "kind": "def",
           "name": "ensureTable",
-          "line": 215,
+          "line": 217,
           "called": [
             "BumpAllocator",
             "Memory",
@@ -25848,7 +25848,7 @@
         {
           "kind": "def",
           "name": "ARMv8VSpace.mapPage",
-          "line": 240,
+          "line": 242,
           "called": [
             "ARMv8VSpace",
             "PAddr",
@@ -25868,7 +25868,7 @@
         {
           "kind": "inductive",
           "name": "VSpaceWalkError",
-          "line": 275,
+          "line": 277,
           "called": [
             "PageTableLevel"
           ]
@@ -25876,7 +25876,7 @@
         {
           "kind": "def",
           "name": "ARMv8VSpace.unmapPage",
-          "line": 283,
+          "line": 285,
           "called": [
             "ARMv8VSpace",
             "VAddr",
@@ -25893,7 +25893,7 @@
         {
           "kind": "theorem",
           "name": "ARMv8VSpace.mapPage_preserves_asid",
-          "line": 308,
+          "line": 310,
           "called": [
             "ARMv8VSpace",
             "PAddr",
@@ -25905,7 +25905,7 @@
         {
           "kind": "theorem",
           "name": "ARMv8VSpace.unmapPage_preserves_asid",
-          "line": 329,
+          "line": 331,
           "called": [
             "ARMv8VSpace",
             "VAddr",
@@ -25915,7 +25915,7 @@
         {
           "kind": "theorem",
           "name": "ARMv8VSpace.mapPage_shadow_eq",
-          "line": 345,
+          "line": 347,
           "called": [
             "ARMv8VSpace",
             "PAddr",
@@ -25927,7 +25927,7 @@
         {
           "kind": "theorem",
           "name": "ARMv8VSpace.unmapPage_shadow_eq",
-          "line": 369,
+          "line": 371,
           "called": [
             "ARMv8VSpace",
             "VAddr",
@@ -25937,7 +25937,7 @@
         {
           "kind": "def",
           "name": "ARMv8VSpace.unmapPageOpt",
-          "line": 397,
+          "line": 399,
           "called": [
             "ARMv8VSpace",
             "VAddr",
@@ -25948,7 +25948,7 @@
         {
           "kind": "theorem",
           "name": "ARMv8VSpace.unmapPageOpt_some_iff_ok",
-          "line": 403,
+          "line": 405,
           "called": [
             "ARMv8VSpace",
             "VAddr",
@@ -25959,7 +25959,7 @@
         {
           "kind": "instance",
           "name": "armv8VSpaceBackend",
-          "line": 410,
+          "line": 412,
           "called": [
             "ARMv8VSpace",
             "ARMv8VSpace.mapPage_preserves_asid",
@@ -25986,7 +25986,7 @@
         {
           "kind": "def",
           "name": "simulationRelation",
-          "line": 462,
+          "line": 464,
           "called": [
             "ARMv8VSpace",
             "hwLookupPage",
@@ -25996,7 +25996,7 @@
         {
           "kind": "theorem",
           "name": "hwLookupPage_refines",
-          "line": 466,
+          "line": 468,
           "called": [
             "ARMv8VSpace",
             "VAddr",
@@ -26008,7 +26008,7 @@
         {
           "kind": "theorem",
           "name": "hwLookupAddr_refines",
-          "line": 471,
+          "line": 473,
           "called": [
             "ARMv8VSpace",
             "ARMv8VSpace.hwLookupAddr",
@@ -26021,7 +26021,7 @@
         {
           "kind": "theorem",
           "name": "vspaceProperty_transfer",
-          "line": 478,
+          "line": 480,
           "called": [
             "ARMv8VSpace",
             "PAddr",
@@ -26702,7 +26702,7 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 74,
+          "line": 85,
           "called": [
             "ktiSharesConflictingLock"
           ]
@@ -26710,7 +26710,7 @@
         {
           "kind": "def",
           "name": "cspaceWalkPath",
-          "line": 104,
+          "line": 115,
           "called": [
             "CPtr",
             "ObjId",
@@ -26728,7 +26728,7 @@
         {
           "kind": "theorem",
           "name": "cspaceWalkPath_head",
-          "line": 138,
+          "line": 149,
           "called": [
             "CNode",
             "CPtr",
@@ -26742,7 +26742,7 @@
         {
           "kind": "theorem",
           "name": "cspaceWalkPath_zero",
-          "line": 161,
+          "line": 172,
           "called": [
             "CPtr",
             "ObjId",
@@ -26754,20 +26754,6 @@
         {
           "kind": "theorem",
           "name": "cspaceWalkPath_no_root",
-          "line": 169,
-          "called": [
-            "CPtr",
-            "ObjId",
-            "SystemState",
-            "cspaceWalkPath",
-            "getCNode",
-            "none",
-            "st"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "cspaceWalkPath_cons",
           "line": 180,
           "called": [
             "CPtr",
@@ -26781,8 +26767,22 @@
         },
         {
           "kind": "theorem",
+          "name": "cspaceWalkPath_cons",
+          "line": 191,
+          "called": [
+            "CPtr",
+            "ObjId",
+            "SystemState",
+            "cspaceWalkPath",
+            "getCNode",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "cspaceWalkPath_dropLast_cnode",
-          "line": 209,
+          "line": 220,
           "called": [
             "CPtr",
             "ObjId",
@@ -26798,7 +26798,7 @@
         {
           "kind": "def",
           "name": "cspaceWalkKeyLock",
-          "line": 273,
+          "line": 284,
           "called": [
             "AccessMode",
             "LockId",
@@ -26814,7 +26814,7 @@
         {
           "kind": "def",
           "name": "cspaceWalkLockSet",
-          "line": 288,
+          "line": 299,
           "called": [
             "CPtr",
             "LockSet",
@@ -26829,7 +26829,7 @@
         {
           "kind": "def",
           "name": "declaredLockSetForCSpaceWalk",
-          "line": 309,
+          "line": 320,
           "called": [
             "CPtr",
             "LockSet",
@@ -26845,7 +26845,7 @@
         {
           "kind": "theorem",
           "name": "declaredLockSetForCSpaceWalk_some_size_le",
-          "line": 318,
+          "line": 329,
           "called": [
             "CPtr",
             "LockSet",
@@ -26860,7 +26860,7 @@
         {
           "kind": "theorem",
           "name": "declaredLockSetForCSpaceWalk_of_le",
-          "line": 332,
+          "line": 343,
           "called": [
             "CPtr",
             "ObjId",
@@ -26875,7 +26875,7 @@
         {
           "kind": "theorem",
           "name": "declaredLockSetForCSpaceWalk_none_of_gt",
-          "line": 343,
+          "line": 354,
           "called": [
             "CPtr",
             "ObjId",
@@ -26891,7 +26891,7 @@
         {
           "kind": "theorem",
           "name": "mem_cspaceWalkLockSet_cnode",
-          "line": 352,
+          "line": 363,
           "called": [
             "CPtr",
             "ObjId",
@@ -26909,7 +26909,7 @@
         {
           "kind": "theorem",
           "name": "mem_cspaceWalkLockSet_missing",
-          "line": 368,
+          "line": 379,
           "called": [
             "CPtr",
             "ObjId",
@@ -26927,7 +26927,7 @@
         {
           "kind": "theorem",
           "name": "cspaceWalk_conflicts_with_delete",
-          "line": 397,
+          "line": 408,
           "called": [
             "AccessMode",
             "AccessMode.conflicts",
@@ -26954,7 +26954,7 @@
         {
           "kind": "theorem",
           "name": "cspaceWalkPath_single_level",
-          "line": 444,
+          "line": 455,
           "called": [
             "CNode",
             "CPtr",
@@ -26969,7 +26969,7 @@
         {
           "kind": "theorem",
           "name": "cspaceWalkLockSet_single_level",
-          "line": 466,
+          "line": 477,
           "called": [
             "CNode",
             "CPtr",
@@ -26986,7 +26986,7 @@
         {
           "kind": "theorem",
           "name": "declaredLockSetForCSpaceWalk_single_level",
-          "line": 481,
+          "line": 492,
           "called": [
             "CNode",
             "CPtr",
@@ -27004,7 +27004,7 @@
         {
           "kind": "def",
           "name": "resolveCapAddressUnderWalkLocks",
-          "line": 511,
+          "line": 522,
           "called": [
             "CPtr",
             "CoreId",
@@ -27022,7 +27022,7 @@
         {
           "kind": "theorem",
           "name": "resolveCapAddressUnderWalkLocks_committed",
-          "line": 520,
+          "line": 531,
           "called": [
             "CPtr",
             "CoreId",
@@ -27043,7 +27043,7 @@
         {
           "kind": "theorem",
           "name": "resolveCapAddressUnderWalkLocks_refused",
-          "line": 544,
+          "line": 555,
           "called": [
             "CPtr",
             "CoreId",
@@ -262819,13 +262819,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 657,
+          "line": 676,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 663,
+          "line": 682,
           "called": []
         }
       ]
@@ -269964,36 +269964,36 @@
     {
       "module": "SeLe4n.Testing.StoreReadClassificationCensus",
       "path": "SeLe4n/Testing/StoreReadClassificationCensus.lean",
-      "declaration_count": 13,
+      "declaration_count": 14,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.StoreReadClassificationCensus",
-          "line": 39,
+          "line": 53,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Attribution",
-          "line": 43,
+          "line": 57,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Span",
-          "line": 57,
+          "line": 71,
           "called": []
         },
         {
           "kind": "def",
           "name": "conclusionOf",
-          "line": 65,
+          "line": 79,
           "called": []
         },
         {
           "kind": "def",
           "name": "isSpecDeclaration",
-          "line": 83,
+          "line": 97,
           "called": [
             "conclusionOf",
             "zero"
@@ -270002,13 +270002,13 @@
         {
           "kind": "def",
           "name": "moduleRelPath",
-          "line": 88,
+          "line": 102,
           "called": []
         },
         {
           "kind": "def",
           "name": "parseRow",
-          "line": 92,
+          "line": 111,
           "called": [
             "Attribution",
             "length",
@@ -270019,13 +270019,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.StoreReadClassificationCensus",
-          "line": 103,
+          "line": 122,
           "called": []
         },
         {
           "kind": "def",
           "name": "readAttribution",
-          "line": 108,
+          "line": 127,
           "called": [
             "Attribution",
             "parseRow",
@@ -270036,13 +270036,13 @@
         {
           "kind": "structure",
           "name": "Reconciliation",
-          "line": 126,
+          "line": 145,
           "called": []
         },
         {
           "kind": "def",
           "name": "enclosingSpans",
-          "line": 149,
+          "line": 168,
           "called": [
             "Attribution",
             "Span",
@@ -270052,7 +270052,7 @@
         {
           "kind": "def",
           "name": "narrowestSpan",
-          "line": 157,
+          "line": 176,
           "called": [
             "Span",
             "isEmpty",
@@ -270061,8 +270061,19 @@
         },
         {
           "kind": "def",
+          "name": "orphanFiles",
+          "line": 187,
+          "called": [
+            "Attribution",
+            "Span",
+            "contains",
+            "filter"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "disagreements",
-          "line": 173,
+          "line": 202,
           "called": [
             "Attribution",
             "Reconciliation",
@@ -270082,6 +270093,8 @@
             "narrowestSpan",
             "none",
             "of",
+            "orphan",
+            "orphanFiles",
             "pure",
             "readAttribution",
             "store",

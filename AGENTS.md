@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.75.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.76.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -806,7 +806,13 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `AXIOM_COUNT`: **regenerating the baseline does not clear it**, only fixing
   the tree does, and the gate says so in its failure epilogue.  The only raw
   reads left anywhere are the accessor bodies — which the census registers by
-  name — and propositions, which have no helper form.
+  name — and propositions, which have no helper form.  Since `v0.35.76`
+  `STORE_WRITE_CODE` sits beside it: the same classifier run over the raw
+  *write* spellings (`objects.insert` / `objects.erase`, method or qualified),
+  with the six bodies that write raw by design registered in
+  `WRITE_PRIMITIVE_BODIES` and reconciled in both directions — and it was a
+  zero floor from its first measurement, the raw-write migration having
+  reached the primitives before the census existed.
 
   **And a spelling is not a read** (PR #895 review, `v0.35.12`).  The zero above
   was true of `s.objects[k]?` and blind to `s.objects.get? k`, which is *the same
@@ -1369,7 +1375,19 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the tier that can take it: `SeLe4n/Testing/StoreReadClassificationCensus.lean`
   (Tier 1) asks `findDeclarationRanges?` which declaration owns each line and the
   conclusion of its type whether that declaration is specification, and fails the
-  build wherever the classifier disagrees.  **Where the authoritative answer is
+  build wherever the classifier disagrees.  **And its domain is reconciled
+  against the classifier's** (`v0.35.76`): the classifier scans the filesystem
+  and the reconciliation reads the environment, and no `SeLe4n/Testing/` module
+  was in that environment — invisible while the read census produced no row
+  there, and exposed by the write census's first, the reply-stack census's
+  planted witness, which the check counted as "outside any declaration" and
+  moved on.  A row in a file the environment declares nothing in now fails the
+  build naming the module to import (`orphanFiles`), because a declaration
+  outside the import closure is indistinguishable from one that does not exist
+  and a count of what could not be judged reads as a diagnostic.  Its first run
+  named a **kernel** module, not a test one — `ChainFootprint`, outside both
+  library roots since RR7.40 — which is how the five-modules finding recorded
+  under *a surface outside every derived domain* above was made.  **Where the authoritative answer is
   out of reach at the tier that needs it, derive it at a tier that can and
   reconcile** — the *derive the set, keep the list as a pin* rule, one tier apart.
 
@@ -3458,6 +3476,28 @@ by a Tier 1 census, or by one of the 71 `lean_exe` roots — all but **one**:
 **no build target compiled**.  Its three re-exports were therefore never checked
 as a unit, so a re-export naming a renamed or deleted submodule was invisible.
 `SeLe4n.lean` imports the hub now; the count is zero.
+
+  **A fourth measurement, with the roots as the criterion, found five more**
+  (`v0.35.76`).  The count above accepted a `lean_exe` or a census as reach,
+  and that is not the criterion the Tier 1 censuses' environments use: each
+  imports `SeLe4n` and `SeLe4n.Platform.Staged`, so a module reached only by a
+  test executable is outside every one of them.  The store-access census's
+  domain reconciliation (below) found the first — `ChainFootprint`, whose RR7.40
+  header said PRODUCTION while no root imported it — and re-measuring with the
+  two roots as the criterion found five non-test modules outside both: that one,
+  its `CSpaceWalkFootprint` sibling with the same RR7.41 header, the
+  `FrozenOps` and `Scheduler/PriorityInheritance` re-export hubs (RadixTree's
+  shape, reached by test suites alone), and `Architecture/VSpaceARMv8`, which
+  §8.15.1 of the spec had recorded as *test-anchored, not production-imported*
+  for thirty minor versions.  Three went into the root (both hubs, and
+  `ChainFootprint` with its one staged dependency `DynamicChainExtension`, every
+  import of which was already production); two are staged with a `STATUS`
+  marker each — `CSpaceWalkFootprint` because its conflict theorem is stated
+  against SM3.E's `ktiSharesConflictingLock`, so its chain runs through
+  `Serializability` → `Deadlock`, which the RR7.18 decision keeps out of the
+  image, and `VSpaceARMv8` because it is on no execution path.  A header's
+  PRODUCTION is a claim the import chain decides, and two such claims stood for
+  fifty-two minor versions with nothing deciding them.
 
 The three attempts are the finding's own epilogue, and they are this section's
 *a measurement can carry the defect it is sizing* rule applied to me.  The first
@@ -6038,7 +6078,11 @@ code may assume:
   and the frozen store, so the executable population outside them is
   **zero**; since `v0.35.75` the trace harness's 61 fixture inserts are
   stores too, so over the whole `SeLe4n/` tree the only raw writes are
-  those five and the reply-stack census's planted witness).  (6) **A transition that rewrites a TCB it is
+  those five and the reply-stack census's planted witness — and since
+  `v0.35.76` that is **enforced**: `STORE_WRITE_CODE` is a Tier 0
+  `ZERO_METRICS` entry, those six bodies are `WRITE_PRIMITIVE_BODIES`,
+  reconciled in both directions, and a raw write reappearing in an
+  executable position fails on the day it is written).  (6) **A transition that rewrites a TCB it is
   handed takes the store's witness for it.**  `timerTickBudget` /
   `timerTickBudgetOnCore` (`v0.35.67`) take `(hTcb : st.getTcb? tid = some tcb)`
   beside the TCB — the proof `rewriteAdmissible_tcb` consumes, erased at runtime —
@@ -7555,10 +7599,13 @@ code may assume:
   new footprint without a bound, or with one at the wrong arity, fails Tier 1
   the day it is written.  A legitimate exemption goes in `boundExemptions` with
   a reason; the list is empty and meant to stay so.
-- **Staged modules**: 67 staged-only, listed in
+- **Staged modules**: 68 staged-only, listed in
   `scripts/staged_module_allowlist.txt` and gated by
   `scripts/check_production_staging_partition.sh`.  Production must not import
-  staged.  WS-RR RR5.15 promoted five (the three state-committing kernel
+  staged.  (67 until `v0.35.76`, which promoted `Locks/DynamicChainExtension`
+  with the RR7.40 footprint that consumes it and staged
+  `Architecture/VSpaceARMv8` and `Capability/CSpaceWalkFootprint` — see the
+  five-modules note below.)  WS-RR RR5.15 promoted five (the three state-committing kernel
   entries `SecondaryEntry` / `PerCoreTimerEntry` / `PerCoreRescheduleEntry`,
   plus the two modules their closure pulls in): an `@[export]` emits a symbol
   only when its module is in `SeLe4n.lean`'s import closure, so a linked image

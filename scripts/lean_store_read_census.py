@@ -34,9 +34,16 @@ reflow that joins two lines must not lower the number.
 Reads are counted over the comment-free code view, so a docstring quoting the
 pattern is not a read.
 
+The same classifier, run over the raw WRITE spellings (`.objects.insert` /
+`.objects.erase` and the qualified table calls), emits `STORE_WRITE_CODE` /
+`STORE_WRITE_SPEC` beside the read pair (`v0.35.76`): the raw-write migration
+drove every executable write onto the store primitives, so `STORE_WRITE_CODE`
+is enforced at zero with those primitives registered in
+`WRITE_PRIMITIVE_BODIES`.
+
 Usage:
-    lean_store_read_census.py --rows            # CODE/SPEC rows for the baseline
-    lean_store_read_census.py --totals          # the two scalars
+    lean_store_read_census.py --rows            # CODE/SPEC rows for the baseline (reads and writes)
+    lean_store_read_census.py --totals          # the four scalars
     lean_store_read_census.py --self-test       # fixture-driven checks
 """
 from __future__ import annotations
@@ -75,6 +82,21 @@ import lean_code_view  # noqa: E402  (needs the path above)
 READ = re.compile(
     r"\.objects(?:\[|\.get\?)"                       # `st.objects[k]?` / `st.objects.get? k`
     r"|\b(?:RHTable|FrozenMap)\.get\?\s+[\w'.]*\.objects\b"  # the qualified call
+)
+
+# A raw WRITE of an object table, in either spelling (`v0.35.76`): the method
+# form `st.objects.insert k v` / `st.objects.erase k` and the qualified call
+# `RHTable.insert st.objects k v` / `FrozenMap.set st.objects k v`.  Both, for
+# the reason `READ` gives: a census that a rename walks around asserts nothing.
+# The population it measures is the one the raw-write migration
+# (`v0.35.64`..`v0.35.75`) drove to the five store primitives — every other
+# executable write goes through `storeObject`, `withObjectStored`,
+# `rewriteObject` or a typed update over it, so the honest floor is **zero**,
+# with the primitives themselves and one planted census witness registered in
+# `WRITE_PRIMITIVE_BODIES` and reconciled in both directions.
+WRITE = re.compile(
+    r"\.objects\.(?:insert|erase)\b"                              # `st.objects.insert k v`
+    r"|\b(?:RHTable|FrozenMap)\.(?:insert|erase|set)\s+[\w'.]*\.objects\b"  # the qualified call
 )
 
 # **What this gate can and cannot claim.**
@@ -564,8 +586,14 @@ def _declaration_is_valueless(lines: list[str], at: int) -> bool:
     return True
 
 
-def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None):
-    """Yield (declaration, is_prop, occurrences, line, region) per read-bearing line.
+def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None, pattern=READ):
+    """Yield (declaration, is_prop, occurrences, line, region) per access-bearing line.
+
+    `pattern` is the access being counted — `READ` (the default) or `WRITE`.  The
+    two questions share every structural decision below (which declaration owns
+    a line, whether it is executable, which region the access sits in); only the
+    spelling counted differs, which is why the write census is this classifier
+    with one argument rather than a second parser (`v0.35.76`).
 
     `unparsed`, when a list is supplied, collects
     `(declaration, kind, line, reason)` for every declaration whose signature
@@ -712,10 +740,10 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None):
         )
         if is_prop_decl:
             sig_spec, sig_default = sig_spec + sig_default, ""
-        n_sig = len(READ.findall(sig_spec))
-        n_default = len(READ.findall(sig_default))
-        n_spec = len(READ.findall(body_spec))
-        n_code = len(READ.findall(body_code))
+        n_sig = len(pattern.findall(sig_spec))
+        n_default = len(pattern.findall(sig_default))
+        n_spec = len(pattern.findall(body_spec))
+        n_code = len(pattern.findall(body_code))
         if n_sig:
             yield decl, True, n_sig, lineno, "sig"   # a binder or result type
         if n_default:
@@ -770,6 +798,34 @@ ACCESSOR_BODIES = {
     # writes it back, applying a lock-only transform to whatever is stored.
     ("SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean", "updateObjectAt"):
         "lock-domain store primitive; kind-agnostic, `f : KernelObject → KernelObject`",
+}
+
+#: The declarations that write an object table RAW by design (`v0.35.76`) —
+#: the five store primitives every other executable write goes through, and
+#: one planted witness.  Reconciled in both directions, exactly as
+#: `ACCESSOR_BODIES` is: an entry that no longer writes raw is a stale
+#: exemption, and a raw write anywhere else is a `STORE_WRITE_CODE` violation.
+#:
+#: `updateObjectAt` cannot be a `rewriteObject`: it is kind-agnostic and a
+#: CNode or VSpace root is not rewrite-neutral, so it stays the lock domain's
+#: raw read-modify-write over `storeObject`'s bookkeeping.  The planted
+#: witness is the reply-stack write census's own fixture — a definition that
+#: stores a chain-bearing record through the bare table so that census is
+#: known to see a raw table write — and it must stay raw for exactly that
+#: reason.
+WRITE_PRIMITIVE_BODIES = {
+    ("SeLe4n/Model/State.lean", "storeObject"):
+        "the object-store write: the insert plus its bookkeeping",
+    ("SeLe4n/Model/State.lean", "rewriteObject"):
+        "the proof-carrying in-place rewrite: the bare insert under `rewriteAdmissible`",
+    ("SeLe4n/Model/Builder.lean", "createObject"):
+        "the boot-time population, capacity-bounded by `PlatformConfig`",
+    ("SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean", "updateObjectAt"):
+        "lock-domain read-modify-write; kind-agnostic, so not a rewrite",
+    ("SeLe4n/Kernel/FrozenOps/Core.lean", "frozenUpdatePipBoost"):
+        "the frozen surface's own store, over `FrozenMap`",
+    ("SeLe4n/Testing/ReplyStackWriteCensus.lean", "censusWitnessRawTableWrite"):
+        "the reply-stack write census's planted raw-table witness",
 }
 
 
@@ -861,18 +917,28 @@ def objects_owner_violations(view: Path) -> list[str]:
     return out
 
 
-def accessor_registry_violations(code: dict, exempt_hits: dict) -> list[str]:
-    """Registry entries that no longer name a raw-reading executable body."""
-    stale = [f"{f}|{d}" for (f, d) in ACCESSOR_BODIES if (f, d) not in exempt_hits]
+def accessor_registry_violations(code: dict, exempt_hits: dict,
+                                 registry: dict = ACCESSOR_BODIES,
+                                 what: str = "read") -> list[str]:
+    """Registry entries that no longer name a raw-accessing executable body.
+
+    `registry` is `ACCESSOR_BODIES` for the read census and
+    `WRITE_PRIMITIVE_BODIES` for the write census; `what` names the access in
+    the message.
+    """
+    stale = [f"{f}|{d}" for (f, d) in registry if (f, d) not in exempt_hits]
     if not stale:
         return []
-    return [f"{len(stale)} accessor-registry entry(ies) no longer read the store raw "
+    return [f"{len(stale)} {what}-registry entry(ies) no longer {what} the store raw "
             f"({stale}) -- a stale exemption reads like coverage.  Remove the entry, or "
             f"restore the body it names."]
 
 
-def census(view: Path):
-    """(executable reads, specification reads, registry hits, rows, unparsed).
+def census(view: Path, pattern=READ, registry: dict = ACCESSOR_BODIES):
+    """(executable accesses, specification accesses, registry hits, rows, unparsed).
+
+    `pattern` / `registry` select the census: `READ` with `ACCESSOR_BODIES`
+    (the default) or `WRITE` with `WRITE_PRIMITIVE_BODIES` (`v0.35.76`).
 
     The third is what the registry is reconciled against, so an entry that stops
     naming a raw read is reported rather than silently kept.  The fifth is the
@@ -886,12 +952,12 @@ def census(view: Path):
     for f in sorted(view.rglob("SeLe4n/**/*.lean")):
         rel = str(f.relative_to(view))
         here = []
-        for decl, is_prop, n, lineno, region in classify(f, aliases, here):
-            # Emitted for every read-bearing line, exempt or not: the
+        for decl, is_prop, n, lineno, region in classify(f, aliases, here, pattern):
+            # Emitted for every access-bearing line, exempt or not: the
             # reconciliation asks whether the CLASSIFIER agreed with the
             # elaborator, and an exempted accessor is classified like any other.
             attribution.append((rel, lineno, decl, is_prop, region))
-            if not is_prop and (rel, decl) in ACCESSOR_BODIES:
+            if not is_prop and (rel, decl) in registry:
                 exempt_hits[(rel, decl)] = exempt_hits.get((rel, decl), 0) + n
                 continue
             bucket = spec if is_prop else code
@@ -1311,9 +1377,72 @@ def peek (st : SystemState) (oid : ObjId) : Bool :=
 EXPECT_REFUSALS = {"unterminated_is_refused": 1}
 
 
+#: The write census's own cases, classified with `WRITE` (`v0.35.76`).  Every
+#: mutation is token-preserving against a sibling: the same raw write moved
+#: between a transition and a proposition, or between two spellings of one
+#: write, or into a string literal that names it.
+WRITE_FIXTURES = {
+    # A transition writing the table raw: the migratable population.
+    "code_write": ("""
+def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  { st with objects := st.objects.insert k o }
+""", {("f.lean", "step"): 1}, {}),
+    # The same write as a proposition's vocabulary: a theorem about the store.
+    "theorem_write": ("""
+theorem frame (st : SystemState) (k : ObjId) (o : KernelObject) :
+    (st.objects.insert k o)[k]? = some o := by
+  exact RHTable.getElem?_insert_self _ _ _ (by assumption)
+""", {}, {("f.lean", "frame"): 1}),
+    # The qualified spelling is the same write (a spelling is not a write).
+    "qualified_write": ("""
+def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  { st with objects := RHTable.insert st.objects k o }
+""", {("f.lean", "step"): 1}, {}),
+    # The frozen table's `set`, on a frozen state.
+    "frozen_write": ("""
+def frozenStep (st : FrozenSystemState) (k : ObjId) (o : FrozenKernelObject) :
+    FrozenSystemState :=
+  { st with objects := FrozenMap.set st.objects k o }
+""", {("f.lean", "frozenStep"): 1}, {}),
+    # An erase is a write too.
+    "erase_write": ("""
+def drop (st : SystemState) (k : ObjId) : SystemState :=
+  { st with objects := st.objects.erase k }
+""", {("f.lean", "drop"): 1}, {}),
+    # A `def` returning `Prop` files its write as specification.
+    "prop_def_write": ("""
+def stored (st : SystemState) (k : ObjId) (o : KernelObject) : Prop :=
+  (st.objects.insert k o)[k]? = some o
+""", {}, {("f.lean", "stored"): 1}),
+    # A write named INSIDE A STRING is not a write: this census reads the
+    # string-blanked view.  Token-preserving against `code_write`.
+    "string_names_a_write": ("""
+def diagnostic : String := "avoid { st with objects := st.objects.insert k o }"
+""", {}, {}),
+}
+
+
 def self_test() -> int:
     failed = 0
     with tempfile.TemporaryDirectory() as td:
+        for name, (src, want_code, want_spec) in WRITE_FIXTURES.items():
+            root = Path(td) / ("w_" + name) / "SeLe4n"
+            root.mkdir(parents=True)
+            (root / "f.lean").write_text(lean_code_view.strip(src))
+            aliases = prop_aliases(Path(td) / ("w_" + name))
+            got_code, got_spec, refused = {}, {}, []
+            for decl, is_prop, n, _line, _region in classify(root / "f.lean", aliases, refused, WRITE):
+                key = ("f.lean", decl)
+                (got_spec if is_prop else got_code)[key] = \
+                    (got_spec if is_prop else got_code).get(key, 0) + n
+            if got_code != want_code or got_spec != want_spec or refused:
+                print(f"  FAIL write:{name}")
+                print(f"    code:     got {got_code} want {want_code}")
+                print(f"    spec:     got {got_spec} want {want_spec}")
+                print(f"    refusals: {refused}")
+                failed += 1
+            else:
+                print(f"  ok   write:{name}")
         for name, (src, want_code, want_spec) in FIXTURES.items():
             root = Path(td) / name / "SeLe4n"
             root.mkdir(parents=True)
@@ -1390,7 +1519,8 @@ def self_test() -> int:
     if failed:
         print(f"[store-read-census] self-test: {failed} case(s) failed")
         return 1
-    print(f"[store-read-census] self-test passed ({len(FIXTURES)} cases)")
+    print(f"[store-read-census] self-test passed ({len(FIXTURES)} read cases, "
+          f"{len(WRITE_FIXTURES)} write cases)")
     return 0
 
 
@@ -1419,6 +1549,7 @@ def main() -> int:
             print(f"FAIL: {line}")
         return 1
     code, spec, exempt_hits, attribution, unparsed = census(view)
+    wcode, wspec, wexempt_hits, wattribution, _ = census(view, WRITE, WRITE_PRIMITIVE_BODIES)
     # Refused in EVERY mode, for the same reason the registry is reconciled in
     # every mode: `--rows` is what Tier 0 calls, and a check only the unused
     # mode runs is a check nobody runs.
@@ -1435,29 +1566,42 @@ def main() -> int:
     # baseline calls, so skipping it there would leave the registry checkable
     # only by a command nothing runs — a gate with a silent default branch,
     # which is the shape this project keeps paying for.
-    stale = accessor_registry_violations(code, exempt_hits)
+    stale = (accessor_registry_violations(code, exempt_hits)
+             + accessor_registry_violations(wcode, wexempt_hits, WRITE_PRIMITIVE_BODIES, "write"))
     if stale:
         for problem in stale:
             print(f"FAIL: {problem}", file=sys.stderr)
         return 1
     if args.attribution:
-        for rel, lineno, decl, is_prop, region in attribution:
-            print(f"STORE_READ_ATTRIB={rel}|{lineno}|{decl}|{1 if is_prop else 0}|{region}")
+        # One stream for both populations: the reconciliation judges the
+        # CLASSIFIER's two structural answers per line, and those do not
+        # depend on which access the line carries.  A line carrying both is
+        # one row.
+        for rel, lineno, decl, is_prop, region in sorted(set(attribution) | set(wattribution)):
+            print(f"STORE_ACCESS_ATTRIB={rel}|{lineno}|{decl}|{1 if is_prop else 0}|{region}")
         return 0
     if args.rows:
         for (f, d), n in sorted(code.items()):
             print(f"STORE_READ_CODE_SITE={f}|{d}|{n}")
         for (f, d), n in sorted(spec.items()):
             print(f"STORE_READ_SPEC_SITE={f}|{d}|{n}")
+        for (f, d), n in sorted(wcode.items()):
+            print(f"STORE_WRITE_CODE_SITE={f}|{d}|{n}")
+        for (f, d), n in sorted(wspec.items()):
+            print(f"STORE_WRITE_SPEC_SITE={f}|{d}|{n}")
     if args.totals or not args.rows:
         print(f"STORE_READ_CODE={sum(code.values())}")
         print(f"STORE_READ_SPEC={sum(spec.values())}")
+        print(f"STORE_WRITE_CODE={sum(wcode.values())}")
+        print(f"STORE_WRITE_SPEC={sum(wspec.values())}")
         # The claim, beside the number.  A bare `0` reads as "there are none";
         # what this gate can say is "none in the spellings it recognises", and
         # saying so is what makes the next widening an improvement rather than
         # a defect report.
         print("STORE_READ_SCOPE=recognised spellings only "
               "(subscript, method, qualified call); a floor, not a proof of absence")
+        print("STORE_WRITE_SCOPE=recognised spellings only "
+              "(method insert/erase, qualified RHTable/FrozenMap call); a floor, not a proof of absence")
     return 0
 
 

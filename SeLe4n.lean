@@ -197,3 +197,23 @@ import SeLe4n.Kernel.FrozenOps.Invariant
 -- adds only the hub, which is the point -- a file outside every build target is
 -- checked by nothing, which is the `FrozenOps` finding one file smaller.
 import SeLe4n.Kernel.RadixTree
+-- **Five more files outside both library roots** (`v0.35.76`).  The
+-- store-access census's Tier 1 reconciliation
+-- (`SeLe4n/Testing/StoreReadClassificationCensus.lean`) started refusing a row
+-- in a module its environment does not contain, and its first run named
+-- `Scheduler/PriorityInheritance/ChainFootprint.lean`.  Measured with the two
+-- roots as the criterion -- the criterion every Tier 1 census's environment
+-- actually uses, where the `v0.35.60` count above accepted a `lean_exe` as
+-- reach -- five non-test modules were outside both.  Three come here: the
+-- `Scheduler/PriorityInheritance` hub and the `FrozenOps` hub (RadixTree's
+-- shape again, each reached by test suites alone, so a re-export naming a
+-- deleted submodule was checked as a unit by nothing in CI -- their
+-- submodules are already in this closure); and `ChainFootprint`, whose RR7.40
+-- header says PRODUCTION and which no root imported, so its only staged
+-- dependency (`Concurrency/Locks/DynamicChainExtension`, every import of which
+-- was already here) is promoted with it.  The other two --
+-- `Architecture/VSpaceARMv8` and `Capability/CSpaceWalkFootprint` -- are staged
+-- instead; `Platform/Staged.lean` says why each cannot be here.
+import SeLe4n.Kernel.Scheduler.PriorityInheritance
+import SeLe4n.Kernel.FrozenOps
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.ChainFootprint
