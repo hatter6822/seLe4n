@@ -3368,6 +3368,27 @@ run_prose_check "INVARIANT" rg -n '^-- STATUS: staged for the fine-lock migratio
 run_prose_negative_check "INVARIANT" rg -U -n '^-- [^\n]*: PRODUCTION\b' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 
 # ============================================================================
+# v0.35.77 -- storeObject clears the displaced CNode's references slot by slot
+# ============================================================================
+#
+# The raw-write migration's last cut (D2): the whole-table filter
+# `capabilityRefs.filter (fun ref _ => ref.cnode ≠ id)` that every store paid
+# is an erase over the displaced CNode's populated slots, so a non-CNode store
+# at a key holding no CNode leaves the reference table structurally unchanged
+# (`storeObject_capabilityRefs_of_not_cnode`), and the erase fold's `invExtK`
+# lemma is the table's half of the bundled store invariant.  The filter, its
+# two unconsumed lemmas and the filter-era name of the IPC-buffer theorem must
+# not come back; the spelled-out revoke post-states follow the body.
+run_check "INVARIANT" rg -U -n '^            let cleared := match st\.objects\[id\]\? with\n              \| some \(\.cnode oldCn\) =>\n                  oldCn\.slots\.fold \(init := st\.lifecycle\.capabilityRefs\) fun acc slot _ =>\n                    acc\.erase \{ cnode := id, slot := slot \}\n              \| _ => st\.lifecycle\.capabilityRefs$' SeLe4n/Model/State.lean
+run_negative_check "INVARIANT" rg -n 'capabilityRefs\.filter \(fun ref _ => ref\.cnode ≠' SeLe4n/Model/State.lean
+run_negative_check "INVARIANT" rg -n 'capabilityRefs\.filter \(fun ref _ => ref\.cnode ≠' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem capabilityRefs_eraseFold_preserves_invExtK$' SeLe4n/Model/State.lean
+run_negative_check "INVARIANT" rg -n '^theorem capabilityRefs_(filter_preserves_invExt|fold_preserves_invExt)\b' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -U -n '^theorem storeObject_capabilityRefs_of_not_cnode\n    \(st st. : SystemState\)\n    \(id : SeLe4n\.ObjId\)\n    \(obj : KernelObject\)\n    \(hOld : ∀ cn, st\.objects\[id\]\? ≠ some \(\.cnode cn\)\)\n    \(hNew : ∀ cn, obj ≠ \.cnode cn\)\n    \(hStep : storeObject id obj st = \.ok \(\(\), st.\)\) :\n    st.\.lifecycle\.capabilityRefs = st\.lifecycle\.capabilityRefs := by$' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -U -n '^theorem setIPCBufferOp_capabilityRefs_eq\n(.|\n)*?\n    st.\.lifecycle\.capabilityRefs = st\.lifecycle\.capabilityRefs := by$' SeLe4n/Kernel/Architecture/IpcBufferValidation.lean
+run_negative_check "INVARIANT" rg -n 'setIPCBufferOp_capabilityRefs_cleaned' SeLe4n/Kernel/Architecture/IpcBufferValidation.lean
+
+# ============================================================================
 # WS-OD OD6 -- the payoff
 # ============================================================================
 #

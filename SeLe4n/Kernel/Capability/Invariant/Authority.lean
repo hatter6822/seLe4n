@@ -92,7 +92,11 @@ theorem cspaceRevoke_local_target_reduction
                   st.lifecycle with
                     objectTypes := st.lifecycle.objectTypes.insert addr.cnode revokedObj.objectType
                     capabilityRefs :=
-                      let cleared := st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ addr.cnode)
+                      -- `v0.35.77`: the store erases the displaced CNode's references slot by
+                      -- slot; the displaced CNode here is `cn` (`hObj`), so this is the store's
+                      -- post-state with that lookup already resolved.
+                      let cleared := cn.slots.fold (init := st.lifecycle.capabilityRefs) fun acc slot _ =>
+                        acc.erase { cnode := addr.cnode, slot := slot }
                       (cn.revokeTargetLocal addr.slot parent.target).slots.fold (init := cleared)
                         fun refs slot cap => refs.insert { cnode := addr.cnode, slot := slot } cap.target
                 }
@@ -275,7 +279,9 @@ theorem cspaceRevoke_preserves_source
                       st.lifecycle with
                         objectTypes := st.lifecycle.objectTypes.insert addr.cnode revokedObj.objectType
                         capabilityRefs :=
-                          let cleared := st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ addr.cnode)
+                          -- `v0.35.77`: the displaced CNode is `cn` (`hObj`); see the first site.
+                          let cleared := cn.slots.fold (init := st.lifecycle.capabilityRefs) fun acc slot _ =>
+                            acc.erase { cnode := addr.cnode, slot := slot }
                           (cn.revokeTargetLocal addr.slot parent.target).slots.fold (init := cleared)
                             fun refs slot cap => refs.insert { cnode := addr.cnode, slot := slot } cap.target
                     }

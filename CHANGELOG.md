@@ -1,3 +1,69 @@
+## v0.35.77 — The store's reference maintenance is an erase over the displaced CNode's slots, and the raw-write row closes
+
+**Raw-write migration, fourteenth and last cut (D2).**  `SystemState.storeObject`
+maintained the capability-reference table with a **filter over the whole
+table** — `capabilityRefs.filter (fun ref _ => ref.cnode ≠ id)` — on **every**
+store, CNode or not, which is the cost that made the store too expensive for
+the hot paths the migration moved onto `rewriteObject`.  It now erases exactly
+the references the displaced object held: when the key holds a CNode, one
+`RHTable.erase` per populated slot of that CNode; otherwise nothing; then, as
+before, one insert per populated slot of a stored CNode.  A store of a
+non-CNode object at a key holding no CNode — every endpoint, notification, TCB
+and SchedContext store on the IPC paths — leaves the table **structurally
+unchanged**, which `storeObject_capabilityRefs_of_not_cnode` states with the two
+arms the body branches on as refutable hypotheses, and
+`setIPCBufferOp_capabilityRefs_eq` (the D3-F theorem, restated from the filter's
+result to the identity) consumes.  `capabilityRefs_eraseFold_preserves_invExtK`
+is the table's clearing half of `storeObject_preserves_allTablesInvExtK`; the
+retired filter lemma and its `invExt` twin — neither consumed by anything — went
+with the filter, and the two spelled-out revoke post-states in
+`Capability/Invariant/Authority.lean` follow the body.  The two spellings agree
+on every state in which each reference at a key names a populated slot of the
+CNode stored there.  One consumer the textual sweep for the field could not see
+followed too: `storeObject_offSchedulerAgrees` (`IPC/Invariant/LookupCongruence.lean`)
+unfolds the store and closes its `lifecycle` component by rewriting, and the
+component now reads the displaced object, so it rewrites `hRel.objects id` as its
+`asidTable` component already did.  The proof's text never names the table — it
+was found by the Tier 1 build, not by the grep, which is the *recognised set*
+shape one artefact over: a sweep for a field's name reaches the sites that spell
+it and not the ones that unfold the definition around it.
+
+**What landing it found, registered rather than fixed.**  No invariant *states*
+that relation, and no executable code reads the table at all.
+`lookupCapabilityRefMeta` — the one function named as the table's reader — is
+*defined* as `(lookupSlotCap st ref).map Capability.target`, a read of the object
+store, so `capabilityRefMetadataConsistent` ("capability-reference lifecycle
+metadata is exact for every slot reference") is definitionally true and
+`storeObject_preserves_capabilityRefMetadataConsistent` is `simp` with both of
+its hypotheses unused; outside `Model/State.lean` the only mentions of the table
+are the boot's frame, the two boot contracts' `size = 0` at `default`, the
+freeze's copy and the fixture builder.  That is the *inert witness* shape inside
+an invariant bundle and the *computed-and-proven structure nothing consumes*
+shape in the model, each hiding the other.  `docs/REGISTERED_DEBT.md` table C
+carries it with the rule's remedy — wire the lookup to the table, state the
+consistency as the relation between the table and the slots it caches, prove it
+of the three writers, and give the table the consumer an `O(1)` slot-to-target
+lookup is for — and the honest alternative if none is found.
+
+**The raw-write row is CLOSED.**  Registered at `v0.35.63` with sixty
+executable definitions writing the object table raw beside the one primitive
+that maintains its bookkeeping; `v0.35.64` → `v0.35.75` moved every one onto
+`storeObject`, `withObjectStored`, `rewriteObject` or a typed update over it;
+`v0.35.76` made the zero a Tier 0 `ZERO_METRICS` entry (`STORE_WRITE_CODE`) with
+the six bodies that write raw by design registered and reconciled; and this cut
+retires the cost that motivated the register row's "why it may wait".  The
+golden trace is byte-identical: nothing the trace exercises reads the table,
+which is the finding above measured from the other side.
+
+**Tier 3**: positives on the erase fold in `storeObject`, the erase-fold
+`invExtK` lemma, the payoff theorem at its full statement and the restated
+IPC-buffer theorem; negatives on the whole-table filter in the store and in the
+spelled-out revoke post-states, on the two retired lemma names and on the
+filter-era theorem name — 8 cases, 9 mutations, every one keeping the tokens
+(the filter restored, the erase fold run over the *stored* object's slots rather
+than the displaced one's, the payoff weakened to a per-reference statement, the
+IPC-buffer statement reverted to the filter's result).
+
 ## v0.35.76 — The Tier 0 write census: every executable object-table write goes through a store primitive, enforced at zero
 
 **Raw-write migration, thirteenth cut (D1).**  `scripts/lean_store_read_census.py`

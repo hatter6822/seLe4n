@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.76.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.77.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6082,7 +6082,19 @@ code may assume:
   `v0.35.76` that is **enforced**: `STORE_WRITE_CODE` is a Tier 0
   `ZERO_METRICS` entry, those six bodies are `WRITE_PRIMITIVE_BODIES`,
   reconciled in both directions, and a raw write reappearing in an
-  executable position fails on the day it is written).  (6) **A transition that rewrites a TCB it is
+  executable position fails on the day it is written).  Since `v0.35.77` (D2)
+  `storeObject`'s own capability-reference maintenance is an **erase over the
+  displaced CNode's populated slots** rather than a filter over the whole
+  table (`capabilityRefs_eraseFold_preserves_invExtK` is its half of
+  `storeObject_preserves_allTablesInvExtK`, and
+  `storeObject_capabilityRefs_of_not_cnode` states the payoff: a non-CNode
+  store at a key holding no CNode leaves the table structurally unchanged,
+  where every IPC-path store used to pay `O(|capabilityRefs|)`), and the
+  register row is **closed**.  What landing it found is its own row
+  (`docs/REGISTERED_DEBT.md`, table C): the table is read by no executable
+  code, and `capabilityRefMetadataConsistent` — the invariant named for it —
+  reads the object store instead, so it is definitionally true and its
+  `storeObject` preservation proof consumes no hypothesis.  (6) **A transition that rewrites a TCB it is
   handed takes the store's witness for it.**  `timerTickBudget` /
   `timerTickBudgetOnCore` (`v0.35.67`) take `(hTcb : st.getTcb? tid = some tcb)`
   beside the TCB — the proof `rewriteAdmissible_tcb` consumes, erased at runtime —

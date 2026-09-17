@@ -326,22 +326,37 @@ theorem setIPCBufferOp_asidTable_eq
       simp only [hRaw]
     · contradiction
 
-/-- D3-F/AH3-B: `setIPCBufferOp` delegates to `storeObject`, which applies the
-    standard capability-ref cleanup (filtering refs where the stored object's
-    ObjId is the CNode). For TCB objects this is a no-op in well-formed states
-    since TCBs are never CNodes — no `CapabilityRef` entries have `ref.cnode =
-    tid.toObjId`. The filtered result is the canonical `storeObject` behavior. -/
-theorem setIPCBufferOp_capabilityRefs_cleaned
+/-- D3-F/AH3-B: `setIPCBufferOp` delegates to `storeObject`, and a TCB store
+    leaves the capability-reference table **structurally unchanged**
+    (`storeObject_capabilityRefs_of_not_cnode`, `v0.35.77`): the key holds the
+    TCB being rewritten, so no CNode is displaced, and a TCB has no slots to
+    insert references for.  Until `v0.35.77` the store filtered the whole table
+    on every write and this theorem stated that filter's result, which for a
+    TCB is the identity only up to the table's own consistency; the erase over
+    the displaced CNode's slots makes it the identity outright. -/
+theorem setIPCBufferOp_capabilityRefs_eq
     (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
     (hOk : setIPCBufferOp st vtid addr = .ok st') :
-    st'.lifecycle.capabilityRefs =
-      st.lifecycle.capabilityRefs.filter (fun ref _ => decide (ref.cnode ≠ vtid.val.toObjId)) := by
+    st'.lifecycle.capabilityRefs = st.lifecycle.capabilityRefs := by
   unfold setIPCBufferOp at hOk
   split at hOk
   · contradiction
   · split at hOk
-    · rename_i tcb _
-      unfold storeObject at hOk; simp only [] at hOk; cases hOk; rfl
+    · rename_i tcb hLookup
+      have hRaw : st.objects[vtid.val.toObjId]? = some (.tcb tcb) :=
+        (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hLookup
+      -- The store's own match: its `.ok` arm carries the step the payoff
+      -- theorem consumes; the key holds a TCB (`hRaw`) and a TCB is stored.
+      -- `dsimp` discharges the `let tcb'` binder the split cannot see past.
+      dsimp only at hOk
+      split at hOk
+      · rename_i stMid hStore
+        -- `cases` on the arm's `.ok stMid = .ok st'` identifies the two states.
+        cases hOk
+        exact storeObject_capabilityRefs_of_not_cnode st _ _ _
+          (fun cn h => by rw [hRaw] at h; cases h)
+          (fun cn h => by cases h) hStore
+      · contradiction
     · contradiction
 
 /-- D3-F: `setIPCBufferOp` determinism — the operation is a pure function

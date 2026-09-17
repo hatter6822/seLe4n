@@ -1856,6 +1856,22 @@ of O(n) list membership scan.
 WS-G3/F-P06: Maintains `asidTable` — erases old ASID when overwriting a
 VSpaceRoot, inserts new ASID when storing a VSpaceRoot.
 
+`v0.35.77` (the raw-write migration's D2): the capability-reference table is
+maintained by an **erase over the displaced CNode's populated slots** — when
+the key held a CNode, one `RHTable.erase` per populated slot of that CNode,
+otherwise nothing — followed by one insert per populated slot of a stored
+CNode.  The whole-table `filter (fun ref _ => ref.cnode ≠ id)` it replaces paid
+`O(|capabilityRefs|)` on **every** store, CNode or not, which is what made the
+store too expensive for the hot paths the migration moved onto
+`rewriteObject`; a store of a non-CNode object at a key holding no CNode now
+leaves the table structurally unchanged
+(`storeObject_capabilityRefs_of_not_cnode`).  The two spellings agree on every
+state in which each reference at `id` names a populated slot of the CNode
+stored at `id`; no invariant in this tree *states* that relation —
+`capabilityRefMetadataConsistent` reads the object store rather than this
+table and is definitionally true — and no executable code reads the table at
+all.  Both facts are registered in `docs/REGISTERED_DEBT.md` (table C).
+
 S4-B/U2-L: Capacity enforcement is performed at the allocation boundary
 (`retypeFromUntyped` in Lifecycle/Operations.lean), not here. The
 `objectCount_le_maxObjects` invariant (alias for `objectIndexBounded`,
@@ -1897,7 +1913,11 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
         lifecycle := {
           objectTypes := st.lifecycle.objectTypes.insert id obj.objectType
           capabilityRefs :=
-            let cleared := st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ id)
+            let cleared := match st.objects[id]? with
+              | some (.cnode oldCn) =>
+                  oldCn.slots.fold (init := st.lifecycle.capabilityRefs) fun acc slot _ =>
+                    acc.erase { cnode := id, slot := slot }
+              | _ => st.lifecycle.capabilityRefs
             match obj with
             | .cnode cn =>
                 cn.slots.fold (init := cleared) fun refs slot cap =>
@@ -4856,36 +4876,25 @@ theorem storeObject_preserves_lifecycleMetadataConsistent
     storeObject_preserves_capabilityRefMetadataConsistent st st' oid obj hCapRef hStep⟩
 
 -- ============================================================================
--- T2-H (M-NEW-3): capabilityRefs filter preserves invExt
+-- The reference table's two folds preserve invExtK (`v0.35.77`: the erase fold
+-- replaces the whole-table filter; T2-H's filter lemma and T2-I's `invExt`
+-- twin, neither consumed, retired with it)
 -- ============================================================================
 
-/-- T2-H (M-NEW-3): When `storeObject` filters out old CNode references via
-    `RHTable.filter`, the resulting table's `invExt` is preserved. This follows
-    directly from `RHTable.filter_preserves_invExt`. -/
-theorem capabilityRefs_filter_preserves_invExt
-    (capRefs : RHTable SlotRef CapTarget)
+/-- `v0.35.77` (D2): the references the displaced CNode held are erased slot by
+    slot — one `RHTable.erase` per populated slot of the old CNode, composed by
+    `RHTable.fold_preserves` — and each erase preserves `invExtK`
+    (`RHTable.erase_preserves_invExtK`).  This is the reference table's clearing
+    half of `storeObject_preserves_allTablesInvExtK`. -/
+theorem capabilityRefs_eraseFold_preserves_invExtK
+    (oldCn : CNode)
+    (refs : RHTable SlotRef CapTarget)
     (id : SeLe4n.ObjId)
-    (hInv : capRefs.invExt) :
-    (capRefs.filter (fun ref _ => ref.cnode ≠ id)).invExt :=
-  RHTable.filter_preserves_invExt capRefs _ hInv
-
--- ============================================================================
--- T2-I (M-NEW-3): capabilityRefs fold insert preserves invExt
--- ============================================================================
-
-/-- T2-I (M-NEW-3): When `storeObject` inserts new CNode references via `fold`,
-    the resulting table's `invExt` is preserved. Each sequential `insert`
-    preserves `invExt` by `RHTable.insert_preserves_invExt`, and the fold
-    composes these preservations via `RHTable.fold_preserves`. -/
-theorem capabilityRefs_fold_preserves_invExt
-    (cn : CNode)
-    (cleared : RHTable SlotRef CapTarget)
-    (id : SeLe4n.ObjId)
-    (hInv : cleared.invExt) :
-    (cn.slots.fold (init := cleared) fun refs slot cap =>
-      refs.insert { cnode := id, slot := slot } cap.target).invExt :=
-  RHTable.fold_preserves cn.slots.table cleared _ (fun t => t.invExt) hInv
-    (fun acc _ _ hAcc => RHTable.insert_preserves_invExt acc _ _ hAcc)
+    (hInvK : refs.invExtK) :
+    (oldCn.slots.fold (init := refs) fun acc slot _ =>
+      acc.erase { cnode := id, slot := slot }).invExtK :=
+  RHTable.fold_preserves oldCn.slots.table refs _ (fun t => t.invExtK) hInvK
+    (fun acc _ _ hAcc => RHTable.erase_preserves_invExtK acc _ hAcc)
 
 /-- V3-B: capabilityRefs fold insert preserves invExtK. -/
 theorem capabilityRefs_fold_preserves_invExtK
@@ -4897,6 +4906,32 @@ theorem capabilityRefs_fold_preserves_invExtK
       refs.insert { cnode := id, slot := slot } cap.target).invExtK :=
   RHTable.fold_preserves cn.slots.table cleared _ (fun t => t.invExtK) hInvK
     (fun acc _ _ hAcc => RHTable.insert_preserves_invExtK acc _ _ hAcc)
+
+/-- `v0.35.77` (D2): a store of a non-CNode object at a key holding no CNode
+    leaves the capability-reference table **structurally unchanged** — no
+    erase, no insert, the same table.  This is the cost the raw-write
+    migration's D2 buys on the IPC paths: every endpoint, notification, TCB and
+    SchedContext store used to pay a filter over the whole table.  The
+    hypotheses are the two arms the body branches on, stated as refutations so
+    a consumer discharges them from whatever lookup it holds. -/
+theorem storeObject_capabilityRefs_of_not_cnode
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hOld : ∀ cn, st.objects[id]? ≠ some (.cnode cn))
+    (hNew : ∀ cn, obj ≠ .cnode cn)
+    (hStep : storeObject id obj st = .ok ((), st')) :
+    st'.lifecycle.capabilityRefs = st.lifecycle.capabilityRefs := by
+  unfold storeObject at hStep; cases hStep
+  dsimp only
+  -- `obj` is a variable, so the outer split substitutes it: the CNode arm is
+  -- refuted by `hNew` at `rfl`.  The inner discriminant is a lookup, so its arm
+  -- carries the equation `hOld` refutes.
+  split
+  · exact absurd rfl (hNew _)
+  · split
+    · rename_i oldCn hEq; exact absurd hEq (hOld oldCn)
+    · rfl
 
 -- ============================================================================
 -- T2-G (M-NEW-2): Bundled storeObject preserves allTablesInvExt
@@ -4945,15 +4980,29 @@ theorem storeObject_preserves_allTablesInvExtK
   have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
   -- Prove objectTypes insert preserves invExtK
   have hObjTypes' := RHTable.insert_preserves_invExtK st.lifecycle.objectTypes id obj.objectType hObjTypes
-  -- Prove capabilityRefs filter+fold preserves invExtK
-  have hFiltered := RHTable.filter_preserves_invExtK st.lifecycle.capabilityRefs (fun ref _ => ref.cnode ≠ id) hCapRefs
-  have hCapRefs' : (match obj with
-      | .cnode cn => cn.slots.fold (init := st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ id))
-          fun refs slot cap => refs.insert { cnode := id, slot := slot } cap.target
-      | _ => st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ id)).invExtK := by
+  -- Prove capabilityRefs erase-fold + insert-fold preserves invExtK (`v0.35.77`:
+  -- the displaced CNode's slots are erased one by one; the whole-table filter
+  -- is gone)
+  have hCapRefs' : (let cleared := match st.objects[id]? with
+        | some (.cnode oldCn) =>
+            oldCn.slots.fold (init := st.lifecycle.capabilityRefs) fun acc slot _ =>
+              acc.erase { cnode := id, slot := slot }
+        | _ => st.lifecycle.capabilityRefs
+      match obj with
+      | .cnode cn => cn.slots.fold (init := cleared) fun refs slot cap =>
+          refs.insert { cnode := id, slot := slot } cap.target
+      | _ => cleared).invExtK := by
+    have hCleared : (match st.objects[id]? with
+        | some (.cnode oldCn) =>
+            oldCn.slots.fold (init := st.lifecycle.capabilityRefs) fun acc slot _ =>
+              acc.erase { cnode := id, slot := slot }
+        | _ => st.lifecycle.capabilityRefs).invExtK := by
+      split
+      · rename_i oldCn _; exact capabilityRefs_eraseFold_preserves_invExtK oldCn _ id hCapRefs
+      · exact hCapRefs
     cases obj with
-    | cnode cn => exact capabilityRefs_fold_preserves_invExtK cn _ id hFiltered
-    | _ => exact hFiltered
+    | cnode cn => exact capabilityRefs_fold_preserves_invExtK cn _ id hCleared
+    | _ => exact hCleared
   -- Prove objectIndexSet insert preserves invExtK
   have hObjIdxSet' := RHSet.insert_preserves_invExtK st.objectIndexSet id hObjIdxSet
   -- Prove asidTable preserves invExtK (erase + insert depending on obj type)
