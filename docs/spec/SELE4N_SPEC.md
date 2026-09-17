@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.65` (`lakefile.toml`) |
+| **Package version** | `0.35.66` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 385,852 across 330 Lean files |
+| **Production LoC** | 385,892 across 330 Lean files |
 | **Test LoC** | 78,722 across 70 Lean test suites |
 | **Proved declarations** | 12,873 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -5154,7 +5154,7 @@ bounded by `objectIndex.length`.
 
 **Operations**:
 - `computeMaxWaiterPriority`: maximum effective priority among direct waiters
-- `updatePipBoost`: single-thread pipBoost recompute + conditional run queue migration
+- `updatePipBoostOnCore`: single-thread pipBoost recompute + conditional run queue migration on the holder's home core; `updatePipBoost` is its boot-core instance (one body since `v0.35.66`, the TCB write an in-place rewrite under the witnessed lookup)
 - `propagatePriorityInheritance`: chain walk applying updatePipBoost at each step
 - `revertPriorityInheritance`: structurally identical to propagation (same updatePipBoost)
 

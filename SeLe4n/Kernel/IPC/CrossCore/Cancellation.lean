@@ -684,7 +684,7 @@ theorem enqueueAbortedHolderOnCore_agrees_runQueueOnCore (st : SystemState) (c :
     (enqueueAbortedHolderOnCore st c tid).scheduler.runQueueOnCore c'
       = (enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c' := by
   unfold enqueueAbortedHolderOnCore enqueueRunnableOnCore
-  simp only [hT, hNotRunning, Bool.or_false]
+  simp only [hT, SystemState.getTcbWitnessed?_eq_some hT, hNotRunning, Bool.or_false]
   split <;> rfl
 
 /-- WS-OD OD1.7: ...and the write the placement omits is redundant — the holder's

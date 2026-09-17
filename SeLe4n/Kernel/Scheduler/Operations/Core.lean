@@ -434,15 +434,17 @@ def timerTick : Kernel Unit :=
         -- No current thread: just advance the timer
         .ok ((), { st with machine := tick st.machine })
     | some tid =>
-        match st.getTcb? tid with
-        | some tcb =>
+        match st.getTcbWitnessed? tid with
+        | some ⟨tcb, h⟩ =>
             if tcb.timeSlice ≤ 1 then
               -- Time-slice expired: reset, re-enqueue, reschedule
               -- AC2-C: Now uses configurable `configDefaultTimeSlice` from scheduler
               -- state (initialized to `defaultTimeSlice` = 5). Preservation proofs
               -- carry an `hConfigTS` hypothesis requiring `configDefaultTimeSlice > 0`.
               let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
-              let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine }
+              let st' := { st.rewriteObject tid.toObjId (.tcb tcb')
+                             (SystemState.rewriteAdmissible_tcb h tcb') with
+                           machine := tick st.machine }
               -- WS-H12b: re-enqueue current thread before schedule.
               -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
               -- `tcb.boostedPriority` (priority + PIP boost).
@@ -457,7 +459,9 @@ def timerTick : Kernel Unit :=
             else
               -- Time-slice not expired: decrement and continue
               let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
-              .ok ((), { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine })
+              .ok ((), { st.rewriteObject tid.toObjId (.tcb tcb')
+                           (SystemState.rewriteAdmissible_tcb h tcb') with
+                         machine := tick st.machine })
         | none => .error .schedulerInvariantViolation
 
 -- ============================================================================
@@ -473,16 +477,13 @@ def popDueReplenishments (st : SystemState) (now : Nat)
 
 /-- Z4-G2: Refill a single SchedContext's budget via CBS replenishment processing.
 Looks up the SchedContext, calls `processReplenishments` and `cbsUpdateDeadline`,
-writes the updated object back to the store. No-op if the SchedContext is not found
-or is not a SchedContext object. -/
+writes the updated object back to the store through `SystemState.updateSchedContext`
+(the in-place rewrite under the witnessed lookup). No-op if the SchedContext is not
+found or is not a SchedContext object. -/
 def refillSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
     (now : Nat) : SystemState :=
-  match st.getSchedContext? scId with
-  | some sc =>
-    let processed := processReplenishments sc now
-    let updated := cbsUpdateDeadline processed now true
-    { st with objects := st.objects.insert scId.toObjId (.schedContext updated) }
-  | none => st
+  st.updateSchedContext scId fun sc =>
+    cbsUpdateDeadline (processReplenishments sc now) now true
 
 /-- Z4-G3: Process all due replenishments and re-enqueue threads whose budget
 was restored. Pops due entries from the replenish queue, refills each
@@ -794,8 +795,8 @@ def handleYieldWithBudget : Kernel Unit :=
           let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
           scheduleEffective st'
         | .bound scId | .donated scId _ =>
-          match st.getSchedContext? scId with
-          | some sc =>
+          match st.getSchedContextWitnessed? scId with
+          | some ⟨sc, h⟩ =>
             -- Charge remaining budget and schedule replenishment
             let now := st.machine.timer
             let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
@@ -803,9 +804,9 @@ def handleYieldWithBudget : Kernel Unit :=
             let sc'' := scheduleReplenishment sc' now consumedAmount
             -- Insert into replenish queue
             let rq := (st.scheduler.replenishQueueOnCore bootCoreId).insert scId (now + sc.period.val)
-            -- Write updated SchedContext
-            let st' := { st with
-              objects := st.objects.insert scId.toObjId (.schedContext sc''),
+            -- Write updated SchedContext (the in-place rewrite under the witnessed lookup)
+            let st' := { st.rewriteObject scId.toObjId (.schedContext sc'')
+                           (SystemState.rewriteAdmissible_schedContext h sc'') with
               scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq }
             -- AG1-A: Re-enqueue thread at effective priority (base + PIP boost)
             let rq' := (st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid sc)

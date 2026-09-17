@@ -274,7 +274,7 @@ inventory was written:
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/` — D4: Priority Inheritance Protocol (WS-AB, v0.24.8–v0.25.0):
   - `BlockingGraph.lean` — blocking relation, chain walk, `blockingAcyclic`, chain depth bounded by `objectIndex.length`.
   - `Compute.lean` — `computeMaxWaiterPriority`.
-  - `Propagate.lean` — `updatePipBoost`, `propagatePriorityInheritance`, `revertPriorityInheritance`.
+  - `Propagate.lean` — `updatePipBoostOnCore` (and `updatePipBoost`, its boot-core instance since v0.35.66), `propagatePriorityInheritance`, `revertPriorityInheritance`.
   - `Preservation.lean` — 16 frame lemmas (scheduler, IPC, cross-subsystem).
   - `BoundedInversion.lean` — `pip_bounded_inversion`, `wcrt_parametric_bound`, determinism.
 - `SeLe4n/Kernel/Scheduler/Liveness/` — D5: Bounded Latency Theorem (WS-AB, v0.25.0–v0.25.1):

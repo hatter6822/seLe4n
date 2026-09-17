@@ -167,7 +167,7 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
     (hNoResize : ¬ (st.objects.size * 4 ≥ st.objects.capacity * 3)) :
     (wakeThread st tid bootCoreId).1 = ensureRunnable st tid := by
   unfold wakeThread enqueueRunnableOnCore ensureRunnable
-  simp only [hHome, hTcb]
+  simp only [hHome, hTcb, SystemState.getTcbWitnessed?_eq_some hTcb, SystemState.rewriteObject]
   -- `runnableOnSomeCore` collapses onto the boot-core membership test.
   have hSome : runnableOnSomeCore st tid
       = (st.scheduler.runQueueOnCore bootCoreId).contains tid := by

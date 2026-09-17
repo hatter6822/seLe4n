@@ -1,3 +1,85 @@
+## v0.35.66 — The wake, the PIP boost update, the legacy tick, the refill and the budgeted yield on the rewrite; the single-thread PIP update has one body
+
+**Raw-write migration, third cut.**  Six executable declarations stop writing the
+object table raw.  `enqueueRunnableOnCore` (`Scheduler/Operations/Selection.lean`)
+writes the woken TCB through `SystemState.rewriteObject` under the witnessed
+lookup, with its run-queue write beside it unchanged; `timerTick`
+(`Scheduler/Operations/Core.lean`) writes both of its TCB updates — the
+time-slice reset and the decrement — through the rewrite under one witnessed
+lookup, with the machine tick beside them; `refillSchedContext` is a plain
+`updateSchedContext`; and `handleYieldWithBudget` writes its charged SchedContext
+through the rewrite under `getSchedContextWitnessed?`.  Every proof that
+unfolded one of them was repaired on the recipes `v0.35.65` recorded, and the
+one the cut adds is **the case split precedes the unfold**: `cases hT :
+st.getTcb? tid` over a goal holding the unfolded witnessed match fails to
+generalise, because the lookup's *type* mentions `st.getTcb? tid` — so a proof
+splits on the typed lookup first, then unfolds and rewrites with the lookup's
+equation.  The ten `timerTick` proofs in `Scheduler/Operations/Preservation.lean`
+that cased on the raw store (`cases hObj : st.objects[tid.toObjId]?`, with a
+seven-constructor catch-all arm each) now case on the typed lookup and carry no
+catch-all, and `refillSchedContext_noop` is its typed update's `none` arm.
+
+**The single-thread PIP boost update is one body.**  `updatePipBoost` and
+`updatePipBoostOnCore` (`Scheduler/PriorityInheritance/Propagate.lean`) were two
+copies of one function differing in the literal core, held together by
+`updatePipBoost_eq_updatePipBoostOnCore_bootCore` (an `rfl`) — *one question
+answered in two places*, and the raw write inside them was two sites for one
+migration.  `updatePipBoost st tid` is **defined** as `updatePipBoostOnCore st
+bootCoreId tid` now; the per-core body is the one that migrates, and the
+equation lemma survives as the statement consumers rewrite with — definitional,
+and still the fact that the single-core name is the boot-core instance.  The
+in-file proofs and the four D4-O frame lemmas in `PriorityInheritance/Preservation.lean`
+unfold both names.
+
+**Measured and left.**  The raw-write population is **53 sites in 41 executable
+declarations across 20 files** outside `SeLe4n/Testing/` (from 60 / 47 / 22).
+`Operations/Core.lean` keeps `timerTickBudget` and `timerTickBudgetOnCore`, which
+take the TCB by value with no witness that it is the stored one, and
+`PerCoreIdle.lean` keeps `enqueueIdleThreadOnCore`, whose store grows the index
+— the next cut.  The change is 156 diff hunks across 20 Lean modules — 28 of them in the three
+definition modules, the rest proof repairs in 17 modules — plus the census pin.
+
+**Tier 3.**  Positives pin each migrated site's shape (the witnessed match and the
+rewrite, the typed update for the refill), the `updatePipBoost` body *exactly* as
+the instance call, and the equation lemma as `rfl`; per-declaration negatives
+refuse a raw insert in each of the six declarations (bounded, since `Core.lean`
+still holds the tick family's), and the dependent-match negative now covers the
+PIP module.  Every anchor mutation-tested in both directions with the token kept
+and the relation broken — a second body under the single-core name, a typed
+lookup put back in place of the witnessed one, a raw insert in the declaration
+firing and the same insert in the next declaration silent.  Golden trace and
+fixtures byte-identical.
+
+**The reply-stack write census reaches the rewrite.**  Its store frontier is the
+two table primitives plus a pinned list of the helpers that wrap them, and it
+recognises a store one hop away from a pinned name; `rewriteObject`,
+`updateTcb`, `updateSchedContext` and `withObjectStored` were not pinned, so
+`refillSchedContext`'s store — `updateSchedContext` over `rewriteObject` over
+the insert — sat two hops out, and the census reported its chain-neutral entry
+as stale the moment the definition migrated.  Deleting the entry would have been
+the fail-open answer: a writer setting `scReply` through the same helper would
+have been invisible, which is the shape `v0.35.64` took when `suspendThread`'s
+store became `updateTcb` and its entry left the list instead of the frontier
+growing.  The four helpers are pinned now (each reconciled to reach a primitive
+within the hop), `suspendThread` is a candidate again and carries its
+chain-neutral reason beside its per-core twin's, and the census prints 25 sites.
+
+**The AK7 adoption ratchet, re-anchored with its reason.**  `GETTCB_ADOPTION`
+2466 → 2453.  The counter reads whole-symbol occurrences of `getTcb?` and
+`getTcbWitnessed?` over the code view, proof text included, and the retired
+lines are proof-side unfoldings of the accessor: twelve `unfold timerTick
+SystemState.getTcb? at hStep` (the tick proofs case on the typed lookup now, so
+the accessor is never opened), eight `simp only [updatePipBoost,
+SystemState.getTcb?]` (the PIP frame lemmas unfold the two names of the update
+instead), and a handful of raw-store steps the same proofs no longer take.  What
+replaced them — nine typed case splits, and the migrated definitions' heads,
+which exchange one whole-symbol read for another — does not make the number up,
+because the equations the new proofs rewrite with (`getTcbWitnessed?_eq_some`,
+`_eq_none`) are lemma names rather than reads and are correctly not counted.
+`GETSCHEDCTX_ADOPTION` 451 → 454 and `STORE_READ_SPEC` 4720 → 4712 (diagnostic)
+move the same way, the second being the raw case analyses those proofs no longer
+perform.  The should-drop metrics and the zero floors are unchanged.
+
 ## v0.35.65 — The witnessed lookup: the typed read that carries its own equation, and the scheduler's context-save family moved onto the rewrite
 
 `v0.35.64`'s `updateTcb` / `updateSchedContext` were spelled as a dependent

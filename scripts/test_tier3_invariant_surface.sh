@@ -2849,7 +2849,7 @@ run_check "INVARIANT" rg -n '^theorem getSchedContextWitnessed\?_val\b' SeLe4n/M
 # theorem may case on a lookup this way elsewhere; these five files are where
 # the executable rewrite sites live, and the mutation this refuses keeps the
 # match and makes it dependent again.
-run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_negative_check "INVARIANT" rg -n 'match h\w* : st\.get(Tcb|SchedContext)\?' SeLe4n/Model/State.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/Selection.lean SeLe4n/Kernel/Scheduler/Operations/Core.lean SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 # The scheduler's context-save family and the affinity op are the typed rewrite,
 # or the witnessed lookup around `rewriteObject` -- bounded to each declaration.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.updateTcb outTid fun outTcb" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
@@ -2868,6 +2868,41 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContextCheck
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def preemptCurrentOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def setThreadCpuAffinity \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContextOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+
+# ----------------------------------------------------------------------------
+# v0.35.66 -- the wake, the PIP boost update, the legacy tick, the refill and
+# the budgeted yield on the rewrite; the single-thread PIP update has ONE body
+# ----------------------------------------------------------------------------
+#
+# `enqueueRunnableOnCore` writes the woken TCB through `rewriteObject` under the
+# witnessed lookup; the scheduler write beside it is unchanged.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueRunnableOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? tid with" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueRunnableOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb \{ tcb with ipcState := \.ready \}\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueRunnableOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+# The single-thread PIP boost update is `updatePipBoostOnCore`, and
+# `updatePipBoost` is its boot-core INSTANCE -- the body is exactly that call,
+# so a second copy of the update cannot come back under the single-core name.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def updatePipBoost \(st : SystemState\) \(tid : ThreadId\) : SystemState :=\n  updatePipBoostOnCore st bootCoreId tid$" SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def updatePipBoostOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? tid with" SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def updatePipBoostOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(KernelObject\.tcb tcb\x27\)" SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def updatePipBoost(OnCore)? \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean'
+# The equation lemma survives as the statement that the instance IS the
+# per-core update at the boot core -- definitional now, and still the fact a
+# consumer rewrites with.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem updatePipBoost_eq_updatePipBoostOnCore_bootCore[^\n]*(\n([ \t][^\n]*)?)*updatePipBoost st tid = updatePipBoostOnCore st bootCoreId tid := rfl" SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean'
+# The legacy boot-core tick: both TCB writes are the rewrite under one witnessed
+# lookup, with the machine tick beside them.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTick : Kernel Unit :=[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? tid with" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTick : Kernel Unit :=[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb tcb\x27\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb tcb\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def timerTick : Kernel Unit :=[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+# The refill is a plain typed update.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def refillSchedContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.updateSchedContext scId fun sc =>" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def refillSchedContext \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+# The budgeted yield writes its SchedContext through the rewrite under the
+# witnessed lookup.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def handleYieldWithBudget : Kernel Unit :=[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContextWitnessed\? scId with" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def handleYieldWithBudget : Kernel Unit :=[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject scId\.toObjId \(\.schedContext sc\x27\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def handleYieldWithBudget : Kernel Unit :=[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 
 # ============================================================================
 # WS-OD OD6 -- the payoff

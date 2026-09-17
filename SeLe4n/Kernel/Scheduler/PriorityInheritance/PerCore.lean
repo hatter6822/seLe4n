@@ -101,16 +101,20 @@ theorem updatePipBoostOnCore_preserves_blockingServer (st : SystemState) (c : Co
     blockingServer (updatePipBoostOnCore st c tid) t = blockingServer st t := by
   by_cases hEq : t = tid
   · rw [hEq]
-    unfold updatePipBoostOnCore
-    -- The transition discriminates on `getTcb?`, so the split is its two arms;
-    -- the congruence lemma wants the store form, which `getTcb?_eq_some_iff`
-    -- supplies without a second reading.
+    -- The transition discriminates on the witnessed lookup, so the split is
+    -- the typed accessor's two arms carried in by the lookup's equations; the
+    -- congruence lemma wants the store form, which `getTcb?_eq_some_iff`
+    -- supplies without a second reading.  The split precedes the unfold: the
+    -- witnessed lookup's type mentions `st.getTcb? tid`.
     cases hTid : st.getTcb? tid with
-    | none => rfl
+    | none =>
+      unfold updatePipBoostOnCore
+      rw [SystemState.getTcbWitnessed?_eq_none hTid]
     | some tcb =>
       have hRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
         (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTid
-      simp only []
+      unfold updatePipBoostOnCore
+      simp only [SystemState.getTcbWitnessed?_eq_some hTid]
       split
       · rfl
       · refine blockingServer_ipcState_congr _ _ _
@@ -162,10 +166,10 @@ theorem updatePipBoostOnCore_getTcb?_pipBoost (st : SystemState) (c : CoreId) (t
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
     ∃ tcb', (updatePipBoostOnCore st c tid).getTcb? tid = some tcb' ∧
       tcb'.pipBoost = computeMaxWaiterPriority st tid := by
-  -- The transition discriminates on `getTcb?`, which is what this hypothesis
-  -- already says; no crossing to the store form is needed to drive the match.
+  -- The transition discriminates on the witnessed lookup, driven by the
+  -- hypothesis through the lookup's own equation.
   unfold updatePipBoostOnCore
-  simp only [hTcb]
+  simp only [SystemState.getTcbWitnessed?_eq_some hTcb]
   split
   · -- no-op: pipBoost already equals newBoost
     rename_i hEq
@@ -490,7 +494,7 @@ theorem restoreToReadyOnCore_pipBoost_recomputed (st : SystemState) (c : CoreId)
   by_cases hRun : runnableOnSomeCore (restoreToReadyMidState st tid) tid = true
   · have hEq : enqueueRunnableOnCore (restoreToReadyMidState st tid) c tid
         = restoreToReadyMidState st tid := by
-      unfold enqueueRunnableOnCore; rw [hSt2Tcb]; simp [hRun]
+      unfold enqueueRunnableOnCore; rw [SystemState.getTcbWitnessed?_eq_some hSt2Tcb]; simp [hRun]
     rw [hEq]
     exact ⟨_, hSt2Tcb, rfl⟩
   · have hFresh : runnableOnSomeCore (restoreToReadyMidState st tid) tid = false := by
@@ -701,7 +705,7 @@ theorem updatePipBoostOnCore_getTcb?_cpuAffinity (st : SystemState) (c : CoreId)
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
     ∃ t', (updatePipBoostOnCore st c tid).getTcb? tid = some t' ∧ t'.cpuAffinity = tcb.cpuAffinity := by
   unfold updatePipBoostOnCore
-  simp only [hTcb]
+  simp only [SystemState.getTcbWitnessed?_eq_some hTcb]
   split
   · exact ⟨tcb, hTcb, rfl⟩
   · refine ⟨{ tcb with pipBoost := computeMaxWaiterPriority st tid }, ?_, rfl⟩

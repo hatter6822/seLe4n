@@ -115,14 +115,20 @@ preserves every thread's home core. -/
 theorem enqueueRunnableOnCore_determineTargetCore (st : SystemState) (c : CoreId)
     (tid0 : SeLe4n.ThreadId) (hInv : st.objects.invExt) (t : SeLe4n.ThreadId) :
     determineTargetCore (enqueueRunnableOnCore st c tid0) t = determineTargetCore st t := by
-  unfold enqueueRunnableOnCore
+  -- The case split precedes the unfold: the witnessed lookup's type mentions
+  -- `st.getTcb? tid0`, so a `cases` over the unfolded match cannot generalise it.
   cases hTcb : st.getTcb? tid0 with
-  | none => rfl
+  | none =>
+    unfold enqueueRunnableOnCore
+    rw [SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
+    unfold enqueueRunnableOnCore
+    rw [SystemState.getTcbWitnessed?_eq_some hTcb]
     cases hR : runnableOnSomeCore st tid0 with
-    | true => rfl
+    | true => simp
     | false =>
       have hRaw := (SystemState.getTcb?_eq_some_iff st tid0 tcb).mp hTcb
+      simp only [Bool.false_eq_true, if_false]
       exact determineTargetCore_insert_tcb st _ tid0 tcb { tcb with ipcState := .ready }
         hInv hRaw rfl rfl t
 
@@ -132,14 +138,18 @@ theorem enqueueRunnableOnCore_boundThread (st : SystemState) (c : CoreId)
     (tid0 : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
     ((enqueueRunnableOnCore st c tid0).getSchedContext? scId).map (·.boundThread)
       = (st.getSchedContext? scId).map (·.boundThread) := by
-  unfold enqueueRunnableOnCore
   cases hTcb : st.getTcb? tid0 with
-  | none => rfl
+  | none =>
+    unfold enqueueRunnableOnCore
+    rw [SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
+    unfold enqueueRunnableOnCore
+    rw [SystemState.getTcbWitnessed?_eq_some hTcb]
     cases hR : runnableOnSomeCore st tid0 with
-    | true => rfl
+    | true => simp
     | false =>
       have hRaw := (SystemState.getTcb?_eq_some_iff st tid0 tcb).mp hTcb
+      simp only [Bool.false_eq_true, if_false]
       rw [getSchedContext?_insert_tcb_eq st _ tid0 tcb { tcb with ipcState := .ready }
         hInv hRaw rfl scId]
 
@@ -148,12 +158,14 @@ preserves every thread's home core. -/
 theorem refillSchedContext_determineTargetCore (st : SystemState) (scId0 : SeLe4n.SchedContextId)
     (now : Nat) (hInv : st.objects.invExt) (t : SeLe4n.ThreadId) :
     determineTargetCore (refillSchedContext st scId0 now) t = determineTargetCore st t := by
+  -- The refill is a typed update: its two equations replace the split.
   unfold refillSchedContext
-  split
-  · rename_i sc hOld
+  cases hOld : st.getSchedContext? scId0 with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hOld]
+  | some sc =>
+    rw [SystemState.updateSchedContext_eq_of_some hOld]
     exact determineTargetCore_congr_getTcb? _ st t
       (getTcb?_insert_schedContext_eq st _ scId0 sc _ hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hOld) rfl t)
-  · rfl
 
 /-- WS-SM SM5.I: `refillSchedContext` preserves every SchedContext's `boundThread`
 projection (`processReplenishments` / `cbsUpdateDeadline` write only budget / deadline
@@ -163,14 +175,15 @@ theorem refillSchedContext_boundThread (st : SystemState) (scId0 : SeLe4n.SchedC
     ((refillSchedContext st scId0 now).getSchedContext? scId).map (·.boundThread)
       = (st.getSchedContext? scId).map (·.boundThread) := by
   unfold refillSchedContext
-  split
-  · rename_i sc hOld
+  cases hOld : st.getSchedContext? scId0 with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hOld]
+  | some sc =>
+    rw [SystemState.updateSchedContext_eq_of_some hOld]
     have hBT : (cbsUpdateDeadline (processReplenishments sc now) now true).boundThread
         = sc.boundThread := by
       simp only [cbsUpdateDeadline, processReplenishments, applyRefill]
       split <;> rfl
     exact getSchedContext?_boundThread_insert_schedContext st _ scId0 sc _ hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hOld) hBT rfl scId
-  · rfl
 
 /-- WS-SM SM5.I: `saveOutgoingContextOnCore` (a register-context TCB write) preserves
 every thread's home core. -/
@@ -248,9 +261,8 @@ theorem processOneReplenishmentOnCore_determineTargetCore (st : SystemState) (ec
       = determineTargetCore st t := by
   have hRefillDt := refillSchedContext_determineTargetCore st scId0 now hInv t
   have hRefillInv : (refillSchedContext st scId0 now).objects.invExt := by
-    unfold refillSchedContext; split
-    · exact RHTable_insert_preserves_invExt st.objects _ _ hInv
-    · exact hInv
+    unfold refillSchedContext
+    exact SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
   simp only [processOneReplenishmentOnCore]
   split
   · split
@@ -269,9 +281,8 @@ theorem processOneReplenishmentOnCore_boundThread (st : SystemState) (ec : CoreI
       = (st.getSchedContext? scId).map (·.boundThread) := by
   have hRefillBt := refillSchedContext_boundThread st scId0 now hInv scId
   have hRefillInv : (refillSchedContext st scId0 now).objects.invExt := by
-    unfold refillSchedContext; split
-    · exact RHTable_insert_preserves_invExt st.objects _ _ hInv
-    · exact hInv
+    unfold refillSchedContext
+    exact SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
   simp only [processOneReplenishmentOnCore]
   split
   · split

@@ -627,7 +627,7 @@ theorem enqueueRunnableOnCore_offSchedulerAgrees_of_ready
     OffSchedulerAgrees st (enqueueRunnableOnCore st c tid) := by
   refine ⟨fun oid => enqueueRunnableOnCore_objects_getElem_eq_of_ready st c tid tcb hTcb hReady hInv oid,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  all_goals simp only [enqueueRunnableOnCore, hTcb]
+  all_goals simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
   all_goals split <;> rfl
 
 /-- SM6.D: the cross-core `wakeThread` of an already-`.ready` thread agrees

@@ -1383,8 +1383,11 @@ could otherwise dispatch concurrently (the same thread running on two cores).
 Fail-closed: a `tid` that does not resolve to a TCB is a no-op (identity),
 mirroring `IPC.ensureRunnable`'s `none => st` discipline.
 
-Footprint: WRITES core `c`'s run-queue slot and `tid`'s TCB; the single-placement
-guard additionally READS every per-core run queue.  `wakeThreadLockSet` declares
+Footprint: WRITES core `c`'s run-queue slot and `tid`'s TCB — the TCB through
+`SystemState.rewriteObject` under the witnessed lookup (`getTcbWitnessed?`), so
+the wake's object-store write is one in-place table insert whose admissibility
+proof is erased; the single-placement guard additionally READS every per-core
+run queue.  `wakeThreadLockSet` declares
 the write footprint; the guard's all-core read coverage is formalised when the
 wake is wired under `withLockSet` at SM5.D (the lock set's runtime consumption is
 SM5.D+).  Every other thread's TCB and every other core's `current` slot are
@@ -1392,13 +1395,12 @@ framed out (the cross-core-independence + per-thread frame lemmas in
 `PerCoreWake`). -/
 def enqueueRunnableOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : SystemState :=
-  match st.getTcb? tid with
-  | some tcb =>
+  match st.getTcbWitnessed? tid with
+  | some ⟨tcb, h⟩ =>
       if runnableOnSomeCore st tid then st
       else
-        let readyTcb : KernelObject := .tcb { tcb with ipcState := .ready }
-        { st with
-            objects := st.objects.insert tid.toObjId readyTcb,
+        { st.rewriteObject tid.toObjId (.tcb { tcb with ipcState := .ready })
+            (SystemState.rewriteAdmissible_tcb h _) with
             scheduler := st.scheduler.setRunQueueOnCore c
               ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)) }
   | none => st

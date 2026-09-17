@@ -1434,9 +1434,9 @@ theorem enqueueRunnableOnCore_mem_old (st : SystemState) (c c' : CoreId)
     (hMem : x ∈ st.scheduler.runQueueOnCore c') :
     x ∈ (enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c' := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]; exact hMem
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]; exact hMem
   | some tcb =>
-    simp only [enqueueRunnableOnCore, hTcb]
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
     split
     · exact hMem
     · by_cases hcc : c' = c

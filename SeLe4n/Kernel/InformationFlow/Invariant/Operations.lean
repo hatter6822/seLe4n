@@ -2893,7 +2893,7 @@ theorem timerTick_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold timerTick SystemState.getTcb? at hStep
+  unfold timerTick at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; subst hStep
@@ -2902,10 +2902,12 @@ theorem timerTick_preserves_projection
     simp only [hCur] at hStep
     have hTidHigh := hCurrentHigh tid hCur
     have hTidObjHigh := hCurrentObjHigh tid hCur
-    -- Split on the match st.objects[tid.toObjId]?
+    -- Split on the witnessed lookup (value, witness, equation), then unfold the
+    -- rewrite so the intermediate states below are the literals they name.
     split at hStep
-    · -- Case: some (.tcb tcb)
-      next tcb hTcbEq =>
+    · -- Case: some ⟨tcb, _⟩
+      next tcb _ hTcbEq =>
+      dsimp only [SystemState.rewriteObject] at hStep
       -- Split on timeSlice ≤ 1
       split at hStep
       · -- Time-slice expired: insert back into runQueue + schedule

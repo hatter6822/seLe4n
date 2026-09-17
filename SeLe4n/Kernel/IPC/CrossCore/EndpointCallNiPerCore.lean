@@ -212,9 +212,9 @@ theorem enqueueRunnableOnCore_projectRunnableOnCore_high (ctx : LabelingContext)
   by_cases hcc : c' = c
   · subst hcc
     cases hTcb : st.getTcb? tid with
-    | none => simp only [enqueueRunnableOnCore, hTcb]
+    | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
     | some tcb =>
-      simp only [enqueueRunnableOnCore, hTcb]
+      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
       split
       · rfl
       · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
@@ -267,9 +267,9 @@ theorem enqueueRunnableOnCore_activeDomainOnCore (st : SystemState) (c : CoreId)
     (enqueueRunnableOnCore st c tid).scheduler.activeDomainOnCore c'
       = st.scheduler.activeDomainOnCore c' := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
-    simp only [enqueueRunnableOnCore, hTcb]
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
     split
     · rfl
     · simp only [SchedulerState.setRunQueueOnCore_activeDomainOnCore]
@@ -280,9 +280,9 @@ theorem enqueueRunnableOnCore_domainTimeRemainingOnCore (st : SystemState) (c : 
     (enqueueRunnableOnCore st c tid).scheduler.domainTimeRemainingOnCore c'
       = st.scheduler.domainTimeRemainingOnCore c' := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
-    simp only [enqueueRunnableOnCore, hTcb]
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
     split
     · rfl
     · simp only [SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
@@ -293,9 +293,9 @@ theorem enqueueRunnableOnCore_domainScheduleIndexOnCore (st : SystemState) (c : 
     (enqueueRunnableOnCore st c tid).scheduler.domainScheduleIndexOnCore c'
       = st.scheduler.domainScheduleIndexOnCore c' := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
-    simp only [enqueueRunnableOnCore, hTcb]
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
     split
     · rfl
     · simp only [SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
@@ -304,8 +304,8 @@ theorem enqueueRunnableOnCore_domainScheduleIndexOnCore (st : SystemState) (c : 
 theorem enqueueRunnableOnCore_machineEq (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : (enqueueRunnableOnCore st c tid).machine = st.machine := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]
-  | some tcb => simp only [enqueueRunnableOnCore, hTcb]; split <;> rfl
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
+  | some tcb => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]; split <;> rfl
 
 /-- `removeRunnableOnCore` leaves every core's machine registers untouched. -/
 theorem removeRunnableOnCore_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId)

@@ -196,6 +196,20 @@ def objectStoreHelpers : List Name :=
     -- which is the argument for the pin.
   , `SeLe4n.Model.storeObjectChecked
   , `SeLe4n.Model.storeObjectKindChecked
+    -- The in-place rewrite and the three spellings over it (`v0.35.64`): the
+    -- proof-carrying `rewriteObject` is the bare table insert, `updateTcb` and
+    -- `updateSchedContext` are the typed read-modify-writes over it, and
+    -- `withObjectStored` is the pure `storeObject`.  Without them a writer that
+    -- rebuilds a SchedContext and stores it through `updateSchedContext` sits
+    -- two hops from the primitive and outside the frontier — which is how
+    -- `refillSchedContext`'s chain-neutral entry read as stale the moment its
+    -- store became the typed update (`v0.35.66`), and how a writer setting
+    -- `scReply` through the same helper would have been invisible.  Each is
+    -- pinned below to reach a primitive within the one hop the frontier buys.
+  , `SeLe4n.Model.SystemState.rewriteObject
+  , `SeLe4n.Model.SystemState.updateTcb
+  , `SeLe4n.Model.SystemState.updateSchedContext
+  , `SeLe4n.Model.SystemState.withObjectStored
     -- The frozen surface's own store.  It lands a built record in
     -- `FrozenSystemState.objects`, which is where the frozen chain lives, so a
     -- derivation that knows only the live spellings sees a frozen writer build
@@ -308,8 +322,10 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ sc with boundThread := none, isActive := false }` and the TCB's `schedContextBinding`; the binding graph, not the stack")
   , (`SeLe4n.Kernel.cancelBoundDonationOnCore,
       "the per-core spelling of the same binding cancel; same reason")
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThread,
+      "composes `consumeReplyLink`, which is registered; writes no chain field in its own body (its direct store is `updateTcb`, which the frontier reaches since v0.35.66 — the entry left this list at v0.35.64, when the frontier did not, and that gap was the fail-open direction)")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore,
-      "composes `consumeReplyLink`, which is registered; writes no chain field in its own body (its single-core twin left this list at v0.35.64, when its own direct store became `updateTcb` and the frontier stopped reaching it)")
+      "composes `consumeReplyLink`, which is registered; writes no chain field in its own body")
   , (`SeLe4n.Kernel.Liveness.stepPost,
       "the scheduler trace model's step: a SchedContext budget update and a replenish queue; no chain field")
     -- The dispatch payoff's pack-inhabitation witnesses.  They build a fresh

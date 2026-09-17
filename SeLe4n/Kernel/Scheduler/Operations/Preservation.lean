@@ -223,7 +223,7 @@ theorem timerTick_preserves_runQueueWellFormed
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hStep : timerTick st = .ok ((), st')) :
     RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
-  unfold timerTick SystemState.getTcb? at hStep
+  unfold timerTick at hStep
   cases hCur : st.scheduler.currentOnCore bootCoreId with
   | none =>
     simp only [hCur, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -232,12 +232,13 @@ theorem timerTick_preserves_runQueueWellFormed
     exact hwf
   | some tid =>
     simp only [hCur] at hStep
-    cases hObj : st.objects[tid.toObjId]? with
-    | none => simp [hObj] at hStep
-    | some obj =>
-      cases obj with
-      | tcb tcb =>
-        simp only [hObj] at hStep
+    cases hObj : st.getTcb? tid with
+    | none =>
+      rw [SystemState.getTcbWitnessed?_eq_none hObj] at hStep
+      simp at hStep
+    | some tcb =>
+        rw [SystemState.getTcbWitnessed?_eq_some hObj] at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
         split at hStep
         · -- Time-slice expired: insert + schedule
           have hwfIns : RunQueue.wellFormed
@@ -253,9 +254,6 @@ theorem timerTick_preserves_runQueueWellFormed
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
           exact hwf
-      | endpoint _ | notification _ | cnode _
-      | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-        simp [hObj] at hStep
 
 -- audit-pass-9: `scheduleDomain_preserves_runQueueWellFormed` is defined
 -- later in this file (after `switchDomain_preserves_runQueueWellFormed`)
@@ -764,19 +762,19 @@ theorem timerTick_preserves_schedulerInvariantBundle
     (hStep : timerTick st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
-  unfold timerTick SystemState.getTcb? at hStep
+  unfold timerTick at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; cases hStep; exact ⟨hQCC, hRQU, hCTV⟩
   | some tid =>
     simp only [hCur] at hStep
-    cases hObj : st.objects[tid.toObjId]? with
-    | none => simp [hObj] at hStep
-    | some obj =>
-      cases obj with
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
-      | tcb tcb =>
-        simp only [hObj] at hStep
+    cases hObj : st.getTcb? tid with
+    | none =>
+      rw [SystemState.getTcbWitnessed?_eq_none hObj] at hStep
+      simp at hStep
+    | some tcb =>
+        rw [SystemState.getTcbWitnessed?_eq_some hObj] at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
         by_cases hExpire : tcb.timeSlice ≤ 1
         · -- Time-slice expired: re-enqueue + reschedule
           rw [if_pos hExpire] at hStep
@@ -1172,19 +1170,19 @@ private theorem timerTick_preserves_timeSlicePositive
     (hConfigTS : st.scheduler.configDefaultTimeSlice > 0)
     (hStep : timerTick st = .ok ((), st')) :
     timeSlicePositive st' := by
-  unfold timerTick SystemState.getTcb? at hStep
+  unfold timerTick at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; cases hStep; exact hInv
   | some tid =>
     simp only [hCur] at hStep
-    cases hObj : st.objects[tid.toObjId]? with
-    | none => simp [hObj] at hStep
-    | some obj =>
-      cases obj with
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
-      | tcb tcb =>
-        simp only [hObj] at hStep
+    cases hObj : st.getTcb? tid with
+    | none =>
+      rw [SystemState.getTcbWitnessed?_eq_none hObj] at hStep
+      simp at hStep
+    | some tcb =>
+        rw [SystemState.getTcbWitnessed?_eq_some hObj] at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
         by_cases hExpire : tcb.timeSlice ≤ 1
         · -- Time-slice expired: reset to configDefaultTimeSlice, insert, reschedule
           rw [if_pos hExpire] at hStep
@@ -1369,20 +1367,20 @@ private theorem timerTick_preserves_currentTimeSlicePositive
     (hConfigTS : st.scheduler.configDefaultTimeSlice > 0)
     (hStep : timerTick st = .ok ((), st')) :
     currentTimeSlicePositive st' := by
-  unfold timerTick SystemState.getTcb? at hStep
+  unfold timerTick at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; cases hStep
     simp [currentTimeSlicePositive, hCur]
   | some tid =>
     simp only [hCur] at hStep
-    cases hObj : st.objects[tid.toObjId]? with
-    | none => simp [hObj] at hStep
-    | some obj =>
-      cases obj with
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
-      | tcb tcb =>
-        simp only [hObj] at hStep
+    cases hObj : st.getTcb? tid with
+    | none =>
+      rw [SystemState.getTcbWitnessed?_eq_none hObj] at hStep
+      simp at hStep
+    | some tcb =>
+        rw [SystemState.getTcbWitnessed?_eq_some hObj] at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
         by_cases hExpire : tcb.timeSlice ≤ 1
         · -- Expired: insert + schedule. schedule selects from runnable (timeSlicePositive covers it)
           rw [if_pos hExpire] at hStep
@@ -1663,7 +1661,7 @@ theorem timerTick_preserves_runnableThreadsAreTCBs
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     runnableThreadsAreTCBs st' := by
-  unfold timerTick SystemState.getTcb? at hStep
+  unfold timerTick at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
       -- No current thread: only machine timer advances
@@ -1672,14 +1670,13 @@ theorem timerTick_preserves_runnableThreadsAreTCBs
       exact hAllTcb tid hMem
   | some curTid =>
       simp only [hCur] at hStep
-      cases hObj : st.objects[curTid.toObjId]? with
-      | none => simp [hObj] at hStep
-      | some obj =>
-          cases obj with
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-              simp [hObj] at hStep
-          | tcb tcb =>
-              simp only [hObj] at hStep
+      cases hObj : st.getTcb? curTid with
+      | none =>
+        rw [SystemState.getTcbWitnessed?_eq_none hObj] at hStep
+        simp at hStep
+      | some tcb =>
+              rw [SystemState.getTcbWitnessed?_eq_some hObj] at hStep
+              dsimp only [SystemState.rewriteObject] at hStep
               by_cases hExp : tcb.timeSlice ≤ 1
               · -- Time-slice expired: reset TCB, re-enqueue, schedule
                 rw [if_pos hExp] at hStep
@@ -2052,20 +2049,20 @@ theorem timerTick_preserves_domainTimeRemainingPositive
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     domainTimeRemainingPositive st' := by
-  unfold timerTick SystemState.getTcb? at hStep
+  unfold timerTick at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp only [hCur, Except.ok.injEq, Prod.mk.injEq] at hStep
     obtain ⟨_, rfl⟩ := hStep; exact hInv
   | some tid =>
     simp only [hCur] at hStep
-    cases hObj : st.objects[tid.toObjId]? with
-    | none => simp [hObj] at hStep
-    | some obj =>
-      cases obj with
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
-      | tcb tcb =>
-        simp only [hObj] at hStep
+    cases hObj : st.getTcb? tid with
+    | none =>
+      rw [SystemState.getTcbWitnessed?_eq_none hObj] at hStep
+      simp at hStep
+    | some tcb =>
+        rw [SystemState.getTcbWitnessed?_eq_some hObj] at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
         by_cases hExpire : tcb.timeSlice ≤ 1
         · -- Time-slice expired: schedule on modified state
           simp only [hExpire, ite_true] at hStep
@@ -2213,18 +2210,18 @@ theorem timerTick_preserves_domainSchedule
     (st st' : SystemState)
     (hStep : timerTick st = .ok ((), st')) :
     st'.scheduler.domainSchedule = st.scheduler.domainSchedule := by
-  unfold timerTick SystemState.getTcb? at hStep
+  unfold timerTick at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
   | some tid =>
     simp [hCur] at hStep
     split at hStep
-    · rename_i tcb _
+    · rename_i tcb _ _
       split at hStep
       · -- Time-slice expired: schedule is called
         have hSched := schedule_preserves_domainSchedule _ _ hStep
-        simp at hSched; exact hSched
+        simp [SystemState.rewriteObject_scheduler] at hSched; exact hSched
       · -- Time-slice not expired: only objects/machine changed
         simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     · simp at hStep
@@ -2789,19 +2786,22 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     edfCurrentHasEarliestDeadline st' := by
-  unfold timerTick SystemState.getTcb? at hStep
+  unfold timerTick at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; cases hStep
     unfold edfCurrentHasEarliestDeadline; simp [hCur]
   | some curTid =>
     simp only [hCur] at hStep
-    cases hObj : st.objects[curTid.toObjId]? with
-    | none => simp [hObj] at hStep
-    | some obj =>
-      cases obj with
-      | tcb curTcb =>
-        simp only [hObj] at hStep
+    cases hObj : st.getTcb? curTid with
+    | none =>
+      rw [SystemState.getTcbWitnessed?_eq_none hObj] at hStep
+      simp at hStep
+    | some curTcb =>
+        rw [SystemState.getTcbWitnessed?_eq_some hObj] at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
+        have hRaw : st.objects[curTid.toObjId]? = some (.tcb curTcb) :=
+          (SystemState.getTcb?_eq_some_iff st curTid curTcb).mp hObj
         by_cases hExpire : curTcb.timeSlice ≤ 1
         · -- Time-slice expired: reset, re-enqueue, reschedule
           rw [if_pos hExpire] at hStep
@@ -2887,7 +2887,7 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
           subst hStep
           unfold edfCurrentHasEarliestDeadline at hEdf ⊢
           simp only [hCur] at hEdf ⊢
-          rw [hObj] at hEdf
+          rw [hRaw] at hEdf
           simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
           simp only [beq_self_eq_true, ite_true]
           intro t hMem
@@ -2897,8 +2897,6 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
             intro _ _ _; exact Or.inr (Or.inr (Nat.le_refl _))
           · have hEqF : (curTid.toObjId == t.toObjId) = false := Bool.eq_false_iff.mpr hEq
             rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp only [hEqF]; exact hEdf
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-        simp [hObj] at hStep
 
 -- ============================================================================
 -- WS-H12c/H-03: contextMatchesCurrent preservation proofs
@@ -2993,7 +2991,7 @@ private theorem timerTick_preserves_contextMatchesCurrent
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     contextMatchesCurrent st' := by
-  unfold timerTick SystemState.getTcb? at hStep
+  unfold timerTick at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- No current thread → just advance timer → current = none → vacuous
@@ -3002,12 +3000,15 @@ private theorem timerTick_preserves_contextMatchesCurrent
     simp [contextMatchesCurrent, hCur]
   | some curTid =>
     simp only [hCur] at hStep
-    cases hObj : st.objects[curTid.toObjId]? with
-    | none => simp [hObj] at hStep
-    | some obj =>
-      cases obj with
-      | tcb tcb =>
-        simp only [hObj] at hStep
+    cases hObj : st.getTcb? curTid with
+    | none =>
+      rw [SystemState.getTcbWitnessed?_eq_none hObj] at hStep
+      simp at hStep
+    | some tcb =>
+        rw [SystemState.getTcbWitnessed?_eq_some hObj] at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
+        have hRaw : st.objects[curTid.toObjId]? = some (.tcb tcb) :=
+          (SystemState.getTcb?_eq_some_iff st curTid tcb).mp hObj
         by_cases hExpire : tcb.timeSlice ≤ 1
         · -- Time slice expired → re-enqueue + schedule
           simp only [hExpire, ite_true] at hStep
@@ -3021,10 +3022,8 @@ private theorem timerTick_preserves_contextMatchesCurrent
           simp only [contextMatchesCurrent, hCur]
           simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv, beq_self_eq_true]; simp
           -- Goal: (tick st.machine).regs = tcb.registerContext
-          simp only [contextMatchesCurrent, hCur, hObj] at hInv
+          simp only [contextMatchesCurrent, hCur, hRaw] at hInv
           simp only [tick]; exact hInv
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-        simp [hObj] at hStep
 
 /-- WS-H12c: Frame theorem for `contextMatchesCurrent`. If a state transition
 preserves `machine.regs`, `scheduler.current`, and the object at the current
@@ -3279,20 +3278,19 @@ private theorem timerTick_preserves_schedulerPriorityMatch
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     schedulerPriorityMatch st' := by
-  unfold timerTick SystemState.getTcb? at hStep
+  unfold timerTick at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hpm
   | some curTid =>
     simp only [hCur] at hStep
-    cases hObj : st.objects[curTid.toObjId]? with
-    | none => simp [hObj] at hStep
-    | some obj =>
-      cases obj with
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-        simp [hObj] at hStep
-      | tcb curTcb =>
-        simp only [hObj] at hStep
+    cases hObj : st.getTcb? curTid with
+    | none =>
+      rw [SystemState.getTcbWitnessed?_eq_none hObj] at hStep
+      simp at hStep
+    | some curTcb =>
+        rw [SystemState.getTcbWitnessed?_eq_some hObj] at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
         have hNotMem : curTid ∉ (st.scheduler.runQueueOnCore bootCoreId) := by
           simp [queueCurrentConsistent, hCur] at hQCC
           intro h; exact hQCC ((RunQueue.mem_toList_iff_mem _ _).2 h)
@@ -3628,19 +3626,15 @@ theorem refillSchedContext_noop
     (st : SystemState) (scId : SeLe4n.SchedContextId) (now : Nat)
     (hNone : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) :
     refillSchedContext st scId now = st := by
-  unfold refillSchedContext SystemState.getSchedContext?
-  simp only [GetElem?.getElem?]
-  match h : st.objects.get? scId.toObjId with
-  | none => rfl
-  | some (.schedContext sc) =>
-    exfalso; exact hNone sc (by simp [GetElem?.getElem?, h])
-  | some (.tcb _) => rfl
-  | some (.endpoint _) => rfl
-  | some (.notification _) => rfl
-  | some (.vspaceRoot _) => rfl
-  | some (.cnode _) => rfl
-  | some (.untyped _) => rfl
-  | some (.reply _) => rfl
+  -- The refill is a typed update, which is the identity exactly when the typed
+  -- lookup answers `none`; the raw hypothesis is what rules out its `some` arm.
+  have hNone' : st.getSchedContext? scId = none := by
+    cases h : st.getSchedContext? scId with
+    | none => rfl
+    | some sc =>
+      exact absurd ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp h) (hNone sc)
+  unfold refillSchedContext
+  exact SystemState.updateSchedContext_eq_self_of_none hNone' _
 
 -- Z4-Q1 (substantive): Budget decrement preserves positivity.
 

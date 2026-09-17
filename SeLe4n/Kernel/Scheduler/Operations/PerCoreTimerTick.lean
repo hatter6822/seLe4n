@@ -558,10 +558,7 @@ theorem refillSchedContext_preserves_objects_invExt (st : SystemState)
     (scId : SeLe4n.SchedContextId) (now : Nat) (hInv : st.objects.invExt) :
     (refillSchedContext st scId now).objects.invExt := by
   unfold refillSchedContext
-  split <;>
-    first
-      | exact RHTable_insert_preserves_invExt st.objects _ _ hInv
-      | exact hInv
+  exact SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
 
 /-- WS-SM SM5.D.4 (preservation helper, general core form): `enqueueRunnableOnCore`
 preserves run-queue well-formedness on **every** core `c'` — on the enqueued core
@@ -614,7 +611,7 @@ theorem processOneReplenishmentOnCore_preserves_runQueueOnCore_wellFormed (st : 
   -- core's run queue verbatim.
   have hRefRq : (refillSchedContext st scId now).scheduler.runQueueOnCore c'
       = st.scheduler.runQueueOnCore c' := by
-    unfold refillSchedContext; split <;> rfl
+    unfold refillSchedContext; rw [SystemState.updateSchedContext_scheduler]
   have hRef : ((refillSchedContext st scId now).scheduler.runQueueOnCore c').wellFormed := by
     rw [hRefRq]; exact hwf
   simp only [processOneReplenishmentOnCore]
@@ -1232,13 +1229,13 @@ scheduler unchanged. -/
 @[simp] theorem refillSchedContext_scheduler_eq (st : SystemState)
     (scId : SeLe4n.SchedContextId) (now : Nat) :
     (refillSchedContext st scId now).scheduler = st.scheduler := by
-  unfold refillSchedContext; split <;> rfl
+  unfold refillSchedContext; exact SystemState.updateSchedContext_scheduler _ _ _
 
 /-- WS-SM SM5.D.4: `refillSchedContext` leaves the machine state unchanged. -/
 @[simp] theorem refillSchedContext_machine_eq (st : SystemState)
     (scId : SeLe4n.SchedContextId) (now : Nat) :
     (refillSchedContext st scId now).machine = st.machine := by
-  unfold refillSchedContext; split <;> rfl
+  unfold refillSchedContext; exact SystemState.updateSchedContext_machine _ _ _
 
 /-- WS-SM SM5.C: `enqueueRunnableOnCore` leaves the machine state unchanged
 (it writes only the object store and a run-queue slot). -/

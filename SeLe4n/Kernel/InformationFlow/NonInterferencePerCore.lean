@@ -1018,7 +1018,7 @@ the boot core's run queue and delegates to `schedule`. -/
 theorem timerTick_confinedToBootCore (st st' : SystemState)
     (hStep : SeLe4n.Kernel.timerTick st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
-  unfold SeLe4n.Kernel.timerTick SystemState.getTcb? at hStep
+  unfold SeLe4n.Kernel.timerTick at hStep
   cases hCur : st.scheduler.currentOnCore bootCoreId with
   | none =>
     simp only [hCur, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -1028,7 +1028,10 @@ theorem timerTick_confinedToBootCore (st st' : SystemState)
   | some tid =>
     simp only [hCur] at hStep
     split at hStep
-    · split at hStep
+    · -- The witnessed arm: unfold the rewrite so the intermediate states are the
+      -- literals the frame lemmas below read.
+      dsimp only [SystemState.rewriteObject] at hStep
+      split at hStep
       · -- time slice expired: object write + timer + boot-core re-enqueue + schedule
         refine observableSlotsConfinedToCore_trans ?_ (schedule_confinedToBootCore _ st' hStep)
         refine ⟨?_, ?_, ?_, ?_, ?_, fun c _ => rfl⟩ <;> intro c hc <;> simp [Ne.symm hc]

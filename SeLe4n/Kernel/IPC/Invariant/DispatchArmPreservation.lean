@@ -3994,11 +3994,17 @@ private theorem enqueueRunnableOnCore_preserves_ipcInvariantFull
     (hReady : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.ipcState = .ready)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (enqueueRunnableOnCore st c tid) := by
-  unfold enqueueRunnableOnCore
+  -- The case split precedes the unfold: the witnessed lookup's type mentions
+  -- `st.getTcb? tid`, so a `cases` over the unfolded match cannot generalise it.
   cases hLk : st.getTcb? tid with
-  | none => exact hInv
+  | none =>
+      unfold enqueueRunnableOnCore
+      rw [SystemState.getTcbWitnessed?_eq_none hLk]
+      exact hInv
   | some tcb =>
-      dsimp only []
+      unfold enqueueRunnableOnCore
+      rw [SystemState.getTcbWitnessed?_eq_some hLk]
+      dsimp only [SystemState.rewriteObject]
       split
       · exact hInv
       · have hSame : ({ tcb with ipcState := .ready } : TCB) = tcb := by
