@@ -1,3 +1,66 @@
+## v0.35.81 — register the `Lifecycle/Suspend` namespace partition (a finding, not a fix)
+
+**One subsystem's Operations/Invariant pair carries a per-file namespace and the
+rest of the subsystem does not, with no stated criterion.**
+`SeLe4n/Kernel/Lifecycle/Suspend.lean` opens `namespace
+SeLe4n.Kernel.Lifecycle.Suspend` and exactly one other module joins it —
+`Lifecycle/Invariant/SuspendPreservation.lean`.  Every other module in the same
+directory is in plain `SeLe4n.Kernel`: `Operations/Cleanup.lean`,
+`Operations/CleanupPreservation.lean`, `Operations/RetypeWrappers.lean`,
+`Operations/ScrubAndUntyped.lean` and all three
+`Invariant/Cancellation{Reply,Queue,Notification}Shape.lean`.  So the
+Operations/Invariant *pair* for suspension is namespaced and the pair for cleanup
+is not, decided per file — *one question answered in two places* at the level of
+module layout.  Found while writing WS-RR RR8.7's second cut and **registered
+rather than fixed**: collapsing it is a mechanical rename with no proposition
+changed, which has no business inside a proof cut.
+
+**Three measurements, none of them reasoned.**  (1) It is **not load-bearing**:
+all 59 top-level declarations in `Suspend.lean`, searched against every other
+tracked `.lean` file, collide with **nothing** — so no name is being
+disambiguated, and none is shadowing an outer name either, which is the hazard a
+per-file namespace under its parent's own `open SeLe4n.Kernel` would otherwise
+carry.  (2) It is **undocumented**: the module header states the suspension and
+resumption sequences and gives no reason for the namespace, so a new module has
+no criterion to apply.  (3) It costs **457 `Lifecycle.Suspend.` qualifications**
+on 453 lines across **27** tracked `.lean` files outside the two that share it —
+`CancellationReplyShape.lean` 157, `DispatchArmPreservation.lean` 53,
+`IPC/CrossCore/Cancellation.lean` 52, `tests/SmpCancellationSuite.lean` 38,
+`IPC/CrossCore/CancellationNI.lean` 34, `tests/LivenessSuite.lean` 33 — plus
+three live documents.  **No gate depends on it**, which was checked rather than
+assumed: the one occurrence in `scripts/test_tier3_invariant_surface.sh` is a
+comment, not an anchor.  What it buys is one thing, for the second file alone:
+`SuspendPreservation.lean` names the operations unqualified.
+
+**The live cost was paid, not predicted.**  RR8.7's second cut wrote
+`abortHolderPendingIpc_other_tcb_eq` with a `Lifecycle.Suspend.` prefix and it
+failed to elaborate — that theorem is *about* Suspend's operations but lives in
+`CancellationReplyShape.lean`, hence in `SeLe4n.Kernel` — in the same proof as an
+`abortHolderPendingIpc_eq_self_of_lookup_none` that **requires** the prefix.  The
+prefix is mandatory for the operation and refused for the theorem about it, from
+the same call site.  The *name* is not the defect: under this project's
+internal-first naming rule `Lifecycle.Suspend` describes its subject and carries
+no workstream ID.  The **partition** is.
+
+**Three corrections to the row before it landed**, each this project's own rule
+firing on the row written to record one.  The first draft said "one Tier 3
+*anchor* spells the prefix"; checking it showed a **comment**, so no gate depends
+on the qualification and the rename's sweep is three documents and the Lean tree.
+Fixing that clause then left two siblings stale — "the gate and three documents"
+in the wait cell, "plus the Tier 3 anchor" in the owner cell — which is the sweep
+rule failing at the smallest possible distance, inside a row about a partition.
+And `test_docs_sync.sh` refused three prose line-number citations (`Suspend.lean`
+at its namespace line, the `open` line, the Tier 3 comment's line), which go
+stale on the next edit above them; all three now cite the construct.
+
+Registered in [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C with
+its measurements, its owner (post-v1.0.0, either direction its own cut) and the
+requirement that whichever direction is taken, the criterion is **stated in the
+module header** — a row in C constrains what v1.0.0 may claim, and WS-RR RR8.15's
+hand-off check reads that table.
+
+Refs: docs/REGISTERED_DEBT.md table C
+
 ## v0.35.80 — WS-RR RR8.7 (first cut): the reply arm's teardown carried two theorems that asserted nothing
 
 **Two production bundle theorems had contradictory premises, so they held on no
