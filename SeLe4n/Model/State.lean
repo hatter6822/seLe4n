@@ -5939,6 +5939,25 @@ theorem withObjectStored_preserves_objects_invExt (st : SystemState) (id : SeLe4
     (st.withObjectStored id obj).objects.invExt :=
   storeObject_preserves_objects_invExt st _ id obj hInv (storeObject_eq_withObjectStored st id obj)
 
+/-- The pure store's object table **is** the insert — the equation a
+state-building consumer reads the table back through (`v0.35.73`: the dispatch
+payoff's and the reachability pack's inhabitation witnesses, which used to be
+the raw insert *by definition* and are the store now, so their per-key
+characterisations go through this rather than through `show`). -/
+theorem withObjectStored_objects (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) :
+    (st.withObjectStored id obj).objects = st.objects.insert id obj := by
+  have h := storeObject_eq_withObjectStored st id obj
+  generalize st.withObjectStored id obj = st' at h ⊢
+  unfold storeObject at h; cases h; rfl
+
+/-- The store writes no scheduler field — the retype lever's `hSched`, which a
+witness spelled as a raw insert discharged by `rfl`. -/
+theorem withObjectStored_scheduler (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) :
+    (st.withObjectStored id obj).scheduler = st.scheduler :=
+  storeObject_scheduler_eq st _ id obj (storeObject_eq_withObjectStored st id obj)
+
 theorem withObjectStored_preserves_objectIndexSet_invExt (st : SystemState) (id : SeLe4n.ObjId)
     (obj : KernelObject) (hSetInv : st.objectIndexSet.table.invExt) :
     (st.withObjectStored id obj).objectIndexSet.table.invExt :=

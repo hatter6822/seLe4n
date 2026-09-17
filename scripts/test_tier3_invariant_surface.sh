@@ -3200,6 +3200,50 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def clearDonationOriginRefer
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def clearDonationOriginReferences[^\n]*(\n([ \t][^\n]*)?)*acc\.updateSchedContext \(SchedContextId\.ofObjId oid\) fun s =>(\n([ \t][^\n]*)?)*if " SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 
 # ============================================================================
+# v0.35.73 -- the seven inhabitation witnesses are the store and the rewrite
+# ============================================================================
+#
+# The dispatch payoff's four pack witnesses and the reachability pack's three
+# chain witnesses were raw inserts BY DEFINITION -- a state whose table the
+# index does not know about, built by the module whose theorems say what a
+# reachable state looks like.  Each fresh key is the pure store now
+# (`withObjectStored`: the retype lever's shape, a key that held nothing) and
+# the bind's two in-place writes are `rewriteObject` under the witnesses the
+# two stores' own lookups supply (the binding lever's shape, which
+# `ipcInvariantFull_of_schedBindingRewrite` demands of the pre-state anyway).
+# The per-key characterisations read the table through the store's equation
+# rather than exposing it by `show`, and the retype lever's scheduler frame is
+# the store's theorem rather than `rfl`.
+
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def witnessSt1 : SystemState :=\n  \(default : SystemState\)\.withObjectStored witnessTid\.toObjId \(\.tcb witnessTcbFresh\)$" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def witnessSt2 : SystemState :=\n  witnessSt1\.withObjectStored witnessScId\.toObjId \(\.schedContext witnessScFresh\)$" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def witnessSt3 : SystemState :=\n  \(witnessSt2\.rewriteObject witnessTid\.toObjId \(\.tcb witnessTcbBound\)\n      \(SystemState\.rewriteAdmissible_tcb witnessSt2_getTcb witnessTcbBound\)\)\.rewriteObject\n    witnessScId\.toObjId \(\.schedContext witnessScBound\)\n    \(SystemState\.rewriteAdmissible_schedContext" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def witnessSt4 : SystemState :=\n  witnessSt3\.withObjectStored \(SeLe4n\.ObjId\.ofNat 3\) \(\.reply witnessReplyFresh\)$" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def chainWitnessSt1 : SystemState :=\n  \(default : SystemState\)\.withObjectStored donationChainWitnessContext\.toObjId\n    \(\.schedContext witnessChainSchedContext\)$" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def chainWitnessSt2 : SystemState :=\n  chainWitnessSt1\.withObjectStored donationChainWitnessOuter\.toObjId\n    \(\.reply witnessChainOuterReply\)$" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def donationChainWitness : SystemState :=\n  chainWitnessSt2\.withObjectStored donationChainWitnessInner\.toObjId\n    \(\.reply witnessChainInnerReply\)$" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+# NEGATIVE: no witness DEFINITION inserts raw (the one raw insert left in the
+# payoff module is `witnessSt3_lookup`'s `show`, which reads the two rewrites'
+# table and is a proof, not a state).
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^(private )?def (witnessSt[1-4]|chainWitnessSt[12]|donationChainWitness) : SystemState :=[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+# The store's two equations, and the witnesses reading through them: the
+# per-key lookups unfold the witness and rewrite with the equation; the retype
+# lever's scheduler frame is the store's theorem.
+run_check "INVARIANT" rg -n '^theorem withObjectStored_objects \(st : SystemState\) \(id : SeLe4n\.ObjId\)' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem withObjectStored_scheduler \(st : SystemState\) \(id : SeLe4n\.ObjId\)' SeLe4n/Model/State.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessSt1_lookup[^\n]*(\n([ \t][^\n]*)?)*  unfold witnessSt1\n  rw \[SystemState\.withObjectStored_objects, RHTable_getElem\?_eq_get\?," SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem chainWitnessSt1_lookup[^\n]*(\n([ \t][^\n]*)?)*  unfold chainWitnessSt1\n  rw \[SystemState\.withObjectStored_objects, RHTable_getElem\?_eq_get\?," SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessInv1[^\n]*(\n([ \t][^\n]*)?)*    \?_ \?_ \(SystemState\.withObjectStored_scheduler _ _ _\) \?_" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessInv2[^\n]*(\n([ \t][^\n]*)?)*    \?_ \?_ \(SystemState\.withObjectStored_scheduler _ _ _\) \?_ witnessSt1_detached witnessInv1" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessInv4[^\n]*(\n([ \t][^\n]*)?)*    \?_ \?_ \(SystemState\.withObjectStored_scheduler _ _ _\) rfl" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
+# NEGATIVE: a stored witness's lookup does not expose its table by `show`
+# (that is the raw insert one step removed: it holds only while the table is
+# definitionally the insert), and the three retype-lever instances do not
+# discharge the scheduler frame by `rfl` again.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private theorem (witnessSt[124]_lookup|chainWitnessSt[12]_lookup|donationChainWitness_lookup)[^\n]*(\n([ \t][^\n]*)?)*  show " SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessInv(1|2|4)[^\n]*(\n([ \t][^\n]*)?)*\?_ \?_ rfl" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
+
+# ============================================================================
 # WS-OD OD6 -- the payoff
 # ============================================================================
 #

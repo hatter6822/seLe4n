@@ -1688,21 +1688,15 @@ private def witnessScFresh : SeLe4n.Kernel.SchedContext :=
 private def witnessScBound : SeLe4n.Kernel.SchedContext :=
   { witnessScFresh with boundThread := some witnessTid }
 
+-- The two retype writes are the pure store (`withObjectStored`, `v0.35.73`):
+-- each key held nothing before, which is exactly the case the store exists
+-- for, and the state it leaves carries the store's own bookkeeping rather than
+-- a table the index does not know about.
 private def witnessSt1 : SystemState :=
-  { (default : SystemState) with
-    objects := (default : SystemState).objects.insert witnessTid.toObjId
-      (.tcb witnessTcbFresh) }
+  (default : SystemState).withObjectStored witnessTid.toObjId (.tcb witnessTcbFresh)
 
 private def witnessSt2 : SystemState :=
-  { witnessSt1 with
-    objects := witnessSt1.objects.insert witnessScId.toObjId
-      (.schedContext witnessScFresh) }
-
-private def witnessSt3 : SystemState :=
-  { witnessSt2 with
-    objects := (witnessSt2.objects.insert witnessTid.toObjId
-        (.tcb witnessTcbBound)).insert witnessScId.toObjId
-      (.schedContext witnessScBound) }
+  witnessSt1.withObjectStored witnessScId.toObjId (.schedContext witnessScFresh)
 
 private theorem witnessKeysNe : witnessTid.toObjId ≠ witnessScId.toObjId := by
   decide
@@ -1712,21 +1706,17 @@ private theorem witnessObjInv0 : (default : SystemState).objects.invExt :=
     (Architecture.default_system_state_proofLayerInvariantBundle).2.1
 
 private theorem witnessObjInv1 : witnessSt1.objects.invExt :=
-  RHTable_insert_preserves_invExt _ _ _ witnessObjInv0
+  SystemState.withObjectStored_preserves_objects_invExt _ _ _ witnessObjInv0
 
 private theorem witnessObjInv2 : witnessSt2.objects.invExt :=
-  RHTable_insert_preserves_invExt _ _ _ witnessObjInv1
-
-private theorem witnessObjInv3 : witnessSt3.objects.invExt :=
-  RHTable_insert_preserves_invExt _ _ _
-    (RHTable_insert_preserves_invExt _ _ _ witnessObjInv2)
+  SystemState.withObjectStored_preserves_objects_invExt _ _ _ witnessObjInv1
 
 private theorem witnessSt1_lookup (oid : SeLe4n.ObjId) :
     witnessSt1.objects[oid]?
       = if witnessTid.toObjId == oid then some (.tcb witnessTcbFresh) else none := by
-  show (((default : SystemState).objects.insert witnessTid.toObjId
-      (.tcb witnessTcbFresh)))[oid]? = _
-  rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ witnessObjInv0]
+  unfold witnessSt1
+  rw [SystemState.withObjectStored_objects, RHTable_getElem?_eq_get?,
+    RHTable_getElem?_insert _ _ _ witnessObjInv0]
   split
   · rfl
   · rw [← RHTable_getElem?_eq_get?, Architecture.default_objects_none]
@@ -1736,12 +1726,39 @@ private theorem witnessSt2_lookup (oid : SeLe4n.ObjId) :
       = if witnessScId.toObjId == oid then some (.schedContext witnessScFresh)
         else if witnessTid.toObjId == oid then some (.tcb witnessTcbFresh)
         else none := by
-  show ((witnessSt1.objects.insert witnessScId.toObjId
-      (.schedContext witnessScFresh)))[oid]? = _
-  rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ witnessObjInv1]
+  unfold witnessSt2
+  rw [SystemState.withObjectStored_objects, RHTable_getElem?_eq_get?,
+    RHTable_getElem?_insert _ _ _ witnessObjInv1]
   split
   · rfl
   · rw [← RHTable_getElem?_eq_get?, witnessSt1_lookup]
+
+/-- The bind's two rewrite witnesses: after the two stores the thread's key
+holds the fresh TCB and the reservation's key the fresh SchedContext, so the
+bind is an in-place rewrite of each under the store's own proof
+(`rewriteObject`, `v0.35.73`) — the shape `schedContextBind` writes since
+`v0.35.71`, and what `ipcInvariantFull_of_schedBindingRewrite` demands of the
+pre-state anyway. -/
+private theorem witnessSt2_getTcb : witnessSt2.getTcb? witnessTid = some witnessTcbFresh := by
+  rw [SystemState.getTcb?_eq_some_iff, witnessSt2_lookup]
+  simp [show (witnessScId.toObjId == witnessTid.toObjId) = false from by decide]
+
+private theorem witnessSt2_getSchedContext :
+    witnessSt2.getSchedContext? witnessScId = some witnessScFresh := by
+  rw [SystemState.getSchedContext?_eq_some_iff, witnessSt2_lookup]; simp
+
+private def witnessSt3 : SystemState :=
+  (witnessSt2.rewriteObject witnessTid.toObjId (.tcb witnessTcbBound)
+      (SystemState.rewriteAdmissible_tcb witnessSt2_getTcb witnessTcbBound)).rewriteObject
+    witnessScId.toObjId (.schedContext witnessScBound)
+    (SystemState.rewriteAdmissible_schedContext
+      (by rw [SystemState.rewriteObject_tcb_getSchedContext? _ _ _ _ witnessObjInv2]
+          exact witnessSt2_getSchedContext)
+      witnessScBound)
+
+private theorem witnessObjInv3 : witnessSt3.objects.invExt :=
+  RHTable_insert_preserves_invExt _ _ _
+    (RHTable_insert_preserves_invExt _ _ _ witnessObjInv2)
 
 private theorem witnessSt3_lookup (oid : SeLe4n.ObjId) :
     witnessSt3.objects[oid]?
@@ -1782,7 +1799,8 @@ private theorem witnessSt1_detached :
 private theorem witnessInv1 : ipcInvariantFull witnessSt1 := by
   refine retypeWrite_preserves_ipcInvariantFull (st := default)
     (target := witnessTid.toObjId) (newObj := .tcb witnessTcbFresh)
-    ?_ ?_ rfl ?_ (retypeTargetDetached_default _) Architecture.default_ipcInvariantFull
+    ?_ ?_ (SystemState.withObjectStored_scheduler _ _ _) ?_
+    (retypeTargetDetached_default _) Architecture.default_ipcInvariantFull
   · rw [witnessSt1_lookup]; simp
   · intro oid hNe
     rw [witnessSt1_lookup, Architecture.default_objects_none]
@@ -1793,7 +1811,7 @@ private theorem witnessInv1 : ipcInvariantFull witnessSt1 := by
 private theorem witnessInv2 : ipcInvariantFull witnessSt2 := by
   refine retypeWrite_preserves_ipcInvariantFull (st := witnessSt1)
     (target := witnessScId.toObjId) (newObj := .schedContext witnessScFresh)
-    ?_ ?_ rfl ?_ witnessSt1_detached witnessInv1
+    ?_ ?_ (SystemState.withObjectStored_scheduler _ _ _) ?_ witnessSt1_detached witnessInv1
   · rw [witnessSt2_lookup]; simp
   · intro oid hNe
     rw [witnessSt2_lookup, witnessSt1_lookup]
@@ -2686,21 +2704,18 @@ private def witnessReplyId : SeLe4n.ReplyId :=
 private def witnessReplyFresh : Reply := { replyId := witnessReplyId }
 
 private def witnessSt4 : SystemState :=
-  { witnessSt3 with
-    objects := witnessSt3.objects.insert (SeLe4n.ObjId.ofNat 3)
-      (.reply witnessReplyFresh) }
+  witnessSt3.withObjectStored (SeLe4n.ObjId.ofNat 3) (.reply witnessReplyFresh)
 
 private theorem witnessObjInv4 : witnessSt4.objects.invExt :=
-  RHTable_insert_preserves_invExt _ _ _ witnessObjInv3
+  SystemState.withObjectStored_preserves_objects_invExt _ _ _ witnessObjInv3
 
 private theorem witnessSt4_lookup (oid : SeLe4n.ObjId) :
     witnessSt4.objects[oid]?
       = if (SeLe4n.ObjId.ofNat 3 : SeLe4n.ObjId) == oid
         then some (.reply witnessReplyFresh)
         else witnessSt3.objects[oid]? := by
-  show (witnessSt3.objects.insert (SeLe4n.ObjId.ofNat 3)
-      (.reply witnessReplyFresh))[oid]? = _
-  rw [RHTable_getElem?_eq_get?,
+  unfold witnessSt4
+  rw [SystemState.withObjectStored_objects, RHTable_getElem?_eq_get?,
     RHTable_getElem?_insert _ _ _ witnessObjInv3]
   split
   · rfl
@@ -2709,7 +2724,8 @@ private theorem witnessSt4_lookup (oid : SeLe4n.ObjId) :
 private theorem witnessInv4 : ipcInvariantFull witnessSt4 := by
   refine retypeWrite_preserves_ipcInvariantFull (st := witnessSt3)
     (target := SeLe4n.ObjId.ofNat 3) (newObj := .reply witnessReplyFresh)
-    ?_ ?_ rfl rfl (witnessSt3_detached_of _ (by decide) (by decide)) witnessInv3
+    ?_ ?_ (SystemState.withObjectStored_scheduler _ _ _) rfl
+    (witnessSt3_detached_of _ (by decide) (by decide)) witnessInv3
   · rw [witnessSt4_lookup]; simp
   · intro oid hne
     rw [witnessSt4_lookup]

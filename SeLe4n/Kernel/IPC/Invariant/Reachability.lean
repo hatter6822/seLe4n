@@ -388,41 +388,41 @@ def witnessChainOuterReply : Reply :=
     caller := some donationChainWitnessOuterCaller,
     next := some (.frame donationChainWitnessInner) }
 
+-- The three stores are the pure store (`withObjectStored`, `v0.35.73`): each
+-- key held nothing in the boot state, and the witness the pop is run on now
+-- carries the store's own bookkeeping.
 private def chainWitnessSt1 : SystemState :=
-  { (default : SystemState) with
-    objects := (default : SystemState).objects.insert
-      donationChainWitnessContext.toObjId (.schedContext witnessChainSchedContext) }
+  (default : SystemState).withObjectStored donationChainWitnessContext.toObjId
+    (.schedContext witnessChainSchedContext)
 
 private def chainWitnessSt2 : SystemState :=
-  { chainWitnessSt1 with
-    objects := chainWitnessSt1.objects.insert
-      donationChainWitnessOuter.toObjId (.reply witnessChainOuterReply) }
+  chainWitnessSt1.withObjectStored donationChainWitnessOuter.toObjId
+    (.reply witnessChainOuterReply)
 
 /-- WS-OD OD2.4: the state a depth-2 Call chain leaves — the context heads the
 inner call's reply, which links down to the outer call's, and every link is
 answered by the object it names. -/
 def donationChainWitness : SystemState :=
-  { chainWitnessSt2 with
-    objects := chainWitnessSt2.objects.insert
-      donationChainWitnessInner.toObjId (.reply witnessChainInnerReply) }
+  chainWitnessSt2.withObjectStored donationChainWitnessInner.toObjId
+    (.reply witnessChainInnerReply)
 
 private theorem chainWitnessObjInv0 : (default : SystemState).objects.invExt :=
   capabilityInvariantBundle.objectsInvExt
     (Architecture.default_system_state_proofLayerInvariantBundle).2.1
 
 private theorem chainWitnessObjInv1 : chainWitnessSt1.objects.invExt :=
-  RHTable_insert_preserves_invExt _ _ _ chainWitnessObjInv0
+  SystemState.withObjectStored_preserves_objects_invExt _ _ _ chainWitnessObjInv0
 
 private theorem chainWitnessObjInv2 : chainWitnessSt2.objects.invExt :=
-  RHTable_insert_preserves_invExt _ _ _ chainWitnessObjInv1
+  SystemState.withObjectStored_preserves_objects_invExt _ _ _ chainWitnessObjInv1
 
 private theorem chainWitnessSt1_lookup (oid : SeLe4n.ObjId) :
     chainWitnessSt1.objects[oid]?
       = if donationChainWitnessContext.toObjId == oid
         then some (.schedContext witnessChainSchedContext) else none := by
-  show ((default : SystemState).objects.insert donationChainWitnessContext.toObjId
-      (.schedContext witnessChainSchedContext))[oid]? = _
-  rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ chainWitnessObjInv0]
+  unfold chainWitnessSt1
+  rw [SystemState.withObjectStored_objects, RHTable_getElem?_eq_get?,
+    RHTable_getElem?_insert _ _ _ chainWitnessObjInv0]
   split
   · rfl
   · rw [← RHTable_getElem?_eq_get?, Architecture.default_objects_none]
@@ -432,9 +432,9 @@ private theorem chainWitnessSt2_lookup (oid : SeLe4n.ObjId) :
       = if donationChainWitnessOuter.toObjId == oid
         then some (.reply witnessChainOuterReply)
         else chainWitnessSt1.objects[oid]? := by
-  show (chainWitnessSt1.objects.insert donationChainWitnessOuter.toObjId
-      (.reply witnessChainOuterReply))[oid]? = _
-  rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ chainWitnessObjInv1]
+  unfold chainWitnessSt2
+  rw [SystemState.withObjectStored_objects, RHTable_getElem?_eq_get?,
+    RHTable_getElem?_insert _ _ _ chainWitnessObjInv1]
   split
   · rfl
   · rw [← RHTable_getElem?_eq_get?]
@@ -444,9 +444,9 @@ private theorem donationChainWitness_lookup (oid : SeLe4n.ObjId) :
       = if donationChainWitnessInner.toObjId == oid
         then some (.reply witnessChainInnerReply)
         else chainWitnessSt2.objects[oid]? := by
-  show (chainWitnessSt2.objects.insert donationChainWitnessInner.toObjId
-      (.reply witnessChainInnerReply))[oid]? = _
-  rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ chainWitnessObjInv2]
+  unfold donationChainWitness
+  rw [SystemState.withObjectStored_objects, RHTable_getElem?_eq_get?,
+    RHTable_getElem?_insert _ _ _ chainWitnessObjInv2]
   split
   · rfl
   · rw [← RHTable_getElem?_eq_get?]
@@ -470,7 +470,7 @@ store-level lemma the pop composes takes this, so exposing it is what makes the
 witness usable as the pop's *input* rather than only as a state that satisfies
 the predicate. -/
 theorem donationChainWitness_objects_invExt : donationChainWitness.objects.invExt :=
-  RHTable_insert_preserves_invExt _ _ _ chainWitnessObjInv2
+  SystemState.withObjectStored_preserves_objects_invExt _ _ _ chainWitnessObjInv2
 
 /-- WS-OD OD2.4: the walk from the context's own head yields the whole stack,
 innermost first — the positive half of the chain's meaning, computed rather than

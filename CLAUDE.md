@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.72.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.73.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6024,7 +6024,11 @@ code may assume:
   `schedContextBind`, `schedContextUnbind`, `schedContextYieldTo`; **16 in 16
   across 8** after `v0.35.72` moved the cross-core suspend's G6, the revoke
   sweep's step and the destroy path's origin scrub — `suspendThreadOnCore`,
-  `revokePendingTransfersStep`, `clearDonationOriginReferences`; five of
+  `revokePendingTransfersStep`, `clearDonationOriginReferences`; **9 in 9
+  across 6** after `v0.35.73` made the seven inhabitation witnesses the
+  store on each fresh key and the rewrite on the bind's two in-place writes
+  — `witnessSt1`–`witnessSt4`, `chainWitnessSt1`, `chainWitnessSt2`,
+  `donationChainWitness`; five of
   them the primitives that should be raw).  (6) **A transition that rewrites a TCB it is
   handed takes the store's witness for it.**  `timerTickBudget` /
   `timerTickBudgetOnCore` (`v0.35.67`) take `(hTcb : st.getTcb? tid = some tcb)`

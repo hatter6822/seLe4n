@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "588a9a82708700e5fb94e535df17a77edd274712",
-      "tree_sha": "1edae0cc188f23c1e93d9ef514888128aea5b820",
-      "committed_at_utc": "2026-09-17T05:15:09+00:00"
+      "commit_sha": "3d8d4a7ec4cc9261b14e36b7c60b45263c1092f9",
+      "tree_sha": "6785b8c32882e45531355f204cfe8a9a1b1e412c",
+      "committed_at_utc": "2026-09-17T05:50:26+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a0a53971d790b60a647b960377d000942002dbf465c637865e8764ff4448855e"
+    "source_digest": "682d36d15a6133da46033a7961a74a7446d3086dec15a0fbd46bfb3048027863"
   },
   "summary": {
     "module_count": 401,
-    "declaration_count": 21749
+    "declaration_count": 21753
   },
   "readme_sync": {
-    "version": "0.35.72",
+    "version": "0.35.73",
     "lean_toolchain": "v4.28.0",
     "production_files": 331,
-    "production_loc": 386458,
+    "production_loc": 386493,
     "test_files": 70,
     "test_loc": 78776,
-    "proved_theorem_lemma_decls": 12905,
+    "proved_theorem_lemma_decls": 12909,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -95895,7 +95895,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.DispatchPayoff",
       "path": "SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean",
-      "declaration_count": 110,
+      "declaration_count": 112,
       "declarations": [
         {
           "kind": "namespace",
@@ -96416,44 +96416,30 @@
         {
           "kind": "def",
           "name": "witnessSt1",
-          "line": 1691,
+          "line": 1695,
           "called": [
             "SystemState",
             "default",
-            "insert",
             "toObjId",
+            "withObjectStored",
             "witnessTcbFresh"
           ]
         },
         {
           "kind": "def",
           "name": "witnessSt2",
-          "line": 1696,
+          "line": 1698,
           "called": [
             "SystemState",
-            "insert",
             "toObjId",
-            "witnessScFresh",
-            "witnessSt1"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "witnessSt3",
-          "line": 1701,
-          "called": [
-            "SystemState",
-            "insert",
-            "toObjId",
-            "witnessScBound",
-            "witnessSt2",
-            "witnessTcbBound"
+            "withObjectStored",
+            "witnessScFresh"
           ]
         },
         {
           "kind": "theorem",
           "name": "witnessKeysNe",
-          "line": 1707,
+          "line": 1701,
           "called": [
             "toObjId"
           ]
@@ -96461,7 +96447,7 @@
         {
           "kind": "theorem",
           "name": "witnessObjInv0",
-          "line": 1710,
+          "line": 1704,
           "called": [
             "SystemState",
             "default",
@@ -96473,27 +96459,101 @@
         {
           "kind": "theorem",
           "name": "witnessObjInv1",
-          "line": 1714,
+          "line": 1708,
           "called": [
-            "RHTable_insert_preserves_invExt",
             "invExt",
+            "withObjectStored_preserves_objects_invExt",
             "witnessObjInv0"
           ]
         },
         {
           "kind": "theorem",
           "name": "witnessObjInv2",
-          "line": 1717,
+          "line": 1711,
           "called": [
-            "RHTable_insert_preserves_invExt",
             "invExt",
+            "withObjectStored_preserves_objects_invExt",
             "witnessObjInv1"
           ]
         },
         {
           "kind": "theorem",
+          "name": "witnessSt1_lookup",
+          "line": 1714,
+          "called": [
+            "ObjId",
+            "RHTable_getElem",
+            "default_objects_none",
+            "none",
+            "toObjId",
+            "withObjectStored_objects",
+            "witnessObjInv0",
+            "witnessSt1",
+            "witnessTcbFresh"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "witnessSt2_lookup",
+          "line": 1724,
+          "called": [
+            "ObjId",
+            "RHTable_getElem",
+            "none",
+            "toObjId",
+            "withObjectStored_objects",
+            "witnessObjInv1",
+            "witnessScFresh",
+            "witnessSt1_lookup",
+            "witnessSt2",
+            "witnessTcbFresh"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "witnessSt2_getTcb",
+          "line": 1742,
+          "called": [
+            "getTcb",
+            "toObjId",
+            "witnessSt2_lookup",
+            "witnessTcbFresh",
+            "witnessTid"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "witnessSt2_getSchedContext",
+          "line": 1746,
+          "called": [
+            "getSchedContext",
+            "witnessScFresh",
+            "witnessScId",
+            "witnessSt2_lookup"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "witnessSt3",
+          "line": 1750,
+          "called": [
+            "SystemState",
+            "rewriteAdmissible_schedContext",
+            "rewriteAdmissible_tcb",
+            "rewriteObject",
+            "rewriteObject_tcb_getSchedContext",
+            "toObjId",
+            "witnessObjInv2",
+            "witnessScBound",
+            "witnessSt2_getSchedContext",
+            "witnessSt2_getTcb",
+            "witnessTcbBound"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "witnessObjInv3",
-          "line": 1720,
+          "line": 1759,
           "called": [
             "RHTable_insert_preserves_invExt",
             "invExt",
@@ -96502,41 +96562,8 @@
         },
         {
           "kind": "theorem",
-          "name": "witnessSt1_lookup",
-          "line": 1724,
-          "called": [
-            "ObjId",
-            "RHTable_getElem",
-            "SystemState",
-            "default",
-            "default_objects_none",
-            "insert",
-            "none",
-            "toObjId",
-            "witnessObjInv0",
-            "witnessTcbFresh"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "witnessSt2_lookup",
-          "line": 1734,
-          "called": [
-            "ObjId",
-            "RHTable_getElem",
-            "insert",
-            "none",
-            "toObjId",
-            "witnessObjInv1",
-            "witnessScFresh",
-            "witnessSt1_lookup",
-            "witnessTcbFresh"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "witnessSt3_lookup",
-          "line": 1746,
+          "line": 1763,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -96553,7 +96580,7 @@
         {
           "kind": "theorem",
           "name": "retypeTargetDetached_default",
-          "line": 1767,
+          "line": 1784,
           "called": [
             "ObjId",
             "SystemState",
@@ -96565,7 +96592,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt1_detached",
-          "line": 1773,
+          "line": 1790,
           "called": [
             "retypeTargetDetached",
             "toObjId",
@@ -96577,7 +96604,7 @@
         {
           "kind": "theorem",
           "name": "witnessInv1",
-          "line": 1782,
+          "line": 1799,
           "called": [
             "default",
             "default_ipcInvariantFull",
@@ -96589,6 +96616,7 @@
             "st",
             "symm",
             "toObjId",
+            "withObjectStored_scheduler",
             "witnessSt1",
             "witnessSt1_lookup",
             "witnessTcbFresh"
@@ -96597,7 +96625,7 @@
         {
           "kind": "theorem",
           "name": "witnessInv2",
-          "line": 1793,
+          "line": 1811,
           "called": [
             "ipcInvariantFull",
             "retypeReplacementFresh",
@@ -96605,6 +96633,7 @@
             "st",
             "symm",
             "toObjId",
+            "withObjectStored_scheduler",
             "witnessInv1",
             "witnessScFresh",
             "witnessSt1",
@@ -96617,7 +96646,7 @@
         {
           "kind": "theorem",
           "name": "witnessInv3",
-          "line": 1804,
+          "line": 1822,
           "called": [
             "ThreadId.toObjId_injective",
             "ipcInvariantFull",
@@ -96641,7 +96670,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_getTcb",
-          "line": 1849,
+          "line": 1867,
           "called": [
             "getTcb",
             "toObjId",
@@ -96653,7 +96682,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_getTcb_unique",
-          "line": 1858,
+          "line": 1876,
           "called": [
             "TCB",
             "ThreadId",
@@ -96667,7 +96696,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_no_reply",
-          "line": 1872,
+          "line": 1890,
           "called": [
             "Reply",
             "ReplyId",
@@ -96678,7 +96707,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_no_stack_head",
-          "line": 1883,
+          "line": 1901,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -96691,7 +96720,7 @@
         {
           "kind": "theorem",
           "name": "witnessReachable3",
-          "line": 1894,
+          "line": 1912,
           "called": [
             "donationChainWellFormed_of_no_donations",
             "ipcReachable",
@@ -96706,7 +96735,7 @@
         {
           "kind": "def",
           "name": "witnessDecoded",
-          "line": 1923,
+          "line": 1941,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -96716,7 +96745,7 @@
         {
           "kind": "def",
           "name": "witnessCap",
-          "line": 1926,
+          "line": 1944,
           "called": [
             "Capability",
             "default",
@@ -96726,7 +96755,7 @@
         {
           "kind": "def",
           "name": "witnessGate",
-          "line": 1929,
+          "line": 1947,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -96737,7 +96766,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_noStacks",
-          "line": 1936,
+          "line": 1954,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -96751,7 +96780,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnly",
-          "line": 1949,
+          "line": 1967,
           "called": [
             "ThreadId.toObjId_injective",
             "bind",
@@ -96774,7 +96803,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited",
-          "line": 2001,
+          "line": 2019,
           "called": [
             "callerTid",
             "epId",
@@ -96794,7 +96823,7 @@
         {
           "kind": "theorem",
           "name": "checkedSyscallDispatchQuiescence_inhabited",
-          "line": 2028,
+          "line": 2046,
           "called": [
             "checkedSyscallDispatchQuiescence",
             "syscallDispatchQuiescence_inhabited",
@@ -96808,7 +96837,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedSignal",
-          "line": 2081,
+          "line": 2099,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -96819,7 +96848,7 @@
         {
           "kind": "def",
           "name": "witnessGateSignal",
-          "line": 2085,
+          "line": 2103,
           "called": [
             "SyscallGate",
             "notificationSignal",
@@ -96831,7 +96860,7 @@
         {
           "kind": "def",
           "name": "witnessCapTcbObject",
-          "line": 2093,
+          "line": 2111,
           "called": [
             "Capability",
             "default",
@@ -96841,7 +96870,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_getNotification_tcbSlot",
-          "line": 2096,
+          "line": 2114,
           "called": [
             "getNotification",
             "none",
@@ -96852,7 +96881,7 @@
         {
           "kind": "theorem",
           "name": "witnessThreadQuiescent",
-          "line": 2104,
+          "line": 2122,
           "called": [
             "threadIpcFieldsQuiescent",
             "witnessSt3",
@@ -96865,7 +96894,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlySignal",
-          "line": 2116,
+          "line": 2134,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -96887,7 +96916,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_signal",
-          "line": 2151,
+          "line": 2169,
           "called": [
             "boundDeliveryTarget",
             "callerTid",
@@ -96909,7 +96938,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedRetype",
-          "line": 2183,
+          "line": 2201,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -96919,7 +96948,7 @@
         {
           "kind": "def",
           "name": "witnessGateRetype",
-          "line": 2187,
+          "line": 2205,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -96930,7 +96959,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_tcb_lookup",
-          "line": 2194,
+          "line": 2212,
           "called": [
             "ObjId",
             "TCB",
@@ -96943,7 +96972,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_no_endpoint",
-          "line": 2204,
+          "line": 2222,
           "called": [
             "Endpoint",
             "ObjId",
@@ -96953,7 +96982,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_no_notification",
-          "line": 2213,
+          "line": 2231,
           "called": [
             "Notification",
             "ObjId",
@@ -96963,7 +96992,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_lookup_none",
-          "line": 2222,
+          "line": 2240,
           "called": [
             "ObjId",
             "none",
@@ -96974,7 +97003,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_detached_of",
-          "line": 2234,
+          "line": 2252,
           "called": [
             "ObjId",
             "epId",
@@ -96991,7 +97020,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyRetype",
-          "line": 2279,
+          "line": 2297,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -97012,7 +97041,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_retype",
-          "line": 2304,
+          "line": 2322,
           "called": [
             "callerTid",
             "epId",
@@ -97032,7 +97061,7 @@
         {
           "kind": "def",
           "name": "witnessCapEndpoint",
-          "line": 2332,
+          "line": 2350,
           "called": [
             "Capability",
             "default",
@@ -97042,7 +97071,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_lookup_seven",
-          "line": 2335,
+          "line": 2353,
           "called": [
             "ObjId",
             "none",
@@ -97054,7 +97083,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_getTcb_seven",
-          "line": 2341,
+          "line": 2359,
           "called": [
             "getTcb",
             "none",
@@ -97067,7 +97096,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyEndpointOf",
-          "line": 2352,
+          "line": 2370,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -97090,7 +97119,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_send",
-          "line": 2389,
+          "line": 2407,
           "called": [
             "callerTid",
             "epId",
@@ -97112,7 +97141,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedRecv",
-          "line": 2421,
+          "line": 2439,
           "called": [
             "SyscallDecodeResult",
             "length",
@@ -97122,7 +97151,7 @@
         {
           "kind": "def",
           "name": "witnessGateRecv",
-          "line": 2426,
+          "line": 2444,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -97133,7 +97162,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_receive",
-          "line": 2435,
+          "line": 2453,
           "called": [
             "callerTid",
             "cleanupDonationStackValid_of_no_stacks",
@@ -97161,7 +97190,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedCall",
-          "line": 2481,
+          "line": 2499,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -97171,7 +97200,7 @@
         {
           "kind": "def",
           "name": "witnessGateCall",
-          "line": 2484,
+          "line": 2502,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -97182,7 +97211,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_getEndpoint_seven",
-          "line": 2489,
+          "line": 2507,
           "called": [
             "getEndpoint",
             "none",
@@ -97193,7 +97222,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_call",
-          "line": 2497,
+          "line": 2515,
           "called": [
             "callerTid",
             "epId",
@@ -97216,7 +97245,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedMint",
-          "line": 2534,
+          "line": 2552,
           "called": [
             "SyscallDecodeResult",
             "cspaceMint",
@@ -97227,7 +97256,7 @@
         {
           "kind": "def",
           "name": "witnessGateMint",
-          "line": 2538,
+          "line": 2556,
           "called": [
             "SyscallGate",
             "cspaceMint",
@@ -97239,7 +97268,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyMint",
-          "line": 2543,
+          "line": 2561,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -97258,7 +97287,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_mint",
-          "line": 2565,
+          "line": 2583,
           "called": [
             "bind",
             "callerTid",
@@ -97283,7 +97312,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedDeclassifySignal",
-          "line": 2598,
+          "line": 2616,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -97293,7 +97322,7 @@
         {
           "kind": "def",
           "name": "witnessGateDeclassifySignal",
-          "line": 2602,
+          "line": 2620,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -97304,7 +97333,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyDeclassifySignal",
-          "line": 2607,
+          "line": 2625,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -97326,7 +97355,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_declassifySignal",
-          "line": 2638,
+          "line": 2656,
           "called": [
             "callerTid",
             "epId",
@@ -97346,7 +97375,7 @@
         {
           "kind": "theorem",
           "name": "checkedSyscallDispatchQuiescence_inhabited_declassifySignal",
-          "line": 2666,
+          "line": 2684,
           "called": [
             "boundDeliveryTarget",
             "checkedSyscallDispatchQuiescence",
@@ -97362,7 +97391,7 @@
         {
           "kind": "def",
           "name": "witnessReplyId",
-          "line": 2683,
+          "line": 2701,
           "called": [
             "ReplyId",
             "ofNat",
@@ -97372,7 +97401,7 @@
         {
           "kind": "def",
           "name": "witnessReplyFresh",
-          "line": 2686,
+          "line": 2704,
           "called": [
             "Reply",
             "replyId",
@@ -97382,48 +97411,49 @@
         {
           "kind": "def",
           "name": "witnessSt4",
-          "line": 2688,
+          "line": 2706,
           "called": [
             "SystemState",
-            "insert",
             "ofNat",
-            "witnessReplyFresh",
-            "witnessSt3"
+            "withObjectStored",
+            "witnessReplyFresh"
           ]
         },
         {
           "kind": "theorem",
           "name": "witnessObjInv4",
-          "line": 2693,
+          "line": 2709,
           "called": [
-            "RHTable_insert_preserves_invExt",
             "invExt",
+            "withObjectStored_preserves_objects_invExt",
             "witnessObjInv3"
           ]
         },
         {
           "kind": "theorem",
           "name": "witnessSt4_lookup",
-          "line": 2696,
+          "line": 2712,
           "called": [
             "ObjId",
             "RHTable_getElem",
-            "insert",
             "ofNat",
+            "withObjectStored_objects",
             "witnessObjInv3",
-            "witnessReplyFresh"
+            "witnessReplyFresh",
+            "witnessSt4"
           ]
         },
         {
           "kind": "theorem",
           "name": "witnessInv4",
-          "line": 2709,
+          "line": 2724,
           "called": [
             "ipcInvariantFull",
             "ofNat",
             "retypeWrite_preserves_ipcInvariantFull",
             "st",
             "symm",
+            "withObjectStored_scheduler",
             "witnessInv3",
             "witnessReplyFresh",
             "witnessSt3",
@@ -97435,7 +97465,7 @@
         {
           "kind": "theorem",
           "name": "witnessReachable4",
-          "line": 2719,
+          "line": 2735,
           "called": [
             "allTimeoutBudgetsNone",
             "donationChainWellFormed_of_no_donations",
@@ -97454,7 +97484,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt4_getTcb",
-          "line": 2751,
+          "line": 2767,
           "called": [
             "ObjId",
             "getTcb",
@@ -97469,7 +97499,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt4_getReply",
-          "line": 2759,
+          "line": 2775,
           "called": [
             "getReply",
             "ofNat",
@@ -97482,7 +97512,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt4_no_pendingFault",
-          "line": 2771,
+          "line": 2787,
           "called": [
             "ThreadId",
             "getTcb",
@@ -97498,7 +97528,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedReply",
-          "line": 2787,
+          "line": 2803,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -97508,7 +97538,7 @@
         {
           "kind": "def",
           "name": "witnessGateReply",
-          "line": 2790,
+          "line": 2806,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -97519,7 +97549,7 @@
         {
           "kind": "def",
           "name": "witnessCapReply",
-          "line": 2795,
+          "line": 2811,
           "called": [
             "Capability",
             "default",
@@ -97529,7 +97559,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt4_noStacks",
-          "line": 2800,
+          "line": 2816,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -97544,7 +97574,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyReply",
-          "line": 2810,
+          "line": 2826,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -97567,7 +97597,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_reply",
-          "line": 2855,
+          "line": 2871,
           "called": [
             "callerTid",
             "epId",
@@ -97590,7 +97620,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedBind",
-          "line": 2888,
+          "line": 2904,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -97601,7 +97631,7 @@
         {
           "kind": "def",
           "name": "witnessGateBind",
-          "line": 2892,
+          "line": 2908,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -97613,7 +97643,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyBind",
-          "line": 2897,
+          "line": 2913,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -97631,7 +97661,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_bind",
-          "line": 2921,
+          "line": 2937,
           "called": [
             "callerTid",
             "epId",
@@ -97651,7 +97681,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedUnbind",
-          "line": 2948,
+          "line": 2964,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -97662,7 +97692,7 @@
         {
           "kind": "def",
           "name": "witnessGateUnbind",
-          "line": 2952,
+          "line": 2968,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -97674,7 +97704,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyUnbind",
-          "line": 2957,
+          "line": 2973,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -97694,7 +97724,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_unbind",
-          "line": 2986,
+          "line": 3002,
           "called": [
             "callerTid",
             "epId",
@@ -97714,7 +97744,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedSuspend",
-          "line": 3014,
+          "line": 3030,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -97724,7 +97754,7 @@
         {
           "kind": "def",
           "name": "witnessGateSuspend",
-          "line": 3018,
+          "line": 3034,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -97735,7 +97765,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlySuspend",
-          "line": 3023,
+          "line": 3039,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -97753,7 +97783,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_suspend",
-          "line": 3049,
+          "line": 3065,
           "called": [
             "Kernel",
             "callerTid",
@@ -112343,36 +112373,34 @@
         {
           "kind": "def",
           "name": "chainWitnessSt1",
-          "line": 391,
+          "line": 394,
           "called": [
             "SystemState",
             "default",
-            "insert",
             "toObjId",
+            "withObjectStored",
             "witnessChainSchedContext"
           ]
         },
         {
           "kind": "def",
           "name": "chainWitnessSt2",
-          "line": 396,
+          "line": 398,
           "called": [
             "SystemState",
-            "chainWitnessSt1",
-            "insert",
             "toObjId",
+            "withObjectStored",
             "witnessChainOuterReply"
           ]
         },
         {
           "kind": "def",
           "name": "donationChainWitness",
-          "line": 404,
+          "line": 405,
           "called": [
             "SystemState",
-            "chainWitnessSt2",
-            "insert",
             "toObjId",
+            "withObjectStored",
             "witnessChainInnerReply"
           ]
         },
@@ -112393,9 +112421,9 @@
           "name": "chainWitnessObjInv1",
           "line": 413,
           "called": [
-            "RHTable_insert_preserves_invExt",
             "chainWitnessObjInv0",
-            "invExt"
+            "invExt",
+            "withObjectStored_preserves_objects_invExt"
           ]
         },
         {
@@ -112403,9 +112431,9 @@
           "name": "chainWitnessObjInv2",
           "line": 416,
           "called": [
-            "RHTable_insert_preserves_invExt",
             "chainWitnessObjInv1",
-            "invExt"
+            "invExt",
+            "withObjectStored_preserves_objects_invExt"
           ]
         },
         {
@@ -112415,13 +112443,12 @@
           "called": [
             "ObjId",
             "RHTable_getElem",
-            "SystemState",
             "chainWitnessObjInv0",
-            "default",
+            "chainWitnessSt1",
             "default_objects_none",
-            "insert",
             "none",
             "toObjId",
+            "withObjectStored_objects",
             "witnessChainSchedContext"
           ]
         },
@@ -112433,8 +112460,9 @@
             "ObjId",
             "RHTable_getElem",
             "chainWitnessObjInv1",
-            "insert",
+            "chainWitnessSt2",
             "toObjId",
+            "withObjectStored_objects",
             "witnessChainOuterReply"
           ]
         },
@@ -112446,8 +112474,9 @@
             "ObjId",
             "RHTable_getElem",
             "chainWitnessObjInv2",
-            "insert",
+            "donationChainWitness",
             "toObjId",
+            "withObjectStored_objects",
             "witnessChainInnerReply"
           ]
         },
@@ -112472,9 +112501,9 @@
           "name": "donationChainWitness_objects_invExt",
           "line": 472,
           "called": [
-            "RHTable_insert_preserves_invExt",
             "chainWitnessObjInv2",
-            "invExt"
+            "invExt",
+            "withObjectStored_preserves_objects_invExt"
           ]
         },
         {
@@ -244387,7 +244416,7 @@
     {
       "module": "SeLe4n.Model.State",
       "path": "SeLe4n/Model/State.lean",
-      "declaration_count": 479,
+      "declaration_count": 481,
       "declarations": [
         {
           "kind": "namespace",
@@ -250710,8 +250739,37 @@
         },
         {
           "kind": "theorem",
+          "name": "withObjectStored_objects",
+          "line": 5947,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "insert",
+            "st",
+            "storeObject",
+            "storeObject_eq_withObjectStored",
+            "withObjectStored"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "withObjectStored_scheduler",
+          "line": 5956,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "st",
+            "storeObject_eq_withObjectStored",
+            "storeObject_scheduler_eq",
+            "withObjectStored"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "withObjectStored_preserves_objectIndexSet_invExt",
-          "line": 5942,
+          "line": 5961,
           "called": [
             "KernelObject",
             "ObjId",
@@ -250726,7 +250784,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_preserves_objectIndexSetComplete",
-          "line": 5948,
+          "line": 5967,
           "called": [
             "KernelObject",
             "ObjId",
@@ -250742,7 +250800,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_preserves_objectIndexLive",
-          "line": 5955,
+          "line": 5974,
           "called": [
             "KernelObject",
             "ObjId",
@@ -250758,7 +250816,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_preserves_lifecycleMetadataConsistent",
-          "line": 5961,
+          "line": 5980,
           "called": [
             "KernelObject",
             "ObjId",
@@ -250774,7 +250832,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_preserves_allTablesInvExtK",
-          "line": 5968,
+          "line": 5987,
           "called": [
             "KernelObject",
             "ObjId",
@@ -250789,7 +250847,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_objectIndex_length_le",
-          "line": 5973,
+          "line": 5992,
           "called": [
             "KernelObject",
             "ObjId",

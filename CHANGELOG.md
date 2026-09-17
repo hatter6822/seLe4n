@@ -1,3 +1,57 @@
+## v0.35.73 — The seven inhabitation witnesses are the store and the rewrite
+
+**Raw-write migration, tenth cut (C4b).**  The dispatch payoff's four pack
+witnesses (`witnessSt1`–`witnessSt4`) and the reachability pack's three chain
+witnesses (`chainWitnessSt1`, `chainWitnessSt2`, `donationChainWitness`) were
+raw inserts *by definition*: the states built by the module whose theorems say
+what a reachable state looks like carried a table the index, the kind table and
+the ASID table did not know about.  Each fresh key is the pure store now
+(`withObjectStored`, the retype lever's shape — a key that held nothing), so the
+seven states carry the store's own bookkeeping; and the bind's two in-place
+writes (`witnessSt3`) are `rewriteObject` under the witnesses the two stores'
+own lookups supply (`witnessSt2_getTcb`, `witnessSt2_getSchedContext`, the
+second carried across the first rewrite by
+`rewriteObject_tcb_getSchedContext?`) — the binding lever's shape, which
+`ipcInvariantFull_of_schedBindingRewrite` demands of the pre-state anyway, and
+the shape `schedContextBind` writes since `v0.35.71`.
+
+**Two equations, and the witnesses read through them.**
+`withObjectStored_objects` — the pure store's object table *is* the insert —
+and `withObjectStored_scheduler` (`Model/State.lean`) are what the seven
+per-key characterisations and the three retype-lever instances consume: each
+lookup unfolds its witness and rewrites with the equation where it used to
+expose the table by `show` (which holds only while the table is definitionally
+the insert, that is, only while the witness is raw), and `witnessInv1` /
+`witnessInv2` / `witnessInv4` discharge the lever's `hSched` by the store's
+theorem where they wrote `rfl`.  Nothing downstream moved: every consumer of
+the chain witness — the pop's depth-2 exercise in
+`tests/SmpCrossCoreCallSuite.lean`, the `donationChainWellFormed` witness, the
+pack inhabitants — reads the states through `donationChainWitness_lookup_cases`
+and the `witnessStN_lookup` family, which is what made the migration local.
+
+**Measured and left.**  The raw-write population is **9 sites in 9 executable
+declarations across 6 files** outside `SeLe4n/Testing/` (from 16 / 16 / 8).
+`IPC/Invariant/DispatchPayoff.lean` and `IPC/Invariant/Reachability.lean` hold
+no raw write in a definition.  What remains: the endpoint and notification
+queue sweeps in `Lifecycle/Operations/Cleanup.lean` with their two named bodies
+in `CleanupPreservation.lean` (C4c, which needs the endpoint and notification
+twins of the witnessed lookup and the typed rewrite), and the five primitives
+that should be raw (`storeObject`, `rewriteObject`, `Builder.createObject`,
+`updateObjectAt`, the frozen store).  Both typed-lookup floors rose by one
+(2464 → 2465, 450 → 451) with the two bind witnesses' statements.
+
+**Tier 3**: positives on each of the seven witnesses' spellings (the six
+stores and the two rewrites under their named witnesses), on the two equations
+and on their consumption (a lookup unfolding through the equation in each
+module, the three retype-lever frames); negatives on a raw insert in any
+witness definition (declaration-bounded, because `witnessSt3_lookup`'s `show`
+reads the two rewrites' table and is a proof), on a stored witness's lookup
+exposing its table by `show`, and on the retype lever's frame discharged by
+`rfl` again — 11 cases, 7 mutations, every one keeping the tokens (each witness
+restored as the raw insert, the reservation rewrite's witness discarded for a
+store, the frame discharged by `rfl`, the lookup exposed by `show`).  Golden
+trace byte-identical.
+
 ## v0.35.72 — The cross-core suspend's G6, the revoke sweep's step and the origin scrub are the typed in-place rewrite
 
 **Raw-write migration, ninth cut (C4a).**  Three writers, three raw inserts,
