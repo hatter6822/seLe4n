@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.92` (`lakefile.toml`) |
+| **Package version** | `0.35.93` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 390,600 across 333 Lean files |
-| **Test LoC** | 79,157 across 70 Lean test suites |
+| **Production LoC** | 390,670 across 333 Lean files |
+| **Test LoC** | 79,176 across 70 Lean test suites |
 | **Proved declarations** | 13,014 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -4236,9 +4236,18 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   `(getTcb? holder).isSome` forward and
   `switchToThreadOnCore_preserves_threadPlacedOnSomeCore` states that side
   condition rather than hiding it.  §3.26 now exhibits the theorem's premises and
-  its conclusion on a state the live operations reach.  What remains registered is
-  the single-core `suspendThread` reference path, which cannot see the shared step
-  across the import boundary.
+  its conclusion on a state the live operations reach.
+
+  **And the single-core reference path completes the reclaim too** (WS-RR RR8.12
+  fifth cut, `v0.35.93`).  `cancelIpcBlockingReclaimed` and the aborted-holder wake
+  were declared in `IPC/CrossCore/Cancellation.lean`, a module that *imports*
+  `Lifecycle/Suspend.lean`, so the boot-pinned `Lifecycle.Suspend.suspendThread` —
+  the tree's single-core reference, with no production caller — could not reach them
+  and its G2 took the bare teardown, leaving the same strand reachable there.  The
+  relocation puts them beside the teardown they complete: every one reads a `TCB`, a
+  run queue or a replenish queue and none reads anything cross-core, so the IPC
+  cross-core layer never had a claim on them.  They keep the `SeLe4n.Kernel`
+  namespace, so the move renames nothing.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

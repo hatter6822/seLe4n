@@ -1,3 +1,51 @@
+## v0.35.93 — WS-RR RR8.12 (fifth cut): the reclaim moves to the layer both askers can see
+
+WS-RR RR8.12's second cut fixed the live `.tcbSuspend`, which had been reaching
+for the **bare** teardown and leaving an aborted donation holder `.ready`,
+`.unbound` and on no run queue on any core.  The tree's **single-core reference**
+path, `Lifecycle.Suspend.suspendThread`, was still doing exactly that, and the
+second cut said why it was not fixed in the same breath:
+`cancelIpcBlockingReclaimed` was declared in `IPC/CrossCore/Cancellation.lean`, a
+module that **imports** `Lifecycle/Suspend.lean`, so the second asker could not
+see the shared answer.
+
+That is this project's own *a shared answer must be reachable from every asker,
+or the unreachable one grows its own* — and its second half is the fix: **when a
+question has one owner and an asker that cannot see it, the owner is in the wrong
+layer.**  It was.  All 31 relocated declarations — `cancelIpcBlockingMigrated`,
+the holder-wake family (`cancelHolderBlockedEndpoint?`, `cancelAbortedHolderWake?`,
+`enqueueAbortedHolderOnCore`, `wakeAbortedDonationHolder`,
+`cancelAbortedHolderWakeCore?`) and `cancelIpcBlockingReclaimed` with their frame
+lemmas — read a `TCB`, a run queue or a replenish queue, and **none reads anything
+cross-core**.  The IPC cross-core layer never had a claim on them.
+
+**THE MOVE RENAMES NOTHING.**  They were declared in the `SeLe4n.Kernel`
+namespace and they stay there: `Suspend.lean` closes `Lifecycle.Suspend`, opens
+`SeLe4n.Kernel` for the relocated section, and reopens `Lifecycle.Suspend` after
+it.  All 168 references across `CancellationNI`, `CancellationBundle`,
+`DispatchArmPreservation`, `NonInterferenceCrossCore`, the reachability census and
+`SmpCancellationSuite` are untouched.  The one new import —
+`SeLe4n.Kernel.SchedContext.ReplenishAffinity`, which `cancelIpcBlockingMigrated`
+needs — was **measured** cycle-free before the move, not after: its own import
+closure is 63 modules and `Lifecycle.Suspend` is not among them.
+
+G2 of the single-core pipeline now reads `cancelIpcBlockingReclaimed`, so the
+reference path completes the reclaim it starts.  `tests/SmpCancellationSuite.lean`
+§3.26 (vi) drives it on the stranding state, asserts the holder ends placed on its
+**own** home core, and computes the retired bare G2 beside it — so the assertions
+are known to discriminate rather than merely to pass.
+
+Two Tier 3 negatives, both mutation-verified with clean-tree controls: the bare
+teardown must not come back as either pipeline's G2, and the relocated definitions
+must not be re-declared in the module that imports this one.  Twenty-three
+existing anchors are repointed at the new declaration site; the anchors whose
+*subject* stayed (`cancelIpcBlockingOnCore`, `suspendThreadOnCore`) are not.
+
+`test_full.sh` exit 0, zero FAIL; `test_rust.sh` and
+`test_aarch64_cross_build.sh` exit 0.  Golden trace byte-identical.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR8.12
+
 ## v0.35.92 — WS-RR RR8.12 (fourth cut): a suspend does not strand the server its victim called
 
 WS-OD OD1.7's `wakeAbortedDonationHolder_holder_runnable` says the cancellation

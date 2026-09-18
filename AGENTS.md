@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.92.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.93.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~70259 lines)
+- `CHANGELOG.md` (~70313 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23652 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -211,11 +211,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/API.lean` (~7592 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7459 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6258 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6267 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6175 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~6141 lines)
 - `SeLe4n/Platform/Boot.lean` (~5780 lines)
 - `SeLe4n/Model/State.lean` (~5710 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5459 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5085 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5084 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
@@ -247,7 +247,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2837 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2739 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2740 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2644 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
@@ -256,8 +256,8 @@ To find files that need pagination today, run:
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
+- `tests/SmpCancellationSuite.lean` (~2518 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
-- `tests/SmpCancellationSuite.lean` (~2499 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `tests/FrozenOpsSuite.lean` (~2473 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
@@ -274,6 +274,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2221 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2150 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2077 lines)
@@ -323,13 +324,12 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1445 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1443 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1430 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1410 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1409 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1385 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
@@ -5932,8 +5932,14 @@ code may assume:
   cut named a prefix — `IPC/Invariant/FaultProgress.lean`, where they sat, imports
   `IPC.CrossCore.Fault`, which imports `Cancellation` — and its three
   `_not_mem_of_not_mem` forms were retired with them, the biconditional being the
-  answer.  What is still registered is the single-core reference path, which cannot
-  see the shared step across the import boundary and still strands.
+  answer.  **And the single-core reference path reads it too, since `v0.35.93`**
+  (RR8.12's fifth cut): `cancelIpcBlockingReclaimed` and the wake family were
+  declared in `IPC/CrossCore/Cancellation.lean`, which *imports*
+  `Lifecycle/Suspend.lean`, so `Lifecycle.Suspend.suspendThread`'s G2 could not see
+  them and the same strand was reachable on it.  They are declared beside the
+  teardown they complete now — *when a question has one owner and an asker that
+  cannot see it, the owner is in the wrong layer* — keeping the `SeLe4n.Kernel`
+  namespace they were declared in, so the move renames nothing.
 - **A definition that transforms kernel state is wired or recorded** (WS-RR
   RR8.12 third cut, `v0.35.91`).
   `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (Tier 1) derives every

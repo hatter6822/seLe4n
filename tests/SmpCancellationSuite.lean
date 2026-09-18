@@ -2454,7 +2454,26 @@ entry names the deactivated reservation"
         (!replenishHolds stPost core1 scId && !replenishHolds stPost core2 scId)
       assertBool "...while the retired G2 left one on the holder's home core"
         (replenishHolds (bareTeardownG2 st victimTid tcb) core2 scId)
-  -- (vi) The footprint names the wake core, and the pre-RR8.12 arity omitted it.
+  -- (vi) And the single-core reference path.  Until WS-RR RR8.12's fifth cut it
+  -- reached for the bare teardown -- `cancelIpcBlockingReclaimed` was declared in
+  -- a module that imports `Lifecycle/Suspend.lean`, so this path could not see it
+  -- -- and the same strand was reachable on it.  It has no production caller, but
+  -- it is the tree's single-core reference and four `SyscallDispatchSuite`
+  -- scenarios drive it.
+  match SeLe4n.ThreadId.toValid? victimTid with
+  | none => assertBool "the victim id is valid" false
+  | some vv =>
+    match Lifecycle.Suspend.suspendThread st vv with
+    | .error _ => assertBool "the single-core reference suspend succeeds" false
+    | .ok stRef =>
+      assertBool "the single-core reference suspend leaves the aborted holder placed"
+        (threadPlacedOnSomeCore stRef serverTid)
+      assertBool "...on the holder's own home core, which the wake resolves"
+        (decide ((stRef.scheduler.runQueueOnCore core2).contains serverTid))
+      assertBool "...where the RETIRED bare G2 left it on no run queue on any core"
+        (!runnableOnSomeCore (bareTeardownG2 st victimTid tcb) serverTid
+          && !runningOnSomeCore (bareTeardownG2 st victimTid tcb) serverTid)
+  -- (vii) The footprint names the wake core, and the pre-RR8.12 arity omitted it.
   assertBool "the suspend sched footprint covers the reclaim's wake core"
     (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
       ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 (some core1)
