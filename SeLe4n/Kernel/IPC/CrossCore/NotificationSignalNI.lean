@@ -294,23 +294,13 @@ theorem notificationWaitOnCore_block_path_NI_smp
 -- cross-core wake — but `endpointQueueRemoveDual` had none, and it is what
 -- dequeues the bound TCB from its endpoint.
 
-/-- **WS-RR RR7.22**: the label hypothesis an endpoint splice needs.
-
-`endpointQueueRemoveDual` writes exactly four objects: the endpoint (twice on
-the head path), the removed thread's own TCB, and the two queue neighbours
-whose links it patches.  This names all four, and names the neighbours *through
-the pre-state lookup* rather than as extra arguments — so a caller supplies one
-hypothesis instead of remembering which two threads the splice will touch,
-which is the shape that makes an under-stated hypothesis possible. -/
-def endpointSpliceHigh (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) (endpointId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) : Prop :=
-  objectObservable ctx observer endpointId = false
-    ∧ objectObservable ctx observer tid.toObjId = false
-    ∧ ∀ tcb : TCB, lookupTcb st tid = some tcb →
-        (∀ p : SeLe4n.ThreadId, tcb.queuePPrev = some (.tcbNext p) →
-            objectObservable ctx observer p.toObjId = false)
-          ∧ (∀ n : SeLe4n.ThreadId, tcb.queueNext = some n →
-              objectObservable ctx observer n.toObjId = false)
+-- WS-RR RR8.8: `endpointSpliceHigh` moved to
+-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean`, beside
+-- `objects_insert_preserves_projection_high` -- the lemma its every clause is
+-- consumed by.  The cancellation reclaim's abort prefix asks the *same*
+-- question of the *same* removal's write set, and this module is not in that
+-- module's import closure, so the predicate had one owner that one of its two
+-- askers could not reach.  The predicate moves; its consumers below stay.
 
 /-- **WS-RR RR7.22**: an endpoint splice confined to high objects is invisible,
 and leaves the object store's external invariant intact.

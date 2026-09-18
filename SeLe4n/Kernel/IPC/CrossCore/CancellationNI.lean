@@ -14,6 +14,9 @@
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
 import SeLe4n.Kernel.InformationFlow.Invariant.Composition
+-- WS-RR RR8.8/RR8.9: the reply-arm shape facts the two discharges consume
+-- (`cancelledCallerDonation?_holder_holds_victim_donation`).
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
 
 /-!
 # WS-SM SM6.E — Cross-core cancellation non-interference
@@ -314,16 +317,20 @@ what a deployment can actually establish: a server holding a high caller's
 donated SchedContext is reachable from that caller, so a labeling that admits
 the `Call` in the first place labels the server at least as high.
 
-**WS-RR RR8.8 correction.**  Closing it as a *theorem* needs **only** that fact,
-recorded as a state invariant — `label victim ⊑ label endpoint` from the
-donating `Call`'s gate, `label endpoint ⊑ label holder` from the server's own
-receive gate, composed by `securityFlowsTo_trans`.  It does **not** wait on
-anything about queues: this obligation is a single `threadObservable` of the
-holder, and a run-queue insert is filtered by the inserted thread's own
-observability.  This docstring previously said it waited on the endpoint-queue
-label-uniformity invariant OD1.4's obligation also waited on; that invariant is
-unestablishable (`endpointAdmissionAdmitsMixedObservability`) and was never
-needed for this half.  Registered WS-RR RR8.8 debt, not assumed away here.
+**WS-RR RR8.9 — DISCHARGED at `v0.35.84`.**
+`abortHolderWakeHigh_of_donationOwnerFlowsToHolder` proves this outright from
+`donationOwnerFlowsToHolder`, the state form of exactly that fact
+(`label victim ⊑ label endpoint` from the donating `Call`'s gate,
+`label endpoint ⊑ label holder` from the server's own receive gate, composed by
+`securityFlowsTo_trans`).  It needed **nothing** about queues: the obligation is
+a single `threadObservable` of the holder, and a run-queue insert is filtered by
+the inserted thread's own observability.  This docstring previously said it
+waited on the endpoint-queue label-uniformity invariant OD1.4's obligation also
+waited on; that invariant is unestablishable
+(`endpointAdmissionAdmitsMixedObservability`) and was never needed for this half,
+so this row carries **none** of OD1.4's registered residue.  Kept as a
+definition because the *consumers* still take it as a hypothesis — the discharge
+is what a caller now applies to get it.
 
 Discharged outright wherever no donation is resolved
 (`abortHolderWakeHigh_of_no_donation`), which is every arm but a reply arm whose
@@ -641,12 +648,18 @@ endpoint would see a high victim's cancellation through it.
 
 This is **the same gap the three queue arms already carry**, arriving at the
 reply arm through the holder rather than through the victim.  Two of the three
-write classes close from the admission gate alone
-(`endpointAdmissionAdmitsMixedObservability`): every waiter's label flows to its
-endpoint's, so the endpoint object is non-observable whenever the holder is, and
-the holder is non-observable whenever the victim is — the donating `Call`'s gate
-composed with the server's own receive gate,
-`label victim ⊑ label endpoint ⊑ label holder`.  The third class is the holder's
+write classes are **discharged** (WS-RR RR8.8, `v0.35.84`): the holder is
+non-observable whenever the victim is
+(`donationHolderHigh_of_donorHigh`, over `donationOwnerFlowsToHolder` — the
+donating `Call`'s gate composed with the server's own receive gate,
+`label victim ⊑ label endpoint ⊑ label holder`), and the endpoint **object** is
+non-observable whenever the holder is
+(`blockedSenderEndpointObjectHigh`).  The second needed a conjunct that did not
+exist: the gate compares `endpointLabelOf` while the projection decides
+visibility from `objectLabelOf`, two independent fields nothing related, so
+`LabelingContextValid.endpointObjectCoherence` was added to carry the one to the
+other.  `v0.35.83` asserted this step from the gate alone, which was not
+available.  The third class is the holder's
 **queue neighbours**, whose labels are constrained only against the *endpoint's*,
 so no labelling fact closes it: a queue label-uniformity invariant is not merely
 absent but **unestablishable**, the gate admitting a non-uniform queue by design
@@ -893,9 +906,12 @@ which only one is a labelling question: their teardown rewrites the endpoint or
 notification object the victim was queued on, *and* splices the victim's queue
 **neighbours'** TCBs.
 
-The endpoint object closes from the admission gate — every waiter's label flows
-to its endpoint's (`endpointFlowGate_implies_securityFlowsTo`, no hypothesis), so
-the object is non-observable whenever any waiter is.  The neighbours do not, and
+The endpoint object closes from the admission gate composed with
+`LabelingContextValid.endpointObjectCoherence` — every waiter's label flows to
+its endpoint's *flow* label (`endpointFlowGate_implies_securityFlowsTo`, no
+hypothesis) and that conjunct carries it on to the *object* label the projection
+reads, so the object is non-observable whenever any waiter is
+(`endpointObjectHigh_of_admittedThreadHigh`).  The neighbours do not, and
 cannot: their labels are constrained only against the *endpoint's*, so nothing
 relates a neighbour to the victim.  The failing direction is therefore **not** "a
 low endpoint holding a high waiter", which the gate makes impossible; it is a low
@@ -921,11 +937,12 @@ which is every state on which the `passiveServerIdle` hole did not arise; no
 information-flow result that held before this remediation is weakened on the
 states it held for.  (3) Closing it in general needs the same queue-link
 relocation the queue arms need, and only for the **neighbour** writes.  Its
-*labelling* half is already available: the holder is high when the victim is,
+*labelling* half is **discharged** since `v0.35.84`
+(`abortHolderSpliceHigh_of_victimHigh`): the holder is high when the victim is,
 from the flow check the donating `Call` passed composed with the server's own
 receive gate (`label victim ⊑ label endpoint ⊑ label holder`,
-`securityFlowsTo_trans`), rather than from a new assumption.  Registered as
-WS-RR RR8.8 debt beside the queue arms' gap.
+`securityFlowsTo_trans`), and the endpoint object is high with it.  The
+neighbour clause is registered as WS-RR RR8.8 debt beside the queue arms' gap.
 
 **WS-OD OD1.7** adds `abortHolderWakeHigh`, the scheduler twin of the same gap:
 the reclaim not only aborts the holder's IPC, it now *places* the holder on its
@@ -958,5 +975,138 @@ theorem cancelIpcBlockingOnCore_reply_cancellation_NI
     (cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st victim tcb ep rt
       hBlocked hValid hVictimHigh hObjInv hIdxComplete hObjSetInv hAbortProj)
     hWakeHigh
+
+-- ============================================================================
+-- §6  WS-RR RR8.8 / RR8.9 — the two obligations, discharged from the labelling
+-- ============================================================================
+
+/-- **WS-RR RR8.9**: the wake's resolved holder *is* the donation's holder.
+
+`cancelAbortedHolderWake?` keys on `cancelledCallerDonation?` and hands back the
+thread that resolver named, so the wake obligation and the reclaim's own
+labelling fact are about one thread.  Stated rather than re-derived at the use
+site: the resolver is read through two guards after that match, and a proof that
+re-walked them would be a second reading of which thread the wake places. -/
+theorem cancelAbortedHolderWake?_donation
+    (stPre stPost : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (holder : SeLe4n.ThreadId)
+    (hW : cancelAbortedHolderWake? stPre stPost victim tcb = some holder) :
+    ∃ scId, Lifecycle.Suspend.cancelledCallerDonation? stPre victim tcb = some (scId, holder) := by
+  unfold cancelAbortedHolderWake? at hW
+  split at hW
+  · exact absurd hW (by simp)
+  · rename_i _ sc0 h0 hEq
+    split at hW
+    · exact absurd hW (by simp)
+    · split at hW
+      · exact absurd hW (by simp)
+      · rename_i _ _ _
+        split at hW
+        · exact ⟨sc0, by rw [hEq, Option.some.inj hW]⟩
+        · exact absurd hW (by simp)
+
+/-- **WS-RR RR8.9**: `abortHolderWakeHigh` is **discharged** — the reclaim's
+holder wake is invisible to any observer that cannot see the victim.
+
+This is the whole of the obligation, and it needed none of the queue reasoning
+its own docstring once said it waited on: a run-queue insert is filtered by the
+inserted thread's *own* observability, so all that is required is that a
+non-observable victim's donation holder is non-observable too — which is
+`donationOwnerFlowsToHolder`, the labelling fact a deployment establishes at the
+`Call` that minted the donation.
+
+`hOwed` is the local coherence fact the reclaim's trigger already needs
+(`replyFrameHeadHolderDonation`, WS-HP HP4.2), consumed here through
+`cancelledCallerDonation?_holder_holds_victim_donation` so the donation the
+labelling fact is read at is the one the resolver found. -/
+theorem abortHolderWakeHigh_of_donationOwnerFlowsToHolder
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (hFlow : donationOwnerFlowsToHolder ctx st)
+    (hOwed : ∀ rid, tcb.replyObject = some rid →
+      replyFrameHeadHolderDonation st rid victim)
+    (hVictimHigh : threadObservable ctx observer victim = false) :
+    abortHolderWakeHigh ctx observer st victim tcb := by
+  intro holder hW
+  obtain ⟨scId, hRes⟩ := cancelAbortedHolderWake?_donation st _ victim tcb holder hW
+  exact donationHolderHigh_of_donorHigh ctx observer st holder victim scId hFlow
+    (cancelledCallerDonation?_holder_holds_victim_donation st victim tcb scId holder hOwed hRes)
+    hVictimHigh
+
+/-- **WS-RR RR8.8**: the reclaim's abort prefix is confined to high objects
+**except** at the holder's queue neighbours — the obligation reduced from three
+write classes to one.
+
+`abortHolderPendingIpc` removes the holder from the endpoint it is blocked
+sending or calling on, and `endpointSpliceHigh` names exactly the four objects
+such a removal writes (`InformationFlow/Invariant/Operations.lean`; relocated
+there so this asker can reach the predicate the notification path's removal
+already used).  Two of its three clauses are now *derived*:
+
+* the **endpoint object** from `blockedSenderFlowsToEndpoint` composed with
+  `LabelingContextValid.endpointObjectCoherence` — a thread the live gate
+  admitted onto an endpoint has `threadLabelOf ⊑ endpointLabelOf`, and the
+  coherence conjunct carries that on to `objectLabelOf`;
+* the **holder's own TCB** from `LabelingContextValid.coherenceImpliesObjectHigh`.
+
+The third — the **queue neighbours** — is the parameter, and it is a parameter
+because no labelling fact can close it: a neighbour's label is constrained only
+against the *endpoint's*, so a lower-labelled neighbour beside a higher-labelled
+holder is admitted by design (`endpointAdmissionAdmitsMixedObservability`).  Its
+closure is representational and registered; see `docs/REGISTERED_DEBT.md`. -/
+theorem abortHolderSpliceHigh_of_neighbourHigh
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (holder : SeLe4n.ThreadId) (holderTcb : TCB) (epId : SeLe4n.ObjId)
+    (hValid : LabelingContextValid ctx)
+    (hEpFlow : blockedSenderFlowsToEndpoint ctx st)
+    (hLookup : lookupTcb st holder = some holderTcb)
+    (hBlocked : holderTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
+      holderTcb.ipcState = ThreadIpcState.blockedOnCall epId)
+    (hHolderHigh : threadObservable ctx observer holder = false)
+    (hNbr : ∀ t : TCB, lookupTcb st holder = some t →
+        (∀ p : SeLe4n.ThreadId, t.queuePPrev = some (.tcbNext p) →
+            objectObservable ctx observer p.toObjId = false)
+          ∧ (∀ n : SeLe4n.ThreadId, t.queueNext = some n →
+              objectObservable ctx observer n.toObjId = false)) :
+    endpointSpliceHigh ctx observer st epId holder :=
+  ⟨blockedSenderEndpointObjectHigh ctx observer st holder holderTcb epId hValid hEpFlow
+      hLookup hBlocked hHolderHigh,
+   hValid.coherenceImpliesObjectHigh observer holder hHolderHigh,
+   hNbr⟩
+
+/-- **WS-RR RR8.8**: the same reduction with the holder resolved from the
+victim, which is the shape the reclaim's own callers hold.
+
+The holder is not a parameter of `abortHolderProjectionStable` — it comes out of
+`cancelledCallerDonation?` — so the useful form takes the *victim*'s
+observability and derives the holder's, exactly as RR8.9's wake discharge does.
+That leaves the queue-neighbour clause as the one thing a caller must still
+supply. -/
+theorem abortHolderSpliceHigh_of_victimHigh
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+    (holder : SeLe4n.ThreadId) (holderTcb : TCB) (epId : SeLe4n.ObjId)
+    (hValid : LabelingContextValid ctx)
+    (hFlow : donationOwnerFlowsToHolder ctx st)
+    (hEpFlow : blockedSenderFlowsToEndpoint ctx st)
+    (hOwed : ∀ rid, tcb.replyObject = some rid →
+      replyFrameHeadHolderDonation st rid victim)
+    (hRes : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder))
+    (hLookup : lookupTcb st holder = some holderTcb)
+    (hBlocked : holderTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
+      holderTcb.ipcState = ThreadIpcState.blockedOnCall epId)
+    (hVictimHigh : threadObservable ctx observer victim = false)
+    (hNbr : ∀ t : TCB, lookupTcb st holder = some t →
+        (∀ p : SeLe4n.ThreadId, t.queuePPrev = some (.tcbNext p) →
+            objectObservable ctx observer p.toObjId = false)
+          ∧ (∀ n : SeLe4n.ThreadId, t.queueNext = some n →
+              objectObservable ctx observer n.toObjId = false)) :
+    endpointSpliceHigh ctx observer st epId holder :=
+  abortHolderSpliceHigh_of_neighbourHigh ctx observer st holder holderTcb epId hValid hEpFlow
+    hLookup hBlocked
+    (donationHolderHigh_of_donorHigh ctx observer st holder victim scId hFlow
+      (cancelledCallerDonation?_holder_holds_victim_donation st victim tcb scId holder hOwed hRes)
+      hVictimHigh)
+    hNbr
 
 end SeLe4n.Kernel

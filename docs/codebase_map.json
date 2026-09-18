@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "3f293820bfd0da15b12ae2314d87c749be4b7b23",
-      "tree_sha": "00cc812af5fe029bb7e76723d1a175182ef047b1",
-      "committed_at_utc": "2026-09-17T22:27:11+00:00"
+      "commit_sha": "0ca8eb8634e3b25320d6164ecfbf67c978374463",
+      "tree_sha": "2395ee4abfeb3a6344c2ac5e66ce8081d28cef03",
+      "committed_at_utc": "2026-09-17T23:49:11+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "de2c3e0423dcafda0f384b6ad1fc8db62c4c3ae86687de9e609103d24a808a68"
+    "source_digest": "38471bfd7cf817b8659d4126ab3018b4db29bd7b32a87d365c884cb45d9a14ee"
   },
   "summary": {
     "module_count": 401,
-    "declaration_count": 21757
+    "declaration_count": 21766
   },
   "readme_sync": {
-    "version": "0.35.83",
+    "version": "0.35.84",
     "lean_toolchain": "v4.28.0",
     "production_files": 331,
-    "production_loc": 387521,
+    "production_loc": 387893,
     "test_files": 70,
     "test_loc": 78892,
-    "proved_theorem_lemma_decls": 12918,
+    "proved_theorem_lemma_decls": 12925,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -71168,18 +71168,18 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.CancellationNI",
       "path": "SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean",
-      "declaration_count": 36,
+      "declaration_count": 40,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 48,
+          "line": 51,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "setReplenishQueueOnCore_preserves_projection",
-          "line": 66,
+          "line": 69,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71206,7 +71206,7 @@
         {
           "kind": "theorem",
           "name": "setReplenishQueueOnCore_preserves_projectionOnCore",
-          "line": 84,
+          "line": 87,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71228,7 +71228,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_preserves_projectionOnCore",
-          "line": 104,
+          "line": 107,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71252,7 +71252,7 @@
         {
           "kind": "theorem",
           "name": "descheduleAtPlacement_preserves_projection",
-          "line": 146,
+          "line": 149,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71269,7 +71269,7 @@
         {
           "kind": "theorem",
           "name": "descheduleAtPlacement_preserves_projectionOnCore",
-          "line": 158,
+          "line": 161,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71287,7 +71287,7 @@
         {
           "kind": "theorem",
           "name": "descheduleThread_cancellation_NI",
-          "line": 173,
+          "line": 176,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71305,7 +71305,7 @@
         {
           "kind": "theorem",
           "name": "descheduleThread_cancellation_NI_smp",
-          "line": 185,
+          "line": 188,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71324,7 +71324,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingMigrated_preserves_projection",
-          "line": 206,
+          "line": 209,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71342,7 +71342,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingMigrated_preserves_projectionOnCore",
-          "line": 218,
+          "line": 221,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71361,7 +71361,7 @@
         {
           "kind": "theorem",
           "name": "enqueueAbortedHolderOnCore_projectRunnableOnCore_high",
-          "line": 235,
+          "line": 238,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71383,7 +71383,7 @@
         {
           "kind": "theorem",
           "name": "enqueueAbortedHolderOnCore_preserves_projection",
-          "line": 258,
+          "line": 261,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71418,7 +71418,7 @@
         {
           "kind": "theorem",
           "name": "enqueueAbortedHolderOnCore_preserves_projectionOnCore",
-          "line": 289,
+          "line": 292,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71442,7 +71442,7 @@
         {
           "kind": "def",
           "name": "abortHolderWakeHigh",
-          "line": 331,
+          "line": 338,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71458,7 +71458,7 @@
         {
           "kind": "theorem",
           "name": "abortHolderWakeHigh_of_no_donation",
-          "line": 340,
+          "line": 347,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71476,7 +71476,7 @@
         {
           "kind": "theorem",
           "name": "wakeAbortedDonationHolder_preserves_projection",
-          "line": 350,
+          "line": 357,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71494,7 +71494,7 @@
         {
           "kind": "theorem",
           "name": "wakeAbortedDonationHolder_preserves_projectionOnCore",
-          "line": 363,
+          "line": 370,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71513,7 +71513,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_cancellation_NI",
-          "line": 388,
+          "line": 395,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71536,7 +71536,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_cancellation_NI_smp",
-          "line": 410,
+          "line": 417,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71560,7 +71560,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_ready_cancellation_NI",
-          "line": 437,
+          "line": 444,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71579,7 +71579,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_ready_cancellation_NI_smp",
-          "line": 453,
+          "line": 460,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71600,7 +71600,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonationOnCore_cancellation_NI",
-          "line": 479,
+          "line": 486,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71617,7 +71617,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonationOnCore_cancellation_NI_smp",
-          "line": 498,
+          "line": 505,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71636,7 +71636,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyStaging_preserves_objects_invExt",
-          "line": 546,
+          "line": 553,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -71651,7 +71651,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReady_preserves_objects_invExt",
-          "line": 553,
+          "line": 560,
           "called": [
             "SystemState",
             "ThreadId",
@@ -71665,7 +71665,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyCancelled_preserves_objects_invExt",
-          "line": 559,
+          "line": 566,
           "called": [
             "SystemState",
             "ThreadId",
@@ -71678,7 +71678,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyStaging_preserves_projection_high",
-          "line": 573,
+          "line": 580,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71699,7 +71699,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReady_preserves_projection_high",
-          "line": 586,
+          "line": 593,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71718,7 +71718,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyCancelled_preserves_projection_high",
-          "line": 598,
+          "line": 605,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71736,7 +71736,7 @@
         {
           "kind": "theorem",
           "name": "consumeReplyLink_preserves_projection_high",
-          "line": 616,
+          "line": 623,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71758,7 +71758,7 @@
         {
           "kind": "def",
           "name": "abortHolderProjectionStable",
-          "line": 661,
+          "line": 674,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71776,7 +71776,7 @@
         {
           "kind": "theorem",
           "name": "abortHolderProjectionStable_of_allowed",
-          "line": 676,
+          "line": 689,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71796,7 +71796,7 @@
         {
           "kind": "theorem",
           "name": "returnDonationToCancelledCaller_preserves_projection",
-          "line": 708,
+          "line": 721,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71833,7 +71833,7 @@
         {
           "kind": "theorem",
           "name": "spliceThreadReplyFrameOut_preserves_projection",
-          "line": 787,
+          "line": 800,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71851,7 +71851,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlocking_blockedOnReply_preserves_projection",
-          "line": 819,
+          "line": 832,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71890,11 +71890,10 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_reply_cancellation_NI",
-          "line": 942,
+          "line": 959,
           "called": [
             "CoreId",
             "IfObserver",
-            "Kernel",
             "LabelingContext",
             "LabelingContextValid",
             "ObjId",
@@ -71911,6 +71910,93 @@
             "projectState",
             "st",
             "threadObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelAbortedHolderWake",
+          "line": 990,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelledCallerDonation",
+            "sc0",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "abortHolderWakeHigh_of_donationOwnerFlowsToHolder",
+          "line": 1022,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "abortHolderWakeHigh",
+            "cancelAbortedHolderWake",
+            "cancelledCallerDonation",
+            "donationHolderHigh_of_donorHigh",
+            "donationOwnerFlowsToHolder",
+            "replyFrameHeadHolderDonation",
+            "scId",
+            "st",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "abortHolderSpliceHigh_of_neighbourHigh",
+          "line": 1057,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "LabelingContextValid",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "blockedSenderEndpointObjectHigh",
+            "blockedSenderFlowsToEndpoint",
+            "endpointSpliceHigh",
+            "epId",
+            "lookupTcb",
+            "objectObservable",
+            "st",
+            "threadObservable",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "abortHolderSpliceHigh_of_victimHigh",
+          "line": 1085,
+          "called": [
+            "IfObserver",
+            "Kernel",
+            "LabelingContext",
+            "LabelingContextValid",
+            "ObjId",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "abortHolderSpliceHigh_of_neighbourHigh",
+            "blockedSenderFlowsToEndpoint",
+            "cancelledCallerDonation",
+            "donationHolderHigh_of_donorHigh",
+            "donationOwnerFlowsToHolder",
+            "endpointSpliceHigh",
+            "epId",
+            "lookupTcb",
+            "objectObservable",
+            "replyFrameHeadHolderDonation",
+            "scId",
+            "st",
+            "threadObservable",
+            "toObjId"
           ]
         }
       ]
@@ -83167,7 +83253,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI",
       "path": "SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean",
-      "declaration_count": 15,
+      "declaration_count": 14,
       "declarations": [
         {
           "kind": "namespace",
@@ -83396,27 +83482,9 @@
           ]
         },
         {
-          "kind": "def",
-          "name": "endpointSpliceHigh",
-          "line": 305,
-          "called": [
-            "IfObserver",
-            "LabelingContext",
-            "ObjId",
-            "SystemState",
-            "TCB",
-            "ThreadId",
-            "endpointId",
-            "lookupTcb",
-            "objectObservable",
-            "st",
-            "toObjId"
-          ]
-        },
-        {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_preserves_projection_and_invExt",
-          "line": 329,
+          "line": 319,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -83452,7 +83520,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_preserves_projection",
-          "line": 486,
+          "line": 476,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -83471,7 +83539,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignalBoundOnCore_bound_path_NI",
-          "line": 514,
+          "line": 504,
           "called": [
             "Badge",
             "CoreId",
@@ -83505,7 +83573,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_preserves_projectionOnCore",
-          "line": 549,
+          "line": 539,
           "called": [
             "CoreId",
             "IfObserver",
@@ -83528,7 +83596,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbReceiveComplete_preserves_projectionOnCore",
-          "line": 567,
+          "line": 557,
           "called": [
             "CoreId",
             "IfObserver",
@@ -83551,7 +83619,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignalBoundOnCore_bound_path_NI_smp",
-          "line": 589,
+          "line": 579,
           "called": [
             "Badge",
             "CoreId",
@@ -154360,7 +154428,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Composition",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean",
-      "declaration_count": 33,
+      "declaration_count": 38,
       "declarations": [
         {
           "kind": "namespace",
@@ -154665,6 +154733,7 @@
           "called": [
             "IfObserver",
             "LabelingContext",
+            "ObjId",
             "ThreadId",
             "objectObservable",
             "securityFlowsTo",
@@ -154675,7 +154744,7 @@
         {
           "kind": "theorem",
           "name": "defaultLabelingContext_fails_validity",
-          "line": 767,
+          "line": 795,
           "called": [
             "LabelingContextValid",
             "defaultLabelingContext"
@@ -154684,7 +154753,7 @@
         {
           "kind": "theorem",
           "name": "labelingContextValid_provides_coherence",
-          "line": 777,
+          "line": 805,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -154698,7 +154767,7 @@
         {
           "kind": "theorem",
           "name": "labelingContextValid_is_deployment_requirement",
-          "line": 793,
+          "line": 821,
           "called": [
             "LabelingContext",
             "LabelingContextValid",
@@ -154710,7 +154779,7 @@
         {
           "kind": "theorem",
           "name": "deploymentLabelingContext_valid",
-          "line": 823,
+          "line": 856,
           "called": [
             "DeploymentLabeling",
             "LabelingContextValid",
@@ -154724,7 +154793,7 @@
         {
           "kind": "theorem",
           "name": "confinedLabelingContext_valid",
-          "line": 837,
+          "line": 871,
           "called": [
             "LabelingContextValid",
             "confinedLabelingContext",
@@ -154736,7 +154805,7 @@
         {
           "kind": "theorem",
           "name": "harnessLabelingContext_valid",
-          "line": 848,
+          "line": 882,
           "called": [
             "LabelingContextValid",
             "deploymentLabelingContext_valid",
@@ -154745,8 +154814,95 @@
         },
         {
           "kind": "theorem",
+          "name": "endpointObjectHigh_of_admittedThreadHigh",
+          "line": 908,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "LabelingContextValid",
+            "ObjId",
+            "ThreadId",
+            "epId",
+            "objectObservable",
+            "securityFlowsTo",
+            "securityFlowsTo_trans",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "donationOwnerFlowsToHolder",
+          "line": 946,
+          "called": [
+            "LabelingContext",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "replyDonationReturn",
+            "scId",
+            "securityFlowsTo",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "donationHolderHigh_of_donorHigh",
+          "line": 957,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "donationOwnerFlowsToHolder",
+            "replyDonationReturn",
+            "scId",
+            "securityFlowsTo_trans",
+            "st",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockedSenderFlowsToEndpoint",
+          "line": 988,
+          "called": [
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "epId",
+            "lookupTcb",
+            "securityFlowsTo",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedSenderEndpointObjectHigh",
+          "line": 999,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "LabelingContextValid",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "blockedSenderFlowsToEndpoint",
+            "endpointObjectHigh_of_admittedThreadHigh",
+            "epId",
+            "lookupTcb",
+            "objectObservable",
+            "st",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "declassifyStore_NI",
-          "line": 865,
+          "line": 1025,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -154768,7 +154924,7 @@
         {
           "kind": "def",
           "name": "preservesLowEquivalence",
-          "line": 891,
+          "line": 1051,
           "called": [
             "IfObserver",
             "Kernel",
@@ -154780,7 +154936,7 @@
         {
           "kind": "theorem",
           "name": "compose_preservesLowEquivalence",
-          "line": 901,
+          "line": 1061,
           "called": [
             "IfObserver",
             "Kernel",
@@ -154792,7 +154948,7 @@
         {
           "kind": "theorem",
           "name": "errorAction_preserves_lowEquiv",
-          "line": 920,
+          "line": 1080,
           "called": [
             "IfObserver",
             "KernelError",
@@ -154803,7 +154959,7 @@
         {
           "kind": "theorem",
           "name": "syscallNI_coverage_witness",
-          "line": 958,
+          "line": 1118,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -154821,7 +154977,7 @@
         {
           "kind": "inductive",
           "name": "KernelOperation",
-          "line": 1010,
+          "line": 1170,
           "called": [
             "chooseThread",
             "cspaceCopy",
@@ -154849,7 +155005,7 @@
         {
           "kind": "def",
           "name": "KernelOperation.all",
-          "line": 1063,
+          "line": 1223,
           "called": [
             "KernelOperation",
             "chooseThread",
@@ -154878,7 +155034,7 @@
         {
           "kind": "theorem",
           "name": "KernelOperation.mem_all",
-          "line": 1087,
+          "line": 1247,
           "called": [
             "KernelOperation",
             "KernelOperation.all"
@@ -154887,13 +155043,13 @@
         {
           "kind": "theorem",
           "name": "KernelOperation.all_nodup",
-          "line": 1092,
+          "line": 1252,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "kernelOperation_count",
-          "line": 1100,
+          "line": 1260,
           "called": [
             "length"
           ]
@@ -154901,7 +155057,7 @@
         {
           "kind": "theorem",
           "name": "niStepConstructorCoverage",
-          "line": 1131,
+          "line": 1291,
           "called": [
             "IfObserver",
             "KernelOperation",
@@ -154935,7 +155091,7 @@
         {
           "kind": "def",
           "name": "kernelOperationNiConstructor",
-          "line": 1179,
+          "line": 1339,
           "called": [
             "KernelOperation",
             "chooseThread",
@@ -154964,7 +155120,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_operational",
-          "line": 1219,
+          "line": 1379,
           "called": [
             "KernelOperation",
             "chooseThread",
@@ -154995,7 +155151,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_injective",
-          "line": 1238,
+          "line": 1398,
           "called": [
             "KernelOperation",
             "kernelOperationNiConstructor"
@@ -155004,7 +155160,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_count",
-          "line": 1247,
+          "line": 1407,
           "called": [
             "Kernel",
             "chooseThread",
@@ -156034,7 +156190,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Operations",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean",
-      "declaration_count": 131,
+      "declaration_count": 132,
       "declarations": [
         {
           "kind": "namespace",
@@ -158087,9 +158243,27 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "endpointSpliceHigh",
+          "line": 3566,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "lookupTcb",
+            "objectObservable",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "objects_insert_preserves_projection_high",
-          "line": 3561,
+          "line": 3588,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -158110,7 +158284,7 @@
         {
           "kind": "theorem",
           "name": "updatePrioritySource_preserves_projection",
-          "line": 3612,
+          "line": 3639,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158139,7 +158313,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlushFromState_preserves_projection",
-          "line": 3654,
+          "line": 3681,
           "called": [
             "ASID",
             "IfObserver",
@@ -158163,7 +158337,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_preserves_projection",
-          "line": 3697,
+          "line": 3724,
           "called": [
             "ASID",
             "IfObserver",
@@ -158183,7 +158357,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTlb_write_preserves_projection",
-          "line": 3730,
+          "line": 3757,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158197,7 +158371,7 @@
         {
           "kind": "theorem",
           "name": "perCoreICache_write_preserves_projection",
-          "line": 3745,
+          "line": 3772,
           "called": [
             "ICacheState",
             "IfObserver",
@@ -158211,7 +158385,7 @@
         {
           "kind": "theorem",
           "name": "pendingIcacheMaintenance_write_preserves_projection",
-          "line": 3759,
+          "line": 3786,
           "called": [
             "ICacheInvalidation",
             "IfObserver",
@@ -158224,7 +158398,7 @@
         {
           "kind": "theorem",
           "name": "declassificationAuditLog_write_preserves_projection",
-          "line": 3795,
+          "line": 3822,
           "called": [
             "DeclassificationAuditLog",
             "IfObserver",
@@ -158237,7 +158411,7 @@
         {
           "kind": "theorem",
           "name": "declassificationAuditEpoch_write_preserves_projection",
-          "line": 3816,
+          "line": 3843,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158249,7 +158423,7 @@
         {
           "kind": "theorem",
           "name": "declassificationRefusals_write_preserves_projection",
-          "line": 3839,
+          "line": 3866,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158262,7 +158436,7 @@
         {
           "kind": "theorem",
           "name": "declassificationTaint_write_preserves_projection",
-          "line": 3862,
+          "line": 3889,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158275,7 +158449,7 @@
         {
           "kind": "theorem",
           "name": "runQueue_remove_preserves_projection_at_high",
-          "line": 3878,
+          "line": 3905,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158306,7 +158480,7 @@
         {
           "kind": "theorem",
           "name": "runQueue_insert_preserves_projection_at_high",
-          "line": 3898,
+          "line": 3925,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158338,7 +158512,7 @@
         {
           "kind": "theorem",
           "name": "runQueue_remove_insert_preserves_projection_at_high",
-          "line": 3917,
+          "line": 3944,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158372,7 +158546,7 @@
         {
           "kind": "theorem",
           "name": "migrateRunQueueBucketOnCore_preserves_projection",
-          "line": 3946,
+          "line": 3973,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158403,7 +158577,7 @@
         {
           "kind": "theorem",
           "name": "migrateRunQueueBucket_preserves_projection",
-          "line": 3976,
+          "line": 4003,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158421,7 +158595,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_preserves_projection",
-          "line": 3999,
+          "line": 4026,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158450,7 +158624,7 @@
         {
           "kind": "theorem",
           "name": "migrateRunQueueOnAffinityChange_preserves_projection",
-          "line": 4026,
+          "line": 4053,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158484,7 +158658,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_preserves_projection",
-          "line": 4068,
+          "line": 4095,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158503,7 +158677,7 @@
         {
           "kind": "theorem",
           "name": "projectKernelObject_tcb_cpuAffinity_irrelevant",
-          "line": 4087,
+          "line": 4114,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158515,7 +158689,7 @@
         {
           "kind": "theorem",
           "name": "objects_insert_preserves_projection_of_proj_eq",
-          "line": 4100,
+          "line": 4127,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -158538,7 +158712,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_preserves_projection_unconditional",
-          "line": 4137,
+          "line": 4164,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158558,7 +158732,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityWithMigration_preserves_projection",
-          "line": 4164,
+          "line": 4191,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158581,7 +158755,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityOp_preserves_projection",
-          "line": 4201,
+          "line": 4228,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158604,7 +158778,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityOnCore_preserves_projection",
-          "line": 4236,
+          "line": 4263,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158625,7 +158799,7 @@
         {
           "kind": "theorem",
           "name": "setPriorityOp_preserves_projection",
-          "line": 4263,
+          "line": 4290,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -158656,7 +158830,7 @@
         {
           "kind": "theorem",
           "name": "priorityRescheduleOnCore_preserves_projection",
-          "line": 4346,
+          "line": 4373,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158672,7 +158846,7 @@
         {
           "kind": "theorem",
           "name": "priorityRescheduleOnCoreLive_preserves_projection",
-          "line": 4388,
+          "line": 4415,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158690,7 +158864,7 @@
         {
           "kind": "theorem",
           "name": "setPriorityOnCore_preserves_projection",
-          "line": 4416,
+          "line": 4443,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158721,7 +158895,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriorityOp_preserves_projection",
-          "line": 4469,
+          "line": 4496,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -158754,7 +158928,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriorityOnCore_preserves_projection",
-          "line": 4554,
+          "line": 4581,
           "called": [
             "CoreId",
             "IfObserver",
@@ -158790,7 +158964,7 @@
         {
           "kind": "theorem",
           "name": "lookupServiceByCap_preserves_state",
-          "line": 4624,
+          "line": 4651,
           "called": [
             "ObjId",
             "ServiceRegistration",
@@ -158806,7 +158980,7 @@
         {
           "kind": "theorem",
           "name": "lookupServiceByCap_preserves_projection",
-          "line": 4642,
+          "line": 4669,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158823,7 +158997,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_projection",
-          "line": 4671,
+          "line": 4698,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158852,7 +159026,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_preserves_projection",
-          "line": 4725,
+          "line": 4752,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158866,7 +159040,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_frame_runQueue_rebucket",
-          "line": 4746,
+          "line": 4773,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158887,7 +159061,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_preserves_projection",
-          "line": 4763,
+          "line": 4790,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158902,7 +159076,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbind_preserves_projection",
-          "line": 4789,
+          "line": 4816,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158916,7 +159090,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanup_preserves_projection",
-          "line": 4819,
+          "line": 4846,
           "called": [
             "Capability",
             "IfObserver",
@@ -158932,7 +159106,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonation_preserves_projection",
-          "line": 4847,
+          "line": 4874,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158947,7 +159121,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonation_preserves_projection",
-          "line": 4872,
+          "line": 4899,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158962,7 +159136,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonation_preserves_projection",
-          "line": 4894,
+          "line": 4921,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158977,7 +159151,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_preserves_projection",
-          "line": 4957,
+          "line": 4987,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -158991,7 +159165,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_insert",
-          "line": 4976,
+          "line": 5006,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -159010,7 +159184,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_ensureRunnable",
-          "line": 4990,
+          "line": 5020,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -159026,7 +159200,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_preserves_projection",
-          "line": 5015,
+          "line": 5045,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -159040,7 +159214,7 @@
         {
           "kind": "theorem",
           "name": "setThreadFaultHandlerOp_preserves_projection",
-          "line": 5035,
+          "line": 5065,
           "called": [
             "CPtr",
             "IfObserver",
@@ -168908,8 +169082,37 @@
         },
         {
           "kind": "theorem",
+          "name": "confidentialityFlowsTo_refl",
+          "line": 215,
+          "called": [
+            "Confidentiality",
+            "confidentialityFlowsTo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "integrityFlowsTo_refl",
+          "line": 219,
+          "called": [
+            "Integrity",
+            "integrityFlowsTo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "securityFlowsTo_refl",
+          "line": 223,
+          "called": [
+            "SecurityLabel",
+            "confidentialityFlowsTo_refl",
+            "integrityFlowsTo_refl",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "securityFlowsTo_prevents_label_escalation",
-          "line": 224,
+          "line": 244,
           "called": [
             "kernelTrusted",
             "publicLabel",
@@ -168919,7 +169122,7 @@
         {
           "kind": "theorem",
           "name": "lowTrusted_highUntrusted_mutually_isolated",
-          "line": 246,
+          "line": 266,
           "called": [
             "highUntrusted",
             "lowTrusted",
@@ -168929,7 +169132,7 @@
         {
           "kind": "structure",
           "name": "DomainFlowPolicy",
-          "line": 281,
+          "line": 301,
           "called": [
             "SecurityDomain"
           ]
@@ -168937,13 +169140,13 @@
         {
           "kind": "namespace",
           "name": "DomainFlowPolicy",
-          "line": 284,
+          "line": 304,
           "called": []
         },
         {
           "kind": "def",
           "name": "isReflexive",
-          "line": 287,
+          "line": 307,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -168952,7 +169155,7 @@
         {
           "kind": "def",
           "name": "isTransitive",
-          "line": 291,
+          "line": 311,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -168961,7 +169164,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 296,
+          "line": 316,
           "called": [
             "DomainFlowPolicy",
             "isReflexive",
@@ -168971,7 +169174,7 @@
         {
           "kind": "def",
           "name": "allowAll",
-          "line": 300,
+          "line": 320,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -168979,7 +169182,7 @@
         {
           "kind": "def",
           "name": "linearOrder",
-          "line": 305,
+          "line": 325,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -168987,7 +169190,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_reflexive",
-          "line": 314,
+          "line": 334,
           "called": [
             "isReflexive"
           ]
@@ -168995,7 +169198,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_transitive",
-          "line": 318,
+          "line": 338,
           "called": [
             "isTransitive"
           ]
@@ -169003,7 +169206,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_wellFormed",
-          "line": 322,
+          "line": 342,
           "called": [
             "allowAll_reflexive",
             "allowAll_transitive",
@@ -169013,7 +169216,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_reflexive",
-          "line": 326,
+          "line": 346,
           "called": [
             "isReflexive",
             "linearOrder"
@@ -169022,7 +169225,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_transitive",
-          "line": 330,
+          "line": 350,
           "called": [
             "isTransitive",
             "le_trans",
@@ -169032,7 +169235,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_wellFormed",
-          "line": 336,
+          "line": 356,
           "called": [
             "linearOrder_reflexive",
             "linearOrder_transitive",
@@ -169042,7 +169245,7 @@
         {
           "kind": "def",
           "name": "domainFlowsTo",
-          "line": 344,
+          "line": 364,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -169051,7 +169254,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_refl",
-          "line": 347,
+          "line": 367,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -169062,7 +169265,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_trans",
-          "line": 353,
+          "line": 373,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -169073,7 +169276,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationPolicy",
-          "line": 375,
+          "line": 395,
           "called": [
             "SecurityDomain"
           ]
@@ -169081,13 +169284,13 @@
         {
           "kind": "namespace",
           "name": "DeclassificationPolicy",
-          "line": 378,
+          "line": 398,
           "called": []
         },
         {
           "kind": "def",
           "name": "none",
-          "line": 381,
+          "line": 401,
           "called": [
             "DeclassificationPolicy"
           ]
@@ -169095,7 +169298,7 @@
         {
           "kind": "def",
           "name": "isDeclassificationAuthorized",
-          "line": 387,
+          "line": 407,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -169105,7 +169308,7 @@
         {
           "kind": "theorem",
           "name": "isDeclassificationAuthorized_not_reflexive",
-          "line": 395,
+          "line": 415,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -169117,7 +169320,7 @@
         {
           "kind": "structure",
           "name": "EndpointFlowPolicy",
-          "line": 410,
+          "line": 430,
           "called": [
             "DomainFlowPolicy",
             "ObjId"
@@ -169126,7 +169329,7 @@
         {
           "kind": "structure",
           "name": "MemoryDomainOwnership",
-          "line": 418,
+          "line": 438,
           "called": [
             "DomainId",
             "PAddr",
@@ -169136,7 +169339,7 @@
         {
           "kind": "structure",
           "name": "LabelingContext",
-          "line": 423,
+          "line": 443,
           "called": [
             "DeclassificationPolicy",
             "EndpointFlowPolicy",
@@ -169152,7 +169355,7 @@
         {
           "kind": "def",
           "name": "defaultLabelingContext",
-          "line": 531,
+          "line": 551,
           "called": [
             "LabelingContext",
             "publicLabel"
@@ -169161,7 +169364,7 @@
         {
           "kind": "theorem",
           "name": "defaultLabelingContext_insecure",
-          "line": 551,
+          "line": 571,
           "called": [
             "ObjId",
             "confidentialityFlowsTo",
@@ -169174,7 +169377,7 @@
         {
           "kind": "theorem",
           "name": "defaultLabelingContext_all_threads_observable",
-          "line": 561,
+          "line": 581,
           "called": [
             "ThreadId",
             "confidentialityFlowsTo",
@@ -169187,7 +169390,7 @@
         {
           "kind": "def",
           "name": "separationWitnessAdmissible",
-          "line": 585,
+          "line": 605,
           "called": [
             "ThreadId",
             "isIdleThreadId",
@@ -169197,7 +169400,7 @@
         {
           "kind": "theorem",
           "name": "separationWitnessAdmissible_iff",
-          "line": 590,
+          "line": 610,
           "called": [
             "ThreadId",
             "idleThreadIdBase",
@@ -169211,7 +169414,7 @@
         {
           "kind": "theorem",
           "name": "separationWitnessAdmissible_not_reserved",
-          "line": 600,
+          "line": 620,
           "called": [
             "ThreadId",
             "isReserved",
@@ -169221,7 +169424,7 @@
         {
           "kind": "theorem",
           "name": "separationWitnessAdmissible_not_idle",
-          "line": 606,
+          "line": 626,
           "called": [
             "ThreadId",
             "isIdleThreadId",
@@ -169231,7 +169434,7 @@
         {
           "kind": "theorem",
           "name": "separationWitnessAdmissible_idleThreadId",
-          "line": 613,
+          "line": 633,
           "called": [
             "CoreId",
             "idleThreadId",
@@ -169242,7 +169445,7 @@
         {
           "kind": "def",
           "name": "verifiesDeclaredSeparation",
-          "line": 637,
+          "line": 657,
           "called": [
             "LabelingContext",
             "none",
@@ -169252,7 +169455,7 @@
         {
           "kind": "def",
           "name": "isInsecureDefaultContext",
-          "line": 672,
+          "line": 692,
           "called": [
             "LabelingContext",
             "verifiesDeclaredSeparation"
@@ -169261,7 +169464,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_defaultLabelingContext",
-          "line": 678,
+          "line": 698,
           "called": [
             "defaultLabelingContext",
             "isInsecureDefaultContext"
@@ -169270,7 +169473,7 @@
         {
           "kind": "theorem",
           "name": "defaultLabelingContext_separates_no_threads",
-          "line": 686,
+          "line": 706,
           "called": [
             "ThreadId"
           ]
@@ -169278,7 +169481,7 @@
         {
           "kind": "def",
           "name": "testLabelingContext",
-          "line": 713,
+          "line": 733,
           "called": [
             "LabelingContext",
             "kernelTrusted",
@@ -169289,7 +169492,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_testLabelingContext",
-          "line": 732,
+          "line": 752,
           "called": [
             "isInsecureDefaultContext",
             "testLabelingContext"
@@ -169298,7 +169501,7 @@
         {
           "kind": "theorem",
           "name": "testLabelingContext_separates_no_real_threads",
-          "line": 741,
+          "line": 761,
           "called": [
             "ThreadId",
             "isReserved",
@@ -169309,7 +169512,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_false_implies_labelNonTriviality",
-          "line": 756,
+          "line": 776,
           "called": [
             "LabelingContext",
             "ThreadId",
@@ -169321,7 +169524,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_false_implies_real_witness",
-          "line": 774,
+          "line": 794,
           "called": [
             "LabelingContext",
             "ThreadId",
@@ -169334,7 +169537,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_false_implies_witness_not_idle",
-          "line": 792,
+          "line": 812,
           "called": [
             "LabelingContext",
             "ThreadId",
@@ -169347,7 +169550,7 @@
         {
           "kind": "structure",
           "name": "DeploymentLabeling",
-          "line": 841,
+          "line": 861,
           "called": [
             "DeclassificationPolicy",
             "EndpointFlowPolicy",
@@ -169358,6 +169561,7 @@
             "ServiceId",
             "ThreadId",
             "none",
+            "securityFlowsTo",
             "separationWitnessAdmissible",
             "toNat"
           ]
@@ -169365,7 +169569,7 @@
         {
           "kind": "def",
           "name": "deploymentLabelingContext",
-          "line": 903,
+          "line": 952,
           "called": [
             "DeploymentLabeling",
             "LabelingContext",
@@ -169375,7 +169579,7 @@
         {
           "kind": "theorem",
           "name": "deploymentLabelingContext_policy_fields",
-          "line": 917,
+          "line": 966,
           "called": [
             "DeploymentLabeling",
             "deploymentLabelingContext"
@@ -169384,7 +169588,7 @@
         {
           "kind": "theorem",
           "name": "deploymentLabelingContext_thread_object_label_eq",
-          "line": 927,
+          "line": 976,
           "called": [
             "DeploymentLabeling",
             "ThreadId",
@@ -169395,7 +169599,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_deploymentLabelingContext",
-          "line": 935,
+          "line": 984,
           "called": [
             "DeploymentLabeling",
             "deploymentLabelingContext",
@@ -169408,13 +169612,13 @@
         {
           "kind": "def",
           "name": "separationBoundary",
-          "line": 954,
+          "line": 1003,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "two_le_separationBoundary",
-          "line": 956,
+          "line": 1005,
           "called": [
             "separationBoundary"
           ]
@@ -169422,7 +169626,7 @@
         {
           "kind": "def",
           "name": "upperWitnessIndex",
-          "line": 969,
+          "line": 1018,
           "called": [
             "idleThreadIdBase",
             "numCores",
@@ -169432,7 +169636,7 @@
         {
           "kind": "theorem",
           "name": "separationBoundary_le_upperWitnessIndex",
-          "line": 973,
+          "line": 1022,
           "called": [
             "separationBoundary",
             "upperWitnessIndex"
@@ -169441,7 +169645,7 @@
         {
           "kind": "theorem",
           "name": "separationWitnessAdmissible_upperWitnessIndex",
-          "line": 978,
+          "line": 1027,
           "called": [
             "idleThreadIdBase",
             "numCores",
@@ -169455,7 +169659,7 @@
         {
           "kind": "def",
           "name": "indexPartitionedLabel",
-          "line": 987,
+          "line": 1036,
           "called": [
             "SecurityLabel",
             "separationBoundary"
@@ -169464,11 +169668,12 @@
         {
           "kind": "def",
           "name": "indexPartitionedDeploymentLabeling",
-          "line": 1022,
+          "line": 1071,
           "called": [
             "DeploymentLabeling",
             "SecurityLabel",
             "indexPartitionedLabel",
+            "securityFlowsTo_refl",
             "separationBoundary",
             "separationBoundary_le_upperWitnessIndex",
             "separationWitnessAdmissible",
@@ -169480,7 +169685,7 @@
         {
           "kind": "theorem",
           "name": "indexPartitionedDeploymentLabeling_separatedThreads",
-          "line": 1044,
+          "line": 1096,
           "called": [
             "SecurityLabel",
             "indexPartitionedDeploymentLabeling",
@@ -169492,7 +169697,7 @@
         {
           "kind": "def",
           "name": "indexPartitionedLabelingContext",
-          "line": 1060,
+          "line": 1112,
           "called": [
             "LabelingContext",
             "SecurityLabel",
@@ -169505,7 +169710,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_indexPartitionedLabelingContext",
-          "line": 1070,
+          "line": 1122,
           "called": [
             "SecurityLabel",
             "indexPartitionedLabelingContext",
@@ -169518,7 +169723,7 @@
         {
           "kind": "theorem",
           "name": "indexPartitionedLabelingContext_threadLabel_below",
-          "line": 1084,
+          "line": 1136,
           "called": [
             "SecurityLabel",
             "ThreadId",
@@ -169534,7 +169739,7 @@
         {
           "kind": "theorem",
           "name": "indexPartitionedLabelingContext_threadLabel_above",
-          "line": 1096,
+          "line": 1148,
           "called": [
             "SecurityLabel",
             "ThreadId",
@@ -169550,7 +169755,7 @@
         {
           "kind": "def",
           "name": "confinedLabelingContext",
-          "line": 1142,
+          "line": 1194,
           "called": [
             "LabelingContext",
             "highUntrusted",
@@ -169563,7 +169768,7 @@
         {
           "kind": "def",
           "name": "confinedDeploymentLabeling",
-          "line": 1160,
+          "line": 1212,
           "called": [
             "DeploymentLabeling",
             "highUntrusted",
@@ -169576,7 +169781,7 @@
         {
           "kind": "theorem",
           "name": "confinedLabelingContext_eq_deploymentLabelingContext",
-          "line": 1170,
+          "line": 1222,
           "called": [
             "confinedDeploymentLabeling",
             "confinedLabelingContext",
@@ -169588,7 +169793,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_confinedLabelingContext",
-          "line": 1180,
+          "line": 1232,
           "called": [
             "confinedLabelingContext",
             "isInsecureDefaultContext",
@@ -169600,7 +169805,7 @@
         {
           "kind": "theorem",
           "name": "confinedLabelingContext_confines",
-          "line": 1193,
+          "line": 1245,
           "called": [
             "ThreadId",
             "confinedLabelingContext",
@@ -169616,19 +169821,19 @@
         {
           "kind": "def",
           "name": "harnessSeparationBoundary",
-          "line": 1223,
+          "line": 1275,
           "called": []
         },
         {
           "kind": "def",
           "name": "harnessLowerWitnessIndex",
-          "line": 1234,
+          "line": 1286,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "harnessLowerWitnessIndex_admissible",
-          "line": 1237,
+          "line": 1289,
           "called": [
             "harnessLowerWitnessIndex",
             "separationWitnessAdmissible"
@@ -169637,7 +169842,7 @@
         {
           "kind": "theorem",
           "name": "harnessLowerWitnessIndex_below_boundary",
-          "line": 1241,
+          "line": 1293,
           "called": [
             "harnessLowerWitnessIndex",
             "harnessSeparationBoundary",
@@ -169647,7 +169852,7 @@
         {
           "kind": "def",
           "name": "harnessLabelingContext",
-          "line": 1260,
+          "line": 1312,
           "called": [
             "LabelingContext",
             "harnessLowerWitnessIndex",
@@ -169662,7 +169867,7 @@
         {
           "kind": "def",
           "name": "harnessDeploymentLabeling",
-          "line": 1268,
+          "line": 1320,
           "called": [
             "DeploymentLabeling",
             "harnessLowerWitnessIndex",
@@ -169677,7 +169882,7 @@
         {
           "kind": "theorem",
           "name": "harnessLabelingContext_eq_deploymentLabelingContext",
-          "line": 1274,
+          "line": 1326,
           "called": [
             "deploymentLabelingContext",
             "harnessDeploymentLabeling",
@@ -169687,7 +169892,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_harnessLabelingContext",
-          "line": 1278,
+          "line": 1330,
           "called": [
             "harnessLabelingContext",
             "isInsecureDefaultContext",
@@ -169697,7 +169902,7 @@
         {
           "kind": "theorem",
           "name": "harnessLabelingContext_separatedThreads",
-          "line": 1285,
+          "line": 1337,
           "called": [
             "harnessLowerWitnessIndex",
             "harnessSeparationBoundary"
@@ -169706,7 +169911,7 @@
         {
           "kind": "def",
           "name": "uniformFixtureLabelingContext",
-          "line": 1302,
+          "line": 1354,
           "called": [
             "LabelingContext",
             "SecurityLabel",
@@ -169720,7 +169925,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_uniformFixtureLabelingContext",
-          "line": 1309,
+          "line": 1361,
           "called": [
             "SecurityLabel",
             "isInsecureDefaultContext",
@@ -169731,7 +169936,7 @@
         {
           "kind": "theorem",
           "name": "harnessLabelingContext_threadLabel_public",
-          "line": 1318,
+          "line": 1370,
           "called": [
             "ThreadId",
             "harnessSeparationBoundary",
@@ -169743,37 +169948,8 @@
         },
         {
           "kind": "theorem",
-          "name": "confidentialityFlowsTo_refl",
-          "line": 1326,
-          "called": [
-            "Confidentiality",
-            "confidentialityFlowsTo"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "integrityFlowsTo_refl",
-          "line": 1330,
-          "called": [
-            "Integrity",
-            "integrityFlowsTo"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "securityFlowsTo_refl",
-          "line": 1334,
-          "called": [
-            "SecurityLabel",
-            "confidentialityFlowsTo_refl",
-            "integrityFlowsTo_refl",
-            "securityFlowsTo"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "confidentialityFlowsTo_trans",
-          "line": 1340,
+          "line": 1378,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -169782,7 +169958,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_trans",
-          "line": 1347,
+          "line": 1385,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -169791,7 +169967,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_trans",
-          "line": 1354,
+          "line": 1392,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_trans",
@@ -169802,7 +169978,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_antisymm",
-          "line": 1376,
+          "line": 1414,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -169811,7 +169987,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_antisymm",
-          "line": 1383,
+          "line": 1421,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -169820,7 +169996,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_antisymm",
-          "line": 1391,
+          "line": 1429,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_antisymm",
@@ -169830,8 +170006,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1409>",
-          "line": 1409,
+          "name": "<anonymous:instance:1447>",
+          "line": 1447,
           "called": [
             "securityFlowsTo"
           ]
@@ -169839,7 +170015,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_lattice_verified",
-          "line": 1414,
+          "line": 1452,
           "called": [
             "kernelTrusted",
             "publicLabel",
@@ -169849,7 +170025,7 @@
         {
           "kind": "structure",
           "name": "GenericLabelingContext",
-          "line": 1432,
+          "line": 1470,
           "called": [
             "DomainFlowPolicy",
             "ObjId",
@@ -169861,7 +170037,7 @@
         {
           "kind": "def",
           "name": "genericFlowCheck",
-          "line": 1441,
+          "line": 1479,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -169871,7 +170047,7 @@
         {
           "kind": "def",
           "name": "endpointFlowCheck",
-          "line": 1448,
+          "line": 1486,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -169886,7 +170062,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_fallback",
-          "line": 1458,
+          "line": 1496,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -169901,7 +170077,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_override",
-          "line": 1469,
+          "line": 1507,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -169916,7 +170092,7 @@
         {
           "kind": "def",
           "name": "embedLegacyLabel",
-          "line": 1498,
+          "line": 1536,
           "called": [
             "SecurityDomain",
             "SecurityLabel"
@@ -169925,7 +170101,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_public",
-          "line": 1506,
+          "line": 1544,
           "called": [
             "embedLegacyLabel",
             "publicLabel"
@@ -169934,7 +170110,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_kernelTrusted",
-          "line": 1510,
+          "line": 1548,
           "called": [
             "embedLegacyLabel",
             "kernelTrusted"
@@ -169943,7 +170119,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_preserves_flow",
-          "line": 1520,
+          "line": 1558,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo",
@@ -169956,7 +170132,7 @@
         {
           "kind": "def",
           "name": "unembedLegacyDomain",
-          "line": 1559,
+          "line": 1597,
           "called": [
             "SecurityDomain",
             "SecurityLabel",
@@ -169966,7 +170142,7 @@
         {
           "kind": "theorem",
           "name": "unembedLegacyDomain_embed",
-          "line": 1568,
+          "line": 1606,
           "called": [
             "SecurityLabel",
             "embedLegacyLabel",
@@ -169976,7 +170152,7 @@
         {
           "kind": "def",
           "name": "legacyDomainFlows",
-          "line": 1581,
+          "line": 1619,
           "called": [
             "SecurityLabel",
             "securityFlowsTo"
@@ -169985,7 +170161,7 @@
         {
           "kind": "theorem",
           "name": "legacyDomainFlows_some",
-          "line": 1585,
+          "line": 1623,
           "called": [
             "SecurityLabel",
             "legacyDomainFlows",
@@ -169995,7 +170171,7 @@
         {
           "kind": "theorem",
           "name": "legacyDomainFlows_none_left",
-          "line": 1588,
+          "line": 1626,
           "called": [
             "SecurityLabel",
             "legacyDomainFlows",
@@ -170005,7 +170181,7 @@
         {
           "kind": "theorem",
           "name": "legacyDomainFlows_none_right",
-          "line": 1591,
+          "line": 1629,
           "called": [
             "SecurityLabel",
             "legacyDomainFlows",
@@ -170015,7 +170191,7 @@
         {
           "kind": "def",
           "name": "DomainFlowPolicy.legacyLattice",
-          "line": 1594,
+          "line": 1632,
           "called": [
             "DomainFlowPolicy",
             "legacyDomainFlows",
@@ -170025,7 +170201,7 @@
         {
           "kind": "theorem",
           "name": "legacyLattice_canFlow_embed",
-          "line": 1602,
+          "line": 1640,
           "called": [
             "SecurityLabel",
             "embedLegacyLabel",
@@ -170035,7 +170211,7 @@
         {
           "kind": "theorem",
           "name": "linearOrder_is_not_faithful_to_legacy",
-          "line": 1616,
+          "line": 1654,
           "called": [
             "embedLegacyLabel",
             "securityFlowsTo"
@@ -170044,7 +170220,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.legacyLattice_reflexive",
-          "line": 1625,
+          "line": 1663,
           "called": [
             "DomainFlowPolicy.legacyLattice",
             "isReflexive"
@@ -170053,7 +170229,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.legacyLattice_transitive",
-          "line": 1632,
+          "line": 1670,
           "called": [
             "DomainFlowPolicy.legacyLattice",
             "isTransitive",
@@ -170065,7 +170241,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.legacyLattice_wellFormed",
-          "line": 1656,
+          "line": 1694,
           "called": [
             "legacyLattice_reflexive",
             "legacyLattice_transitive",
@@ -170075,7 +170251,7 @@
         {
           "kind": "def",
           "name": "endpointOverrideAllows",
-          "line": 1669,
+          "line": 1707,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -170088,7 +170264,7 @@
         {
           "kind": "def",
           "name": "endpointFlowGate",
-          "line": 1692,
+          "line": 1730,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -170101,7 +170277,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_implies_securityFlowsTo",
-          "line": 1701,
+          "line": 1739,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -170114,7 +170290,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_implies_override",
-          "line": 1708,
+          "line": 1746,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -170127,7 +170303,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_of",
-          "line": 1717,
+          "line": 1755,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -170141,7 +170317,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_false_of_override_false",
-          "line": 1727,
+          "line": 1765,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -170154,7 +170330,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_false_of_securityFlowsTo_false",
-          "line": 1736,
+          "line": 1774,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -170167,7 +170343,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_eq_securityFlowsTo_of_no_override",
-          "line": 1745,
+          "line": 1783,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -170182,7 +170358,7 @@
         {
           "kind": "theorem",
           "name": "endpointOverrideAllows_default",
-          "line": 1753,
+          "line": 1791,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -170195,7 +170371,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowGate_is_not_securityFlowsTo",
-          "line": 1762,
+          "line": 1800,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -170209,7 +170385,7 @@
         {
           "kind": "def",
           "name": "endpointGateRestricted",
-          "line": 1781,
+          "line": 1819,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -170222,7 +170398,7 @@
         {
           "kind": "theorem",
           "name": "endpointGateRestricted_always",
-          "line": 1795,
+          "line": 1833,
           "called": [
             "LabelingContext",
             "endpointFlowGate_implies_securityFlowsTo",
@@ -170233,7 +170409,7 @@
         {
           "kind": "theorem",
           "name": "endpointGateRestricted_survives_widening_override",
-          "line": 1808,
+          "line": 1846,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -170249,7 +170425,7 @@
         {
           "kind": "def",
           "name": "liftLegacyContext",
-          "line": 1835,
+          "line": 1873,
           "called": [
             "GenericLabelingContext",
             "LabelingContext",
@@ -170260,7 +170436,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_reflexive",
-          "line": 1880,
+          "line": 1918,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -170270,7 +170446,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_transitive",
-          "line": 1883,
+          "line": 1921,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -170280,7 +170456,7 @@
         {
           "kind": "def",
           "name": "endpointFlowPolicyWellFormed",
-          "line": 1929,
+          "line": 1967,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -170290,7 +170466,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowPolicyWellFormed_no_overrides",
-          "line": 1937,
+          "line": 1975,
           "called": [
             "DomainFlowPolicy",
             "endpointFlowPolicyWellFormed",
@@ -170301,7 +170477,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_reflexive",
-          "line": 1948,
+          "line": 1986,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -170318,7 +170494,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_transitive",
-          "line": 1964,
+          "line": 2002,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -170335,7 +170511,7 @@
         {
           "kind": "def",
           "name": "endpointPolicyRestricted",
-          "line": 1995,
+          "line": 2033,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -170346,7 +170522,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_no_overrides",
-          "line": 2006,
+          "line": 2044,
           "called": [
             "DomainFlowPolicy",
             "endpointPolicyRestricted",
@@ -170356,7 +170532,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_restricted_subset",
-          "line": 2013,
+          "line": 2051,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -171201,7 +171377,7 @@
         {
           "kind": "theorem",
           "name": "endpointAdmissionAdmitsMixedObservability",
-          "line": 1233,
+          "line": 1237,
           "called": [
             "IfObserver",
             "Kernel",

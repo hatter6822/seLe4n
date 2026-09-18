@@ -785,8 +785,12 @@ run_check "INVARIANT" rg -n '^theorem notificationWaitOnCore_preserves_ipcInvari
 # because each projection step's hypothesis is the previous state's invExt),
 # its per-core form, and the boot-core + every-core theorems it makes possible.
 # The label hypothesis resolves the two queue neighbours through the pre-state
-# lookup, so a caller cannot under-state it by naming the wrong threads.
-run_check "INVARIANT" rg -n '^def endpointSpliceHigh' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+# lookup, so a caller cannot under-state it by naming the wrong threads.  WS-RR
+# RR8.8 moved that predicate to `InformationFlow/Invariant/Operations.lean` so the
+# cancellation reclaim's abort could reach it too, and the anchor moved with it --
+# this positive would otherwise have contradicted the negative that pins the
+# single owner, which `check_anchor_consistency.py` refused.
+run_check "INVARIANT" rg -n '^def endpointSpliceHigh' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_projection_and_invExt' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
 run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_projection\b' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
 run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_projectionOnCore' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
@@ -3635,8 +3639,8 @@ run_negative_check "INVARIANT" rg -n 'let rounds = fifo_acquisitions\(\) / THREA
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.
-run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSpliceHigh[^\n]*(\n([ \t][^\n]*)?)*queuePPrev = some \(\.tcbNext p\)" SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSpliceHigh[^\n]*(\n([ \t][^\n]*)?)*tcb\.queueNext = some n" SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSpliceHigh[^\n]*(\n([ \t][^\n]*)?)*queuePPrev = some \(\.tcbNext p\)" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSpliceHigh[^\n]*(\n([ \t][^\n]*)?)*tcb\.queueNext = some n" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
 run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
@@ -14834,5 +14838,47 @@ run_prose_negative_check "INVARIANT" bash -lc 'rg -U -n "a low endpoint\s*\n?\s*
 run_prose_negative_check "INVARIANT" bash -lc 'rg -U -n "label-uniformity invariant(,| and)\s*\n?\s*(\*\*)?establish(ed|ing)(\*\*)? it on every" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
 run_prose_check "INVARIANT" rg -n 'unestablishable' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 run_prose_check "INVARIANT" rg -n 'unestablishable' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+
+# ---------------------------------------------------------------------------
+# WS-RR RR8.8 / RR8.9 -- the labelling layer the two obligations reduce to.
+#
+# The deployment obligation, and it is a RELATION: the flow runs from the
+# endpoint's *flow* label to the *entity* label the projection reads.  A mutation
+# that keeps the field and reverses it, or reads one function twice, keeps every
+# token and asserts nothing about the two answers this reconciles.
+run_check "INVARIANT" bash -lc 'rg -U -n "hEndpointObjectCoherence : . oid : SeLe4n.ObjId,[^\n]*(\n([ \t][^\n]*)?)*securityFlowsTo \(endpointLabelOf oid\) \(entityLabelOf oid.toNat\) = true" SeLe4n/Kernel/InformationFlow/Policy.lean'
+# ...and the LabelingContextValid conjunct reads `objectLabelOf`, which is what
+# `objectObservable` decides visibility from -- not `threadLabelOf`, which would
+# make the conjunct a statement about a different question.
+run_check "INVARIANT" bash -lc 'rg -U -n "endpointObjectCoherence : . oid : SeLe4n.ObjId,[^\n]*(\n([ \t][^\n]*)?)*securityFlowsTo \(ctx.endpointLabelOf oid\) \(ctx.objectLabelOf oid\) = true" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "endpointObjectCoherence : . oid : SeLe4n.ObjId,[^\n]*(\n([ \t][^\n]*)?)*securityFlowsTo \(ctx.endpointLabelOf oid\) \(ctx.threadLabelOf" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+# The donor-dominance invariant is stated over `replyDonationReturn?` -- this
+# tree's single reader of "does this thread hold a donated context, and from
+# whom" -- so a second spelling of that question cannot enter through it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*replyDonationReturn\? st holder = some \(scId, owner\)" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*schedContextBinding = .donated" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+# The endpoint-flow invariant covers BOTH blocked-sender states.  Dropping either
+# keeps the definition and silently exempts one of the two arms
+# `abortHolderPendingIpc` and `cancelHolderBlockedEndpoint?` both resolve on.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedSenderFlowsToEndpoint[^\n]*(\n([ \t][^\n]*)?)*\(t.ipcState = ThreadIpcState.blockedOnSend epId ∨" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedSenderFlowsToEndpoint[^\n]*(\n([ \t][^\n]*)?)*ThreadIpcState.blockedOnCall epId\)" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+# RR8.9 is DISCHARGED, and the load-bearing half of that claim is what the
+# discharge does NOT take: a run-queue insert is filtered by the inserted
+# thread's own observability, so nothing here may ask about a queue's
+# representation.  A hypothesis of that shape would make the row inherit RR8.8's
+# registered residue, which is exactly what its own docstring used to claim.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderWakeHigh_of_donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*abortHolderWakeHigh ctx observer st victim tcb := by" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderWakeHigh_of_donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*(endpointSpliceHigh|queuePPrev|queueNext)" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+# The splice predicate has ONE owner and it is the layer both askers reach.  The
+# positive is the RR7.22 anchor above, repointed by this cut rather than
+# duplicated here; what this adds is the negative that refuses a second copy
+# coming back into the module the predicate left.
+run_negative_check "INVARIANT" rg -n '^def endpointSpliceHigh' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+# RR8.8's reduction: the endpoint object and the holder's own TCB are DERIVED,
+# the queue neighbours are the parameter.  Anchored as the three-way shape,
+# because a version that took the endpoint clause as a hypothesis too would
+# reduce nothing while keeping the name.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderSpliceHigh_of_neighbourHigh[^\n]*(\n([ \t][^\n]*)?)*⟨blockedSenderEndpointObjectHigh ctx observer st holder holderTcb epId hValid hEpFlow" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderSpliceHigh_of_neighbourHigh[^\n]*(\n([ \t][^\n]*)?)*hEp : objectObservable ctx observer epId = false" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 
 finalize_report

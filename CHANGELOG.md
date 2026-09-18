@@ -1,3 +1,94 @@
+## v0.35.84 — WS-RR RR8.8 (second cut) + RR8.9: the endpoint had two labels and nothing related them
+
+**`v0.35.83` retracted a remedy and asserted, in its place, an inference the tree
+could not make.**  It said the endpoint object's half of the cancellation
+teardown "closes from the admission gate — every waiter's label flows to its
+endpoint's, so the object is non-observable whenever any waiter is."  The
+premise is true and the conclusion does not follow from it: the live gate
+compares `ctx.endpointLabelOf epId`, and `objectObservable` — which decides
+whether the projection shows the endpoint object at all — reads
+`ctx.objectLabelOf epId`.  `LabelingContext` carries those as **independent**
+fields, `DeploymentLabeling` supplies them from two independent functions, and
+nothing in `LabelingContextValid` related them.  *One question, two answers*:
+a deployment could label an endpoint high for flow purposes and low for
+visibility, and no gate or obligation refused it.
+
+No existing theorem had made the conflation — `Enforcement/Soundness.lean`'s
+thirty-one `endpointLabelOf` readings are all gate-side, and no projection result
+read it — so nothing was unsound; what was wrong was the claim, and correcting it
+is implementing the missing conjunct rather than weakening the prose.
+
+**`LabelingContextValid.endpointObjectCoherence`** — an endpoint's *flow* label
+flows to its own kernel object's label, so the object is at least as sensitive as
+the flows the endpoint admits.  A flow rather than an equality, mirroring
+`threadObjectCoherence`, and discharged structurally for **every** constructed
+context from the new `DeploymentLabeling.hEndpointObjectCoherence`, which the one
+base constructor (`indexPartitionedDeploymentLabeling`) meets by reflexivity, its
+two label functions being the same partition read at the same index.  So it costs
+the production family nothing and a new `DeploymentLabeling` must supply it.  The
+three `securityFlowsTo` reflexivity lemmas moved up beside the definition they are
+about, a thousand lines earlier, since a constructor cannot cite a lemma declared
+after it.
+
+**The two state invariants, and what they close.**
+`donationOwnerFlowsToHolder` — a donated context's holder is at least as high as
+its donor — is RR8.8's absorbed prerequisite, the one the register had scheduled
+against no sub-task.  It is stated over `replyDonationReturn?`, this tree's single
+reader of "does this thread hold a donated context, and from whom", so a second
+spelling of that question cannot enter through it; and it is a *state* predicate
+because the two gates that license it (the donating `Call`'s and the server's
+receive) are transition-time checks the store records no trace of.
+`blockedSenderFlowsToEndpoint` is its endpoint counterpart, over both blocked
+states the abort and `cancelHolderBlockedEndpoint?` resolve on.  Their
+consequences are `donationHolderHigh_of_donorHigh`,
+`endpointObjectHigh_of_admittedThreadHigh` and `blockedSenderEndpointObjectHigh`.
+
+**RR8.9 is DISCHARGED, in the same cut as its prerequisite.**
+`abortHolderWakeHigh_of_donationOwnerFlowsToHolder` proves the obligation
+outright, with `cancelAbortedHolderWake?_donation` relating the wake's resolved
+holder to the donation resolver's.  It needed **nothing** about queues: the
+obligation is a single `threadObservable` of the holder, a run-queue insert being
+filtered by the inserted thread's own observability — so it inherits none of
+RR8.8's residue, and its own docstring's claim that it waited on the
+(unestablishable) queue label-uniformity invariant was wrong on both counts.
+Landing it beside the invariant rather than one cut later is this plan's rule
+applied: splitting would have left `donationHolderHigh_of_donorHigh` with no
+consumer, and an unconsumed lemma is what the project forbids.
+
+**RR8.8: two of three write classes discharged, the third isolated.**
+`abortHolderSpliceHigh_of_victimHigh` derives the endpoint object's and the
+holder's own non-observability and takes the **queue-neighbour** clause as its one
+parameter.  It is stated over `endpointSpliceHigh`, which **moved** from
+`IPC/CrossCore/NotificationSignalNI.lean` to
+`InformationFlow/Invariant/Operations.lean`: the cancellation reclaim's abort
+removes a thread from an endpoint queue too and asks the same question of the same
+four objects, but its module is not in that one's import closure — so the
+predicate had one owner that one of its two askers could not reach, which is the
+layering fix `v0.35.59` set the pattern for.  The relocation repaired no proof,
+which is the evidence the layer was wrong.
+
+**What this cut does not do, stated rather than implied.**  The reduction stops at
+`endpointSpliceHigh`.  `endpointQueueRemove` — the *single* removal
+`abortPendingIpcOnEndpoint` runs — has no projection lemma where
+`endpointQueueRemoveDual` does, so `abortHolderProjectionStable` still carries its
+whole obligation: the labelling layer under it is proved, the connection is not.
+Writing that lemma must bridge a mismatch this reduction found —
+`endpointSpliceHigh` names the predecessor through `queuePPrev` while the single
+removal reads `queuePrev`, which agree only under RR8.3's
+`queuePPrevAgreesWithPrev`.  Both are registered.
+
+Six prose passages were corrected a second time, in the same six places
+`v0.35.83` corrected, because a correction is a claim and gets the same scrutiny
+as a claim.  Eleven Tier 3 anchors pin the cut — the two coherence obligations as
+*relations* (a mutation that reverses the flow, or reads one label function
+twice, keeps every token), the donor-dominance invariant's single reader, both
+arms of the endpoint invariant, RR8.9's discharge taking **no** queue hypothesis,
+the splice predicate's single reachable owner, and the reduction's three-way shape
+— all mutation-tested in both directions, with the baseline silent on the clean
+tree before and after.  Two of them were tightened after the harness showed a
+loose regex passing a mutation: one matched a disjunct where the disjunction was
+the claim, the other matched a renamed stand-in as a substring.
+
 ## v0.35.83 — WS-RR RR8.8 (first cut): the queue label-uniformity remedy is refuted
 
 **Three information-flow obligations were registered against an invariant that

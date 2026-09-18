@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.83.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.84.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~69395 lines)
+- `CHANGELOG.md` (~69676 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23632 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -216,8 +216,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Platform/Boot.lean` (~5780 lines)
 - `SeLe4n/Model/State.lean` (~5695 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5604 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5084 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5072 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5044 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~4454 lines)
@@ -276,12 +276,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
+- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2066 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2051 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2048 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~2044 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2031 lines)
-- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2024 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~2006 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
@@ -322,6 +322,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1445 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1430 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
@@ -338,12 +339,12 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1316 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1285 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
 - `SeLe4n/Kernel/FrozenOps/Core.lean` (~1270 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1254 lines)
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1254 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
@@ -352,7 +353,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1224 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
-- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1176 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
@@ -363,6 +363,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1126 lines)
 - `tests/SmpIdleSuite.lean` (~1118 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1112 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1090 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
@@ -390,7 +391,6 @@ To find files that need pagination today, run:
 - `tests/SmpTimerSuite.lean` (~934 lines)
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~927 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
@@ -5903,17 +5903,34 @@ code may assume:
   merely absent; it was the registered closure for `abortHolderProjectionStable`,
   `abortHolderWakeHigh` and the three queue arms' `hTeardownProj`, and it is
   retracted.  A proof that reaches for it is asking for a premise the gate
-  refutes.  (2) **What the gate does give is the other direction, and it is
-  enough for everything but the neighbours**: every waiter's label flows to its
-  endpoint's (`endpointFlowGate_implies_securityFlowsTo`, no hypothesis), so an
-  *observable* endpoint has only observable waiters and, contrapositively, the
-  endpoint object is non-observable whenever any waiter is — which covers the
-  endpoint's own queue boundaries, and covers the aborted holder's TCB through
-  `label victim ⊑ label endpoint ⊑ label holder`.  The **queue neighbours** are
-  covered by nothing: their labels are constrained only against the endpoint's.
-  So `abortHolderWakeHigh` closes from the labelling **outright** (it is a single
-  `threadObservable` of the holder), and `abortHolderProjectionStable` and
-  `hTeardownProj` reduce to that one class and no further.  (3) **The residue is
+  refutes.  (2) **What the gate gives is the other direction, and with one
+  added conjunct it is enough for everything but the neighbours.**  Every
+  waiter's label flows to its endpoint's **flow** label
+  (`endpointFlowGate_implies_securityFlowsTo`, no hypothesis) — but
+  `objectObservable` decides visibility from `objectLabelOf`, and
+  `LabelingContext` carried `endpointLabelOf` and `objectLabelOf` as
+  *independent* fields with nothing relating them, so "the endpoint object is
+  non-observable whenever a waiter is" was **not derivable** and `v0.35.83`
+  asserted it anyway.  `LabelingContextValid.endpointObjectCoherence`
+  (`v0.35.84`) is the missing conjunct — an endpoint's flow label flows to its
+  own object's label, so the object is at least as sensitive as the flows the
+  endpoint admits — discharged structurally for every constructed context from
+  `DeploymentLabeling.hEndpointObjectCoherence`, which the one base constructor
+  meets by reflexivity.  A new `DeploymentLabeling` must supply it; a new
+  labelling *question* about an endpoint must say which of the two fields it is
+  about.  With it, `endpointObjectHigh_of_admittedThreadHigh` covers the
+  endpoint's own queue boundaries and `donationHolderHigh_of_donorHigh` covers
+  the aborted holder's TCB, through `donationOwnerFlowsToHolder` — the state
+  form of `label victim ⊑ label endpoint ⊑ label holder`, established where a
+  donation is minted because the state records no trace of the two gates that
+  licensed it.  The **queue neighbours** are covered by nothing: their labels are
+  constrained only against the endpoint's.  So `abortHolderWakeHigh` is
+  **discharged** (`abortHolderWakeHigh_of_donationOwnerFlowsToHolder`,
+  `v0.35.84`) — it is a single `threadObservable` of the holder and needed no
+  queue reasoning at all — while `abortHolderProjectionStable` and
+  `hTeardownProj` reduce to the neighbour class and no further
+  (`abortHolderSpliceHigh_of_victimHigh`, over the shared
+  `endpointSpliceHigh`).  (3) **The residue is
   representational and the remedy is forced**: `queuePrev` / `queuePPrev` /
   `queueNext` survive `projectKernelObject`, so an observable thread's projection
   already names a non-observable one's identity with no operation having run —

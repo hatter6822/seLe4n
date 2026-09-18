@@ -3547,6 +3547,33 @@ theorem setIPCBufferOp_preserves_projection
 -- AK6-F Step A: Universal direct-insert frame lemma
 -- ============================================================================
 
+/-- **WS-RR RR7.22**: the label hypothesis an endpoint splice needs.
+
+**WS-RR RR8.8** relocated it here from `IPC/CrossCore/NotificationSignalNI.lean`:
+the cancellation reclaim's abort prefix (`abortHolderPendingIpc`) removes a
+thread from an endpoint queue too, and asks this same question of the same four
+objects -- but its own module is not in that one's import closure, so the
+predicate had one owner that one of its two askers could not reach.  Here both
+reach it, beside `objects_insert_preserves_projection_high`, which is the lemma
+every clause of it is consumed by.
+
+`endpointQueueRemoveDual` writes exactly four objects: the endpoint (twice on
+the head path), the removed thread's own TCB, and the two queue neighbours
+whose links it patches.  This names all four, and names the neighbours *through
+the pre-state lookup* rather than as extra arguments — so a caller supplies one
+hypothesis instead of remembering which two threads the splice will touch,
+which is the shape that makes an under-stated hypothesis possible. -/
+def endpointSpliceHigh (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) : Prop :=
+  objectObservable ctx observer endpointId = false
+    ∧ objectObservable ctx observer tid.toObjId = false
+    ∧ ∀ tcb : TCB, lookupTcb st tid = some tcb →
+        (∀ p : SeLe4n.ThreadId, tcb.queuePPrev = some (.tcbNext p) →
+            objectObservable ctx observer p.toObjId = false)
+          ∧ (∀ n : SeLe4n.ThreadId, tcb.queueNext = some n →
+              objectObservable ctx observer n.toObjId = false)
+
+
 /-- AK6-F (Step A): Direct `objects.insert` at a non-observable ID preserves
     projection. This is the direct-insert analog of
     `storeObject_preserves_projection` — used by ops that manipulate `.objects`
@@ -4931,9 +4958,12 @@ theorem cancelDonatedDonation_preserves_projection
       low and a high waiter on one high endpoint are both admitted by design
       (`endpointAdmissionAdmitsMixedObservability`); establishing uniformity
       would mean narrowing the gate to equality and refusing the one-way flow
-      the lattice exists to permit.  The gate's own direction closes the
-      *endpoint object* (non-observable whenever any waiter is) and closes
-      nothing about the neighbours, so the residue is representational: a
+      the lattice exists to permit.  The gate's own direction, composed with
+      `LabelingContextValid.endpointObjectCoherence` (which carries the
+      endpoint's *flow* label on to the *object* label the projection reads),
+      closes the *endpoint object* — non-observable whenever any waiter is,
+      `endpointObjectHigh_of_admittedThreadHigh` — and closes nothing about the
+      neighbours, so the residue is representational: a
       queue's content must live in an object whose label dominates every
       member's, which the endpoint is and a member's own TCB is not.  The
       SM6.E cancellation-NI module consumes this obligation as its

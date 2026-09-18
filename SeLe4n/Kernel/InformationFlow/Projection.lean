@@ -1206,12 +1206,16 @@ path can establish it.  Establishing it would mean narrowing the gate to label
 permit — a lower-labelled client sending to a higher-labelled server.  The
 remedy is retracted; see `docs/REGISTERED_DEBT.md`.
 
-**What the gate does give is the other direction, and it closes two of the three
-write classes.**  Every thread on an endpoint's queue satisfies
-`label thread ⊑ label endpoint` (`endpointFlowGate_implies_securityFlowsTo`,
-which takes no hypothesis at all), so an *observable* endpoint has only
-observable waiters and — contrapositively — the endpoint object is
-non-observable whenever any of its waiters is.  That covers the endpoint's own
+**What the gate does give is the other direction, and with one conjunct it
+closes two of the three write classes.**  Every thread on an endpoint's queue
+satisfies `label thread ⊑ endpointLabelOf endpoint`
+(`endpointFlowGate_implies_securityFlowsTo`, which takes no hypothesis at all),
+and `LabelingContextValid.endpointObjectCoherence` (WS-RR RR8.8) carries that on
+to `objectLabelOf endpoint`, which is what `objectObservable` decides visibility
+from — two independent `LabelingContext` fields that nothing related until that
+conjunct.  So an *observable* endpoint has only observable waiters and —
+contrapositively — the endpoint object is non-observable whenever any of its
+waiters is (`endpointObjectHigh_of_admittedThreadHigh`).  That covers the endpoint's own
 `sendQueue` / `recvQueue` boundaries, and the aborted holder's own TCB is
 covered by the same order run through the donating `Call` and the server's
 receive.  What is left is the **queue neighbours**: their labels are constrained
