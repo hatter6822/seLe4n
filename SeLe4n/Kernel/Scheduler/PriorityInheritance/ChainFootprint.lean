@@ -73,41 +73,43 @@ open SeLe4n.Kernel.Concurrency (CoreId AccessMode allCores numCores LockKind Loc
 /-- **WS-RR RR7.40**: the home cores of a chain's members — the cores whose
 run-queue buckets the walk can migrate.
 
-`determineTargetCore` at each visited thread, filtered out of `allCores` so the
-result is `CoreId`-ascending and duplicate-free by construction (two members may
-share a home core, and a chain crossing four cores must still name each once). -/
+`determineTargetCore` at each visited thread, canonicalised through
+`Concurrency.canonicalCores`, so the result is `CoreId`-ascending and
+duplicate-free by construction (two members may share a home core, and a chain
+crossing four cores must still name each once).
+
+**WS-RR RR8.12**: the `allCores.filter` this used to spell inline is that shared
+definition now — the same derivation, read from the one place that states it, so
+the run-queue segment below and the per-arm syscall-seam segments cannot disagree
+about what "the cores, as a list a lock ladder can be walked in" means. -/
 def pipChainHomeCores (s : SystemState) (visited : List SeLe4n.ThreadId) : List CoreId :=
-  allCores.filter (fun c => visited.any (fun t => determineTargetCore s t == c))
+  Concurrency.canonicalCores (visited.map (determineTargetCore s))
 
 /-- **WS-RR RR7.40**: the home-core segment is duplicate-free — it is a sublist
 of `allCores`. -/
 theorem pipChainHomeCores_nodup (s : SystemState) (visited : List SeLe4n.ThreadId) :
     (pipChainHomeCores s visited).Nodup :=
-  List.Pairwise.sublist (List.filter_sublist) Concurrency.allCores_nodup
+  Concurrency.canonicalCores_nodup _
 
 /-- **WS-RR RR7.40**: every member's home core is in the segment — the coverage
 half, and the one a false footprint would fail. -/
 theorem mem_pipChainHomeCores (s : SystemState) (visited : List SeLe4n.ThreadId)
     (t : SeLe4n.ThreadId) (ht : t ∈ visited) :
-    determineTargetCore s t ∈ pipChainHomeCores s visited := by
-  refine List.mem_filter.mpr ⟨Concurrency.mem_allCores _, ?_⟩
-  exact List.any_eq_true.mpr ⟨t, ht, by simp⟩
+    determineTargetCore s t ∈ pipChainHomeCores s visited :=
+  (Concurrency.mem_canonicalCores _ _).mpr (List.mem_map.mpr ⟨t, ht, rfl⟩)
 
 /-- **WS-RR RR7.40**: a core in the segment is some member's home core — the
 converse, so the segment names no core the walk cannot touch. -/
 theorem pipChainHomeCores_mem (s : SystemState) (visited : List SeLe4n.ThreadId)
     (c : CoreId) (hc : c ∈ pipChainHomeCores s visited) :
     ∃ t ∈ visited, determineTargetCore s t = c := by
-  have hAny := (List.mem_filter.mp hc).2
-  obtain ⟨t, ht, hEq⟩ := List.any_eq_true.mp hAny
-  exact ⟨t, ht, by simpa using hEq⟩
+  obtain ⟨t, ht, hEq⟩ := List.mem_map.mp ((Concurrency.mem_canonicalCores _ _).mp hc)
+  exact ⟨t, ht, hEq⟩
 
 /-- **WS-RR RR7.40**: the segment is bounded by the core count. -/
 theorem pipChainHomeCores_length_le (s : SystemState) (visited : List SeLe4n.ThreadId) :
-    (pipChainHomeCores s visited).length ≤ numCores := by
-  have := List.length_filter_le (fun c => visited.any (fun t => determineTargetCore s t == c))
-    allCores
-  simpa [pipChainHomeCores, Concurrency.allCores_length] using this
+    (pipChainHomeCores s visited).length ≤ numCores :=
+  Concurrency.canonicalCores_length_le _
 
 /-- **WS-RR RR7.40**: the PIP chain walk's scheduler-domain footprint.
 
@@ -122,8 +124,8 @@ the store. -/
 def pipChainSchedFootprint (s : SystemState) (visited : List SeLe4n.ThreadId) :
     List (SchedLockId × AccessMode) :=
   visited.map (fun t => (SchedLockId.object ⟨LockKind.tcb, t.toObjId⟩, AccessMode.write))
-    ++ (pipChainHomeCores s visited).map
-        (fun c => (SchedLockId.runQueue ⟨c⟩, AccessMode.write))
+    ++ schedCoreSegment (fun c => SchedLockId.runQueue ⟨c⟩)
+        (visited.map (determineTargetCore s))
 
 /-- **WS-RR RR7.40**: every lock in the chain footprint is a **write** lock. -/
 theorem pipChainSchedFootprint_write_only (s : SystemState) (visited : List SeLe4n.ThreadId) :
@@ -131,7 +133,7 @@ theorem pipChainSchedFootprint_write_only (s : SystemState) (visited : List SeLe
   intro p hp
   rcases List.mem_append.mp hp with h | h
   · obtain ⟨_, _, rfl⟩ := List.mem_map.mp h; rfl
-  · obtain ⟨_, _, rfl⟩ := List.mem_map.mp h; rfl
+  · exact schedCoreSegment_write_only _ _ p h
 
 /-- **WS-RR RR7.40**: a visited thread's TCB write lock is in the footprint. -/
 theorem mem_pipChainSchedFootprint_tcb (s : SystemState) (visited : List SeLe4n.ThreadId)
@@ -148,7 +150,8 @@ theorem mem_pipChainSchedFootprint_runQueue (s : SystemState) (visited : List Se
     (SchedLockId.runQueue ⟨determineTargetCore s t⟩, AccessMode.write)
       ∈ pipChainSchedFootprint s visited :=
   List.mem_append_right _
-    (List.mem_map.mpr ⟨determineTargetCore s t, mem_pipChainHomeCores s visited t ht, rfl⟩)
+    ((mem_schedCoreSegment_iff runQueueLock_injective _ (determineTargetCore s t)).mpr
+      (List.mem_map.mpr ⟨t, ht, rfl⟩))
 
 /-- **WS-RR RR7.40**: the footprint's length — one lock per visited thread plus
 one per distinct home core.
@@ -160,7 +163,8 @@ theorem pipChainSchedFootprint_length (s : SystemState) (visited : List SeLe4n.T
     (pipChainSchedFootprint s visited).length
       ≤ visited.length + numCores := by
   simp only [pipChainSchedFootprint, List.length_append, List.length_map]
-  exact Nat.add_le_add_left (pipChainHomeCores_length_le s visited) _
+  exact Nat.add_le_add_left
+    (schedCoreSegment_length_le (fun c => SchedLockId.runQueue ⟨c⟩) _) _
 
 -- ============================================================================
 -- §2  Ordering and uniqueness
@@ -192,9 +196,10 @@ different `SchedLockId` constructors. -/
 theorem pipChainSchedFootprint_keys_nodup (s : SystemState) (visited : List SeLe4n.ThreadId)
     (hNodup : visited.Nodup) :
     ((pipChainSchedFootprint s visited).map (·.1)).Nodup := by
-  simp only [pipChainSchedFootprint, List.map_append, List.map_map]
+  simp only [pipChainSchedFootprint, List.map_append]
   refine List.nodup_append.2 ⟨?_, ?_, ?_⟩
   · -- the TCB segment: an injective image of a duplicate-free list
+    rw [List.map_map]
     have hInj : ∀ a b : SeLe4n.ThreadId,
         (SchedLockId.object ⟨LockKind.tcb, a.toObjId⟩ : SchedLockId)
           = SchedLockId.object ⟨LockKind.tcb, b.toObjId⟩ → a = b := by
@@ -203,17 +208,13 @@ theorem pipChainSchedFootprint_keys_nodup (s : SystemState) (visited : List SeLe
         congrArg Concurrency.LockId.objId (SchedLockId.object.inj hab)
       exact SeLe4n.ThreadId.toObjId_injective a b hOid
     exact List.Pairwise.map _ (fun a b h he => h (hInj a b he)) hNodup
-  · -- the run-queue segment: an injective image of a sublist of `allCores`
-    have hInj : ∀ a b : CoreId,
-        (SchedLockId.runQueue ⟨a⟩ : SchedLockId) = SchedLockId.runQueue ⟨b⟩ → a = b := by
-      intro a b hab
-      exact congrArg RunQueueLockId.core (SchedLockId.runQueue.inj hab)
-    exact List.Pairwise.map _ (fun a b h he => h (hInj a b he))
-      (pipChainHomeCores_nodup s visited)
+  · -- the run-queue segment: the shared segment's own uniqueness (WS-RR RR8.12)
+    exact schedCoreSegment_keys_nodup runQueueLock_injective _
   · -- disjoint: an object key is never a run-queue key
     intro a ha b hb
+    rw [List.map_map] at ha
     obtain ⟨_, _, rfl⟩ := List.mem_map.mp ha
-    obtain ⟨_, _, rfl⟩ := List.mem_map.mp hb
+    obtain ⟨c, _, rfl⟩ := schedCoreSegment_map_fst_mem hb
     simp
 
 /-- **WS-RR RR7.40**: the footprint's keys form a `SchedLockId`-ascending
@@ -228,25 +229,27 @@ to be two segments rather than per-member pairs. -/
 theorem pipChainSchedFootprint_pairwise_le (s : SystemState) (visited : List SeLe4n.ThreadId)
     (hAsc : visited.Pairwise (fun a b => a.toNat < b.toNat)) :
     ((pipChainSchedFootprint s visited).map (·.1)).Pairwise (· ≤ ·) := by
-  simp only [pipChainSchedFootprint, List.map_append, List.map_map]
+  simp only [pipChainSchedFootprint, List.map_append]
   refine List.pairwise_append.2 ⟨?_, ?_, ?_⟩
   · -- within the TCB segment: the SM0.I `LockId` order at equal kind is by ObjId
+    rw [List.map_map]
     refine List.Pairwise.map _ (fun a b hab => ?_) hAsc
     show (SchedLockId.object ⟨LockKind.tcb, a.toObjId⟩ : SchedLockId)
       ≤ SchedLockId.object ⟨LockKind.tcb, b.toObjId⟩
     -- SM0.I's `LockId` order is lexicographic: equal kind, then `objId.val`.
     exact Or.inr ⟨rfl, Nat.le_of_lt hab⟩
-  · -- within the run-queue segment: `CoreId`-ascending, from `allCores`
-    have hCores : (pipChainHomeCores s visited).Pairwise (fun a b => a.val ≤ b.val) := by
-      refine List.Pairwise.sublist (List.filter_sublist) ?_
-      show allCores.Pairwise (fun a b : CoreId => a.val ≤ b.val)
-      unfold Concurrency.allCores
-      decide
-    exact List.Pairwise.map _ (fun a b hab => hab) hCores
+  · -- within the run-queue segment: `CoreId`-ascending, from `allCores`.
+    -- WS-RR RR8.12: the shared segment's own ordering lemma, which routes through
+    -- `Concurrency.allCores_pairwise_le` rather than a `decide` at the literal
+    -- `numCores` — for the reason `allCores_nodup`'s docstring gives, a `decide`
+    -- stops reducing the moment `numCores` is parameterised by
+    -- `PlatformBinding.coreCount`.
+    exact schedCoreSegment_pairwise_le _ _ (fun c d h => h)
   · -- across the segments: every object lock precedes every run-queue lock
     intro a ha b hb
+    rw [List.map_map] at ha
     obtain ⟨_, _, rfl⟩ := List.mem_map.mp ha
-    obtain ⟨_, _, rfl⟩ := List.mem_map.mp hb
+    obtain ⟨c, _, rfl⟩ := schedCoreSegment_map_fst_mem hb
     exact (SchedLockId.object_lt_runQueue _ _).1
 
 

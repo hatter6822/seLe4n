@@ -1,3 +1,68 @@
+## v0.35.87 — WS-RR RR8.12 (first cut): one segment over a core *set*, not two arities
+
+**WS-RR RR8.12** is the last technical row of WS-RR: cover
+`UncoveredLockDomain.syscallSeamSchedulerDomain` by giving the live syscall seam
+a footprint that names the **resolved wake targets** of each declared arm.  The
+per-arm footprints need a segment over a set of cores of *unbounded* arity — a
+`.replyRecv` writes the woken caller's home, the descheduled server's placement,
+the receive leg's core and the post-receive donation's, and its replenish
+segment names up to six — and the tree had two fixed-arity spellings of exactly
+that question.  This cut replaces them with one; the per-arm footprints, their
+coverage and the domain's deletion are the cuts after it.
+
+**`sortedSchedCorePair` and `sortedSchedCoreTriple` are deleted.**  Both answered
+"the duplicate-free, `CoreId`-ascending segment of same-kind scheduler locks over
+this set of cores" at a fixed arity, each with its own `_map_fst_mem` and
+`_pairwise_le`, and adding a third arity would have been the
+enumeration-standing-in-for-a-derivation shape this project retires.
+`schedCoreSegment (f : CoreId → SchedLockId) (cs : List CoreId)`
+(`SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean`) takes the set.
+Seven lemmas replace four: `_map_fst_mem`, `mem_schedCoreSegment_iff` (the
+coverage direction, under the lock constructor's injectivity), `_pairwise_le`,
+`_write_only`, `_keys_nodup`, `_length_le` (bounded by `numCores`, not by the
+supplied list) and `_nil`, with `runQueueLock_injective` /
+`replenishQueueLock_injective` as the two injectivity witnesses.  **That the two
+were instances was measured before they were deleted** — exhaustively over the
+concrete core enumeration at both lock constructors — so no footprint's value
+moved, and 61 use sites across five files were repointed.
+
+**And it was a FIFTH spelling, not a third.**  `cancelDonatedDonationOnCoreSchedLockSet`
+spelled the sorted pair out again as an `if`-chain, forty lines below a comment
+saying the pair had been relocated so that "every use below is unchanged".  Its
+`_keys_nodup` and `_pairwise_le` were 30 and 35 lines of branch analysis; they are
+five and six now, and its `_contains_*` proofs are one application of
+`mem_schedCoreSegment_iff` each.  That is what a hand-inlined copy of a shared
+definition costs, and it is why the deletion is the right response to a second
+arity rather than a third definition.
+
+**The canonicalisation is the shared answer too.**
+`Concurrency.canonicalCores` (`SeLe4n/Kernel/Concurrency/Types.lean`, beside
+`allCores_length` and `allCores_nodup`) is `allCores.filter (· ∈ cs)`: ascending
+and duplicate-free because `allCores` is, and bounded by `numCores` for the same
+reason — the derivation WS-RR RR7.40's `pipChainHomeCores` already used and
+justified in its own docstring, now stated once.  `pipChainHomeCores` reads it,
+`pipChainSchedFootprint`'s run-queue segment reads `schedCoreSegment`, and its
+five lemmas are one application each of the shared ones.  Two ordering facts are
+new: `pairwise_finRange_le` (by induction on the length, not by `decide` at the
+literal) and `allCores_pairwise_le`, which is what let
+`pipChainSchedFootprint_pairwise_le` retire an `unfold Concurrency.allCores;
+decide` — a proof that stops reducing the moment `numCores` is parameterised by
+`PlatformBinding.coreCount`, which is exactly what `allCores_nodup`'s own
+docstring says not to write.
+
+**Anchors.**  The three Tier 3 positives over the retired names are repointed at
+`schedCoreSegment`, `mem_schedCoreSegment_iff`, `canonicalCores` and
+`allCores_pairwise_le`; the OD5.3 suspend-segment anchor pins the three-core
+*list* (a relation — its mutation keeps every core argument and drops the third)
+rather than a three-endpoint combinator; and each retired name becomes a
+`run_negative_check` over `SeLe4n/` and `tests/`, because a positive anchor on a
+deleted symbol passes forever.  Both negatives are mutation-tested by
+reintroducing the name as **code**: the two survive in prose, which the code view
+strips, so the clean tree exercises the other direction.
+
+No behaviour changed: the golden trace is byte-identical, every footprint's value
+is unmoved, and `maxLockSetSize` and the figures derived from it do not move.
+
 ## v0.35.86 — WS-RR RR8.11: the replenishment migration's destination is the fact
 
 **The congruence this row scheduled could not be stated of the code as written.**

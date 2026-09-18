@@ -4325,14 +4325,7 @@ the footprint collapses to the bound-arm shape. -/
 def cancelDonatedDonationOnCoreSchedLockSet (victimHome ownerHome : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   (SchedLockId.object schedObjStoreLockId, .write) ::
-    (if victimHome = ownerHome then
-      [ (SchedLockId.replenishQueue ⟨victimHome⟩, .write) ]
-    else if victimHome ≤ ownerHome then
-      [ (SchedLockId.replenishQueue ⟨victimHome⟩, .write)
-      , (SchedLockId.replenishQueue ⟨ownerHome⟩, .write) ]
-    else
-      [ (SchedLockId.replenishQueue ⟨ownerHome⟩, .write)
-      , (SchedLockId.replenishQueue ⟨victimHome⟩, .write) ])
+    schedCoreSegment (fun c => SchedLockId.replenishQueue ⟨c⟩) [victimHome, ownerHome]
 
 /-- SM6.E: every lock in the donated-arm footprint is acquired in **write**
 mode. -/
@@ -4344,12 +4337,7 @@ theorem cancelDonatedDonationOnCoreSchedLockSet_write_only
   simp only [cancelDonatedDonationOnCoreSchedLockSet, List.mem_cons] at hp
   rcases hp with h | hp
   · subst h; rfl
-  · split at hp
-    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
-      subst hp; rfl
-    · split at hp <;>
-        (simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
-         rcases hp with h | h <;> subst h <;> rfl)
+  · exact schedCoreSegment_write_only _ _ p hp
 
 /-- SM6.E: the victim's home-core replenish-queue write lock is in the
 donated-arm footprint (the migration source / purge slot). -/
@@ -4357,10 +4345,8 @@ theorem cancelDonatedDonationOnCoreSchedLockSet_contains_victimHome_write
     (victimHome ownerHome : CoreId) :
     (SchedLockId.replenishQueue ⟨victimHome⟩, Concurrency.AccessMode.write)
       ∈ cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome := by
-  unfold cancelDonatedDonationOnCoreSchedLockSet
-  by_cases hEq : victimHome = ownerHome
-  · simp [hEq]
-  · by_cases hLe : victimHome ≤ ownerHome <;> simp [hEq, hLe]
+  refine List.mem_cons_of_mem _ ?_
+  exact (mem_schedCoreSegment_iff replenishQueueLock_injective _ victimHome).mpr (by simp)
 
 /-- SM6.E: the owner's home-core replenish-queue write lock is in the
 donated-arm footprint (the migration destination). -/
@@ -4368,42 +4354,21 @@ theorem cancelDonatedDonationOnCoreSchedLockSet_contains_ownerHome_write
     (victimHome ownerHome : CoreId) :
     (SchedLockId.replenishQueue ⟨ownerHome⟩, Concurrency.AccessMode.write)
       ∈ cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome := by
-  unfold cancelDonatedDonationOnCoreSchedLockSet
-  by_cases hEq : victimHome = ownerHome
-  · simp [hEq]
-  · by_cases hLe : victimHome ≤ ownerHome <;> simp [hEq, hLe]
+  refine List.mem_cons_of_mem _ ?_
+  exact (mem_schedCoreSegment_iff replenishQueueLock_injective _ ownerHome).mpr (by simp)
 
 /-- SM6.E: the donated-arm footprint's projected keys are duplicate-free —
-the two replenish endpoints are distinct locks exactly when the homes
-differ, and the shared-home branch carries the slot once. -/
+the segment carries one lock per distinct home core, and the object-store key
+is of a different constructor. -/
 theorem cancelDonatedDonationOnCoreSchedLockSet_keys_nodup
     (victimHome ownerHome : CoreId) :
     ((cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome).map (·.1)).Nodup := by
   unfold cancelDonatedDonationOnCoreSchedLockSet
-  by_cases hEq : victimHome = ownerHome
-  · subst hEq
-    simp
-  · by_cases hLe : victimHome ≤ ownerHome
-    · simp only [hEq, hLe, if_true, if_false, List.map_cons, List.map_nil]
-      refine List.nodup_cons.mpr ⟨?_, List.nodup_cons.mpr ⟨?_, List.nodup_cons.mpr ⟨List.not_mem_nil, List.nodup_nil⟩⟩⟩
-      · intro h
-        rcases List.mem_cons.mp h with h | h
-        · cases h
-        · rcases List.mem_singleton.mp h with h; cases h
-      · intro h
-        have h' := List.mem_singleton.mp h
-        injection h' with h''
-        exact hEq (congrArg ReplenishQueueLockId.core h'')
-    · simp only [hEq, hLe, if_false, List.map_cons, List.map_nil]
-      refine List.nodup_cons.mpr ⟨?_, List.nodup_cons.mpr ⟨?_, List.nodup_cons.mpr ⟨List.not_mem_nil, List.nodup_nil⟩⟩⟩
-      · intro h
-        rcases List.mem_cons.mp h with h | h
-        · cases h
-        · rcases List.mem_singleton.mp h with h; cases h
-      · intro h
-        have h' := List.mem_singleton.mp h
-        injection h' with h''
-        exact hEq (congrArg ReplenishQueueLockId.core h'').symm
+  rw [List.map_cons]
+  refine List.nodup_cons.mpr ⟨fun hMem => ?_,
+    schedCoreSegment_keys_nodup replenishQueueLock_injective _⟩
+  obtain ⟨_, _, hEq⟩ := schedCoreSegment_map_fst_mem hMem
+  exact absurd hEq (by simp)
 
 /-- SM6.E: the donated-arm footprint's keys form a `SchedLockId`-ascending
 acquisition sequence — object < replenishQueue cross-domain, and the two
@@ -4415,35 +4380,11 @@ theorem cancelDonatedDonationOnCoreSchedLockSet_pairwise_le
       ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
     fun c => (SchedLockId.object_lt_replenishQueue _ _).1
   unfold cancelDonatedDonationOnCoreSchedLockSet
-  by_cases hEq : victimHome = ownerHome
-  · subst hEq
-    simp only [List.map_cons]
-    exact List.Pairwise.cons
-      (fun a ha => by rcases List.mem_singleton.mp ha with rfl; exact hObjLe _)
-      (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil)
-  · by_cases hLe : victimHome ≤ ownerHome
-    · simp only [hEq, hLe, if_true, if_false, List.map_cons, List.map_nil]
-      refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_
-        (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil))
-      · intro a ha
-        rcases List.mem_cons.mp ha with rfl | ha
-        · exact hObjLe _
-        · rcases List.mem_singleton.mp ha with rfl; exact hObjLe _
-      · intro a ha
-        rcases List.mem_singleton.mp ha with rfl
-        exact hLe
-    · simp only [hEq, hLe, if_false, List.map_cons, List.map_nil]
-      have hGe : ownerHome ≤ victimHome :=
-        (Nat.le_total victimHome.val ownerHome.val).resolve_left hLe
-      refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_
-        (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil))
-      · intro a ha
-        rcases List.mem_cons.mp ha with rfl | ha
-        · exact hObjLe _
-        · rcases List.mem_singleton.mp ha with rfl; exact hObjLe _
-      · intro a ha
-        rcases List.mem_singleton.mp ha with rfl
-        exact hGe
+  rw [List.map_cons, List.pairwise_cons]
+  refine ⟨?_, schedCoreSegment_pairwise_le _ _ (fun c d h => h)⟩
+  intro x hx
+  obtain ⟨c, _, rfl⟩ := schedCoreSegment_map_fst_mem hx
+  exact hObjLe c
 
 /-- WS-SM SM6.E: the scheduler-domain footprint of the donation-cancellation
 **dispatcher** `cancelDonationOnCore` — the union over its arms: the
@@ -4455,19 +4396,14 @@ def cancelDonationOnCoreSchedLockSet (victimHome ownerHome : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome
 
--- WS-RR RR2.4: `sortedSchedCorePair` and its two lemmas moved to
--- `Scheduler/Operations/PerCoreChooseThread.lean`, beside the `SchedLockId`
--- order they are about, so the cross-core `.call` and `.reply` dispatch
--- footprints (which live below this module and cannot import it) share the one
--- definition rather than growing a third copy of a sorted two-element list.
--- Same names, same `SeLe4n.Kernel` namespace; every use below is unchanged.
-
--- WS-RR RR2.10: the two Bool-comparator helpers and `sortedSchedCoreTriple`
--- moved with `sortedSchedCorePair` to
--- `Scheduler/Operations/PerCoreChooseThread.lean`; the cross-core `.reply`
--- dispatch footprint needs the triple for the same reason this one does (a
--- woken caller's home, a descheduled server's core and the executing core can
--- be three distinct cores), and it sits below this module.
+-- WS-RR RR2.4 / RR2.10, superseded at WS-RR RR8.12: the sorted same-kind
+-- scheduler-lock segment lives in `Scheduler/Operations/PerCoreChooseThread.lean`,
+-- beside the `SchedLockId` order it is about, so the cross-core `.call` and
+-- `.reply` dispatch footprints (which sit below this module and cannot import
+-- it) share the one definition.  RR2.4 and RR2.10 relocated a two-endpoint and
+-- a three-endpoint spelling; RR8.12 replaced both with `schedCoreSegment`, which
+-- takes the *set* of cores, because a fourth arity was about to be needed and
+-- the arity was never the question.
 
 /-- WS-SM SM6.E, re-keyed at WS-RR RR8.6: the scheduler-domain footprint of
 the cross-core suspend pipeline (`suspendThreadOnCore`, the G2..G7 composite):
@@ -4524,9 +4460,10 @@ def suspendThreadOnCoreSchedLockSet
     (home executingCore ownerHome outerHome : CoreId) (placed : Option CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   (SchedLockId.object schedObjStoreLockId, .write) ::
-  (sortedSchedCorePair (fun c => SchedLockId.runQueue ⟨c⟩) (placed.getD executingCore)
-      executingCore
-    ++ sortedSchedCoreTriple (fun c => SchedLockId.replenishQueue ⟨c⟩) home ownerHome outerHome)
+  (schedCoreSegment (fun c => SchedLockId.runQueue ⟨c⟩)
+      [placed.getD executingCore, executingCore]
+    ++ schedCoreSegment (fun c => SchedLockId.replenishQueue ⟨c⟩)
+        [home, ownerHome, outerHome])
 
 /-- **WS-OD OD5.3: the second pop's migration endpoints, read off the operation.**
 
@@ -4578,14 +4515,15 @@ theorem suspendThreadOnCoreSchedLockSet_pairwise_le
   refine ⟨?_, ?_⟩
   · intro x hx
     rcases List.mem_append.mp hx with hx | hx
-    · rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;> exact hObjRQ _
-    · rcases sortedSchedCoreTriple_map_fst_mem hx with rfl | rfl | rfl <;> exact hObjRep _
+    · obtain ⟨c, _, rfl⟩ := schedCoreSegment_map_fst_mem hx; exact hObjRQ c
+    · obtain ⟨c, _, rfl⟩ := schedCoreSegment_map_fst_mem hx; exact hObjRep c
   · rw [List.pairwise_append]
-    refine ⟨sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h),
-      sortedSchedCoreTriple_pairwise_le _ _ _ _ (fun c d h => h), ?_⟩
+    refine ⟨schedCoreSegment_pairwise_le _ _ (fun c d h => h),
+      schedCoreSegment_pairwise_le _ _ (fun c d h => h), ?_⟩
     intro x hx y hy
-    rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;>
-    rcases sortedSchedCoreTriple_map_fst_mem hy with rfl | rfl | rfl <;> exact hRQRep _ _
+    obtain ⟨c, _, rfl⟩ := schedCoreSegment_map_fst_mem hx
+    obtain ⟨d, _, rfl⟩ := schedCoreSegment_map_fst_mem hy
+    exact hRQRep c d
 
 -- ============================================================================
 -- §13  SM6.E — the live per-core suspend (the `.tcbSuspend` dispatch target)

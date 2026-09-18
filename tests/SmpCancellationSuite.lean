@@ -231,10 +231,12 @@ open SeLe4n.Testing
 #check @SeLe4n.Kernel.PriorityInheritance.currentScan_boot_of_single_core
 #check @queueSpliceNeighbors?
 
--- Audit closure: sorted run-queue triple, current-uniqueness slice,
--- donation-side observer capstone.
-#check @sortedSchedCoreTriple
-#check @sortedSchedCoreTriple_pairwise_le
+-- Audit closure: the sorted same-kind scheduler-lock segment (a three-endpoint
+-- `sortedSchedCoreTriple` until WS-RR RR8.12 made the arity an argument),
+-- current-uniqueness slice, donation-side observer capstone.
+#check @schedCoreSegment
+#check @schedCoreSegment_pairwise_le
+#check @mem_schedCoreSegment_iff
 #check @currentThreadUniqueAcrossCores
 #check @default_currentThreadUniqueAcrossCores
 #check @removeRunnableOnCore_preserves_currentThreadUniqueAcrossCores

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.86.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.87.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5696,6 +5696,29 @@ code may assume:
   (`revokePendingTransfersFrom`, v0.33.88), because revoking a derived subtree
   leaves the source slot live and so never trips the creator's check.  New code
   must not assume a carried `TransferCap` will install.
+- **A footprint's same-kind core segment is `schedCoreSegment`, over a core
+  *set*** (WS-RR RR8.12, `v0.35.87`).  A cross-domain footprint that names
+  several cores' run queues or replenish queues declares them through
+  `schedCoreSegment (f : CoreId → SchedLockId) (cs : List CoreId)`
+  (`Scheduler/Operations/PerCoreChooseThread.lean`), whose canonical form is
+  `Concurrency.canonicalCores` — `allCores.filter (· ∈ cs)`, so ascending,
+  duplicate-free and bounded by `numCores` because `allCores` is.  Three things
+  new code must respect.  (1) **The arity is an argument, not a definition.**
+  `sortedSchedCorePair` and `sortedSchedCoreTriple` were this question at two
+  arities and are **deleted**, with a Tier 3 negative refusing each tree-wide;
+  a footprint needing four cores passes a four-element list, and a footprint
+  resolved from a *walk* passes whatever the walk found
+  (`pipChainSchedFootprint` does).  (2) **A hand-inlined `if`-chain over two
+  cores is the same defect**: `cancelDonatedDonationOnCoreSchedLockSet` carried
+  one for eleven cuts, forty lines below a comment asserting the shared
+  definition was used everywhere below it, and its uniqueness and ordering
+  proofs were 30 and 35 lines of branch analysis for a fact the shared lemmas
+  state once.  (3) **`allCores`'s ordering is `allCores_pairwise_le`, never a
+  `decide`**: a `decide` at the literal `numCores` stops reducing the moment a
+  multi-platform build parameterises it by `PlatformBinding.coreCount`, which is
+  what `allCores_nodup`'s own docstring says and what one chain-footprint proof
+  had done anyway.
+
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)

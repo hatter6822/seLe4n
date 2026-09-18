@@ -163,6 +163,88 @@ reduce). -/
 theorem allCores_nodup : allCores.Nodup :=
   SeLe4n.PerCoreVector.nodup_of_finRange numCores
 
+/-- **WS-RR RR8.12**: `List.finRange n` is `Fin.val`-ascending.
+
+Lean 4.28's standard library exports `List.finRange_succ` and
+`List.mem_finRange` but no ordering lemma, so the induction is written out:
+the head `0` is below every `Fin.succ`, and the tail is the induction
+hypothesis transported along `Fin.succ`, which adds one to `.val`.
+
+Proved for an *arbitrary* length rather than by `decide` at the literal, for
+the reason `allCores_nodup` gives: a future multi-platform build parameterises
+`numCores` by `PlatformBinding.coreCount`, where `decide` would not reduce. -/
+theorem pairwise_finRange_le (n : Nat) :
+    List.Pairwise (fun a b : Fin n => a.val ≤ b.val) (List.finRange n) := by
+  induction n with
+  | zero => simp [List.finRange]
+  | succ m ih =>
+    rw [List.finRange_succ]
+    refine List.Pairwise.cons (fun x hx => ?_) ?_
+    · obtain ⟨y, _, rfl⟩ := List.mem_map.mp hx
+      simp [Fin.succ]
+    · exact List.Pairwise.map _ (fun a b h => by simpa [Fin.succ] using h) ih
+
+/-- **WS-RR RR8.12**: `allCores` is `CoreId`-ascending.
+
+The third fact about the enumeration, beside `allCores_length` and
+`allCores_nodup`, and the one that makes `canonicalCores` below a *canonical*
+form rather than merely a duplicate-free one. -/
+theorem allCores_pairwise_le :
+    List.Pairwise (fun a b : CoreId => a.val ≤ b.val) allCores :=
+  pairwise_finRange_le numCores
+
+/-- **WS-RR RR8.12**: the canonical form of a set of cores — ascending and
+duplicate-free, whatever order and multiplicity the caller supplied.
+
+**One answer to "which cores, as a list a lock ladder can be walked in".**  A
+cross-domain footprint that names several cores' slots of the same kind must
+emit them duplicate-free (a footprint naming one lock twice has a read-acquire
+the symmetric shrinking phase never removes) and `CoreId`-ascending (so the
+declared list is its own acquisition sequence).  Both come from `allCores` being
+`List.finRange numCores` — sorted and `Nodup` — rather than from a `dedup` whose
+ordering would then need its own proof, and the length bound comes free with
+them.  That is the derivation `pipChainHomeCores` (WS-RR RR7.40) already used
+and justified; RR8.12 made it the shared answer, because the two fixed-arity
+spellings beside it (`sortedSchedCorePair`, `sortedSchedCoreTriple`) were the
+same question at two arities and a third arity was about to be needed.
+
+The filter runs over the enumeration rather than over `cs`, so the result is
+independent of how `cs` was built: two resolvers that discover the same set in
+different orders declare the same footprint. -/
+def canonicalCores (cs : List CoreId) : List CoreId :=
+  allCores.filter (fun c => cs.contains c)
+
+/-- **WS-RR RR8.12**: membership is membership in the supplied list — the
+canonical form drops nothing and invents nothing. -/
+@[simp] theorem mem_canonicalCores (cs : List CoreId) (c : CoreId) :
+    c ∈ canonicalCores cs ↔ c ∈ cs := by
+  simp [canonicalCores, List.mem_filter]
+
+/-- **WS-RR RR8.12**: the canonical form is duplicate-free — it is a sublist of
+`allCores`. -/
+theorem canonicalCores_nodup (cs : List CoreId) : (canonicalCores cs).Nodup :=
+  List.Pairwise.sublist List.filter_sublist allCores_nodup
+
+/-- **WS-RR RR8.12**: the canonical form is ascending — likewise a sublist of
+`allCores`, which `allCores_pairwise_le` says is ascending. -/
+theorem canonicalCores_pairwise_le (cs : List CoreId) :
+    List.Pairwise (fun a b : CoreId => a.val ≤ b.val) (canonicalCores cs) :=
+  List.Pairwise.sublist List.filter_sublist allCores_pairwise_le
+
+/-- **WS-RR RR8.12**: the canonical form is bounded by the core count, however
+long the supplied list is.  This is what bounds a footprint segment resolved
+from a *walk* — a chain may visit a thread per object, and still names at most
+`numCores` run queues. -/
+theorem canonicalCores_length_le (cs : List CoreId) :
+    (canonicalCores cs).length ≤ numCores := by
+  have := List.length_filter_le (fun c => cs.contains c) allCores
+  simpa [canonicalCores, allCores_length] using this
+
+/-- **WS-RR RR8.12**: no cores, no segment — the arm of a footprint resolver
+that declares nothing. -/
+@[simp] theorem canonicalCores_nil : canonicalCores [] = [] := by
+  simp [canonicalCores]
+
 /-- WS-SM SM0.E: `bootCoreId.val < numCores`.  Trivial from the `Fin`
 representation; useful as a surface anchor for downstream theorems. -/
 theorem bootCoreId_valid : bootCoreId.val < numCores :=

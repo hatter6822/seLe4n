@@ -2705,11 +2705,13 @@ run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_none_below_the_c
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_arm_below_the_cut' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 
 # OD5.3: the suspend pipeline pops TWICE at depth >= 2, so its scheduler-domain
-# replenish segment is a triple.  Relation, not presence: the mutation keeps
-# every core argument and collapses the segment back to a pair.
+# replenish segment names THREE cores.  Relation, not presence: the mutation
+# keeps every core argument and drops the third from the segment.  WS-RR RR8.12
+# made the arity an argument (`schedCoreSegment` over a core *set*), so the
+# anchor pins the three-core list rather than a three-endpoint combinator.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCoreSchedLockSet\n[ \t]*\(home executingCore ownerHome outerHome : CoreId\) \(placed : Option CoreId\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" bash -lc 'rg -n "\+\+ sortedSchedCoreTriple \(fun c => SchedLockId\.replenishQueue ⟨c⟩\) home ownerHome outerHome\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -n "\+\+ sortedSchedCorePair \(fun c => SchedLockId\.replenishQueue ⟨c⟩\) home ownerHome\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\+\+ schedCoreSegment \(fun c => SchedLockId\.replenishQueue ⟨c⟩\)\n[ \t]*\[home, ownerHome, outerHome\]\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -n "schedCoreSegment \(fun c => SchedLockId\.replenishQueue ⟨c⟩\) \[home, ownerHome\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The two theorems that make the third core a consequence rather than a guess:
 # the reclaim can leave the victim `.donated`, and the second pop migrates to
 # whatever thread that binding records.
@@ -9386,12 +9388,25 @@ run_check "INVARIANT" rg -n '^theorem currentScan_boot_of_single_core' SeLe4n/Ke
 # `queueSpliceNeighbors?`, in the model beside the link fields it reads, since
 # the bound-notification delivery asks the same question.
 run_check "INVARIANT" rg -n '^def queueSpliceNeighbors\?' SeLe4n/Model/Object/Types.lean
-# Audit closure (v0.32.66): running-core footprint triple, EDF deadline rules,
-# current-uniqueness invariant slice, donation-side observer capstone.
-# WS-RR RR2.10 (v0.34.42): the triple moved to `Scheduler/Operations/PerCoreChooseThread.lean`
-# so the reply path's widened lock-set can order its three cores with the same
-# helper the cancellation path uses — one comparator, not a second copy.
-run_check "INVARIANT" rg -n '^def sortedSchedCoreTriple' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+# Audit closure (v0.32.66): the same-kind scheduler-lock segment, EDF deadline
+# rules, current-uniqueness invariant slice, donation-side observer capstone.
+# WS-RR RR2.10 (v0.34.42) moved a three-endpoint spelling to
+# `Scheduler/Operations/PerCoreChooseThread.lean` so the reply path's widened
+# lock-set orders its cores with the same helper the cancellation path uses;
+# WS-RR RR8.12 replaced that spelling and its two-endpoint sibling with one
+# definition over the core *set*, because the arity was never the question and a
+# fourth was about to be needed.  The two retired names must not come back
+# (negatives below); this pins the survivor.
+run_check "INVARIANT" rg -n '^def schedCoreSegment' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^theorem mem_schedCoreSegment_iff' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^def canonicalCores' SeLe4n/Kernel/Concurrency/Types.lean
+run_check "INVARIANT" rg -n '^theorem allCores_pairwise_le' SeLe4n/Kernel/Concurrency/Types.lean
+# WS-RR RR8.12: the two retired fixed-arity spellings are refused tree-wide.  A
+# positive anchor on a deleted symbol silently passes forever, so each becomes a
+# negative; the mutation that decides reintroduces the name as *code* (both
+# survive in prose, which the code view strips).
+run_negative_check "INVARIANT" rg -n 'sortedSchedCorePair' SeLe4n/ tests/
+run_negative_check "INVARIANT" rg -n 'sortedSchedCoreTriple' SeLe4n/ tests/
 run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 

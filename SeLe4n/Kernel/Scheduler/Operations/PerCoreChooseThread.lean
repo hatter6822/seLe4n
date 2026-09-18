@@ -391,151 +391,127 @@ theorem runQueue_lt_replenishQueue (q : RunQueueLockId) (r : ReplenishQueueLockI
 end SchedLockId
 
 -- ============================================================================
--- WS-SM SM6.E / WS-RR RR2.4 — sorted same-kind scheduler-lock segments
+-- WS-SM SM6.E / WS-RR RR2.4, generalised at WS-RR RR8.12 — a same-kind
+-- scheduler-lock segment over a *set* of cores
 -- ============================================================================
 --
--- A cross-domain footprint that touches two cores' slots of the *same* kind
--- (two replenish queues, two run queues) must emit them in `CoreId`-ascending
--- order, so the declared list is itself the SM3.D acquisition sequence.  The
--- shape is shared by the `.tcbSuspend` cancellation footprint (SM6.E) and by
--- the `.call` / `.reply` donation footprints (RR2.4 / RR2.10), so it lives
--- here, with the `SchedLockId` order it is about, rather than in any one of
--- them.
+-- A cross-domain footprint that touches several cores' slots of the *same* kind
+-- (run queues, replenish queues) must emit them duplicate-free and in
+-- `CoreId`-ascending order, so the declared list is itself the SM3.D acquisition
+-- sequence.  The shape is shared by the `.tcbSuspend` cancellation footprint
+-- (SM6.E), the `.call` / `.reply` donation footprints (RR2.4 / RR2.10), the PIP
+-- chain walk's footprint (RR7.40) and the per-arm syscall-seam footprints
+-- (RR8.12), so it lives here, with the `SchedLockId` order it is about, rather
+-- than in any one of them.
+--
+-- **RR8.12 replaced two fixed-arity spellings with one.**  `sortedSchedCorePair`
+-- and `sortedSchedCoreTriple` were the same question at two arities — "the
+-- segment over this set of cores" — each with its own `_map_fst_mem` and
+-- `_pairwise_le`, and `.receive` / `.replyRecv` were about to need a third
+-- arity.  Adding one would have been the enumeration-standing-in-for-a-derivation
+-- shape this project retires; `schedCoreSegment` takes the set.  That the two
+-- were instances was measured before they were deleted, exhaustively over the
+-- concrete core enumeration at both lock constructors, so the sweep changed no
+-- footprint's value.
 
-/-- WS-SM SM6.E (PR #831 review 3): a `CoreId`-ascending sorted pair of
-same-kind scheduler locks — the shared shape of the suspend footprint's
-run-queue and replenish-queue segments (one entry when the cores coincide,
-two in `CoreId`-ascending order otherwise). -/
-def sortedSchedCorePair (f : CoreId → SchedLockId) (a b : CoreId) :
+/-- **WS-RR RR8.12**: a duplicate-free, `CoreId`-ascending segment of same-kind
+scheduler locks over a set of cores.
+
+`f` names the kind (`fun c => SchedLockId.runQueue ⟨c⟩` or the replenish-queue
+counterpart), and the cores are canonicalised through
+`Concurrency.canonicalCores`, so the segment is independent of the order and
+multiplicity the resolver discovered them in.  Every member is a **write**: a
+footprint segment exists because the transition moves those cores' slots.
+
+The length bound is `numCores` rather than the supplied list's length
+(`schedCoreSegment_length_le`), which is what makes a segment resolved from a
+*walk* — a PIP chain, a reply stack — bounded without a separate argument. -/
+def schedCoreSegment (f : CoreId → SchedLockId) (cs : List CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
-  if a = b then [ (f a, .write) ]
-  else if a ≤ b then [ (f a, .write), (f b, .write) ]
-  else [ (f b, .write), (f a, .write) ]
+  (Concurrency.canonicalCores cs).map (fun c => (f c, .write))
 
-/-- Every key of a sorted pair is one of the two endpoints. -/
-theorem sortedSchedCorePair_map_fst_mem {f : CoreId → SchedLockId}
-    {a b : CoreId} {x : SchedLockId}
-    (hx : x ∈ (sortedSchedCorePair f a b).map (·.1)) : x = f a ∨ x = f b := by
-  unfold sortedSchedCorePair at hx
-  split at hx
-  · simp only [List.map_cons, List.map_nil, List.mem_singleton] at hx
-    exact Or.inl hx
-  · split at hx
-    · simp only [List.map_cons, List.map_nil, List.mem_cons,
-        List.not_mem_nil, or_false] at hx
-      exact hx
-    · simp only [List.map_cons, List.map_nil, List.mem_cons,
-        List.not_mem_nil, or_false] at hx
-      exact hx.symm
-
-/-- A sorted pair's keys ascend under any `CoreId`-monotone lock constructor. -/
-theorem sortedSchedCorePair_pairwise_le (f : CoreId → SchedLockId) (a b : CoreId)
-    (hMono : ∀ c d : CoreId, c ≤ d → f c ≤ f d) :
-    ((sortedSchedCorePair f a b).map (·.1)).Pairwise (· ≤ ·) := by
-  unfold sortedSchedCorePair
-  split
-  · simp
-  · split
-    · rename_i hne hle
-      simp only [List.map_cons, List.map_nil]
-      exact List.Pairwise.cons
-        (fun x hx => by rcases List.mem_singleton.mp hx with rfl; exact hMono _ _ hle)
-        (List.Pairwise.cons (fun x hx => by simp at hx) List.Pairwise.nil)
-    · rename_i hne hnle
-      have hge : b ≤ a := (Nat.le_total a.val b.val).resolve_left hnle
-      simp only [List.map_cons, List.map_nil]
-      exact List.Pairwise.cons
-        (fun x hx => by rcases List.mem_singleton.mp hx with rfl; exact hMono _ _ hge)
-        (List.Pairwise.cons (fun x hx => by simp at hx) List.Pairwise.nil)
-
-
-/-- Bool-comparator transitivity for the `CoreId` value order (the
-`List.pairwise_mergeSort` obligation, mirroring `leLockId_bool_trans`). -/
-private theorem leCore_bool_trans : ∀ (x y z : CoreId),
-    (fun x y : CoreId => decide (x.val ≤ y.val)) x y = true →
-    (fun x y : CoreId => decide (x.val ≤ y.val)) y z = true →
-    (fun x y : CoreId => decide (x.val ≤ y.val)) x z = true := by
-  intro x y z hxy hyz
-  exact decide_eq_true (Nat.le_trans (of_decide_eq_true hxy) (of_decide_eq_true hyz))
-
-/-- Bool-comparator totality for the `CoreId` value order. -/
-private theorem leCore_bool_total : ∀ (x y : CoreId),
-    ((fun x y : CoreId => decide (x.val ≤ y.val)) x y
-      || (fun x y : CoreId => decide (x.val ≤ y.val)) y x) = true := by
-  intro x y
-  rcases Nat.le_total x.val y.val with h | h
-  · simp [decide_eq_true h]
-  · simp [decide_eq_true h]
-
-/-- WS-SM SM6.E (audit closure): a `CoreId`-ascending, duplicate-free sorted
-TRIPLE of same-kind scheduler locks — the replenish-queue segment of the
-suspend footprint over {victim home, donation owner's home, outer caller's
-home} (WS-OD OD5.3), three cores that can all differ; it was also the
-footprint's run-queue segment over {victim home, executing core, victim
-running core} until WS-RR RR8.6 keyed the deschedule on placement and that
-segment became a pair.  Built on the SM3.B canonical-sort machinery
-(`List.mergeSort` over the deduped core list), so ascending order and endpoint
-membership are `pairwise_mergeSort` / `mem_mergeSort` corollaries. -/
-def sortedSchedCoreTriple (f : CoreId → SchedLockId) (a b c : CoreId)
-    : List (SchedLockId × Concurrency.AccessMode) :=
-  (((if c = a ∨ c = b then (if a = b then [a] else [a, b])
-     else if a = b then [a, c]
-     else [a, b, c]) : List CoreId).mergeSort
-    (fun x y => decide (x.val ≤ y.val))).map (fun x => (f x, .write))
-
-/-- Every key of a sorted triple is one of the three endpoints. -/
-theorem sortedSchedCoreTriple_map_fst_mem {f : CoreId → SchedLockId}
-    {a b c : CoreId} {x : SchedLockId}
-    (hx : x ∈ (sortedSchedCoreTriple f a b c).map (·.1)) :
-    x = f a ∨ x = f b ∨ x = f c := by
-  unfold sortedSchedCoreTriple at hx
+/-- **WS-RR RR8.12**: every key of a segment is some supplied core's lock — the
+case analysis every ordering proof over a composite footprint runs. -/
+theorem schedCoreSegment_map_fst_mem {f : CoreId → SchedLockId} {cs : List CoreId}
+    {x : SchedLockId} (hx : x ∈ (schedCoreSegment f cs).map (·.1)) :
+    ∃ c ∈ cs, x = f c := by
+  unfold schedCoreSegment at hx
   rw [List.map_map] at hx
-  rcases List.mem_map.mp hx with ⟨y, hy, rfl⟩
-  have hMem := List.mem_mergeSort.mp hy
-  by_cases h1 : c = a ∨ c = b
-  · rw [if_pos h1] at hMem
-    by_cases h2 : a = b
-    · rw [if_pos h2] at hMem
-      rcases List.mem_singleton.mp hMem with rfl
-      exact Or.inl rfl
-    · rw [if_neg h2] at hMem
-      rcases List.mem_cons.mp hMem with rfl | hMem
-      · exact Or.inl rfl
-      · rcases List.mem_singleton.mp hMem with rfl
-        exact Or.inr (Or.inl rfl)
-  · rw [if_neg h1] at hMem
-    by_cases h2 : a = b
-    · rw [if_pos h2] at hMem
-      rcases List.mem_cons.mp hMem with rfl | hMem
-      · exact Or.inl rfl
-      · rcases List.mem_singleton.mp hMem with rfl
-        exact Or.inr (Or.inr rfl)
-    · rw [if_neg h2] at hMem
-      rcases List.mem_cons.mp hMem with rfl | hMem
-      · exact Or.inl rfl
-      rcases List.mem_cons.mp hMem with rfl | hMem
-      · exact Or.inr (Or.inl rfl)
-      · rcases List.mem_singleton.mp hMem with rfl
-        exact Or.inr (Or.inr rfl)
+  obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hx
+  exact ⟨c, (Concurrency.mem_canonicalCores cs c).mp hc, rfl⟩
 
-/-- A sorted triple's keys ascend under any `CoreId`-monotone lock
-constructor. -/
-theorem sortedSchedCoreTriple_pairwise_le (f : CoreId → SchedLockId)
-    (a b c : CoreId)
-    (hMono : ∀ x y : CoreId, x ≤ y → f x ≤ f y) :
-    ((sortedSchedCoreTriple f a b c).map (·.1)).Pairwise (· ≤ ·) := by
-  unfold sortedSchedCoreTriple
+/-- **WS-RR RR8.12**: a core's write lock is in the segment exactly when the
+core is in the set — the coverage half, and the direction a *false* footprint
+fails.
+
+`hInj` is discharged at each use by the constructor's own injectivity
+(`SchedLockId.runQueue.inj` / `.replenishQueue.inj` composed with the wrapper's
+field projection); without it the reverse direction would hold for a `f` that
+collapsed two cores onto one lock, which is not a segment but an alias. -/
+theorem mem_schedCoreSegment_iff {f : CoreId → SchedLockId}
+    (hInj : ∀ c d : CoreId, f c = f d → c = d) (cs : List CoreId) (c : CoreId) :
+    (f c, Concurrency.AccessMode.write) ∈ schedCoreSegment f cs ↔ c ∈ cs := by
+  unfold schedCoreSegment
+  constructor
+  · intro h
+    obtain ⟨d, hd, hEq⟩ := List.mem_map.mp h
+    have hcd : c = d := hInj c d (congrArg Prod.fst hEq).symm
+    exact hcd ▸ (Concurrency.mem_canonicalCores cs d).mp hd
+  · intro h
+    exact List.mem_map.mpr ⟨c, (Concurrency.mem_canonicalCores cs c).mpr h, rfl⟩
+
+/-- **WS-RR RR8.12**: a segment's keys ascend under any `CoreId`-monotone lock
+constructor — so the segment is its own acquisition sequence within its kind. -/
+theorem schedCoreSegment_pairwise_le (f : CoreId → SchedLockId) (cs : List CoreId)
+    (hMono : ∀ c d : CoreId, c ≤ d → f c ≤ f d) :
+    ((schedCoreSegment f cs).map (·.1)).Pairwise (· ≤ ·) := by
+  unfold schedCoreSegment
   rw [List.map_map]
-  have hSorted : List.Pairwise (fun x y : CoreId => x.val ≤ y.val)
-      (((if c = a ∨ c = b then (if a = b then [a] else [a, b])
-         else if a = b then [a, c]
-         else [a, b, c]) : List CoreId).mergeSort
-        (fun x y => decide (x.val ≤ y.val))) :=
-    (List.pairwise_mergeSort
-      (le := fun x y : CoreId => decide (x.val ≤ y.val))
-      leCore_bool_trans leCore_bool_total _).imp
-      (fun h => of_decide_eq_true h)
-  exact List.Pairwise.map _ (fun x y h => hMono x y h) hSorted
+  exact List.Pairwise.map _ (fun a b h => hMono a b h)
+    (Concurrency.canonicalCores_pairwise_le cs)
+
+/-- **WS-RR RR8.12**: a segment is write-only. -/
+theorem schedCoreSegment_write_only (f : CoreId → SchedLockId) (cs : List CoreId) :
+    ∀ p ∈ schedCoreSegment f cs, p.2 = Concurrency.AccessMode.write := by
+  intro p hp
+  obtain ⟨_, _, rfl⟩ := List.mem_map.mp hp
+  rfl
+
+/-- **WS-RR RR8.12**: a segment's keys are duplicate-free — the obligation
+`SchedLockSet.ofList?` refuses a footprint for, and the one a `dedup`-based
+segment would have had to prove separately. -/
+theorem schedCoreSegment_keys_nodup {f : CoreId → SchedLockId}
+    (hInj : ∀ c d : CoreId, f c = f d → c = d) (cs : List CoreId) :
+    ((schedCoreSegment f cs).map (·.1)).Nodup := by
+  unfold schedCoreSegment
+  rw [List.map_map]
+  exact List.Pairwise.map f (fun c d h hEq => h (hInj c d hEq))
+    (Concurrency.canonicalCores_nodup cs)
+
+/-- **WS-RR RR8.12**: a segment names at most one lock per core, however many
+cores the resolver supplied. -/
+theorem schedCoreSegment_length_le (f : CoreId → SchedLockId) (cs : List CoreId) :
+    (schedCoreSegment f cs).length ≤ Concurrency.numCores := by
+  unfold schedCoreSegment
+  rw [List.length_map]
+  exact Concurrency.canonicalCores_length_le cs
+
+/-- **WS-RR RR8.12**: no cores, no segment. -/
+@[simp] theorem schedCoreSegment_nil (f : CoreId → SchedLockId) :
+    schedCoreSegment f [] = [] := by
+  simp [schedCoreSegment]
+
+/-- **WS-RR RR8.12**: the run-queue constructor is injective in the core — the
+`hInj` argument of `mem_schedCoreSegment_iff` and `schedCoreSegment_keys_nodup`
+at the run-queue segment. -/
+theorem runQueueLock_injective (c d : CoreId)
+    (h : SchedLockId.runQueue ⟨c⟩ = SchedLockId.runQueue ⟨d⟩) : c = d :=
+  congrArg RunQueueLockId.core (SchedLockId.runQueue.inj h)
+
+/-- **WS-RR RR8.12**: and the replenish-queue constructor. -/
+theorem replenishQueueLock_injective (c d : CoreId)
+    (h : SchedLockId.replenishQueue ⟨c⟩ = SchedLockId.replenishQueue ⟨d⟩) : c = d :=
+  congrArg ReplenishQueueLockId.core (SchedLockId.replenishQueue.inj h)
 
 /-- WS-SM SM5.H.4 (lock-set): `migrateSchedContextReplenishment fromCore toCore`
 writes both cores' replenish-queue slots. -/
