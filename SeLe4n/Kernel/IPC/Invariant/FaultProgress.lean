@@ -55,87 +55,23 @@ open SeLe4n.Kernel.Concurrency
 -- ============================================================================
 -- §1  The priority-inheritance walk cannot make a thread runnable
 -- ============================================================================
-
-/-- The priority boost migrates a run-queue *bucket*; it never admits a thread
-the queue did not already hold.  The migration arm is guarded on
-`tid ∈ runQueueOnCore c`, so a thread outside the queue is outside it after —
-including the boosted thread itself. -/
-theorem updatePipBoostOnCore_not_mem_of_not_mem (st : SystemState) (c c' : CoreId)
-    (tid other : SeLe4n.ThreadId)
-    (h : other ∉ st.scheduler.runQueueOnCore c') :
-    other ∉ (PriorityInheritance.updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c' := by
-  simp only [PriorityInheritance.updatePipBoostOnCore, SystemState.getTcb?]
-  split
-  · split
-    · exact h
-    · split
-      · rename_i _ _ _ _ hMem
-        split
-        · by_cases hcc : c = c'
-          · subst hcc
-            simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-            intro hIn
-            rcases (RunQueue.mem_insert _ tid _ other).mp hIn with hRem | hEq
-            · exact h ((RunQueue.mem_remove _ tid other).mp hRem).1
-            · exact h (hEq ▸ hMem)
-          · simpa only [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc]
-              using h
-        · exact h
-      · exact h
-  · exact h
-
-/-- The boost never writes any core's `current` slot — the lift of
-`updatePipBoostOnCore_currentOnCore` to the walk's step. -/
-theorem pipBoostWithWake_currentOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
-    (ec c' : CoreId) :
-    (PriorityInheritance.pipBoostWithWake st tid ec).1.scheduler.currentOnCore c'
-      = st.scheduler.currentOnCore c' :=
-  PriorityInheritance.updatePipBoostOnCore_currentOnCore st _ c' tid
-
-/-- One walk step admits no new run-queue member. -/
-theorem pipBoostWithWake_not_mem_of_not_mem (st : SystemState) (tid other : SeLe4n.ThreadId)
-    (ec c' : CoreId) (h : other ∉ st.scheduler.runQueueOnCore c') :
-    other ∉ (PriorityInheritance.pipBoostWithWake st tid ec).1.scheduler.runQueueOnCore c' :=
-  updatePipBoostOnCore_not_mem_of_not_mem st _ c' tid other h
-
-/-- **The whole chain walk admits no new run-queue member.**  By induction on
-the walk's fuel: each link is a `pipBoostWithWake`, and the recursion threads
-the boosted state forward. -/
-theorem propagatePipChainCrossCore_not_mem_of_not_mem :
-    ∀ (fuel : Nat) (st : SystemState) (startTid other : SeLe4n.ThreadId) (ec c' : CoreId),
-      other ∉ st.scheduler.runQueueOnCore c' →
-      other ∉ (PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1.scheduler.runQueueOnCore c'
-  | 0, st, startTid, other, ec, c', h => by
-      rw [PriorityInheritance.propagatePipChainCrossCore_zero]; exact h
-  | n + 1, st, startTid, other, ec, c', h => by
-      rw [PriorityInheritance.propagatePipChainCrossCore_step]
-      simp only
-      have hStep := pipBoostWithWake_not_mem_of_not_mem st startTid other ec c' h
-      cases PriorityInheritance.blockingServer st startTid with
-      | none => simpa using hStep
-      | some nextServer =>
-          simpa using propagatePipChainCrossCore_not_mem_of_not_mem n
-            (PriorityInheritance.pipBoostWithWake st startTid ec).1 nextServer other ec c' hStep
-
-/-- **The whole chain walk writes no core's `current` slot.** -/
-theorem propagatePipChainCrossCore_currentOnCore :
-    ∀ (fuel : Nat) (st : SystemState) (startTid : SeLe4n.ThreadId) (ec c' : CoreId),
-      (PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1.scheduler.currentOnCore c'
-        = st.scheduler.currentOnCore c'
-  | 0, st, startTid, ec, c' => by
-      rw [PriorityInheritance.propagatePipChainCrossCore_zero]
-  | n + 1, st, startTid, ec, c' => by
-      rw [PriorityInheritance.propagatePipChainCrossCore_step]
-      simp only
-      cases PriorityInheritance.blockingServer st startTid with
-      | none => simpa using pipBoostWithWake_currentOnCore st startTid ec c'
-      | some nextServer =>
-          have hTail := propagatePipChainCrossCore_currentOnCore n
-            (PriorityInheritance.pipBoostWithWake st startTid ec).1 nextServer ec c'
-          simp only at hTail ⊢
-          rw [hTail]
-          exact pipBoostWithWake_currentOnCore st startTid ec c'
-
+--
+-- **WS-RR RR8.12 (Cut 4)**: this section's two frames moved to
+-- `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean`, beside the walk
+-- they are about, and its three `_not_mem_of_not_mem` forms were retired with
+-- them: `propagatePipChainCrossCore_mem_runQueueOnCore` is the biconditional,
+-- and `updatePipBoostOnCore_mem_runQueueOnCore` (which `Propagate.lean` has
+-- carried since WS-RR RR2.6) was already the step-level answer this section had
+-- restated one direction of.
+--
+-- The relocation is this project's *a shared answer must be reachable from
+-- every asker* rule rather than tidying.  The suspend pipeline's placement
+-- payoff (`suspendThreadOnCore_holder_still_placed`, in
+-- `IPC/CrossCore/Cancellation.lean`) needs the walk's run-queue and `current`
+-- frames, and this module imports `IPC.CrossCore.Fault`, which imports that one
+-- — so the second asker could not have reached the answer and would have grown
+-- its own.  §2 and §3 below consume the relocated names through the
+-- `PriorityInheritance` namespace.
 -- ============================================================================
 -- §2  The Call chain leaves its caller descheduled
 -- ============================================================================
@@ -248,9 +184,10 @@ theorem endpointCallCrossCoreDispatch_caller_not_runnable
                     executingCore).1 = st' := congrArg Prod.fst hStep
                 subst hEq
                 refine ⟨?_, ?_⟩
-                · exact propagatePipChainCrossCore_not_mem_of_not_mem _ stD receiverTid
-                    caller executingCore executingCore (by rw [hDonSched.1]; exact hW.1)
-                · rw [propagatePipChainCrossCore_currentOnCore _ stD receiverTid
+                · rw [PriorityInheritance.propagatePipChainCrossCore_mem_runQueueOnCore _ stD
+                    receiverTid caller executingCore executingCore, hDonSched.1]
+                  exact hW.1
+                · rw [PriorityInheritance.propagatePipChainCrossCore_currentOnCore _ stD receiverTid
                     executingCore executingCore, hDonSched.2]
                   exact hW.2
             · exact absurd (congrArg Prod.snd hStep) (by simp)

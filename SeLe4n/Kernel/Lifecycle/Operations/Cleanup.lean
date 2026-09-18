@@ -352,6 +352,29 @@ theorem cleanupDonatedSchedContext_scheduler_eq
       | exact returnDonatedSchedContextResolved_lift h
           (fun n s hs => returnDonatedSchedContext_scheduler_eq st s tid _ _ n hs)
 
+/-- **WS-RR RR8.12 (Cut 4)**: `cleanupDonatedSchedContext` destroys no TCB.  Its
+only non-identity arm is the donation pop, whose every TCB write is an in-place
+binding rewrite (`returnDonatedSchedContext_tcb_rewrite`), so a thread that
+resolved before resolves after — which is what the suspend pipeline's placement
+payoff needs of its G3 donated arm. -/
+theorem cleanupDonatedSchedContext_getTcb?_isSome
+    (st st' : SystemState) (tid u : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (h : cleanupDonatedSchedContext st tid = .ok st') (hu : (st.getTcb? u).isSome) :
+    (st'.getTcb? u).isSome := by
+  simp only [cleanupDonatedSchedContext] at h
+  split at h
+  · rw [← Except.ok.inj h]; exact hu
+  · split at h
+    · rename_i scId owner _
+      obtain ⟨t0, ht0⟩ := Option.isSome_iff_exists.mp hu
+      refine returnDonatedSchedContextResolved_lift
+        (P := fun s => (s.getTcb? u).isSome = true) h (fun n s hs => ?_)
+      obtain ⟨t', ht', _⟩ := returnDonatedSchedContext_tcb_rewrite st s tid scId owner hInv n hs
+        u.toObjId t0 ((SystemState.getTcb?_eq_some_iff st u t0).mp ht0)
+      rw [(SystemState.getTcb?_eq_some_iff s u t').mpr ht']
+      rfl
+    · rw [← Except.ok.inj h]; exact hu
+
 /-- WS-SM SM8.B: `cleanupDonatedSchedContext` never touches the machine state
 either — the register banks included.  Added beside the scheduler frame for the
 SM8.B per-core confinement consumer: per-core confinement reads each core's

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "745cbcd38c88369b00baddaaedb3cc5ddc138520",
-      "tree_sha": "096da5fea8bab4ceeeb969dd9885e31e55061484",
-      "committed_at_utc": "2026-09-18T08:36:14+00:00"
+      "commit_sha": "853e90e7abb5fc2a96f4a757f8bdb76927af9d16",
+      "tree_sha": "ce4a45399013e7317a1aca9a46f49e3efc9f1d2a",
+      "committed_at_utc": "2026-09-18T10:10:19+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5788398f6c6ca76f5b720723e5b29a41abe8912b2cb81baa26554c80fc056882"
+    "source_digest": "c72d8b5882fb135e346d9a4b001a911782d2eca754c82c3c499ca17d18bf1829"
   },
   "summary": {
     "module_count": 403,
-    "declaration_count": 21855
+    "declaration_count": 21878
   },
   "readme_sync": {
-    "version": "0.35.91",
+    "version": "0.35.92",
     "lean_toolchain": "v4.28.0",
     "production_files": 333,
-    "production_loc": 389944,
+    "production_loc": 390600,
     "test_files": 70,
-    "test_loc": 79141,
-    "proved_theorem_lemma_decls": 12989,
+    "test_loc": 79157,
+    "proved_theorem_lemma_decls": 13014,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -66935,7 +66935,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.Cancellation",
       "path": "SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean",
-      "declaration_count": 278,
+      "declaration_count": 290,
       "declarations": [
         {
           "kind": "namespace",
@@ -71363,7 +71363,6 @@
           "line": 5724,
           "called": [
             "CoreId",
-            "Kernel",
             "SgiKind",
             "SystemState",
             "ValidThreadId",
@@ -71372,6 +71371,238 @@
             "st",
             "suspendThreadOnCore",
             "suspendThreadOnCore_ipcInvariantStage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelledCallerDonation",
+          "line": 5749,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelHolderBlockedEndpoint",
+          "line": 5763,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelAbortedHolderWake",
+          "line": 5786,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelHolderBlockedEndpoint",
+            "cancelledCallerDonation",
+            "none",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelAbortedHolderWake",
+          "line": 5818,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelHolderBlockedEndpoint",
+            "cancelledCallerDonation",
+            "getTcb",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagatePipChainCrossCore_threadPlacedOnSomeCore",
+          "line": 5836,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "propagatePipChainCrossCore",
+            "propagatePipChainCrossCore_currentOnCore",
+            "propagatePipChainCrossCore_mem_runQueueOnCore",
+            "st",
+            "threadPlacedOnSomeCore",
+            "threadPlacedOnSomeCore_congr_at"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "descheduleAt_threadPlacedOnSomeCore_ne",
+          "line": 5851,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "descheduleAt",
+            "mem_remove",
+            "none",
+            "removeRunnableOnCore_currentOnCore_ne",
+            "removeRunnableOnCore_currentOnCore_self",
+            "removeRunnableOnCore_runQueueOnCore_ne",
+            "removeRunnableOnCore_runQueueOnCore_self",
+            "st",
+            "symm",
+            "threadPlacedOnSomeCore",
+            "threadPlacedOnSomeCore_congr_at"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendRescheduleOnCore_preserves_threadPlacedOnSomeCore",
+          "line": 5881,
+          "called": [
+            "CoreId",
+            "SgiKind",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "handleRescheduleSgiOnCore_preserves_threadPlacedOnSomeCore",
+            "st",
+            "suspendRescheduleOnCore",
+            "suspendRescheduleOnCore_state_dichotomy",
+            "threadPlacedOnSomeCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelBoundDonationOnCore_getTcb",
+          "line": 5897,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelBoundDonationOnCore",
+            "getTcb",
+            "invExt",
+            "scId",
+            "st",
+            "updateSchedContext_getTcb",
+            "updateSchedContext_preserves_objects_invExt",
+            "updateTcb_getTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelDonatedDonationOnCore_getTcb",
+          "line": 5914,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelDonatedDonationOnCore",
+            "cleanupDonatedSchedContext_getTcb",
+            "getTcb",
+            "invExt",
+            "migrateSchedContextReplenishment_getTcb",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelSuspendDonation_threadPlacedOnSomeCore",
+          "line": 5932,
+          "called": [
+            "CoreId",
+            "KernelError",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelBoundDonationOnCore",
+            "cancelBoundDonationOnCore_runQueue_current_eq",
+            "cancelDonatedDonationOnCore",
+            "cancelDonatedDonationOnCore_runQueue_current_eq",
+            "scId",
+            "st",
+            "threadPlacedOnSomeCore",
+            "threadPlacedOnSomeCore_congr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelSuspendDonation_getTcb",
+          "line": 5966,
+          "called": [
+            "CoreId",
+            "KernelError",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelBoundDonationOnCore",
+            "cancelBoundDonationOnCore_getTcb",
+            "cancelDonatedDonationOnCore",
+            "cancelDonatedDonationOnCore_getTcb",
+            "getTcb",
+            "invExt",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThreadOnCore_holder_still_placed",
+          "line": 6015,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "SgiKind",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ValidThreadId",
+            "blockingServer",
+            "cancelAbortedHolderWake",
+            "cancelIpcBlockingMigrated",
+            "cancelIpcBlockingReclaimed",
+            "cancelIpcBlockingReclaimed_ipcInvariantStage",
+            "cancelSuspendDonation_getTcb",
+            "cancelSuspendDonation_ipcInvariantStage",
+            "cancelSuspendDonation_threadPlacedOnSomeCore",
+            "clearPendingState",
+            "clearPendingState_ipcInvariantStage",
+            "descheduleAt",
+            "descheduleAt_ipcInvariantStage",
+            "descheduleAt_threadPlacedOnSomeCore_ne",
+            "determineTargetCore",
+            "getTcb",
+            "invExt",
+            "none",
+            "placedCoreOf",
+            "propagatePipChainCrossCore",
+            "propagatePipChainCrossCore_getTcb",
+            "propagatePipChainCrossCore_preserves_objects_invExt",
+            "propagatePipChainCrossCore_threadPlacedOnSomeCore",
+            "removeRunnableOnCore_getTcb",
+            "st",
+            "suspendRescheduleOnCore_preserves_threadPlacedOnSomeCore",
+            "suspendThreadOnCore",
+            "tcb0",
+            "threadPlacedOnSomeCore",
+            "threadPlacedOnSomeCore_updateTcb",
+            "threadQueuedOnSomeCore",
+            "threadRunningOnSomeCore",
+            "updateTcb",
+            "updateTcb_getTcb",
+            "updateTcb_ipcInvariantStage",
+            "wakeAbortedDonationHolder",
+            "wakeAbortedDonationHolder_getTcb",
+            "wakeAbortedDonationHolder_holder_runnable"
           ]
         }
       ]
@@ -102478,7 +102709,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.FaultProgress",
       "path": "SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean",
-      "declaration_count": 15,
+      "declaration_count": 10,
       "declarations": [
         {
           "kind": "namespace",
@@ -102488,92 +102719,8 @@
         },
         {
           "kind": "theorem",
-          "name": "updatePipBoostOnCore_not_mem_of_not_mem",
-          "line": 63,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "ThreadId",
-            "getTcb",
-            "mem_insert",
-            "mem_remove",
-            "runQueueOnCore",
-            "setRunQueueOnCore_runQueueOnCore_ne",
-            "setRunQueueOnCore_runQueueOnCore_self",
-            "st",
-            "updatePipBoostOnCore"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "pipBoostWithWake_currentOnCore",
-          "line": 89,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "ThreadId",
-            "currentOnCore",
-            "pipBoostWithWake",
-            "st",
-            "updatePipBoostOnCore_currentOnCore"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "pipBoostWithWake_not_mem_of_not_mem",
-          "line": 96,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "ThreadId",
-            "pipBoostWithWake",
-            "runQueueOnCore",
-            "st",
-            "updatePipBoostOnCore_not_mem_of_not_mem"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "propagatePipChainCrossCore_not_mem_of_not_mem",
-          "line": 104,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "ThreadId",
-            "blockingServer",
-            "none",
-            "pipBoostWithWake",
-            "pipBoostWithWake_not_mem_of_not_mem",
-            "propagatePipChainCrossCore",
-            "propagatePipChainCrossCore_step",
-            "propagatePipChainCrossCore_zero",
-            "runQueueOnCore",
-            "st"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "propagatePipChainCrossCore_currentOnCore",
-          "line": 121,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "ThreadId",
-            "blockingServer",
-            "currentOnCore",
-            "none",
-            "pipBoostWithWake",
-            "pipBoostWithWake_currentOnCore",
-            "propagatePipChainCrossCore",
-            "propagatePipChainCrossCore_step",
-            "propagatePipChainCrossCore_zero",
-            "st"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "endpointCallOnCore_deschedules_caller",
-          "line": 147,
+          "line": 83,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -102591,7 +102738,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallOnCore_caller_not_runnable",
-          "line": 163,
+          "line": 99,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -102612,7 +102759,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallWithCapsOnCore_caller_not_runnable",
-          "line": 180,
+          "line": 116,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -102638,7 +102785,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallCrossCoreDispatch_caller_not_runnable",
-          "line": 213,
+          "line": 149,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -102658,7 +102805,7 @@
             "isEmpty",
             "propagatePipChainCrossCore",
             "propagatePipChainCrossCore_currentOnCore",
-            "propagatePipChainCrossCore_not_mem_of_not_mem",
+            "propagatePipChainCrossCore_mem_runQueueOnCore",
             "runQueueOnCore",
             "st"
           ]
@@ -102666,7 +102813,7 @@
         {
           "kind": "def",
           "name": "dispatchableOnCore",
-          "line": 269,
+          "line": 206,
           "called": [
             "CoreId",
             "SystemState",
@@ -102679,7 +102826,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCore_not_dispatchable",
-          "line": 282,
+          "line": 219,
           "called": [
             "CoreId",
             "Fault",
@@ -102706,7 +102853,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCore_leaves_thread_not_runnable",
-          "line": 310,
+          "line": 247,
           "called": [
             "CoreId",
             "Fault",
@@ -102724,7 +102871,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCoreChecked_not_dispatchable",
-          "line": 328,
+          "line": 265,
           "called": [
             "CoreId",
             "Fault",
@@ -102749,7 +102896,7 @@
         {
           "kind": "theorem",
           "name": "faultDeliverOnCoreChecked_leaves_thread_not_runnable",
-          "line": 352,
+          "line": 289,
           "called": [
             "CoreId",
             "Fault",
@@ -182557,7 +182704,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Operations.Cleanup",
       "path": "SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean",
-      "declaration_count": 18,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "namespace",
@@ -182759,8 +182906,25 @@
         },
         {
           "kind": "theorem",
+          "name": "cleanupDonatedSchedContext_getTcb",
+          "line": 360,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "cleanupDonatedSchedContext",
+            "getTcb",
+            "invExt",
+            "returnDonatedSchedContextResolved_lift",
+            "returnDonatedSchedContext_tcb_rewrite",
+            "scId",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "cleanupDonatedSchedContext_machine_eq",
-          "line": 361,
+          "line": 384,
           "called": [
             "SystemState",
             "ThreadId",
@@ -182773,7 +182937,7 @@
         {
           "kind": "theorem",
           "name": "cleanupDonatedSchedContext_tlbShootdown_eq",
-          "line": 377,
+          "line": 400,
           "called": [
             "SystemState",
             "ThreadId",
@@ -182786,7 +182950,7 @@
         {
           "kind": "def",
           "name": "clearDonationOriginReferences",
-          "line": 413,
+          "line": 436,
           "called": [
             "SystemState",
             "ThreadId",
@@ -182800,7 +182964,7 @@
         {
           "kind": "def",
           "name": "cleanupTcbReferences",
-          "line": 437,
+          "line": 460,
           "called": [
             "Kernel",
             "SystemState",
@@ -207505,7 +207669,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.Core",
       "path": "SeLe4n/Kernel/Scheduler/Operations/Core.lean",
-      "declaration_count": 103,
+      "declaration_count": 110,
       "declarations": [
         {
           "kind": "namespace",
@@ -208774,8 +208938,8 @@
         },
         {
           "kind": "theorem",
-          "name": "threadPlacedOnSomeCore_congr",
-          "line": 1979,
+          "name": "threadPlacedOnSomeCore_congr_at",
+          "line": 1985,
           "called": [
             "CoreId",
             "SystemState",
@@ -208793,8 +208957,23 @@
         },
         {
           "kind": "theorem",
+          "name": "threadPlacedOnSomeCore_congr",
+          "line": 2005,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "runQueueOnCore",
+            "st",
+            "threadPlacedOnSomeCore",
+            "threadPlacedOnSomeCore_congr_at"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "threadRunningOnSomeCore_of_currentOnCore",
-          "line": 1995,
+          "line": 2013,
           "called": [
             "CoreId",
             "SystemState",
@@ -208809,7 +208988,7 @@
         {
           "kind": "theorem",
           "name": "objects_insert_tcb_frame",
-          "line": 2003,
+          "line": 2021,
           "called": [
             "ObjId",
             "RHTable.getElem",
@@ -208825,7 +209004,7 @@
         {
           "kind": "theorem",
           "name": "threadPlacedOnSomeCore_save_and_reenqueue",
-          "line": 2026,
+          "line": 2044,
           "called": [
             "CoreId",
             "KernelObject",
@@ -208853,7 +209032,7 @@
         {
           "kind": "theorem",
           "name": "threadInactiveFlagConsistent_save_and_reenqueue",
-          "line": 2065,
+          "line": 2083,
           "called": [
             "CoreId",
             "Priority",
@@ -208878,7 +209057,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_preserves_threadInactiveFlagConsistent",
-          "line": 2086,
+          "line": 2104,
           "called": [
             "CoreId",
             "SystemState",
@@ -208894,7 +209073,7 @@
         {
           "kind": "theorem",
           "name": "threadPlacedOnSomeCore_eq_true_iff",
-          "line": 2104,
+          "line": 2122,
           "called": [
             "CoreId",
             "SystemState",
@@ -208913,7 +209092,7 @@
         {
           "kind": "theorem",
           "name": "threadQueuedOnSomeCore_eq_true_iff",
-          "line": 2119,
+          "line": 2137,
           "called": [
             "CoreId",
             "SystemState",
@@ -208927,15 +209106,43 @@
         },
         {
           "kind": "theorem",
-          "name": "threadInactiveFlagConsistent_dispatch",
-          "line": 2137,
+          "name": "threadPlacedOnSomeCore_of_scheduler_eq",
+          "line": 2147,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "runnableOnSomeCore",
+            "runningOnSomeCore",
+            "st",
+            "threadPlacedOnSomeCore",
+            "threadQueuedOnSomeCore",
+            "threadRunningOnSomeCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "threadPlacedOnSomeCore_updateTcb",
+          "line": 2157,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "st",
+            "threadPlacedOnSomeCore",
+            "threadPlacedOnSomeCore_of_scheduler_eq",
+            "updateTcb",
+            "updateTcb_scheduler"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "threadPlacedOnSomeCore_dispatch_ne",
+          "line": 2170,
           "called": [
             "CoreId",
             "SystemState",
             "ThreadId",
             "currentOnCore",
-            "getTcb",
-            "inferThreadState",
             "mem_remove",
             "remove",
             "runQueueOnCore",
@@ -208949,8 +209156,7 @@
             "setRunQueueOnCore_runQueueOnCore_self",
             "st",
             "symm",
-            "threadInactiveFlagConsistent",
-            "threadInactiveFlagConsistent_of_frame_placing",
+            "threadPlacedOnSomeCore",
             "threadPlacedOnSomeCore_eq_true_iff",
             "threadQueuedOnSomeCore",
             "threadQueuedOnSomeCore_eq_true_iff"
@@ -208958,8 +209164,50 @@
         },
         {
           "kind": "theorem",
+          "name": "threadPlacedOnSomeCore_dispatch_self",
+          "line": 2224,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "remove",
+            "runQueueOnCore",
+            "setCurrentOnCore",
+            "setCurrentOnCore_currentOnCore_self",
+            "setRunQueueOnCore",
+            "st",
+            "threadPlacedOnSomeCore",
+            "threadPlacedOnSomeCore_eq_true_iff"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "threadInactiveFlagConsistent_dispatch",
+          "line": 2243,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "getTcb",
+            "inferThreadState",
+            "remove",
+            "runQueueOnCore",
+            "setCurrentOnCore",
+            "setRunQueueOnCore",
+            "st",
+            "threadInactiveFlagConsistent",
+            "threadInactiveFlagConsistent_of_frame_placing",
+            "threadPlacedOnSomeCore_dispatch_ne",
+            "threadPlacedOnSomeCore_dispatch_self",
+            "threadQueuedOnSomeCore"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "threadInactiveFlagConsistent_congr",
-          "line": 2201,
+          "line": 2262,
           "called": [
             "SystemState",
             "st",
@@ -208971,7 +209219,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_threadPlacedOnSomeCore",
-          "line": 2213,
+          "line": 2274,
           "called": [
             "CoreId",
             "SystemState",
@@ -208986,7 +209234,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_objects_frame",
-          "line": 2228,
+          "line": 2289,
           "called": [
             "CoreId",
             "ObjId",
@@ -209007,7 +209255,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_preserves_threadInactiveFlagConsistent",
-          "line": 2264,
+          "line": 2325,
           "called": [
             "CoreId",
             "SystemState",
@@ -209043,9 +209291,55 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "switchToThreadOnCore_preserves_threadPlacedOnSomeCore",
+          "line": 2411,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "getTcbWitnessed",
+            "mem_insert",
+            "preemptCurrentOnCore",
+            "preemptCurrentOnCore_currentOnCore",
+            "preemptCurrentOnCore_threadPlacedOnSomeCore",
+            "remove",
+            "restoreIncomingContextOnCoreUnlessCurrent",
+            "restoreIncomingContextOnCoreUnlessCurrent_scheduler",
+            "runQueueOnCore",
+            "setCurrentOnCore",
+            "setRunQueueOnCore",
+            "setRunQueueOnCore_runQueueOnCore_self",
+            "st",
+            "switchToThreadOnCore",
+            "symm",
+            "threadPlacedOnSomeCore",
+            "threadPlacedOnSomeCore_dispatch_ne",
+            "threadPlacedOnSomeCore_dispatch_self",
+            "threadPlacedOnSomeCore_of_scheduler_eq",
+            "threadQueuedOnSomeCore_eq_true_iff"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleRescheduleSgiOnCore_preserves_threadPlacedOnSomeCore",
+          "line": 2477,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "handleRescheduleSgiOnCore",
+            "st",
+            "switchToThreadOnCore_preserves_threadPlacedOnSomeCore",
+            "threadPlacedOnSomeCore"
+          ]
+        },
+        {
           "kind": "def",
           "name": "replenishScOnCore",
-          "line": 2349,
+          "line": 2514,
           "called": [
             "CoreId",
             "SchedContext",
@@ -209058,7 +209352,7 @@
         {
           "kind": "def",
           "name": "migrateSchedContextReplenishment",
-          "line": 2357,
+          "line": 2522,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -209076,7 +209370,7 @@
         {
           "kind": "def",
           "name": "migrateRunQueueOnAffinityChange",
-          "line": 2381,
+          "line": 2546,
           "called": [
             "CoreId",
             "SystemState",
@@ -209096,7 +209390,7 @@
         {
           "kind": "def",
           "name": "runningCoreOf",
-          "line": 2418,
+          "line": 2583,
           "called": [
             "CoreId",
             "SystemState",
@@ -209108,7 +209402,7 @@
         {
           "kind": "def",
           "name": "setThreadCpuAffinityWithMigration",
-          "line": 2451,
+          "line": 2616,
           "called": [
             "CoreId",
             "KernelError",
@@ -209134,7 +209428,7 @@
         {
           "kind": "def",
           "name": "affinityUnbindMarker",
-          "line": 2499,
+          "line": 2664,
           "called": [
             "numCores"
           ]
@@ -209142,7 +209436,7 @@
         {
           "kind": "def",
           "name": "decodeAffinity",
-          "line": 2502,
+          "line": 2667,
           "called": [
             "CoreId",
             "KernelError",
@@ -209154,7 +209448,7 @@
         {
           "kind": "def",
           "name": "setThreadCpuAffinityOnCore",
-          "line": 2526,
+          "line": 2691,
           "called": [
             "CoreId",
             "KernelError",
@@ -209168,7 +209462,7 @@
         {
           "kind": "def",
           "name": "setThreadCpuAffinityOp",
-          "line": 2541,
+          "line": 2706,
           "called": [
             "CoreId",
             "KernelError",
@@ -209182,7 +209476,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityOnCore_state_core_independent",
-          "line": 2550,
+          "line": 2715,
           "called": [
             "CoreId",
             "SystemState",
@@ -209195,7 +209489,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityOp_eq_onCore_state",
-          "line": 2565,
+          "line": 2730,
           "called": [
             "CoreId",
             "Kernel",
@@ -232393,7 +232687,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate",
       "path": "SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean",
-      "declaration_count": 34,
+      "declaration_count": 41,
       "declarations": [
         {
           "kind": "namespace",
@@ -232974,6 +233268,129 @@
             "updatePipBoostOnCore_getSchedContext",
             "updatePipBoostOnCore_replenishQueueOnCore",
             "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pipBoostWithWake_mem_runQueueOnCore",
+          "line": 806,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "pipBoostWithWake",
+            "pipBoostWithWake_state",
+            "runQueueOnCore",
+            "st",
+            "updatePipBoostOnCore_mem_runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagatePipChainCrossCore_mem_runQueueOnCore",
+          "line": 819,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "blockingServer",
+            "none",
+            "pipBoostWithWake",
+            "pipBoostWithWake_mem_runQueueOnCore",
+            "propagatePipChainCrossCore",
+            "propagatePipChainCrossCore_step",
+            "propagatePipChainCrossCore_zero",
+            "runQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pipBoostWithWake_currentOnCore",
+          "line": 839,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "pipBoostWithWake",
+            "st",
+            "updatePipBoostOnCore_currentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagatePipChainCrossCore_currentOnCore",
+          "line": 846,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "blockingServer",
+            "currentOnCore",
+            "none",
+            "pipBoostWithWake",
+            "pipBoostWithWake_currentOnCore",
+            "propagatePipChainCrossCore",
+            "propagatePipChainCrossCore_step",
+            "propagatePipChainCrossCore_zero",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoostOnCore_getTcb",
+          "line": 866,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "getTcb",
+            "invExt",
+            "none",
+            "st",
+            "toObjId",
+            "updatePipBoostOnCore",
+            "updatePipBoostOnCore_objects_at",
+            "updatePipBoostOnCore_objects_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pipBoostWithWake_getTcb",
+          "line": 882,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "invExt",
+            "pipBoostWithWake",
+            "pipBoostWithWake_state",
+            "st",
+            "updatePipBoostOnCore_getTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagatePipChainCrossCore_getTcb",
+          "line": 889,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "blockingServer",
+            "getTcb",
+            "invExt",
+            "none",
+            "pipBoostWithWake",
+            "pipBoostWithWake_getTcb",
+            "pipBoostWithWake_preserves_objects_invExt",
+            "propagatePipChainCrossCore",
+            "propagatePipChainCrossCore_step",
+            "propagatePipChainCrossCore_zero",
+            "st"
           ]
         }
       ]
@@ -246674,7 +247091,7 @@
     {
       "module": "SeLe4n.Model.State",
       "path": "SeLe4n/Model/State.lean",
-      "declaration_count": 454,
+      "declaration_count": 455,
       "declarations": [
         {
           "kind": "namespace",
@@ -252324,8 +252741,24 @@
         },
         {
           "kind": "theorem",
+          "name": "updateTcb_getTcb",
+          "line": 5481,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "getTcb",
+            "invExt",
+            "st",
+            "toObjId",
+            "updateTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "updateSchedContext_getTcb",
-          "line": 5475,
+          "line": 5490,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -252342,7 +252775,7 @@
         {
           "kind": "theorem",
           "name": "updateSchedContext_getSchedContext",
-          "line": 5483,
+          "line": 5498,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -252359,7 +252792,7 @@
         {
           "kind": "theorem",
           "name": "updateSchedContext_getSchedContext",
-          "line": 5494,
+          "line": 5509,
           "called": [
             "RHTable.getElem",
             "RHTable_getElem",
@@ -252380,7 +252813,7 @@
         {
           "kind": "theorem",
           "name": "updateTcb_after_rewriteObject_schedContext",
-          "line": 5520,
+          "line": 5535,
           "called": [
             "ObjId",
             "SchedContext",
@@ -252402,7 +252835,7 @@
         {
           "kind": "theorem",
           "name": "updateTcb_after_rewriteObject_schedContext_objects",
-          "line": 5532,
+          "line": 5547,
           "called": [
             "ObjId",
             "SchedContext",
@@ -252423,7 +252856,7 @@
         {
           "kind": "theorem",
           "name": "updateSchedContext_after_rewriteObject_tcb",
-          "line": 5543,
+          "line": 5558,
           "called": [
             "ObjId",
             "SchedContext",
@@ -252446,7 +252879,7 @@
         {
           "kind": "theorem",
           "name": "updateSchedContext_after_rewriteObject_tcb_objects",
-          "line": 5556,
+          "line": 5571,
           "called": [
             "ObjId",
             "SchedContext",
@@ -252468,7 +252901,7 @@
         {
           "kind": "theorem",
           "name": "updateSchedContext_after_rewriteObject_ne",
-          "line": 5567,
+          "line": 5582,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252491,7 +252924,7 @@
         {
           "kind": "theorem",
           "name": "updateTcb_after_rewriteObject_ne",
-          "line": 5581,
+          "line": 5596,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252513,7 +252946,7 @@
         {
           "kind": "def",
           "name": "withObjectStored",
-          "line": 5605,
+          "line": 5620,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252526,7 +252959,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_eq_withObjectStored",
-          "line": 5616,
+          "line": 5631,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252540,7 +252973,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_objects_self",
-          "line": 5628,
+          "line": 5643,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252555,7 +252988,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_preserves_objects_invExt",
-          "line": 5633,
+          "line": 5648,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252570,7 +253003,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_objects",
-          "line": 5643,
+          "line": 5658,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252585,7 +253018,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_scheduler",
-          "line": 5652,
+          "line": 5667,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252599,7 +253032,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_preserves_objectIndexSet_invExt",
-          "line": 5657,
+          "line": 5672,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252614,7 +253047,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_preserves_objectIndexSetComplete",
-          "line": 5663,
+          "line": 5678,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252630,7 +253063,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_preserves_objectIndexLive",
-          "line": 5670,
+          "line": 5685,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252646,7 +253079,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_preserves_objectTypeMetadataConsistent",
-          "line": 5676,
+          "line": 5691,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252662,7 +253095,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_preserves_allTablesInvExtK",
-          "line": 5683,
+          "line": 5698,
           "called": [
             "KernelObject",
             "ObjId",
@@ -252677,7 +253110,7 @@
         {
           "kind": "theorem",
           "name": "withObjectStored_objectIndex_length_le",
-          "line": 5688,
+          "line": 5703,
           "called": [
             "KernelObject",
             "ObjId",
@@ -301725,6 +302158,7 @@
             "assertBool",
             "bareTeardownG2",
             "bootCoreId",
+            "cancelAbortedHolderWake",
             "cancelAbortedHolderWakeCore",
             "cancelIpcBlockingMigrated",
             "cancelIpcBlockingReclaimed",
@@ -301746,6 +302180,7 @@
             "stStrandedHolderReclaim",
             "suspendThreadOnCore",
             "suspendThreadOnCoreSchedLockSet",
+            "threadPlacedOnSomeCore",
             "toValid",
             "victimTcb",
             "victimTid"
@@ -301754,7 +302189,7 @@
         {
           "kind": "def",
           "name": "runSmpCancellationChecks",
-          "line": 2453,
+          "line": 2469,
           "called": [
             "runBoundDonationCancelChecks",
             "runDiffSeamEdfChecks",
@@ -301784,7 +302219,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2482,
+          "line": 2498,
           "called": [
             "runSmpCancellationChecks"
           ]

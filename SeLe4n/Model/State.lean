@@ -5472,6 +5472,21 @@ theorem updateTcb_getTcb?_ne (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB
   · exact rewriteObject_getTcb?_ne st _ _ _ hInv tid' hNe
   · rfl
 
+/-- **WS-RR RR8.12 (Cut 4)**: the typed read-modify-write rewrites a TCB **in
+place**, so a thread that resolved before resolves after — at the written key and
+at every other.  The suspend pipeline's placement payoff needs exactly this of
+its `clearPendingState` and `threadState := .Inactive` stages: a scheduling point
+can strand a thread whose TCB does not resolve, so the chain has to carry the
+resolvability forward rather than assume it. -/
+theorem updateTcb_getTcb?_isSome (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : TCB → TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId)
+    (h : (st.getTcb? x).isSome) : ((st.updateTcb tid f).getTcb? x).isSome := by
+  by_cases hEq : tid.toObjId = x.toObjId
+  · obtain rfl : tid = x := SeLe4n.ThreadId.toObjId_injective _ _ hEq
+    rw [updateTcb_getTcb?_self st tid f hInv]
+    simpa using h
+  · rw [updateTcb_getTcb?_ne st tid f hInv x hEq]; exact h
+
 theorem updateSchedContext_getTcb? (st : SystemState) (scId : SeLe4n.SchedContextId)
     (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt)
     (tid : SeLe4n.ThreadId) :

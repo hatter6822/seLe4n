@@ -15063,4 +15063,56 @@ run_check "INVARIANT" rg -n 'lake build SeLe4n\.Testing\.KernelTransitionReachab
   scripts/test_tier1_build.sh
 
 
+# ---------------------------------------------------------------------------
+# WS-RR RR8.12 (fourth cut): OD1.7's payoff reaches the end of the pipeline.
+# ---------------------------------------------------------------------------
+# `wakeAbortedDonationHolder_holder_runnable` is a statement about the state G2
+# leaves; the live `.tcbSuspend` runs six more stages after it, so the
+# user-visible guarantee -- a suspend does not strand the server its victim
+# called -- rested on the suite MEASURING the whole transition.  The composition
+# is the theorem, and its conclusion is about the state the transition ends in.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_still_placed[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore st. holder = true := by" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# Relation, not presence: the holder-is-not-the-victim fact -- which is what
+# licenses G4 to leave the holder alone -- is DERIVED inside the payoff, not
+# taken as a hypothesis.  `suspendThreadOnCore` asserted it in a comment for
+# three cuts; a sentence in a comment is not a licence.
+run_check "INVARIANT" rg -n '^theorem cancelAbortedHolderWake\?_ne_victim' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_still_placed[^\n]*(\n([ \t][^\n]*)?)*cancelAbortedHolderWake\?_ne_victim st _ vtid\.val tcb holder hTcb hW" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# ...and it is derived from the wake's OWN two guards, which read the same TCB
+# and demand incompatible constructors of its `ipcState`.
+run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_blockedOnReply' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelHolderBlockedEndpoint\?_isSome_blocked' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# The G7 side condition is the honest one and is stated: a scheduling point
+# strands a thread whose TCB does not resolve, so resolvability travels WITH the
+# placement rather than being assumed at the end.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore[^\n]*(\n([ \t][^\n]*)?)*\(hTcb : \(st\.getTcb\? u\)\.isSome\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+# The walk frames live beside the walk, so the payoff can reach them: this
+# module imports `IPC.CrossCore.Fault`, which imports `Cancellation`, so the
+# second asker could not have reached an answer stated in `FaultProgress.lean`.
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_mem_runQueueOnCore' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_currentOnCore' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_getTcb\?_isSome' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+# The three retired one-direction forms must not come back: the biconditional is
+# the answer, and `updatePipBoostOnCore_mem_runQueueOnCore` had been the
+# step-level one since WS-RR RR2.6.
+run_negative_check "INVARIANT" rg -n 'updatePipBoostOnCore_not_mem_of_not_mem' --glob '*.lean' SeLe4n tests
+run_negative_check "INVARIANT" rg -n 'pipBoostWithWake_not_mem_of_not_mem' --glob '*.lean' SeLe4n tests
+run_negative_check "INVARIANT" rg -n 'propagatePipChainCrossCore_not_mem_of_not_mem' --glob '*.lean' SeLe4n tests
+# One question, one answer: the dispatch step's placement argument had been
+# inline in `threadInactiveFlagConsistent_dispatch`, and the payoff asks the same
+# thing of the same step.  The relation is that the inactive-flag theorem READS
+# the two placement lemmas rather than restating their argument.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem threadInactiveFlagConsistent_dispatch[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore_dispatch_ne st c tid u hu \(hOutgoing u hu\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem threadInactiveFlagConsistent_dispatch[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore_dispatch_self st c tid" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+# Placement is framed by agreement AT the thread, not by equality of the slots --
+# the equality form cannot frame G4, which clears the victim's current slot.
+run_check "INVARIANT" rg -n '^theorem threadPlacedOnSomeCore_congr_at' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem threadPlacedOnSomeCore_congr [^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore_congr_at st st. u" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+# The witness exhibits the payoff's premises on a state the live operations
+# reach, and asserts its conclusion in the payoff's own vocabulary -- a
+# hypothesis nothing exhibits is indistinguishable from one that cannot hold.
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the payoff.s wake premise holds here" tests/SmpCancellationSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore stPost serverTid" tests/SmpCancellationSuite.lean'
+
+
 finalize_report

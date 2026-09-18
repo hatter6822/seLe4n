@@ -2424,7 +2424,20 @@ private def runReclaimCompleteSuspendChecks : IO Unit := do
       && runnableOnSomeCore live serverTid)
   assertBool "...and migrates the reservation to the home of the thread it is now bound to"
     (replenishHolds live core1 scId && !replenishHolds live core2 scId)
-  -- (iv) And the transition the live `.tcbSuspend` arm actually runs.
+  -- (iv) The premises of the RR8.12 Cut 4 payoff, exhibited on this state.  A
+  -- hypothesis nothing exhibits is indistinguishable from one that cannot hold,
+  -- and `suspendThreadOnCore_holder_still_placed` takes exactly these three.
+  assertBool "the payoff's wake premise holds here: the trigger answers the holder"
+    (decide (cancelAbortedHolderWake? st (cancelIpcBlockingMigrated victimTid tcb st)
+      victimTid tcb = some serverTid))
+  -- (`st.objects.invExt`, the payoff's third premise, is the object-store
+  -- invariant every bundle theorem in the tree already takes; it is not decidable
+  -- and so is not exhibited here.)
+  assertBool "the payoff's resolvability premise holds here"
+    ((cancelIpcBlockingMigrated victimTid tcb st).getTcb? serverTid).isSome
+  assertBool "...and the fact the payoff DERIVES rather than assumes: holder ≠ victim"
+    (decide (serverTid ≠ victimTid))
+  -- (v) And the transition the live `.tcbSuspend` arm actually runs.
   match SeLe4n.ThreadId.toValid? victimTid with
   | none => assertBool "the victim id is valid" false
   | some vv =>
@@ -2433,12 +2446,15 @@ private def runReclaimCompleteSuspendChecks : IO Unit := do
     | .ok (stPost, _) =>
       assertBool "the live suspend leaves the aborted holder runnable"
         (runnableOnSomeCore stPost serverTid || runningOnSomeCore stPost serverTid)
+      -- ...which is the payoff's own conclusion, in the payoff's own vocabulary.
+      assertBool "...which is `threadPlacedOnSomeCore` of the state the transition ends in"
+        (threadPlacedOnSomeCore stPost serverTid)
       assertBool "...and its `.bound` arm's purge reaches the migrated entry, so no \
 entry names the deactivated reservation"
         (!replenishHolds stPost core1 scId && !replenishHolds stPost core2 scId)
       assertBool "...while the retired G2 left one on the holder's home core"
         (replenishHolds (bareTeardownG2 st victimTid tcb) core2 scId)
-  -- (v) The footprint names the wake core, and the pre-RR8.12 arity omitted it.
+  -- (vi) The footprint names the wake core, and the pre-RR8.12 arity omitted it.
   assertBool "the suspend sched footprint covers the reclaim's wake core"
     (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
       ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 (some core1)

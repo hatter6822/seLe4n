@@ -1,3 +1,77 @@
+## v0.35.92 — WS-RR RR8.12 (fourth cut): a suspend does not strand the server its victim called
+
+WS-OD OD1.7's `wakeAbortedDonationHolder_holder_runnable` says the cancellation
+reclaim leaves the aborted donation holder queued or running.  That is a
+statement about the state **G2** leaves, and the live `.tcbSuspend` runs six more
+stages after it — so the guarantee a user actually sees rested on
+`tests/SmpCancellationSuite.lean` §3.26 *measuring* the whole transition rather
+than on a proof of it.  `suspendThreadOnCore_holder_still_placed` is that lift,
+and it closes the first of the two obligations WS-RR RR8.12's second cut
+registered at `v0.35.90`.
+
+It is the composition of frames the register row predicted: the chain reversion
+re-buckets a member inside the queue it already sits in, both donation arms wake
+and deschedule nothing, the placement removal is about the **victim**, the
+pending-state clear and the `.Inactive` write touch objects alone, and the
+scheduling point re-enqueues what it displaces.
+
+**TWO OF ITS INGREDIENTS WERE PROSE.**  `holder ≠ victim` — what licenses G4's
+removal to leave the holder alone — was asserted in `suspendThreadOnCore`'s own
+G4-precapture comment (*the wake fires only on a holder the pre-state has blocked
+sending or calling, and the victim is `.blockedOnReply`*) and stated nowhere.  It
+is `cancelAbortedHolderWake?_ne_victim` now, derived from the wake's two guards,
+which read the same TCB's `ipcState` and demand incompatible constructors of it;
+`cancelledCallerDonation?_blockedOnReply` and
+`cancelHolderBlockedEndpoint?_isSome_blocked` are the two halves.  The payoff
+derives it rather than taking it, which a Tier 3 anchor pins and a
+token-preserving mutation — keep the name, take the fact as a hypothesis — breaks.
+
+And the holder's **resolvability has to travel with its placement**.  A
+scheduling point strands a thread whose TCB does not resolve:
+`preemptCurrentOnCore` re-enqueues the outgoing thread only on the arm where its
+`getTcbWitnessed?` succeeds, and the `setCurrentOnCore` that follows then
+displaces it with nothing to fall back to.  So every stage carries
+`(getTcb? holder).isSome` forward, and
+`switchToThreadOnCore_preserves_threadPlacedOnSomeCore` **states** that side
+condition — the placement half of the one RR7.36 already states for the same
+transition's inactive-flag preservation.
+
+**A SHARED ANSWER MUST BE REACHABLE FROM EVERY ASKER.**  The chain walk's
+run-queue and `current` frames sat in `IPC/Invariant/FaultProgress.lean`, which
+imports `IPC.CrossCore.Fault`, which imports `Cancellation` — so the payoff could
+not have reached them and would have grown its own.  They move to
+`Scheduler/PriorityInheritance/Propagate.lean`, beside the walk they are about,
+and the three `_not_mem_of_not_mem` forms are **retired** with them:
+`propagatePipChainCrossCore_mem_runQueueOnCore` is the biconditional, and
+`updatePipBoostOnCore_mem_runQueueOnCore` had been the step-level answer since
+WS-RR RR2.6 — one direction of it had simply been restated downstream.  Each
+retired name is refused tree-wide.
+
+**THE SAME RULE INSIDE `Core.lean`.**  `threadPlacedOnSomeCore_congr` asks for
+the `current` slots to be **equal**, which a deschedule of a different thread
+falsifies — and G4 is exactly that step.  `threadPlacedOnSomeCore_congr_at` asks
+for agreement **at the thread**, which is the question, and the equality form is
+now its instance.  `threadPlacedOnSomeCore_dispatch_ne` / `_dispatch_self` are
+the dispatch step's placement argument, which
+`threadInactiveFlagConsistent_dispatch` had inline and now reads.
+
+§3.26 exhibits the payoff's premises and its conclusion on a state the live
+operations reach, because a hypothesis nothing exhibits is indistinguishable from
+one that cannot hold.
+
+Three anchor mutations decide the new checks: a retired name reintroduced **as
+code** (the negatives fire), the derivation replaced by a hypothesis with the
+name still present (the positive fails), and the conclusion moved to the state G2
+leaves rather than the state the transition ends in (the wrong-unit mutation, and
+the shape this project keeps paying for).  Each has a clean-tree control.
+
+`test_full.sh` exit 0, zero FAIL; `test_rust.sh` and `test_aarch64_cross_build.sh`
+exit 0.  Golden trace byte-identical.  What remains registered from the second
+cut is the single-core `suspendThread` reference path, which cannot see the
+shared step across the import boundary.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR8.12
+
 ## v0.35.91 — WS-RR RR8.12 (third cut): which kernel transitions are on an executed path, derived
 
 `ExportCommitDisciplineCensus` walks outward from each state-committing

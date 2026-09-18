@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.91` (`lakefile.toml`) |
+| **Package version** | `0.35.92` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 389,944 across 333 Lean files |
-| **Test LoC** | 79,141 across 70 Lean test suites |
-| **Proved declarations** | 12,989 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 390,600 across 333 Lean files |
+| **Test LoC** | 79,157 across 70 Lean test suites |
+| **Proved declarations** | 13,014 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4215,10 +4215,30 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   it.  G2 now reads `cancelIpcBlockingReclaimed`, the composite's prefix, so both
   steps are on the live path and every result about the composite's teardown half
   applies to it; `suspendThreadOnCoreSchedLockSet` and `suspendThreadOnCoreWriteSet`
-  each grew by the wake core they had been silent about.  What is measured rather
-  than proved is that the holder is *still* placed after the six pipeline stages
-  that follow G2 (`tests/SmpCancellationSuite.lean` §3.26); that lift is registered
-  debt.
+  each grew by the wake core they had been silent about.
+
+  **And the holder is *still* placed after the six pipeline stages that follow
+  G2** (`suspendThreadOnCore_holder_still_placed`, WS-RR RR8.12 fourth cut,
+  `v0.35.92`).  Until it, the user-visible guarantee — *a suspend does not strand
+  the server its victim called* — rested on `tests/SmpCancellationSuite.lean` §3.26
+  **measuring** the whole transition; the theorem is the composition of six frames:
+  the chain reversion re-buckets inside the queue a thread already sits in, both
+  donation arms wake and deschedule nothing, the placement removal is about the
+  **victim**, the pending-state clear and the `.Inactive` write touch objects
+  alone, and the scheduling point re-enqueues what it displaces.  Two of its
+  ingredients are facts the pipeline had only asserted in prose.  `holder ≠ victim`
+  — what licenses G4's removal to leave the holder alone — is
+  `cancelAbortedHolderWake?_ne_victim`, derived from the wake's own two guards,
+  which read the same TCB's `ipcState` and demand incompatible constructors of it.
+  And the holder's **resolvability travels with its placement**: a scheduling point
+  strands a thread whose TCB does not resolve, because `preemptCurrentOnCore`
+  re-enqueues the outgoing thread only when it does, so every stage carries
+  `(getTcb? holder).isSome` forward and
+  `switchToThreadOnCore_preserves_threadPlacedOnSomeCore` states that side
+  condition rather than hiding it.  §3.26 now exhibits the theorem's premises and
+  its conclusion on a state the live operations reach.  What remains registered is
+  the single-core `suspendThread` reference path, which cannot see the shared step
+  across the import boundary.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)
