@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.93` (`lakefile.toml`) |
+| **Package version** | `0.35.94` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 390,670 across 333 Lean files |
+| **Production LoC** | 390,824 across 333 Lean files |
 | **Test LoC** | 79,176 across 70 Lean test suites |
-| **Proved declarations** | 13,014 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 13,029 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4248,6 +4248,25 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   run queue or a replenish queue and none reads anything cross-core, so the IPC
   cross-core layer never had a claim on them.  They keep the `SeLe4n.Kernel`
   namespace, so the move renames nothing.
+
+  **And a whole operation's scheduler-domain footprint is one constructor** (WS-RR
+  RR8.12 sixth cut, `v0.35.94`).  `(SchedLockId.object schedObjStoreLockId, .write)
+  :: runSegment ++ replenishSegment` was spelled at seven definitions, four of them
+  carrying a byte-identical twenty-five-line `_pairwise_le`; `schedFootprintOfCores
+  (runCores replenishCores : List CoreId)`
+  (`Scheduler/Operations/PerCoreChooseThread.lean`) is the shared answer, with the
+  ordering, write-mode, duplicate-freedom, length bound, subset and membership
+  facts proved once.  Which footprints it covers is a **criterion** — a footprint
+  whose cores form a *set* — rather than a list: a footprint at a fixed single core
+  of each kind stays a literal, because there is nothing to sort and nothing to
+  merge.  It closes the first cut's unswept sibling:
+  `cancelIpcBlockingOnCoreSchedLockSet` answered a set question with an
+  `if placed = some c` deduplication branch, and with that branch gone
+  `…_contains_wake_runQueue_write` holds unconditionally where it used to need
+  `placed ≠ some c`.  That the argument is a set is now a theorem
+  (`Concurrency.canonicalCores_congr`, `schedFootprintOfCores_congr`,
+  `canonicalCores_singleton`).  No footprint's member set moved, so the golden
+  trace is byte-identical and `maxLockSetSize` is unmoved.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

@@ -501,6 +501,28 @@ theorem schedCoreSegment_length_le (f : CoreId → SchedLockId) (cs : List CoreI
     schedCoreSegment f [] = [] := by
   simp [schedCoreSegment]
 
+/-- **WS-RR RR8.12**: one core, one member.
+
+The arm every `Option CoreId`-shaped footprint resolver reaches: a footprint
+that names at most one core of a kind — a deschedule's placed core, a wake's
+target — is the segment over that core's singleton set, and this is what says
+the segment has not quietly become something longer. -/
+@[simp] theorem schedCoreSegment_singleton (f : CoreId → SchedLockId) (c : CoreId) :
+    schedCoreSegment f [c] = [(f c, Concurrency.AccessMode.write)] := by
+  simp [schedCoreSegment, Concurrency.canonicalCores_singleton]
+
+/-- **WS-RR RR8.12**: a segment depends on the *set* of cores, not on the list —
+the statement that its argument is a set rather than a claim about it.
+
+A resolver that discovers a core twice, or discovers two cores in either order,
+declares one segment.  This is what retires a hand-written deduplication at a
+footprint; see `cancelIpcBlockingOnCoreSchedLockSet`, whose `if placed = some c`
+branch existed only to remove a duplicate the canonical form never emits. -/
+theorem schedCoreSegment_congr (f : CoreId → SchedLockId) {cs ds : List CoreId}
+    (h : ∀ c, c ∈ cs ↔ c ∈ ds) : schedCoreSegment f cs = schedCoreSegment f ds := by
+  unfold schedCoreSegment
+  rw [Concurrency.canonicalCores_congr h]
+
 /-- **WS-RR RR8.12**: the run-queue constructor is injective in the core — the
 `hInj` argument of `mem_schedCoreSegment_iff` and `schedCoreSegment_keys_nodup`
 at the run-queue segment. -/
@@ -512,6 +534,234 @@ theorem runQueueLock_injective (c d : CoreId)
 theorem replenishQueueLock_injective (c d : CoreId)
     (h : SchedLockId.replenishQueue ⟨c⟩ = SchedLockId.replenishQueue ⟨d⟩) : c = d :=
   congrArg ReplenishQueueLockId.core (SchedLockId.replenishQueue.inj h)
+
+/-- **WS-RR RR8.12**: a whole operation's scheduler-domain footprint — the
+object-store table write lock, then the run-queue segment, then the
+replenish-queue segment.
+
+Every scheduler-domain footprint of a whole kernel operation in this tree is
+this list at some pair of core sets: the `.call` and `.reply` dispatches, the
+two donation hand-offs, the cancellation composite, the cross-core suspend
+pipeline, and the per-arm syscall-seam footprints.  Before this definition each
+spelled the three-domain ladder out again, and **four** carried a
+byte-identical twenty-five-line `_pairwise_le` — one question with four
+answers, about to become nine as the remaining syscall arms are declared.
+
+The three segments are in the plan §4.4 cross-domain ascending order
+`object < runQueue < replenishQueue`, and each same-kind segment is
+`CoreId`-ascending and duplicate-free because `schedCoreSegment` canonicalises
+its core set.  So the list **is** the SM3.D acquisition sequence
+(`schedFootprintOfCores_pairwise_le`) and `SchedLockSet.ofList?` accepts it
+(`schedFootprintOfCores_keys_nodup`).
+
+The two arguments are **sets**: a core named twice, or two cores a resolver
+discovered in descending order, contribute one member in ascending position.
+That is what retires the hand-written deduplication
+`cancelIpcBlockingOnCoreSchedLockSet` used to carry as an
+`if placed = some c then … else … ++ [(runQueue ⟨c⟩, .write)]` — a question
+about a *set*, answered by an `if`-chain over its two possible elements, which
+is the shape RR8.12's first cut retired one level up.
+
+**Which footprints are this, and which are not**, stated as a criterion rather
+than a list, because a list cannot see the footprint nobody has written yet: a
+footprint whose core arguments form a **set** — two or more of a kind, an
+`Option` joined with another, a segment resolved from a walk — is this
+constructor, because the ordering and the deduplication are then real questions
+and the ladder proof is the twenty-five-line one.  A footprint at a **fixed
+single** core of each kind is a literal: `wakeThreadLockSet`,
+`descheduleThreadLockSet` and `cancelBoundDonationOnCoreSchedLockSet` name at
+most one run queue and at most one replenish queue, so there is nothing to sort
+and nothing to merge, and their `_pairwise_le` is a two-element `simp`.
+`migrateSchedContextReplenishmentLockSet` is not this shape at all — it is a
+*sub*-footprint with no object-store member, declared so a composite can be
+shown to cover it.
+
+A fixed-single-core footprint that later gains a second core of a kind stops
+being a literal and becomes this constructor in the same cut; that is the
+question to ask when adding an argument, not which list a name is on. -/
+def schedFootprintOfCores (runCores replenishCores : List CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  (SchedLockId.object schedObjStoreLockId, .write) ::
+    (schedCoreSegment (fun c => SchedLockId.runQueue ⟨c⟩) runCores
+      ++ schedCoreSegment (fun c => SchedLockId.replenishQueue ⟨c⟩) replenishCores)
+
+/-- **WS-RR RR8.12**: what a scheduler-domain footprint contains — the one
+characterisation its consumers read.
+
+Stated as a biconditional over the pair rather than left to each consumer's own
+case analysis over the cons and the two segments: a second reading of the same
+three-way split is the duplication this constructor exists to close, one level
+down.  Everything below is an instance of it. -/
+theorem mem_schedFootprintOfCores_iff (runCores replenishCores : List CoreId)
+    (p : SchedLockId × Concurrency.AccessMode) :
+    p ∈ schedFootprintOfCores runCores replenishCores ↔
+      p = (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+        ∨ (∃ c ∈ runCores, p = (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write))
+        ∨ (∃ c ∈ replenishCores,
+            p = (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)) := by
+  unfold schedFootprintOfCores schedCoreSegment
+  rw [List.mem_cons, List.mem_append]
+  constructor
+  · rintro (rfl | hp | hp)
+    · exact Or.inl rfl
+    · obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hp
+      exact Or.inr (Or.inl ⟨c, (Concurrency.mem_canonicalCores _ c).mp hc, rfl⟩)
+    · obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hp
+      exact Or.inr (Or.inr ⟨c, (Concurrency.mem_canonicalCores _ c).mp hc, rfl⟩)
+  · rintro (rfl | ⟨c, hc, rfl⟩ | ⟨c, hc, rfl⟩)
+    · exact Or.inl rfl
+    · exact Or.inr (Or.inl
+        (List.mem_map.mpr ⟨c, (Concurrency.mem_canonicalCores _ c).mpr hc, rfl⟩))
+    · exact Or.inr (Or.inr
+        (List.mem_map.mpr ⟨c, (Concurrency.mem_canonicalCores _ c).mpr hc, rfl⟩))
+
+/-- **WS-RR RR8.12**: a scheduler-domain footprint is write-only.  Every member
+is a slot the operation mutates: the object store it stores through, the run
+queues it enqueues on or removes from, the replenish queues it purges or
+migrates. -/
+theorem schedFootprintOfCores_write_only (runCores replenishCores : List CoreId) :
+    ∀ p ∈ schedFootprintOfCores runCores replenishCores,
+      p.2 = Concurrency.AccessMode.write := by
+  intro p hp
+  rcases (mem_schedFootprintOfCores_iff runCores replenishCores p).mp hp with
+    rfl | ⟨_, _, rfl⟩ | ⟨_, _, rfl⟩ <;> rfl
+
+/-- **WS-RR RR8.12**: the object-store table write lock is always a member —
+every scheduler-domain footprint is a footprint of an operation that stores. -/
+theorem schedFootprintOfCores_contains_objStore_write
+    (runCores replenishCores : List CoreId) :
+    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+      ∈ schedFootprintOfCores runCores replenishCores :=
+  List.mem_cons_self ..
+
+/-- **WS-RR RR8.12**: a run core's run-queue write lock is a member exactly when
+the core is in the run set — the coverage half, and the direction a *false*
+footprint fails. -/
+theorem mem_schedFootprintOfCores_runQueue_iff (runCores replenishCores : List CoreId)
+    (c : CoreId) :
+    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+        ∈ schedFootprintOfCores runCores replenishCores ↔ c ∈ runCores := by
+  rw [mem_schedFootprintOfCores_iff]
+  constructor
+  · rintro (h | ⟨d, hd, h⟩ | ⟨d, _, h⟩)
+    · exact absurd (congrArg Prod.fst h) (by simp)
+    · exact runQueueLock_injective c d (congrArg Prod.fst h) ▸ hd
+    · exact absurd (congrArg Prod.fst h) (by simp)
+  · exact fun h => Or.inr (Or.inl ⟨c, h, rfl⟩)
+
+/-- **WS-RR RR8.12**: and a replenish core's replenish-queue write lock. -/
+theorem mem_schedFootprintOfCores_replenishQueue_iff
+    (runCores replenishCores : List CoreId) (c : CoreId) :
+    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+        ∈ schedFootprintOfCores runCores replenishCores ↔ c ∈ replenishCores := by
+  rw [mem_schedFootprintOfCores_iff]
+  constructor
+  · rintro (h | ⟨d, _, h⟩ | ⟨d, hd, h⟩)
+    · exact absurd (congrArg Prod.fst h) (by simp)
+    · exact absurd (congrArg Prod.fst h) (by simp)
+    · exact replenishQueueLock_injective c d (congrArg Prod.fst h) ▸ hd
+  · exact fun h => Or.inr (Or.inr ⟨c, h, rfl⟩)
+
+/-- **WS-RR RR8.12**: widening either core set widens the footprint — the
+statement every `…_covers_…` obligation between a composite's footprint and a
+component's is an instance of.
+
+Over-declaring is the safe direction (a footprint that omits a written lock is
+*false*), so this is the lemma a composite reaches for rather than a second
+member-by-member case analysis. -/
+theorem schedFootprintOfCores_subset
+    {run₁ run₂ rep₁ rep₂ : List CoreId}
+    (hRun : ∀ c ∈ run₁, c ∈ run₂) (hRep : ∀ c ∈ rep₁, c ∈ rep₂) :
+    ∀ p ∈ schedFootprintOfCores run₁ rep₁, p ∈ schedFootprintOfCores run₂ rep₂ := by
+  intro p hp
+  rw [mem_schedFootprintOfCores_iff] at hp ⊢
+  rcases hp with rfl | ⟨c, hc, rfl⟩ | ⟨c, hc, rfl⟩
+  · exact Or.inl rfl
+  · exact Or.inr (Or.inl ⟨c, hRun c hc, rfl⟩)
+  · exact Or.inr (Or.inr ⟨c, hRep c hc, rfl⟩)
+
+/-- **WS-RR RR8.12**: a scheduler-domain footprint's keys ascend in the
+`SchedLockId` order — the full three-domain ladder
+`object < runQueue < replenishQueue`, each same-kind segment `CoreId`-ascending.
+So the declared list is its own SM3.D acquisition sequence.
+
+Proved once here.  It was four copies before this cut. -/
+theorem schedFootprintOfCores_pairwise_le (runCores replenishCores : List CoreId) :
+    ((schedFootprintOfCores runCores replenishCores).map (·.1)).Pairwise (· ≤ ·) := by
+  have hObjRQ : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
+      ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
+    fun c => (SchedLockId.object_lt_runQueue _ _).1
+  have hObjRep : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
+      ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
+    fun c => (SchedLockId.object_lt_replenishQueue _ _).1
+  have hRQRep : ∀ (c d : CoreId), SchedLockId.runQueue (⟨c⟩ : RunQueueLockId)
+      ≤ SchedLockId.replenishQueue (⟨d⟩ : ReplenishQueueLockId) :=
+    fun c d => (SchedLockId.runQueue_lt_replenishQueue _ _).1
+  unfold schedFootprintOfCores
+  rw [List.map_cons, List.map_append, List.pairwise_cons]
+  refine ⟨?_, ?_⟩
+  · intro x hx
+    rcases List.mem_append.mp hx with hx | hx
+    · obtain ⟨c, _, rfl⟩ := schedCoreSegment_map_fst_mem hx; exact hObjRQ c
+    · obtain ⟨c, _, rfl⟩ := schedCoreSegment_map_fst_mem hx; exact hObjRep c
+  · rw [List.pairwise_append]
+    refine ⟨schedCoreSegment_pairwise_le _ _ (fun c d h => h),
+      schedCoreSegment_pairwise_le _ _ (fun c d h => h), ?_⟩
+    intro x hx y hy
+    obtain ⟨c, _, rfl⟩ := schedCoreSegment_map_fst_mem hx
+    obtain ⟨d, _, rfl⟩ := schedCoreSegment_map_fst_mem hy
+    exact hRQRep c d
+
+/-- **WS-RR RR8.12**: a scheduler-domain footprint's keys are duplicate-free —
+the obligation `SchedLockSet.ofList?` refuses a footprint for.
+
+Each segment is duplicate-free by canonicalisation, the two segments are
+disjoint because their keys carry different constructors, and the object key is
+in neither. -/
+theorem schedFootprintOfCores_keys_nodup (runCores replenishCores : List CoreId) :
+    ((schedFootprintOfCores runCores replenishCores).map (·.1)).Nodup := by
+  unfold schedFootprintOfCores
+  rw [List.map_cons, List.map_append, List.nodup_cons]
+  refine ⟨?_, ?_⟩
+  · intro hx
+    rcases List.mem_append.mp hx with hx | hx
+    · obtain ⟨_, _, h⟩ := schedCoreSegment_map_fst_mem hx; exact absurd h (by simp)
+    · obtain ⟨_, _, h⟩ := schedCoreSegment_map_fst_mem hx; exact absurd h (by simp)
+  · rw [List.nodup_append]
+    refine ⟨schedCoreSegment_keys_nodup runQueueLock_injective _,
+      schedCoreSegment_keys_nodup replenishQueueLock_injective _, ?_⟩
+    intro x hx y hy
+    obtain ⟨_, _, rfl⟩ := schedCoreSegment_map_fst_mem hx
+    obtain ⟨_, _, rfl⟩ := schedCoreSegment_map_fst_mem hy
+    simp
+
+/-- **WS-RR RR8.12**: a scheduler-domain footprint names at most one lock per
+core per kind, plus the object store — `1 + 2 * numCores`, however many cores
+the resolvers supplied.
+
+The bound is in `numCores` rather than in the supplied lists' lengths, which is
+what makes a footprint resolved from a *walk* — a PIP chain, a reply stack —
+bounded without a separate argument. -/
+theorem schedFootprintOfCores_length_le (runCores replenishCores : List CoreId) :
+    (schedFootprintOfCores runCores replenishCores).length
+      ≤ 1 + 2 * Concurrency.numCores := by
+  unfold schedFootprintOfCores
+  rw [List.length_cons, List.length_append]
+  have hRun := schedCoreSegment_length_le (fun c => SchedLockId.runQueue ⟨c⟩) runCores
+  have hRep := schedCoreSegment_length_le (fun c => SchedLockId.replenishQueue ⟨c⟩)
+    replenishCores
+  omega
+
+/-- **WS-RR RR8.12**: a footprint depends on the *sets* of cores, not on the
+lists — `schedCoreSegment_congr` lifted to the whole three-domain ladder.
+
+Two resolvers that discover the same cores declare the same footprint, so a
+footprint that names a core twice needs no deduplication branch of its own. -/
+theorem schedFootprintOfCores_congr {run₁ run₂ rep₁ rep₂ : List CoreId}
+    (hRun : ∀ c, c ∈ run₁ ↔ c ∈ run₂) (hRep : ∀ c, c ∈ rep₁ ↔ c ∈ rep₂) :
+    schedFootprintOfCores run₁ rep₁ = schedFootprintOfCores run₂ rep₂ := by
+  unfold schedFootprintOfCores
+  rw [schedCoreSegment_congr _ hRun, schedCoreSegment_congr _ hRep]
 
 /-- WS-SM SM5.H.4 (lock-set): `migrateSchedContextReplenishment fromCore toCore`
 writes both cores' replenish-queue slots. -/

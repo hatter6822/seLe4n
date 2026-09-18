@@ -1518,8 +1518,11 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def cancelAbortedHolderWake\?[^\n]*(\n
 run_check "INVARIANT" bash -lc 'rg -U -n "def enqueueAbortedHolderOnCore[^\n]*(\n([ \t][^\n]*)?)*if runnableOnSomeCore st tid \|\| runningOnSomeCore st tid then st" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # The declared scheduler footprint names the woken core's run-queue write lock.
 # A footprint naming only the victim's placed core would be FALSE of the
-# transition, which this project rates worse than a wide one.
-run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCoreSchedLockSet \(placed wakeCore : Option CoreId\)[^\n]*(\n([ \t][^\n]*)?)*descheduleThreadLockSet placed \+\+ \[\(SchedLockId\.runQueue ⟨c⟩, \.write\)\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# transition, which this project rates worse than a wide one.  WS-RR RR8.12's
+# sixth cut made the footprint a core *set* through `schedFootprintOfCores`, so
+# the wake core is named by being in that set rather than by an appended member;
+# the mutation that decides drops `wakeCore.toList` and keeps everything else.
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCoreSchedLockSet \(placed wakeCore : Option CoreId\)[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(placed\.toList \+\+ wakeCore\.toList\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_contains_wake_runQueue_write' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # The wake is a SCHEDULER write and nothing else — that is what keeps every
 # object-level and information-flow result about the composite true verbatim, so
@@ -2713,11 +2716,12 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_arm_below_the_cut'
 # OD5.3: the suspend pipeline pops TWICE at depth >= 2, so its scheduler-domain
 # replenish segment names THREE cores.  Relation, not presence: the mutation
 # keeps every core argument and drops the third from the segment.  WS-RR RR8.12
-# made the arity an argument (`schedCoreSegment` over a core *set*), so the
-# anchor pins the three-core list rather than a three-endpoint combinator.
+# made the arity an argument (`schedCoreSegment` over a core *set*) and its sixth
+# cut made the whole three-domain ladder one constructor, so the anchor pins the
+# three-core list as that constructor's replenish argument.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCoreSchedLockSet\n[ \t]*\(home executingCore ownerHome outerHome : CoreId\) \(placed wakeCore : Option CoreId\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\+\+ schedCoreSegment \(fun c => SchedLockId\.replenishQueue ⟨c⟩\)\n[ \t]*\[home, ownerHome, outerHome\]\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -n "schedCoreSegment \(fun c => SchedLockId\.replenishQueue ⟨c⟩\) \[home, ownerHome\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "schedFootprintOfCores \(\[placed\.getD executingCore, executingCore\] \+\+ wakeCore\.toList\)\n[ \t]*\[home, ownerHome, outerHome\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "schedFootprintOfCores[^\n]*\n[ \t]*\[home, ownerHome\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The two theorems that make the third core a consequence rather than a guess:
 # the reclaim can leave the victim `.donated`, and the second pop migrates to
 # whatever thread that binding records.
@@ -9413,6 +9417,42 @@ run_check "INVARIANT" rg -n '^theorem allCores_pairwise_le' SeLe4n/Kernel/Concur
 # survive in prose, which the code view strips).
 run_negative_check "INVARIANT" rg -n 'sortedSchedCorePair' SeLe4n/ tests/
 run_negative_check "INVARIANT" rg -n 'sortedSchedCoreTriple' SeLe4n/ tests/
+# WS-RR RR8.12 (sixth cut): the whole three-domain ladder is one constructor.
+# Before it, `(object, .write) :: runSegment ++ replenishSegment` was spelled at
+# seven definitions and FOUR of them carried a byte-identical twenty-five-line
+# `_pairwise_le` -- one question with four answers, about to become nine as the
+# remaining syscall arms are declared.
+run_check "INVARIANT" rg -n '^def schedFootprintOfCores' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^theorem mem_schedFootprintOfCores_iff' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_pairwise_le' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_subset' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+# ...and the two lemmas that make "the argument is a set" a theorem rather than a
+# claim: `canonicalCores_congr` is what retires a footprint's hand-written
+# deduplication branch, and `canonicalCores_singleton` is the `Option CoreId` arm.
+run_check "INVARIANT" rg -n '^theorem canonicalCores_congr' SeLe4n/Kernel/Concurrency/Types.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem canonicalCores_singleton' SeLe4n/Kernel/Concurrency/Types.lean
+run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_congr' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+# RELATION, not presence: each repointed footprint's own BODY must name the shared
+# constructor.  The gap is declaration-bounded (the rest of the line, then any run
+# of indented or blank lines), so it cannot reach a neighbouring definition; the
+# mutation that decides keeps the definition and re-inlines the ladder in it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyCallDonationOnCoreSchedLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointCallCrossCoreDispatchSchedLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCoreSchedLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatchSchedLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingOnCoreSchedLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelDonatedDonationOnCoreSchedLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCoreSchedLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The hand-written deduplication the constructor retired must not come back: a
+# footprint over a core SET does not branch on whether two of its cores coincide.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingOnCoreSchedLockSet[^\n]*(\n([ \t][^\n]*)?)*if placed = some c" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# And neither must the ladder preamble.  A three-domain footprint that proves its
+# own ordering needs the run-queue-before-replenish cross-domain fact; one that
+# delegates to `schedFootprintOfCores_pairwise_le` does not, so the fact's
+# presence anywhere under the cross-core IPC surface means a re-inlined copy.
+# (`cancelBoundDonationOnCoreSchedLockSet` keeps `object_lt_replenishQueue`: it is
+# a fixed-single-core literal, two elements, and names no run queue at all.)
+run_negative_check "INVARIANT" rg -n 'runQueue_lt_replenishQueue' SeLe4n/Kernel/IPC/ SeLe4n/Kernel/Lifecycle/
 run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 

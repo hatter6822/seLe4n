@@ -245,6 +245,53 @@ that declares nothing. -/
 @[simp] theorem canonicalCores_nil : canonicalCores [] = [] := by
   simp [canonicalCores]
 
+/-- **WS-RR RR8.12**: the canonical form depends on the *set*, not on the list —
+two supplied lists with the same members canonicalise to the same list.
+
+This is the statement that "the argument is a set" rather than a claim about it.
+It is what retires a hand-written deduplication: a footprint resolver that
+discovers a core twice, or discovers two cores in either order, declares one
+footprint.  The filter runs over the enumeration, so the proof is pointwise on
+the predicate. -/
+theorem canonicalCores_congr {cs ds : List CoreId} (h : ∀ c, c ∈ cs ↔ c ∈ ds) :
+    canonicalCores cs = canonicalCores ds := by
+  unfold canonicalCores
+  refine List.filter_congr (fun x _ => ?_)
+  rw [Bool.eq_iff_iff, List.contains_iff_mem, List.contains_iff_mem]
+  exact h x
+
+/-- **WS-RR RR8.12**: a duplicate-free list whose members are exactly `c` is
+`[c]`.
+
+The general list fact behind `canonicalCores_singleton`, kept separate because
+it is about `List.Nodup` and not about the core enumeration: a `Nodup` list
+cannot hold `c` twice, and a member other than `c` is refused by the
+characterisation, so nothing but the single entry survives. -/
+private theorem eq_singleton_of_nodup_of_mem_iff {l : List CoreId} {c : CoreId}
+    (hNodup : l.Nodup) (h : ∀ x, x ∈ l ↔ x = c) : l = [c] := by
+  match l with
+  | [] => exact absurd ((h c).mpr rfl) (by simp)
+  | a :: t =>
+    have ha : a = c := (h a).mp (List.mem_cons_self ..)
+    have ht : t = [] := by
+      match t with
+      | [] => rfl
+      | b :: u =>
+        have hb : b = c := (h b).mp (List.mem_cons_of_mem _ (List.mem_cons_self ..))
+        have hMem : a ∈ b :: u := by rw [ha, ← hb]; exact List.mem_cons_self ..
+        exact absurd hMem (List.nodup_cons.mp hNodup).1
+    subst ha; subst ht; rfl
+
+/-- **WS-RR RR8.12**: one core canonicalises to itself.
+
+The arm every `Option CoreId`-shaped resolver reaches — a footprint that names
+at most one core of a kind (a deschedule's placed core, a wake's target) is the
+segment over that core's singleton set, and this is what says the segment has
+not quietly become something else. -/
+@[simp] theorem canonicalCores_singleton (c : CoreId) : canonicalCores [c] = [c] :=
+  eq_singleton_of_nodup_of_mem_iff (canonicalCores_nodup [c])
+    (fun x => by rw [mem_canonicalCores]; simp)
+
 /-- WS-SM SM0.E: `bootCoreId.val < numCores`.  Trivial from the `Fin`
 representation; useful as a surface anchor for downstream theorems. -/
 theorem bootCoreId_valid : bootCoreId.val < numCores :=

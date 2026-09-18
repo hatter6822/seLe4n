@@ -1,3 +1,117 @@
+## v0.35.94 — WS-RR RR8.12 (sixth cut): the three-domain ladder is one constructor
+
+RR8.12's remaining work is to declare per-arm scheduler footprints for the five
+IPC syscall arms that have none, so the syscall seam's scheduler writes stop
+being covered by the free over-approximation.  Reading the seven footprints the
+tree already has, to build the five new ones in their shape, found that the shape
+itself was written out seven times:
+
+```
+(SchedLockId.object schedObjStoreLockId, .write) :: runSegment ++ replenishSegment
+```
+
+and that **four** of the seven proved the ladder themselves — the same three
+cross-domain order facts spelled out as a `have` preamble, three of the four
+then byte-identical down to the `List.pairwise_append` and the two
+`schedCoreSegment_map_fst_mem` destructurings, the fourth the same preamble over
+a cons.  One question with four answers, about to become nine.  That is
+the shape this workstream's **first** cut retired one level down, at the two
+fixed-arity segment spellings; this cut retires it one level up, before the five
+new askers are written rather than after.
+
+`schedFootprintOfCores (runCores replenishCores : List CoreId)`
+(`Scheduler/Operations/PerCoreChooseThread.lean`) is the shared answer.  Proved
+once: `_pairwise_le` (the full `object < runQueue < replenishQueue` ladder, each
+same-kind segment `CoreId`-ascending, so the declared list is its own SM3.D
+acquisition sequence), `_write_only`, `_keys_nodup`, `_length_le`, `_subset` —
+and `mem_schedFootprintOfCores_iff`, the single characterisation its consumers
+read instead of each running the same three-way case analysis over the cons and
+the two segments.
+
+**It closes the first cut's unswept sibling.**  `cancelIpcBlockingOnCoreSchedLockSet`
+answered a question about a *set* — which run queues does this cancellation write
+— with an `if`-chain over its two possible elements:
+
+```lean
+| some c =>
+  if placed = some c then descheduleThreadLockSet placed
+  else descheduleThreadLockSet placed ++ [(SchedLockId.runQueue ⟨c⟩, .write)]
+```
+
+That is precisely the defect the first cut recorded against
+`cancelDonatedDonationOnCoreSchedLockSet`, forty lines away in the same file, and
+did not sweep onto its neighbour.  *When a fix names a relation, grep for every
+other place that asks it.*  With the branch gone the canonical form does the
+deduplication, and
+`cancelIpcBlockingOnCoreSchedLockSet_contains_wake_runQueue_write` holds
+**unconditionally** where it used to need `placed ≠ some c` — which is the
+statement the coverage argument wanted in the first place, the hypothesis having
+existed only because on the coincidence the `if` returned the other list.
+
+**"The argument is a set" is a theorem now, not a docstring claim.**
+`Concurrency.canonicalCores_congr` (two lists with the same members canonicalise
+to the same list) and its lift `schedFootprintOfCores_congr` are what license
+retiring a deduplication branch at all; `canonicalCores_singleton` is the
+`Option CoreId` arm, and `schedCoreSegment_singleton` its segment-level form —
+both consumed explicitly rather than left to fire from the `simp` set, since a
+lemma nothing names reads exactly like one nothing needs.
+
+**Which footprints this covers is a criterion, not a list.**  A footprint whose
+cores form a *set* — two or more of a kind, an `Option` joined with another, a
+segment resolved from a walk — is this constructor.  A footprint at a **fixed
+single** core of each kind is a literal: `wakeThreadLockSet`,
+`descheduleThreadLockSet` and `cancelBoundDonationOnCoreSchedLockSet` name at
+most one run queue and at most one replenish queue, so there is nothing to sort
+and nothing to merge and their `_pairwise_le` is a two-element `simp`.  A literal
+that gains a second core of a kind becomes this constructor in the same cut; that
+is the question to ask when adding an argument, not which list a name is on.
+`migrateSchedContextReplenishmentLockSet` is not this shape at all — it has no
+object-store member, being a *sub*-footprint a composite is shown to cover — and
+`Scheduler/PriorityInheritance/ChainFootprint.lean` deliberately keeps its own
+ladder, its object segment being a per-thread TCB lock per chain member rather
+than the single table lock.
+
+### Changed
+
+* `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean`:
+  `schedFootprintOfCores` plus `mem_schedFootprintOfCores_iff`,
+  `_write_only`, `_contains_objStore_write`, `mem_…_runQueue_iff`,
+  `mem_…_replenishQueue_iff`, `_subset`, `_pairwise_le`, `_keys_nodup`,
+  `_length_le`, `_congr`; `schedCoreSegment_congr` and
+  `schedCoreSegment_singleton` beside the segment.
+* `SeLe4n/Kernel/Concurrency/Types.lean`: `canonicalCores_congr`,
+  `canonicalCores_singleton` and the private list fact behind it.
+* `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean`,
+  `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`,
+  `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`: seven footprints repointed
+  (`applyCallDonationOnCoreSchedLockSet`,
+  `endpointCallCrossCoreDispatchSchedLockSet`,
+  `applyReplyDonationOnCoreSchedLockSet`,
+  `endpointReplyCrossCoreDispatchSchedLockSet`,
+  `cancelIpcBlockingOnCoreSchedLockSet`,
+  `cancelDonatedDonationOnCoreSchedLockSet`,
+  `suspendThreadOnCoreSchedLockSet`), their duplicated structural proofs
+  deleted, and the two `_covers_donation` obligations restated as
+  `schedFootprintOfCores_subset`.  **263 lines deleted against 120 added** in
+  those three files; the shared constructor costs 250 lines once, and the five
+  arms Cut 7 adds will cost none.
+* `scripts/test_tier3_invariant_surface.sh`: seven **relation** positives (each
+  footprint's own body names the constructor, declaration-bounded so the gap
+  cannot reach a neighbour) and three negatives — the deduplication branch, the
+  two-core replenish list, and a re-inlined `runQueue_lt_replenishQueue` under
+  `SeLe4n/Kernel/IPC/` and `SeLe4n/Kernel/Lifecycle/`.  Two pre-existing anchors
+  repointed off the retired spellings rather than left to pass vacuously.  All
+  six mutation-verified in both directions, each mutation keeping every token of
+  its definition and breaking only the relation, with a clean-tree control.
+
+### Unchanged, and measured rather than assumed
+
+* No footprint's *set* of members moved, so `main_trace_smoke.expected` is
+  byte-identical and `maxLockSetSize` is unmoved — with it the RPi5 per-lock cost
+  and the uniform envelope.
+* `SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean` and the three
+  fixed-single-core literals are untouched, by the criterion above.
+
 ## v0.35.93 — WS-RR RR8.12 (fifth cut): the reclaim moves to the layer both askers can see
 
 WS-RR RR8.12's second cut fixed the live `.tcbSuspend`, which had been reaching

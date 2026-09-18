@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.93.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.94.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -215,7 +215,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6175 lines)
 - `SeLe4n/Platform/Boot.lean` (~5780 lines)
 - `SeLe4n/Model/State.lean` (~5710 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5459 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5416 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5085 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5084 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
@@ -248,19 +248,20 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/Object/Types.lean` (~2837 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2740 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2644 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2633 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2608 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2589 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
 - `tests/SmpCancellationSuite.lean` (~2518 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `tests/FrozenOpsSuite.lean` (~2473 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2471 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2461 lines)
 - `tests/ModelIntegritySuite.lean` (~2456 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
@@ -271,7 +272,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2291 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2221 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2150 lines)
@@ -318,9 +318,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1617 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1499 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1454 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1445 lines)
@@ -5719,6 +5719,46 @@ code may assume:
   multi-platform build parameterises it by `PlatformBinding.coreCount`, which is
   what `allCores_nodup`'s own docstring says and what one chain-footprint proof
   had done anyway.
+
+- **...and a whole operation's footprint is `schedFootprintOfCores`, over two
+  core sets** (WS-RR RR8.12 sixth cut, `v0.35.94`).  The segment above is one
+  kind; a footprint of a whole kernel operation is the three-domain ladder
+  `(object, .write) :: runSegment ++ replenishSegment`, and that was spelled at
+  **seven** definitions with **four** byte-identical twenty-five-line
+  `_pairwise_le` proofs — one question with four answers, about to become nine
+  as the remaining syscall arms are declared.  `schedFootprintOfCores (runCores
+  replenishCores : List CoreId)` is the one answer, with `_pairwise_le`,
+  `_write_only`, `_keys_nodup`, `_length_le`, `_subset` and the single
+  characterisation `mem_schedFootprintOfCores_iff` its consumers read instead of
+  each running the same three-way case analysis.  Four things new code must
+  respect.  (1) **The criterion is the *shape of the argument*, not a list of
+  names**: a footprint whose cores form a set — two or more of a kind, an
+  `Option` joined with another, a segment resolved from a walk — is this
+  constructor; one at a fixed single core of each kind
+  (`wakeThreadLockSet`, `descheduleThreadLockSet`,
+  `cancelBoundDonationOnCoreSchedLockSet`) is a literal, because there is
+  nothing to sort and nothing to merge and its ladder is a two-element `simp`.
+  A literal that gains a second core of a kind becomes this constructor in the
+  same cut.  (2) **"The argument is a set" is a theorem, not a claim**:
+  `Concurrency.canonicalCores_congr` and `schedFootprintOfCores_congr` say two
+  resolvers that discover the same cores declare the same footprint, and
+  `canonicalCores_singleton` is the `Option CoreId` arm.  That is what retired
+  `cancelIpcBlockingOnCoreSchedLockSet`'s hand-written deduplication — `if
+  placed = some c then … else … ++ [(runQueue ⟨c⟩, .write)]`, a question about a
+  set answered by an `if`-chain over its two possible elements, which is item
+  (2) above one level up and which RR8.12's first cut did not sweep onto its own
+  sibling.  With the branch gone,
+  `cancelIpcBlockingOnCoreSchedLockSet_contains_wake_runQueue_write` is
+  **unconditional**, where it used to need `placed ≠ some c`.  (3) **A composite
+  covers a component by `schedFootprintOfCores_subset`**, not by a second
+  member-by-member case analysis; over-declaring is the safe direction and the
+  lemma is stated that way round.  (4) **`Scheduler/PriorityInheritance/
+  ChainFootprint.lean` is deliberately not this shape**: its object segment is a
+  *per-thread* TCB lock per chain member rather than the single table lock, so
+  its ladder is a different proposition and it keeps its own — which is why the
+  Tier 3 negative that refuses a re-inlined `runQueue_lt_replenishQueue` is
+  scoped to `SeLe4n/Kernel/IPC/` and `SeLe4n/Kernel/Lifecycle/` rather than
+  tree-wide.
 
 - **`ipcInvariantFull` has its dispatch payoff, under stated packs and
   confinements** (WS-RR RR3.15–RR3.26, `v0.34.43`; compressed here at RR8.14,
