@@ -1,3 +1,81 @@
+## v0.35.85 — WS-RR RR8.10: the cancellation's IPC bundle, arm-complete and across cores
+
+**Three arm theorems in three modules, and nothing that put them together.**
+`cancelIpcBlocking`'s six `ipcState` constructors are serviced by four bodies,
+and each of the three non-identity bodies has carried an `ipcInvariantFull`
+result since `v0.34.95`, `v0.34.96` and `v0.35.82` — each in its own module,
+each needing a different engine, because two run a whole-store fold and the
+third is a four-step composition in which no two steps carry the bundle for the
+same reason.  What no theorem stated was the arm-complete composite, nor its
+lift to the cross-core `cancelIpcBlockingOnCore` the live `.tcbSuspend` dispatch
+actually runs — so no caller could cite "the cancellation preserves the bundle"
+without case-splitting on `ipcState` itself and re-deriving which arm needs what.
+Both land here, in the new production `IPC/Invariant/CancellationBundle.lean`,
+and that is the second half of the RR7.22 residual.
+
+**The premises are per-arm, because the facts are.**  `ipcInvariantFull` entails
+none of the queue-coherence facts the three bodies need — that is stated at each
+of them and is why they take hypotheses at all — so demanding every fact
+unconditionally would make a `.ready` cancellation, which commits no write at
+all, carry the reply arm's six-fact pack.  `cancelIpcBlockingArmPremises` gates
+each group on that arm's own `ipcState` equation, which is the equation each arm
+theorem already takes: a caller that has the equation has the gate, and no
+second reading of "which arm is this" enters the tree.  The `.ready` arm appears
+nowhere in the pack.
+
+**The cross-core lift adds no premise at all**, and that is the cut's
+substantive claim rather than a convenience.  Of the twenty conjuncts only
+`passiveServerIdle` reads the scheduler — every other one is a property of the
+object store — so `ipcInvariantFull_of_descheduleFrame` (WS-RR RR2.5, factored
+for exactly this) transports nineteen of them from the objects equality the
+composite already had.  The three scheduler steps then frame `passiveServerIdle`
+for three reasons, each a property of the step:
+
+* the replenishment migration writes neither a run queue nor a current slot, so
+  all three inputs to `of_objects_scheduler_eq` are existing `@[simp]` frames;
+* the holder wake only **inserts**, and the frame's pullback asks a thread absent
+  from the *post*-state queue to be absent from the pre-state one — so an
+  enqueue can never break a conjunct whose antecedent is *not queued*, and the
+  wake frames with no hypothesis about the holder or the victim;
+* the victim's placement removal is `descheduleAtPlacement_passiveServerIdleFrame`,
+  whose obligation is **discharged rather than assumed**:
+  `cancelIpcBlocking_victim_ready` establishes that a cancelled victim ends
+  `.ready` on every arm, and `.ready` is a state `passiveServerIdleAllowed`
+  admits.  Each arm for its own reason — the identity returns the looked-up TCB,
+  three arms end in a restore whose write is `restoredTcb`, and the reply arm's
+  trailing `consumeReplyLink` clears `replyObject` and copies every other field.
+
+A Tier 3 negative refuses a hypothesis about any of the three steps, because
+such a hypothesis would retract the claim while keeping the theorem's name.
+
+**Two things the cut found rather than planned.**  The de-threading census counts
+the two new statements, so the family figure moved **184 → 186** across five
+prose sites — and the Tier 1 *elaborator* census had to import the module: its
+own closure is what the semantic layer sees, and Tier 0's text scan counting a
+statement the elaborator cannot reach is precisely the drift that reachability
+check exists to catch.  Both were caught by the gate after staging, which is the
+project's own rule about index-reading gates working as intended.
+
+And `restoreToReadyStaging_preserves_objects_invExt` in the **staged**
+`IPC/CrossCore/CancellationNI.lean` was a byte-for-byte duplicate of the
+production `Lifecycle.Suspend.restoreToReadyStaging_invExt` — same statement,
+same proof.  One question, two answers, with the staged copy unreachable from
+production code and the production one, therefore, invisible to whoever wrote the
+staged copy.  Found because this cut's production composite reached for the fact;
+it is deleted and its two consumers repointed at the production lemma, with a
+Tier 3 negative refusing its return.
+
+Nine Tier 3 anchors pin the cut, all mutation-tested in both directions with the
+baseline silent before and after: the three statements, the premise pack's two
+gated fields as *relations* (a pack whose fields are unconditional keeps every
+field name and reduces nothing), the lift's route through the factored tool, the
+production-root import, the negative on a scheduler-side hypothesis, and the
+negative on the retired duplicate.
+
+One correction to this row's own heading, carried into the plan: the register
+called it "all five arms", and the count is **four bodies over six
+constructors** — the three endpoint states share one body.
+
 ## v0.35.84 — WS-RR RR8.8 (second cut) + RR8.9: the endpoint had two labels and nothing related them
 
 **`v0.35.83` retracted a remedy and asserted, in its place, an inference the tree

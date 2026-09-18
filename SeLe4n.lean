@@ -20,6 +20,13 @@ import SeLe4n.Model.State
 -- silently.
 import SeLe4n.Model.Object.PerObjectLockInventory
 import SeLe4n.Kernel.API
+-- WS-RR RR8.10: the cancellation's arm-complete IPC bundle and its cross-core
+-- lift.  Its three arm theorems live in three different modules, so the
+-- composite has no natural home among them; putting it in the production import
+-- closure is what keeps it inside every Tier 1 census's derived domain (the
+-- `v0.35.60` lesson: a module outside the root is exempt from most of this
+-- tree's defences by omission rather than by decision).
+import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
 import SeLe4n.Kernel.Architecture.VSpaceBackend
 import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Architecture.RegisterDecode

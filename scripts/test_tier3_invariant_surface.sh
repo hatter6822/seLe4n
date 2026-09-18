@@ -14881,4 +14881,35 @@ run_negative_check "INVARIANT" rg -n '^def endpointSpliceHigh' SeLe4n/Kernel/IPC
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderSpliceHigh_of_neighbourHigh[^\n]*(\n([ \t][^\n]*)?)*⟨blockedSenderEndpointObjectHigh ctx observer st holder holderTcb epId hValid hEpFlow" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderSpliceHigh_of_neighbourHigh[^\n]*(\n([ \t][^\n]*)?)*hEp : objectObservable ctx observer epId = false" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 
+# ---------------------------------------------------------------------------
+# WS-RR RR8.10 -- the cancellation's arm-complete IPC bundle, and its cross-core
+# lift.  The three arm theorems landed one per cut in three modules; these pin
+# the composite that puts them together and the transition the live
+# `.tcbSuspend` dispatch actually runs.
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_victim_ready' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+# Relation, not presence: the premise pack must gate each group on its OWN arm's
+# `ipcState` equation.  A pack whose fields are unconditional keeps every field
+# name and makes the `.ready` arm -- which commits no write -- carry the reply
+# arm's six facts, which is the shape this pack exists to refuse.
+run_check "INVARIANT" bash -lc 'rg -U -n "^structure cancelIpcBlockingArmPremises[^\n]*(\n([ \t][^\n]*)?)*replyArm : . epV rtV, tcbV.ipcState = ThreadIpcState.blockedOnReply epV rtV .\n?\s*cancelReplyArmPremises st v tcbV" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^structure cancelIpcBlockingArmPremises[^\n]*(\n([ \t][^\n]*)?)*notificationArm : . nId, tcbV.ipcState = ThreadIpcState.blockedOnNotification nId ." SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
+# ...and the composite's own premises are the TEARDOWN's: the three scheduler
+# steps the cross-core form adds contribute none, which is the cut's claim.  A
+# hypothesis about the wake, the migration or the placement here would retract it.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*\(h[A-Za-z]* : (passiveServerIdleFrame|abortHolderWakeHigh|replenishQueueAffinityConsistent)" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
+# The lift goes through the factored tool rather than re-deriving nineteen
+# object-only conjuncts: `ipcInvariantFull_of_descheduleFrame` is what RR2.5
+# factored for exactly this, and a proof that unfolds the bundle instead would
+# be a second twenty-conjunct argument.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull_of_descheduleFrame" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
+# The module is in the production import closure, so it is inside every Tier 1
+# census's derived domain rather than exempt from them by omission.
+run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.IPC.Invariant.CancellationBundle' SeLe4n.lean
+# NEGATIVE: the staged duplicate of the production restore-invExt lemma must not
+# come back.  One question, two answers, with only the production one reachable
+# from production code -- which is how RR8.10 met it.
+run_negative_check "INVARIANT" rg -n '^theorem restoreToReadyStaging_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+
 finalize_report

@@ -9,6 +9,11 @@ import SeLe4n.Platform.Staged
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
+-- WS-RR RR8.10: the arm-complete cancellation bundle and its cross-core lift.
+-- The production root already reaches it; this census elaborates only what it
+-- imports itself, so a bundle statement outside *this* closure is invisible to
+-- the semantic layer even while Tier 0's text scan counts it.
+import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
 
 /-!
 # The elaborator-backed de-threading census

@@ -544,29 +544,24 @@ theorem cancelDonatedDonationOnCore_cancellation_NI_smp
 -- their invisibility is that path's theorem (`consumeCallerReply_preserves_projection`)
 -- reached through the bridge, not a second argument over raw inserts.
 
-/-- WS-RR RR2.18: `restoreToReady` writes one TCB, so it preserves the
-object-store invariant.
-
-**WS-RR RR7.14**: stated over `restoreToReadyStaging`, so the plain and the
-frame-staging spellings share one proof — a staged frame is one more field of
-the same single insert. -/
-theorem restoreToReadyStaging_preserves_objects_invExt (st : SystemState)
-    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
-    (hInv : st.objects.invExt) :
-    (Lifecycle.Suspend.restoreToReadyStaging st tid frame).objects.invExt := by
-  unfold Lifecycle.Suspend.restoreToReadyStaging
-  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
-
+-- WS-RR RR8.10: `restoreToReadyStaging_preserves_objects_invExt` is **deleted**.
+-- It was a byte-for-byte duplicate of the production
+-- `Lifecycle.Suspend.restoreToReadyStaging_invExt`
+-- (`Lifecycle/Invariant/SuspendPreservation.lean`) -- same statement, same
+-- proof -- declared here in a *staged* module, so production code that needed
+-- the fact could not reach this copy and the tree carried two answers to one
+-- question with only one of them importable.  Found while RR8.10's production
+-- composite reached for it; the two spellings below now read the production one.
 theorem restoreToReady_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
     (Lifecycle.Suspend.restoreToReady st tid).objects.invExt :=
-  restoreToReadyStaging_preserves_objects_invExt st tid none hInv
+  Lifecycle.Suspend.restoreToReadyStaging_invExt st tid none hInv
 
 /-- **WS-RR RR7.14**: the cancellation spelling. -/
 theorem restoreToReadyCancelled_preserves_objects_invExt (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     (Lifecycle.Suspend.restoreToReadyCancelled st tid).objects.invExt :=
-  restoreToReadyStaging_preserves_objects_invExt st tid _ hInv
+  Lifecycle.Suspend.restoreToReadyStaging_invExt st tid _ hInv
 
 /-- WS-RR RR2.18: `restoreToReady` at a high thread is invisible.
 

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "0ca8eb8634e3b25320d6164ecfbf67c978374463",
-      "tree_sha": "2395ee4abfeb3a6344c2ac5e66ce8081d28cef03",
-      "committed_at_utc": "2026-09-17T23:49:11+00:00"
+      "commit_sha": "8f0afcf6725ec7c69fb8182b4d8eb8ef74673ffc",
+      "tree_sha": "8252e8a072e6a71d2594f461f43fdff62b7950b6",
+      "committed_at_utc": "2026-09-18T01:22:00+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "38471bfd7cf817b8659d4126ab3018b4db29bd7b32a87d365c884cb45d9a14ee"
+    "source_digest": "225da470964b09052d9af6164702d4adbba8814d03eb3152811e2805abe77600"
   },
   "summary": {
-    "module_count": 401,
-    "declaration_count": 21766
+    "module_count": 402,
+    "declaration_count": 21775
   },
   "readme_sync": {
-    "version": "0.35.84",
+    "version": "0.35.85",
     "lean_toolchain": "v4.28.0",
-    "production_files": 331,
-    "production_loc": 387893,
+    "production_files": 332,
+    "production_loc": 388275,
     "test_files": 70,
     "test_loc": 78892,
-    "proved_theorem_lemma_decls": 12925,
+    "proved_theorem_lemma_decls": 12931,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -71168,7 +71168,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.CancellationNI",
       "path": "SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean",
-      "declaration_count": 40,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
@@ -71635,50 +71635,35 @@
         },
         {
           "kind": "theorem",
-          "name": "restoreToReadyStaging_preserves_objects_invExt",
-          "line": 553,
-          "called": [
-            "SyscallReturnFrame",
-            "SystemState",
-            "ThreadId",
-            "frame",
-            "invExt",
-            "restoreToReadyStaging",
-            "st",
-            "updateTcb_preserves_objects_invExt"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "restoreToReady_preserves_objects_invExt",
-          "line": 560,
+          "line": 555,
           "called": [
             "SystemState",
             "ThreadId",
             "invExt",
             "none",
             "restoreToReady",
-            "restoreToReadyStaging_preserves_objects_invExt",
+            "restoreToReadyStaging_invExt",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "restoreToReadyCancelled_preserves_objects_invExt",
-          "line": 566,
+          "line": 561,
           "called": [
             "SystemState",
             "ThreadId",
             "invExt",
             "restoreToReadyCancelled",
-            "restoreToReadyStaging_preserves_objects_invExt",
+            "restoreToReadyStaging_invExt",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "restoreToReadyStaging_preserves_projection_high",
-          "line": 580,
+          "line": 575,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71699,7 +71684,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReady_preserves_projection_high",
-          "line": 593,
+          "line": 588,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71718,7 +71703,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyCancelled_preserves_projection_high",
-          "line": 605,
+          "line": 600,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71736,7 +71721,7 @@
         {
           "kind": "theorem",
           "name": "consumeReplyLink_preserves_projection_high",
-          "line": 623,
+          "line": 618,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71758,7 +71743,7 @@
         {
           "kind": "def",
           "name": "abortHolderProjectionStable",
-          "line": 674,
+          "line": 669,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71776,7 +71761,7 @@
         {
           "kind": "theorem",
           "name": "abortHolderProjectionStable_of_allowed",
-          "line": 689,
+          "line": 684,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71796,7 +71781,7 @@
         {
           "kind": "theorem",
           "name": "returnDonationToCancelledCaller_preserves_projection",
-          "line": 721,
+          "line": 716,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71833,7 +71818,7 @@
         {
           "kind": "theorem",
           "name": "spliceThreadReplyFrameOut_preserves_projection",
-          "line": 800,
+          "line": 795,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71851,7 +71836,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlocking_blockedOnReply_preserves_projection",
-          "line": 832,
+          "line": 827,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71890,7 +71875,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_reply_cancellation_NI",
-          "line": 959,
+          "line": 954,
           "called": [
             "CoreId",
             "IfObserver",
@@ -71915,7 +71900,7 @@
         {
           "kind": "theorem",
           "name": "cancelAbortedHolderWake",
-          "line": 990,
+          "line": 985,
           "called": [
             "SystemState",
             "TCB",
@@ -71928,7 +71913,7 @@
         {
           "kind": "theorem",
           "name": "abortHolderWakeHigh_of_donationOwnerFlowsToHolder",
-          "line": 1022,
+          "line": 1017,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71949,7 +71934,7 @@
         {
           "kind": "theorem",
           "name": "abortHolderSpliceHigh_of_neighbourHigh",
-          "line": 1057,
+          "line": 1052,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -71972,7 +71957,7 @@
         {
           "kind": "theorem",
           "name": "abortHolderSpliceHigh_of_victimHigh",
-          "line": 1085,
+          "line": 1080,
           "called": [
             "IfObserver",
             "Kernel",
@@ -86536,6 +86521,233 @@
       "path": "SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean",
       "declaration_count": 0,
       "declarations": []
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.Invariant.CancellationBundle",
+      "path": "SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean",
+      "declaration_count": 10,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 59,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "restoreVictimReady",
+          "line": 70,
+          "called": [
+            "SyscallReturnFrame",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "lookupTcb",
+            "restoreToReadyStaging",
+            "restoreToReadyStaging_tcb_pullback",
+            "restoredTcb",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelIpcBlocking_victim_ready",
+          "line": 98,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelIpcBlocking",
+            "cancelIpcBlocking_endpoint_arm_eq",
+            "cancelIpcBlocking_notification_arm_eq",
+            "cancelIpcBlocking_reply_arm_eq",
+            "cancelledIpcFrame",
+            "consumeCallerReply_eq_link",
+            "consumeCallerReply_tcb_caller",
+            "consumeReplyLink_none",
+            "consumeReplyLink_some",
+            "getTcb",
+            "invExt",
+            "isReserved",
+            "lookupTcb",
+            "lookupTcb_of_objects_of_not_reserved",
+            "lookupTcb_some_not_reserved",
+            "lookupTcb_some_objects",
+            "nId",
+            "none",
+            "purgedAndRestored",
+            "removeFromAllEndpointQueues_tcb_lookup",
+            "removeFromAllNotificationWaitLists_tcb_lookup",
+            "restoreToReadyStaging",
+            "restoreToReadyStaging_invExt",
+            "restoreToReadyStaging_objects_self",
+            "restoreVictimReady",
+            "restoredAndConsumed",
+            "restoredTcb",
+            "returnDonationToCancelledCaller",
+            "returnDonationToCancelledCaller_preserves_objects_invExt",
+            "returnDonationToCancelledCaller_tcb_lookup",
+            "spliceThreadReplyFrameOut",
+            "spliceThreadReplyFrameOut_preserves_objects_invExt",
+            "spliceThreadReplyFrameOut_tcb_eq",
+            "st",
+            "sweptAndRestored",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "cancelReplyArmPremises",
+          "line": 190,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "abortHolderQueueCoherent",
+            "cancelDonationStackValid",
+            "cancelledCallerDonation",
+            "donatedContextIsOwnerFrameHead",
+            "donationChainWellFormed",
+            "replyFrameHeadHolderDonation",
+            "scId",
+            "st",
+            "sweptThreadOffQueueChains"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "cancelIpcBlockingArmPremises",
+          "line": 213,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelReplyArmPremises",
+            "epId",
+            "nId",
+            "st",
+            "sweptThreadOffQueueChains",
+            "sweptThreadQueueCoherent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelIpcBlocking_preserves_ipcInvariantFull",
+          "line": 235,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "allTimeoutBudgetsNone",
+            "cancelIpcBlocking",
+            "cancelIpcBlockingArmPremises",
+            "cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull",
+            "cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull",
+            "cancelIpcBlocking_replyArm_preserves_ipcInvariantFull",
+            "invExt",
+            "ipcInvariantFull",
+            "lookupTcb",
+            "nId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelIpcBlockingMigrated_passiveServerIdleFrame",
+          "line": 274,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "bootCoreId",
+            "cancelIpcBlocking",
+            "cancelIpcBlockingMigrated",
+            "cancelIpcBlockingMigrated_currentOnCore",
+            "cancelIpcBlockingMigrated_objects",
+            "cancelIpcBlockingMigrated_runQueueOnCore",
+            "of_objects_scheduler_eq",
+            "passiveServerIdleFrame",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enqueueAbortedHolderOnCore_mem_old",
+          "line": 290,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "boostedPriority",
+            "enqueueAbortedHolderOnCore",
+            "getTcb",
+            "insert",
+            "mem_insert",
+            "none",
+            "runQueueOnCore",
+            "runnableOnSomeCore",
+            "runningOnSomeCore",
+            "setRunQueueOnCore",
+            "setRunQueueOnCore_runQueueOnCore_ne",
+            "setRunQueueOnCore_runQueueOnCore_self",
+            "st",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wakeAbortedDonationHolder_passiveServerIdleFrame",
+          "line": 320,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "bootCoreId",
+            "enqueueAbortedHolderOnCore_mem_old",
+            "passiveServerIdleFrame",
+            "wakeAbortedDonationHolder",
+            "wakeAbortedDonationHolder_currentOnCore",
+            "wakeAbortedDonationHolder_objects"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelIpcBlockingOnCore_preserves_ipcInvariantFull",
+          "line": 355,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "allTimeoutBudgetsNone",
+            "cancelIpcBlocking",
+            "cancelIpcBlockingArmPremises",
+            "cancelIpcBlockingMigrated",
+            "cancelIpcBlockingMigrated_objects",
+            "cancelIpcBlockingMigrated_passiveServerIdleFrame",
+            "cancelIpcBlockingOnCore",
+            "cancelIpcBlockingOnCore_objects_eq",
+            "cancelIpcBlockingOnCore_state_eq",
+            "cancelIpcBlocking_preserves_ipcInvariantFull",
+            "cancelIpcBlocking_victim_ready",
+            "descheduleAtPlacement_passiveServerIdleFrame",
+            "invExt",
+            "ipcInvariantFull",
+            "ipcInvariantFull_of_descheduleFrame",
+            "lookupTcb",
+            "passiveServerIdleAllowed",
+            "st",
+            "toObjId",
+            "trans",
+            "wakeAbortedDonationHolder",
+            "wakeAbortedDonationHolder_objects",
+            "wakeAbortedDonationHolder_passiveServerIdleFrame"
+          ]
+        }
+      ]
     },
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.CapTransferBundle",
@@ -267993,19 +268205,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.IpcDethreadingEnvironmentCensus",
-          "line": 54,
+          "line": 59,
           "called": []
         },
         {
           "kind": "def",
           "name": "familyMarkers",
-          "line": 58,
+          "line": 63,
           "called": []
         },
         {
           "kind": "def",
           "name": "carriesFamilyMarker",
-          "line": 68,
+          "line": 73,
           "called": [
             "any",
             "length"
@@ -268014,13 +268226,13 @@
         {
           "kind": "def",
           "name": "isFamilyForm",
-          "line": 77,
+          "line": 82,
           "called": []
         },
         {
           "kind": "def",
           "name": "systemStateName",
-          "line": 82,
+          "line": 87,
           "called": [
             "SystemState"
           ]
@@ -268028,7 +268240,7 @@
         {
           "kind": "def",
           "name": "andLeafHeads",
-          "line": 85,
+          "line": 90,
           "called": [
             "insert"
           ]
@@ -268036,7 +268248,7 @@
         {
           "kind": "def",
           "name": "measuredConjuncts",
-          "line": 100,
+          "line": 105,
           "called": [
             "andLeafHeads",
             "contains",
@@ -268051,7 +268263,7 @@
         {
           "kind": "def",
           "name": "entailedTargets",
-          "line": 140,
+          "line": 145,
           "called": [
             "contains",
             "insert",
@@ -268064,7 +268276,7 @@
         {
           "kind": "def",
           "name": "conclusionStates",
-          "line": 191,
+          "line": 196,
           "called": [
             "isFamilyForm",
             "systemStateName"
@@ -268073,7 +268285,7 @@
         {
           "kind": "def",
           "name": "checkStatement",
-          "line": 210,
+          "line": 215,
           "called": [
             "conclusionStates",
             "entailedTargets",
@@ -268087,7 +268299,7 @@
         {
           "kind": "def",
           "name": "censusMain",
-          "line": 227,
+          "line": 232,
           "called": [
             "carriesFamilyMarker",
             "checkStatement",
@@ -268104,13 +268316,13 @@
         {
           "kind": "section",
           "name": "CheckerWitnesses",
-          "line": 259,
+          "line": 264,
           "called": []
         },
         {
           "kind": "structure",
           "name": "censusWitnessPack",
-          "line": 264,
+          "line": 269,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -268120,7 +268332,7 @@
         {
           "kind": "def",
           "name": "censusWitnessCarrier",
-          "line": 268,
+          "line": 273,
           "called": [
             "SystemState",
             "censusWitnessPack",
@@ -268130,7 +268342,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessThreaded",
-          "line": 274,
+          "line": 279,
           "called": [
             "SystemState",
             "ipcInvariantFull"
@@ -268139,7 +268351,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessChained",
-          "line": 281,
+          "line": 286,
           "called": [
             "SystemState",
             "censusWitnessCarrier",
@@ -268150,7 +268362,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessOrCarried",
-          "line": 289,
+          "line": 294,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -268161,7 +268373,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessExistsCarried",
-          "line": 298,
+          "line": 303,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -268172,7 +268384,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessOrTrue",
-          "line": 307,
+          "line": 312,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -268183,7 +268395,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessOrMixed",
-          "line": 317,
+          "line": 322,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -268195,7 +268407,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessClean",
-          "line": 325,
+          "line": 330,
           "called": [
             "SystemState",
             "ipcInvariantFull",
@@ -268205,7 +268417,7 @@
         {
           "kind": "def",
           "name": "checkWitness",
-          "line": 333,
+          "line": 338,
           "called": [
             "checkStatement",
             "insert",
@@ -268218,13 +268430,13 @@
         {
           "kind": "macro",
           "name": "\"censusMintGeneratedWitness\"",
-          "line": 346,
+          "line": 351,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "generatedWitness_preserves_ipcInvariantFull",
-          "line": 347,
+          "line": 352,
           "called": [
             "SystemState",
             "carriesFamilyMarker",

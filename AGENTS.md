@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.84.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.85.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5698,7 +5698,7 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **184**
+  reports **zero** conjuncts bound on a post-state across all **186**
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements, measured over the comment-free code view with the conjunct set,
   the bundle family and each bundle's own pre-state all *derived* rather than
@@ -6438,9 +6438,31 @@ code may assume:
   (`cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull`,
   `…/CancellationNotificationShape.lean`), and the **reply** arm at `v0.35.82`
   (`cancelIpcBlocking_replyArm_preserves_ipcInvariantFull`,
-  `…/CancellationReplyShape.lean`).  What no transition-level bundle covers yet is
-  the *composite* over all five arms lifted to `cancelIpcBlockingOnCore`
-  (registered debt, owner RR8).  The sentence here named the notification arm as
+  `…/CancellationReplyShape.lean`).  **The arm-complete composite and its
+  cross-core lift landed at `v0.35.85`** (WS-RR RR8.10,
+  `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean`, production and in the
+  library root): `cancelIpcBlocking_preserves_ipcInvariantFull` over the four
+  bodies the six `ipcState` constructors are serviced by, and
+  `cancelIpcBlockingOnCore_preserves_ipcInvariantFull` over the transition the
+  live `.tcbSuspend` dispatch runs.  Three things new code must respect.  (1)
+  **The premises are per-arm**: `cancelIpcBlockingArmPremises` gates each group
+  on that arm's own `ipcState` equation — which is the equation each arm theorem
+  already takes, so no second reading of "which arm is this" enters the tree —
+  and the `.ready` arm owes nothing, because it commits no write.  (2) **The
+  cross-core form's premises are the teardown's and nothing more**: the
+  migration, the holder wake and the victim's placement removal each frame
+  `passiveServerIdle` for a reason that is a property of the *step* — the
+  migration writes no run queue and no current slot, an *insert* cannot break a
+  conjunct whose antecedent is "not queued", and the removal's one obligation is
+  discharged from `cancelIpcBlocking_victim_ready`, the fact that a cancelled
+  victim ends `.ready` on every arm.  A hypothesis about any of the three here
+  would retract that claim, and a Tier 3 negative refuses one.  (3) **Only
+  `passiveServerIdle` reads the scheduler**, which is why the lift is
+  `ipcInvariantFull_of_descheduleFrame` and not a second twenty-conjunct
+  argument; a proof that unfolds the bundle instead is doing the work RR2.5
+  factored away.  "All five arms" is how the register named this row and the
+  count is **four bodies over six constructors** — the three endpoint states
+  share one.  The sentence here named the notification arm as
   uncovered for eighteen cuts after v0.34.96 covered it, two sentences below its
   own retraction, which is the *status claim a later cut must sweep* shape — so
   read this list as of its stated versions and sweep it, not around it.  Each arm
