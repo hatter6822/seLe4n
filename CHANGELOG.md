@@ -1,3 +1,61 @@
+## v0.35.89 — WS-RR RR8.13: the pre-SM10 register re-read against the tree, not against its own headings
+
+**WS-RR RR8.13** gives every one of `UNFINISHED_SMP_WORK.md`'s **26** findings a
+status marker carrying the version it closed at: **23 CLOSED**, **2 PARTIALLY
+CLOSED** with the residual named, **1 REGISTRATION CLOSED** with the residual
+owned by WS-SL.  The findings themselves are left as the audit wrote them — this
+register records what was *found*, and `docs/REGISTERED_DEBT.md` is the status
+board.
+
+**The row's value is in how the re-read was done.**  Each finding was checked
+against its own artefact in the tree — the theorem it asked for, the export it
+named, the comment it quoted — rather than against a CHANGELOG heading that
+mentions its phase.  That found three things no row had.
+
+**One finding was still live, and worse than its heading said.**  §4 finding 11
+("`trap.rs` SVC comment cites the deleted `syscall_dispatch_inner` export") was
+severity `low`, kind `doc-drift`, and nothing had closed it.  The comment named
+the deleted export *and* described the ABI **v1** status convention — "errors are
+surfaced via x0 with the canonical KernelError discriminant", wrapped as
+`DispatchError::Kernel(disc)` — which two ABI revisions had retired.  A reader
+following it would have looked for a symbol that does not exist and then decoded
+the wrong register: `SYSCALL_ABI_VERSION = 3` puts the status in the **`x1`
+MessageInfo label** at `errorLabelBase + d`, leaves `x0` carrying the badge or
+primary result at full width, makes the scalar export return the *outcome tag*,
+and sends the six-word frame through `ffiSyscallReturnFrame`.  Both halves are
+corrected at the seam, naming `lean_syscall_dispatch_cross_core` and
+`SeLe4n/Kernel/SyscallDispatchEntry.lean`.
+
+**One finding's stated closure target had been retracted, which is worse than an
+open finding.**  §4 finding 2 carried "Closure target **RR3**", and RR3's route
+was the endpoint/notification queue label-uniformity invariant.  RR8.8
+(`v0.35.83`) established that invariant is **unestablishable**: the live
+admission gate is `endpointFlowGate ctx ep (threadLabelOf sender)
+(endpointLabelOf ep)`, an **order** and not an equality, so a lower- and a
+higher-labelled sender are both admitted onto one higher-labelled endpoint, and
+`endpointAdmissionAdmitsMixedObservability` is that admission as a
+`decide`-checked theorem.  A closer following the finding would have gone after a
+premise the gate refutes.  The note now records the retraction, what
+`v0.35.84`'s `LabelingContextValid.endpointObjectCoherence` conjunct *does* cover
+(the endpoint's own queue boundaries and the aborted holder's TCB, leaving the
+queue-**neighbour** class), and that the residue is representational — the
+projection keeps `queuePrev` / `queuePPrev` / `queueNext`, stripping them is
+unsound rather than coarse, and the closure is non-intrusive endpoint queues.
+
+**And absence from the debt register meant *done*, not *forgotten*.**  §4 findings
+3 and 4 are Medium `soundness` items that appear in no `REGISTERED_DEBT.md` row
+and in no WS-BP plan row, which reads exactly like the unregistered-debt defect
+the audit's own blocker 1 was about.  They closed at `v0.34.57` (RR7.1/RR7.2).
+The header says so, because reading another row's silence as a gap is the mistake
+that inference invites — and it is the mistake this re-read made first, before
+checking.
+
+The remaining open work is visible and owned: WS-SL's trace-model residual
+(`stepPrecondition` / `stepPost` / `ValidTrace` still read `bootCoreId`, so no
+`ValidTrace` exhibits a step on a secondary core), and the non-intrusive
+endpoint-queue representation.  Neither is closed here and neither is claimed to
+be.
+
 ## v0.35.88 — WS-RR RR8.14: the RR0.3 standing constraint, compressed to what it obliges
 
 **The misdirection this row was written against was already gone.**  RR8.14 was
