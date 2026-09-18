@@ -3431,8 +3431,11 @@ private theorem retypeWrite_dualQueueSystemInvariant
     by_cases hKt : tid.toObjId = target
     · rw [hKt] at hTcb
       obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hTcb
-      obtain ⟨-, -, -, -, hQPP, -⟩ := hFresh
-      exact TCB.queuePPrevAgreesWithPrev_of_pprev_none hQPP
+      -- `v0.35.99`: the pristine replacement is fresh in BOTH back-pointers,
+      -- which `retypeReplacementFresh` has always required — the destructuring
+      -- simply dropped the `queuePrev` component while the arm was vacuous.
+      obtain ⟨-, -, -, hQPrev, hQPP, -⟩ := hFresh
+      exact TCB.queuePPrevAgreesWithPrev_of_pprev_none hQPP hQPrev
     · rw [hNe _ hKt] at hTcb
       exact hPPair tid tcb hTcb
 

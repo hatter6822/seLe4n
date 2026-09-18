@@ -1,3 +1,96 @@
+## v0.35.99 — a `queuePPrev` of `none` claims the thread is on no queue
+
+**PR #897 review, confirmed by reading the conjuncts rather than the prose.**
+`TCB.queuePPrevAgreesWithPrev`'s `none` arm was `True`, so a **queued** interior
+node carrying no back-pointer satisfied every conjunct of
+`dualQueueSystemInvariant` — while `endpointQueueRemoveDual`, whose guard takes a
+`QueuePPrev` and not an `Option`, refuses such a node outright.  That thread
+could never leave its queue.  It is WS-OD OD1.1's and OD3.9's stranding class a
+third time, at the one spot RR8.3's own pairing left open: the conjunct closed
+*present but wrong* and left *absent on a linked node* open.
+
+**The reason the arm gave for being vacuous was false**, which is why the gap
+survived RR8.3's own review: the docstring said *"`tcbQueueLinkIntegrity` is what
+forbids a dangling `queuePrev`"*, and that conjunct forbids a `queuePrev` whose
+target does not point back — a statement about two threads' `queuePrev`/`queueNext`
+reciprocity that never mentions `queuePPrev`.  Codex's two-node example satisfies
+it.  So the field was weaker than the "one bit" (*is this node linked at all*)
+that its own RR8.3 docstring documents it as carrying, and the *documentation*
+described the better state: implement-the-improvement, not weaken the claim.
+
+The arm is `tcb.queuePrev = none` now — equivalently
+`queuePrev = some p → queuePPrev = some (.tcbNext p)`, the one missing direction —
+and `queueLinkPairAgrees`, the same relation on the values a link store writes,
+moved with it.  `TCB.queuePPrevAgreesWithPrev_of_pprev_none` takes the second
+component, since carrying no `queuePPrev` is now a *claim* rather than a vacuity.
+
+**The blast radius is the measurement that the strengthening is right.**  Six
+sites: the two definitions, the decidability instance and the two transport
+lemmas, and five discharge points (the retype replacement, three
+restore-to-ready shapes, and the boot check) — every one of which already wrote
+`queuePrev = none` beside its `queuePPrev = none` and simply had to *say* so.
+No operation changed, no queue changed, and `frozenRunAgrees` and the golden
+trace are untouched.  A seventh site was an **inline copy** of
+`queueLinkPairAgrees_of_tcb`'s own case analysis in `QueueNextTransport.lean`;
+it is one application of the named derivation now, which is why strengthening the
+arm broke exactly one proof outside the definition's own module.
+
+**The witness computes the retired reading beside the live one.**
+`tests/NegativeStateSuite.lean`'s pairing block gains a fourth assertion:
+`retiredPairingAcceptingAnyMissingBackPointer` — `private`, and nowhere else —
+**accepts** the stranding state, the strengthened predicate **refuses** it, and
+the removal refuses it with `.endpointQueueEmpty` **on a queue that is not
+empty**, which is the misleading half of the same defect.  Two controls assert
+the untouched queue is accepted by both readings and that its interior node *can*
+be removed, so the three assertions are about the cleared field rather than about
+the fixture.
+
+Four Tier 3 anchors, one a negative refusing the retired arm's return, each
+mutation-tested by reverting the arm while keeping the comment that explains it.
+
+**And the frozen mirror of `.tcbSetPriority` writes both homes too** — a second
+PR #897 finding, folded in here rather than left diverging for a cut because
+`frozenBranchOperationChecked` claims the two surfaces are run beside each other.
+`v0.35.98` fixed the live writer and left `frozenSetPriority` writing the
+reservation alone, so the *same* operation produced divergent states and a frozen
+block/wake would restore the old band — the very defect that cut closed,
+surviving on the mirror.  It is this project's own *a field added to a shared
+record is a sweep of both surfaces* rule, which `v0.35.98`'s entry quoted about
+`donationOrigin` and then did not apply to its own change: the seventh
+frozen-surface after-the-fact correction.
+
+**Sweeping the sibling found two more, mirror images of each other.**
+`frozenSetMCPriority`'s ceiling compared against `targetTcb.priority` where the
+live `setMCPriorityOnCore` compares against `threadBasePriority` — the
+*reservation* for a `.bound` thread — so the frozen cap read a stale band and
+could decline to bite at all; and the capped value went to the TCB alone where
+the live path writes both.  `FrozenSystemState.threadBasePriority` is the frozen
+reader now, stated beside the frozen accessors as the live one is stated beside
+the live ones, and `frozenWriteBasePriority` is the one writer both frozen
+operations call — so the surface has one answer to each question rather than two.
+
+The witnesses are **differentials**: they drive the live and frozen operations on
+corresponding fixtures and compare both fields, which is the only assertion that
+could have caught either divergence, since each surface's own per-object checks
+passed throughout.  Mutation-tested by dropping the frozen TCB write, which fails
+the comparison and nothing else.  Four more Tier 3 anchors, one a negative
+refusing either operation's return to spelling its own write.
+
+**And the collapse retired two artefacts that were pinning what it moved**, which
+is this project's *a fix retires more than it changes* rule failing in exactly the
+way it describes, twice in one cut.  WS-OD's anchor pair asserted that
+`frozenSetPriority` classifies by `ownScId?` and never by the merged arm; with the
+classifier moved into the shared writer the positive failed outright and the
+negative would have passed forever — a tautological pin — so both are repointed at
+`frozenWriteBasePriority` and mutation-tested against the code view in both
+directions.  And `ReplyStackWriteCensus`'s chain-neutral registry named
+`frozenSetPriority`, which now neither stores nor constructs directly and so left
+the derived frontier: the census reported the stale exemption *and* the two new
+sites in one message, which is its both-directions reconciliation doing the work a
+hand-kept list cannot.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8
+
 ## v0.35.98 — a bound thread's base priority has two homes, and the syscall wrote one
 
 **SECURITY (High, pre-existing since `v0.29.2`).**  `seL4_TCB_SetPriority` on a

@@ -279,8 +279,17 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ sc with donationOrigin := none }` on the destroy path; `scReply` is untouched by the update")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind,
       "`{ sc with boundThread := none, isActive := false }`; `scReply` is untouched")
-  , (`SeLe4n.Kernel.FrozenOps.frozenSetPriority,
-      "`{ sc with priority := _ }` on the bound SchedContext; `scReply` is untouched")
+    -- `v0.35.99`: `frozenSetPriority` LEFT this list, and that is the
+    -- reconciliation working rather than an exemption going missing.  Its
+    -- `{ sc with priority := _ }` moved into the shared `frozenWriteBasePriority`
+    -- when the two spellings of "write a thread's base priority" were collapsed
+    -- onto one writer, so it now neither stores directly nor constructs directly
+    -- and is outside both disjuncts of the frontier.  A chain write added back
+    -- to its own body puts it back in the candidate set on the day it is written.
+  , (`SeLe4n.Kernel.FrozenOps.frozenWriteBasePriority,
+      "`{ sc with priority := _ }` on the owned SchedContext and `{ tcb with priority := _ }` on the thread; `scReply` is in neither assignment list")
+  , (`SeLe4n.Kernel.FrozenOps.frozenSetMCPriority,
+      "`{ tcb with maxControlledPriority := _ }`, then the capped base priority through `frozenWriteBasePriority`; no chain field in either")
   , (`SeLe4n.Kernel.FrozenOps.frozenTimerTickBudget,
       "rebuilds a SchedContext for its budget accounting; `scReply` is untouched")
     -- ---------------------------------------------------------------------

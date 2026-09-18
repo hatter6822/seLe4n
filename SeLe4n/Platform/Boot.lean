@@ -4970,11 +4970,14 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         exact tcbQueueChainAcyclic_of_allNextNone (fun tid tcb hObj => by
           exact ((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.2.1)
       · -- WS-RR RR8.3: the pairing.  `bootSafeObjectCheck` admits a TCB only
-        -- with all three queue links empty, and `queuePPrev = none` constrains
-        -- nothing.
+        -- with all three queue links empty, which is what the strengthened
+        -- `none` arm asks (`v0.35.99`): carrying no `queuePPrev` is the claim
+        -- that the thread is on no queue, so its `queuePrev` is part of the
+        -- claim rather than unconstrained.
         intro tid tcb hObj
         exact TCB.queuePPrevAgreesWithPrev_of_pprev_none
           ((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.2.2.2.1
+          ((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.2.2.1
     · -- allPendingMessagesBounded
       intro tid tcb msg hObj hPend
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl

@@ -741,7 +741,11 @@ theorem sweptAndRestored_queuePPrevAgreesWithPrev
   · rw [hav, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hT
     have hEq : restoredTcb tcbV frame = t := by injection hT with hObj; injection hObj
     subst hEq
+    -- `v0.35.99`: the restored victim claims BOTH back-pointers cleared — with
+    -- the pairing's `none` arm strengthened, carrying no `queuePPrev` is the
+    -- claim that the thread is on no queue, so `queuePrev` must be gone too.
     exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev tcbV frame)
+      (restoredTcb_queuePrev tcbV frame)
   · -- Away from the swept thread the composite's TCB view is the splice's.
     have hNeObj : a.toObjId ≠ v.toObjId :=
       fun hEq => hav (SeLe4n.ThreadId.toObjId_injective _ _ hEq)

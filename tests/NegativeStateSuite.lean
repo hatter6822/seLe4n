@@ -1212,10 +1212,25 @@ private def runUntypedF2NegativeChecks : IO Unit := do
 #check @SeLe4n.Kernel.sweptAndRestored_queuePPrevAgreesWithPrev
 #check @SeLe4n.Kernel.QueueNextPath.lastEdge
 
+/-- The reading the pairing had until `v0.35.99`: a `queuePPrev` of `none`
+constrained nothing.  It lives here, `private`, and nowhere else — the stranding
+witness below computes it beside the live predicate, so the assertion is known to
+discriminate rather than merely to pass. -/
+private def retiredPairingAcceptingAnyMissingBackPointer (st : SystemState) : Bool :=
+  st.objectIndex.foldr (fun oid acc =>
+    match st.getTcb? ⟨oid.toNat⟩ with
+    | some tcb =>
+        (match tcb.queuePPrev with
+         | none => true
+         | some .endpointHead => tcb.queuePrev.isNone
+         | some (.tcbNext p) => tcb.queuePrev == some p) && acc
+    | none => acc) true
+
 /-- **WS-RR RR8.3**: the `queuePPrev`/`queuePrev` pairing invariant, and the split
 that makes `endpointQueueRemoveDual`'s guard discharge from it.
 
-Three assertions the tree could not make before this cut.
+Four assertions the tree could not make before this cut (the fourth added at
+`v0.35.99`, when the `none` arm stopped being vacuous).
 
 1. A queue the **live** operations built satisfies the pairing, and
    `dualQueueRemovalGuard` is `true` at both the head and an interior node — so
@@ -1292,6 +1307,38 @@ private def runDualQueuePPrevPairingChecks : IO Unit := do
   expectBool "...which is exactly the position factor"
     (SeLe4n.Model.queuePPrevHeadPositionAgrees qEmpty (SeLe4n.ThreadId.ofNat 7) .endpointHead)
     false
+
+  -- (4) `v0.35.99`: the shape the `none` arm used to admit — a QUEUED interior
+  -- node carrying no back-pointer at all.  Reported on PR #897 and confirmed by
+  -- reading the conjuncts: `tcbQueueLinkIntegrity`, which the pairing's docstring
+  -- delegated this case to, forbids a *dangling* `queuePrev` (one whose target
+  -- does not point back) and says nothing about `queuePPrev`.  So this state
+  -- satisfied every conjunct of `dualQueueSystemInvariant` while the dual removal
+  -- — whose guard takes a `QueuePPrev`, not an `Option` — refuses it outright.
+  -- That thread could never leave its queue: the OD1.1/OD3.9 stranding class, at
+  -- the one spot RR8.3's own pairing left open.
+  let stNoBackPointer ← expectOkVal "pprev pairing clear an interior node's back-pointer"
+    (corruptThreadQueueLinks stPair3 (SeLe4n.ThreadId.ofNat 8) (some (SeLe4n.ThreadId.ofNat 7))
+      none (some (SeLe4n.ThreadId.ofNat 9)))
+  expectBool "the RETIRED reading ACCEPTED a queued node with no back-pointer"
+    (retiredPairingAcceptingAnyMissingBackPointer stNoBackPointer) true
+  expectBool "...and the strengthened pairing REFUSES it"
+    (queuePPrevAgreesWithPrevBool stNoBackPointer) false
+  -- The refusal is `.endpointQueueEmpty` on a queue that is *not* empty: the
+  -- removal reaches for a `QueuePPrev` and finds `none`, so it reports the shape
+  -- it expects a missing back-pointer to mean.  The misleading code is the
+  -- smaller half of the finding; the strand is that the thread can never leave.
+  expectErr "...which is the state whose removal was refused, stranding the thread"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8)
+      stNoBackPointer)
+    .endpointQueueEmpty
+  -- ...and the control: the same queue with the back-pointer intact is accepted by
+  -- both readings and its removal succeeds, so the three assertions above are
+  -- about the cleared field and not about the fixture.
+  expectBool "control: the untouched queue satisfies the RETIRED reading too"
+    (retiredPairingAcceptingAnyMissingBackPointer stPair3) true
+  let (_, _) ← expectOkSt "control: the untouched interior node CAN be removed"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8) stPair3)
 
 -- WS-RR RR8.4: the four shapes a guarded removal writes, and the two removals'
 -- boundary pins.  Elaborated here because `runDualQueueTailPairingChecks` below

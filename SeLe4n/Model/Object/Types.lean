@@ -1127,9 +1127,20 @@ fields agree exactly when
 * `.endpointHead` occurs with `queuePrev = none`, and
 * `.tcbNext p` occurs with `queuePrev = some p`,
 
-and a `queuePPrev` of `none` constrains nothing: a detached thread's
-`queuePrev` is cleared by the same writes, but this predicate is about the
-*pairing* and `tcbQueueLinkIntegrity` is what forbids a dangling `queuePrev`.
+and a `queuePPrev` of `none` says the thread is on no queue, which is exactly
+what makes `queuePrev = none` its obligation.
+
+**That arm was `True` until `v0.35.99`, and the reason given for it was false.**
+It read *"`tcbQueueLinkIntegrity` is what forbids a dangling `queuePrev`"* — and
+that conjunct forbids a `queuePrev` whose target does not point back, not a
+`queuePrev` present with no `queuePPrev`.  So a two-node queue whose tail
+carried `queuePrev = some head` and `queuePPrev = none` satisfied every conjunct
+of `dualQueueSystemInvariant`, while `endpointQueueRemoveDual` — whose guard
+takes a `QueuePPrev`, not an `Option` — refuses that tail outright and can never
+dequeue it.  That is the OD1.1/OD3.9 stranding class a third time: the pairing
+closed *present but wrong* and left *absent on a linked node* open, which is
+weaker than the "one bit" this field is documented to carry.  Reported on
+PR #897 and confirmed by reading the two conjuncts rather than the prose.
 
 **Why pointwise.**  Every operational writer of the pair writes both fields in
 one store (`tcbWithQueueLinks`) or inherits them together
@@ -1148,15 +1159,21 @@ pairing.  A field two operations must agree about, with no invariant relating
 them, is the *maintained only by convention* shape. -/
 def TCB.queuePPrevAgreesWithPrev (tcb : TCB) : Prop :=
   match tcb.queuePPrev with
-  | none => True
+  -- on no queue, so it has no predecessor either
+  | none => tcb.queuePrev = none
+  -- a queue's head, so it has no predecessor
   | some .endpointHead => tcb.queuePrev = none
+  -- behind `p`, which is therefore its predecessor
   | some (.tcbNext p) => tcb.queuePrev = some p
 
-/-- A TCB carrying no `queuePPrev` agrees vacuously — the detached shape every
-clear writes. -/
+/-- A TCB carrying neither back-pointer agrees — the detached shape every clear
+writes.  It took `queuePrev = none` as a second hypothesis at `v0.35.99`: with
+the `none` arm strengthened, carrying no `queuePPrev` is a *claim* that the
+thread is on no queue, not a vacuity. -/
 theorem TCB.queuePPrevAgreesWithPrev_of_pprev_none {tcb : TCB}
-    (h : tcb.queuePPrev = none) : tcb.queuePPrevAgreesWithPrev := by
-  unfold TCB.queuePPrevAgreesWithPrev; rw [h]; trivial
+    (h : tcb.queuePPrev = none) (hPrev : tcb.queuePrev = none) :
+    tcb.queuePPrevAgreesWithPrev := by
+  unfold TCB.queuePPrevAgreesWithPrev; rw [h]; exact hPrev
 
 /-- The workhorse: a TCB that agrees on **both** link fields with one that
 satisfies the pairing satisfies it too.  Stated on the pair rather than on the
@@ -1503,16 +1520,23 @@ queue-writing call site state its own obligation — which is the whole content 
 the invariant: `endpointQueueEnqueue` discharges it because it writes
 `(none, .endpointHead)` on an empty queue and `(some t, .tcbNext t)` behind a
 tail, `endpointQueuePopHead` because it promotes the successor to
-`(none, .endpointHead)`, and every clear because `none` constrains nothing. -/
+`(none, .endpointHead)`, and every clear because it writes `(none, none)`.
+
+**Strengthened at `v0.35.99` with `TCB.queuePPrevAgreesWithPrev`**, whose `none`
+arm this is: a `pprev` of `none` says the node is on no queue, so writing it
+beside a `prev` of `some p` is the stranding shape (see the record-level
+predicate for the two-node queue that exhibited it).  Free for
+`dualQueueRemovalGuard`, which applies this at a `QueuePPrev` rather than an
+`Option` and so never reaches the arm. -/
 def queueLinkPairAgrees
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) : Prop :=
   match pprev with
-  | none => True
+  | none => prev = none
   | some .endpointHead => prev = none
   | some (.tcbNext p) => prev = some p
 
-@[simp] theorem queueLinkPairAgrees_none (prev : Option SeLe4n.ThreadId) :
-    queueLinkPairAgrees prev none := trivial
+@[simp] theorem queueLinkPairAgrees_none :
+    queueLinkPairAgrees none none := rfl
 
 @[simp] theorem queueLinkPairAgrees_endpointHead :
     queueLinkPairAgrees none (some .endpointHead) := rfl
@@ -1529,7 +1553,7 @@ instance queueLinkPairAgrees_decidable
     Decidable (queueLinkPairAgrees prev pprev) := by
   unfold queueLinkPairAgrees
   cases pprev with
-  | none => exact isTrue trivial
+  | none => exact inferInstanceAs (Decidable (prev = none))
   | some pp => cases pp with
     | endpointHead => exact inferInstanceAs (Decidable (prev = none))
     | tcbNext p => exact inferInstanceAs (Decidable (prev = some p))
@@ -1544,7 +1568,7 @@ theorem queueLinkPairAgrees_of_tcb {tcb : TCB}
   unfold TCB.queuePPrevAgreesWithPrev at h
   unfold queueLinkPairAgrees
   cases hpp : tcb.queuePPrev with
-  | none => trivial
+  | none => rw [hpp] at h; exact h
   | some pp =>
       rw [hpp] at h; cases pp with
       | endpointHead => exact h
@@ -1558,7 +1582,7 @@ theorem tcbWithQueueLinks_queuePPrevAgreesWithPrev
   unfold TCB.queuePPrevAgreesWithPrev tcbWithQueueLinks
   unfold queueLinkPairAgrees at h
   cases pprev with
-  | none => trivial
+  | none => exact h
   | some pp => cases pp with
     | endpointHead => exact h
     | tcbNext p => exact h

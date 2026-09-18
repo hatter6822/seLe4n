@@ -983,6 +983,91 @@ private def pm_od_08_configureBoundControlStillPropagates : IO Unit := do
         (tcb'.domain == ⟨5⟩)
     | _ => throw <| IO.userError "bound TCB not found after configure"
 
+/-- **`v0.35.99`: the frozen surface writes both homes too, and the differential
+is what says so.**  `v0.35.98` fixed the live writer and left `frozenSetPriority`
+writing the reservation alone, so the *same* operation produced divergent states
+— reported on PR #897.  This drives the live and frozen demotes on corresponding
+fixtures and compares both fields, which is the only assertion that could have
+caught it: each surface's own per-object checks passed throughout. -/
+private def pm_frozenBasePriorityAgreesWithTheLiveWrite : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let targetTid : SeLe4n.ThreadId := ⟨2⟩
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨50⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+      boundThread := some targetTid }
+  let liveSt := mkState [
+    (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 50) (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc) ]
+  let frozenSt := mkFrozenState [
+    (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 50) (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc) ]
+  match setPriorityOp liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩ with
+  | .error e => throw <| IO.userError s!"live setPriority should succeed, got {repr e}"
+  | .ok liveAfter =>
+    match frozenSetPriority callerTid targetTid ⟨10⟩ frozenSt with
+    | .error e => throw <| IO.userError s!"frozen setPriority should succeed, got {repr e}"
+    | .ok ((), frozenAfter) =>
+      let liveTcbPrio := (liveAfter.getTcb? targetTid).map (·.priority)
+      let liveScPrio := (liveAfter.getSchedContext? scId).map (·.priority)
+      let frozenTcbPrio := (frozenLookupTcb frozenAfter targetTid).map (·.priority)
+      let frozenScPrio := (frozenAfter.getSchedContext? scId).map (·.priority)
+      expect "live demote writes both homes" (liveTcbPrio == some ⟨10⟩ && liveScPrio == some ⟨10⟩)
+      expect "frozen demote writes the reservation" (frozenScPrio == some ⟨10⟩)
+      expect "frozen demote writes the THREAD too — the half that diverged"
+        (frozenTcbPrio == some ⟨10⟩)
+      expect "...so the two surfaces agree on the thread's base priority"
+        (frozenTcbPrio == liveTcbPrio)
+      expect "...and on the reservation's" (frozenScPrio == liveScPrio)
+
+/-- **`v0.35.99`: the MC-priority ceiling reaches the same question.**  Found by
+sweeping the sibling rather than by a report: the frozen capping compared against
+`targetTcb.priority` where the live one compares against `threadBasePriority` —
+the *reservation* for a `.bound` thread — and wrote the capped value to the TCB
+alone where the live path writes both homes.  Two mirror-image divergences on one
+operation. -/
+private def pm_frozenCeilingAgreesWithTheLiveWrite : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let targetTid : SeLe4n.ThreadId := ⟨2⟩
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  -- the reservation carries the live band (80); the TCB's own field is stale at
+  -- 10, which is the state the retired frozen reading got wrong: it compared the
+  -- ceiling against 10 and capped nothing.
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨80⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+      boundThread := some targetTid }
+  let objs : List (ObjId × KernelObject) := [
+    (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 10) (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc) ]
+  let liveSt := mkState objs
+  let frozenSt := mkFrozenState [
+    (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 10) (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc) ]
+  match setMCPriorityOp liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨20⟩ with
+  | .error e => throw <| IO.userError s!"live setMCPriority should succeed, got {repr e}"
+  | .ok liveAfter =>
+    match frozenSetMCPriority callerTid targetTid ⟨20⟩ frozenSt with
+    | .error e => throw <| IO.userError s!"frozen setMCPriority should succeed, got {repr e}"
+    | .ok ((), frozenAfter) =>
+      let liveScPrio := (liveAfter.getSchedContext? scId).map (·.priority)
+      let frozenScPrio := (frozenAfter.getSchedContext? scId).map (·.priority)
+      let frozenTcbPrio := (frozenLookupTcb frozenAfter targetTid).map (·.priority)
+      let frozenMcp := (frozenLookupTcb frozenAfter targetTid).map (·.maxControlledPriority)
+      expect "the ceiling lands on the frozen TCB" (frozenMcp == some ⟨20⟩)
+      expect "live: the ceiling caps the reservation's band to 20" (liveScPrio == some ⟨20⟩)
+      expect "frozen: the ceiling caps the reservation too — it read the TCB before"
+        (frozenScPrio == some ⟨20⟩)
+      expect "...and the frozen thread's own field moves with it"
+        (frozenTcbPrio == some ⟨20⟩)
+      expect "...so the two surfaces agree on the reservation's band"
+        (frozenScPrio == liveScPrio)
+
 -- ============================================================================
 -- The bound thread's base priority has two homes (`v0.35.98`)
 -- ============================================================================
@@ -1126,4 +1211,7 @@ def main : IO Unit := do
   IO.println "--- `v0.35.98`: the bound thread's base priority has two homes ---"
   pm_basePriorityWritesBothHomes
   pm_basePrioritySurvivesBlockAndWake
-  IO.println "=== All D2 priority management tests passed (40 tests) ==="
+  IO.println "--- `v0.35.99`: the frozen mirror writes both homes too ---"
+  pm_frozenBasePriorityAgreesWithTheLiveWrite
+  pm_frozenCeilingAgreesWithTheLiveWrite
+  IO.println "=== All D2 priority management tests passed (42 tests) ==="

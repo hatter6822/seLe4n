@@ -2204,16 +2204,14 @@ theorem endpointQueueEnqueue_preserves_dualQueueSystemInvariant
                         st pairB.2 endpointId _ (fun _ h => by cases h) hObjInv hStoreEpB hPP
                       have hPPTail := storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev
                         pairB.2 st2B tailTid tailTcb.queuePrev tailTcb.queuePPrev (some enqueueTid)
-                        (by
-                          have hTailAgree := hPPEpB2 tailTid tailTcb hTailInPB
-                          unfold TCB.queuePPrevAgreesWithPrev at hTailAgree
-                          unfold queueLinkPairAgrees
-                          cases hpp : tailTcb.queuePPrev with
-                          | none => trivial
-                          | some pp =>
-                              rw [hpp] at hTailAgree; cases pp with
-                              | endpointHead => exact hTailAgree
-                              | tcbNext p => exact hTailAgree)
+                        -- `v0.35.99`: one application of the named derivation
+                        -- rather than a sixth inline copy of it.  This block
+                        -- re-ran `queueLinkPairAgrees_of_tcb`'s own case
+                        -- analysis, so strengthening the pairing's `none` arm
+                        -- broke it and nothing else in the tree — which is both
+                        -- the measure of how narrow the change is and the
+                        -- reason the copy had to go.
+                        (queueLinkPairAgrees_of_tcb (hPPEpB2 tailTid tailTcb hTailInPB))
                         hObjInvB hSt2B hPPEpB2
                       have hPPB := storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev
                         st2B st3B enqueueTid (some tailTid) (some (QueuePPrev.tcbNext tailTid)) none

@@ -1516,6 +1516,36 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
 -- D2-L: Frozen priority management operations
 -- ============================================================================
 
+/-- **The frozen mirror of `updatePrioritySource`** (`v0.35.99`): a `.bound`
+thread's base priority has **two homes** and this writes both, in the live
+operation's own order (the reservation, then the thread).
+
+`v0.35.98` fixed the live writer and left this surface writing the reservation
+alone, so the same operation produced divergent live and frozen states and a
+frozen block/wake would read the stale `TCB.boostedPriority` and restore the old
+band — the very defect that cut closed, surviving on the mirror.  Reported on
+PR #897, and it is this project's *a field added to a shared record is a sweep of
+both surfaces* rule, which `v0.35.98`'s own entry quoted about `donationOrigin`
+and then did not apply to its own change.
+
+Both frozen operations that move a base priority call this, so the surface has
+one answer: `frozenSetPriority` directly, and `frozenSetMCPriority` when its
+ceiling bites. -/
+def frozenWriteBasePriority (st : FrozenSystemState) (targetTid : SeLe4n.ThreadId)
+    (targetTcb : TCB) (newPriority : SeLe4n.Priority) :
+    Except KernelError FrozenSystemState :=
+  let tcb' := { targetTcb with priority := newPriority }
+  match targetTcb.schedContextBinding.ownScId? with
+  | some scId =>
+    match st.getSchedContext? scId with
+    | some sc =>
+      match frozenWithObjectStored st scId.toObjId
+              (.schedContext { sc with priority := newPriority }) with
+      | .ok st1 => frozenWithObjectStored st1 targetTid.toObjId (.tcb tcb')
+      | .error e => .error e
+    | none => .error .objectNotFound
+  | none => frozenWithObjectStored st targetTid.toObjId (.tcb tcb')
+
 /-- D2-L: Frozen-phase setPriority. Validates MCP authority, updates priority
 on the frozen state (the thread's SchedContext if `.bound`, its TCB otherwise).
 
@@ -1537,20 +1567,9 @@ def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
       | some targetTcb =>
         -- Update the priority source (`.bound`: the SchedContext; `.unbound`
         -- and `.donated`: the TCB).
-        match targetTcb.schedContextBinding.ownScId? with
-        | some scId =>
-          match st.getSchedContext? scId with
-          | some sc =>
-            let sc' := { sc with priority := newPriority }
-            match frozenWithObjectStored st scId.toObjId (.schedContext sc') with
-            | .ok st' => .ok ((), st')
-            | .error e => .error e
-          | _ => .error .objectNotFound
-        | none =>
-          let tcb' := { targetTcb with priority := newPriority }
-          match frozenWithObjectStored st targetTid.toObjId (.tcb tcb') with
-          | .ok st' => .ok ((), st')
-          | .error e => .error e
+        match frozenWriteBasePriority st targetTid targetTcb newPriority with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
 
 /-- D2-L: Frozen-phase setMCPriority. Validates caller has sufficient MCP,
 updates target's maxControlledPriority. If current priority exceeds new MCP,
@@ -1565,15 +1584,23 @@ def frozenSetMCPriority (callerTid targetTid : SeLe4n.ThreadId)
       else match frozenLookupTcb st targetTid with
       | none => .error .objectNotFound
       | some targetTcb =>
+        -- `v0.35.99`: the ceiling on the TCB, then the capped base priority
+        -- through the shared writer -- the live `setMCPriorityOnCore`'s own
+        -- control flow (rewrite the ceiling, then `applyPriorityChangeOnCore`).
+        -- Two divergences closed here, mirror images of each other: the cap is
+        -- compared against `threadBasePriority`, which reads the *reservation*
+        -- for a `.bound` thread and which this arm read off the TCB; and the
+        -- capped value was written to the TCB alone, where the live path writes
+        -- both homes.
         let targetTcb' := { targetTcb with maxControlledPriority := newMCP }
-        -- Cap priority if it exceeds new MCP
-        let targetTcb' :=
-          if targetTcb'.priority.val > newMCP.val
-          then { targetTcb' with priority := newMCP }
-          else targetTcb'
         match frozenWithObjectStored st targetTid.toObjId (.tcb targetTcb') with
-        | .ok st' => .ok ((), st')
         | .error e => .error e
+        | .ok st1 =>
+          if (st1.threadBasePriority targetTcb').val > newMCP.val then
+            match frozenWriteBasePriority st1 targetTid targetTcb' newMCP with
+            | .ok st' => .ok ((), st')
+            | .error e => .error e
+          else .ok ((), st1)
 
 -- ============================================================================
 -- D3-I: Frozen IPC buffer configuration

@@ -2309,7 +2309,9 @@ theorem restoreToReadyStaging_dualQueueSystemInvariant (st : SystemState)
     rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
       tid.toObjId tcb hTcb with ⟨_, h0⟩ | ⟨_, rfl⟩
     · exact hPPair tid tcb h0
-    · exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev tcbV frame)
+    · -- `v0.35.99`: both back-pointers, the restore clearing each.
+      exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev tcbV frame)
+        (restoredTcb_queuePrev tcbV frame)
 
 /-- The restore frames the timeout budget: it writes no `timeoutBudget`. -/
 theorem restoreToReadyStaging_timeoutBudgetFrame (st : SystemState) (v : SeLe4n.ThreadId)

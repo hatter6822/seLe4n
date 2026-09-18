@@ -3543,11 +3543,18 @@ run_check "INVARIANT" rg -n '^theorem effectiveSchedParams_priority_deadline_eq_
 run_check "INVARIANT" rg -n '^theorem effectiveBucketPriority_eq_resolveEffective' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 run_check "INVARIANT" rg -n '^theorem getCurrentPriority_eq_threadBasePriority' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
 
-# The frozen mirror answers the same question the same way.  `frozenSetPriority`
-# is `updatePrioritySource`'s second implementation, and the two diverging is
-# exactly the shape CLAUDE.md's "one question, two answers" rule names.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetPriority[^\n]*(\n([ \t][^\n]*)?)*match targetTcb\.schedContextBinding\.ownScId\? with" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetPriority[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# The frozen mirror answers the same question the same way.  The frozen base-
+# priority write is `updatePrioritySource`'s second implementation, and the two
+# diverging is exactly the shape CLAUDE.md's "one question, two answers" rule
+# names.  `v0.35.99`: both anchors moved off `frozenSetPriority` and onto
+# `frozenWriteBasePriority`, which is where the classifier now lives -- the
+# frozen `.tcbSetPriority` and `.tcbSetMCPriority` arms were two spellings of
+# one write and were collapsed onto that helper, so a pin left on the caller
+# would have been a pin on a body that no longer asks the question: the positive
+# fails outright and the negative passes forever, which is the tautological pin
+# CLAUDE.md's "a fix retires more than it changes" rule retires.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*match targetTcb\.schedContextBinding\.ownScId\? with" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/FrozenOps/Operations.lean'
 
 # The invariants follow the read: a donee is bucketed at its own base priority,
 # so its recorded run-queue bucket is the `.unbound` arm's.
@@ -15356,4 +15363,44 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^    st\.updateSchedContext s
 # docstring that stood on `boundThreadPriorityConsistent` claimed no transition
 # touches either of its two fields, and three do.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem updatePrioritySource_preserves_boundThreadPriorityConsistent[^\n]*(\n([ \t][^\n]*)?)*boundThreadPriorityConsistent \(SchedContext\.PriorityManagement\.updatePrioritySource st tid tcb newPrio\)" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
+# ---------------------------------------------------------------------------
+# `v0.35.99`: `queuePPrev = none` CLAIMS the thread is on no queue.
+#
+# The inter-arm gap is `([ \t]*(--[^\n]*)?\n)*` rather than a comment pattern
+# because `run_check` reads the comment-stripped code view, where a comment line
+# is BLANKED and byte-aligned rather than removed -- so a pattern that requires
+# `--` there matches the raw file and not the text the gate sees.  Both spellings
+# are admitted, which is what makes hand-verification and the harness agree.
+#
+# The arm read `True` until this cut, and the docstring delegated it to
+# `tcbQueueLinkIntegrity` -- which forbids a *dangling* `queuePrev` (one whose
+# target does not point back) and says nothing about `queuePPrev`.  So a queued
+# interior node carrying no back-pointer satisfied every conjunct of
+# `dualQueueSystemInvariant` while `endpointQueueRemoveDual` -- whose guard takes
+# a `QueuePPrev`, not an `Option` -- refused it outright and could never dequeue
+# it.  That is WS-OD OD1.1 and OD3.9's stranding class at the one spot RR8.3's
+# own pairing left open; reported on PR #897.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def TCB\.queuePPrevAgreesWithPrev \(tcb : TCB\) : Prop :=\n  match tcb\.queuePPrev with\n([ \t]*(--[^\n]*)?\n)*  \| none => tcb\.queuePrev = none$" SeLe4n/Model/Object/Types.lean'
+# ...and the same relation one arity down, on the values a link store writes.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def queueLinkPairAgrees\n    \(prev : Option SeLe4n\.ThreadId\) \(pprev : Option QueuePPrev\) : Prop :=\n  match pprev with\n  \| none => prev = none$" SeLe4n/Model/Object/Types.lean'
+# ...and neither may go back to constraining nothing.  Scoped to the file that
+# holds both, which carries no other `| none => True` arm.
+run_negative_check "INVARIANT" rg -n '\| none => True' SeLe4n/Model/Object/Types.lean
+# The runtime mirror asks the same question, or the harness would pass a state
+# the Prop-level invariant refuses.
+run_check "INVARIANT" bash -lc 'rg -U -n "          match tcb\.queuePPrev with\n([ \t]*(--[^\n]*)?\n)*          \| none => tcb\.queuePrev\.isNone$" SeLe4n/Testing/InvariantChecks.lean'
+# ---------------------------------------------------------------------------
+# `v0.35.99`: the FROZEN surface writes both homes of a base priority too, and
+# both frozen operations that move one read the same writer.  `v0.35.98` fixed
+# the live side and left this one writing the reservation alone -- reported on
+# PR #897, and this project's own *a field added to a shared record is a sweep of
+# both surfaces* rule, which that cut's entry quoted and did not apply to itself.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority \(st : FrozenSystemState\) \(targetTid : SeLe4n\.ThreadId\)[^\n]*(\n([ \t][^\n]*)?)*\| \.ok st1 => frozenWithObjectStored st1 targetTid\.toObjId \(\.tcb tcb.\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# ...and neither operation may go back to spelling its own write.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetPriority[^\n]*(\n([ \t][^\n]*)?)*let sc. := \{ sc with priority := newPriority \}" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetMCPriority[^\n]*(\n([ \t][^\n]*)?)*frozenWriteBasePriority st1 targetTid targetTcb. newMCP" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# The frozen ceiling compares against the FROZEN base-priority reader, which is
+# the reservation for a `.bound` thread -- reading `targetTcb.priority` there is
+# the sibling divergence the sweep found.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetMCPriority[^\n]*(\n([ \t][^\n]*)?)*if \(st1\.threadBasePriority targetTcb.\)\.val > newMCP\.val then" SeLe4n/Kernel/FrozenOps/Operations.lean'
 finalize_report

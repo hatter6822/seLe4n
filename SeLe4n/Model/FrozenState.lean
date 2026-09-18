@@ -1087,4 +1087,41 @@ def FrozenSystemState.getReply? (st : FrozenSystemState) (rid : SeLe4n.ReplyId) 
   | some (.reply r) => some r
   | _               => none
 
+
+/-- **The frozen mirror of `SystemState.threadBasePriority`** (`v0.35.99`).
+
+A `.bound` thread's base priority is read from its *reservation*; every other
+binding reads the thread's own field.  The frozen surface needs the same reading
+because it carries the live `TCB` and `SchedContext` records, and because
+`frozenSetMCPriority`'s capping rule compares against it — reading
+`tcb.priority` there instead is the divergence PR #897 found one operation over:
+the two surfaces answer "what band is this thread at" differently and the
+differential cannot see it until a scenario puts a `.bound` thread on both.
+
+Stated here beside the frozen accessors, as the live one is stated beside the
+live ones, so neither surface has a second reading of the question. -/
+def FrozenSystemState.threadBasePriority (st : FrozenSystemState) (tcb : TCB) :
+    SeLe4n.Priority :=
+  match tcb.schedContextBinding.ownScId? with
+  | some scId =>
+    match st.getSchedContext? scId with
+    | some sc => sc.priority
+    | none    => tcb.priority
+  | none => tcb.priority
+
+/-- An unbound thread reads its own field — the frozen twin of
+`threadBasePriority_unbound`. -/
+@[simp] theorem FrozenSystemState.threadBasePriority_unbound (st : FrozenSystemState)
+    (tcb : TCB) (h : tcb.schedContextBinding = .unbound) :
+    st.threadBasePriority tcb = tcb.priority := by
+  simp [FrozenSystemState.threadBasePriority, h]
+
+/-- A **donated** thread reads its own field, whatever the donor's reservation
+says — the frozen twin of `threadBasePriority_donated`, and the seL4-MCS split. -/
+@[simp] theorem FrozenSystemState.threadBasePriority_donated (st : FrozenSystemState)
+    (tcb : TCB) {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    (h : tcb.schedContextBinding = .donated scId owner) :
+    st.threadBasePriority tcb = tcb.priority := by
+  simp [FrozenSystemState.threadBasePriority, h]
+
 end SeLe4n.Model

@@ -382,13 +382,15 @@ theorem purgedAndRestored_dualQueueSystemInvariant
   · exact fun x hPath => hAcyc x
       (purgedAndRestored_path_transport st v frame tcbV hInv hLookup hOff hPath)
   · -- WS-RR RR8.3: the pairing.  The pullback is exact here -- away from the
-    -- swept thread the record is the pre-state's verbatim, and the swept thread's
-    -- own `queuePPrev` is cleared by the restore.
+    -- swept thread the record is the pre-state's verbatim, and the swept thread
+    -- has BOTH back-pointers cleared by the restore (`v0.35.99`: the `none` arm
+    -- claims the thread is on no queue, so `queuePrev` is part of the claim).
     intro tid tcb hTcb
     rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb hTcb with
       ⟨_, h0⟩ | ⟨_, rfl⟩
     · exact hPPair tid tcb h0
     · exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev tcbV frame)
+        (restoredTcb_queuePrev tcbV frame)
 
 -- ============================================================================
 -- §5  The reusable frames

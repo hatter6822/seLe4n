@@ -155,7 +155,12 @@ def queuePPrevAgreesWithPrevChecks (objectIds : List SeLe4n.ObjId) (st : SystemS
     | some tcb =>
         let ok : Bool :=
           match tcb.queuePPrev with
-          | none => true
+          -- `v0.35.99`: `none` says the thread is on no queue, so it claims
+          -- `queuePrev = none` rather than nothing.  It read `true` here and in
+          -- the Prop-level predicate, which admitted a queued thread carrying no
+          -- back-pointer -- one the dual removal refuses outright and can never
+          -- dequeue.
+          | none => tcb.queuePrev.isNone
           | some .endpointHead => tcb.queuePrev.isNone
           | some (.tcbNext p) => tcb.queuePrev == some p
         (s!"queuePPrev agrees with queuePrev: oid={oid} prev={reprStr tcb.queuePrev} \
