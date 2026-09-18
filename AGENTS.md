@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.87.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.88.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5719,72 +5719,34 @@ code may assume:
   what `allCores_nodup`'s own docstring says and what one chain-footprint proof
   had done anyway.
 
-- **`ipcInvariantFull` has its dispatch payoff — three theorems, under
-  stated packs and confinements.**  The whole bundle family is de-threaded:
-  the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **186**
-  `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
-  statements, measured over the comment-free code view with the conjunct set,
-  the bundle family and each bundle's own pre-state all *derived* rather than
-  listed, and prints `[PASS] ipcInvariantFull is de-threaded end to end`;
-  `docs/planning/ipc_dethreading_pending.txt` carries zero registrations and
-  the gate holds that register in both directions.  **The figure above is
-  enforced, not asserted** (WS-RR RR7.28): the gate holds every tracked
-  Markdown file outside `CHANGELOG.md` and `docs/dev_history/` — where the
-  number is history, and rewriting it would be the falsification — to its own
-  `len(bundles)`, so a cut that adds a bundle fails until the prose it made
-  stale is corrected, and a claim spelled in a form the reader cannot parse
-  fails rather than being skipped.  A hand-maintained count beside a derivation
-  is the enumeration-standing-in-for-a-derivation shape this file warns about,
-  and it drifted exactly that way: RR7.22 added twelve statements and the three
-  canonical sites still said 146 two cuts later.  The payoff tier (WS-RR
-  RR3.15–RR3.26, v0.34.43): `dispatchCapabilityOnly_preserves_ipcInvariantFull`
-  (`SeLe4n/Kernel/API.lean`, **production**) covers every capability-gated arm
-  under the pre-state pack `capabilityDispatchQuiescence`, composing the
-  production per-arm layer
-  `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`;
-  `dispatchWithCap_preserves_ipcInvariantFull` and
-  `dispatchSyscall_preserves_ipcInvariantFull`
-  (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`) extend it over the IPC
-  fall-through arms and the lookup/taint prologue under
-  `syscallDispatchQuiescence` — **staged**, because the `.call` arm composes
-  the staged `EndpointCallInvariant` surface (see the call-chain bullet
-  below); they relocate to production when that surface promotes.  The
-  flow-checked tier is covered too:
-  `dispatchWithCapChecked_preserves_ipcInvariantFull` and
-  `dispatchSyscallChecked_preserves_ipcInvariantFull` (same module, staged)
-  reduce every mirrored arm to the unchecked payoff — machine-checking the
-  dispatcher's "mirrors the unchecked arm" comments — and close the four
-  live SM9 arms from their transitions' frames, under
-  `checkedSyscallDispatchQuiescence` (the base pack plus the declassifying
-  signal's unbound-delivery confinement).  Both packs carry inhabitation
-  witnesses built through the retype and binding levers — the base pair
-  (`syscallDispatchQuiescence_inhabited`,
-  `checkedSyscallDispatchQuiescence_inhabited`) for the state-shaped fields,
-  plus a per-arm family (`…_inhabited_signal` / `…_retype` / `…_send` /
-  `…_receive` / `…_call` / `…_mint` / `…_reply` / `…_bind` / `…_unbind` /
-  `…_suspend` / `checked…_inhabited_declassifySignal`, `DispatchPayoff` §7b)
-  that fires
-  each *indexed* field's premises — so an unsatisfiable pack field cannot
-  hide; the two interiors beyond the levers' reach (a caller-carrying
-  reply, a CSpace-resolved `replyRecv` capability — both created only by
-  the call rendezvous) are registered WS-DT debt.  What new
-  code must respect: (1) the payoff holds *under the packs* — every field is
-  a pre-state fact, dischargeable before the step, with the state-shaped ones
-  collected in `SeLe4n/Kernel/IPC/Invariant/Reachability.lean`
-  (`ipcReachable`, boot-inhabited by `ipcReachable_default`) — so a caller
-  supplies the pack rather than citing the theorem bare; (2) the stated
-  confinements: `.notificationSignal` is covered on the unbound-delivery path
-  only (SM6.D's registered debt), the `.replyRecv` composite excludes a live
-  donation edge naming the woken caller (the AUD-3 window), and the retype
-  and suspend arms demand their quiescence packs (`retypeTargetDetached`,
-  `threadIpcFieldsQuiescent` — revoke, suspend and cancel *before* retype or
-  suspend); (3) production code must not cite the two staged payoffs.  The
-  operation-hardening and relocation residuals are registered as debt under
-  **WS-DT — CLOSED** in
-  [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) (plan retired to
-  [`docs/dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md`](docs/dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md));
-  RR8.14 retires this bullet.
+- **`ipcInvariantFull` has its dispatch payoff, under stated packs and
+  confinements** (WS-RR RR3.15–RR3.26, `v0.34.43`; compressed here at RR8.14,
+  `v0.35.88`).  The bundle family is de-threaded end to end and
+  `scripts/check_ipc_invariant_dethreading.py` (Tier 0) keeps it so, holding the
+  family size stated in prose to its own measurement — the figure and the
+  narrative of how it drifted live in `docs/spec/SELE4N_SPEC.md` and
+  `CHANGELOG.md`, not here.  Four things new code must respect.  (1) **Cite the
+  right tier.**  `dispatchCapabilityOnly_preserves_ipcInvariantFull`
+  (`SeLe4n/Kernel/API.lean`) is **production** and covers every capability-gated
+  arm; `dispatchWithCap_preserves_ipcInvariantFull`,
+  `dispatchSyscall_preserves_ipcInvariantFull` and their two `…Checked` twins
+  (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`) are **staged**, because the
+  `.call` arm composes the staged `EndpointCallInvariant` surface, and production
+  code must not cite them; they relocate when that surface promotes.  (2) **The
+  payoff holds *under the packs***: every field of
+  `capabilityDispatchQuiescence` / `syscallDispatchQuiescence` /
+  `checkedSyscallDispatchQuiescence` is a pre-state fact, with the state-shaped
+  ones collected as `ipcReachable`
+  (`SeLe4n/Kernel/IPC/Invariant/Reachability.lean`, boot-inhabited by
+  `ipcReachable_default`), so a caller supplies the pack rather than citing the
+  theorem bare.  (3) **The packs are inhabited, per arm** — an unsatisfiable
+  field cannot hide behind a vacuous witness (`DispatchPayoff` §7b); the two
+  interiors beyond the retype and binding levers' reach are registered debt.
+  (4) **The confinements are stated, not implied**: `.notificationSignal` is
+  covered on the unbound-delivery path only, the `.replyRecv` composite excludes
+  a live donation edge naming the woken caller, and the retype and suspend arms
+  demand `retypeTargetDetached` / `threadIpcFieldsQuiescent` — revoke, suspend
+  and cancel *before* retype or suspend.
 - **A cancelled caller gets its donated SchedContext back** (WS-RR RR7.22
   residual remediation, v0.34.97).  `cancelIpcBlocking`'s `.blockedOnReply` arm
   is `consumeReplyLink (restoreToReadyCancelled (spliceThreadReplyFrameOut

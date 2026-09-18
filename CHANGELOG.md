@@ -1,3 +1,43 @@
+## v0.35.88 — WS-RR RR8.14: the RR0.3 standing constraint, compressed to what it obliges
+
+**The misdirection this row was written against was already gone.**  RR8.14 was
+scheduled to retire a `CLAUDE.md` bullet that said two `ipcInvariantFull`
+conjuncts remain threaded and the bundle is not end-to-end checked — a claim
+RR3.25 made false.  RR3.1's gate and the cuts after it had already corrected the
+bullet in place, so by the time the row came due it said the opposite of what the
+row quotes.  Recording that is the point: a row whose stated defect has been
+fixed by another row is closed by *measuring* the artefact, not by performing the
+edit the row describes.
+
+**What was left was the shape, which the bullet's own last line named.**  It ran
+to 4,577 characters, of which roughly eight hundred were obligations a
+contributor must respect; the rest was narrative — how the family-size figure
+drifted, which inhabitation witnesses fire which premises, that WS-DT is closed
+and its plan retired to `docs/dev_history/`.  `CLAUDE.md`'s own rule for its
+status index says a row that grows past its summary belongs in `CHANGELOG.md` and
+`docs/REGISTERED_DEBT.md`; the same rule applies to a standing constraint, and
+this one had not had it applied.
+
+It is now four numbered obligations: cite the **production** payoff
+(`dispatchCapabilityOnly_preserves_ipcInvariantFull`) and never the four staged
+ones from production; supply the quiescence pack rather than citing a payoff
+bare, with the state-shaped fields collected as `ipcReachable`; the packs are
+inhabited per arm, with the two interiors beyond the retype and binding levers'
+reach registered as debt; and the three confinements are stated
+(`.notificationSignal` on the unbound-delivery path only, the `.replyRecv`
+composite's live-donation exclusion, and the retype and suspend arms' quiescence
+packs).
+
+**The enforced figure moves out of guidance, and stays enforced.**
+`check_ipc_invariant_dethreading.py` holds every tracked Markdown file outside
+`CHANGELOG.md` and `docs/dev_history/` to its own `len(bundles)` — it checks the
+files that *carry* the claim rather than a list of files that must, so dropping
+the sentence from `CLAUDE.md` and `AGENTS.md` removes a site without weakening
+the check: `docs/spec/SELE4N_SPEC.md`, `docs/gitbook/12-proof-and-invariant-map.md`
+and `docs/planning/UNFINISHED_SMP_WORK.md` still carry it, and the spec is where
+this project's canonical-ownership rule puts a measured claim anyway.  That was
+verified before the sentence was cut rather than assumed.
+
 ## v0.35.87 — WS-RR RR8.12 (first cut): one segment over a core *set*, not two arities
 
 **WS-RR RR8.12** is the last technical row of WS-RR: cover
