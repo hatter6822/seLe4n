@@ -379,4 +379,722 @@ theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull
     (wakeAbortedDonationHolder_passiveServerIdleFrame st _ victim tcb)).trans
     (descheduleAtPlacement_passiveServerIdleFrame _ victim hRemoved)
 
+-- ============================================================================
+-- §4  WS-RR RR8.11 — the composite establishes the SM5.H replenish-affinity
+--     invariant
+-- ============================================================================
+
+/-- WS-RR RR8.11: `getSchedContext?` is determined by which `.schedContext` the
+store holds at the context's key, so two states agreeing on that at one key agree
+on the reading there.  The bridge every step frame below crosses: the pieces the
+tree already has are *kind* biconditionals over `objects[·]?`, and this turns one
+into the typed reading. -/
+private theorem getSchedContext?_of_kind_iff {sa sb : SystemState}
+    {scId : SeLe4n.SchedContextId}
+    (h : ∀ sc : SeLe4n.Kernel.SchedContext,
+      sb.objects[scId.toObjId]? = some (.schedContext sc) ↔
+      sa.objects[scId.toObjId]? = some (.schedContext sc)) :
+    sb.getSchedContext? scId = sa.getSchedContext? scId := by
+  cases hA : sa.getSchedContext? scId with
+  | none =>
+    cases hB : sb.getSchedContext? scId with
+    | none => rfl
+    | some sc =>
+      exact absurd
+        ((SystemState.getSchedContext?_eq_some_iff sa scId sc).mpr
+          ((h sc).mp ((SystemState.getSchedContext?_eq_some_iff sb scId sc).mp hB)))
+        (by rw [hA]; simp)
+  | some sc =>
+    rw [(SystemState.getSchedContext?_eq_some_iff sb scId sc).mpr
+      ((h sc).mpr ((SystemState.getSchedContext?_eq_some_iff sa scId sc).mp hA))]
+
+/-- WS-RR RR8.11: the restore writes one TCB, so it writes no scheduling
+context. -/
+private theorem restoreToReadyStaging_getSchedContext?_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    (Lifecycle.Suspend.restoreToReadyStaging st tid frame).getSchedContext? scId
+      = st.getSchedContext? scId := by
+  refine getSchedContext?_of_kind_iff (fun sc => ?_)
+  rw [restoreToReadyStaging_eq]
+  cases hT : st.getTcb? tid with
+  | none => exact Iff.rfl
+  | some tcb =>
+    by_cases hk : scId.toObjId = tid.toObjId
+    · -- the one key the restore writes holds a TCB before and after, so neither
+      -- side of the reading is a scheduling context
+      rw [hk, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT,
+        show (({ st with objects :=
+              st.objects.insert tid.toObjId (.tcb (restoredTcb tcb frame)) } :
+              SystemState).objects[tid.toObjId]?)
+            = some (.tcb (restoredTcb tcb frame)) from
+          SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _
+            hInv]
+      simp
+    · rw [show (({ st with objects :=
+              st.objects.insert tid.toObjId (.tcb (restoredTcb tcb frame)) } :
+              SystemState).objects[scId.toObjId]?) = st.objects[scId.toObjId]? from
+        SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId
+          scId.toObjId _ (by simpa using Ne.symm hk) hInv]
+
+/-- WS-RR RR8.11: the frame splice writes Reply objects only. -/
+private theorem spliceThreadReplyFrameOut_getSchedContext?_eq (st : SystemState)
+    (tcb : TCB) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    (spliceThreadReplyFrameOut st tcb).getSchedContext? scId = st.getSchedContext? scId := by
+  unfold spliceThreadReplyFrameOut
+  cases tcb.replyObject with
+  | none => rfl
+  | some rid => exact spliceReplyFrameOutOrSelf_getSchedContext?_eq st rid hInv scId
+
+/-- WS-RR RR8.11: the reply-link teardown writes a TCB and a Reply, so it writes
+no scheduling context — RR8.5's projection of the reply path's own consume, whose
+frame `consumeCallerReply_getSchedContext?_eq` states. -/
+private theorem consumeReplyLink_getSchedContext?_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
+    (scId : SeLe4n.SchedContextId) :
+    (Lifecycle.Suspend.consumeReplyLink st tid tcb).getSchedContext? scId
+      = st.getSchedContext? scId := by
+  unfold Lifecycle.Suspend.consumeReplyLink
+  cases hR : tcb.replyObject with
+  | none => rfl
+  | some rid =>
+    exact consumeCallerReply_getSchedContext?_eq st _ tid rid hInv
+      (SystemState.consumeCallerReply_eq_link st tid rid) scId
+
+/-- WS-RR RR8.11: the endpoint sweep and the splice it composes write endpoints
+and TCBs only. -/
+private theorem removeFromAllEndpointQueues_getSchedContext?_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    (removeFromAllEndpointQueues st tid).getSchedContext? scId
+      = st.getSchedContext? scId := by
+  refine getSchedContext?_of_kind_iff (fun sc => ?_)
+  refine Iff.trans (removeFromAllEndpointQueues_nonEndpoint st tid
+      (spliceOutMidQueueNode_preserves_objects_invExt st tid hInv)
+      scId.toObjId (.schedContext sc) (fun e => fun hc => KernelObject.noConfusion hc)) ?_
+  exact spliceOutMidQueueNode_nonTcb st tid hInv scId.toObjId (.schedContext sc)
+    (fun t => fun hc => KernelObject.noConfusion hc)
+
+/-- WS-RR RR8.11: the notification purge writes notifications only. -/
+private theorem removeFromAllNotificationWaitLists_getSchedContext?_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    (removeFromAllNotificationWaitLists st tid).getSchedContext? scId
+      = st.getSchedContext? scId := by
+  refine getSchedContext?_of_kind_iff (fun sc => ?_)
+  exact removeFromAllNotificationWaitLists_nonNotification st tid hInv
+    scId.toObjId (.schedContext sc) (fun n => fun hc => KernelObject.noConfusion hc)
+
+/-- WS-RR RR8.11: the holder abort writes endpoints and TCBs, so it writes no
+scheduling context — the `unwritten_kind` pair WS-OD OD3.2 built for the chain
+frame, read at the SchedContext kind. -/
+private theorem abortHolderPendingIpc_getSchedContext?_eq (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    (Lifecycle.Suspend.abortHolderPendingIpc st holder).getSchedContext? scId
+      = st.getSchedContext? scId := by
+  refine getSchedContext?_of_kind_iff (fun sc => ?_)
+  exact ⟨fun h => Lifecycle.Suspend.abortHolderPendingIpc_unwritten_kind_backward st holder hInv
+      (fun o => ∃ sc0 : SeLe4n.Kernel.SchedContext, o = .schedContext sc0)
+      (fun _ hc => nomatch hc.choose_spec) (fun _ hc => nomatch hc.choose_spec)
+      scId.toObjId _ ⟨sc, rfl⟩ h,
+    fun h => Lifecycle.Suspend.abortHolderPendingIpc_unwritten_kind_forward st holder hInv
+      (fun o => ∃ sc0 : SeLe4n.Kernel.SchedContext, o = .schedContext sc0)
+      (fun _ hc => nomatch hc.choose_spec) (fun _ hc => nomatch hc.choose_spec)
+      scId.toObjId _ ⟨sc, rfl⟩ h⟩
+
+/-- WS-RR RR8.11: **the reclaim writes exactly the scheduling context it hands
+back.**  Its three refusing shapes — no donation resolved, a caller with no TCB,
+and a refused return — commit nothing at all, and on the committing shape the only
+SchedContext store is `returnDonatedSchedContext`'s at `scId`. -/
+private theorem returnDonationToCancelledCaller_getSchedContext?_ne (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt)
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (scId₀ : SeLe4n.SchedContextId)
+    (hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder))
+    (hne : scId₀ ≠ scId) :
+    (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).getSchedContext? scId₀
+      = st.getSchedContext? scId₀ := by
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  rw [hD]
+  cases hT : st.getTcb? v with
+  | none => rfl
+  | some _ =>
+    dsimp only
+    cases hRet : returnDonatedSchedContextResolved
+        (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder scId v with
+    | error _ => rfl
+    | ok st' =>
+      obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+      rw [returnDonatedSchedContext_getSchedContext?_ne _ st' holder scId scId₀ v hne
+          (Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
+          newOwner? hPop,
+        abortHolderPendingIpc_getSchedContext?_eq st holder hInv scId₀]
+
+/-- **WS-RR RR8.11: the teardown writes a scheduling context only through the
+reclaim.**
+
+Five of the six `ipcState` constructors write none at all: the `.ready` identity
+commits nothing, the three endpoint states run a splice and a whole-store endpoint
+sweep followed by the restore, and `.blockedOnNotification` runs a notification
+purge followed by the restore.  Only `.blockedOnReply` can write one, and only
+through the reclaim — so the reclaim's own frame at a key is the teardown's frame
+at that key, which is what this takes as its hypothesis.
+
+Stated this way rather than with the exclusion built in because the two callers
+ask different questions of it: one excludes the context the resolver names (the
+committing case), the other has the whole reclaim inert (the refused case).  One
+six-arm analysis, two corollaries. -/
+theorem cancelIpcBlocking_getSchedContext?_eq_of_reclaim_frame (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt)
+    (scId₀ : SeLe4n.SchedContextId)
+    (hReclaim : (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).getSchedContext? scId₀
+      = st.getSchedContext? scId₀) :
+    (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).getSchedContext? scId₀
+      = st.getSchedContext? scId₀ := by
+  unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
+  cases hIp : tcbV.ipcState with
+  | ready => rfl
+  | blockedOnSend _ =>
+    rw [restoreToReadyStaging_getSchedContext?_eq _ v _
+        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
+      removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
+  | blockedOnReceive _ =>
+    rw [restoreToReadyStaging_getSchedContext?_eq _ v _
+        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
+      removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
+  | blockedOnCall _ =>
+    rw [restoreToReadyStaging_getSchedContext?_eq _ v _
+        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
+      removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
+  | blockedOnNotification _ =>
+    rw [restoreToReadyStaging_getSchedContext?_eq _ v _
+        (removeFromAllNotificationWaitLists_preserves_objects_invExt st v hInv),
+      removeFromAllNotificationWaitLists_getSchedContext?_eq st v hInv]
+  | blockedOnReply ep rt =>
+    have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
+      st v tcbV hInv
+    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
+    rw [consumeReplyLink_getSchedContext?_eq _ v tcbV
+        (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS),
+      restoreToReadyStaging_getSchedContext?_eq _ v _ hS,
+      spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR, hReclaim]
+
+/-- **WS-RR RR8.11: the teardown writes at most ONE scheduling context** — the one
+the reclaim hands back to the cancelled caller — so every other context reads
+through it unchanged.
+
+Stated with the exclusion as a hypothesis **over the resolver** rather than over a
+supplied id, because the context is *resolved* rather than passed: a caller that
+has not resolved it discharges the hypothesis vacuously, and one that has
+discharges it from its own distinctness. -/
+theorem cancelIpcBlocking_getSchedContext?_ne (st : SystemState) (v : SeLe4n.ThreadId)
+    (tcbV : TCB) (hInv : st.objects.invExt) (scId₀ : SeLe4n.SchedContextId)
+    (hne : ∀ scId holder, Lifecycle.Suspend.cancelledCallerDonation? st v tcbV
+      = some (scId, holder) → scId₀ ≠ scId) :
+    (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).getSchedContext? scId₀
+      = st.getSchedContext? scId₀ := by
+  refine cancelIpcBlocking_getSchedContext?_eq_of_reclaim_frame st v tcbV hInv scId₀ ?_
+  cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
+  | none => rw [Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hD]
+  | some p =>
+    obtain ⟨scId, holder⟩ := p
+    exact returnDonationToCancelledCaller_getSchedContext?_ne st v tcbV hInv scId holder
+      scId₀ hD (hne scId holder hD)
+
+/-- **WS-RR RR8.11: a teardown whose reclaim committed nothing writes no scheduling
+context at all** — including the one the resolver names, which is the key the
+`_ne` form above deliberately excludes.  This is the reading the refused-reclaim
+case needs, and it is what makes the migration's destination degenerate to its own
+source there. -/
+theorem cancelIpcBlocking_getSchedContext?_eq_of_reclaim_inert (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt)
+    (hInert : Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV = st)
+    (scId₀ : SeLe4n.SchedContextId) :
+    (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).getSchedContext? scId₀
+      = st.getSchedContext? scId₀ :=
+  cancelIpcBlocking_getSchedContext?_eq_of_reclaim_frame st v tcbV hInv scId₀ (by rw [hInert])
+
+/-- WS-RR RR8.11: the shape every affinity frame below is proved in.  A step whose
+TCB readings refine forward with the affinity preserved and whose post-state TCBs
+all have pre-state TCBs at the same key frames `determineTargetCore` at that key —
+the `Option.map` form, whose `none` case is the statement that the step
+materialises no thread. -/
+private theorem map_affinity_of_refines {sa sb : SystemState} {x : SeLe4n.ThreadId}
+    (hFwd : ∀ t0, sa.getTcb? x = some t0 →
+      ∃ t', sb.getTcb? x = some t' ∧ t'.cpuAffinity = t0.cpuAffinity)
+    (hBwd : ∀ t', sb.getTcb? x = some t' → ∃ t0, sa.getTcb? x = some t0) :
+    (sb.getTcb? x).map (·.cpuAffinity) = (sa.getTcb? x).map (·.cpuAffinity) := by
+  cases hA : sa.getTcb? x with
+  | none =>
+    cases hB : sb.getTcb? x with
+    | none => rfl
+    | some t' =>
+      obtain ⟨t0, h0⟩ := hBwd t' hB
+      rw [hA] at h0
+      exact absurd h0 (by simp)
+  | some t0 =>
+    obtain ⟨t', hB, hAff⟩ := hFwd t0 hA
+    rw [hB]
+    simp [hAff]
+
+/-- WS-RR RR8.11: the mid-queue splice patches queue links only. -/
+private theorem spliceOutMidQueueNode_affinity_frame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((spliceOutMidQueueNode st tid).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) := by
+  refine map_affinity_of_refines (fun t0 hT0 => ?_) (fun t' hT' => ?_)
+  · obtain ⟨t', hL', hAff'⟩ := spliceOutMidQueueNode_tcb_lookup st tid x.toObjId t0 hInv
+      ((SystemState.getTcb?_eq_some_iff st x t0).mp hT0)
+    exact ⟨t', (SystemState.getTcb?_eq_some_iff _ x t').mpr hL', hAff'⟩
+  · obtain ⟨t0, hL0, _⟩ := spliceOutMidQueueNode_tcb_backward st tid x.toObjId t' hInv
+      ((SystemState.getTcb?_eq_some_iff _ x t').mp hT')
+    exact ⟨t0, (SystemState.getTcb?_eq_some_iff st x t0).mpr hL0⟩
+
+/-- WS-RR RR8.11: the endpoint sweep's fold writes endpoints only, so every TCB
+reading is the splice's; the splice is the affinity frame above. -/
+private theorem removeFromAllEndpointQueues_affinity_frame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((removeFromAllEndpointQueues st tid).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) := by
+  have hFold : ∀ t : TCB,
+      (removeFromAllEndpointQueues st tid).getTcb? x = some t
+        ↔ (spliceOutMidQueueNode st tid).getTcb? x = some t := fun t =>
+    Iff.trans (SystemState.getTcb?_eq_some_iff _ x t)
+      (Iff.trans (removeFromAllEndpointQueues_nonEndpoint st tid
+          (spliceOutMidQueueNode_preserves_objects_invExt st tid hInv)
+          x.toObjId (.tcb t) (fun e => fun hc => KernelObject.noConfusion hc))
+        (SystemState.getTcb?_eq_some_iff _ x t).symm)
+  have hEq : (removeFromAllEndpointQueues st tid).getTcb? x
+      = (spliceOutMidQueueNode st tid).getTcb? x := by
+    cases hA : (spliceOutMidQueueNode st tid).getTcb? x with
+    | none =>
+      cases hB : (removeFromAllEndpointQueues st tid).getTcb? x with
+      | none => rfl
+      | some t => exact absurd ((hFold t).mp hB) (by rw [hA]; simp)
+    | some t => exact (hFold t).mpr hA
+  rw [hEq]
+  exact spliceOutMidQueueNode_affinity_frame st tid hInv x
+
+/-- WS-RR RR8.11: the notification purge writes notifications only. -/
+private theorem removeFromAllNotificationWaitLists_affinity_frame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((removeFromAllNotificationWaitLists st tid).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) := by
+  have hIff : ∀ t : TCB,
+      (removeFromAllNotificationWaitLists st tid).getTcb? x = some t ↔ st.getTcb? x = some t :=
+    fun t => Iff.trans (SystemState.getTcb?_eq_some_iff _ x t)
+      (Iff.trans (removeFromAllNotificationWaitLists_nonNotification st tid hInv
+          x.toObjId (.tcb t) (fun n => fun hc => KernelObject.noConfusion hc))
+        (SystemState.getTcb?_eq_some_iff st x t).symm)
+  have hEq : (removeFromAllNotificationWaitLists st tid).getTcb? x = st.getTcb? x := by
+    cases hA : st.getTcb? x with
+    | none =>
+      cases hB : (removeFromAllNotificationWaitLists st tid).getTcb? x with
+      | none => rfl
+      | some t => exact absurd ((hIff t).mp hB) (by rw [hA]; simp)
+    | some t => exact (hIff t).mpr hA
+  rw [hEq]
+
+/-- WS-RR RR8.11: the restore rewrites the victim's own TCB and writes nothing
+where no TCB was. -/
+private theorem restoreToReadyStaging_affinity_frame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((Lifecycle.Suspend.restoreToReadyStaging st tid frame).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) := by
+  cases hT : st.getTcb? tid with
+  | none =>
+    rw [Lifecycle.Suspend.restoreToReadyStaging_eq_self_of_getTcb?_none st tid frame hT]
+  | some tcb =>
+    by_cases hk : x = tid
+    · subst hk
+      have hPost : (Lifecycle.Suspend.restoreToReadyStaging st x frame).getTcb? x
+          = some (restoredTcb tcb frame) := by
+        rw [restoreToReadyStaging_eq]
+        simp only [hT]
+        exact (SystemState.getTcb?_eq_some_iff _ x _).mpr
+          (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects x.toObjId _ hInv)
+      rw [hPost, hT]
+      cases frame with
+      | none => simp [restoredTcb]
+      | some f => simp [restoredTcb, TCB.withReturnFrame]
+    · have hPost : (Lifecycle.Suspend.restoreToReadyStaging st tid frame).getTcb? x
+          = st.getTcb? x := by
+        unfold SystemState.getTcb?
+        rw [restoreToReadyStaging_objects_ne st tid frame x.toObjId hInv
+          (fun hc => hk (SeLe4n.ThreadId.toObjId_injective x tid hc))]
+      rw [hPost]
+
+/-- WS-RR RR8.11: a store of one TCB at a key that already held a TCB with the same
+`cpuAffinity` frames every thread's home core. -/
+private theorem storeObject_tcb_affinity_frame {st st' : SystemState} {k : SeLe4n.ObjId}
+    {t t' : TCB}
+    (hInv : st.objects.invExt) (hPre : st.objects[k]? = some (.tcb t))
+    (hAff : t'.cpuAffinity = t.cpuAffinity)
+    (hStore : storeObject k (.tcb t') st = .ok ((), st')) (x : SeLe4n.ThreadId) :
+    (st'.getTcb? x).map (·.cpuAffinity) = (st.getTcb? x).map (·.cpuAffinity) := by
+  by_cases hk : x.toObjId = k
+  · subst hk
+    rw [show st'.getTcb? x = some t' from
+        (SystemState.getTcb?_eq_some_iff _ x t').mpr
+          (storeObject_objects_eq' st x.toObjId (.tcb t') ((), st') hInv hStore),
+      show st.getTcb? x = some t from (SystemState.getTcb?_eq_some_iff st x t).mpr hPre]
+    simp [hAff]
+  · unfold SystemState.getTcb?
+    rw [storeObject_objects_ne st st' k x.toObjId (.tcb t') hk hInv hStore]
+
+/-- WS-RR RR8.11: the guarded endpoint-queue removal patches queue links only, in
+**both** directions — the `FieldRefines` pair WS-OD OD1.4 built, whose backward half
+is what says the removal materialises no thread. -/
+private theorem endpointQueueRemove_affinity_frame {endpointId : SeLe4n.ObjId}
+    {isReceiveQ : Bool} {tid : SeLe4n.ThreadId} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') (x : SeLe4n.ThreadId) :
+    (st'.getTcb? x).map (·.cpuAffinity) = (st.getTcb? x).map (·.cpuAffinity) := by
+  refine map_affinity_of_refines (fun t0 hT0 => ?_) (fun t' hT' => ?_)
+  · obtain ⟨ot', hL', hAff'⟩ := endpointQueueRemove_getTcb_upToAffinity endpointId isReceiveQ
+      tid st st' hInv h x.toObjId t0
+      (by rw [← RHTable_getElem?_eq_get?]; exact (SystemState.getTcb?_eq_some_iff st x t0).mp hT0)
+    exact ⟨ot', (SystemState.getTcb?_eq_some_iff _ x ot').mpr
+      (by rw [RHTable_getElem?_eq_get?]; exact hL'), hAff'.symm⟩
+  · obtain ⟨ot, hL, _⟩ := endpointQueueRemove_getTcb_backward_upToField
+      (fun t : TCB => t.cpuAffinity)
+      (fun _ _ _ _ => rfl) endpointId isReceiveQ tid st st' hInv h x.toObjId t'
+      ((SystemState.getTcb?_eq_some_iff _ x t').mp hT')
+    exact ⟨ot, (SystemState.getTcb?_eq_some_iff st x ot).mpr hL⟩
+
+/-- WS-RR RR8.11: the holder abort ends an outstanding send or call and moves no
+thread's home core. -/
+private theorem abortHolderPendingIpc_affinity_frame (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((Lifecycle.Suspend.abortHolderPendingIpc st holder).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) := by
+  have hArm : ∀ (epId : SeLe4n.ObjId),
+      (((match abortPendingIpcOnEndpoint epId false holder st with
+        | .ok s => s
+        | .error _ => st : SystemState)).getTcb? x).map (fun t : TCB => t.cpuAffinity)
+        = (st.getTcb? x).map (fun t : TCB => t.cpuAffinity) := by
+    intro epId
+    cases hA : abortPendingIpcOnEndpoint epId false holder st with
+    | error _ => rfl
+    | ok stA =>
+      obtain ⟨st1, tcb1, hRem, hLook, hStore⟩ := abortPendingIpcOnEndpoint_shape hA
+      have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
+      rw [storeObject_tcb_affinity_frame (hInv := hInv1)
+            (hPre := lookupTcb_some_objects _ _ _ hLook) (hStore := hStore)
+            (hAff := by simp [TCB.withReturnFrame]) (x := x),
+        endpointQueueRemove_affinity_frame hInv hRem x]
+  unfold Lifecycle.Suspend.abortHolderPendingIpc
+  split
+  · rfl
+  · rename_i holderTcb _
+    split
+    · rename_i epId _; exact hArm epId
+    · rename_i epId _; exact hArm epId
+    · rfl
+
+/-- WS-RR RR8.11: the reclaim moves no thread's home core — its abort prefix
+patches queue links and blocking state, and the pop rebinds scheduling contexts
+(`returnDonatedSchedContext_getTcb?_cpuAffinity_eq`). -/
+private theorem returnDonationToCancelledCaller_affinity_frame (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) := by
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
+  | none => rfl
+  | some p =>
+    obtain ⟨scId, holder⟩ := p
+    cases hT : st.getTcb? v with
+    | none => rfl
+    | some _ =>
+      dsimp only
+      cases hRet : returnDonatedSchedContextResolved
+          (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder scId v with
+      | error _ => rfl
+      | ok st' =>
+        obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+        rw [returnDonatedSchedContext_getTcb?_cpuAffinity_eq _ st' holder scId v
+            (Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
+            newOwner? hPop x,
+          abortHolderPendingIpc_affinity_frame st holder hInv x]
+
+/-- WS-RR RR8.11: **the consume materialises no thread.**  The backward half the
+tree lacked: its two stores are at keys their own lookups found occupied, so a TCB
+the post-state holds had a TCB at the same key before. -/
+private theorem consumeCallerReply_getTcb?_backward {st st' : SystemState}
+    {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} (hInv : st.objects.invExt)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st'))
+    (x : SeLe4n.ThreadId) (t' : TCB) (hT' : st'.getTcb? x = some t') :
+    ∃ t0, st.getTcb? x = some t0 := by
+  unfold SystemState.consumeCallerReply at hStep
+  cases hCons : SystemState.consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hInv1 := SystemState.consumeReply_preserves_objects_invExt st st1 rid hInv hCons
+    have hMid : ∀ (y : SeLe4n.ThreadId) (t : TCB), st1.getTcb? y = some t → st.getTcb? y = some t := by
+      intro y t hy
+      unfold SystemState.consumeReply at hCons
+      cases hG : st.getReply? rid with
+      | none => rw [hG] at hCons; cases hCons; exact hy
+      | some r0 =>
+        rw [hG] at hCons
+        by_cases hk : y.toObjId = rid.toObjId
+        · exfalso
+          have hPost : st1.objects[y.toObjId]? = some (.reply r0.consumed) := by
+            rw [hk]; exact storeObject_objects_eq' st _ _ _ hInv hCons
+          rw [(SystemState.getTcb?_eq_some_iff st1 y t).mp hy] at hPost
+          exact absurd hPost (by simp)
+        · refine (SystemState.getTcb?_eq_some_iff st y t).mpr ?_
+          rw [← storeObject_objects_ne st st1 rid.toObjId y.toObjId _ hk hInv hCons]
+          exact (SystemState.getTcb?_eq_some_iff st1 y t).mp hy
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep] at hT'
+      exact ⟨t', hMid x t' hT'⟩
+    | some tcb =>
+      simp only [hT] at hStep
+      by_cases hk : x.toObjId = caller.toObjId
+      · refine ⟨tcb, hMid x tcb ?_⟩
+        rw [show x = caller from SeLe4n.ThreadId.toObjId_injective x caller hk]
+        exact hT
+      · refine ⟨t', hMid x t' ?_⟩
+        refine (SystemState.getTcb?_eq_some_iff st1 x t').mpr ?_
+        rw [← storeObject_objects_ne st1 st' caller.toObjId x.toObjId _ hk hInv1 hStep]
+        exact (SystemState.getTcb?_eq_some_iff st' x t').mp hT'
+
+/-- WS-RR RR8.11: the reply-link teardown clears one TCB field and consumes one
+Reply, so it moves no thread's home core. -/
+private theorem consumeReplyLink_affinity_frame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((Lifecycle.Suspend.consumeReplyLink st tid tcb).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) := by
+  unfold Lifecycle.Suspend.consumeReplyLink
+  cases hR : tcb.replyObject with
+  | none => rfl
+  | some rid =>
+    have hStep := SystemState.consumeCallerReply_eq_link st tid rid
+    refine map_affinity_of_refines (fun t0 hT0 => ?_)
+      (fun t' hT' => consumeCallerReply_getTcb?_backward hInv hStep x t' hT')
+    by_cases hk : x.toObjId = tid.toObjId
+    · refine ⟨{ t0 with replyObject := none }, ?_, rfl⟩
+      refine (SystemState.getTcb?_eq_some_iff _ x _).mpr ?_
+      rw [hk]
+      exact SystemState.consumeCallerReply_tcb_caller st _ tid rid hInv hStep t0
+        (by rw [← hk]; exact (SystemState.getTcb?_eq_some_iff st x t0).mp hT0)
+    · exact ⟨t0, (SystemState.getTcb?_eq_some_iff _ x t0).mpr
+        (SystemState.consumeCallerReply_tcb_other st _ tid rid hInv hStep x.toObjId t0 hk
+          ((SystemState.getTcb?_eq_some_iff st x t0).mp hT0)), rfl⟩
+
+/-- **WS-RR RR8.11: the teardown moves no thread's home core.**  The composite of
+the per-step frames above, stated in the `Option.map` form so its `none` case is
+the statement that the teardown materialises no thread — which is what a reader of
+`replenishQueueAffinityConsistentOnCore` needs, since a scheduling context's
+`boundThread` is tied to no stored TCB by any invariant. -/
+theorem cancelIpcBlocking_affinity_frame (st : SystemState) (v : SeLe4n.ThreadId)
+    (tcbV : TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((Lifecycle.Suspend.cancelIpcBlocking st v tcbV).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) := by
+  unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
+  cases hIp : tcbV.ipcState with
+  | ready => rfl
+  | blockedOnSend _ =>
+    rw [restoreToReadyStaging_affinity_frame _ v _
+        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x,
+      removeFromAllEndpointQueues_affinity_frame st v hInv x]
+  | blockedOnReceive _ =>
+    rw [restoreToReadyStaging_affinity_frame _ v _
+        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x,
+      removeFromAllEndpointQueues_affinity_frame st v hInv x]
+  | blockedOnCall _ =>
+    rw [restoreToReadyStaging_affinity_frame _ v _
+        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x,
+      removeFromAllEndpointQueues_affinity_frame st v hInv x]
+  | blockedOnNotification _ =>
+    rw [restoreToReadyStaging_affinity_frame _ v _
+        (removeFromAllNotificationWaitLists_preserves_objects_invExt st v hInv) x,
+      removeFromAllNotificationWaitLists_affinity_frame st v hInv x]
+  | blockedOnReply ep rt =>
+    have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
+      st v tcbV hInv
+    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
+    rw [consumeReplyLink_affinity_frame _ v tcbV
+        (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS) x,
+      restoreToReadyStaging_affinity_frame _ v _ hS x,
+      spliceThreadReplyFrameOut_getTcb?_eq _ tcbV hR x,
+      returnDonationToCancelledCaller_affinity_frame st v tcbV hInv x]
+
+/-- WS-SM SM6.E (resolution frame) / **WS-RR RR8.11**: the teardown never moves
+**any** thread's home core.
+
+Moved here from `IPC/CrossCore/Cancellation.lean` and generalised from the victim
+to an arbitrary thread.  The proof it had there could only be stated at the victim,
+because `cancelIpcBlocking_getTcb?_none` is; the general form reads the teardown's
+whole affinity frame, whose per-step pieces this module has the imports for.  Since
+WS-RR RR8.6 the deschedule no longer reads it; what still does is the `.bound`
+arm's replenish purge core in `suspendThreadOnCore`, resolved on the pre-state, and
+the SM5.H affinity invariant, which reads the home of whichever thread a scheduling
+context is bound to — not the victim. -/
+theorem cancelIpcBlocking_determineTargetCore_eq (st : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
+    (x : SeLe4n.ThreadId) :
+    determineTargetCore (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) x
+      = determineTargetCore st x :=
+  determineTargetCore_congr st _ x (cancelIpcBlocking_affinity_frame st victim tcb hInv x)
+
+/-- **WS-RR RR8.11: the migrated teardown establishes the SM5.H replenish-affinity
+invariant** — the second half of the obligation `cancelIpcBlockingMigrated`'s
+docstring registered, and it takes **no** hypothesis beyond the object-store
+invariant and the pre-state invariant itself.
+
+That is what the destination fix buys.  With the destination read off the
+post-teardown binding (`replenishHomeOfSchedContext`) the "the destination is
+right" obligation is `replenishHomeOfSchedContext_spec`, which is free; with the
+victim's pre-state home in that position it was **false** on a refused reclaim, and
+no hypothesis short of "the reclaim committed" could have rescued it.
+
+The three remaining obligations are the teardown's own frames: it writes no
+scheduler slot (`cancelIpcBlocking_scheduler_eq`), no scheduling context but the
+one the reclaim hands back (`cancelIpcBlocking_getSchedContext?_ne`), and no
+thread's `cpuAffinity` (`cancelIpcBlocking_determineTargetCore_eq`).  The
+migration's *source* is the pre-state bound thread's home, which
+`cancelledCallerDonation?_some` supplies: the resolver reads the context off the
+victim's own reply frame head, and that context's `boundThread` **is** the holder
+the resolver names. -/
+theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState)
+    (hInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st) :
+    replenishQueueAffinityConsistent_smp (cancelIpcBlockingMigrated victim tcb st) := by
+  unfold cancelIpcBlockingMigrated
+  cases hD : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb with
+  | none =>
+    refine (replenishQueueAffinityConsistent_smp_congr
+      (fun c => by rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq])
+      (fun scId₀ => cancelIpcBlocking_getSchedContext?_ne st victim tcb hInv scId₀
+        (fun s h hD' => by rw [hD] at hD'; exact absurd hD' (by simp)))
+      (fun tid => cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv tid)).mpr hCons
+  | some p =>
+    obtain ⟨scId, holder⟩ := p
+    obtain ⟨-, rid, r, sc, -, -, -, hSc, -, hBound⟩ :=
+      cancelledCallerDonation?_some st victim tcb scId holder hD
+    exact migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp
+      st (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) scId
+      (determineTargetCore st holder) sc holder
+      (fun c => by rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq])
+      (fun scId₀ hne => cancelIpcBlocking_getSchedContext?_ne st victim tcb hInv scId₀
+        (fun s h hD' => by rw [hD] at hD'; cases hD'; exact hne))
+      (fun tid => cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv tid)
+      hSc hBound rfl hCons
+
+/-- WS-RR RR8.11: the holder wake is a run-queue insert, so it moves no
+replenishment. -/
+@[simp] theorem enqueueAbortedHolderOnCore_replenishQueueOnCore (st : SystemState)
+    (c : CoreId) (tid : SeLe4n.ThreadId) (c' : CoreId) :
+    (enqueueAbortedHolderOnCore st c tid).scheduler.replenishQueueOnCore c'
+      = st.scheduler.replenishQueueOnCore c' := by
+  unfold enqueueAbortedHolderOnCore
+  split
+  · rfl
+  · split
+    · rfl
+    · rfl
+
+/-- WS-RR RR8.11: ...and so does the wake that resolves it. -/
+@[simp] theorem wakeAbortedDonationHolder_replenishQueueOnCore (stPre stPost : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (c : CoreId) :
+    (wakeAbortedDonationHolder stPre stPost victim tcb).scheduler.replenishQueueOnCore c
+      = stPost.scheduler.replenishQueueOnCore c := by
+  unfold wakeAbortedDonationHolder
+  split
+  · rfl
+  · exact enqueueAbortedHolderOnCore_replenishQueueOnCore _ _ _ c
+
+/-- **WS-RR RR8.11: the cross-core cancellation composite establishes the SM5.H
+replenish-affinity invariant.**
+
+The lift adds nothing, for the same reason RR8.10's bundle lift adds no premise:
+the two scheduler steps the composite performs over the migrated teardown — the
+holder wake and the victim's placement removal — write run queues and current
+slots, which the invariant does not read, and no object at all, so all three of its
+readings are the migrated teardown's. -/
+theorem cancelIpcBlockingOnCore_establishes_replenishQueueAffinityConsistent_smp
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId) (st : SystemState)
+    (hInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st) :
+    replenishQueueAffinityConsistent_smp
+      (cancelIpcBlockingOnCore victim tcb executingCore st).1 := by
+  have hBase := cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp
+    victim tcb st hInv hCons
+  rw [cancelIpcBlockingOnCore_state_eq]
+  refine (replenishQueueAffinityConsistent_smp_congr (fun c => ?_) (fun scId₀ => ?_)
+    (fun tid => ?_)).mpr hBase
+  · rw [descheduleAtPlacement_replenishQueueOnCore,
+      wakeAbortedDonationHolder_replenishQueueOnCore]
+  · unfold SystemState.getSchedContext?
+    rw [descheduleAtPlacement_preserves_objects, wakeAbortedDonationHolder_objects]
+  · rw [descheduleAtPlacement_determineTargetCore,
+      wakeAbortedDonationHolder_determineTargetCore]
+
+/-- **WS-RR RR8.11: a refused reclaim migrates nothing.**
+
+This is the defect the destination fix closed, stated.  The reclaim's guards are
+fail-closed — the outer-caller check, HP4.6's recipient guard and the head
+validation all refuse — and on a refusal `returnDonationToCancelledCaller` returns
+its own input with `scId` still bound to the holder.  With the destination read
+off the post-teardown binding the migration's source and destination then coincide,
+so `migrateSchedContextReplenishment_noop` collapses it to the identity; with the
+victim's pre-state home in that position it moved `scId`'s replenishments to a core
+no thread bound to `scId` is homed on, which is
+`replenishQueueAffinityConsistentOnCore`'s own negation. -/
+theorem cancelIpcBlockingMigrated_eq_teardown_of_reclaim_inert
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) (hInv : st.objects.invExt)
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (hD : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder))
+    (hInert : Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb = st) :
+    cancelIpcBlockingMigrated victim tcb st
+      = Lifecycle.Suspend.cancelIpcBlocking st victim tcb := by
+  obtain ⟨-, rid, r, sc, -, -, -, hSc, -, hBound⟩ :=
+    cancelledCallerDonation?_some st victim tcb scId holder hD
+  have hPost : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).getSchedContext? scId
+      = some sc := by
+    rw [cancelIpcBlocking_getSchedContext?_eq_of_reclaim_inert st victim tcb hInv hInert scId,
+      hSc]
+  have hDest : replenishHomeOfSchedContext (Lifecycle.Suspend.cancelIpcBlocking st victim tcb)
+      scId (determineTargetCore st holder) = determineTargetCore st holder := by
+    rw [replenishHomeOfSchedContext_eq_of_bound _ scId _ sc holder hPost hBound,
+      cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv holder]
+  unfold cancelIpcBlockingMigrated
+  rw [hD]
+  dsimp only
+  rw [hDest, migrateSchedContextReplenishment_noop]
+
+/-- **WS-RR RR8.11: a committed reclaim migrates exactly where it did before the
+fix.**
+
+The other half of the measurement: where the reclaim commits, the post-teardown
+binding names the cancelled caller, so the destination the resolver reads *is* the
+victim's home — the pre-fix expression, since the teardown writes no `cpuAffinity`.
+So the fix is a no-op on every state the tree's stated coherence facts admit, which
+is why the golden trace is byte-identical. -/
+theorem cancelIpcBlockingMigrated_eq_victim_home_of_committed
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) (hInv : st.objects.invExt)
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (hD : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder))
+    (scPost : SeLe4n.Kernel.SchedContext)
+    (hPost : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).getSchedContext? scId
+      = some scPost)
+    (hBoundPost : scPost.boundThread = some victim) :
+    cancelIpcBlockingMigrated victim tcb st
+      = migrateSchedContextReplenishment (Lifecycle.Suspend.cancelIpcBlocking st victim tcb)
+          scId (determineTargetCore st holder) (determineTargetCore st victim) := by
+  unfold cancelIpcBlockingMigrated
+  rw [hD]
+  dsimp only
+  rw [replenishHomeOfSchedContext_eq_of_bound _ scId _ scPost victim hPost hBoundPost,
+    cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv victim]
+
 end SeLe4n.Kernel

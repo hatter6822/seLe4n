@@ -958,6 +958,17 @@ theorem removeRunnableOnCore_preserves_objects (st : SystemState)
   · exact removeRunnableOnCore_preserves_objects _ _ _
   · rfl
 
+/-- WS-RR RR8.11: ...and hence moves no thread's home core.  Stated beside the
+object frame it is derived from, because the SM5.H replenish-affinity invariant
+reads `determineTargetCore` at whichever thread a scheduling context is bound to
+and the cancellation composite ends in this removal. -/
+@[simp] theorem descheduleAtPlacement_determineTargetCore (st : SystemState)
+    (tid x : SeLe4n.ThreadId) :
+    determineTargetCore (descheduleAtPlacement st tid) x = determineTargetCore st x := by
+  refine determineTargetCore_congr st _ x ?_
+  unfold SystemState.getTcb?
+  rw [descheduleAtPlacement_preserves_objects]
+
 /-- `placedCoreOf?` reads exactly two per-core scheduler slices, so a step that
 frames both at every core frames it.  The pointwise form, because the migration
 frames them per core rather than by handing back the whole scheduler. -/

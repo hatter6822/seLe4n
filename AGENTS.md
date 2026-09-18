@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.85.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.86.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,8 +203,8 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~69676 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23632 lines)
+- `CHANGELOG.md` (~69841 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23652 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7786 lines)
@@ -264,6 +264,7 @@ To find files that need pagination today, run:
 - `tests/ModelIntegritySuite.lean` (~2456 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2356 lines)
+- `tests/SmpCancellationSuite.lean` (~2349 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
@@ -271,7 +272,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2245 lines)
-- `tests/SmpCancellationSuite.lean` (~2234 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
@@ -316,8 +316,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1624 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1617 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1512 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1501 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
@@ -363,8 +363,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1126 lines)
 - `tests/SmpIdleSuite.lean` (~1118 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1112 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1107 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
+- `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean` (~1100 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1090 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
@@ -5782,7 +5783,11 @@ code may assume:
   replenishment migration is at the cross-core layer** (`cancelIpcBlockingMigrated`),
   where this tree resolves home cores for every donation-carrying path, which is
   what keeps `cancelIpcBlocking` an objects-only write; that it *establishes*
-  `replenishQueueAffinityConsistent_smp` is registered RR8 debt.  (4) **The return
+  `replenishQueueAffinityConsistent_smp` is proved at WS-RR RR8.11 (`v0.35.86`,
+  `cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp` and its
+  cross-core lift), which also moved the migration's **destination** onto the bound
+  thread's post-teardown home — see the hand-off constraint below for why the
+  victim's pre-state home was wrong.  (4) **The return
   is invisible to every observer, not merely a high one**: `projectKernelObject`
   strips `schedContextBinding` and `boundThread`, so writing a possibly-low
   server's TCB on a high caller's cancellation leaks nothing
@@ -6505,19 +6510,49 @@ code may assume:
   (`dispatchWithCapChecked_preserves_ipcInvariantFull` /
   `dispatchSyscallChecked_preserves_ipcInvariantFull`, staged) in the same
   cut.
-- **Every SchedContext hand-off must migrate the replenish queue.**  The CBS
-  replenishments of a SchedContext live on its *bound thread's* home core
-  (`replenishQueueAffinityConsistentOnCore`, SM5.H), so any transition that
-  rebinds `boundThread` across cores must call `migrateSchedContextReplenishment`
-  or the invariant is false from the instant it commits.  Three live paths do
-  (`applyCallDonationOnCore`, `applyReplyDonationOnCore`, `replyRecvReturnDonation`,
-  all at v0.34.42), each with a `replenishQueueAffinityConsistent_smp` preservation
-  theorem.  The pre-SM10 audit found only two of the three, because it enumerated
-  the donation *primitives* and `.replyRecv` composes them from the API layer —
-  the enumeration-versus-derivation shape the key-conventions section above warns
-  about.  A same-core hand-off is a definitional no-op
-  (`migrateSchedContextReplenishment_noop`), so the migration costs nothing where
-  it is not needed and there is no reason to omit it.
+- **Every SchedContext hand-off must migrate the replenish queue, and the
+  migration's DESTINATION is the bound thread's home rather than the thread the
+  hand-off expects to bind** (SM5.H; the destination half is WS-RR RR8.11,
+  `v0.35.86`).  The CBS replenishments of a SchedContext live on its *bound
+  thread's* home core (`replenishQueueAffinityConsistentOnCore`), so any transition
+  that rebinds `boundThread` across cores must call
+  `migrateSchedContextReplenishment` or the invariant is false from the instant it
+  commits.  Three live paths do (`applyCallDonationOnCore`,
+  `applyReplyDonationOnCore`, and `.replyRecv`'s pop — `replyRecvPopDonation` since
+  WS-RM split the fused `replyRecvReturnDonation`; the paths landed at v0.34.42),
+  each with a `replenishQueueAffinityConsistent_smp` preservation theorem.  The
+  pre-SM10 audit found only two of the three, because it enumerated the donation
+  *primitives* and `.replyRecv` composes them from the API layer — the
+  enumeration-versus-derivation shape the key-conventions section above warns about.
+  A same-core hand-off is a definitional no-op
+  (`migrateSchedContextReplenishment_noop`), so the migration costs nothing where it
+  is not needed and there is no reason to omit it.
+
+  **And a caller that can refuse must read the destination off the post-rebind
+  state.**  `cancelIpcBlockingMigrated` aimed its migration at
+  `determineTargetCore st victim` — the home of the thread the reclaim is *about to*
+  bind the context to — and the reclaim's guards are fail-closed (the outer-caller
+  check, HP4.6's recipient guard, the head validation), so on a refusal it moved
+  `scId`'s replenishments to a core no thread bound to `scId` is homed on, which is
+  the invariant's own negation.  Latent rather than live — the refusal needs a state
+  violating one of the two *stated* coherence facts, which hold on every reachable
+  state — but the migration's soundness rested on an unstated hypothesis, and the
+  reply path never had the defect because *its* migration sits in the `.ok`
+  continuation of its return: one question, two spellings, and the pure one had it
+  wrong.  `replenishHomeOfSchedContext` (`SchedContext/ReplenishAffinity.lean`) is
+  the destination now — the home of the thread the context is bound to, read on the
+  state the migration runs against — so a refused rebind is a *self*-migration that
+  `_noop` collapses to the identity, and
+  `migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp` gets
+  its destination obligation free from `replenishHomeOfSchedContext_spec`.  Three
+  things new code must respect.  (1) **Every caller passes the migration's own
+  source as the fallback**, so a context that resolves to nothing or is bound to no
+  thread is a no-op rather than a pointless move.  (2) **The general lemma requires
+  the source to be where the invariant currently puts the context** — spelled as the
+  pre-state binding and its home, not as an implication, because a context bound to
+  no thread locates no entries a migration could move.  (3) **The footprint does not
+  grow**: both cores the destination can name were already declared, and
+  `maxLockSetSize` is unmoved.
 - **The scheduler liveness trace model is boot-core-pinned** (SM4.C.11's
   residual).  SM5.J lifted the per-core Liveness *predicates* at v0.31.64 —
   `eventuallyExitsOnCore`, `higherBandExhaustedOnCore`,

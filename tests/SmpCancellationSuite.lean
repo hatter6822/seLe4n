@@ -2203,6 +2203,120 @@ private def runFrameHeadReclaimChecks : IO Unit := do
      | some t => decide (t.schedContextBinding = .bound scId)
      | none => false)
 
+-- ----------------------------------------------------------------------------
+-- §3.25  WS-RR RR8.11 — the replenishment migration's destination is the fact
+-- ----------------------------------------------------------------------------
+
+/-- A second scheduling context, so the cancelled caller can hold a binding of its
+own and make HP4.6's recipient guard refuse the reclaim. -/
+private def scIdOther : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 704
+
+/-- **The RETIRED destination**, computed here and nowhere else: until WS-RR RR8.11
+`cancelIpcBlockingMigrated` aimed the migration at `determineTargetCore st victim` —
+the home of the thread the reclaim is *about to* bind the context to — rather than
+at the home of the thread it is bound to **after** the teardown.  Kept beside the
+live reading so the assertions below are known to discriminate rather than merely to
+pass. -/
+private def retiredVictimHomeMigration (st : SystemState) (victim : SeLe4n.ThreadId)
+    (tcb : TCB) : SystemState :=
+  match Lifecycle.Suspend.cancelledCallerDonation? st victim tcb with
+  | some (scId₀, holder) =>
+      migrateSchedContextReplenishment (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) scId₀
+        (determineTargetCore st holder) (determineTargetCore st victim)
+  | none => Lifecycle.Suspend.cancelIpcBlocking st victim tcb
+
+/-- **The shape on which a refused reclaim and the retired destination part
+company.**
+
+`stFrameHeadReclaim`'s state with one field changed: the cancelled caller holds a
+scheduling context of its **own** (`.bound scIdOther`), which is a state
+`donationOwnerValid` permits — nothing names the victim as a donation's owner here,
+because the holder's binding is `.donated scId victim`… and that is precisely what
+the guard exists for.  HP4.6's `donationRecipientAcceptable` refuses to overwrite a
+binding the recipient already has, so the reclaim commits nothing and `scId` stays
+bound to the holder, homed on core 2, with its replenishment on core 2's queue.
+
+Reachable with ordinary syscalls: a caller answered out of order is woken `.ready`
+and `.unbound` and may bind a second reservation while its frame is still on a
+stack (the HP10.7 discussion records the same window for the redirect's
+rebindability guard).  The fixture is hand-built because driving it needs a
+delegated reply, which is a longer scenario than the one fact being measured. -/
+private def stRefusedReclaimRemoteHolder : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject rId.toObjId (.reply
+          { replyId := rId, caller := some victimTid, next := some (.head scId) })
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
+          ipcState := .blockedOnReply epId (some serverTid),
+          replyObject := some rId,
+          schedContextBinding := .bound scIdOther })
+      |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
+          schedContextBinding := .donated scId victimTid })
+      |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
+      |>.build)
+  let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
+  { base with scheduler := base.scheduler.setReplenishQueueOnCore core2 rq2 }
+
+/-- Does core `c`'s replenish queue hold an entry for `sc`? -/
+private def replenishHolds (st : SystemState) (c : CoreId) (sc : SeLe4n.SchedContextId) : Bool :=
+  (st.scheduler.replenishQueueOnCore c).entries.any (fun e => e.1 == sc)
+
+/-- **WS-RR RR8.11: the migration's destination is the bound thread's home, not the
+victim's.**
+
+The decisive comparison is (iii) against (iv): one state, two destinations, opposite
+outcomes.  The retired reading moves `scId`'s replenishment to core 1 while `scId` is
+still bound to a thread homed on core 2 — which is
+`replenishQueueAffinityConsistentOnCore`'s own negation at core 1 — and the live
+reading leaves it where the invariant says it belongs.
+
+**On the mutation discipline.**  Reverting the destination to
+`determineTargetCore st victim` does not reach these assertions: it fails to
+elaborate `cancelIpcBlockingMigrated_eq_teardown_of_reclaim_inert` and
+`cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp` first,
+because RR8.11 *states* the destination rather than merely computing it.  That is
+the stronger outcome, and it is why the discrimination is exhibited inside the
+witness rather than by mutating production. -/
+private def runReplenishDestinationChecks : IO Unit := do
+  IO.println "--- §3.25 WS-RR RR8.11 the replenishment destination is the fact ---"
+  let st := stRefusedReclaimRemoteHolder
+  let tcb := victimTcb st
+  -- (i) The trigger fires on the holder, whose home differs from the victim's.
+  assertBool "setup: the reclaim's trigger resolves the holder off the victim's frame"
+    (decide (Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb
+      = some (scId, serverTid)))
+  assertBool "setup: the holder is homed on core 2 and the victim on core 1"
+    (decide (determineTargetCore st serverTid = core2)
+      && decide (determineTargetCore st victimTid = core1))
+  assertBool "setup: the context's replenishment sits on the holder's home core"
+    (replenishHolds st core2 scId && !replenishHolds st core1 scId)
+  -- (ii) The reclaim REFUSES: the recipient guard will not overwrite the victim's
+  -- own binding, so the context is still bound to the holder afterwards.
+  assertBool "the reclaim commits nothing — `scId` is still bound to the holder"
+    (decide (((Lifecycle.Suspend.returnDonationToCancelledCaller st victimTid
+        tcb).getSchedContext? scId).bind (·.boundThread) = some serverTid))
+  assertBool "...and so is it after the whole teardown"
+    (decide (((Lifecycle.Suspend.cancelIpcBlocking st victimTid
+        tcb).getSchedContext? scId).bind (·.boundThread) = some serverTid))
+  -- (iii) The RETIRED destination moves the replenishment to the victim's home,
+  -- where no thread bound to `scId` is homed.
+  let retired := retiredVictimHomeMigration st victimTid tcb
+  assertBool "the RETIRED victim-home destination moves the replenishment to core 1"
+    (replenishHolds retired core1 scId && !replenishHolds retired core2 scId)
+  assertBool "...and that breaks affinity consistency: the context is bound to a \
+core-2 thread"
+    (decide ((retired.getSchedContext? scId).bind (·.boundThread) = some serverTid)
+      && decide (determineTargetCore retired serverTid = core2))
+  -- (iv) The LIVE destination is the bound thread's home, so the migration is its
+  -- own no-op and the replenishment stays put.
+  let live := cancelIpcBlockingMigrated victimTid tcb st
+  assertBool "the LIVE bound-thread destination leaves the replenishment on core 2"
+    (replenishHolds live core2 scId && !replenishHolds live core1 scId)
+  assertBool "the live destination resolves to the holder's home"
+    (decide (replenishHomeOfSchedContext (Lifecycle.Suspend.cancelIpcBlocking st victimTid tcb)
+      scId (determineTargetCore st serverTid) = core2))
+
 def runSmpCancellationChecks : IO Unit := do
   IO.println "=== SmpCancellationSuite (WS-SM SM6.E cancellation across cores) ==="
   runEndpointCancelChecks
@@ -2226,6 +2340,7 @@ def runSmpCancellationChecks : IO Unit := do
   runUnblockFrameStagingChecks
   runDonationDoublePopFootprintChecks
   runFrameHeadReclaimChecks
+  runReplenishDestinationChecks
   IO.println "SmpCancellationSuite: all checks passed."
 
 end SeLe4n.Testing.SmpCancellation

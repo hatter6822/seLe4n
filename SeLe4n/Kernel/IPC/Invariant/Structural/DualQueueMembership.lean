@@ -4886,6 +4886,75 @@ theorem removeCallerReplyFrame_clears_prev_of_bottom_frame (st st' : SystemState
       exact hAbove1
 
 open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.11: the consume writes no scheduling context.**
+
+Extracted from `removeCallerReplyFrame_getSchedContext?_eq`, which had this
+argument inlined as a local `have`: the cancellation teardown needs the same fact
+about the same step, and a second copy of a two-store case analysis is the
+duplication this project spends its length retiring.
+
+Each of the two stores writes a kind that is not `.schedContext`, and at a key
+where the context's id *is* the reply's or the caller's both readings are `none` —
+which is why it takes no distinctness hypothesis: `ReplyId.toObjId`,
+`ThreadId.toObjId` and `SchedContextId.toObjId` are three wrappers over one
+`ObjId`, so only the store's contents rule a collision out. -/
+theorem consumeCallerReply_getSchedContext?_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st'))
+    (scId : SeLe4n.SchedContextId) :
+    st'.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hMid : st1.getSchedContext? scId = st.getSchedContext? scId := by
+      unfold consumeReply at hCons
+      cases hG : st.getReply? rid with
+      | none => rw [hG] at hCons; cases hCons; rfl
+      | some r0 =>
+        rw [hG] at hCons
+        by_cases hk : scId.toObjId = rid.toObjId
+        · have hPre : st.objects[scId.toObjId]? = some (.reply r0) := by
+            rw [hk]; exact (getReply?_eq_some_iff _ _ _).mp hG
+          have hPost : st1.objects[scId.toObjId]? = some (.reply r0.consumed) := by
+            rw [hk]; exact storeObject_objects_eq' st _ _ _ hObjInv hCons
+          unfold SystemState.getSchedContext?; rw [hPre, hPost]
+        · unfold SystemState.getSchedContext?
+          rw [storeObject_objects_ne st st1 rid.toObjId scId.toObjId _ hk hObjInv hCons]
+    have hInv1 := consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact hMid
+    | some tcb =>
+      simp only [hT] at hStep
+      rw [← hMid]
+      by_cases hk : scId.toObjId = caller.toObjId
+      · have hPre : st1.objects[scId.toObjId]? = some (.tcb tcb) := by
+          rw [hk]; exact (getTcb?_eq_some_iff _ _ _).mp hT
+        have hPost : st'.objects[scId.toObjId]?
+            = some (.tcb { tcb with replyObject := none }) := by
+          rw [hk]; exact storeObject_objects_eq' st1 _ _ _ hInv1 hStep
+        unfold SystemState.getSchedContext?; rw [hPre, hPost]
+      · unfold SystemState.getSchedContext?
+        rw [storeObject_objects_ne st1 st' caller.toObjId scId.toObjId _ hk hInv1 hStep]
+
+/-- **WS-RR RR8.11: the splice writes no scheduling context.**  Extracted beside
+`consumeCallerReply_getSchedContext?_eq` for the same reason: the splice's own
+rewrite lemma answers at every key with no distinctness condition — either the
+objects agree, or both sides hold a Reply — and the cancellation teardown asks the
+same question of the same step. -/
+theorem spliceReplyFrameOutOrSelf_getSchedContext?_eq (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (scId : SeLe4n.SchedContextId) :
+    (spliceReplyFrameOutOrSelf st rid).getSchedContext? scId = st.getSchedContext? scId := by
+  rcases spliceReplyFrameOutOrSelf_objects_rewrite st rid hObjInv scId.toObjId with
+    h | ⟨_, _, hPre, hPost, _⟩
+  · unfold SystemState.getSchedContext?; rw [h]
+  · unfold SystemState.getSchedContext?; rw [hPre, hPost]
+
 /-- **WS-HP HP6.9: the removal moves no scheduling context.**
 
 Every key the removal writes holds an object of the kind it wrote there — the
@@ -4909,61 +4978,12 @@ theorem removeCallerReplyFrame_getSchedContext?_eq (st st' : SystemState)
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st'))
     (scId : SeLe4n.SchedContextId) :
     st'.getSchedContext? scId = st.getSchedContext? scId := by
+  -- WS-RR RR8.11: the two legs are the two extracted lemmas above, which the
+  -- cancellation teardown reads as well; this composes them.
   rw [removeCallerReplyFrame_eq] at hStep
-  -- Leg 2 first, as a fact about the consume at any state: each of its two stores
-  -- writes a kind that is not `.schedContext`, and where the key it writes *is*
-  -- the context's both readings are `none`.
-  have hConsume : ∀ (s s' : SystemState), s.objects.invExt →
-      consumeCallerReply caller rid s = .ok ((), s') →
-      s'.getSchedContext? scId = s.getSchedContext? scId := by
-    intro s s' hInv hC
-    unfold consumeCallerReply at hC
-    cases hCons : consumeReply rid s with
-    | error e => simp [hCons] at hC
-    | ok p1 =>
-      obtain ⟨_, s1⟩ := p1
-      simp only [hCons] at hC
-      have hMid : s1.getSchedContext? scId = s.getSchedContext? scId := by
-        unfold consumeReply at hCons
-        cases hG : s.getReply? rid with
-        | none => rw [hG] at hCons; cases hCons; rfl
-        | some r0 =>
-          rw [hG] at hCons
-          by_cases hk : scId.toObjId = rid.toObjId
-          · have hPre : s.objects[scId.toObjId]? = some (.reply r0) := by
-              rw [hk]; exact (getReply?_eq_some_iff _ _ _).mp hG
-            have hPost : s1.objects[scId.toObjId]? = some (.reply r0.consumed) := by
-              rw [hk]; exact storeObject_objects_eq' s _ _ _ hInv hCons
-            unfold SystemState.getSchedContext?; rw [hPre, hPost]
-          · unfold SystemState.getSchedContext?
-            rw [storeObject_objects_ne s s1 rid.toObjId scId.toObjId _ hk hInv hCons]
-      have hInv1 := consumeReply_preserves_objects_invExt s s1 rid hInv hCons
-      cases hT : s1.getTcb? caller with
-      | none =>
-        simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hC
-        rw [← hC]; exact hMid
-      | some tcb =>
-        simp only [hT] at hC
-        rw [← hMid]
-        by_cases hk : scId.toObjId = caller.toObjId
-        · have hPre : s1.objects[scId.toObjId]? = some (.tcb tcb) := by
-            rw [hk]; exact (getTcb?_eq_some_iff _ _ _).mp hT
-          have hPost : s'.objects[scId.toObjId]?
-              = some (.tcb { tcb with replyObject := none }) := by
-            rw [hk]; exact storeObject_objects_eq' s1 _ _ _ hInv1 hC
-          unfold SystemState.getSchedContext?; rw [hPre, hPost]
-        · unfold SystemState.getSchedContext?
-          rw [storeObject_objects_ne s1 s' caller.toObjId scId.toObjId _ hk hInv1 hC]
-  -- Leg 1: the splice.  Its own rewrite lemma answers at every key with no
-  -- distinctness condition — either the objects agree, or both sides hold a Reply.
-  have h1 : (spliceReplyFrameOutOrSelf st rid).getSchedContext? scId
-      = st.getSchedContext? scId := by
-    rcases spliceReplyFrameOutOrSelf_objects_rewrite st rid hObjInv scId.toObjId with
-      h | ⟨_, _, hPre, hPost, _⟩
-    · unfold SystemState.getSchedContext?; rw [h]
-    · unfold SystemState.getSchedContext?; rw [hPre, hPost]
-  rw [hConsume _ st' (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep,
-    h1]
+  rw [consumeCallerReply_getSchedContext?_eq _ st' caller rid
+      (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep scId,
+    spliceReplyFrameOutOrSelf_getSchedContext?_eq st rid hObjInv scId]
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (PR #822 review): the success preconditions of `linkCallerReply`:

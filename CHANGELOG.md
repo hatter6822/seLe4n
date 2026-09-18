@@ -1,3 +1,90 @@
+## v0.35.86 — WS-RR RR8.11: the replenishment migration's destination is the fact
+
+**The congruence this row scheduled could not be stated of the code as written.**
+RR8.11 was to prove that `cancelIpcBlockingMigrated` *establishes*
+`replenishQueueAffinityConsistent_smp` — the SM5.H obligation the migration's own
+docstring had registered, with the reply chain's identical shape already proved and
+"only a congruence over the two TCB writes the teardown performs" left.  Building it
+found that the migration was aimed at the wrong core.
+
+`cancelIpcBlockingMigrated` moved the reclaimed context's replenishments to
+`determineTargetCore st victim` — the home of the thread the reclaim is *about to*
+bind it to.  The reclaim's guards are fail-closed: the outer-caller check, HP4.6's
+recipient guard and the head validation all refuse, and on a refusal
+`returnDonationToCancelledCaller` returns its own input with `scId` still bound to
+the holder while this migration still fired.  That moves a context's
+replenishments to a core no thread bound to it is homed on, which is
+`replenishQueueAffinityConsistentOnCore`'s own negation — so no hypothesis short of
+"the reclaim committed" could have carried the congruence.  **The reply path never
+had the defect**, because its migration sits in the `.ok` continuation of its
+return (`applyReplyDonationOnCore`): one question, two spellings, and the pure one
+had it wrong.
+
+Latent rather than live, and the severity is bounded by that: the refusal needs a
+state violating one of the two *stated* coherence facts
+(`replyFrameHeadHolderDonation`, `donatedContextIsOwnerFrameHead`), which hold on
+every reachable state by arguments their docstrings carry; nothing boots before
+SM10.1; and the consequence is CBS bookkeeping — a reservation's refill scheduled on
+a core its thread does not run on — not memory safety.  What was wrong was that a
+live transition's soundness rested on an unstated hypothesis.
+
+**The destination is the fact now.**  `replenishHomeOfSchedContext`
+(`SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean`) reads the home of the thread
+the context is bound to, on the state the migration runs against — which is exactly
+what the invariant demands of every entry naming it.  Three consequences:
+
+* a **refused** reclaim leaves `scId` bound to the holder, so the destination *is*
+  the source and `migrateSchedContextReplenishment_noop` collapses the migration to
+  the identity (`cancelIpcBlockingMigrated_eq_teardown_of_reclaim_inert`);
+* a **committed** reclaim binds it to the victim, so the destination is
+  `determineTargetCore st victim` exactly as before — the fix is a no-op on every
+  reachable state, and the golden trace is byte-identical
+  (`cancelIpcBlockingMigrated_eq_victim_home_of_committed`);
+* the destination obligation becomes `replenishHomeOfSchedContext_spec`, which takes
+  no hypothesis — so
+  `cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp` and
+  `cancelIpcBlockingOnCore_establishes_replenishQueueAffinityConsistent_smp` need
+  nothing beyond `objects.invExt` and the pre-state invariant.
+
+`migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp` is the
+general form of what any rebind-then-migrate transition owes.  It requires the
+**source** to be where the invariant currently puts the context — spelled as the
+pre-state binding and its home rather than as an implication, because a context that
+resolves to nothing or is bound to no thread constrains no entry and so cannot
+locate the entries a migration would move.
+
+**Three teardown frames were built for it, and they are the cut's bulk.**
+`cancelIpcBlocking_getSchedContext?_eq_of_reclaim_frame` is one six-arm analysis
+with two corollaries (the `_ne` form the committing case needs, the
+`_of_reclaim_inert` form the refused case needs); `cancelIpcBlocking_affinity_frame`
+is the `Option.map` form of "the teardown moves no thread's home core", whose
+`none` case is the statement that it **materialises no thread** — the direction the
+tree lacked at the abort and at the consume, so `consumeCallerReply_getTcb?_backward`
+is new.  `cancelIpcBlocking_determineTargetCore_eq` moved from
+`IPC/CrossCore/Cancellation.lean` and was generalised from the victim to any thread:
+its old proof could only be stated at the victim, because
+`cancelIpcBlocking_getTcb?_none` is, and the affinity invariant reads the home of
+whichever thread a context is bound to.  A tombstone at the old site records the
+move; the name is unchanged, so `suspendThreadOnCore`'s G1 citation still resolves.
+
+**Two lemmas were extracted rather than written twice.**
+`consumeCallerReply_getSchedContext?_eq` and
+`spliceReplyFrameOutOrSelf_getSchedContext?_eq` were inlined inside
+`removeCallerReplyFrame_getSchedContext?_eq`; the cancellation teardown asks the
+same question of the same steps, and a second copy of a two-store case analysis is
+the duplication this project spends its length retiring.  That theorem now composes
+them.  Three unconsumed resolver lemmas written along the way were deleted rather
+than left.
+
+Fifteen Tier 3 anchors — twelve positive and three negative — five of them
+mutation-tested in both directions with the baseline
+silent before and after — the decisive one keeps every token and puts the victim's
+pre-state home back in the destination position.  `tests/SmpCancellationSuite.lean`
+§3.25 computes the retired destination beside the live one on a refused reclaim with
+the holder on core 2 and the victim on core 1: the retired reading moves the
+replenishment to core 1 while the context is bound to a core-2 thread, the live
+reading leaves it on core 2.  `docs/REGISTERED_DEBT.md`'s row closes.
+
 ## v0.35.85 — WS-RR RR8.10: the cancellation's IPC bundle, arm-complete and across cores
 
 **Three arm theorems in three modules, and nothing that put them together.**

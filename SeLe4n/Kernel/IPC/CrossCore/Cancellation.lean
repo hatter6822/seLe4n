@@ -354,28 +354,43 @@ where this tree puts it for every other donation-carrying path
 chain's return likewise), and it is what keeps `cancelIpcBlocking` an
 objects-only write — see `cancelIpcBlocking_scheduler_eq`.
 
-Both home cores are resolved from the **pre**-state so the `withLockSet` bracket
-can declare the two `SchedLockId.replenishQueue` write locks before the
-transition runs; neither the teardown nor the return writes a `cpuAffinity`, so a
-pre-state reading is the reading the post-state would give.  A shared home core
-is a definitional no-op (`migrateSchedContextReplenishment_noop`), so on one core
-this is exactly `cancelIpcBlocking`.
+The **source** core is resolved from the pre-state so the `withLockSet` bracket
+can declare the `SchedLockId.replenishQueue` write locks before the transition
+runs; neither the teardown nor the return writes a `cpuAffinity`, so a pre-state
+reading is the reading the post-state would give.  A shared home core is a
+definitional no-op (`migrateSchedContextReplenishment_noop`), so on one core this
+is exactly `cancelIpcBlocking`.
 
-**Registered obligation** (WS-RR RR8, `docs/REGISTERED_DEBT.md`): that this
-migration *establishes* `replenishQueueAffinityConsistent_smp` on the composite.
-The reply chain's identical shape is proved
-(`returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp`),
-and the only difference here is the two TCB writes the teardown performs between
-the return and the migration — neither touches a SchedContext, a `cpuAffinity` or
-the scheduler, so the argument transports through a congruence this cut does not
-yet build.  Until it does, the migration is present and correct by construction
-but not proved sufficient; a reader must not cite it as such. -/
+**WS-RR RR8.11: the DESTINATION is the fact, not the victim's home.**  Until
+RR8.11 the destination was `determineTargetCore st victim` — the home of the
+thread the reclaim is *about to* bind `scId` to — and the reclaim can refuse: the
+outer-caller check, the recipient guard and the head validation are all
+fail-closed, and on a refusal `returnDonationToCancelledCaller` returns `st` with
+`scId` still bound to `holder` while this migration still fired.  That moved
+`scId`'s replenishments to a core no thread bound to `scId` is homed on, which is
+`replenishQueueAffinityConsistentOnCore`'s own negation.  The reply path never had
+the defect because its migration sits in the `.ok` continuation of its return
+(`applyReplyDonationOnCore`), so the asymmetry was between two spellings of one
+question — and the pure spelling is the one that got it wrong.
+
+`replenishHomeOfSchedContext` reads the home of the thread `scId` is bound to **on
+the post-teardown state**, which is what the invariant demands of every entry
+naming it.  On a committed reclaim that thread is the victim, so the destination is
+`determineTargetCore st victim` exactly as before (the teardown writes no
+`cpuAffinity`); on a refused one it is `holder`, whose home *is* the source, so the
+migration degenerates to its own no-op.  The footprint is unchanged either way —
+both cores it can name were already declared — and
+`cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp` needs
+no hypothesis beyond `st.objects.invExt` and the pre-state invariant, because the
+destination obligation becomes `replenishHomeOfSchedContext_spec`. -/
 def cancelIpcBlockingMigrated (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) :
     SystemState :=
   match Lifecycle.Suspend.cancelledCallerDonation? st victim tcb with
   | some (scId, holder) =>
       migrateSchedContextReplenishment (cancelIpcBlocking st victim tcb) scId
-        (determineTargetCore st holder) (determineTargetCore st victim)
+        (determineTargetCore st holder)
+        (replenishHomeOfSchedContext (cancelIpcBlocking st victim tcb) scId
+          (determineTargetCore st holder))
   | none => cancelIpcBlocking st victim tcb
 
 /-- The migrated teardown is the plain teardown when nothing was donated — which
@@ -1175,29 +1190,14 @@ theorem cancelIpcBlockingOnCore_ready_eq_descheduleThread
       rw [hReady])
   rw [cancelIpcBlockingOnCore_eq_descheduleThread, hNoWake, hId]
 
-/-- WS-SM SM6.E (resolution frame): the teardown never moves the victim's
-home core — `cancelIpcBlocking` preserves TCB-kind and `cpuAffinity` at
-every key (`cancelIpcBlocking_tcb_lookup`) and never materialises a TCB at
-an unresolved key (`cancelIpcBlocking_getTcb?_none`), so
-`determineTargetCore` reads the same affinity before and after.  Since WS-RR
-RR8.6 the deschedule no longer reads it; what still does is the `.bound` arm's
-replenish purge core in `suspendThreadOnCore`, resolved on the pre-state. -/
-theorem cancelIpcBlocking_determineTargetCore_eq
-    (st : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (hInv : st.objects.invExt) :
-    determineTargetCore (cancelIpcBlocking st victim tcb) victim
-      = determineTargetCore st victim := by
-  cases hT : st.getTcb? victim with
-  | none =>
-    have hPost := cancelIpcBlocking_getTcb?_none st victim tcb hInv hT
-    simp only [determineTargetCore, hPost, hT]
-  | some t0 =>
-    obtain ⟨t', hL', hAff'⟩ := cancelIpcBlocking_tcb_lookup st victim tcb
-      victim.toObjId t0 hInv
-      ((SystemState.getTcb?_eq_some_iff st victim t0).mp hT)
-    have hPost : (cancelIpcBlocking st victim tcb).getTcb? victim = some t' :=
-      (SystemState.getTcb?_eq_some_iff _ victim t').mpr hL'
-    simp only [determineTargetCore, hPost, hT, hAff']
+-- WS-RR RR8.11: `cancelIpcBlocking_determineTargetCore_eq` moved to
+-- `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean` and was generalised there
+-- from the victim to an arbitrary thread.  The proof it had here could only be
+-- stated at the victim, because `cancelIpcBlocking_getTcb?_none` is: the general
+-- form needs the teardown's whole affinity frame, which is built from the
+-- per-step frames that module has the imports for.  The name is unchanged, so
+-- the citation in `suspendThreadOnCore`'s G1 comment still resolves.
+
 
 /-- WS-RR RR8.6: neither the teardown nor the replenishment migration writes a
 run queue or a current slot, so every thread's placement on the migrated

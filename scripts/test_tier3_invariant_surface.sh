@@ -14912,4 +14912,40 @@ run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.IPC.Invariant.CancellationBun
 # from production code -- which is how RR8.10 met it.
 run_negative_check "INVARIANT" rg -n '^theorem restoreToReadyStaging_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 
+# ---------------------------------------------------------------------------
+# WS-RR RR8.11 -- the replenishment migration's DESTINATION is the fact.  The
+# migration aimed at the home of the thread the reclaim is about to bind the
+# context to; the reclaim's guards are fail-closed, so on a refusal it moved
+# `scId`'s replenishments to a core no thread bound to `scId` is homed on.  The
+# destination is now read off the post-teardown binding.
+run_check "INVARIANT" rg -n '^def replenishHomeOfSchedContext' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
+run_check "INVARIANT" rg -n '^theorem replenishHomeOfSchedContext_spec' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
+run_check "INVARIANT" rg -n '^theorem migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
+# Relation, not presence: the destination must be `replenishHomeOfSchedContext`
+# OF THE POST-TEARDOWN STATE.  Resolved on the pre-state it would be the pre-state
+# binding's home, which is the source -- a migration that never moves anything.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrated[^\n]*(\n([ \t][^\n]*)?)*replenishHomeOfSchedContext \(cancelIpcBlocking st victim tcb\) scId" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# NEGATIVE: and the retired destination -- the victim's pre-state home -- must not
+# come back.  The source position keeps `determineTargetCore st holder`, so this
+# names `victim` specifically.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrated[^\n]*(\n([ \t][^\n]*)?)*\(determineTargetCore st victim\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_establishes_replenishQueueAffinityConsistent_smp' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_eq_teardown_of_reclaim_inert' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_eq_victim_home_of_committed' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+# ...and the keystone takes NO hypothesis about the reclaim committing.  Such a
+# hypothesis would restore the proxy while keeping the theorem's name.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*\(h[A-Za-z]* : (returnDonationToCancelledCaller|returnDonatedSchedContextResolved|Lifecycle.Suspend.returnDonation)" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
+# The teardown's two frames the keystone consumes, and the question of which
+# thread's home the teardown moves has ONE owner: the general form in
+# CancellationBundle, not a victim-specialised copy back in Cancellation.lean.
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_getSchedContext\?_ne' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_affinity_frame' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_negative_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_determineTargetCore_eq' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+# The witness that makes the flip a measurement rather than a claim: the retired
+# destination computed beside the live one, in the suite that refutes it and
+# nowhere else.
+run_check "INVARIANT" rg -n '^private def retiredVictimHomeMigration' tests/SmpCancellationSuite.lean
+
 finalize_report
