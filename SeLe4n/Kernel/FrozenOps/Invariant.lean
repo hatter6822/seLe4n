@@ -39,17 +39,11 @@ open SeLe4n.Model
 -- Q7-E: frozenStoreObject Frame Lemmas
 -- ============================================================================
 
-private theorem frozenStoreObject_extracts_state
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st st' : FrozenSystemState)
-    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    ∃ objects', st.objects.set id obj = some objects' ∧
-      st' = { st with objects := objects' } := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' =>
-    exact ⟨objects', rfl, by simp [hSet] at hOk; exact hOk.symm⟩
-  | none => simp [hSet] at hOk
+-- `frozenStoreObject_extracts_state` lived here, `private`, saying exactly what
+-- `Core.frozenStoreObject_ok` now says beside the write itself.  Eleven proofs
+-- across `Core` and `Commutativity` could not see it and re-derived it by
+-- unfolding to `FrozenMap.set`; the owner moved down to the layer every asker
+-- reaches.  Cite `frozenStoreObject_ok`.
 
 /-- Q7-E: `frozenStoreObject` preserves CDT edges. -/
 theorem frozenStoreObject_preserves_cdtEdges
@@ -57,7 +51,7 @@ theorem frozenStoreObject_preserves_cdtEdges
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.cdtEdges = st.cdtEdges := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt; rfl
 
 /-- Q7-E: `frozenStoreObject` preserves the object index. -/
@@ -66,7 +60,7 @@ theorem frozenStoreObject_preserves_objectIndex
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.objectIndex = st.objectIndex := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt; rfl
 
 /-- Q7-E: `frozenStoreObject` preserves CDT child map. -/
@@ -75,7 +69,7 @@ theorem frozenStoreObject_preserves_cdtChildMap
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.cdtChildMap = st.cdtChildMap := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt; rfl
 
 /-- Q7-E: `frozenStoreObject` preserves CDT parent map. -/
@@ -84,7 +78,7 @@ theorem frozenStoreObject_preserves_cdtParentMap
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.cdtParentMap = st.cdtParentMap := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt; rfl
 
 /-- Q7-E: `frozenStoreObject` preserves CDT next node counter. -/
@@ -93,7 +87,7 @@ theorem frozenStoreObject_preserves_cdtNextNode
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.cdtNextNode = st.cdtNextNode := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt; rfl
 
 -- ============================================================================
@@ -106,7 +100,7 @@ theorem frozenStoreObject_preserves_services
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.services = st.services := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt; rfl
 
 /-- Q7-E: `frozenStoreObject` preserves CDT slot-node map. -/
@@ -115,7 +109,7 @@ theorem frozenStoreObject_preserves_cdtSlotNode'
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.cdtSlotNode = st.cdtSlotNode := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt; rfl
 
 /-- Q7-E: `frozenStoreObject` preserves CDT node-slot map. -/
@@ -124,7 +118,7 @@ theorem frozenStoreObject_preserves_cdtNodeSlot'
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.cdtNodeSlot = st.cdtNodeSlot := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt; rfl
 
 -- ============================================================================
@@ -158,11 +152,8 @@ theorem frozenSaveOutgoingContext_preserves_scheduler
     split at hOk
     · -- objects.get? = some (.tcb outTcb)
       rename_i outTcb _
-      simp only at hOk
-      cases hSet : st.objects.set outTid.toObjId
-          (FrozenKernelObject.tcb { outTcb with registerContext := st.machine.regs }) with
-      | some objects' => simp [hSet] at hOk; rw [← hOk]
-      | none => simp [hSet] at hOk
+      obtain ⟨_, hSt⟩ := frozenWithObjectStored_only_modifies_objects hOk
+      rw [hSt]
     · simp at hOk
 
 /-- R1-E/M-11: When `frozenRestoreIncomingContext` succeeds, the scheduler
@@ -210,7 +201,7 @@ theorem frozenStoreObject_preserves_frozenDirect
         SeLe4n.Kernel.apiInvariantBundle sst' ∧
         (∀ (oid : ObjId), (sst'.objects.get? oid).map freezeObject = st'.objects.get? oid)) :
     apiInvariantBundle_frozenDirect st' := by
-  obtain ⟨objects', _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  obtain ⟨objects', _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt
   exact frozenDirect_preserved_by_set st hInv objects' hCompat
 

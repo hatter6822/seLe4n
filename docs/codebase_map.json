@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "a11cd306551a0222fbbcb53d2aa5d644a8ce2071",
-      "tree_sha": "3ba44eb64ac682a0139645edda3b6fb74c9627ab",
-      "committed_at_utc": "2026-09-18T14:47:48+00:00"
+      "commit_sha": "64102447ef4680f2a375ad655ff8bbc7d42c9e60",
+      "tree_sha": "04261bc7242f056fb1c34486d12f9caf9ad4a166",
+      "committed_at_utc": "2026-09-18T15:38:24+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2cda4bc5f389d0a36bb3244f0754477cf8ad0b12f226efc4b4befc9d49a264b8"
+    "source_digest": "860720e1e183677a0d7cecc498b53f0b17668b279d3bedb634b73d25b3f3f43c"
   },
   "summary": {
     "module_count": 403,
-    "declaration_count": 21928
+    "declaration_count": 21936
   },
   "readme_sync": {
-    "version": "0.35.96",
+    "version": "0.35.97",
     "lean_toolchain": "v4.28.0",
     "production_files": 333,
-    "production_loc": 391466,
+    "production_loc": 391604,
     "test_files": 70,
     "test_loc": 79392,
-    "proved_theorem_lemma_decls": 13046,
+    "proved_theorem_lemma_decls": 13052,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -65040,43 +65040,40 @@
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "none",
-            "set",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_asidTable",
-          "line": 104,
+          "line": 103,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "none",
-            "set",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_serviceRegistry",
-          "line": 115,
+          "line": 113,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "none",
-            "set",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "FrozenMap.set_data_size",
-          "line": 130,
+          "line": 127,
           "called": [
             "FrozenMap",
             "FrozenMap.set",
@@ -65087,7 +65084,7 @@
         {
           "kind": "theorem",
           "name": "FrozenMap.set_contains_eq",
-          "line": 144,
+          "line": 141,
           "called": [
             "FrozenMap",
             "FrozenMap.contains",
@@ -65099,77 +65096,72 @@
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_cdtSlotNode",
-          "line": 152,
+          "line": 149,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "none",
-            "set",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_cdtNodeSlot",
-          "line": 163,
+          "line": 159,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "none",
-            "set",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_objectTypes",
-          "line": 174,
+          "line": 169,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "none",
-            "set",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_interfaceRegistry",
-          "line": 185,
+          "line": 179,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "none",
-            "set",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_objectIndexSet",
-          "line": 196,
+          "line": 189,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "none",
-            "set",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenQueuePushTail_preserves_scheduler",
-          "line": 213,
+          "line": 205,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -65183,7 +65175,7 @@
         {
           "kind": "theorem",
           "name": "frozenQueuePushTail_preserves_machine",
-          "line": 222,
+          "line": 214,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -65197,7 +65189,7 @@
         {
           "kind": "theorem",
           "name": "frozenQueuePushTail_preserves_asidTable",
-          "line": 231,
+          "line": 223,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -65211,7 +65203,7 @@
         {
           "kind": "theorem",
           "name": "frozenQueuePushTail_preserves_serviceRegistry",
-          "line": 240,
+          "line": 232,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -65225,7 +65217,7 @@
         {
           "kind": "theorem",
           "name": "frozenQueuePushTail_preserves_cdtEdges",
-          "line": 249,
+          "line": 241,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -65239,7 +65231,7 @@
         {
           "kind": "theorem",
           "name": "frozenQueuePushTail_preserves_irqHandlers",
-          "line": 258,
+          "line": 250,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -65255,7 +65247,7 @@
     {
       "module": "SeLe4n.Kernel.FrozenOps.Core",
       "path": "SeLe4n/Kernel/FrozenOps/Core.lean",
-      "declaration_count": 57,
+      "declaration_count": 66,
       "declarations": [
         {
           "kind": "namespace",
@@ -65340,11 +65332,12 @@
         },
         {
           "kind": "def",
-          "name": "frozenStoreObject",
-          "line": 144,
+          "name": "frozenWithObjectStored",
+          "line": 161,
           "called": [
-            "FrozenKernel",
             "FrozenKernelObject",
+            "FrozenSystemState",
+            "KernelError",
             "ObjId",
             "none",
             "set",
@@ -65353,8 +65346,107 @@
         },
         {
           "kind": "def",
+          "name": "frozenStoreObject",
+          "line": 172,
+          "called": [
+            "FrozenKernel",
+            "FrozenKernelObject",
+            "ObjId",
+            "frozenWithObjectStored",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenRewriteObject",
+          "line": 194,
+          "called": [
+            "FrozenKernelObject",
+            "FrozenSystemState",
+            "ObjId",
+            "frozenWithObjectStored",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenWithObjectStored_ok",
+          "line": 225,
+          "called": [
+            "FrozenKernelObject",
+            "FrozenSystemState",
+            "ObjId",
+            "frozenWithObjectStored",
+            "none",
+            "set",
+            "st",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenWithObjectStored_only_modifies_objects",
+          "line": 238,
+          "called": [
+            "FrozenKernelObject",
+            "FrozenSystemState",
+            "ObjId",
+            "frozenWithObjectStored",
+            "frozenWithObjectStored_ok",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenRewriteObject_only_modifies_objects",
+          "line": 246,
+          "called": [
+            "FrozenKernelObject",
+            "FrozenSystemState",
+            "ObjId",
+            "frozenRewriteObject",
+            "frozenWithObjectStored",
+            "frozenWithObjectStored_only_modifies_objects",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenOnlyObjects_rfl",
+          "line": 256,
+          "called": [
+            "FrozenSystemState",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenOnlyObjects_trans",
+          "line": 262,
+          "called": [
+            "FrozenSystemState",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenStoreObject_ok",
+          "line": 271,
+          "called": [
+            "FrozenKernelObject",
+            "FrozenSystemState",
+            "ObjId",
+            "frozenStoreObject",
+            "frozenWithObjectStored",
+            "frozenWithObjectStored_ok",
+            "set",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "frozenStoreTcb",
-          "line": 153,
+          "line": 286,
           "called": [
             "FrozenKernel",
             "TCB",
@@ -65366,7 +65458,7 @@
         {
           "kind": "def",
           "name": "frozenStoreEndpoint",
-          "line": 158,
+          "line": 291,
           "called": [
             "Endpoint",
             "FrozenKernel",
@@ -65378,7 +65470,7 @@
         {
           "kind": "def",
           "name": "frozenStoreNotification",
-          "line": 163,
+          "line": 296,
           "called": [
             "FrozenKernel",
             "Notification",
@@ -65390,7 +65482,7 @@
         {
           "kind": "def",
           "name": "frozenStoreTcbChecked",
-          "line": 197,
+          "line": 330,
           "called": [
             "FrozenKernel",
             "TCB",
@@ -65404,7 +65496,7 @@
         {
           "kind": "def",
           "name": "frozenStoreEndpointChecked",
-          "line": 205,
+          "line": 338,
           "called": [
             "Endpoint",
             "FrozenKernel",
@@ -65419,7 +65511,7 @@
         {
           "kind": "def",
           "name": "frozenStoreNotificationChecked",
-          "line": 213,
+          "line": 346,
           "called": [
             "FrozenKernel",
             "Notification",
@@ -65434,7 +65526,7 @@
         {
           "kind": "theorem",
           "name": "frozenStoreTcbChecked_ok_eq_frozenStoreTcb",
-          "line": 224,
+          "line": 357,
           "called": [
             "FrozenSystemState",
             "TCB",
@@ -65449,7 +65541,7 @@
         {
           "kind": "theorem",
           "name": "frozenStoreEndpointChecked_ok_eq_frozenStoreEndpoint",
-          "line": 235,
+          "line": 368,
           "called": [
             "Endpoint",
             "FrozenSystemState",
@@ -65465,7 +65557,7 @@
         {
           "kind": "theorem",
           "name": "frozenStoreNotificationChecked_ok_eq_frozenStoreNotification",
-          "line": 246,
+          "line": 379,
           "called": [
             "FrozenSystemState",
             "Notification",
@@ -65481,7 +65573,7 @@
         {
           "kind": "def",
           "name": "frozenEnsureRunnable",
-          "line": 283,
+          "line": 416,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -65499,7 +65591,7 @@
         {
           "kind": "def",
           "name": "frozenRemoveRunnable",
-          "line": 311,
+          "line": 444,
           "called": [
             "FrozenSystemState",
             "ThreadId",
@@ -65514,7 +65606,7 @@
         {
           "kind": "def",
           "name": "frozenWaitersOf",
-          "line": 338,
+          "line": 471,
           "called": [
             "FrozenSystemState",
             "ThreadId",
@@ -65526,7 +65618,7 @@
         {
           "kind": "def",
           "name": "frozenComputeMaxWaiterPriority",
-          "line": 357,
+          "line": 490,
           "called": [
             "FrozenSystemState",
             "Priority",
@@ -65541,7 +65633,7 @@
         {
           "kind": "def",
           "name": "frozenBlockingServer",
-          "line": 371,
+          "line": 504,
           "called": [
             "FrozenSystemState",
             "TCB.blockingServer",
@@ -65554,7 +65646,7 @@
         {
           "kind": "def",
           "name": "frozenUpdatePipBoost",
-          "line": 391,
+          "line": 524,
           "called": [
             "FrozenSystemState",
             "ThreadId",
@@ -65563,6 +65655,7 @@
             "contains",
             "filter",
             "frozenComputeMaxWaiterPriority",
+            "frozenRewriteObject",
             "get",
             "getTcb",
             "insert",
@@ -65574,7 +65667,7 @@
         {
           "kind": "def",
           "name": "frozenRevertPriorityInheritance",
-          "line": 437,
+          "line": 570,
           "called": [
             "FrozenSystemState",
             "ThreadId",
@@ -65588,17 +65681,17 @@
         {
           "kind": "def",
           "name": "frozenLinkCallerReply",
-          "line": 462,
+          "line": 595,
           "called": [
             "FrozenSystemState",
             "KernelError",
             "ReplyId",
             "ThreadId",
             "frozenLookupTcb",
+            "frozenWithObjectStored",
             "getObject",
             "isFree",
             "none",
-            "set",
             "st",
             "toObjId"
           ]
@@ -65606,7 +65699,7 @@
         {
           "kind": "def",
           "name": "frozenSpliceFrameBelow",
-          "line": 509,
+          "line": 640,
           "called": [
             "FrozenSystemState",
             "Reply",
@@ -65620,7 +65713,7 @@
         {
           "kind": "def",
           "name": "frozenSpliceReplyFrameStores",
-          "line": 530,
+          "line": 661,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -65628,8 +65721,8 @@
             "ReplyId",
             "frame",
             "frozenSpliceFrameBelow",
+            "frozenWithObjectStored",
             "none",
-            "set",
             "st",
             "toObjId"
           ]
@@ -65637,7 +65730,7 @@
         {
           "kind": "def",
           "name": "frozenSpliceReplyFrameOut",
-          "line": 569,
+          "line": 698,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -65652,7 +65745,7 @@
         {
           "kind": "def",
           "name": "frozenSpliceReplyFrameOutOrSelf",
-          "line": 588,
+          "line": 717,
           "called": [
             "FrozenSystemState",
             "ReplyId",
@@ -65663,15 +65756,15 @@
         {
           "kind": "theorem",
           "name": "frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below",
-          "line": 600,
+          "line": 729,
           "called": [
             "FrozenSystemState",
             "Reply",
             "ReplyId",
             "frozenSpliceFrameBelow",
             "frozenSpliceReplyFrameStores",
+            "frozenWithObjectStored",
             "none",
-            "set",
             "st",
             "toObjId"
           ]
@@ -65679,7 +65772,7 @@
         {
           "kind": "def",
           "name": "frozenReplyFrameHeadContext",
-          "line": 625,
+          "line": 752,
           "called": [
             "FrozenSystemState",
             "ReplyId",
@@ -65695,7 +65788,7 @@
         {
           "kind": "def",
           "name": "frozenReplyFrameHeadHolder",
-          "line": 645,
+          "line": 772,
           "called": [
             "FrozenSystemState",
             "ReplyId",
@@ -65712,7 +65805,7 @@
         {
           "kind": "def",
           "name": "frozenDonationHeadOf",
-          "line": 660,
+          "line": 787,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -65730,7 +65823,7 @@
         {
           "kind": "def",
           "name": "frozenOuterCallerAcceptable",
-          "line": 678,
+          "line": 805,
           "called": [
             "FrozenSystemState",
             "ThreadId",
@@ -65743,7 +65836,7 @@
         {
           "kind": "def",
           "name": "frozenDonationRecipientAcceptable",
-          "line": 706,
+          "line": 833,
           "called": [
             "FrozenSystemState",
             "ThreadId",
@@ -65755,7 +65848,7 @@
         {
           "kind": "def",
           "name": "frozenReplyStackOuterCaller",
-          "line": 718,
+          "line": 845,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -65774,7 +65867,7 @@
         {
           "kind": "def",
           "name": "frozenReplyFrameOnLiveStack",
-          "line": 753,
+          "line": 880,
           "called": [
             "FrozenSystemState",
             "TCB",
@@ -65790,18 +65883,18 @@
         {
           "kind": "def",
           "name": "frozenStoreDonationHeadPop",
-          "line": 778,
+          "line": 905,
           "called": [
             "FrozenSystemState",
             "KernelError",
             "Reply",
             "ReplyId",
             "SchedContextId",
+            "frozenWithObjectStored",
             "getReply",
             "head",
             "none",
             "scId",
-            "set",
             "st",
             "toObjId"
           ]
@@ -65809,7 +65902,7 @@
         {
           "kind": "def",
           "name": "frozenReturnDonatedSchedContext",
-          "line": 818,
+          "line": 943,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -65821,13 +65914,13 @@
             "frozenDonationRecipientAcceptable",
             "frozenOuterCallerAcceptable",
             "frozenStoreDonationHeadPop",
+            "frozenWithObjectStored",
             "getSchedContext",
             "getTcb",
             "head",
             "none",
             "scId",
             "serverTid",
-            "set",
             "st",
             "toObjId"
           ]
@@ -65835,7 +65928,7 @@
         {
           "kind": "def",
           "name": "frozenDonationOriginRebindable",
-          "line": 895,
+          "line": 1016,
           "called": [
             "FrozenSystemState",
             "ThreadId",
@@ -65847,7 +65940,7 @@
         {
           "kind": "def",
           "name": "frozenDonationOriginRecipient",
-          "line": 916,
+          "line": 1037,
           "called": [
             "FrozenSystemState",
             "SchedContextId",
@@ -65866,7 +65959,7 @@
         {
           "kind": "def",
           "name": "frozenReplyDonationRecipient",
-          "line": 945,
+          "line": 1066,
           "called": [
             "FrozenSystemState",
             "SchedContextId",
@@ -65879,7 +65972,7 @@
         {
           "kind": "theorem",
           "name": "frozenReplyDonationRecipient_eq_of_no_origin",
-          "line": 951,
+          "line": 1072,
           "called": [
             "FrozenSystemState",
             "SchedContextId",
@@ -65894,7 +65987,7 @@
         {
           "kind": "theorem",
           "name": "frozenReplyDonationRecipient_eq_origin",
-          "line": 958,
+          "line": 1079,
           "called": [
             "FrozenSystemState",
             "SchedContextId",
@@ -65908,7 +66001,7 @@
         {
           "kind": "def",
           "name": "frozenReturnDonatedSchedContextResolved",
-          "line": 969,
+          "line": 1090,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -65924,7 +66017,7 @@
         {
           "kind": "def",
           "name": "frozenStoreTcbIpcState",
-          "line": 978,
+          "line": 1099,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -65939,7 +66032,7 @@
         {
           "kind": "def",
           "name": "frozenStoreTcbIpcStateAndMessage",
-          "line": 994,
+          "line": 1115,
           "called": [
             "FrozenSystemState",
             "IpcMessage",
@@ -65955,14 +66048,14 @@
         {
           "kind": "def",
           "name": "frozenSaveOutgoingContext",
-          "line": 1012,
+          "line": 1133,
           "called": [
             "FrozenSystemState",
             "KernelError",
+            "frozenWithObjectStored",
             "getTcb",
             "none",
             "regs",
-            "set",
             "st",
             "toObjId"
           ]
@@ -65970,7 +66063,7 @@
         {
           "kind": "def",
           "name": "frozenRestoreIncomingContext",
-          "line": 1028,
+          "line": 1147,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -65984,7 +66077,7 @@
         {
           "kind": "def",
           "name": "frozenSetCurrentThread",
-          "line": 1036,
+          "line": 1155,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -65995,11 +66088,10 @@
         {
           "kind": "def",
           "name": "frozenQueuePushTailObjects",
-          "line": 1050,
+          "line": 1169,
           "called": [
             "Endpoint",
-            "FrozenKernelObject",
-            "FrozenMap",
+            "FrozenSystemState",
             "IntrusiveQueue",
             "KernelError",
             "ObjId",
@@ -66007,18 +66099,37 @@
             "ThreadId",
             "contains",
             "endpointId",
-            "get",
+            "frozenWithObjectStored",
+            "getTcb",
             "head",
             "none",
-            "set",
+            "st",
             "tail",
             "toObjId"
           ]
         },
         {
+          "kind": "theorem",
+          "name": "frozenQueuePushTailObjects_only_modifies_objects",
+          "line": 1229,
+          "called": [
+            "Endpoint",
+            "FrozenSystemState",
+            "ObjId",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "frozenOnlyObjects_rfl",
+            "frozenOnlyObjects_trans",
+            "frozenQueuePushTailObjects",
+            "frozenWithObjectStored_only_modifies_objects",
+            "st"
+          ]
+        },
+        {
           "kind": "def",
           "name": "frozenQueuePushTail",
-          "line": 1105,
+          "line": 1249,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -66035,11 +66146,9 @@
         {
           "kind": "def",
           "name": "frozenQueueRemove",
-          "line": 1136,
+          "line": 1278,
           "called": [
             "Endpoint",
-            "FrozenKernelObject",
-            "FrozenMap",
             "FrozenSystemState",
             "IntrusiveQueue",
             "KernelError",
@@ -66048,14 +66157,14 @@
             "dualQueueRemovalEnabled",
             "endpointId",
             "frozenLookupTcb",
-            "get",
+            "frozenWithObjectStored",
             "getObject",
+            "getTcb",
             "nextTid",
             "none",
             "prevTid",
             "queuePredecessorNamesSuccessor",
             "queueRemoveBoundary",
-            "set",
             "st",
             "toObjId"
           ]
@@ -66063,7 +66172,7 @@
         {
           "kind": "theorem",
           "name": "frozenQueuePushTail_only_modifies_objects",
-          "line": 1253,
+          "line": 1391,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -66071,14 +66180,14 @@
             "endpointId",
             "frozenLookupTcb",
             "frozenQueuePushTail",
-            "st",
-            "symm"
+            "frozenQueuePushTailObjects_only_modifies_objects",
+            "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenLookupObject_state_unchanged",
-          "line": 1271,
+          "line": 1409,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
@@ -66091,28 +66200,26 @@
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_scheduler",
-          "line": 1281,
+          "line": 1419,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "none",
-            "set",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_machine",
-          "line": 1292,
+          "line": 1429,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "none",
-            "set",
+            "frozenStoreObject_ok",
             "st"
           ]
         }
@@ -66121,7 +66228,7 @@
     {
       "module": "SeLe4n.Kernel.FrozenOps.Invariant",
       "path": "SeLe4n/Kernel/FrozenOps/Invariant.lean",
-      "declaration_count": 15,
+      "declaration_count": 14,
       "declarations": [
         {
           "kind": "namespace",
@@ -66131,127 +66238,112 @@
         },
         {
           "kind": "theorem",
-          "name": "frozenStoreObject_extracts_state",
-          "line": 42,
-          "called": [
-            "FrozenKernelObject",
-            "FrozenSystemState",
-            "ObjId",
-            "frozenStoreObject",
-            "none",
-            "set",
-            "st",
-            "symm"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "frozenStoreObject_preserves_cdtEdges",
-          "line": 55,
+          "line": 49,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "frozenStoreObject_extracts_state",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_objectIndex",
-          "line": 64,
+          "line": 58,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "frozenStoreObject_extracts_state",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_cdtChildMap",
-          "line": 73,
+          "line": 67,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "frozenStoreObject_extracts_state",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_cdtParentMap",
-          "line": 82,
+          "line": 76,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "frozenStoreObject_extracts_state",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_cdtNextNode",
-          "line": 91,
+          "line": 85,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "frozenStoreObject_extracts_state",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_services",
-          "line": 104,
+          "line": 98,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "frozenStoreObject_extracts_state",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_cdtSlotNode'",
-          "line": 113,
+          "line": 107,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "frozenStoreObject_extracts_state",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_cdtNodeSlot'",
-          "line": 122,
+          "line": 116,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
             "ObjId",
             "frozenStoreObject",
-            "frozenStoreObject_extracts_state",
+            "frozenStoreObject_ok",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenLookupObject_read_only",
-          "line": 135,
+          "line": 129,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
@@ -66264,21 +66356,18 @@
         {
           "kind": "theorem",
           "name": "frozenSaveOutgoingContext_preserves_scheduler",
-          "line": 148,
+          "line": 142,
           "called": [
             "FrozenSystemState",
             "frozenSaveOutgoingContext",
-            "none",
-            "regs",
-            "set",
-            "st",
-            "toObjId"
+            "frozenWithObjectStored_only_modifies_objects",
+            "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "frozenRestoreIncomingContext_preserves_scheduler",
-          "line": 170,
+          "line": 161,
           "called": [
             "FrozenSystemState",
             "ThreadId",
@@ -66289,7 +66378,7 @@
         {
           "kind": "theorem",
           "name": "frozenRestoreIncomingContext_preserves_objects",
-          "line": 181,
+          "line": 172,
           "called": [
             "FrozenSystemState",
             "ThreadId",
@@ -66300,7 +66389,7 @@
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_frozenDirect",
-          "line": 201,
+          "line": 192,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
@@ -66311,7 +66400,7 @@
             "freezeObject",
             "frozenDirect_preserved_by_set",
             "frozenStoreObject",
-            "frozenStoreObject_extracts_state",
+            "frozenStoreObject_ok",
             "get",
             "st"
           ]
@@ -66382,9 +66471,9 @@
           "called": [
             "FrozenKernel",
             "frozenSchedule",
+            "frozenWithObjectStored",
             "getTcb",
             "none",
-            "set",
             "st",
             "tick",
             "toObjId"
@@ -66393,7 +66482,7 @@
         {
           "kind": "def",
           "name": "frozenTaintFlow",
-          "line": 254,
+          "line": 253,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -66404,7 +66493,7 @@
         {
           "kind": "def",
           "name": "frozenTaintClear",
-          "line": 261,
+          "line": 260,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -66415,7 +66504,7 @@
         {
           "kind": "def",
           "name": "frozenBoundDeliveryTarget",
-          "line": 271,
+          "line": 270,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -66432,7 +66521,7 @@
         {
           "kind": "def",
           "name": "frozenNotificationSignal",
-          "line": 306,
+          "line": 305,
           "called": [
             "Badge",
             "FrozenKernel",
@@ -66452,12 +66541,12 @@
             "frozenStoreTcb",
             "frozenTaintClear",
             "frozenTaintFlow",
+            "frozenWithObjectStored",
             "getObject",
             "isEmpty",
             "none",
             "notificationId",
             "ofNatMasked",
-            "set",
             "st",
             "state",
             "tail",
@@ -66468,7 +66557,7 @@
         {
           "kind": "def",
           "name": "frozenNotificationWait",
-          "line": 440,
+          "line": 437,
           "called": [
             "Badge",
             "FrozenKernel",
@@ -66484,10 +66573,10 @@
             "frozenStoreTcbIpcStateAndMessage",
             "frozenTaintClear",
             "frozenTaintFlow",
+            "frozenWithObjectStored",
             "getObject",
             "none",
             "notificationId",
-            "set",
             "st",
             "state",
             "toObjId"
@@ -66496,7 +66585,7 @@
         {
           "kind": "def",
           "name": "frozenQueuePopHead",
-          "line": 527,
+          "line": 522,
           "called": [
             "FrozenSystemState",
             "IntrusiveQueue",
@@ -66508,10 +66597,10 @@
             "epId",
             "frozenLookupTcb",
             "frozenStoreTcb",
+            "frozenWithObjectStored",
             "getEndpoint",
             "head",
             "none",
-            "set",
             "st",
             "tail"
           ]
@@ -66519,7 +66608,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointSend",
-          "line": 575,
+          "line": 569,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -66546,7 +66635,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointReceive",
-          "line": 663,
+          "line": 657,
           "called": [
             "FrozenKernel",
             "FrozenSystemState",
@@ -66575,7 +66664,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointCall",
-          "line": 758,
+          "line": 752,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -66602,7 +66691,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointReply",
-          "line": 832,
+          "line": 826,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -66625,7 +66714,7 @@
         {
           "kind": "def",
           "name": "frozenRecordedReplyServer",
-          "line": 969,
+          "line": 963,
           "called": [
             "FrozenSystemState",
             "ThreadId",
@@ -66637,7 +66726,7 @@
         {
           "kind": "def",
           "name": "frozenApplyReplyDonation",
-          "line": 1008,
+          "line": 1002,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -66653,7 +66742,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointReplyWithDonationReturn",
-          "line": 1084,
+          "line": 1078,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -66674,7 +66763,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceLookup",
-          "line": 1122,
+          "line": 1116,
           "called": [
             "CPtr",
             "Capability",
@@ -66693,7 +66782,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceLookupSlot",
-          "line": 1134,
+          "line": 1128,
           "called": [
             "CPtr",
             "Capability",
@@ -66706,41 +66795,41 @@
         {
           "kind": "def",
           "name": "frozenCspaceMint",
-          "line": 1148,
+          "line": 1142,
           "called": [
             "Capability",
             "FrozenCNode",
             "FrozenKernel",
             "ObjId",
             "Slot",
+            "frozenWithObjectStored",
             "getObject",
             "insert",
             "lookup",
             "none",
-            "set",
             "st"
           ]
         },
         {
           "kind": "def",
           "name": "frozenCspaceDelete",
-          "line": 1166,
+          "line": 1160,
           "called": [
             "FrozenCNode",
             "FrozenKernel",
             "ObjId",
             "Slot",
             "erase",
+            "frozenWithObjectStored",
             "getObject",
             "none",
-            "set",
             "st"
           ]
         },
         {
           "kind": "def",
           "name": "frozenVspaceLookup",
-          "line": 1185,
+          "line": 1179,
           "called": [
             "ASID",
             "FrozenKernel",
@@ -66756,7 +66845,7 @@
         {
           "kind": "def",
           "name": "frozenLookupServiceByCap",
-          "line": 1206,
+          "line": 1200,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -66770,17 +66859,16 @@
         {
           "kind": "def",
           "name": "frozenSchedContextConfigure",
-          "line": 1228,
+          "line": 1222,
           "called": [
             "FrozenKernel",
             "ObjId",
             "SchedContext",
             "admissionCheck",
             "fold",
+            "frozenWithObjectStored",
             "getObject",
-            "none",
             "scId",
-            "set",
             "st",
             "toObjId"
           ]
@@ -66788,18 +66876,18 @@
         {
           "kind": "def",
           "name": "frozenSchedContextBind",
-          "line": 1274,
+          "line": 1268,
           "called": [
             "FrozenKernel",
             "ObjId",
             "SchedContextId",
             "ThreadId",
             "frozenReplyFrameOnLiveStack",
+            "frozenWithObjectStored",
             "getObject",
             "getTcb",
             "none",
             "scId",
-            "set",
             "st",
             "toNat",
             "toObjId"
@@ -66808,16 +66896,16 @@
         {
           "kind": "def",
           "name": "frozenSchedContextUnbind",
-          "line": 1356,
+          "line": 1350,
           "called": [
             "FrozenKernel",
             "ObjId",
+            "frozenWithObjectStored",
             "getObject",
             "getTcb",
             "isDonated",
             "none",
             "scId",
-            "set",
             "st",
             "toObjId"
           ]
@@ -66825,16 +66913,16 @@
         {
           "kind": "def",
           "name": "frozenTimerTickBudget",
-          "line": 1411,
+          "line": 1405,
           "called": [
             "FrozenKernel",
             "cbsBudgetCheck",
             "frozenTimerTick",
+            "frozenWithObjectStored",
             "getSchedContext",
             "getTcb",
             "none",
             "scId",
-            "set",
             "st",
             "tick",
             "toObjId"
@@ -66843,14 +66931,14 @@
         {
           "kind": "def",
           "name": "frozenSuspendThread",
-          "line": 1466,
+          "line": 1460,
           "called": [
             "FrozenKernel",
             "ThreadId",
             "frozenLookupTcb",
             "frozenRemoveRunnable",
+            "frozenWithObjectStored",
             "none",
-            "set",
             "st",
             "toObjId"
           ]
@@ -66858,15 +66946,15 @@
         {
           "kind": "def",
           "name": "frozenResumeThread",
-          "line": 1494,
+          "line": 1488,
           "called": [
             "FrozenKernel",
             "ThreadId",
             "frozenEnsureRunnable",
             "frozenLookupTcb",
+            "frozenWithObjectStored",
             "getTcb",
             "none",
-            "set",
             "st",
             "toObjId"
           ]
@@ -66874,18 +66962,18 @@
         {
           "kind": "def",
           "name": "frozenSetPriority",
-          "line": 1535,
+          "line": 1528,
           "called": [
             "FrozenKernel",
             "Priority",
             "ThreadId",
             "callerTid",
             "frozenLookupTcb",
+            "frozenWithObjectStored",
             "getSchedContext",
             "none",
             "ownScId",
             "scId",
-            "set",
             "st",
             "toObjId"
           ]
@@ -66893,15 +66981,15 @@
         {
           "kind": "def",
           "name": "frozenSetMCPriority",
-          "line": 1565,
+          "line": 1558,
           "called": [
             "FrozenKernel",
             "Priority",
             "ThreadId",
             "callerTid",
             "frozenLookupTcb",
+            "frozenWithObjectStored",
             "none",
-            "set",
             "st",
             "toObjId"
           ]
@@ -66909,18 +66997,18 @@
         {
           "kind": "def",
           "name": "frozenSetIPCBuffer",
-          "line": 1596,
+          "line": 1589,
           "called": [
             "FrozenKernel",
             "ThreadId",
             "VAddr",
             "frozenLookupTcb",
+            "frozenWithObjectStored",
             "get",
             "getVSpaceRoot",
             "ipcBufferAlignment",
             "isCanonical",
             "none",
-            "set",
             "st",
             "toNat",
             "toObjId"
@@ -66929,7 +67017,7 @@
         {
           "kind": "def",
           "name": "frozenOpCoverage",
-          "line": 1647,
+          "line": 1640,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -66946,7 +67034,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_count",
-          "line": 1702,
+          "line": 1695,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -66965,7 +67053,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_exhaustive",
-          "line": 1717,
+          "line": 1710,
           "called": [
             "SyscallId",
             "frozenOpCoverage"
@@ -258196,7 +258284,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.bootSafe",
-          "line": 4494,
+          "line": 4504,
           "called": [
             "PlatformConfig",
             "bootSafeObject",
@@ -258206,7 +258294,7 @@
         {
           "kind": "theorem",
           "name": "bootSafeObject_admits_rpi5BootVSpaceRoot",
-          "line": 4502,
+          "line": 4512,
           "called": [
             "bootSafeObject",
             "rpi5BootVSpaceRoot",
@@ -258216,7 +258304,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.untypedRegionsDisjoint",
-          "line": 4534,
+          "line": 4544,
           "called": [
             "ObjectEntry",
             "PlatformConfig",
@@ -258227,7 +258315,7 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.untypedRegionsDisjoint_empty",
-          "line": 4547,
+          "line": 4557,
           "called": [
             "PlatformConfig.untypedRegionsDisjoint"
           ]
@@ -258235,7 +258323,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_bootSafe",
-          "line": 4558,
+          "line": 4568,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -258254,7 +258342,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_objects_bootSafe",
-          "line": 4586,
+          "line": 4596,
           "called": [
             "KernelObject",
             "ObjId",
@@ -258273,7 +258361,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_reachable",
-          "line": 4607,
+          "line": 4617,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -258291,7 +258379,7 @@
         {
           "kind": "theorem",
           "name": "idleSlotsFreshAt_of_initialObjects_below_base",
-          "line": 4642,
+          "line": 4652,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -258317,7 +258405,7 @@
         {
           "kind": "theorem",
           "name": "idleSlotsFreshAt_of_idleSlotsReserved",
-          "line": 4680,
+          "line": 4690,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -258346,7 +258434,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_untypedRegionsDisjoint",
-          "line": 4709,
+          "line": 4719,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -258365,7 +258453,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_proofLayerInvariantBundle_general",
-          "line": 4781,
+          "line": 4791,
           "called": [
             "ICacheState.empty",
             "ObjId",
@@ -258482,7 +258570,7 @@
         {
           "kind": "theorem",
           "name": "bootToRuntime_invariantBridge_general",
-          "line": 5360,
+          "line": 5370,
           "called": [
             "PlatformConfig",
             "apiInvariantBundle_frozen",
@@ -258500,7 +258588,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_idleSlotsFreshAt",
-          "line": 5383,
+          "line": 5393,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -258520,7 +258608,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects",
-          "line": 5415,
+          "line": 5425,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -258540,7 +258628,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent",
-          "line": 5443,
+          "line": 5453,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -258562,7 +258650,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_idle_threadState",
-          "line": 5477,
+          "line": 5487,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -258585,7 +258673,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_tcb_inactive",
-          "line": 5497,
+          "line": 5507,
           "called": [
             "IntermediateState",
             "ObjId",
@@ -258617,7 +258705,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_not_running_not_queued",
-          "line": 5531,
+          "line": 5541,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -258641,7 +258729,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_threadStateConsistent",
-          "line": 5557,
+          "line": 5567,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -258658,7 +258746,7 @@
         {
           "kind": "theorem",
           "name": "inferThreadState_eq_of_not_running_not_queued",
-          "line": 5570,
+          "line": 5580,
           "called": [
             "SystemState",
             "TCB",
@@ -258672,7 +258760,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_threadStateConsistent",
-          "line": 5592,
+          "line": 5602,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -258710,7 +258798,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent",
-          "line": 5655,
+          "line": 5665,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -258725,7 +258813,7 @@
         {
           "kind": "def",
           "name": "deviceTreeCoversMachineConfig",
-          "line": 5701,
+          "line": 5711,
           "called": [
             "DeviceTree",
             "MachineConfig",
@@ -258735,7 +258823,7 @@
         {
           "kind": "theorem",
           "name": "deviceTreeCoversMachineConfig_eq",
-          "line": 5709,
+          "line": 5719,
           "called": [
             "DeviceTree",
             "MachineConfig",
@@ -258746,7 +258834,7 @@
         {
           "kind": "def",
           "name": "deviceTreeCoversMmioRegions",
-          "line": 5720,
+          "line": 5730,
           "called": [
             "DeviceTree",
             "RequiredMmioWindow",
@@ -258761,7 +258849,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.fromDeviceTree",
-          "line": 5734,
+          "line": 5744,
           "called": [
             "BootVSpaceRootEntry",
             "DeviceTree",
@@ -258773,7 +258861,7 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.fromDeviceTree_machineConfig",
-          "line": 5745,
+          "line": 5755,
           "called": [
             "BootVSpaceRootEntry",
             "DeviceTree",
@@ -258785,7 +258873,7 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.fromDeviceTree_deployment",
-          "line": 5752,
+          "line": 5762,
           "called": [
             "BootVSpaceRootEntry",
             "DeviceTree",
@@ -258797,7 +258885,7 @@
         {
           "kind": "theorem",
           "name": "deviceTreeCoversMachineConfig_self",
-          "line": 5763,
+          "line": 5773,
           "called": [
             "DeviceTree",
             "deviceTreeCoversMachineConfig",
@@ -258807,7 +258895,7 @@
         {
           "kind": "theorem",
           "name": "deviceTreeCoversMmioRegions_no_peripherals",
-          "line": 5771,
+          "line": 5781,
           "called": [
             "DeviceTree",
             "RequiredMmioWindow",
@@ -272190,7 +272278,9 @@
           "name": "objectStoreHelpers",
           "line": 189,
           "called": [
+            "frozenRewriteObject",
             "frozenStoreObject",
+            "frozenWithObjectStored",
             "rewriteObject",
             "storeObject",
             "storeObjectChecked",
@@ -272203,7 +272293,7 @@
         {
           "kind": "def",
           "name": "objectStoreSpellings",
-          "line": 220,
+          "line": 236,
           "called": [
             "objectStoreHelpers",
             "objectStorePrimitives"
@@ -272212,7 +272302,7 @@
         {
           "kind": "def",
           "name": "chainNeutralConstructors",
-          "line": 233,
+          "line": 249,
           "called": [
             "cancelBoundDonation",
             "cancelBoundDonationOnCore",
@@ -272253,7 +272343,7 @@
         {
           "kind": "def",
           "name": "primitiveCoverageViolations",
-          "line": 354,
+          "line": 370,
           "called": [
             "Reply",
             "SchedContext",
@@ -272268,7 +272358,7 @@
         {
           "kind": "def",
           "name": "isProjectConstant",
-          "line": 374,
+          "line": 390,
           "called": [
             "any"
           ]
@@ -272276,13 +272366,13 @@
         {
           "kind": "def",
           "name": "isAuxiliary",
-          "line": 405,
+          "line": 421,
           "called": []
         },
         {
           "kind": "def",
           "name": "usesDirectly",
-          "line": 410,
+          "line": 426,
           "called": [
             "any",
             "bind",
@@ -272294,7 +272384,7 @@
         {
           "kind": "def",
           "name": "storesVia",
-          "line": 442,
+          "line": 458,
           "called": [
             "any",
             "bind",
@@ -272307,7 +272397,7 @@
         {
           "kind": "def",
           "name": "storesObject",
-          "line": 450,
+          "line": 466,
           "called": [
             "objectStoreSpellings",
             "storesVia"
@@ -272316,19 +272406,19 @@
         {
           "kind": "def",
           "name": "chainWriteFrontier",
-          "line": 454,
+          "line": 470,
           "called": []
         },
         {
           "kind": "def",
           "name": "isDefinitionShaped",
-          "line": 473,
+          "line": 489,
           "called": []
         },
         {
           "kind": "def",
           "name": "directWriteCandidates",
-          "line": 485,
+          "line": 501,
           "called": [
             "chainWritePrimitives",
             "contains",
@@ -272341,7 +272431,7 @@
         {
           "kind": "def",
           "name": "constructsChainRecord",
-          "line": 497,
+          "line": 513,
           "called": [
             "chainRecordConstructors",
             "usesDirectly"
@@ -272350,7 +272440,7 @@
         {
           "kind": "def",
           "name": "reachesChainConstructor",
-          "line": 518,
+          "line": 534,
           "called": [
             "any",
             "bind",
@@ -272364,7 +272454,7 @@
         {
           "kind": "def",
           "name": "recordConstructingStoreCandidates",
-          "line": 539,
+          "line": 555,
           "called": [
             "constructsChainRecord",
             "isAuxiliary",
@@ -272379,25 +272469,25 @@
         {
           "kind": "inductive",
           "name": "ChainDiscipline",
-          "line": 557,
+          "line": 573,
           "called": []
         },
         {
           "kind": "def",
           "name": "isChainForm",
-          "line": 583,
+          "line": 599,
           "called": []
         },
         {
           "kind": "def",
           "name": "conclusionOf",
-          "line": 589,
+          "line": 605,
           "called": []
         },
         {
           "kind": "def",
           "name": "isPredicate",
-          "line": 596,
+          "line": 612,
           "called": [
             "conclusionOf",
             "none",
@@ -272407,7 +272497,7 @@
         {
           "kind": "def",
           "name": "isChainPredicate",
-          "line": 607,
+          "line": 623,
           "called": [
             "isChainForm",
             "isPredicate"
@@ -272416,7 +272506,7 @@
         {
           "kind": "def",
           "name": "resultViolations",
-          "line": 616,
+          "line": 632,
           "called": [
             "any",
             "conclusionOf",
@@ -272429,7 +272519,7 @@
         {
           "kind": "def",
           "name": "chainWriteRegistry",
-          "line": 649,
+          "line": 665,
           "called": [
             "ChainDiscipline",
             "chainWitnessSt1",
@@ -272477,7 +272567,7 @@
         {
           "kind": "def",
           "name": "halfStepResolves",
-          "line": 786,
+          "line": 802,
           "called": [
             "ChainDiscipline",
             "length",
@@ -272487,7 +272577,7 @@
         {
           "kind": "def",
           "name": "disciplineViolations",
-          "line": 802,
+          "line": 818,
           "called": [
             "ChainDiscipline",
             "covers",
@@ -272501,7 +272591,7 @@
         {
           "kind": "def",
           "name": "reconciliationViolations",
-          "line": 842,
+          "line": 858,
           "called": [
             "Reply",
             "SchedContext",
@@ -272517,7 +272607,7 @@
         {
           "kind": "def",
           "name": "censusWitnessBareConsume",
-          "line": 874,
+          "line": 890,
           "called": [
             "Kernel",
             "ReplyId",
@@ -272528,7 +272618,7 @@
         {
           "kind": "def",
           "name": "censusWitnessDirectLinkWrite",
-          "line": 885,
+          "line": 901,
           "called": [
             "Kernel",
             "ReplyId",
@@ -272542,7 +272632,7 @@
         {
           "kind": "def",
           "name": "censusWitnessRawTableWrite",
-          "line": 904,
+          "line": 920,
           "called": [
             "ReplyId",
             "SystemState",
@@ -272556,7 +272646,7 @@
         {
           "kind": "def",
           "name": "censusWitnessSplitHelper",
-          "line": 914,
+          "line": 930,
           "called": [
             "Reply",
             "none"
@@ -272565,7 +272655,7 @@
         {
           "kind": "def",
           "name": "censusWitnessSplitWriter",
-          "line": 921,
+          "line": 937,
           "called": [
             "Kernel",
             "ReplyId",
@@ -272580,7 +272670,7 @@
         {
           "kind": "def",
           "name": "censusWitnessDelegatedStoreHelper",
-          "line": 934,
+          "line": 950,
           "called": [
             "Kernel",
             "KernelObject",
@@ -272591,7 +272681,7 @@
         {
           "kind": "def",
           "name": "censusWitnessDelegatedStoreWriter",
-          "line": 938,
+          "line": 954,
           "called": [
             "Kernel",
             "ReplyId",
@@ -272605,7 +272695,7 @@
         {
           "kind": "def",
           "name": "eq_censusWitnessUserNamed",
-          "line": 950,
+          "line": 966,
           "called": [
             "Kernel",
             "ReplyId",
@@ -272619,7 +272709,7 @@
         {
           "kind": "def",
           "name": "eq_1",
-          "line": 965,
+          "line": 981,
           "called": [
             "Kernel",
             "ReplyId",
@@ -272633,7 +272723,7 @@
         {
           "kind": "def",
           "name": "censusWitnessNoWrite",
-          "line": 972,
+          "line": 988,
           "called": [
             "Reply",
             "ReplyId",

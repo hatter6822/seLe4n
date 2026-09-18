@@ -3360,8 +3360,18 @@ run_negative_check "INVARIANT" rg -n 'objectIndexSet := .*\.insert|objectIndex :
 # so the overlay links them whole and those anchors read raw text; the two
 # STATUS markers are comments, so they are prose checks.
 #
-# The write recogniser: both spellings, and the erase.
-run_check "INVARIANT" rg -U -n '^WRITE = re\.compile\(\n    r"\\\.objects\\\.\(\?:insert\|erase\)\\b"[^\n]*\n    r"\|\\b\(\?:RHTable\|FrozenMap\)\\\.\(\?:insert\|erase\|set\)\\s\+\[\\w.\.\]\*\\\.objects\\b"' scripts/lean_store_read_census.py
+# The write recogniser is DERIVED from the one classification, not spelled out.
+#
+# `v0.35.97`: this was a positive on the literal two-line alternation, which was
+# correct when written and which the derivation replaced -- so it failed loudly
+# rather than passing over a spelling nobody consults, which is the direction a
+# pin on a retired construct should fail in.  Its intent (both spellings, and
+# the erase) is carried structurally now by `branch_symmetry_violations`, which
+# asserts it of every classified kind rather than of the three the literal named.
+run_check "INVARIANT" rg -n '^WRITE = re\.compile\(_table_access\(\("write",\)\)\)$' scripts/lean_store_read_census.py
+# ...and the retired hand-written alternation must not come back beside it: a
+# second recogniser is how `set` came to be named in one branch and not the other.
+run_negative_check "INVARIANT" bash -lc 'rg -n "objects..\\(\\?:insert\\|erase\\)" scripts/lean_store_read_census.py'
 # The write census runs over its own registry and is reconciled both ways.
 run_check "INVARIANT" rg -n '^    wcode, wspec, wexempt_hits, wattribution, _ = census\(view, WRITE, WRITE_PRIMITIVE_BODIES\)$' scripts/lean_store_read_census.py
 run_check "INVARIANT" rg -n '^             \+ accessor_registry_violations\(wcode, wexempt_hits, WRITE_PRIMITIVE_BODIES, "write"\)\)$' scripts/lean_store_read_census.py
@@ -3376,7 +3386,15 @@ run_check "INVARIANT" rg -U -n '^    \("SeLe4n/Model/State\.lean", "rewriteObjec
 run_check "INVARIANT" rg -U -n '^    \("SeLe4n/Model/Builder\.lean", "createObject"\):\n        "the boot-time population, capacity-bounded by `PlatformConfig`",$' scripts/lean_store_read_census.py
 run_check "INVARIANT" rg -U -n '^    \("SeLe4n/Kernel/Concurrency/Locks/WithLockSet\.lean", "updateObjectAt"\):\n        "lock-domain read-modify-write; kind-agnostic, so not a rewrite",$' scripts/lean_store_read_census.py
 # shellcheck disable=SC2016
-run_check "INVARIANT" rg -U -n '^    \("SeLe4n/Kernel/FrozenOps/Core\.lean", "frozenUpdatePipBoost"\):\n        "the frozen surface.s own store, over `FrozenMap`",$' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -U -n '^    \("SeLe4n/Kernel/FrozenOps/Core\.lean", "frozenWithObjectStored"\):\n        "the frozen surface.s one store, over `FrozenMap.set`",$' scripts/lean_store_read_census.py
+# ...and the TRANSITION that used to wear that primitive's exemption must not
+# come back into the registry.  `frozenUpdatePipBoost` spelled its write
+# `st.objects.insert` -- the one form the `set`-only branch could not see -- so
+# it held a registry entry while being a transition rather than a primitive; it
+# writes through `frozenRewriteObject` now, and the registry names the primitive
+# alone.  A registry entry naming a transition is an exemption that grows with
+# every operation, which is the opposite of a frontier.
+run_negative_check "INVARIANT" rg -n 'frozenUpdatePipBoost' scripts/lean_store_read_census.py
 run_check "INVARIANT" rg -U -n '^    \("SeLe4n/Testing/ReplyStackWriteCensus\.lean", "censusWitnessRawTableWrite"\):\n        "the reply-stack write census.s planted raw-table witness",$' scripts/lean_store_read_census.py
 # The Lean side reads the shared tag; the retired read-only tag is gone.
 run_check "INVARIANT" rg -U -n '^  let body ← if s\.startsWith "STORE_ACCESS_ATTRIB=" then\n      some \(s\.drop "STORE_ACCESS_ATTRIB="\.length\)\.toString else none$' SeLe4n/Testing/StoreReadClassificationCensus.lean
@@ -15263,5 +15281,57 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem threadPlacedOnSomeCore_congr 
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the payoff.s wake premise holds here" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore stPost serverTid" tests/SmpCancellationSuite.lean'
 
+# ---------------------------------------------------------------------------
+# PR #897 review F2 (`v0.35.97`) -- the frozen write has ONE owner, and so does
+# its frame.
+#
+# `WRITE` named `set` in its qualified branch and not in its method branch, so
+# `st.objects.set k v` -- the frozen surface's ordinary store -- walked around
+# an enforced zero.  Closing that surfaced the class beneath it: "what does a
+# frozen store change" had TWELVE answers, eleven of them proofs that unfolded a
+# composite down to `FrozenMap.set` and case-split on it, and a twelfth that
+# said exactly this, `private`, downstream of every asker.
+# ---------------------------------------------------------------------------
+
+# The frame is stated at the write, in both readings, with the composition and
+# the base case that let a chained operation inherit it.
+run_check "INVARIANT" rg -n '^theorem frozenWithObjectStored_ok' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^theorem frozenWithObjectStored_only_modifies_objects' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^theorem frozenOnlyObjects_trans' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^theorem frozenOnlyObjects_rfl' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^theorem frozenRewriteObject_only_modifies_objects' SeLe4n/Kernel/FrozenOps/Core.lean
+
+# ...and it is READ rather than merely declared.  A frame nothing consults reads
+# exactly like one nobody checked, and the eleven re-derivations are what this
+# cut replaced -- so the anchor is on a consumer, not on the definition.
+run_check "INVARIANT" bash -lc 'rg -n "frozenStoreObject_ok hOk" SeLe4n/Kernel/FrozenOps/Commutativity.lean SeLe4n/Kernel/FrozenOps/Invariant.lean SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem frozenQueuePushTail_only_modifies_objects[^\n]*(\n([ \t][^\n]*)?)*frozenQueuePushTailObjects_only_modifies_objects hOk" SeLe4n/Kernel/FrozenOps/Core.lean'
+
+# The retired re-derivation must not come back: a proof that unfolds a frozen
+# store down to the raw table operation is the twelfth answer returning.  The
+# mutation that decides this KEEPS the proof and restores the case split.
+run_negative_check "INVARIANT" rg -n 'unfold frozenStoreObject frozenWithObjectStored' --glob '*.lean' SeLe4n tests
+run_negative_check "INVARIANT" rg -n 'frozenStoreObject_extracts_state' --glob '*.lean' SeLe4n tests
+
+# The total rewrite is what the one frozen transition that had spelled its write
+# `st.objects.insert` now writes through -- the spelling the `set`-only branch
+# could not see, which is why it sat past the zero as a registered "primitive".
+run_check "INVARIANT" rg -n '^def frozenRewriteObject' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenUpdatePipBoost[^\n]*(\n([ \t][^\n]*)?)*frozenRewriteObject st tid\.toObjId \(\.tcb tcb.\)" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_negative_check "INVARIANT" rg -n 'objects := st\.objects\.insert' SeLe4n/Kernel/FrozenOps
+
+# The census's two branches are built from ONE classification, and both
+# reconciliations run.  A kind named in one branch and not the other is the
+# original defect; a table operation nobody classified is one neither pattern
+# ever looks for.
+run_check "INVARIANT" rg -n '^def table_op_violations' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -n '^def branch_symmetry_violations' scripts/lean_store_read_census.py
+run_check "INVARIANT" bash -lc 'rg -n "misclassified = table_op_violations\(\) \+ branch_symmetry_violations\(\)" scripts/lean_store_read_census.py'
+run_negative_check "INVARIANT" bash -lc 'rg -n "^WRITE = re\.compile\(r\"\\\\b\(\?:RHTable\|FrozenMap\)" scripts/lean_store_read_census.py'
+
+# The sweep population is REPORTED and never enforced: a fold is outside the
+# keyed population both zeros are about, and a number beside them is what stops
+# that being read as absence.
+run_check "INVARIANT" bash -lc 'rg -n "STORE_SWEEP_SCOPE=whole-table traversals; diagnostic only, never enforced" scripts/lean_store_read_census.py'
 
 finalize_report

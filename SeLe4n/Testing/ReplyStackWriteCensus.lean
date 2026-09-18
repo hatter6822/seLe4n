@@ -214,7 +214,23 @@ def objectStoreHelpers : List Name :=
     -- `FrozenSystemState.objects`, which is where the frozen chain lives, so a
     -- derivation that knows only the live spellings sees a frozen writer build
     -- a `Reply` and store it nowhere.
-  , `SeLe4n.Kernel.FrozenOps.frozenStoreObject ]
+  , `SeLe4n.Kernel.FrozenOps.frozenStoreObject
+    -- ...and the two the frozen write migration (`v0.35.97`) put *under* it:
+    -- `frozenWithObjectStored` is the surface's one raw `FrozenMap.set` and
+    -- `frozenStoreObject` is now its `FrozenKernel` wrapper, with
+    -- `frozenRewriteObject` the total in-place form.  Pinning them is not
+    -- optional bookkeeping: the frontier reaches **one hop**, so the moment a
+    -- frozen writer's store became `frozenWithObjectStored` rather than a
+    -- direct `FrozenMap.set`, every such writer sat two hops out and dropped
+    -- from the candidate set -- which this census reported at once, as
+    -- `frozenTimerTickBudget`'s chain-neutral entry reading stale.
+    --
+    -- **Deleting that entry is the fail-open direction**, and this list's own
+    -- history says so: `v0.35.64` met the identical report for `suspendThread`
+    -- and deleted it, so a writer setting `scReply` through the unpinned helper
+    -- would have been invisible.  The helper gets pinned; the entry stays.
+  , `SeLe4n.Kernel.FrozenOps.frozenWithObjectStored
+  , `SeLe4n.Kernel.FrozenOps.frozenRewriteObject ]
 
 /-- The stores a built record has to reach to become state. -/
 def objectStoreSpellings : List Name :=

@@ -79,10 +79,90 @@ import lean_code_view  # noqa: E402  (needs the path above)
 # `SchedContext` records verbatim, and the hazard is identical.  It has its own
 # accessor family now (`Model/FrozenState.lean`), so both tables answer the
 # same question the same way.
-READ = re.compile(
-    r"\.objects(?:\[|\.get\?)"                       # `st.objects[k]?` / `st.objects.get? k`
-    r"|\b(?:RHTable|FrozenMap)\.get\?\s+[\w'.]*\.objects\b"  # the qualified call
-)
+#
+# **Both branches are built from one classification** (PR #897 review).  Each
+# pattern below has a *method* branch and a *qualified* branch, and until this cut
+# they enumerated their operations independently: `WRITE`'s qualified branch named
+# `set` and its method branch did not, so `st.objects.set k v` -- the frozen
+# surface's ordinary store spelling -- was invisible to an **enforced zero**, and
+# 31 executable raw writes across 22 frozen declarations walked around it.  That is
+# *keep the tables symmetric* (PR #895 review round 11) at the level of a regex's
+# two alternations, and the remedy is round 9's: not a third telling but a
+# mechanism, so the two branches read `_TABLE_OPS` and cannot name different sets.
+#
+# `_TABLE_OPS` is also this gate's **domain**, reconciled against the two sources
+# in both directions by `table_op_violations` -- an operation on either table that
+# it does not classify is a *named* Tier 0 failure rather than a silent hole, which
+# is the shape `OBJECTS_FIELD_OWNERS` already has for the receiver question.
+#
+#   `read`   a KEYED lookup yielding one object for the call site to discriminate.
+#            This is the population `STORE_READ_CODE`'s enforced zero is about.
+#   `write`  a keyed mutation.  `STORE_WRITE_CODE`'s population.
+#   `sweep`  a whole-table traversal.  Its call sites *do* discriminate objects,
+#            but a sweep over a heterogeneous table has no typed-accessor form --
+#            it is not a lookup -- so it is **reported and not enforced**, the
+#            treatment `STORE_READ_SPEC` already has.  Measured rather than
+#            assumed empty: 15 executable sites today.
+#   `other`  yields no object at all (a projection, a predicate, a constructor).
+_TABLE_OPS = {
+    "get?": "read",
+    "insert": "write",
+    "insertNoResize": "write",
+    "erase": "write",
+    "set": "write",
+    "fold": "sweep",
+    "toList": "sweep",
+    "filter": "sweep",
+    "contains": "other",
+    "empty": "other",
+    "ofList": "other",
+    "resize": "other",
+    "invExtK": "other",
+    "wellFormed": "other",
+    "size": "other",
+    # `RHTable`'s remaining structure fields.  Projections, so they yield no
+    # object; classified because the reconciliation's domain includes fields --
+    # `size` is a field on one table and a `def` on the other, which is exactly
+    # the asymmetry a field-blind derivation would hide.
+    "slots": "other",
+    "capacity": "other",
+    "hCapGe4": "other",
+    "hSlotsLen": "other",
+    # ...and `FrozenMap`'s.
+    "data": "other",
+    "indexMap": "other",
+}
+
+
+def _op_alternation(kinds: tuple[str, ...]) -> str:
+    """The alternation of every `_TABLE_OPS` entry of one of `kinds`.
+
+    A trailing `\b` only where the operation ends in a word character: `get?`
+    ends in `?`, and a word boundary after it would never match.
+    """
+    ops = sorted(o for o, k in _TABLE_OPS.items() if k in kinds)
+    parts = [re.escape(o) + (r"\b" if o[-1].isalnum() or o[-1] == "_" else "")
+             for o in ops]
+    return "(?:" + "|".join(parts) + ")"
+
+
+def _table_access(kinds: tuple[str, ...], extra_method: str = "") -> str:
+    """The method and qualified spellings of every operation of one of `kinds`.
+
+    One alternation, two branches, so a widening reaches both by construction.
+    """
+    alt = _op_alternation(kinds)
+    method = rf"\.objects\.{alt}"
+    if extra_method:
+        method = rf"(?:{method}|{extra_method})"
+    qualified = rf"\b(?:RHTable|FrozenMap)\.{alt}\s+[\w'.]*\.objects\b"
+    return rf"{method}|{qualified}"
+
+
+# `st.objects[k]?` is the subscript spelling of the keyed read and has no
+# qualified counterpart, so it is the one branch that is not derived from an
+# operation name.
+READ = re.compile(_table_access(("read",), extra_method=r"\.objects\["))
 
 # A raw WRITE of an object table, in either spelling (`v0.35.76`): the method
 # form `st.objects.insert k v` / `st.objects.erase k` and the qualified call
@@ -94,10 +174,99 @@ READ = re.compile(
 # `rewriteObject` or a typed update over it, so the honest floor is **zero**,
 # with the primitives themselves and one planted census witness registered in
 # `WRITE_PRIMITIVE_BODIES` and reconciled in both directions.
-WRITE = re.compile(
-    r"\.objects\.(?:insert|erase)\b"                              # `st.objects.insert k v`
-    r"|\b(?:RHTable|FrozenMap)\.(?:insert|erase|set)\s+[\w'.]*\.objects\b"  # the qualified call
-)
+WRITE = re.compile(_table_access(("write",)))
+
+# The whole-table traversals, reported as a diagnostic beside the two enforced
+# populations.  See `_TABLE_OPS` for why they are not in `READ`.
+SWEEP = re.compile(_table_access(("sweep",)))
+
+#: The two object-table types, and where their operations are declared.  The
+#: reconciliation below reads these files rather than a list of names, so an
+#: operation added to either table is a *named* Tier 0 failure -- "classify it in
+#: `_TABLE_OPS`" -- rather than a spelling the patterns silently do not see.
+_TABLE_SOURCES = {
+    "RHTable": ("SeLe4n/Kernel/RobinHood/Core.lean",
+                "SeLe4n/Kernel/RobinHood/Bridge.lean"),
+    "FrozenMap": ("SeLe4n/Model/FrozenState.lean",),
+}
+
+#: `def RHTable.foo`, `@[inline] def FrozenMap.bar`, `abbrev`, `private def`.
+_TABLE_DEF = re.compile(
+    r"^(?:@\[[^\]]*\]\s*)?(?:private\s+|protected\s+)?(?:def|abbrev)\s+"
+    r"(?P<ns>RHTable|FrozenMap)\.(?P<op>[A-Za-z0-9_?'!]+)", re.MULTILINE)
+
+#: ...and the structure's own fields, which are operations too as far as a call
+#: site is concerned: `RHTable.size` is a FIELD and `FrozenMap.size` is a `def`,
+#: which is exactly the asymmetry a field-blind derivation would hide.
+_TABLE_STRUCT = re.compile(
+    r"^structure\s+(?P<ns>RHTable|FrozenMap)(?![.\w])[^\n]*\bwhere\s*$", re.MULTILINE)
+_STRUCT_FIELD = re.compile(r"^\s{2}(?P<name>[A-Za-z0-9_?'!]+)\s*:")
+
+
+def declared_table_operations() -> set[str]:
+    """Every operation of either object table, derived from the sources."""
+    ops: set[str] = set()
+    for _ns, files in _TABLE_SOURCES.items():
+        for rel in files:
+            text = (REPO / rel).read_text(encoding="utf-8")
+            for m in _TABLE_DEF.finditer(text):
+                ops.add(m.group("op"))
+            for m in _TABLE_STRUCT.finditer(text):
+                # Fields run from the `where` to the first line that is not an
+                # indented `name :` binding.
+                for line in text[m.end():].splitlines()[1:]:
+                    if not line.strip() or line.lstrip().startswith("--"):
+                        continue
+                    fm = _STRUCT_FIELD.match(line)
+                    if fm is None:
+                        break
+                    ops.add(fm.group("name"))
+    return ops
+
+
+def table_op_violations() -> list[str]:
+    """Where `_TABLE_OPS` and the sources disagree -- both directions.
+
+    An *unclassified* operation is the dangerous one: the patterns are built
+    from the classification, so an operation nobody classified is one neither
+    pattern looks for, which is how `set` stayed out of the WRITE method branch.
+    A *stale* entry is the other, and is still a failure: a classification that
+    no longer describes the tree reads exactly like one that does.
+    """
+    declared = declared_table_operations()
+    out = []
+    for op in sorted(declared - set(_TABLE_OPS)):
+        out.append(f"`{op}` is an operation of an object table and `_TABLE_OPS` does not "
+                   f"classify it -- classify it `read`, `write`, `sweep` or `other`, or "
+                   f"neither pattern will ever look for it")
+    for op in sorted(set(_TABLE_OPS) - declared):
+        out.append(f"`{op}` is classified in `_TABLE_OPS` and is not an operation of either "
+                   f"object table -- a stale entry reads exactly like a live one")
+    return out
+
+
+def branch_symmetry_violations() -> list[str]:
+    """Both branches of each pattern recognise the same operations.
+
+    The defect this is the mechanism for: `WRITE` named `set` in its qualified
+    branch and not in its method branch, so the tree's ordinary frozen store
+    spelling was invisible to an enforced zero.  Asserting the symmetry directly
+    is what makes a future widening reach both branches by construction --
+    stating the rule a fourth time is what had already failed.
+    """
+    out = []
+    for op, kind in sorted(_TABLE_OPS.items()):
+        pat = {"read": READ, "write": WRITE, "sweep": SWEEP}.get(kind)
+        if pat is None:
+            continue
+        if not pat.search(f"  let t := st.objects.{op} k v"):
+            out.append(f"`{op}` is classified `{kind}` and the METHOD spelling "
+                       f"`st.objects.{op}` is not recognised")
+        if not pat.search(f"  let t := RHTable.{op} st.objects k v"):
+            out.append(f"`{op}` is classified `{kind}` and the QUALIFIED spelling "
+                       f"`RHTable.{op} st.objects` is not recognised")
+    return out
+
 
 # **What this gate can and cannot claim.**
 #
@@ -822,8 +991,8 @@ WRITE_PRIMITIVE_BODIES = {
         "the boot-time population, capacity-bounded by `PlatformConfig`",
     ("SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean", "updateObjectAt"):
         "lock-domain read-modify-write; kind-agnostic, so not a rewrite",
-    ("SeLe4n/Kernel/FrozenOps/Core.lean", "frozenUpdatePipBoost"):
-        "the frozen surface's own store, over `FrozenMap`",
+    ("SeLe4n/Kernel/FrozenOps/Core.lean", "frozenWithObjectStored"):
+        "the frozen surface's one store, over `FrozenMap.set`",
     ("SeLe4n/Testing/ReplyStackWriteCensus.lean", "censusWitnessRawTableWrite"):
         "the reply-stack write census's planted raw-table witness",
 }
@@ -1404,6 +1573,25 @@ def frozenStep (st : FrozenSystemState) (k : ObjId) (o : FrozenKernelObject) :
     FrozenSystemState :=
   { st with objects := FrozenMap.set st.objects k o }
 """, {("f.lean", "frozenStep"): 1}, {}),
+    # **The decisive case for this branch** (`v0.35.97`): the SAME write, in the
+    # METHOD spelling.  `WRITE` named `set` in its qualified branch and not in
+    # its method branch, so `st.objects.set k o` -- the frozen surface's
+    # ordinary store -- was invisible to an enforced zero while
+    # `FrozenMap.set st.objects k o` above was seen.  The mutation that decides
+    # this keeps the write and changes only how it is written, which is why the
+    # two fixtures are token-preserving with respect to each other.
+    "frozen_write_method_form": ("""
+def frozenStepMethod (st : FrozenSystemState) (k : ObjId) (o : FrozenKernelObject) :
+    Option FrozenSystemState :=
+  (st.objects.set k o).map (fun m => { st with objects := m })
+""", {("f.lean", "frozenStepMethod"): 1}, {}),
+    # ...and `insert` in the method spelling, which is how the one frozen
+    # transition that escaped the `set`-only branch actually spelled its write.
+    "frozen_insert_method_form": ("""
+def frozenRewrite (st : FrozenSystemState) (k : ObjId) (o : FrozenKernelObject) :
+    FrozenSystemState :=
+  { st with objects := st.objects.insert k o }
+""", {("f.lean", "frozenRewrite"): 1}, {}),
     # An erase is a write too.
     "erase_write": ("""
 def drop (st : SystemState) (k : ObjId) : SystemState :=
@@ -1507,6 +1695,57 @@ def self_test() -> int:
                 failed += 1
             else:
                 print(f"  ok   owner-domain '{case}'")
+    # **The CLASSIFICATION, and the SYMMETRY of the two branches.**  The
+    # patterns are BUILT from `_TABLE_OPS`, so an operation nobody classified
+    # is one neither pattern ever looks for -- and a kind named in one branch
+    # and not the other is the same hole one level down, which is exactly how
+    # `set` came to be recognised qualified and not as a method.  Both
+    # reconciliations are mutation-tested here, because a discipline check that
+    # cannot fire is indistinguishable from one that is wrong.
+    known_ops = dict(_TABLE_OPS)
+    for case, mutate, expect_unclassified, expect_asymmetric in [
+        ("the live classification reconciles both ways", None, False, False),
+        ("an UNCLASSIFIED table operation fails",
+         lambda d: d.pop("set", None), True, False),
+        # A stale entry trips BOTH: it names no table operation, and the
+        # compiled pattern -- built from the real classification -- does not
+        # recognise it either.  Expecting only the first would be asserting
+        # less than the gate says.
+        ("a STALE classification entry fails",
+         lambda d: d.update({"notAnOperation": "write"}), True, True),
+    ]:
+        try:
+            if mutate is not None:
+                mutate(globals()["_TABLE_OPS"])
+            got_unclassified = bool(table_op_violations())
+            got_asymmetric = bool(branch_symmetry_violations())
+        finally:
+            globals()["_TABLE_OPS"] = dict(known_ops)
+        if got_unclassified != expect_unclassified or got_asymmetric != expect_asymmetric:
+            print(f"  SELF-TEST FAIL: table-ops '{case}': reported "
+                  f"unclassified={got_unclassified} asymmetric={got_asymmetric}, "
+                  f"want unclassified={expect_unclassified} "
+                  f"asymmetric={expect_asymmetric}")
+            failed += 1
+        else:
+            print(f"  ok   table-ops '{case}'")
+    # The symmetry check's own decisive case: a kind recognised in ONE branch.
+    # The mutation keeps `set` classified `write` -- it changes only which
+    # spellings the pattern is built to see, which is the pre-fix state.
+    saved_write = globals()["WRITE"]
+    try:
+        globals()["WRITE"] = re.compile(
+            r"\b(?:RHTable|FrozenMap)\." + _op_alternation(("write",))
+            + r"\s+[\w'.]*\.objects\b")
+        asymmetric = bool(branch_symmetry_violations())
+    finally:
+        globals()["WRITE"] = saved_write
+    if not asymmetric:
+        print("  SELF-TEST FAIL: table-ops 'a QUALIFIED-ONLY write branch must "
+              "be reported' -- the symmetry check did not fire")
+        failed += 1
+    else:
+        print("  ok   table-ops 'a QUALIFIED-ONLY write branch is reported'")
     # ...and the live registry must agree with the live tree, in both
     # directions, so a stale entry cannot read like coverage.
     live = objects_owner_violations(REPO)
@@ -1548,8 +1787,18 @@ def main() -> int:
         for line in drifted:
             print(f"FAIL: {line}")
         return 1
+    # The patterns are BUILT from `_TABLE_OPS`, so an operation nobody
+    # classified is one neither pattern ever looks for -- which is how `set`
+    # stayed out of the WRITE method branch past an enforced zero.  Both
+    # directions, and both branches, in every mode.
+    misclassified = table_op_violations() + branch_symmetry_violations()
+    if misclassified:
+        for line in misclassified:
+            print(f"FAIL: {line}")
+        return 1
     code, spec, exempt_hits, attribution, unparsed = census(view)
     wcode, wspec, wexempt_hits, wattribution, _ = census(view, WRITE, WRITE_PRIMITIVE_BODIES)
+    scode, sspec, _, _, _ = census(view, SWEEP, {})
     # Refused in EVERY mode, for the same reason the registry is reconciled in
     # every mode: `--rows` is what Tier 0 calls, and a check only the unused
     # mode runs is a check nobody runs.
@@ -1601,7 +1850,14 @@ def main() -> int:
         print("STORE_READ_SCOPE=recognised spellings only "
               "(subscript, method, qualified call); a floor, not a proof of absence")
         print("STORE_WRITE_SCOPE=recognised spellings only "
-              "(method insert/erase, qualified RHTable/FrozenMap call); a floor, not a proof of absence")
+              "(method insert/erase/set, qualified RHTable/FrozenMap call); "
+              "a floor, not a proof of absence")
+        # The whole-table traversals, reported and NOT enforced: a fold or a
+        # `toList` is outside the keyed population both zeros are about, and a
+        # number beside them is what stops that being read as absence.
+        print(f"STORE_SWEEP_CODE={sum(scode.values())}")
+        print(f"STORE_SWEEP_SPEC={sum(sspec.values())}")
+        print("STORE_SWEEP_SCOPE=whole-table traversals; diagnostic only, never enforced")
     return 0
 
 

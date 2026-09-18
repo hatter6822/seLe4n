@@ -127,6 +127,8 @@ stands behind.
 |-------|------------------|---------------|----------|
 | The object store is a verified Robin Hood hash table with proven O(1) lookup, not a benchmarked one | README, `SELE4N_SPEC.md` | `lake exe robin_hood_suite` | `RHTable.invExt`, `allTablesInvExtK` |
 | The CNode radix tree is verified flat-array, with the same treatment | `SELE4N_SPEC.md` | `lake exe radix_tree_suite` | `Kernel/RadixTree/` |
+| No executable definition reads or writes an object table raw, on the live surface or the frozen one — both spellings of each, and the write patterns are derived from one classification rather than enumerated | `SELE4N_SPEC.md` §SM3.C, `CLAUDE.md` | `python3 scripts/lean_store_read_census.py` (`STORE_READ_CODE=0`, `STORE_WRITE_CODE=0`); `--self-test` | `_TABLE_OPS`, `table_op_violations`, `branch_symmetry_violations`, `ACCESSOR_BODIES`, `WRITE_PRIMITIVE_BODIES` |
+| A frozen store changes `objects` and nothing else — stated once at the write, inherited by every operation built from it rather than re-derived per body | `CLAUDE.md`, `SELE4N_SPEC.md` §8.12 | `lake build SeLe4n.Kernel.FrozenOps.Commutativity` | `frozenWithObjectStored_ok`, `frozenWithObjectStored_only_modifies_objects`, `frozenOnlyObjects_rfl` / `_trans`, `frozenRewriteObject_only_modifies_objects` |
 
 ## 6. Hardware and build
 

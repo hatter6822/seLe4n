@@ -4481,8 +4481,18 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- Z9-I: SchedContexts must be well-formed and unbound at boot, and — WS-OD
   -- OD2.1 — must head no reply stack: every admissible boot Reply is inert,
   -- so a config-supplied `scReply` could only dangle.
+  --
+  -- **WS-HP HP10.3, corrected at `v0.35.97`**: and no recorded reservation
+  -- origin.  HP10.3 added that conjunct to the Bool mirror
+  -- (`bootSafeSchedContextCheck`) and to the structural bridge
+  -- (`bootSafeObjectCheck_sound_structural`) and **not here**, so this
+  -- Prop-level API — the one the post-boot safety theorems are stated over —
+  -- certified a configuration the live validator rejects, carrying a loan
+  -- history no boot state can have made.  One question, two answers, with the
+  -- executable side the stricter: the direction that reads as coverage.
   (∀ sc, obj = .schedContext sc →
-    schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none) ∧
+    schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
+      sc.donationOrigin = none) ∧
   -- WS-SM SM6.D: a boot Reply is inert — no blocked caller and no reply-stack
   -- link in either direction.
   (∀ r, obj = .reply r →

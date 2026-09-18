@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.96.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.97.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -340,7 +340,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1316 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
-- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1270 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1445 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1254 lines)
@@ -810,11 +810,86 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   reads left anywhere are the accessor bodies — which the census registers by
   name — and propositions, which have no helper form.  Since `v0.35.76`
   `STORE_WRITE_CODE` sits beside it: the same classifier run over the raw
-  *write* spellings (`objects.insert` / `objects.erase`, method or qualified),
-  with the six bodies that write raw by design registered in
+  *write* spellings, with the bodies that write raw by design registered in
   `WRITE_PRIMITIVE_BODIES` and reconciled in both directions — and it was a
   zero floor from its first measurement, the raw-write migration having
   reached the primitives before the census existed.
+
+  **And a spelling is not a write either — nor is a regex a classification**
+  (PR #897 review, `v0.35.97`).  That zero was true of `objects.insert` and
+  `objects.erase` and blind to `objects.set`, which the WRITE pattern named in
+  its *qualified* branch and not in its *method* one — so `st.objects.set k v`,
+  the frozen surface's ordinary store, walked around an **enforced zero**, and
+  thirty-one executable raw writes sat behind it.  That is `v0.35.12`'s finding
+  on the other census, one branch down, and patching the branch would have been
+  the fourth telling of a rule this file already carries twice.
+
+  So the *question* has one answer: `_TABLE_OPS` classifies every operation of
+  either object table `read` / `write` / `sweep` / `other`, and `READ`, `WRITE`
+  and `SWEEP` are built from **one alternation** over it, so a widening reaches
+  both spellings by construction.  Two reconciliations run in every mode:
+  `table_op_violations` derives the operation set from `RHTable`'s and
+  `FrozenMap`'s own sources and fails in both directions — *an operation nobody
+  classified is one neither pattern ever looks for*, which is precisely how
+  `set` escaped — and `branch_symmetry_violations` asserts each kind is
+  recognised in the method spelling *and* the qualified one.  The decisive
+  self-test case keeps the write and changes only how it is written.
+
+  Two things that widening measured, and both generalise.  **A helper the
+  scanner cannot see is a spelling that evades the metric**: the frozen writes
+  went onto `frozenWithObjectStored`, a *state*-level primitive, because a
+  map-level one would carry its raw `set` on a bare `FrozenMap` parameter, which
+  a census keyed on `.objects` is blind to — so a new store primitive takes the
+  state, never the table.  And **a transition can wear a primitive's
+  exemption**: `frozenUpdatePipBoost` was in `WRITE_PRIMITIVE_BODIES` because it
+  spelled its write `st.objects.insert`, the one form the `set`-only branch
+  could not see; it writes through `frozenRewriteObject` — the total mirror of
+  the live `rewriteObject`, sound because `FrozenMap.insert` *is* `set` with an
+  append fallback — and the registry names the primitive alone.  Whole-table
+  traversals are now **reported** (`STORE_SWEEP_*`) rather than silently outside
+  the population, because a fold is not a keyed access and a number beside the
+  two zeros is what stops their silence reading as absence.
+
+  **And the collapse surfaced twelve answers to one question.**  Moving the
+  writes behind a primitive broke eleven proofs that each `unfold`ed a composite
+  down to `FrozenMap.set` and case-split on it — plus a twelfth,
+  `frozenStoreObject_extracts_state`, which said exactly that, `private`, in a
+  module **downstream of every asker**: *when a question has one owner and an
+  asker that cannot see it, the owner is in the wrong layer.*  The owner is now
+  beside the write (`frozenWithObjectStored_ok`, `_only_modifies_objects`,
+  `frozenRewriteObject_only_modifies_objects`, `frozenOnlyObjects_rfl` /
+  `_trans`) and the duplicate is deleted with a tombstone.  The re-derivations
+  were coupled to the wrong thing besides — each closed its leaves by
+  `injection` on a literal `{ st with objects := _ }`, so it depended on how many
+  branches a body had *and* on every write being spelled inline, which is why
+  the migration broke them rather than leaving them redundant.
+  `frozen_objects_frame` **searches** the branch for whatever store chain the
+  split left in context, so a store added to a frozen operation costs its frame
+  proof nothing.
+
+  One mechanical note, because it corrected the author rather than the tree: a
+  mutation run first read as showing the registry reconciliation passing a stale
+  entry.  It was not stale — `frozenUpdatePipBoost` genuinely still held a raw
+  write, in the `insert` spelling the fixing sweep had grepped past.  **The gate
+  was right and the sweep was one spelling wide**, which is this cut's own
+  finding arriving inside the work to fix it.
+
+  **And the sweep's subject is the SET a cut retires, not the artefact the last
+  red gate named.**  Four artefacts watched this one change and each reported
+  separately: the de-threading gate (a `macro` is declaration-minting
+  machinery), the reply-stack write census (a helper one hop past the frontier),
+  and **two** Tier 3 anchors — one on the retired `WRITE` alternation, one on
+  the retired `WRITE_PRIMITIVE_BODIES` key.  The fourth is the finding: after
+  the third, this file's own *sweep what was pinning the thing you deleted* rule
+  was run — and run against the retired **pattern**, which is what the red gate
+  had pointed at, so the anchor naming a retired **registry key** stayed
+  invisible until Tier 3 reached it.  A cut that deletes a pattern, a helper and
+  a registry key has three sweeps to run.  Deriving that set is a mechanism
+  `scripts/check_anchor_symbol_liveness.py` already has for Python *symbols* and
+  does not have for the string-literal *keys* these registries are indexed by;
+  extending it is registered in `docs/REGISTERED_DEBT.md` table C rather than
+  restated here, because a rule this file has now stated three times is owed a
+  check.
 
   **And a spelling is not a read** (PR #895 review, `v0.35.12`).  The zero above
   was true of `s.objects[k]?` and blind to `s.objects.get? k`, which is *the same

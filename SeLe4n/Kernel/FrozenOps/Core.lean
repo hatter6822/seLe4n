@@ -138,15 +138,148 @@ def frozenLookupCNode (st : FrozenSystemState) (cnId : SeLe4n.ObjId) : Option Fr
 -- Q7-B: Core Mutation Primitives (Value-Only)
 -- ============================================================================
 
+/-- **PR #897 review: the frozen object table's one checked write.**
+
+`Model.withObjectStored`'s counterpart, and it returns an `Except` where the live
+one is total: `storeObject` cannot fail, while a frozen key the freeze did not
+capture has no slot to write.
+
+`FrozenMap.set` answers `none` for such a key, and every frozen transition that
+wrote an object had that `match` inlined -- 31 executable occurrences across 22
+declarations, invisible to `STORE_WRITE_CODE`'s enforced zero because the census's
+method branch named `insert` and `erase` and not `set`.  A spelling the gate does
+not recognise is not a licence to keep it: the live surface routes every write
+through `storeObject` / `withObjectStored` / `rewriteObject`, and this is the
+frozen counterpart of that discipline.
+
+**State level, deliberately.**  A map-level primitive would have served the two
+helpers that chain writes on the table itself -- and its own raw `set` would then
+sit on a bare `FrozenMap` parameter, which the census keys on `.objects` and so
+cannot see.  Moving 31 writes into a helper the scanner is blind to is *choosing
+a spelling to evade a metric*, which is the defect this cut exists to close; the
+two helpers take a state instead. -/
+def frozenWithObjectStored (st : FrozenSystemState) (id : SeLe4n.ObjId)
+    (obj : FrozenKernelObject) : Except KernelError FrozenSystemState :=
+  match st.objects.set id obj with
+  | some objects' => .ok { st with objects := objects' }
+  | none => .error .objectNotFound
+
 /-- Q7-B: Store a frozen kernel object at an existing key.
-Uses `FrozenMap.set` — in-place array update. Returns error if key is
-not in the frozen map (key was not present at freeze time). -/
+
+The `FrozenKernel` wrapper over `frozenWithObjectStored`, as the live
+`storeObject` is the monadic spelling of `withObjectStored`.  The raw
+`FrozenMap.set` is in `frozenWithObjectStored` and nowhere else. -/
 def frozenStoreObject (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
     : FrozenKernel Unit :=
   fun st =>
-    match st.objects.set id obj with
-    | some objects' => .ok ((), { st with objects := objects' })
-    | none => .error .objectNotFound
+    match frozenWithObjectStored st id obj with
+    | .ok st' => .ok ((), st')
+    | .error e => .error e
+
+/-- The **total** in-place rewrite, mirroring the live `rewriteObject`.
+
+`FrozenMap.insert` is `set` with an append fallback, so on a key the store
+already holds the two agree definitionally; where they part is an *absent* key,
+which `insert` appends and this leaves alone.  A frozen transition that has
+already resolved its object reaches a present key by construction, so the
+identity arm is unreachable from every caller -- and it is the right arm to
+have, because a rewrite that silently created an object would be a write the
+live surface cannot perform.
+
+This exists so a total transition need not reach for the raw table: before it,
+`frozenUpdatePipBoost` spelled its write `st.objects.insert`, which is the same
+write in a spelling the census's `set`-only branch did not recognise, so it sat
+past an enforced zero as a *registered primitive* -- a transition wearing a
+primitive's exemption. -/
+def frozenRewriteObject (st : FrozenSystemState) (id : SeLe4n.ObjId)
+    (obj : FrozenKernelObject) : FrozenSystemState :=
+  match frozenWithObjectStored st id obj with
+  | .ok st' => st'
+  | .error _ => st
+
+-- ============================================================================
+-- The frozen write's frame -- stated once, at the write
+-- ============================================================================
+
+/-! ### What a frozen store changes
+
+`frozenWithObjectStored` is the frozen surface's one raw `FrozenMap.set`, so
+"which fields does a frozen store change" is a question about **it**, not about
+each operation built from it.  Before the raw writes were collapsed onto it the
+question had **twelve** answers: eleven proofs across `Core`, `Commutativity`
+and `Invariant` each `unfold`ed a composite down to `FrozenMap.set` and
+case-split on it, and a twelfth -- `frozenStoreObject_extracts_state` -- said
+exactly this, `private`, in `Invariant.lean`, downstream of every one of the
+eleven that could not see it.  *When a question has one owner and an asker that
+cannot see it, the owner is in the wrong layer.*
+
+The three lemmas below are that owner, beside the write they are about.
+`_ok` is the sharp reading (the stored table is `set`'s own output),
+`_only_modifies_objects` the frame consumers want, and `_trans` what lets a
+composite that chains stores inherit the frame instead of re-deriving it by
+destructuring its own body -- which is what coupled the old proofs to how many
+branches a body happened to have. -/
+
+/-- The sharp reading of a successful frozen store: the post-state is the
+pre-state with `objects` replaced by `FrozenMap.set`'s own output. -/
+theorem frozenWithObjectStored_ok
+    {st st' : FrozenSystemState} {id : SeLe4n.ObjId} {obj : FrozenKernelObject}
+    (hOk : frozenWithObjectStored st id obj = .ok st') :
+    ∃ objects', st.objects.set id obj = some objects' ∧
+      st' = { st with objects := objects' } := by
+  unfold frozenWithObjectStored at hOk
+  cases hSet : st.objects.set id obj with
+  | some objects' =>
+    rw [hSet] at hOk
+    exact ⟨objects', rfl, by injection hOk with hEq; exact hEq.symm⟩
+  | none => rw [hSet] at hOk; simp at hOk
+
+/-- A successful frozen store changes `objects` and nothing else. -/
+theorem frozenWithObjectStored_only_modifies_objects
+    {st st' : FrozenSystemState} {id : SeLe4n.ObjId} {obj : FrozenKernelObject}
+    (hOk : frozenWithObjectStored st id obj = .ok st') :
+    ∃ objects', st' = { st with objects := objects' } := by
+  obtain ⟨objects', _, hSt⟩ := frozenWithObjectStored_ok hOk
+  exact ⟨objects', hSt⟩
+
+/-- The total rewrite changes `objects` and nothing else -- on either arm. -/
+theorem frozenRewriteObject_only_modifies_objects
+    (st : FrozenSystemState) (id : SeLe4n.ObjId) (obj : FrozenKernelObject) :
+    ∃ objects', frozenRewriteObject st id obj = { st with objects := objects' } := by
+  unfold frozenRewriteObject
+  cases hStore : frozenWithObjectStored st id obj with
+  | ok st1 => obtain ⟨o, hSt⟩ := frozenWithObjectStored_only_modifies_objects hStore; exact ⟨o, hSt⟩
+  | error e => exact ⟨st.objects, rfl⟩
+
+/-- A state changes only `objects` from itself -- the base case a store chain
+unwinds to. -/
+theorem frozenOnlyObjects_rfl {st : FrozenSystemState} :
+    ∃ objects', st = { st with objects := objects' } :=
+  ⟨st.objects, rfl⟩
+
+/-- Changing only `objects` composes, so an operation that chains stores
+inherits the frame rather than re-deriving it from its own body. -/
+theorem frozenOnlyObjects_trans {st st1 st2 : FrozenSystemState}
+    (h1 : ∃ objects', st1 = { st with objects := objects' })
+    (h2 : ∃ objects', st2 = { st1 with objects := objects' }) :
+    ∃ objects', st2 = { st with objects := objects' } := by
+  obtain ⟨_, rfl⟩ := h1
+  obtain ⟨o2, rfl⟩ := h2
+  exact ⟨o2, rfl⟩
+
+/-- The monadic wrapper's sharp reading. -/
+theorem frozenStoreObject_ok
+    {st st' : FrozenSystemState} {id : SeLe4n.ObjId} {obj : FrozenKernelObject}
+    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
+    ∃ objects', st.objects.set id obj = some objects' ∧
+      st' = { st with objects := objects' } := by
+  unfold frozenStoreObject at hOk
+  cases hStore : frozenWithObjectStored st id obj with
+  | ok st1 =>
+    rw [hStore] at hOk
+    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hOk
+    exact hOk ▸ frozenWithObjectStored_ok hStore
+  | error e => rw [hStore] at hOk; simp at hOk
 
 /-- Q7-B: Update a TCB in frozen state. Convenience wrapper around
 `frozenStoreObject` that wraps the TCB in `FrozenKernelObject.tcb`. -/
@@ -400,7 +533,7 @@ def frozenUpdatePipBoost (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
         let oldPrio := tcb.boostedPriority
         let newPrio := tcb'.boostedPriority
         let st' : FrozenSystemState :=
-          { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+          frozenRewriteObject st tid.toObjId (.tcb tcb')
         -- **Queued ANYWHERE, not queued at `oldPrio`.**  The live
         -- `updatePipBoost` asks `tid ∈ runQueueOnCore` -- membership in the
         -- queue -- and then `RunQueue.remove tid` takes it out of whichever
@@ -470,18 +603,16 @@ def frozenLinkCallerReply (st : FrozenSystemState) (caller : SeLe4n.ThreadId)
       -- is the fifth guard deciding one question differently, and `isFree`'s own
       -- docstring records the last time this tree paid for it.
       if r.isFree then
-        match st.objects.set rid.toObjId (.reply { r with caller := some caller }) with
-        | none => .error .objectNotFound
-        | some objects' =>
-            let st1 : FrozenSystemState := { st with objects := objects' }
+        match frozenWithObjectStored st rid.toObjId
+            (.reply { r with caller := some caller }) with
+        | .error e => .error e
+        | .ok st1 =>
             match frozenLookupTcb st1 caller with
             | none => .error .objectNotFound
             | some tcb =>
                 if tcb.replyObject.isNone then
-                  match st1.objects.set caller.toObjId
-                      (.tcb { tcb with replyObject := some rid }) with
-                  | none => .error .objectNotFound
-                  | some objects'' => .ok { st1 with objects := objects'' }
+                  frozenWithObjectStored st1 caller.toObjId
+                    (.tcb { tcb with replyObject := some rid })
                 else .error .replyCapInvalid
       else .error .replyCapInvalid
   | _ => .error .replyCapInvalid
@@ -531,19 +662,17 @@ def frozenSpliceReplyFrameStores (st : FrozenSystemState) (rid above : SeLe4n.Re
     (r a : SeLe4n.Kernel.Reply) : Except KernelError FrozenSystemState :=
   match frozenSpliceFrameBelow? st rid r above with
   | none =>
-    match st.objects.set above.toObjId (.reply { a with prev := none }) with
-    | none => .error .objectNotFound
-    | some objects' => .ok { st with objects := objects' }
+    frozenWithObjectStored st above.toObjId (.reply { a with prev := none })
   | some (below, b) =>
-    match st.objects.set above.toObjId (.reply { a with prev := some below }) with
-    | none => .error .objectNotFound
-    | some o1 =>
-      match o1.set below.toObjId (.reply { b with next := some (.frame above) }) with
-      | none => .error .objectNotFound
-      | some o2 =>
-        match o2.set rid.toObjId (.reply { r with prev := none }) with
-        | none => .error .objectNotFound
-        | some o3 => .ok { st with objects := o3 }
+    match frozenWithObjectStored st above.toObjId
+        (.reply { a with prev := some below }) with
+    | .error e => .error e
+    | .ok st1 =>
+      match frozenWithObjectStored st1 below.toObjId
+          (.reply { b with next := some (.frame above) }) with
+      | .error e => .error e
+      | .ok st2 =>
+        frozenWithObjectStored st2 rid.toObjId (.reply { r with prev := none })
 
 /-- **WS-HP HP8, frozen mirror**: splice the frame `rid` out of its reply stack.
 
@@ -601,9 +730,7 @@ theorem frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below
     {st : FrozenSystemState} {rid above : SeLe4n.ReplyId} {r a : SeLe4n.Kernel.Reply}
     (h : frozenSpliceFrameBelow? st rid r above = none) :
     frozenSpliceReplyFrameStores st rid above r a =
-      (match st.objects.set above.toObjId (.reply { a with prev := none }) with
-       | none => .error .objectNotFound
-       | some objects' => .ok { st with objects := objects' }) := by
+      frozenWithObjectStored st above.toObjId (.reply { a with prev := none }) := by
   unfold frozenSpliceReplyFrameStores
   rw [h]
 
@@ -782,20 +909,18 @@ def frozenStoreDonationHeadPop (st : FrozenSystemState) (scId : SeLe4n.SchedCont
     match st.getReply? rid with
     | none => .error .objectNotFound
     | some h =>
-      match st.objects.set rid.toObjId (.reply { h with prev := none, next := none }) with
-      | none => .error .objectNotFound
-      | some cleared =>
-        let st1 : FrozenSystemState := { st with objects := cleared }
+      match frozenWithObjectStored st rid.toObjId
+          (.reply { h with prev := none, next := none }) with
+      | .error e => .error e
+      | .ok st1 =>
         match r.prev with
         | none => .ok st1
         | some below =>
           match st1.getReply? below with
           | none => .error .objectNotFound
           | some b =>
-            match st1.objects.set below.toObjId
-                    (.reply { b with next := some (.head scId) }) with
-            | none => .error .objectNotFound
-            | some reheaded => .ok { st1 with objects := reheaded }
+            frozenWithObjectStored st1 below.toObjId
+              (.reply { b with next := some (.head scId) })
 
 /-- **WS-RM, frozen mirror**: hand a donated scheduling context back.
 
@@ -850,30 +975,26 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
                              scReply := head?.bind (fun p => p.2.prev),
                              donationOrigin :=
                                if newOwner?.isNone then none else sc.donationOrigin }
-        match st.objects.set scId.toObjId (.schedContext sc') with
-        | none => .error .objectNotFound
-        | some rebound =>
-          match frozenStoreDonationHeadPop { st with objects := rebound } scId head? with
+        match frozenWithObjectStored st scId.toObjId (.schedContext sc') with
+        | .error e => .error e
+        | .ok rebound =>
+          match frozenStoreDonationHeadPop rebound scId head? with
           | .error e => .error e
           | .ok st2 =>
             match st2.getTcb? originalOwner with
             | none => .error .objectNotFound
             | some ownerTcb =>
-              match st2.objects.set originalOwner.toObjId
+              match frozenWithObjectStored st2 originalOwner.toObjId
                       (.tcb { ownerTcb with
                         schedContextBinding :=
                           SeLe4n.Kernel.donationReturnBinding scId newOwner? }) with
-              | none => .error .objectNotFound
-              | some owned =>
-                let st3 : FrozenSystemState := { st2 with objects := owned }
+              | .error e => .error e
+              | .ok st3 =>
                 match st3.getTcb? serverTid with
                 | none => .error .objectNotFound
                 | some serverTcb =>
-                  match st3.objects.set serverTid.toObjId
-                          (.tcb { serverTcb with
-                            schedContextBinding := .unbound }) with
-                  | none => .error .objectNotFound
-                  | some released => .ok { st3 with objects := released }
+                  frozenWithObjectStored st3 serverTid.toObjId
+                    (.tcb { serverTcb with schedContextBinding := .unbound })
 
 /-- **WS-HP HP10.7/HP10.8, frozen mirror**: the origin may be rebound without
 invalidating a live donation.
@@ -1017,9 +1138,7 @@ def frozenSaveOutgoingContext (st : FrozenSystemState)
       match st.getTcb? outTid with
       | some outTcb =>
           let obj := FrozenKernelObject.tcb { outTcb with registerContext := st.machine.regs }
-          match st.objects.set outTid.toObjId obj with
-          | some objects' => .ok { st with objects := objects' }
-          | none => .error .objectNotFound
+          frozenWithObjectStored st outTid.toObjId obj
       | _ => .error .objectNotFound
 
 /-- R1-E/M-11: Restore incoming thread's register context from its TCB in frozen state.
@@ -1047,15 +1166,15 @@ makes preservation proofs trivial: the caller wraps in `{ st with objects }`.
 
 AE2-D (U-31): Two-phase design — validate all object keys exist BEFORE
 performing any writes, preventing partial mutation on intermediate failure. -/
-def frozenQueuePushTailObjects (objects : FrozenMap SeLe4n.ObjId FrozenKernelObject)
+def frozenQueuePushTailObjects (st : FrozenSystemState)
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB)
-    : Except KernelError (FrozenMap SeLe4n.ObjId FrozenKernelObject) :=
+    : Except KernelError FrozenSystemState :=
   let q := if isReceiveQ then ep.receiveQ else ep.sendQ
   match q.tail with
   | none =>
       -- AE2-D Phase 1: Validate all target keys exist before any mutation
-      if !(objects.contains endpointId && objects.contains tid.toObjId) then
+      if !(st.objects.contains endpointId && st.objects.contains tid.toObjId) then
         .error .objectNotFound
       else
       -- AE2-D Phase 2: Apply writes (guaranteed to succeed by Phase 1)
@@ -1067,18 +1186,16 @@ def frozenQueuePushTailObjects (objects : FrozenMap SeLe4n.ObjId FrozenKernelObj
         queuePrev := none
         queuePPrev := some .endpointHead
         queueNext := none }
-      match objects.set endpointId (.endpoint ep') with
-      | some objects1 =>
-          match objects1.set tid.toObjId (.tcb tcb') with
-          | some objects2 => .ok objects2
-          | none => .error .objectNotFound  -- unreachable after Phase 1
-      | none => .error .objectNotFound  -- unreachable after Phase 1
+      -- Both writes are guaranteed by Phase 1; the refusals are unreachable.
+      match frozenWithObjectStored st endpointId (.endpoint ep') with
+      | .ok st1 => frozenWithObjectStored st1 tid.toObjId (.tcb tcb')
+      | .error e => .error e
   | some tailTid =>
-      match objects.get? tailTid.toObjId with
-      | some (.tcb tailTcb) =>
+      match st.getTcb? tailTid with
+      | some tailTcb =>
           -- AE2-D Phase 1: Validate all target keys exist before any mutation
-          if !(objects.contains endpointId && objects.contains tailTid.toObjId
-               && objects.contains tid.toObjId) then
+          if !(st.objects.contains endpointId && st.objects.contains tailTid.toObjId
+               && st.objects.contains tid.toObjId) then
             .error .objectNotFound
           else
           -- AE2-D Phase 2: Apply writes (guaranteed to succeed by Phase 1)
@@ -1091,16 +1208,43 @@ def frozenQueuePushTailObjects (objects : FrozenMap SeLe4n.ObjId FrozenKernelObj
             queuePrev := some tailTid
             queuePPrev := some (.tcbNext tailTid)
             queueNext := none }
-          match objects.set endpointId (.endpoint ep') with
-          | some objects1 =>
-              match objects1.set tailTid.toObjId (.tcb tailTcb') with
-              | some objects2 =>
-                  match objects2.set tid.toObjId (.tcb tcb') with
-                  | some objects3 => .ok objects3
-                  | none => .error .objectNotFound  -- unreachable after Phase 1
-              | none => .error .objectNotFound  -- unreachable after Phase 1
-          | none => .error .objectNotFound  -- unreachable after Phase 1
+          -- All three writes are guaranteed by Phase 1.
+          match frozenWithObjectStored st endpointId (.endpoint ep') with
+          | .ok st1 =>
+              match frozenWithObjectStored st1 tailTid.toObjId (.tcb tailTcb') with
+              | .ok st2 => frozenWithObjectStored st2 tid.toObjId (.tcb tcb')
+              | .error e => .error e
+          | .error e => .error e
       | _ => .error .objectNotFound
+
+/-- The enqueue's writes are frozen stores, so it inherits their frame.
+
+The leaf closer **searches** for the store chain rather than naming its shape:
+`solve_by_elim` composes `frozenOnlyObjects_trans` over whichever
+`frozenWithObjectStored ... = .ok _` hypotheses the branch left in context.  A
+store added to either arm therefore costs this proof nothing, where the
+superseded proof destructured the body down to `FrozenMap.set` and closed each
+leaf by `injection` on a literal `{ st with objects := _ }` -- coupling it to
+how many branches the body had and to every write being spelled inline. -/
+theorem frozenQueuePushTailObjects_only_modifies_objects
+    {st st' : FrozenSystemState} {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {ep : Endpoint} {tcb : TCB}
+    (hOk : frozenQueuePushTailObjects st endpointId isReceiveQ tid ep tcb = .ok st') :
+    ∃ objects', st' = { st with objects := objects' } := by
+  simp only [frozenQueuePushTailObjects] at hOk
+  repeat' split at hOk
+  -- Unwind whatever store chain the branch left in context, rather than naming
+  -- its length: each step peels one `frozenWithObjectStored ... = .ok stK`
+  -- hypothesis off the front and the walk stops at `frozenOnlyObjects_rfl` when
+  -- it reaches `st` itself.  Spelled inline rather than behind a tactic `macro`,
+  -- because declaration-minting machinery is invisible to this tree's text
+  -- censuses and one call site buys no sharing to pay for that.
+  all_goals first
+    | (simp at hOk; done)
+    | (repeat first
+        | exact frozenOnlyObjects_rfl
+        | refine frozenOnlyObjects_trans ?_
+            (frozenWithObjectStored_only_modifies_objects (by assumption)))
 
 def frozenQueuePushTail (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st : FrozenSystemState)
@@ -1114,9 +1258,7 @@ def frozenQueuePushTail (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
           if tcb.queuePPrev.isSome || tcb.queuePrev.isSome || tcb.queueNext.isSome then
             .error .illegalState
           else
-          match frozenQueuePushTailObjects st.objects endpointId isReceiveQ tid ep tcb with
-          | .ok objects' => .ok { st with objects := objects' }
-          | .error e => .error e
+          frozenQueuePushTailObjects st endpointId isReceiveQ tid ep tcb
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
 
@@ -1196,12 +1338,12 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
             then { ep with receiveQ := q' }
             else { ep with sendQ := q' }
           let tcb' := { tcb with queuePrev := none, queueNext := none, queuePPrev := none }
-          match st.objects.set endpointId (.endpoint ep') with
-          | none => .error .objectNotFound
-          | some o1 =>
-            match o1.set tid.toObjId (.tcb tcb') with
-            | none => .error .objectNotFound
-            | some o2 =>
+          match frozenWithObjectStored st endpointId (.endpoint ep') with
+          | .error e => .error e
+          | .ok st1 =>
+            match frozenWithObjectStored st1 tid.toObjId (.tcb tcb') with
+            | .error e => .error e
+            | .ok st2 =>
               -- Predecessor now points past the removed node.
               --
               -- `v0.35.59`: and it must *be* the predecessor.
@@ -1215,35 +1357,31 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
               -- result is an `Except` rather than an `Option` because the two
               -- failures are different: an unresolvable predecessor is
               -- `.objectNotFound` and a non-reciprocating one is `.illegalState`.
-              let afterPrev : Except KernelError (FrozenMap SeLe4n.ObjId FrozenKernelObject) :=
+              let afterPrev : Except KernelError FrozenSystemState :=
                 match tcb.queuePrev with
-                | none => .ok o2
+                | none => .ok st2
                 | some prevTid =>
-                  match o2.get? prevTid.toObjId with
-                  | some (.tcb prevTcb) =>
+                  match st2.getTcb? prevTid with
+                  | some prevTcb =>
                       if !queuePredecessorNamesSuccessor prevTcb tid then .error .illegalState
                       else
-                        match o2.set prevTid.toObjId
-                            (.tcb { prevTcb with queueNext := tcb.queueNext }) with
-                        | some o3 => .ok o3
-                        | none => .error .objectNotFound
+                        frozenWithObjectStored st2 prevTid.toObjId
+                          (.tcb { prevTcb with queueNext := tcb.queueNext })
                   | _ => .error .objectNotFound
               match afterPrev with
               | .error e => .error e
-              | .ok o3 =>
+              | .ok st3 =>
                 -- Successor's back-links move to the removed node's predecessor.
                 match tcb.queueNext with
-                | none => .ok { st with objects := o3 }
+                | none => .ok st3
                 | some nextTid =>
-                  match o3.get? nextTid.toObjId with
-                  | some (.tcb nextTcb) =>
-                      match o3.set nextTid.toObjId (.tcb { nextTcb with
-                          queuePrev := tcb.queuePrev,
-                          queuePPrev := match tcb.queuePrev with
-                            | none => some .endpointHead
-                            | some prevTid => some (.tcbNext prevTid) }) with
-                      | some o4 => .ok { st with objects := o4 }
-                      | none => .error .objectNotFound
+                  match st3.getTcb? nextTid with
+                  | some nextTcb =>
+                      frozenWithObjectStored st3 nextTid.toObjId (.tcb { nextTcb with
+                        queuePrev := tcb.queuePrev,
+                        queuePPrev := match tcb.queuePrev with
+                          | none => some .endpointHead
+                          | some prevTid => some (.tcbNext prevTid) })
                   | _ => .error .objectNotFound
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
@@ -1256,12 +1394,12 @@ theorem frozenQueuePushTail_only_modifies_objects
     (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
     ∃ objects', st' = { st with objects := objects' } := by
   simp only [frozenQueuePushTail, frozenLookupTcb] at hOk
-  -- Split all nested matches including the queue-link precondition `if`
-  repeat split at hOk
-  all_goals (repeat split at hOk)
-  all_goals (repeat split at hOk)
-  -- Close goals: error paths close by simp (derives False), success paths by injection
-  all_goals (first | (simp at hOk; done) | (injection hOk with hEq; exact ⟨_, hEq.symm⟩))
+  -- The lookups and the queue-link precondition write nothing; the one arm that
+  -- reaches a write delegates to the enqueue, which carries the frame.
+  repeat' split at hOk
+  all_goals first
+    | (simp at hOk; done)
+    | exact frozenQueuePushTailObjects_only_modifies_objects hOk
 
 -- ============================================================================
 -- Q7-A: Core Theorems
@@ -1283,10 +1421,9 @@ theorem frozenStoreObject_preserves_scheduler
     (st : FrozenSystemState) (st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' => simp [hSet] at hOk; rw [← hOk]
-  | none => simp [hSet] at hOk
+  -- The frame is the write's, stated once at `frozenWithObjectStored`.
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
+  rw [hSt]
 
 /-- Q7-A: `frozenStoreObject` preserves the machine state. -/
 theorem frozenStoreObject_preserves_machine
@@ -1294,9 +1431,8 @@ theorem frozenStoreObject_preserves_machine
     (st : FrozenSystemState) (st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.machine = st.machine := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' => simp [hSet] at hOk; rw [← hOk]
-  | none => simp [hSet] at hOk
+  -- The frame is the write's, stated once at `frozenWithObjectStored`.
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
+  rw [hSt]
 
 end SeLe4n.Kernel.FrozenOps

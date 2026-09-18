@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.96` (`lakefile.toml`) |
+| **Package version** | `0.35.97` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 391,466 across 333 Lean files |
+| **Production LoC** | 391,604 across 333 Lean files |
 | **Test LoC** | 79,392 across 70 Lean test suites |
-| **Proved declarations** | 13,046 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 13,052 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1910,14 +1910,29 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    The frozen execution surface is in scope on the same footing and is
    also at zero, through the accessor family in
    `SeLe4n/Model/FrozenState.lean`.  Since v0.35.76 the same classifier
-   also counts raw object-table *writes* (`objects.insert` /
-   `objects.erase`, method or qualified spelling): `STORE_WRITE_CODE` is
-   the executable population, **zero** and enforced as zero from its
-   first measurement, with the six bodies that write raw by design
-   (`storeObject`, `rewriteObject`, `Builder.createObject`,
-   `updateObjectAt`, the frozen store and the reply-stack write census's
-   planted witness) registered as `WRITE_PRIMITIVE_BODIES` and
-   reconciled in both directions, and `STORE_WRITE_SPEC` the diagnostic.)
+   also counts raw object-table *writes*: `STORE_WRITE_CODE` is the
+   executable population, **zero** and enforced as zero from its first
+   measurement, with the bodies that write raw by design (`storeObject`,
+   `rewriteObject`, `Builder.createObject`, `updateObjectAt`,
+   `frozenWithObjectStored` and the reply-stack write census's planted
+   witness) registered as `WRITE_PRIMITIVE_BODIES` and reconciled in
+   both directions, and `STORE_WRITE_SPEC` the diagnostic.
+
+   Since v0.35.97 both patterns are built from **one classification**.
+   `WRITE` had named `set` in its qualified branch and not in its method
+   branch, so `st.objects.set k v` — the frozen surface's ordinary
+   store — walked around the enforced zero, and thirty-one executable
+   raw writes sat behind it; the finding is v0.35.12's *a spelling is
+   not a read*, one branch down.  `_TABLE_OPS` now classifies every
+   operation of `RHTable` and `FrozenMap` as `read` / `write` / `sweep`
+   / `other` and all three patterns are one alternation over it, with
+   two reconciliations run in every mode: the operation set is derived
+   from those two types' own sources and fails in both directions, and
+   each classified kind must be recognised in the method spelling *and*
+   the qualified one.  The whole-table traversals are reported as
+   `STORE_SWEEP_CODE` / `STORE_SWEEP_SPEC` — a diagnostic, never
+   enforced, because a fold is not a keyed access and a number beside
+   the two zeros is what stops their silence reading as absence.)
 
    **Axiom budget for SM3.C**: 0 Lean axioms, 0 sorries.  Every
    theorem depends only on the standard Lean foundational axioms

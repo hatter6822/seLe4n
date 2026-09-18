@@ -1,3 +1,184 @@
+## v0.35.97 — PR #897 review F2: a spelling is not a write, and a frame belongs to the write
+
+The review's fourth finding, closed — and the class underneath it, which the fix
+surfaced.
+
+**The finding.**  `scripts/lean_store_read_census.py`'s `WRITE` pattern named
+`set` in its *qualified* branch and not in its *method* branch, so
+`st.objects.set k v` — the frozen surface's ordinary store — was invisible to an
+**enforced zero**.  That is `v0.35.12`'s *a spelling is not a read* on the write
+census, one branch down: the census measured a spelling, and an enforced zero a
+rename walks around is worse than no zero, because the number reads like a
+measurement.
+
+**The remedy is one classification, not a wider regex.**  `_TABLE_OPS` classifies
+every operation of either object table `read` / `write` / `sweep` / `other`, and
+`READ`, `WRITE` and `SWEEP` are all built from one alternation over it, so a
+widening reaches both branches by construction.  Two reconciliations keep it
+honest, both wired into every mode and both mutation-tested:
+`table_op_violations` derives the operation set from `RHTable`'s and
+`FrozenMap`'s own sources and fails in **both** directions (an operation nobody
+classified is one neither pattern ever looks for — which is exactly how `set`
+got out — and a stale entry reads like a live one), and
+`branch_symmetry_violations` asserts that each classified kind is recognised in
+the method spelling *and* the qualified one.  Stating that rule a fourth time is
+what had already failed; the check is the remedy.
+
+The decisive self-test case keeps the write and changes only how it is written:
+`frozen_write_method_form` is token-preserving against the existing
+`frozen_write`, and `frozen_insert_method_form` is the spelling the one
+transition below actually used.
+
+**What widening it measured.**  Thirty-one executable raw writes across the
+frozen surface, past `STORE_WRITE_CODE = 0`.  Widening alone would have turned
+Tier 0 red, so the widening and the migration are one cut: every frozen write now
+goes through `frozenWithObjectStored` — a **state-level** primitive, deliberately,
+because a map-level helper's own raw `set` would sit on a bare `FrozenMap`
+parameter that the census (which keys on `.objects`) cannot see, and moving
+writes into a helper the scanner is blind to is *choosing a spelling to evade a
+metric*, which is the defect this cut exists to close.
+
+`frozenRewriteObject` is its **total** companion, mirroring the live
+`rewriteObject`: `FrozenMap.insert` is `set` with an append fallback, so on a key
+the store already holds the two agree definitionally.  It exists because
+`frozenUpdatePipBoost` spelled its write `st.objects.insert` — the same write in
+the one spelling the `set`-only branch could not see — and so sat past the zero
+as a **registered write primitive**: a transition wearing a primitive's
+exemption.  `WRITE_PRIMITIVE_BODIES` now names `frozenWithObjectStored` and
+nothing else on that surface, and both zeros hold: `STORE_READ_CODE = 0`,
+`STORE_WRITE_CODE = 0`.
+
+Three frozen **reads** surfaced in the same widening —
+`st.objects.get? tailTid.toObjId` matched against `some (.tcb _)` in the enqueue
+and twice in the removal — and went to `FrozenSystemState.getTcb?`, which is
+definitionally that inline match, so the migration is behaviour-preserving by
+construction.  `frozenLookupTcb` would have been *wrong* here: it adds an
+`isReserved` refusal these sites do not have.
+
+The whole-table traversals are now **reported** rather than silently outside the
+population: `STORE_SWEEP_CODE` / `STORE_SWEEP_SPEC` / `STORE_SWEEP_SCOPE`, a
+diagnostic and never enforced, because a fold is not a keyed access and a number
+beside the two zeros is what stops their silence being read as absence.
+
+### ...and the class the fix surfaced: twelve answers to one question
+
+Collapsing the writes broke **twelve** proofs at once, and the reason is the
+finding.  "What does a frozen store change?" was answered eleven times by
+`unfold`ing a composite down to `FrozenMap.set` and case-splitting on it — and a
+twelfth time by `frozenStoreObject_extracts_state`, which said exactly that,
+`private`, in `Invariant.lean`, **downstream of every one of the eleven that
+could not see it**.  That is this project's own rule, in the form it keeps
+taking: *when a question has one owner and an asker that cannot see it, the
+owner is in the wrong layer.*
+
+So the owner moved down, beside the write it is about:
+`frozenWithObjectStored_ok` (the sharp reading — the stored table is `set`'s own
+output), `frozenWithObjectStored_only_modifies_objects` (the frame consumers
+want), `frozenRewriteObject_only_modifies_objects`, and
+`frozenOnlyObjects_rfl` / `_trans`, which are what let an operation that chains
+stores **inherit** the frame instead of re-deriving it.  All twelve askers cite
+it; the private duplicate is deleted with a tombstone naming its replacement.
+
+**And the re-derivations were coupled to the wrong thing.**  Each closed its
+leaves by `injection` on a literal `{ st with objects := _ }`, so it depended on
+how many branches the body had *and* on every write being spelled inline —
+which is why moving the writes behind a primitive broke them rather than leaving
+them merely redundant.  `frozen_objects_frame` is the replacement: it **searches**
+the branch for whatever store chain the split left in context, peeling one
+`frozenWithObjectStored` hypothesis at a time and stopping at
+`frozenOnlyObjects_rfl`.  A store added to a frozen operation now costs its frame
+proof nothing.
+
+One measurement worth keeping, because it corrected me rather than the tree: the
+first reading of a mutation run recorded the registry reconciliation as having a
+hole — a stale entry passing.  It did not.  `frozenUpdatePipBoost` genuinely
+still held a raw write, in the `insert` spelling my own sweep had grepped past,
+so the entry was *live*, not stale, and both mutations behaved correctly.  **The
+gate was right and the sweep was one spelling wide** — which is the finding this
+cut is about, arriving in the work to fix it.
+
+Tier 3 gains fifteen anchors: the frame at the write, its consumers, the total
+rewrite and the transition that writes through it, the two census
+reconciliations, and four negatives — the retired `unfold frozenStoreObject
+frozenWithObjectStored` re-derivation, the deleted private duplicate, the raw
+`insert` spelling in `FrozenOps`, and the qualified-only `WRITE` pattern.  Each
+negative was mutation-tested by **breaking the relation it forbids** while
+keeping the surrounding declaration.
+
+### Two corrections the gates and the review made to this cut
+
+**A tactic `macro` is declaration-minting machinery, and one call site does not
+pay for it.**  The frame walk above shipped as `macro "frozen_objects_frame"`,
+and `check_ipc_invariant_dethreading.py` refused it: machinery that can define
+commands mints declarations no text census sees, so each occurrence is pinned in
+`MACHINERY_PINS`.  The gate is asking the right question and the honest answer
+was not to widen the pin — the macro had **one** consumer, so it bought no
+sharing to set against making this file's declarations invisible to a census.
+It is inlined, with the technique explained at the theorem that uses it.  *A
+mechanism that trips a gate is worth exactly the duplication it removes.*
+
+**And the Prop-level boot check was a third answer to a question that already
+had two** (PR #897 review, finding G5 — real, and this project's own defect
+rather than the review's).  WS-HP HP10.3 added `donationOrigin = none` to the
+executable `bootSafeSchedContextCheck` and to the structural bridge
+`bootSafeObjectCheck_sound_structural`, and **not** to `bootSafeObject` — the
+Prop-level API the post-boot safety theorems are stated over.  So that API
+certified a configuration the live validator rejects, carrying a loan history no
+boot state can have made, with the *executable* side the stricter one: the
+direction that reads as coverage, because the Bool check is what a reader tests
+against.  The conjunct is where it belongs now, and both library roots build
+unchanged, which is the measurement that nothing was relying on the weaker form.
+
+
+**And the migration moved every frozen writer one hop out of the write census's
+frontier.**  `ReplyStackWriteCensus`'s store frontier reaches **one** hop, so a
+definition that stored through a direct `FrozenMap.set` was a candidate and one
+that now stores through `frozenWithObjectStored` is not -- which the census
+reported at once, as `frozenTimerTickBudget`'s chain-neutral entry reading
+stale.  **Deleting that entry is the fail-open direction**, and
+`objectStoreHelpers`' own docstring says so: `v0.35.64` met the identical report
+for `suspendThread` and deleted it, so a writer setting `scReply` through the
+unpinned helper would have been invisible.  The two new frozen helpers are
+pinned instead, and `objectStoreHelpers_reach_primitives` keeps each one honest.
+*A cut that changes how a write is spelled changes which derivations can see
+it* -- the blast radius of this migration included the censuses whose domain the
+spelling decides, and only one of the two noticed on its own.
+
+**And a third artefact watched what the derivation replaced.**  A Tier 3
+positive pinned the `WRITE` recogniser's literal two-line alternation, so
+deriving it from `_TABLE_OPS` broke that anchor — *loudly*, which is the
+direction a pin on a retired construct should fail in, and the reason this cut
+found it at all rather than carrying a green tautology.  Its intent (both
+spellings, and the erase) is structural now: `branch_symmetry_violations`
+asserts it of **every** classified kind rather than of the three the literal
+named, so the anchor is a positive on the derived construction plus a negative
+refusing the hand-written alternation beside it, both mutation-tested.
+
+**And a fourth, which is the one worth the entry.**  After the third the sweep
+this file prescribes was *run* — grep every artefact naming what the cut
+retired — and it was run against the retired **pattern**, so it found the
+anchors watching `WRITE`'s literal alternation and missed the one watching the
+retired **registry key**: a Tier 3 positive pinning the
+`WRITE_PRIMITIVE_BODIES` entry for `frozenUpdatePipBoost`, whose exemption this
+cut deleted because the body is a transition rather than a primitive.  It is
+repointed at the entry that replaced it, with a negative refusing the retired
+transition from re-entering the registry — *a registry entry naming a
+transition is an exemption that grows with every operation, which is the
+opposite of a frontier* — and both are mutation-tested with token-preserving
+mutations (the positive by changing the reason while keeping the key, the
+negative by re-adding the entry beside every surviving one).
+
+So four artefacts watched this one change — the de-threading gate, the
+reply-stack write census, and two Tier 3 anchors — and each reported in its own
+way.  *The blast radius of changing how something is spelled is every
+derivation whose domain that spelling decides*, and the corollary the fourth
+paid for: **the sweep's subject is the SET of things the cut retired, not the
+one the last failure named.**  A cut that deletes a pattern, a helper and a
+registry key has three sweeps to run, and running the one the most recent red
+gate pointed at is how the other two stay green over nothing.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8
+
 ## v0.35.96 — PR #897 review: a mirror's refusal set, and two gates that asked presence
 
 Three review findings, and the reading that matters is **where** they landed: one

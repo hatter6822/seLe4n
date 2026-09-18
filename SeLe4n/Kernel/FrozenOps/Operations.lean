@@ -211,21 +211,20 @@ def frozenTimerTick : FrozenKernel Unit :=
             if tcb.timeSlice ≤ 1 then
               -- Time-slice expired: reset to platform-configured value, update TCB
               let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
-              match st.objects.set tid.toObjId (.tcb tcb') with
-              | some objects' =>
-                  let st' := { st with objects := objects', machine := tick st.machine }
+              match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
+              | .ok stored =>
+                  let st' := { stored with machine := tick st.machine }
                   -- Clear current to re-enqueue the preempted thread
                   let st'' := { st' with scheduler :=
                     { st'.scheduler with current := none } }
                   frozenSchedule st''
-              | none => .error .objectNotFound
+              | .error e => .error e
             else
               -- Time-slice not expired: decrement and continue
               let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
-              match st.objects.set tid.toObjId (.tcb tcb') with
-              | some objects' =>
-                  .ok ((), { st with objects := objects', machine := tick st.machine })
-              | none => .error .objectNotFound
+              match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
+              | .ok stored => .ok ((), { stored with machine := tick st.machine })
+              | .error e => .error e
         | _ => .error .schedulerInvariantViolation
 
 -- ============================================================================
@@ -377,9 +376,8 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
             let ntfn' : Notification := {
               state := nextState, waitingThreads := rest, pendingBadge := none,
               boundTCB := ntfn.boundTCB }
-            match st.objects.set notificationId (.notification ntfn') with
-            | some objects' =>
-                let st' := { st with objects := objects' }
+            match frozenWithObjectStored st notificationId (.notification ntfn') with
+            | .ok st' =>
                 -- **The badge is delivered, not just dropped.**  This branch
                 -- clears `pendingBadge` and woke the waiter, but stored no
                 -- message — so the badge vanished while the state claimed a
@@ -411,7 +409,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                       .ok ((), frozenTaintClear
                               (frozenTaintFlow st3 waiter.toObjId signaller.toObjId)
                               notificationId)
-            | none => .error .objectNotFound
+            | .error e => .error e
         | none =>
             let mergedBadge : SeLe4n.Badge :=
               match ntfn.pendingBadge with
@@ -420,13 +418,12 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
             let ntfn' : Notification := {
               state := .active, waitingThreads := SeLe4n.NoDupList.empty,
               pendingBadge := some mergedBadge, boundTCB := ntfn.boundTCB }
-            match st.objects.set notificationId (.notification ntfn') with
-            | some objects' =>
+            match frozenWithObjectStored st notificationId (.notification ntfn') with
+            | .ok stored =>
                 -- Stored on the notification: it now holds the badge, so it
                 -- carries the signaller's provenance until something takes it.
-                .ok ((), frozenTaintFlow { st with objects := objects' }
-                          notificationId signaller.toObjId)
-            | none => .error .objectNotFound
+                .ok ((), frozenTaintFlow stored notificationId signaller.toObjId)
+            | .error e => .error e
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -447,9 +444,8 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
             let ntfn' : Notification :=
               { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
                 pendingBadge := none, boundTCB := ntfn.boundTCB }
-            match st.objects.set notificationId (.notification ntfn') with
-            | some objects' =>
-                let st' := { st with objects := objects' }
+            match frozenWithObjectStored st notificationId (.notification ntfn') with
+            | .ok st' =>
                 -- **No enqueue here** (PR #873 round 17).  The waiter on this
                 -- branch is the *calling* thread: it consumed a badge that was
                 -- already pending, so it never blocked and never left the run
@@ -469,7 +465,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                     .ok (some badge, frozenTaintClear
                             (frozenTaintFlow st'' waiter.toObjId notificationId)
                             notificationId)
-            | none => .error .objectNotFound
+            | .error e => .error e
         | none =>
             match frozenLookupTcb st waiter with
             | none => .error .objectNotFound
@@ -486,9 +482,8 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                         waitingThreads := wt'
                         pendingBadge := none
                         boundTCB := ntfn.boundTCB }
-                      match st.objects.set notificationId (.notification ntfn') with
-                      | some objects' =>
-                          let st' := { st with objects := objects' }
+                      match frozenWithObjectStored st notificationId (.notification ntfn') with
+                      | .ok st' =>
                           -- PR #886 review: clear `pendingMessage` atomically
                           -- with the block, exactly as the live idle-wait path
                           -- does since the RR3.5 fix -- storing state alone
@@ -501,7 +496,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                               (fun stB => frozenRemoveRunnable stB waiter) with
                           | .error e => .error e
                           | .ok st'' => .ok (none, st'')
-                      | none => .error .objectNotFound
+                      | .error e => .error e
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -561,13 +556,12 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
               -- to allow re-enqueue via frozenQueuePushTail, which rejects
               -- threads with queuePPrev.isSome)
               let headTcb' := { headTcb with queuePrev := none, queueNext := none, queuePPrev := none }
-              match st.objects.set endpointId (.endpoint ep') with
-              | some objects1 =>
-                  let st1 := { st with objects := objects1 }
+              match frozenWithObjectStored st endpointId (.endpoint ep') with
+              | .ok st1 =>
                   match frozenStoreTcb headTid headTcb' st1 with
                   | .error e => .error e
                   | .ok ((), st2) => .ok (headTid, headTcb, st2)
-              | none => .error .objectNotFound
+              | .error e => .error e
   | _ => .error .objectNotFound
 
 /-- Q7-C2: Frozen endpoint send — send message via frozen endpoint.
@@ -1156,9 +1150,9 @@ def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
         | none =>
             let slots' := cn.slots.insert slot cap
             let cn' : FrozenCNode := { cn with slots := slots' }
-            match st.objects.set rootId (.cnode cn') with
-            | some objects' => .ok ((), { st with objects := objects' })
-            | none => .error .objectNotFound
+            match frozenWithObjectStored st rootId (.cnode cn') with
+            | .ok st' => .ok ((), st')
+            | .error e => .error e
     | some _ => .error .objectNotFound
     | none => .error .objectNotFound
 
@@ -1170,9 +1164,9 @@ def frozenCspaceDelete (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     | some (.cnode cn) =>
         let slots' := cn.slots.erase slot
         let cn' : FrozenCNode := { cn with slots := slots' }
-        match st.objects.set rootId (.cnode cn') with
-        | some objects' => .ok ((), { st with objects := objects' })
-        | none => .error .objectNotFound
+        match frozenWithObjectStored st rootId (.cnode cn') with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
     | some _ => .error .objectNotFound
     | none => .error .objectNotFound
 
@@ -1260,9 +1254,9 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
           | .schedContext sc' => if sc'.scId.toObjId == scId then acc else sc' :: acc
           | _ => acc
         if SeLe4n.Kernel.admissionCheck allScs updated then
-          match st.objects.set scId (.schedContext updated) with
-          | some objects' => .ok ((), { st with objects := objects' })
-          | none => .error .objectNotFound
+          match frozenWithObjectStored st scId (.schedContext updated) with
+          | .ok st' => .ok ((), st')
+          | .error e => .error e
         else
           .error .resourceExhausted
       | _ => .error .objectNotFound
@@ -1325,12 +1319,12 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
             let updatedTcb := { tcb with
               schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound scIdTyped,
               priority := sc.priority }
-            match st.objects.set scId (.schedContext updatedSc) with
-            | some objs1 =>
-              match objs1.set threadId.toObjId (.tcb updatedTcb) with
-              | some objs2 => .ok ((), { st with objects := objs2 })
-              | none => .error .objectNotFound
-            | none => .error .objectNotFound
+            match frozenWithObjectStored st scId (.schedContext updatedSc) with
+            | .ok st1 =>
+              match frozenWithObjectStored st1 threadId.toObjId (.tcb updatedTcb) with
+              | .ok st2 => .ok ((), st2)
+              | .error e => .error e
+            | .error e => .error e
           | _ => .error .illegalState
         | _ => .error .objectNotFound
     | _ => .error .objectNotFound
@@ -1388,12 +1382,12 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
                                      donationOrigin := none }
           let updatedTcb := { tcb with
             schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
-          match st0.objects.set scId (.schedContext updatedSc) with
-          | none => .error .objectNotFound
-          | some st1Objs =>
-            match st1Objs.set tid.toObjId (.tcb updatedTcb) with
-            | some objs2 => .ok ((), { st0 with objects := objs2 })
-            | none => .error .objectNotFound
+          match frozenWithObjectStored st0 scId (.schedContext updatedSc) with
+          | .error e => .error e
+          | .ok st1 =>
+            match frozenWithObjectStored st1 tid.toObjId (.tcb updatedTcb) with
+            | .ok st2 => .ok ((), st2)
+            | .error e => .error e
         | _ =>
           -- AK8-H: TCB missing or wrong variant — fail closed, no SC mutation.
           .error .objectNotFound
@@ -1424,16 +1418,16 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
               let result := SeLe4n.Kernel.cbsBudgetCheck sc st.machine.timer 1
               let updatedSc := result.1
               let wasPreempted := result.2
-              match st.objects.set scId.toObjId (.schedContext updatedSc) with
-              | some objs1 =>
-                let st' := { st with objects := objs1, machine := tick st.machine }
+              match frozenWithObjectStored st scId.toObjId (.schedContext updatedSc) with
+              | .ok stored =>
+                let st' := { stored with machine := tick st.machine }
                 if wasPreempted == true then
                   -- Budget exhausted: clear current to force rescheduling
                   .ok ((), { st' with scheduler :=
                     { st'.scheduler with current := none } })
                 else
                   .ok ((), st')
-              | none => .error .objectNotFound
+              | .error e => .error e
             | _ =>
               -- R5.E (DEEP-SCH-04): SchedContext lookup failed for a bound-
               -- budget thread.  Pre-R5 this silently fell back to the legacy
@@ -1478,9 +1472,9 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
           queuePrev := none
           queueNext := none
           queuePPrev := none }
-        match st.objects.set tid.toObjId (.tcb tcb') with
-        | some objs => .ok ((), frozenRemoveRunnable { st with objects := objs } tid)
-        | none => .error .objectNotFound
+        match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
+        | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
+        | .error e => .error e
 
 /-- D1: Frozen thread resume — transition a thread from Inactive to Ready.
 Mirrors `resumeThread` in frozen state.
@@ -1499,25 +1493,24 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
       if tcb.threadState != .Inactive then .error .illegalState
       else
         let tcb' := { tcb with threadState := .Ready, ipcState := .ready }
-        match st.objects.set tid.toObjId (.tcb tcb') with
-        | some objs =>
-          let st' := { st with objects := objs }
+        match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
+        | .ok stored =>
           -- If resumed thread has higher priority than current, force reschedule
-          let st' := match (st'.scheduler.current) with
+          let st' := match (stored.scheduler.current) with
             | some curTid =>
-              match st'.getTcb? curTid with
+              match stored.getTcb? curTid with
               | some curTcb =>
                 if tcb'.priority.val > curTcb.priority.val then
-                  { st' with scheduler := { st'.scheduler with current := none } }
-                else st'
-              | _ => { st' with scheduler := { st'.scheduler with current := none } }
-            | none => st'
+                  { stored with scheduler := { stored.scheduler with current := none } }
+                else stored
+              | _ => { stored with scheduler := { stored.scheduler with current := none } }
+            | none => stored
           -- PR #873 round 15: and it re-enters the run queue, which is what
           -- makes it selectable at all.
           match frozenEnsureRunnable st' tid with
           | .error e => .error e
           | .ok st'' => .ok ((), st'')
-        | none => .error .objectNotFound
+        | .error e => .error e
 
 -- ============================================================================
 -- D2-L: Frozen priority management operations
@@ -1549,15 +1542,15 @@ def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
           match st.getSchedContext? scId with
           | some sc =>
             let sc' := { sc with priority := newPriority }
-            match st.objects.set scId.toObjId (.schedContext sc') with
-            | some objs => .ok ((), { st with objects := objs })
-            | none => .error .objectNotFound
+            match frozenWithObjectStored st scId.toObjId (.schedContext sc') with
+            | .ok st' => .ok ((), st')
+            | .error e => .error e
           | _ => .error .objectNotFound
         | none =>
           let tcb' := { targetTcb with priority := newPriority }
-          match st.objects.set targetTid.toObjId (.tcb tcb') with
-          | some objs => .ok ((), { st with objects := objs })
-          | none => .error .objectNotFound
+          match frozenWithObjectStored st targetTid.toObjId (.tcb tcb') with
+          | .ok st' => .ok ((), st')
+          | .error e => .error e
 
 /-- D2-L: Frozen-phase setMCPriority. Validates caller has sufficient MCP,
 updates target's maxControlledPriority. If current priority exceeds new MCP,
@@ -1578,9 +1571,9 @@ def frozenSetMCPriority (callerTid targetTid : SeLe4n.ThreadId)
           if targetTcb'.priority.val > newMCP.val
           then { targetTcb' with priority := newMCP }
           else targetTcb'
-        match st.objects.set targetTid.toObjId (.tcb targetTcb') with
-        | some objs => .ok ((), { st with objects := objs })
-        | none => .error .objectNotFound
+        match frozenWithObjectStored st targetTid.toObjId (.tcb targetTcb') with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
 
 -- ============================================================================
 -- D3-I: Frozen IPC buffer configuration
@@ -1621,9 +1614,9 @@ def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
               .error .addressOutOfBounds
             else
               let tcb' := { tcb with ipcBuffer := addr }
-              match st.objects.set targetTid.toObjId (.tcb tcb') with
-              | some objs => .ok ((), { st with objects := objs })
-              | none => .error .objectNotFound
+              match frozenWithObjectStored st targetTid.toObjId (.tcb tcb') with
+              | .ok st' => .ok ((), st')
+              | .error e => .error e
           | none => .error .translationFault
         | _ => .error .invalidArgument
 
