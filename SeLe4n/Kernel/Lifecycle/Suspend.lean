@@ -612,6 +612,18 @@ def cancelledCallerDonation? (st : SystemState) (_tid : SeLe4n.ThreadId) (tcb : 
     | none => none
   | _ => none
 
+/-- **WS-RR RR8.12**: a victim with no IPC to cancel triggers no reclaim.
+
+The arm gate is `.blockedOnReply`, so this is immediate — and it is what makes
+the reclaim-complete teardown the identity on a quiescent victim, which every
+bundle result about the suspend pipeline's `.ready` arm needs now that G2 carries
+the reclaim's two scheduler steps. -/
+@[simp] theorem cancelledCallerDonation?_of_ready (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (h : tcb.ipcState = .ready) :
+    cancelledCallerDonation? st tid tcb = none := by
+  unfold cancelledCallerDonation?
+  rw [h]
+
 /-- **WS-HP HP5.1**: the reclaim's trigger does not read the victim's id.
 
 The binding reading's `owner == tid` check is what the head reading replaces with

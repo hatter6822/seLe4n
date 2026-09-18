@@ -1632,10 +1632,10 @@ private def runDisinheritanceSchedulingChecks : IO Unit := do
       -- the victim's home-core run-queue lock.
       assertBool "suspend sched footprint covers the executing core's run queue"
         (decide ((SchedLockId.runQueue ⟨bootCoreId⟩, Concurrency.AccessMode.write)
-          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 (some core1)))
+          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 (some core1) none))
       assertBool "suspend sched footprint still covers the victim's placed run queue"
         (decide ((SchedLockId.runQueue ⟨core1⟩, Concurrency.AccessMode.write)
-          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 (some core1)))
+          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 (some core1) none))
 
 -- ----------------------------------------------------------------------------
 -- Scenario O (PR #831 review 4, P1): an UNBOUND victim (home = boot) actually
@@ -1682,7 +1682,7 @@ private def runUnboundRunningSuspendChecks : IO Unit := do
           assertBool "suspend sched footprint covers the PLACED core's run queue (core 2)"
             (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
               ∈ suspendThreadOnCoreSchedLockSet bootCoreId bootCoreId bootCoreId bootCoreId
-                  (placedCoreOf? stUnboundRunningRemote victimTid)))
+                  (placedCoreOf? stUnboundRunningRemote victimTid) none))
       | .error _ => assertBool "unbound-running suspend succeeds" false
 
 -- ----------------------------------------------------------------------------
@@ -1765,10 +1765,10 @@ private def runPlacementDescheduleChecks : IO Unit := do
   assertBool "suspend sched footprint covers core 2's run queue (the placement)"
     (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
       ∈ suspendThreadOnCoreSchedLockSet bootCoreId bootCoreId bootCoreId bootCoreId
-          (placedCoreOf? stUnpinnedQueuedRemote victimTid)))
+          (placedCoreOf? stUnpinnedQueuedRemote victimTid) none))
   assertBool "NEGATIVE: the members the retired keying declared here (home = boot, no running core) omit core 2"
     (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
-      ∉ suspendThreadOnCoreSchedLockSet bootCoreId bootCoreId bootCoreId bootCoreId none))
+      ∉ suspendThreadOnCoreSchedLockSet bootCoreId bootCoreId bootCoreId bootCoreId none none))
   assertBool "cancellation sched footprint covers core 2's run queue (the placement)"
     (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
       ∈ cancelIpcBlockingOnCoreSchedLockSet (placedCoreOf? stUnpinnedQueuedRemote victimTid)
@@ -1996,20 +1996,20 @@ private def runDonationDoublePopFootprintChecks : IO Unit := do
   let core3 : CoreId := ⟨3, by decide⟩
   assertBool "the victim's own home replenish lock is declared"
     (decide ((SchedLockId.replenishQueue ⟨core1⟩, Concurrency.AccessMode.write)
-      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 (some core1)))
+      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 (some core1) none))
   assertBool "...so is the donation owner's home"
     (decide ((SchedLockId.replenishQueue ⟨core2⟩, Concurrency.AccessMode.write)
-      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 (some core1)))
+      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 (some core1) none))
   assertBool "...and so is the OUTER caller's home, which the second pop migrates to"
     (decide ((SchedLockId.replenishQueue ⟨core3⟩, Concurrency.AccessMode.write)
-      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 (some core1)))
+      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 (some core1) none))
   assertBool "NEGATIVE: a footprint whose outer home is the owner's declares no third"
     (decide ((SchedLockId.replenishQueue ⟨core3⟩, Concurrency.AccessMode.write)
-      ∉ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core2 (some core1)))
+      ∉ suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core2 (some core1) none))
   -- The segment is sorted, which is what the scheduler bracket acquires in
   -- (WS-OD OD3's `lockAcquireSequence` correction, one domain over).
   assertBool "the three replenish locks are declared without duplication"
-    (decide (((suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 (some core1)).filter
+    (decide (((suspendThreadOnCoreSchedLockSet core1 bootCoreId core2 core3 (some core1) none).filter
       (fun p => p.1 matches SchedLockId.replenishQueue _)).length = 3))
 
 -- ----------------------------------------------------------------------------
@@ -2319,6 +2319,137 @@ core-2 thread"
     (decide (replenishHomeOfSchedContext (Lifecycle.Suspend.cancelIpcBlocking st victimTid tcb)
       scId (determineTargetCore st serverTid) = core2))
 
+-- ----------------------------------------------------------------------------
+-- §3.26  WS-RR RR8.12 — the live suspend pipeline's G2 completes the reclaim
+-- ----------------------------------------------------------------------------
+
+/-- **The RETIRED G2**, spelled here and nowhere else: until WS-RR RR8.12 the live
+`suspendThreadOnCore` reached for the *bare* teardown.
+
+WS-OD OD1.7's holder wake and WS-RR RR7.22/RR8.11's replenishment migration were
+both added to `cancelIpcBlockingOnCore`, a composite that has never had a
+production caller — the live `.tcbSuspend` arm and the `suspend_thread_cross_core`
+seam both run `suspendThreadOnCore`, which performs its own placement removal at
+G4 and so took the teardown's bare form at G2.  Neither fix was therefore on the
+path a syscall takes.  Kept beside the live reading so the assertions below are
+known to discriminate rather than merely to pass. -/
+private def bareTeardownG2 (st : SystemState) (victim : SeLe4n.ThreadId)
+    (tcb : TCB) : SystemState :=
+  Lifecycle.Suspend.cancelIpcBlocking st victim tcb
+
+/-- **The shape on which the reclaim's abort actually unblocks the holder.**
+
+`stFrameHeadReclaim`'s state with the server *blocked on a call of its own*: a
+passive server that Called an endpoint with no receiver waiting while still
+holding the victim's donated reservation, which is OD1.4's own depth-1 shape.  The
+abort is then not inert — it ends the server's call, splices it off the endpoint's
+send queue and leaves it `.ready` — so the wake has something to place, and the
+reclaim rebinds the reservation to the victim, whose home core differs, so the
+migration is observable too.
+
+Home cores differ (victim core 1, server core 2) and the reservation's pending
+replenishment starts on the server's own home core, which is where the SM5.H
+affinity invariant puts it while the server runs on it. -/
+private def stStrandedHolderReclaim : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint
+          { sendQ := { head := some serverTid, tail := some serverTid }, receiveQ := {} })
+      |>.withObject rId.toObjId (.reply
+          { replyId := rId, caller := some victimTid, next := some (.head scId) })
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
+          ipcState := .blockedOnReply epId (some serverTid),
+          threadState := .BlockedReply,
+          replyObject := some rId,
+          schedContextBinding := .unbound })
+      |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
+          ipcState := .blockedOnCall epId,
+          threadState := .BlockedCall,
+          schedContextBinding := .donated scId victimTid,
+          queuePPrev := some .endpointHead })
+      |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
+      |>.build)
+  let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
+  { base with scheduler := base.scheduler.setReplenishQueueOnCore core2 rq2 }
+
+/-- **WS-RR RR8.12: the live suspend pipeline completes the reclaim it starts.**
+
+The decisive comparison is (ii) against (iii): one state, two spellings of G2,
+opposite outcomes — the retired one leaves the aborted server `.ready`, `.unbound`
+and on **no** run queue on any core, with every recovery path closed
+(`.tcbResume` demands `.Inactive`, `schedContextBind` re-buckets only an
+already-queued thread, and `chooseThreadOnCore` never scans ready TCBs), and the
+live one places it on its own home core.  (iv) then measures the whole transition
+the syscall runs rather than the step in isolation, which is the point: the
+composite carrying these two steps was already correct and was reachable from
+nothing.
+
+**On the mutation discipline.**  Reverting G2 to the bare teardown does not reach
+these assertions: it fails to elaborate `suspendThreadOnCore_ipcInvariantStage`
+first, whose stage chain names the reclaim-complete teardown as the pipeline's
+first intermediate state.  That refusal is a **proof's** intermediate term rather
+than a stated relation, though, and a restatement that generalised it would take
+the pin with it — which is why the Tier 3 pair over G2 exists and why both
+spellings are computed here.  The measurement that matters either way is (ii)
+against (iii): the retired G2 is not merely unproved on this state, it strands the
+server. -/
+private def runReclaimCompleteSuspendChecks : IO Unit := do
+  IO.println "--- §3.26 WS-RR RR8.12 the live suspend completes its reclaim ---"
+  let st := stStrandedHolderReclaim
+  let tcb := victimTcb st
+  -- (i) Setup: the trigger fires on a holder whose call the abort will end.
+  assertBool "setup: the reclaim's trigger resolves the holder off the victim's frame"
+    (decide (Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb
+      = some (scId, serverTid)))
+  assertBool "setup: the holder is blocked on a call of its own, homed on core 2"
+    (decide ((st.getTcb? serverTid).map (·.ipcState) = some (.blockedOnCall epId))
+      && decide (determineTargetCore st serverTid = core2)
+      && decide (determineTargetCore st victimTid = core1))
+  assertBool "setup: the reservation's replenishment sits on the holder's home core"
+    (replenishHolds st core2 scId && !replenishHolds st core1 scId)
+  -- (ii) The RETIRED G2: the abort fires, and strands the holder.
+  let retired := bareTeardownG2 st victimTid tcb
+  assertBool "the RETIRED bare teardown unblocks the holder — it is `.ready` and unbound"
+    (decide ((retired.getTcb? serverTid).map (·.ipcState) = some .ready)
+      && decide ((retired.getTcb? serverTid).map (·.schedContextBinding)
+          = some SchedContextBinding.unbound))
+  assertBool "...and leaves it on NO run queue on any core: the strand"
+    (!runnableOnSomeCore retired serverTid && !runningOnSomeCore retired serverTid)
+  assertBool "...and leaves the reservation's replenishment on the holder's home core"
+    (replenishHolds retired core2 scId && !replenishHolds retired core1 scId)
+  -- (iii) The LIVE G2: the same abort, with the wake and the migration.
+  let live := cancelIpcBlockingReclaimed victimTid tcb st
+  assertBool "the LIVE reclaim-complete teardown places the holder on its home core"
+    (decide ((live.scheduler.runQueueOnCore core2).contains serverTid)
+      && runnableOnSomeCore live serverTid)
+  assertBool "...and migrates the reservation to the home of the thread it is now bound to"
+    (replenishHolds live core1 scId && !replenishHolds live core2 scId)
+  -- (iv) And the transition the live `.tcbSuspend` arm actually runs.
+  match SeLe4n.ThreadId.toValid? victimTid with
+  | none => assertBool "the victim id is valid" false
+  | some vv =>
+    match Lifecycle.Suspend.suspendThreadOnCore st vv bootCoreId with
+    | .error _ => assertBool "the live per-core suspend succeeds" false
+    | .ok (stPost, _) =>
+      assertBool "the live suspend leaves the aborted holder runnable"
+        (runnableOnSomeCore stPost serverTid || runningOnSomeCore stPost serverTid)
+      assertBool "...and its `.bound` arm's purge reaches the migrated entry, so no \
+entry names the deactivated reservation"
+        (!replenishHolds stPost core1 scId && !replenishHolds stPost core2 scId)
+      assertBool "...while the retired G2 left one on the holder's home core"
+        (replenishHolds (bareTeardownG2 st victimTid tcb) core2 scId)
+  -- (v) The footprint names the wake core, and the pre-RR8.12 arity omitted it.
+  assertBool "the suspend sched footprint covers the reclaim's wake core"
+    (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
+      ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 (some core1)
+          (some core2)))
+  assertBool "NEGATIVE: with no wake core declared the member is absent"
+    (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
+      ∉ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1 (some core1) none))
+  assertBool "the wake core the footprint must name is the one the reclaim resolves"
+    (decide (cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victimTid tcb st)
+      victimTid tcb = some core2))
+
 def runSmpCancellationChecks : IO Unit := do
   IO.println "=== SmpCancellationSuite (WS-SM SM6.E cancellation across cores) ==="
   runEndpointCancelChecks
@@ -2343,6 +2474,7 @@ def runSmpCancellationChecks : IO Unit := do
   runDonationDoublePopFootprintChecks
   runFrameHeadReclaimChecks
   runReplenishDestinationChecks
+  runReclaimCompleteSuspendChecks
   IO.println "SmpCancellationSuite: all checks passed."
 
 end SeLe4n.Testing.SmpCancellation

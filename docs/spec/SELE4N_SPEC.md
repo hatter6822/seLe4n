@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.89` (`lakefile.toml`) |
+| **Package version** | `0.35.90` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 389,122 across 332 Lean files |
-| **Test LoC** | 79,009 across 70 Lean test suites |
-| **Proved declarations** | 12,977 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 389,382 across 332 Lean files |
+| **Test LoC** | 79,141 across 70 Lean test suites |
+| **Proved declarations** | 12,989 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4176,10 +4176,25 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   queue with every recovery path closed — `.tcbResume` demands `.Inactive`,
   `schedContextBind` re-buckets only an already-queued thread, and
   `chooseThreadOnCore` never scans ready TCBs — so the server was stranded
-  permanently.  `cancelIpcBlockingOnCore` now enqueues it on its **home** core,
+  permanently.  `cancelIpcBlockingOnCore` enqueues it on its **home** core,
   which is neither necessarily the victim's nor the executing core; the declared
   scheduler footprint names that core's run-queue write lock, and the composite's
   per-core run-queue locality clause excludes it.
+
+  **And the live `.tcbSuspend` performs that wake only since `v0.35.90`** (WS-RR
+  RR8.12, second cut).  `cancelIpcBlockingOnCore` has no production caller: the
+  live arm and the `suspend_thread_cross_core` seam run
+  `Lifecycle.Suspend.suspendThreadOnCore`, whose G4 performs its own placement
+  removal and whose G2 therefore reached for the *bare* teardown — so OD1.7's
+  wake, and WS-RR RR7.22/RR8.11's replenishment migration beside it, were absent
+  from the path a syscall takes, and the strand described above was reachable on
+  it.  G2 now reads `cancelIpcBlockingReclaimed`, the composite's prefix, so both
+  steps are on the live path and every result about the composite's teardown half
+  applies to it; `suspendThreadOnCoreSchedLockSet` and `suspendThreadOnCoreWriteSet`
+  each grew by the wake core they had been silent about.  What is measured rather
+  than proved is that the holder is *still* placed after the six pipeline stages
+  that follow G2 (`tests/SmpCancellationSuite.lean` §3.26); that lift is registered
+  debt.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

@@ -1,3 +1,88 @@
+## v0.35.90 — WS-RR RR8.12 (second cut): the live `.tcbSuspend` completes the reclaim it starts
+
+**A live defect, found by reading, measured before it was fixed.**  WS-OD OD1.7
+(`v0.34.108`) added the aborted donation holder's wake, and WS-RR RR7.22/RR8.11
+the reclaimed reservation's replenishment migration.  Both went into
+`cancelIpcBlockingOnCore` — a composite **no production path calls**.  The live
+`.tcbSuspend` arm and the `suspend_thread_cross_core` FFI seam both run
+`Lifecycle.Suspend.suspendThreadOnCore`, whose G4 performs its own placement
+removal and whose G2 therefore reached for the *bare* teardown.  So on the only
+path a syscall takes, neither fix was present.
+
+Measured on the live transition rather than inferred from the bodies: after a
+`.tcbSuspend` on a client that had donated its reservation to a passive server,
+the server ended `.ready`, `.unbound`, spliced off its endpoint and on **no** run
+queue on any core — `.tcbResume` demands `.Inactive`, `schedContextBind`
+re-buckets only an already-queued thread, and `chooseThreadOnCore` never scans
+ready TCBs, so every recovery path was closed.  That is a permanent denial of
+service against a system service, reachable with a TCB write capability over a
+thread in one's own call chain, with no race and no SMP requirement.  In the same
+state the reservation's pending replenishment stayed on the server's home core
+while the `.bound` arm purged the victim's, leaving an entry naming a SchedContext
+the same step had deactivated.
+
+**No invariant could catch it.**  `passiveServerIdle` permits `.ready`, so a
+stranded `.ready` thread satisfies it — the conjunct's antecedent is the property
+one wants, a shape `CLAUDE.md` already records.  And no test exercised the wake on
+the live transition: the golden trace's `SCO-020d` and `SmpCancellationSuite`
+§3.20 both drive `cancelIpcBlockingOnCore` directly, which is *a witness whose
+subject is not the live path*.
+
+**The remedy is to name the composite's prefix, not to wire the composite.**
+`cancelIpcBlockingReclaimed` is the teardown with its migration and its holder
+wake; `cancelIpcBlockingOnCore` is that plus the victim's deschedule
+(`cancelIpcBlockingOnCore_eq_reclaimed_deschedule`, `rfl`), and `suspendThreadOnCore`'s
+G2 is the prefix.  Composing the whole composite would deschedule the victim
+twice and lose G4's pre-state placement capture; naming the prefix makes the
+shared answer reachable from both consumers, which is the rule the finding earns:
+**a composite whose prefix a second consumer needs is a shared answer that
+consumer cannot reach.**
+
+**Both declarations grew by the wake core**, because a declaration that omits a
+written lock or a written core is false, not conservative.
+`suspendThreadOnCoreSchedLockSet` takes a `wakeCore : Option CoreId` — its
+run-queue segment is the placed and executing cores plus it, with three
+membership lemmas where it previously had none — and `suspendThreadOnCoreWriteSet`'s
+first entry is no longer `[]`, its confinement proof composing the new
+`cancelIpcBlockingReclaimed_confinedToCores` (derived once, read by the composite
+too).  `maxLockSetSize` does not move: a `SchedLockSet` carries no cardinality
+bound, the ceiling being the object domain's.
+
+**Everything the reclaim is inert on is unchanged.**  A quiescent victim is not
+`.blockedOnReply`, so the trigger declines and both steps are the identity
+(`cancelledCallerDonation?_of_ready`, `cancelIpcBlockingReclaimed_of_no_donation`,
+`cancelIpcBlockingReclaimed_ready_id`); the `ipcInvariantFull` and stage results
+about the pipeline carry verbatim, and the golden trace is byte-identical.
+
+**Two corrections shipped with it.**  `CancellationBundle.lean`'s RR8.10 header
+said `cancelIpcBlockingOnCore` is "the live `.tcbSuspend` dispatch" — it is not,
+and that reading is what let the gap survive; it is struck rather than reworded.
+`Cancellation.lean`'s *Live wiring status* note was right about the wiring and
+stale about the reason (RR8.6 retired the home-keying it cites); it now says what
+the composite is for and what its prefix is.
+
+**The sweep found the same shape one level down, and the class behind both.**
+The pipeline's G3 re-spells `cancelDonationOnCore`'s three-way binding match
+rather than calling it, so a step added to that dispatcher would not reach the
+live path either; the two cannot be collapsed without restating every proof that
+splits on G3's match, so `suspendDonationArm_eq_cancelDonationOnCore` pins them by
+`rfl` — which fires even on a dispatcher change that updates all of the
+dispatcher's own frame theorems, the case no other theorem covers.  The class
+itself — *a verified step added to a definition that is not on an executed path,
+while the executed path re-composes its parts* — has no gate, and pins are not the
+remedy: `docs/REGISTERED_DEBT.md` §A registers the reachability census owed beside
+`ExportCommitDisciplineCensus`, which would have failed on the day OD1.7 landed.
+
+**The witness is decisive and the measurement is stated.**
+`tests/SmpCancellationSuite.lean` §3.26 computes the retired G2 beside the live
+one on a state where the abort really unblocks the holder — opposite outcomes on
+one state — and then runs `suspendThreadOnCore` on it.  Two Tier 3 anchors pin
+G2's identity, mutation-verified in both directions over the code view.  What is
+**not** yet proved is OD1.7's payoff lifted through the six stages after G2;
+that, and the single-core reference path which cannot see the shared step across
+the import boundary and still strands, are registered in
+`docs/REGISTERED_DEBT.md` §A against RR8.12's third cut.
+
 ## v0.35.89 — WS-RR RR8.13: the pre-SM10 register re-read against the tree, not against its own headings
 
 **WS-RR RR8.13** gives every one of `UNFINISHED_SMP_WORK.md`'s **26** findings a

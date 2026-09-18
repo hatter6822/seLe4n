@@ -4303,6 +4303,20 @@ private theorem cancelIpcBlocking_ready_id
   unfold Lifecycle.Suspend.cancelIpcBlocking
   rw [hReady]
 
+/-- **WS-RR RR8.12**: and so is the teardown with its reclaim completed — the
+form the suspend pipeline's G2 now reads.
+
+A quiescent victim is not `.blockedOnReply`, so the reclaim's trigger declines
+and both of its scheduler steps are the identity; the bare teardown's own
+`.ready` identity then finishes it. -/
+private theorem cancelIpcBlockingReclaimed_ready_id
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hReady : tcb.ipcState = .ready) :
+    cancelIpcBlockingReclaimed tid tcb st = st := by
+  rw [cancelIpcBlockingReclaimed_of_no_donation tid tcb st
+        (Lifecycle.Suspend.cancelledCallerDonation?_of_ready st tid tcb hReady),
+    cancelIpcBlocking_ready_id st tid tcb hReady]
+
 /-- Descheduling a `.ready` thread on one core preserves the bundle: objects
 are untouched, and `passiveServerIdle` closes over the removed thread because
 `.ready` is an allowed passive state. -/
@@ -4792,8 +4806,7 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
       · cases hStep
       · have hReady := hQ.ready tcb hLk
         have hPre := (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hLk
-        rw [Lifecycle.Suspend.cancelIpcBlockingValid_eq,
-          cancelIpcBlocking_ready_id st vtid.val tcb hReady] at hStep
+        rw [cancelIpcBlockingReclaimed_ready_id st vtid.val tcb hReady] at hStep
         have hBS : PriorityInheritance.blockingServer st vtid.val = none := by
           -- `blockingServer` reads `getTcb?`, which is what `hLk` already says;
           -- the raw restatement `hPre` is no longer the vocabulary it needs.

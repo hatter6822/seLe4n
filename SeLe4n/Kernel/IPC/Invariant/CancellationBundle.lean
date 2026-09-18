@@ -23,8 +23,18 @@ since `v0.34.95`, `v0.34.96` and `v0.35.82` respectively — each in its own mod
 and each needing a different engine, because two of them run a whole-store fold
 and the third is a composition in which no two steps carry the bundle for the
 same reason.  What no theorem stated was the **arm-complete** composite, nor its
-lift to the cross-core `cancelIpcBlockingOnCore` that the live `.tcbSuspend`
-dispatch actually runs.  This module is both, and nothing else.
+lift to the cross-core `cancelIpcBlockingOnCore`.  This module is both, and
+nothing else.
+
+**A correction, `v0.35.90`.**  That sentence read "…that the live `.tcbSuspend`
+dispatch actually runs", and `cancelIpcBlockingOnCore` is not what it runs:
+`Lifecycle.Suspend.suspendThreadOnCore` is, and this module's own host file has
+said so since v0.32.61.  The claim was wrong when written (WS-RR RR8.10) and is
+struck rather than quietly reworded, because it is the reading that let WS-RR
+RR8.12 find two fixes sitting in a transition nothing calls.  The lift is still
+worth having — the composite is the prefix the pipeline's G2 reads plus the
+victim's deschedule (`cancelIpcBlockingOnCore_eq_reclaimed_deschedule`) — and the
+honest statement of its reach is that, not a claim about the dispatch.
 
 Three things decide its shape.
 

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.89.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.90.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5877,6 +5877,45 @@ code may assume:
   thread's own observability, and the holder's label is not determined by the
   victim's — discharged outright where no donation is resolved and registered as
   WS-OD debt otherwise.
+- **...and the live `.tcbSuspend` performs that wake — since `v0.35.90`, and not
+  before** (WS-RR RR8.12, second cut).  OD1.7's wake and WS-RR RR7.22/RR8.11's
+  replenishment migration were both added to `cancelIpcBlockingOnCore`, a
+  composite **no production path calls**: the live arm and the
+  `suspend_thread_cross_core` seam run `Lifecycle.Suspend.suspendThreadOnCore`,
+  whose G4 performs its own placement removal and whose G2 therefore reached for
+  the *bare* teardown.  So on the only path a syscall takes, neither fix was
+  present — measured on the live transition, an aborted donation holder ended
+  `.ready` and `.unbound` on **no** run queue on any core (the strand OD1.7
+  describes, reachable from an ordinary `.tcbSuspend` on a thread in one's own
+  call chain), and the reclaimed reservation's replenishment stayed on the
+  holder's home core while the `.bound` arm purged the victim's, leaving an entry
+  naming a deactivated SchedContext.  Five things new code must respect.  (1)
+  **The shared step is the composite's PREFIX, and it has a name**:
+  `cancelIpcBlockingReclaimed` is the teardown with its migration and its holder
+  wake, `cancelIpcBlockingOnCore` is that plus the victim's deschedule
+  (`cancelIpcBlockingOnCore_eq_reclaimed_deschedule`, `rfl`), and G2 is the
+  prefix — so every object-level, bundle and information-flow result about the
+  composite's teardown half reaches the live path with no second statement.  (2)
+  **A step added to the cancellation *teardown* goes in the prefix**; only a step
+  about the victim's own placement belongs to the composite.  A composite whose
+  prefix a second consumer needs is a shared answer that consumer cannot reach,
+  which is how two cuts each believed they had closed this.  (3) **The state pair
+  is `(st, cancelIpcBlockingMigrated … st)`** — `wakeAbortedDonationHolder` reads
+  the pre-state to resolve the holder and its home and the post-teardown state to
+  check the abort unblocked it, and handing it a state further down the pipeline
+  is a different predicate.  (4) **Both declarations grew by the wake core**:
+  `suspendThreadOnCoreSchedLockSet` takes a `wakeCore : Option CoreId` (the
+  run-queue segment is the placed and executing cores *plus* it) and
+  `suspendThreadOnCoreWriteSet`'s first entry is no longer `[]` — a write set that
+  omits a written core is as false as a footprint that does, and both were silent
+  because the pipeline performed no wake.  `maxLockSetSize` does not move: a
+  `SchedLockSet` carries no cardinality bound.  (5) **The guarantee rests on a
+  measurement, not yet on a proof**: `tests/SmpCancellationSuite.lean` §3.26
+  computes the retired G2 beside the live one on a state where the abort really
+  unblocks the holder, and runs the live transition on it; lifting OD1.7's payoff
+  through the six stages after G2 is a registered obligation
+  (`docs/REGISTERED_DEBT.md` §A), as is the single-core reference path, which
+  cannot see the shared step across the import boundary and still strands.
 - **An endpoint queue's membership lives in its members' TCBs, and those members'
   labels differ** (WS-RR RR8.8, `v0.35.83`).  Three facts new code must respect,
   and the first is the one that decides the other two.  (1) **The admission gate
