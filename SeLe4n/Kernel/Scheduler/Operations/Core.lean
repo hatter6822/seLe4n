@@ -404,12 +404,18 @@ def handleYield : Kernel Unit :=
 -- M-04/WS-E6: Time-slice preemption
 -- ============================================================================
 
-/-- M-04/WS-E6/V5-L: Default time-slice quantum (ticks per scheduling round).
-Factored into a named constant for backward compatibility. New code should
-prefer `st.scheduler.configDefaultTimeSlice` which is configurable per
-scheduler instance. This constant remains for use in contexts where no
-`SchedulerState` is available (e.g., frozen operations). -/
-def defaultTimeSlice : Nat := 5
+-- `defaultTimeSlice : Nat := 5` stood here and is **deleted** at `v0.35.103`.
+-- It was superseded by the per-instance `SchedulerState.configDefaultTimeSlice`
+-- (AC2-C) and retained on a justification that named a consumer which does not
+-- exist: *"for use in contexts where no `SchedulerState` is available (e.g.,
+-- frozen operations)"*.  A `FrozenSystemState` carries a `FrozenSchedulerState`,
+-- so `frozenTimerTick` reads `st.scheduler.configDefaultTimeSlice` like the live
+-- tick below, and measurement put the constant's whole-tree reference count at
+-- zero.  `frozenDefaultTimeSlice`, which carried the mirror-image false claim
+-- (*"retained for backward compatibility in tests that reference this
+-- constant"*, referenced by no test), went in the same cut.  A quantum is read
+-- from `st.scheduler.configDefaultTimeSlice`; a Tier 3 negative refuses either
+-- name coming back.
 
 /-- WS-H12b/H-04 + WS-H12c/H-03: Handle a timer tick with dequeue-on-dispatch
 and inline context switch semantics.
@@ -418,7 +424,7 @@ Behavior:
 1. If no thread is current, advance the machine timer only.
 2. If the current thread's time-slice has not expired (> 1 after decrement),
    decrement and advance the machine timer.
-3. If the time-slice expires (≤ 1), reset it to `defaultTimeSlice`,
+3. If the time-slice expires (≤ 1), reset it to `st.scheduler.configDefaultTimeSlice`,
    re-enqueue the current thread into the run queue, and reschedule.
 
 Under dequeue-on-dispatch, the current thread is NOT in the run queue.
@@ -438,9 +444,9 @@ def timerTick : Kernel Unit :=
         | some ⟨tcb, h⟩ =>
             if tcb.timeSlice ≤ 1 then
               -- Time-slice expired: reset, re-enqueue, reschedule
-              -- AC2-C: Now uses configurable `configDefaultTimeSlice` from scheduler
-              -- state (initialized to `defaultTimeSlice` = 5). Preservation proofs
-              -- carry an `hConfigTS` hypothesis requiring `configDefaultTimeSlice > 0`.
+              -- AC2-C: uses the configurable `configDefaultTimeSlice` from scheduler
+              -- state (its own default is 5). Preservation proofs carry an
+              -- `hConfigTS` hypothesis requiring `configDefaultTimeSlice > 0`.
               let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
               let st' := { st.rewriteObject tid.toObjId (.tcb tcb')
                              (SystemState.rewriteAdmissible_tcb h tcb') with

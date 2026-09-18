@@ -188,10 +188,15 @@ def frozenHandleYield : FrozenKernel Unit :=
         let st' := { st with scheduler := { st.scheduler with current := none } }
         frozenSchedule st'
 
-/-- Q7-C1: Default time-slice quantum for frozen scheduler.
-DEPRECATED: Use `FrozenSchedulerState.configDefaultTimeSlice` instead.
-Retained for backward compatibility in tests that reference this constant. -/
-def frozenDefaultTimeSlice : Nat := 5
+-- `frozenDefaultTimeSlice : Nat := 5` stood here and is **deleted** at
+-- `v0.35.103`, together with the live `defaultTimeSlice` it mirrored.  Its own
+-- docstring marked it DEPRECATED in favour of
+-- `FrozenSchedulerState.configDefaultTimeSlice` and justified keeping it as
+-- *"backward compatibility in tests that reference this constant"* — and no test
+-- referenced it, nor did anything else in the tree.  A retention justification
+-- that names a consumer which does not exist is the stale-claim shape this
+-- project retires on sight; `frozenTimerTick` below reads
+-- `st.scheduler.configDefaultTimeSlice`.
 
 /-- Q7-C1: Frozen timer tick — handle preemption in frozen state.
 Mirrors `timerTick` with dequeue-on-dispatch.

@@ -8410,6 +8410,26 @@ run_check "INVARIANT" rg -n 'FO-047 DIFFERENTIAL: the two post-bind states agree
 run_check "INVARIANT" rg -n '^private def pm_frozenBasePriorityRebucketsLikeTheLiveWrite' tests/PriorityManagementSuite.lean
 run_check "INVARIANT" rg -n '^private def pm_frozenCeilingRebucketsLikeTheLiveWrite' tests/PriorityManagementSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def pm_frozenBasePriorityRebucketsLikeTheLiveWrite[^\n]*(\n([ \t][^\n]*)?)*runnable := \[callerTid, targetTid\]" tests/PriorityManagementSuite.lean'
+
+# ---------------------------------------------------------------------------
+# `v0.35.103`: the two superseded time-slice constants must not come back.
+#
+# `defaultTimeSlice` (Scheduler/Operations/Core.lean) and
+# `frozenDefaultTimeSlice` (FrozenOps/Operations.lean) were both superseded by
+# the per-instance `configDefaultTimeSlice` (AC2-C) and both were retained on a
+# justification naming a consumer that does not exist -- the live one "for
+# contexts where no `SchedulerState` is available (e.g., frozen operations)",
+# which `frozenTimerTick` refutes by reading `st.scheduler.configDefaultTimeSlice`
+# itself, and the frozen one "for tests that reference this constant", referenced
+# by no test.  Measured whole-tree reference count: zero for both.  These are
+# negatives rather than converted positives because neither ever carried one --
+# `lowercase d` does not occur inside `configDefaultTimeSlice`, so the live name's
+# negative cannot fire on its own replacement.
+run_negative_check "INVARIANT" rg -n '\bdefaultTimeSlice\b' SeLe4n/ tests/ --glob '*.lean'
+run_negative_check "INVARIANT" rg -n '\bfrozenDefaultTimeSlice\b' SeLe4n/ tests/ --glob '*.lean'
+# ...and the quantum is read from the scheduler on both surfaces.
+run_check "INVARIANT" rg -n 'st\.scheduler\.configDefaultTimeSlice' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n 'st\.scheduler\.configDefaultTimeSlice' SeLe4n/Kernel/FrozenOps/Operations.lean
 # The relation compares the buckets, not just the current thread; comparing
 # `current` alone is what let the wake divergence through the differential
 # scenarios that were built to catch exactly this class.

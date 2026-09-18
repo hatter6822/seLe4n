@@ -916,9 +916,10 @@ structure TCB where
   /-- V8-G1: Explicit lifecycle state. Default `.Inactive` for freshly created
       threads; set to `.Ready` when enqueued, `.Running` when dispatched. -/
   threadState : ThreadState := .Inactive
-  /-- M-04/WS-E6: Remaining time-slice ticks before preemption. Reset to
-      `defaultTimeSlice` on expiry. Default value matches seL4's
-      CONFIG_TIMER_TICK_MS-based quantum. -/
+  /-- M-04/WS-E6: Remaining time-slice ticks before preemption. Reset to the
+      scheduler's own `configDefaultTimeSlice` on expiry, by the live and the
+      frozen tick alike. Default value matches seL4's CONFIG_TIMER_TICK_MS-based
+      quantum. -/
   timeSlice : Nat := 5
   /-- M-03/WS-E6: Scheduling deadline for EDF tie-breaking within same
       priority level. 0 = no deadline (lowest urgency). Lower nonzero

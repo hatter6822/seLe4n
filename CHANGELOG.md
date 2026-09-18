@@ -1,3 +1,49 @@
+## v0.35.103 — two superseded constants, each retained on a consumer that does not exist
+
+Found while checking, at the maintainer's prompting, whether the README's "24
+frozen operations" still matches the tree.  It does — the pairing table in
+`FrozenOps/Operations.lean` enumerates 24 operations plus the `10a` donation-return
+variant, and the six further `def frozen*` in that module are all helpers or
+sub-steps composed by a tabled operation.  One of the six was not.
+
+`frozenDefaultTimeSlice : Nat := 5` was marked **DEPRECATED** in its own docstring
+in favour of `FrozenSchedulerState.configDefaultTimeSlice`, and justified as
+*"retained for backward compatibility in tests that reference this constant"*.  No
+test referenced it.  Nothing did: its whole-tree reference count, over the
+comment-free code view, was **zero**.
+
+Asking the same question of its live twin found the same shape.  `defaultTimeSlice`
+(`Scheduler/Operations/Core.lean`) was justified as remaining *"for use in contexts
+where no `SchedulerState` is available (e.g., frozen operations)"* — and a
+`FrozenSystemState` carries a `FrozenSchedulerState`, so `frozenTimerTick` reads
+`st.scheduler.configDefaultTimeSlice` exactly as the live tick does.  The one
+context the justification named is the one that refutes it.  Reference count: zero.
+
+**A retention justification that names a consumer which does not exist is the
+stale-claim shape this project retires on sight** — the same shape as `v0.35.102`'s
+mitigation clause, one artefact down, and the reason to check a justification's
+*consumer* rather than its plausibility.  Both constants are deleted, with a
+tombstone at each site naming what replaced them and why the retention claim was
+false.
+
+Three citations swept, and one of them was a third instance: `timerTick`'s own
+docstring said *"reset it to `defaultTimeSlice`"* while the body two lines below
+writes `st.scheduler.configDefaultTimeSlice` and the inline comment beside it says
+so — a docstring contradicting the code it documents.  It, the inline comment, and
+`TCB.timeSlice`'s field docstring in `Model/Object/Types.lean` now name the
+configured field.
+
+Two Tier 3 negatives refuse either name tree-wide, with two positives asserting the
+quantum is read from the scheduler on both surfaces.  Mutation-tested in both
+directions: silent on the clean tree — the tombstone comments naming both symbols
+are stripped by the code view, which is the direction that matters — and firing
+when either name is reintroduced as code.
+
+No behavioural change: neither constant was read by anything.  Three modules
+rebuilt clean, the golden trace is byte-identical.
+
+Refs: CLAUDE.md, "Retired code is removed, not left to pollute the tree"
+
 ## v0.35.102 — the frozen surface is the execute phase, and its row said otherwise
 
 Documentation-only, and a correction to this project's own register rather than to
