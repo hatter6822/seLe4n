@@ -1,3 +1,129 @@
+## v0.35.100 — the pop's reservation record has a name, and the frozen mirror reads the live reader
+
+**The de-duplication `docs/REGISTERED_DEBT.md` asks for before the priority-mirror
+fix, and the measurement that made the fix a separate cut.**
+`returnDonatedSchedContext` rewrites a *pair* — the reservation and the
+recipient's binding — and only the binding had a name
+(`donationReturnBinding`), so the reservation's record was spelled as a literal
+at **eighteen sites across four files**: eight in `IPC/Operations/Endpoint.lean`
+(the operation's own body, `_ok_storeChain`'s statement and its `cases`, the
+legacy-shape equality's `have` and its `show`, `_post_schedContext`'s two readings
+and `_post_getSchedContext?`'s one), eight in
+`IPC/Invariant/DonationPreservation.lean` (the operation's TCB characterisation,
+the two chain-preservation lemmas' signatures, and the five intermediate `have`s
+inside the first), one in `IPC/Invariant/Defs.lean`'s pop-succeeds lemma, and one
+in the frozen mirror.  A
+field added to it was eighteen edits, which is what the registered
+priority-mirror row names as the reason that fix is a de-duplication as well as a
+repair.
+
+`donationReturnSchedContext sc originalOwner nextHead? newOwner?` is that one
+definition, beside `donationReturnBinding` where the pop's two writes belong
+together, with its three fields' rationale — the recipient, the frame below the
+cleared head, and WS-HP HP10.4's bottom-arm origin clear — in one docstring
+rather than distributed over the sites that reproduced them.  **No behaviour
+changed on the live side**: it is definitionally the literal it replaces, the
+golden trace is byte-identical, and every proof that read the literal now reads
+the name.
+
+**And the pop's two chain lemmas name no record at all, which the first attempt
+at this cut got wrong in a way worth recording.**  Their docstrings have claimed
+since WS-HP HP10.4 that the proof "reads the stored context's `scReply` and
+nothing else, so a field it does not read is quantified rather than fixed" — and
+that was a claim *about* the proof rather than its statement, since the hypothesis
+spelled a record either way.  Restating it over the new named record looked like
+the de-duplication and is strictly **narrower**: the named form's
+`donationOrigin` is a function of the arm selector where the literal's was a free
+parameter, and the depth-2 witness in `tests/SmpCrossCoreCallSuite.lean` stores a
+record that *keeps* its origin, which no value of `newOwner?` produces.  So the
+named form refused a witness whose whole job is to exercise the store surface
+those lemmas are stated over, and the build said so.
+
+The fix is the statement the docstring already described: both lemmas quantify
+over the stored record and carry `scStored.scReply = head?.bind (fun p => p.2.prev)`
+— the read set, which is what `donationChainFrame` states for the same reason and
+what this project's own rule asks for ("stated over the two projections the walk
+actually reads, so it **is** the read set rather than an over-approximation of
+it").  That is more general than either record spelling, makes the docstring's
+claim checkable, costs the lemmas nothing when a field is added to the pop's
+record — because they do not mention it — and leaves the witness compiling with
+one `by rfl`.  Three anchors pin it: the read-set hypothesis, that the store
+receives the *parameter*, and a declaration-bounded negative refusing a record
+coming back; the mutation that decides all three keeps both lemmas and both
+names and states the hypothesis as a store that leaves `scReply` where it is.
+
+**And the push's dual got the same treatment in the same cut, which is the whole
+point.**  `donationHeadPush_preserves_donationChainWellFormed` sits twenty lines
+below the pop's, carried the *identical* docstring making the *identical* claim,
+and spelled its own record literal with `origin?` free.  It therefore had no
+defect and no refused witness — its `donationOrigin` was never narrowed — and its
+other **eleven** `SchedContext` fields were fixed by the literal all the same,
+which is the same over-specification one field wider.  Applying a relation at one
+of two lemmas in one file, with the sibling's docstring asserting the same thing,
+is the shape this project spends its length retiring, so both quantify the record
+now and carry its `scReply`; three anchors mirror the pop's, because keeping the
+tables symmetric is what stops the next reader concluding the question has two
+answers.  The push's `{serverTid}` binder went with its literal — nothing else in
+the proof reads it, and Lean's unused-variable linter said so.
+
+**Four of the record's six projections were unconsumed, so they are deleted.**
+`_boundThread`, `_scId`, `_donationOrigin_bottom` and `_donationOrigin_outward`
+were written as the record's API on the precedent of `donationReturnBinding`,
+whose four projections all have Lean consumers.  These four have none — measured
+by deleting them and rebuilding the four modules clean, not by grepping for
+by-name references, which an `@[simp]` lemma does not need.  What stays is
+measured too: `_scReply`'s attribute is load-bearing (removing it fails
+`DonationPreservation` with four errors, since the two callers discharge the new
+read-set hypothesis by `simp`), and `_priority` is the anchored artefact that
+records the projection finding above.  A complete projection family is idiomatic
+and is not a reason to keep four tautologies; this project's rule is that unused
+code is removed, and an `@[simp]` lemma nothing fires is exactly that.
+
+**And the reason the priority mirror is NOT a fourth field is the finding this
+cut records.**  The registered remedy for the pop's stale band is
+`sc.priority := recipient.priority` folded into this very record.  Writing it
+here makes the pop **projection-visible**: `SchedContext.priority` survives
+`projectKernelObject` — thread priority is deliberately observable, which
+`Projection.lean` §2 states outright — so copying a possibly-high recipient's
+band into a possibly-low reservation makes
+`returnDonatedSchedContext_preserves_projection` **false**, and two
+low-equivalent pre-states differing only in a non-observable recipient's
+priority would step to post-states differing in an observable field.  That is
+non-interference, not a proof-engineering inconvenience.
+
+So the remedy is the *class* fix rather than the instance: one home, read from
+the TCB at every binding, which leaves nothing for this record to refresh and
+which `docs/REGISTERED_DEBT.md` already registers as the improvement the
+instance row is subsumed by.  `donationReturnSchedContext_priority` states that
+the pop leaves the configured band alone, and a Tier 3 negative refuses a
+`priority :=` clause returning to the definition — so the next cut that reaches
+for the instance fix meets the reason it is the wrong one.
+
+**And the frozen pop reads the live reader.**  Its two TCB resolutions were
+`st.getTcb?` where the live pop uses `lookupTcb`, which refuses the reserved
+sentinel thread id — so on a state holding a TCB there the mirror would have
+handed a reservation to, or unbound, a thread the kernel refuses with
+`.objectNotFound`.  Unreachable, because every allocation path reserves object
+id 0 and `Model.freeze` copies a live state; corrected regardless, because a
+mirror that succeeds where the kernel refuses is the direction that matters on a
+differential surface, and because a record shared with the live surface must not
+be reached through a *second* reading of "which thread is the recipient".
+
+Seventeen Tier 3 anchors, six of them negatives, each mutation-tested against the
+code view in both directions — including the **three** this cut had to repoint:
+WS-HP HP10.8's pin on the frozen body's own inlined origin clause, WS-OD OD3.8's
+pin on `scReply := head?.bind (fun p => p.2.prev)` inside the chain lemmas'
+signature, and WS-OD OD3.2's *one-store* pin on the live pop's inlined literal.
+All three watched the same collapse, and **the way they surfaced is the finding**:
+one failed loudly (a positive on a vanished literal), one was found only because
+the build failed first and bought another Tier 3 run, and one was found by grepping
+the gate for every spelling the cut retired.  A cut that deletes a literal, a
+binder and a field clause has three sweeps to run, and *sweep what was pinning the
+thing you deleted* is a rule this project states and this cut broke four times —
+counting `v0.35.99`'s, which is the entry directly below.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8
+
 ## v0.35.99 — a `queuePPrev` of `none` claims the thread is on no queue
 
 **PR #897 review, confirmed by reading the conjuncts rather than the prose.**

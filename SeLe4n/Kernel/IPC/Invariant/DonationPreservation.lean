@@ -153,10 +153,8 @@ theorem returnDonatedSchedContext_getTcb?_char
   have hFinal : ∀ t : SeLe4n.ThreadId, st'.getTcb? t = s4.getTcb? t := by
     intro t; rw [hEq]; rfl
   have hSc1 : s1.getSchedContext? scId =
-      some { sc with boundThread := some originalOwner,
-                     scReply := head?.bind (fun p => p.2.prev),
-                     donationOrigin :=
-                       if newOwner?.isNone then none else sc.donationOrigin } := by
+      some (donationReturnSchedContext sc originalOwner
+        (head?.bind (fun p => p.2.prev)) newOwner?) := by
     unfold SystemState.getSchedContext?
     rw [storeObject_objects_eq st s1 _ _ hObjInv hS1]
   have hOwner2 : s2.getTcb? originalOwner = some ownerTcb :=
@@ -2353,22 +2351,29 @@ and both are proved against the same store surface
 (`donationHeadPush_preserves_donationChainWellFormed` is the dual). -/
 theorem donationHeadPop_preserves_donationChainWellFormed_of_except
     {st s1 s2 : SystemState} {scId : SeLe4n.SchedContextId} {sc : SchedContext}
-    {originalOwner : SeLe4n.ThreadId} {head? : Option (SeLe4n.ReplyId × Reply)}
-    -- **WS-HP HP10.4**: the recorded reservation origin is a **parameter**, in the
-    -- same position and for the same reason as `originalOwner`: this proof reads the
-    -- stored context's `scReply` and nothing else, so a field it does not read is
-    -- quantified rather than fixed, and the lemma stays true of whatever the pop's
-    -- bottom arm writes there.
-    {origin? : Option SeLe4n.ThreadId}
+    {head? : Option (SeLe4n.ReplyId × Reply)}
+    -- **WS-HP HP10.4 / WS-RR RR8 (`v0.35.100`)**: the stored record is a
+    -- PARAMETER, constrained by the one field this proof reads.  Its docstring has
+    -- claimed since HP10.4 that the proof "reads the stored context's `scReply` and
+    -- nothing else"; spelling the record -- as a literal with a free origin, or as
+    -- the pop's own `donationReturnSchedContext` -- leaves that a claim *about* the
+    -- proof rather than its statement, and the named form is strictly NARROWER,
+    -- since its origin is a function of the arm selector rather than free.  That
+    -- narrowing was measured: the depth-2 witness in
+    -- `tests/SmpCrossCoreCallSuite.lean` supplies a record that keeps its origin,
+    -- which no selector value produces, so the named form refused it.  The
+    -- hypothesis below therefore IS the read set -- which makes the docstring's
+    -- claim the statement, is more general than either record spelling, and costs
+    -- this lemma nothing when a field is added to the pop's record, because it does
+    -- not mention the record at all.
+    {scStored : SchedContext}
     (hObjInv : st.objects.invExt)
     (hChainNone : head? = none → donationChainWellFormed st)
     (hChainHead : ∀ rid r, head? = some (rid, r) → donationChainWellFormedExcept st rid)
     (hSc : st.getSchedContext? scId = some sc)
     (hHead : donationHeadOf? st scId sc = .ok head?)
-    (hS1 : storeObject scId.toObjId
-      (.schedContext { sc with boundThread := some originalOwner,
-                               scReply := head?.bind (fun p => p.2.prev),
-                               donationOrigin := origin? }) st = .ok ((), s1))
+    (hStoredHead : scStored.scReply = head?.bind (fun p => p.2.prev))
+    (hS1 : storeObject scId.toObjId (.schedContext scStored) st = .ok ((), s1))
     (hPop : storeDonationHeadPop scId head? s1 = .ok s2) :
     donationChainWellFormed s2 := by
   -- Two views of one read.  The typed accessor is what the operation and the
@@ -2388,7 +2393,8 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
       have hKey := donationHeadOf?_ok_key st scId sc none hHead
       simpa using hKey.symm
     have hFrame : donationChainFrame st s1 :=
-      donationChainFrame_of_storeObject_schedContext hObjInv hScStore (by simp [hNoHead]) hS1
+      donationChainFrame_of_storeObject_schedContext hObjInv hScStore
+        (by simp [hStoredHead, hNoHead]) hS1
     have hs2 : s1 = s2 := by simpa using hPop
     subst hs2
     exact donationChainWellFormed_of_frame hFrame hChain
@@ -2410,9 +2416,9 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
     have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
     have hS1Ne : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → s1.objects[k]? = st.objects[k]? :=
       fun k hk => SeLe4n.Model.storeObject_objects_ne st s1 _ k _ hk hObjInv hS1
-    have hS1Sc : s1.objects[scId.toObjId]?
-        = some (.schedContext { sc with boundThread := some originalOwner, scReply := r.prev,
-                                        donationOrigin := origin? }) := by
+    -- The one field the argument below reads, at this branch's head value.
+    have hStoredPrev : scStored.scReply = r.prev := by simpa using hStoredHead
+    have hS1Sc : s1.objects[scId.toObjId]? = some (.schedContext scStored) := by
       simpa using SeLe4n.Model.storeObject_objects_eq st s1 _ _ hObjInv hS1
     -- §6.2  The pop's two stores: the unlink at `rid`, the re-head at `r.prev`.
     rcases storeDonationHeadPop_cases hPop with ⟨hAbs, _⟩ | ⟨rid', r', s1', hEq, hClear, hReHead⟩
@@ -2439,10 +2445,9 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
         rw [hPrev] at hReHead
         simpa using hReHead
       subst hs2
-      have hSc2 : s1'.objects[scId.toObjId]?
-          = some (.schedContext { sc with boundThread := some originalOwner, scReply := none,
-                                          donationOrigin := origin? }) := by
-        rw [hS1'Ne scId.toObjId (Ne.symm hKeyNe), hS1Sc, hPrev]
+      have hStoredNone : scStored.scReply = none := by rw [hStoredPrev, hPrev]
+      have hSc2 : s1'.objects[scId.toObjId]? = some (.schedContext scStored) := by
+        rw [hS1'Ne scId.toObjId (Ne.symm hKeyNe), hS1Sc]
       have hOther : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → k ≠ rid.toObjId →
           s1'.objects[k]? = st.objects[k]? :=
         fun k h1 h2 => by rw [hS1'Ne k h2, hS1Ne k h1]
@@ -2461,8 +2466,7 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
           exact ⟨fun hx => hqRid (by rw [hx]), by rw [← hOther q.toObjId hqSc hqRid]; exact hq⟩
       have hScCases : ∀ (c : SeLe4n.SchedContextId) (sc' : SchedContext),
           s1'.objects[c.toObjId]? = some (.schedContext sc') →
-          (c = scId ∧ sc' = { sc with boundThread := some originalOwner, scReply := none,
-                                      donationOrigin := origin? }) ∨
+          (c = scId ∧ sc' = scStored) ∨
           (c ≠ scId ∧ st.objects[c.toObjId]? = some (.schedContext sc')) := by
         intro c sc' hc
         by_cases hcSc : c.toObjId = scId.toObjId
@@ -2494,7 +2498,7 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
         · exact hChain.replyWellFormedExcept q rq hqNe hqPre
       · intro c sc' hc rid' hRid'
         rcases hScCases c sc' hc with ⟨_, rfl⟩ | ⟨hcNe, hcPre⟩
-        · simp at hRid'
+        · rw [hStoredNone] at hRid'; simp at hRid'
         · obtain ⟨r', hR', hNext'⟩ := hChain.headLinkReciprocal c sc' hcPre rid' hRid'
           have hNeRid : rid' ≠ rid := by
             intro hx; rw [hx, hRobj] at hR'
@@ -2524,7 +2528,7 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
           exact ⟨b', hReplyFwd below' b' hNe1 hB', hB'next⟩
       · intro c sc' hc
         rcases hScCases c sc' hc with ⟨_, rfl⟩ | ⟨hcNe, hcPre⟩
-        · exact ⟨0, [], by simp⟩
+        · exact ⟨0, [], by simp [hStoredNone]⟩
         · obtain ⟨fuel', chain', hWalk'⟩ := hChain.headTerminates c sc' hcPre
           refine ⟨fuel', chain', ?_⟩
           -- The popped head heads `scId`, so it answers no link on another
@@ -2574,12 +2578,9 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
       have hS2Rid : s2.objects[rid.toObjId]?
           = some (.reply { r0 with prev := none, next := none }) := by
         rw [hS2Ne rid.toObjId (Ne.symm hBelowKeyNeRid)]; exact hS1'Rid
-      have hS2Sc : s2.objects[scId.toObjId]?
-          = some (.schedContext { sc with boundThread := some originalOwner,
-                                          scReply := some below,
-                                          donationOrigin := origin? }) := by
-        rw [hS2Ne scId.toObjId (Ne.symm hBelowNeSc), hS1'Ne scId.toObjId (Ne.symm hKeyNe), hS1Sc,
-          hPrev]
+      have hStoredBelow : scStored.scReply = some below := by rw [hStoredPrev, hPrev]
+      have hS2Sc : s2.objects[scId.toObjId]? = some (.schedContext scStored) := by
+        rw [hS2Ne scId.toObjId (Ne.symm hBelowNeSc), hS1'Ne scId.toObjId (Ne.symm hKeyNe), hS1Sc]
       have hOther : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → k ≠ rid.toObjId → k ≠ below.toObjId →
           s2.objects[k]? = st.objects[k]? :=
         fun k h1 h2 h3 => by rw [hS2Ne k h3, hS1'Ne k h2, hS1Ne k h1]
@@ -2605,8 +2606,7 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
             rw [← hOther q.toObjId hqSc hqRid hqBelow]; exact hq
       have hScCases : ∀ (c : SeLe4n.SchedContextId) (sc' : SchedContext),
           s2.objects[c.toObjId]? = some (.schedContext sc') →
-          (c = scId ∧ sc' = { sc with boundThread := some originalOwner, scReply := some below,
-                                      donationOrigin := origin? }) ∨
+          (c = scId ∧ sc' = scStored) ∨
           (c ≠ scId ∧ st.objects[c.toObjId]? = some (.schedContext sc')) := by
         intro c sc' hc
         by_cases hcSc : c.toObjId = scId.toObjId
@@ -2652,7 +2652,7 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
       · intro c sc' hc rid' hRid'
         rcases hScCases c sc' hc with ⟨hcEq, rfl⟩ | ⟨hcNe, hcPre⟩
         · obtain rfl : scId = c := hcEq.symm
-          have hEq : below = rid' := Option.some.inj hRid'
+          have hEq : below = rid' := Option.some.inj (hStoredBelow.symm.trans hRid')
           rw [← hEq]
           exact ⟨_, hS2Below, rfl⟩
         · obtain ⟨r', hR', hNext'⟩ := hChain.headLinkReciprocal c sc' hcPre rid' hRid'
@@ -2673,7 +2673,7 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
         · have hcEq : scId = c := ReplyStackLink.head.inj (Option.some.inj hNext')
           obtain rfl := hcEq
           rw [hEq]
-          exact ⟨_, hS2Sc, rfl⟩
+          exact ⟨_, hS2Sc, hStoredBelow⟩
         · obtain ⟨sc0, hSc0, hHead0⟩ := hChain.headLinkResolves rid' r' c hPre hNext'
           have hcNe : c ≠ scId := by
             intro hx; rw [hx, hScStore] at hSc0
@@ -2744,6 +2744,7 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
               unfold replyStackLinksAt? SystemState.getObject?
               rw [hReplyFwd q rq hqRid hqBelow hrq, hrq])
           refine ⟨f' + 1, below :: tail', ?_⟩
+          rw [hStoredBelow]
           show donationChainWalk s2 (.head scId) (f' + 1) (some below) = some (below :: tail')
           rw [donationChainWalk_succ]
           have hLinks : replyStackLinksAt? s2 below = some (b0.prev, some (.head scId)) := by
@@ -2787,25 +2788,33 @@ from the **unrelaxed** pre-state — the instance of
 that does not run a reply leg first consumes. -/
 theorem donationHeadPop_preserves_donationChainWellFormed
     {st s1 s2 : SystemState} {scId : SeLe4n.SchedContextId} {sc : SchedContext}
-    {originalOwner : SeLe4n.ThreadId} {head? : Option (SeLe4n.ReplyId × Reply)}
-    -- **WS-HP HP10.4**: the recorded reservation origin is a **parameter**, in the
-    -- same position and for the same reason as `originalOwner`: this proof reads the
-    -- stored context's `scReply` and nothing else, so a field it does not read is
-    -- quantified rather than fixed, and the lemma stays true of whatever the pop's
-    -- bottom arm writes there.
-    {origin? : Option SeLe4n.ThreadId}
+    {head? : Option (SeLe4n.ReplyId × Reply)}
+    -- **WS-HP HP10.4 / WS-RR RR8 (`v0.35.100`)**: the stored record is a
+    -- PARAMETER, constrained by the one field this proof reads.  Its docstring has
+    -- claimed since HP10.4 that the proof "reads the stored context's `scReply` and
+    -- nothing else"; spelling the record -- as a literal with a free origin, or as
+    -- the pop's own `donationReturnSchedContext` -- leaves that a claim *about* the
+    -- proof rather than its statement, and the named form is strictly NARROWER,
+    -- since its origin is a function of the arm selector rather than free.  That
+    -- narrowing was measured: the depth-2 witness in
+    -- `tests/SmpCrossCoreCallSuite.lean` supplies a record that keeps its origin,
+    -- which no selector value produces, so the named form refused it.  The
+    -- hypothesis below therefore IS the read set -- which makes the docstring's
+    -- claim the statement, is more general than either record spelling, and costs
+    -- this lemma nothing when a field is added to the pop's record, because it does
+    -- not mention the record at all.
+    {scStored : SchedContext}
     (hObjInv : st.objects.invExt)
     (hChain : donationChainWellFormed st)
     (hSc : st.getSchedContext? scId = some sc)
     (hHead : donationHeadOf? st scId sc = .ok head?)
-    (hS1 : storeObject scId.toObjId
-      (.schedContext { sc with boundThread := some originalOwner,
-                               scReply := head?.bind (fun p => p.2.prev),
-                               donationOrigin := origin? }) st = .ok ((), s1))
+    (hStoredHead : scStored.scReply = head?.bind (fun p => p.2.prev))
+    (hS1 : storeObject scId.toObjId (.schedContext scStored) st = .ok ((), s1))
     (hPop : storeDonationHeadPop scId head? s1 = .ok s2) :
     donationChainWellFormed s2 :=
   donationHeadPop_preserves_donationChainWellFormed_of_except hObjInv (fun _ => hChain)
-    (fun rid _ _ => donationChainWellFormedExcept_of_wellFormed hChain rid) hSc hHead hS1 hPop
+    (fun rid _ _ => donationChainWellFormedExcept_of_wellFormed hChain rid) hSc hHead
+    hStoredHead hS1 hPop
 
 /-- **WS-RM (`v0.35.6`): the pop *discharges* the reply leg's head transient.**
 
@@ -2845,7 +2854,9 @@ theorem returnDonatedSchedContext_preserves_donationChainWellFormed_of_except
     donationHeadPop_preserves_donationChainWellFormed_of_except hObjInv
       (fun hNone => hChainNone sc hScGet (hNone ▸ hHead))
       (fun rid r hSome => hChainHead sc rid r hScGet (hSome ▸ hHead))
-      hScGet hHead hS1 hClear
+      -- **WS-RR RR8**: the read-set hypothesis, discharged by the pop's own
+      -- record -- `donationReturnSchedContext_scReply` is the `@[simp]` lemma.
+      hScGet hHead (by simp) hS1 hClear
   -- The two TCB rewrites and the index refresh carry no chain data.
   have hFrame23 : donationChainFrame s2 s3 :=
     donationChainFrame_of_tcb_rewrite hInv2
@@ -2889,7 +2900,7 @@ theorem returnDonatedSchedContext_preserves_donationChainWellFormed
   have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   have hChain2 : donationChainWellFormed s2 :=
     donationHeadPop_preserves_donationChainWellFormed hObjInv hChain
-      ((SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hSc) hHead hS1 hClear
+      ((SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hSc) hHead (by simp) hS1 hClear
   -- The two TCB rewrites and the index refresh carry no chain data.
   have hFrame23 : donationChainFrame s2 s3 :=
     donationChainFrame_of_tcb_rewrite hInv2
@@ -2941,23 +2952,26 @@ Three things this proof turns on.
    the pushed frame's `prev` link. -/
 theorem donationHeadPush_preserves_donationChainWellFormed
     {st s1 s2 : SystemState} {scId : SeLe4n.SchedContextId} {sc : SchedContext}
-    {serverTid : SeLe4n.ThreadId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
-    -- **WS-HP HP10.4**: the recorded reservation origin is a **parameter**, in the
-    -- same position and for the same reason as `serverTid`: this proof reads the
-    -- stored context's `scReply` and nothing else, so a field it does not read is
-    -- quantified rather than fixed.  That is what keeps the lemma true of whatever
-    -- the push writes there, this cut's origin included.
-    {origin? : Option SeLe4n.ThreadId}
+    {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
+    -- **WS-HP HP10.4 / WS-RR RR8 (`v0.35.100`)**: the stored record is a
+    -- PARAMETER, constrained by the one field this proof reads -- the same shape
+    -- its dual `donationHeadPop_preserves_donationChainWellFormed` takes, and for
+    -- the same reason.  HP10.4 quantified the *origin* and wrote down why ("this
+    -- proof reads the stored context's `scReply` and nothing else, so a field it
+    -- does not read is quantified rather than fixed"); that reasoning is right and
+    -- reaches further than one field, since the other eleven `SchedContext` fields
+    -- were still fixed by the literal.  With the record quantified the docstring's
+    -- claim IS the statement, and a field added to `SchedContext` costs this lemma
+    -- nothing rather than five edits.
+    {scStored : SchedContext}
     (hObjInv : st.objects.invExt)
     (hChain : donationChainWellFormed st)
     (hSc : st.getSchedContext? scId = some sc)
     (hRep : st.getReply? pushRid = some pushReply)
     (hFreshNext : pushReply.next = none)
     (hCaller : pushReply.caller ≠ none)
-    (hS1 : storeObject scId.toObjId
-      (.schedContext { sc with boundThread := some serverTid, scReply := some pushRid,
-                               donationOrigin := origin? }) st
-        = .ok ((), s1))
+    (hStoredHead : scStored.scReply = some pushRid)
+    (hS1 : storeObject scId.toObjId (.schedContext scStored) st = .ok ((), s1))
     (hS2 : storeDonationFramePush scId pushRid pushReply sc.scReply s1 = .ok s2) :
     donationChainWellFormed s2 := by
   have hScStore := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
@@ -2968,9 +2982,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
   have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hS1Ne : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → s1.objects[k]? = st.objects[k]? :=
     fun k hk => SeLe4n.Model.storeObject_objects_ne st s1 _ k _ hk hObjInv hS1
-  have hS1Sc : s1.objects[scId.toObjId]?
-      = some (.schedContext { sc with boundThread := some serverTid, scReply := some pushRid,
-                                      donationOrigin := origin? }) :=
+  have hS1Sc : s1.objects[scId.toObjId]? = some (.schedContext scStored) :=
     SeLe4n.Model.storeObject_objects_eq st s1 _ _ hObjInv hS1
   obtain ⟨hNotSelf, s1', hSPush, hRest⟩ := storeDonationFramePush_cases hS2
   have hInv1' := SeLe4n.Model.storeObject_preserves_objects_invExt s1 s1' _ _ hInv1 hSPush
@@ -2989,9 +3001,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
     have hOther : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → k ≠ pushRid.toObjId →
         s1'.objects[k]? = st.objects[k]? :=
       fun k h1 h2 => by rw [hS1'Ne k h2, hS1Ne k h1]
-    have hSc2 : s1'.objects[scId.toObjId]?
-        = some (.schedContext { sc with boundThread := some serverTid, scReply := some pushRid,
-                                        donationOrigin := origin? }) := by
+    have hSc2 : s1'.objects[scId.toObjId]? = some (.schedContext scStored) := by
       rw [hS1'Ne scId.toObjId (Ne.symm hKeyNe)]; exact hS1Sc
     have hRid2 : s1'.objects[pushRid.toObjId]?
         = some (.reply { pushReply with prev := none, next := some (.head scId) }) := by
@@ -3011,8 +3021,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
         exact ⟨fun hx => hqRid (by rw [hx]), by rw [← hOther q.toObjId hqSc hqRid]; exact hq⟩
     have hScCases : ∀ (c : SeLe4n.SchedContextId) (sc' : SchedContext),
         s1'.objects[c.toObjId]? = some (.schedContext sc') →
-        (c = scId ∧ sc' = { sc with boundThread := some serverTid, scReply := some pushRid,
-                                    donationOrigin := origin? }) ∨
+        (c = scId ∧ sc' = scStored) ∨
         (c ≠ scId ∧ st.objects[c.toObjId]? = some (.schedContext sc')) := by
       intro c sc' hc
       by_cases hcSc : c.toObjId = scId.toObjId
@@ -3044,7 +3053,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
     · intro c sc' hc rid' hRid'
       rcases hScCases c sc' hc with ⟨hcEq, rfl⟩ | ⟨hcNe, hcPre⟩
       · obtain rfl : scId = c := hcEq.symm
-        have hEq : pushRid = rid' := Option.some.inj hRid'
+        have hEq : pushRid = rid' := Option.some.inj (hStoredHead.symm.trans hRid')
         rw [← hEq]
         exact ⟨_, hRid2, rfl⟩
       · obtain ⟨r', hR', hNext'⟩ := hChain.headLinkReciprocal c sc' hcPre rid' hRid'
@@ -3059,7 +3068,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
       · have hcEq : scId = c := ReplyStackLink.head.inj (Option.some.inj hNext')
         obtain rfl := hcEq
         rw [hEq]
-        exact ⟨_, hSc2, rfl⟩
+        exact ⟨_, hSc2, hStoredHead⟩
       · obtain ⟨sc0, hSc0, hHead0⟩ := hChain.headLinkResolves rid' r' c hPre hNext'
         have hcNe : c ≠ scId := by
           intro hx; rw [hx, hScStore] at hSc0
@@ -3081,6 +3090,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
       rcases hScCases c sc' hc with ⟨hcEq, rfl⟩ | ⟨hcNe, hcPre⟩
       · obtain rfl : scId = c := hcEq.symm
         refine ⟨1, [pushRid], ?_⟩
+        rw [hStoredHead]
         show donationChainWalk s1' (.head scId) 1 (some pushRid) = some [pushRid]
         rw [donationChainWalk_succ]
         have hLinks : replyStackLinksAt? s1' pushRid = some (none, some (.head scId)) := by
@@ -3121,9 +3131,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
     have hRid2 : s2.objects[pushRid.toObjId]?
         = some (.reply { pushReply with prev := some old, next := some (.head scId) }) := by
       rw [hS2Ne pushRid.toObjId (Ne.symm hOldKeyNe), hS1'Rid, hOldEq]
-    have hSc2 : s2.objects[scId.toObjId]?
-        = some (.schedContext { sc with boundThread := some serverTid, scReply := some pushRid,
-                                        donationOrigin := origin? }) := by
+    have hSc2 : s2.objects[scId.toObjId]? = some (.schedContext scStored) := by
       rw [hS2Ne scId.toObjId (Ne.symm hOldNeSc), hS1'Ne scId.toObjId (Ne.symm hKeyNe)]
       exact hS1Sc
     have hOther : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → k ≠ pushRid.toObjId → k ≠ old.toObjId →
@@ -3151,8 +3159,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
           rw [← hOther q.toObjId hqSc hqRid hqOld]; exact hq
     have hScCases : ∀ (c : SeLe4n.SchedContextId) (sc' : SchedContext),
         s2.objects[c.toObjId]? = some (.schedContext sc') →
-        (c = scId ∧ sc' = { sc with boundThread := some serverTid, scReply := some pushRid,
-                                    donationOrigin := origin? }) ∨
+        (c = scId ∧ sc' = scStored) ∨
         (c ≠ scId ∧ st.objects[c.toObjId]? = some (.schedContext sc')) := by
       intro c sc' hc
       by_cases hcSc : c.toObjId = scId.toObjId
@@ -3196,7 +3203,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
     · intro c sc' hc rid' hRid'
       rcases hScCases c sc' hc with ⟨hcEq, rfl⟩ | ⟨hcNe, hcPre⟩
       · obtain rfl : scId = c := hcEq.symm
-        have hEq : pushRid = rid' := Option.some.inj hRid'
+        have hEq : pushRid = rid' := Option.some.inj (hStoredHead.symm.trans hRid')
         rw [← hEq]
         exact ⟨_, hRid2, rfl⟩
       · obtain ⟨r', hR', hNext'⟩ := hChain.headLinkReciprocal c sc' hcPre rid' hRid'
@@ -3216,7 +3223,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
       · have hcEq : scId = c := ReplyStackLink.head.inj (Option.some.inj hNext')
         obtain rfl := hcEq
         rw [hEq]
-        exact ⟨_, hSc2, rfl⟩
+        exact ⟨_, hSc2, hStoredHead⟩
       · simp at hNext'
       · obtain ⟨sc0, hSc0, hHead0⟩ := hChain.headLinkResolves rid' r' c hPre hNext'
         have hcNe : c ≠ scId := by
@@ -3287,6 +3294,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
           rw [hLinksOld]
           simp [hTail2]
         refine ⟨f + 1 + 1, pushRid :: old :: tail, ?_⟩
+        rw [hStoredHead]
         show donationChainWalk s2 (.head scId) (f + 1 + 1) (some pushRid)
           = some (pushRid :: old :: tail)
         rw [donationChainWalk_succ]
@@ -3344,7 +3352,9 @@ theorem donateSchedContext_preserves_donationChainWellFormed
   have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
   have hChain2 : donationChainWellFormed s2 :=
     donationHeadPush_preserves_donationChainWellFormed hObjInv hChain hSc hRep
-      hFreshNext hCaller hS1 hS2
+      -- **WS-RR RR8**: the read-set hypothesis, discharged by the record the push
+      -- itself stores -- `rfl`, since its `scReply` is written literally.
+      hFreshNext hCaller rfl hS1 hS2
   have hFrame23 : donationChainFrame s2 s3 :=
     donationChainFrame_of_tcb_rewrite hInv2
       (lookupTcb_some_objects s2 clientTid clientTcb hLC) hS3

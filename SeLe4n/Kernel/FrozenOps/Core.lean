@@ -963,25 +963,32 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
       match frozenDonationHeadOf? st scId sc with
       | .error e => .error e
       | .ok head? =>
-        -- **WS-HP HP10.4/HP10.8: the loan ends on the BOTTOM arm, so the origin
-        -- clears there** -- the live clause, which this mirror did not carry
-        -- until FO-044 gave the frozen surface its first state with a recorded
-        -- origin and the differential reported the divergence.  HP10.4 landed
-        -- the field's clears on the live side only; leaving the mirror without
-        -- them is the thread-id-reuse hazard the field's own docstring names,
-        -- one surface over.  On the `some` arm the loan is still travelling
-        -- outward, so the origin is preserved.
-        let sc' := { sc with boundThread := some originalOwner,
-                             scReply := head?.bind (fun p => p.2.prev),
-                             donationOrigin :=
-                               if newOwner?.isNone then none else sc.donationOrigin }
+        -- **WS-RR RR8**: the record is `donationReturnSchedContext` -- the
+        -- **live** function, as `donationReturnBinding` below is -- so the two
+        -- surfaces cannot disagree about what a return writes into the
+        -- reservation.  HP10.4's bottom-arm origin clear travels with it: this
+        -- mirror did not carry that clause until FO-044 gave the frozen surface
+        -- its first state with a recorded origin and the differential reported
+        -- the divergence, and sharing the definition is what stops the next such
+        -- clause from needing its own correction one cut later.
+        let sc' := SeLe4n.Kernel.donationReturnSchedContext sc originalOwner
+          (head?.bind (fun p => p.2.prev)) newOwner?
         match frozenWithObjectStored st scId.toObjId (.schedContext sc') with
         | .error e => .error e
         | .ok rebound =>
           match frozenStoreDonationHeadPop rebound scId head? with
           | .error e => .error e
           | .ok st2 =>
-            match st2.getTcb? originalOwner with
+            -- **WS-RR RR8**: `frozenLookupTcb`, not `getTcb?`.  The live pop
+            -- reads both of its TCBs with `lookupTcb`, which refuses a reserved
+            -- (idle) thread id; this mirror read them with the bare accessor, so
+            -- it would hand a reservation to -- or unbind -- a per-core idle
+            -- thread on a state the kernel refuses with `.objectNotFound`.  A
+            -- mirror that succeeds where the kernel refuses is the direction
+            -- that matters on a differential surface, and the divergence was
+            -- latent only because the live `.reply` path resolves its recipient
+            -- from an answered caller, which is never reserved.
+            match frozenLookupTcb st2 originalOwner with
             | none => .error .objectNotFound
             | some ownerTcb =>
               match frozenWithObjectStored st2 originalOwner.toObjId
@@ -990,7 +997,7 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
                           SeLe4n.Kernel.donationReturnBinding scId newOwner? }) with
               | .error e => .error e
               | .ok st3 =>
-                match st3.getTcb? serverTid with
+                match frozenLookupTcb st3 serverTid with
                 | none => .error .objectNotFound
                 | some serverTcb =>
                   frozenWithObjectStored st3 serverTid.toObjId

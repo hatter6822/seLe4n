@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.99.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.100.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6863,7 +6863,17 @@ code may assume:
   rebinds a recipient `.bound` without refreshing the reservation's record, so a
   `.tcbSetPriority` on the origin *during* the loan leaves the pair
   desynchronised at the pop.  That is the one remaining writer, it is latent
-  rather than reachable-by-default, and it is registered.  (2) **A new writer
+  rather than reachable-by-default, and it is registered — **and the obvious
+  remedy is refuted rather than merely deferred** (`v0.35.100`): refreshing the
+  mirror inside the record that pop stores (`donationReturnSchedContext`, the
+  named form of that write since `v0.35.100`) makes the pop
+  projection-**visible**, because `SchedContext.priority` survives
+  `projectKernelObject` — so a possibly-high recipient's band would be copied
+  into a possibly-low reservation and
+  `returnDonatedSchedContext_preserves_projection` would be false.
+  `donationReturnSchedContext_priority` and a Tier 3 negative state that at the
+  record.  The closure is the one-home improvement below, which leaves nothing
+  for the pop to refresh.  (2) **A new writer
   needs `schedContextBindingConsistent`**, which is what rules out a second
   thread bound to one reservation — the reservation's `priority` moves for the
   whole reservation, so a second claimant would be left stale.  (3) **A

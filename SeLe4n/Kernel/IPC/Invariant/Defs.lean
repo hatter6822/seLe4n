@@ -7243,15 +7243,12 @@ theorem returnDonatedSchedContext_ok_of_boundAndRecipient
     simp [donationRecipientAcceptable_eq_of_some st owner ownerTcb hLkOwner, hOwnerUnbound])]
   rw [hHead]
   simp only []
+  -- **WS-RR RR8**: the record the store receives is `donationReturnSchedContext`
+  -- -- HP10.4's bottom-arm origin clear and the priority mirror included, since
+  -- it is one definition rather than a literal this proof has to reproduce.
   generalize hS1 : storeObject scId.toObjId
-      (.schedContext { sc with boundThread := some owner,
-                               scReply := head?.bind (fun p => p.2.prev),
-                               -- **WS-HP HP10.4**: and the origin clear on the
-                               -- bottom arm, which is part of the record the store
-                               -- receives whatever `newOwner?` is.
-                               donationOrigin :=
-                                 if newOwner?.isNone then none
-                                 else sc.donationOrigin }) st = result1
+      (.schedContext (donationReturnSchedContext sc owner
+        (head?.bind (fun p => p.2.prev)) newOwner?)) st = result1
   match result1, hS1 with
   | .ok pair1, hS1 =>
     have hInv1 : pair1.2.objects.invExt :=

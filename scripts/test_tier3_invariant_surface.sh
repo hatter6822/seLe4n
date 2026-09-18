@@ -1695,6 +1695,37 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "let clientTcb. := \{ clientTc
 # only asks "which scheduling context does this thread reference" — the
 # `scThreadIndex` discipline in particular — insensitive to the stack depth.
 run_check "INVARIANT" rg -n '^@\[simp\] theorem donationReturnBinding_scId\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+
+# --- WS-RR RR8 (`v0.35.100`): the reservation's record has a name too ---------
+# `donationReturnBinding`'s counterpart on the other side of the pop's first
+# write.  The literal was spelled at eighteen sites across four files, so a field
+# added to it was eighteen edits; naming it is what makes the next one a single
+# edit and what lets the frozen mirror store the SAME record rather than a copy
+# of its shape.
+run_check "INVARIANT" rg -n '^@\[inline\] def donationReturnSchedContext' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The live pop stores it, rather than a literal that happens to agree.
+run_check "INVARIANT" bash -lc 'rg -U -n "let sc. := donationReturnSchedContext sc originalOwner[^\n]*(\n([ \t][^\n]*)?)*match storeObject scId\.toObjId \(\.schedContext sc.\) st with" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# NEGATIVE: and the inlined literal must not come back anywhere in either file --
+# the de-duplication is the point, and a second copy reads exactly like the one
+# definition in a diff.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "boundThread := some originalOwner,\n\s*scReply := head\?\.bind" SeLe4n/Kernel/IPC/Operations/Endpoint.lean SeLe4n/Kernel/FrozenOps/Core.lean SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The priority mirror is deliberately NOT a fourth field: `SchedContext.priority`
+# survives `projectKernelObject`, so writing a possibly-high recipient's band
+# into a possibly-low reservation makes the pop projection-visible and
+# `returnDonatedSchedContext_preserves_projection` false.  The record says so
+# with a theorem rather than only in prose.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem donationReturnSchedContext_priority' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def donationReturnSchedContext[^\n]*(\n([ \t][^\n]*)?)*priority :=" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# **The frozen pop reads the live reader, not the bare accessor.**  The live pop
+# resolves both of its TCBs with `lookupTcb`, which refuses the reserved sentinel
+# thread id; this mirror used `getTcb?` for both, so it would have handed a
+# reservation to -- or unbound -- a TCB stored at that id on a state the kernel
+# refuses with `.objectNotFound`.  Unreachable, because every allocation path
+# reserves object id 0, and corrected regardless: a mirror that succeeds where
+# the kernel refuses is the direction that matters on a differential surface.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*match frozenLookupTcb st2 originalOwner with" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*match frozenLookupTcb st3 serverTid with" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*match st[23]\.getTcb\? " SeLe4n/Kernel/FrozenOps/Core.lean'
 # The head validation is FAIL-CLOSED: a head that resolves to no Reply, or to one
 # donating a different context, is a refusal rather than an empty stack.  Treating
 # it as empty would leave a Reply naming a context that no longer names it, which
@@ -1705,8 +1736,13 @@ run_check "INVARIANT" bash -lc 'rg -U -n "if r\.next != some \(\.head scId\) the
 # mutation keeps every token and breaks the relation.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "if r\.next != some \(\.head scId\) then \.ok none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The pop writes the rebind and the stack head as ONE SchedContext store: a frame
-# stated over either half alone would be false of the operation.
-run_check "INVARIANT" bash -lc 'rg -U -n "let sc. := \{ sc with boundThread := some originalOwner,\n                           scReply := head\?\.bind \(fun p => p\.2\.prev\),\n                           donationOrigin :=" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# stated over either half alone would be false of the operation.  `v0.35.100`
+# repointed this from the live pop's inlined literal to the shared record, which is
+# where "one store, three fields" now lives -- the FOURTH artefact in that cut found
+# to be pinning something the cut retired, and the only one of the four that failed
+# LOUDLY (a positive on a vanished literal), which is why the other three had to be
+# swept for rather than waited for.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def donationReturnSchedContext[^\n]*(\n([ \t][^\n]*)?)*boundThread := some originalOwner,\n\s*scReply := nextHead\?,\n\s*donationOrigin :=" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The head clear is its own step with its own frames, so a downstream frame
 # extends by one rewrite rather than by a second arm through the whole proof.
 run_check "INVARIANT" rg -n '^def storeDonationHeadClear' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
@@ -2356,6 +2392,17 @@ run_check "INVARIANT" rg -n '^theorem donateSchedContext_preserves_donationChain
 # revisit a member.  Relation, not presence -- the mutation keeps the lemma and
 # feeds it the wrong Reply.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationHeadPush_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*not_mem_donationChainFrom_of_unlinked hWalk hRepStore hFreshNext" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# ...and the push states its READ SET, exactly as its dual does since `v0.35.100`.
+# Keeping the two tables symmetric is the point: the pop's lemma was generalised
+# because stating a store-surface lemma over a *record* fixes fields the proof never
+# reads, and applying that at one of two lemmas twenty lines apart -- with an
+# identical docstring making the identical claim -- is the shape this project
+# retires.  HP10.4 had quantified the origin alone; the record quantifies all twelve
+# fields, so a field added to `SchedContext` costs neither lemma an edit.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationHeadPush_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*\(hStoredHead : scStored\.scReply = some pushRid\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationHeadPush_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*\(hS1 : storeObject scId\.toObjId \(\.schedContext scStored\) st = \.ok \(\(\), s1\)\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# NEGATIVE: and it may not go back to storing a record literal.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationHeadPush_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*\.schedContext \{ sc with boundThread := some serverTid" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 
 # OD4.6: at depth >= 2 the migration's source core is the INTERMEDIATE donor's
 # home -- the thread the context is bound to at the moment of the push, which is
@@ -2613,7 +2660,16 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "frozenApplyReplyDonation st. 
 # gave the frozen side its first state with a recorded origin and the differential
 # reported the divergence -- a field added to a SHARED record is a sweep of both
 # surfaces, not of the one whose transition motivated it.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*donationOrigin :=\n\s*if newOwner\?\.isNone then none else sc\.donationOrigin" SeLe4n/Kernel/FrozenOps/Core.lean'
+#
+# `v0.35.100` repointed this pair.  The clause moved into the shared
+# `donationReturnSchedContext`, which is where both surfaces now read it, so an
+# anchor on the frozen body's own inlined literal would have failed outright --
+# this project's *sweep what was pinning the thing you deleted* rule, arriving
+# one cut after the two it is written about.  The relation is that the frozen pop
+# stores the LIVE definition and does not re-inline the clause, which is what
+# makes a future field added there reach both surfaces by construction.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*SeLe4n\.Kernel\.donationReturnSchedContext sc originalOwner" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*donationOrigin :=" SeLe4n/Kernel/FrozenOps/Core.lean'
 # ...and the witness, whose second half is decisive because the resolver DECLINES
 # a reply-blocked origin and the fallback lands on the same thread -- so a selector
 # firing unconditionally passes every outcome assertion and fails that one.
@@ -14051,7 +14107,27 @@ run_check "INVARIANT" rg -n '^theorem donationHeadPop_preserves_donationChainWel
 # `donationChainFrame_of_storeObject_schedContext` and would say nothing about
 # the pop -- token-preserving, since it keeps the lemma and its name.  Bounded to
 # the declaration's own signature: an unbounded gap is not a region.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationHeadPop_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*scReply := head\?\.bind \(fun p => p\.2\.prev\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+#
+# `v0.35.100` repointed this anchor, and it is the THIRD artefact in that one cut
+# to have been pinning something the cut retired -- this project's *sweep what was
+# pinning the thing you deleted* rule failing twice inside the work to fix it.  The
+# subject is unchanged and is now the lemma's own hypothesis rather than a record
+# literal in it: the lemma quantifies over the STORED RECORD and constrains the one
+# field its proof reads, which is the shape `donationChainFrame` has for the same
+# reason.  Stating it over the pop's own `donationReturnSchedContext` was strictly
+# narrower and was measured so -- the depth-2 witness in
+# `tests/SmpCrossCoreCallSuite.lean` stores a record that keeps its
+# `donationOrigin`, which no value of the pop's arm selector produces, so the named
+# form refused a witness whose whole job is to exercise this store surface.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationHeadPop_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*\(hStoredHead : scStored\.scReply = head\?\.bind \(fun p => p\.2\.prev\)\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# ...and the store receives that PARAMETER, not a record.  Without this the
+# hypothesis above could sit beside a record-valued store and constrain nothing.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationHeadPop_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*\(hS1 : storeObject scId\.toObjId \(\.schedContext scStored\) st = \.ok \(\(\), s1\)\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# NEGATIVE: and neither lemma may go back to storing a record.  Bounded to the two
+# declarations, because `returnDonatedSchedContext_getTcb?_char` in the same file
+# reads the record legitimately -- it is a statement about the OPERATION, where
+# these two are statements about the store surface it is built from.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationHeadPop_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*\.schedContext \(donationReturnSchedContext" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 # ...and it is UNCONDITIONAL in `newOwner?`.  The pop's third and fourth stores
 # rewrite `schedContextBinding`, which is not chain data at any depth, so unlike
 # the `ipcInvariantFull` composite nothing here is `hBottom`-conditioned.  The
