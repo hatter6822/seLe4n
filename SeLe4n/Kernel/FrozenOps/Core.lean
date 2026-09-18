@@ -457,6 +457,99 @@ def frozenRemoveRunnable (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
       else acc)
     cleared
 
+/-- **Is `tid` in any run-queue bucket?** -- the frozen reading of the live
+`tid ∈ RunQueue`, which `runQueueOnCore`'s `membership` answers in O(1) and
+which has to be a fold here because a `FrozenSet`'s keys are the freeze-time
+population rather than the runnable set (`frozenSchedule` records that
+`membership` is a read-only census, so it is *not* the queue).
+
+**Queued ANYWHERE, not queued at some particular priority.**  Every live
+re-bucketing asks queue membership and then `RunQueue.remove tid`, which takes
+the thread out of whichever bucket holds it; looking only in the bucket a
+thread's *expected* priority names assumes bucket and effective priority never
+drift apart, and a state where they have is exactly the one a re-bucketing has
+to repair. -/
+def frozenQueuedAnywhere (st : FrozenSystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  st.scheduler.byPriority.indexMap.toList.any (fun kv =>
+    ((st.scheduler.byPriority.get? kv.1).getD []).contains tid)
+
+/-- **Move `tid` into the bucket `newPrio` names** -- the frozen mirror of the
+live `(rq.remove tid).insert tid newPrio`, and the frozen surface's **one**
+answer to "a thread's effective priority moved, so which bucket is it in now?".
+
+Three live writers change a run-queue key and every one of them re-buckets:
+`updatePipBoostOnCore` (the inherited boost), `migrateRunQueueBucketOnCore` (the
+base priority, which `applyPriorityChangeOnCore` composes) and
+`schedContextBind`'s Z5-G3 step (the base priority a bind propagates from the
+reservation).  The frozen surface had this spelled **once**, inline in
+`frozenUpdatePipBoost`, so only the boost half was answered -- and
+`TCB.boostedPriority` is `priority.raisedBy pipBoost`, so a *base* write moves
+the key exactly as a boost write does.  Reported on PR #897 against
+`frozenSchedContextBind` and `frozenWriteBasePriority`, both of which wrote a
+base priority and left the thread where it was: `frozenChooseThread` folds
+`byPriority`, so the frozen kernel went on selecting the thread at the band the
+write had just removed, and a later `frozenEnsureRunnable` -- which appends when
+the thread is absent from the bucket for its *new* priority -- would have left it
+in **two**.  That is this project's *one question answered in two places* shape
+with only one of the places ever answering, so the remedy is a shared definition
+rather than two per-site patches.
+
+**What this does not own is the guard.**  The live writers disagree there, and
+faithfully: `updatePipBoostOnCore` migrates only `if oldPrio != newPrio`, while
+`migrateRunQueueBucketOnCore` and the bind migrate whenever the thread is
+queued -- and the difference is observable, since `RunQueue.insert` appends, so
+a remove-and-reinsert at an unchanged priority moves the thread to its bucket's
+tail.  Each caller therefore keeps its own subject's guard and this owns the
+mechanics alone.  A caller must also check `frozenQueuedAnywhere` first: an
+unqualified call would *insert* a thread that is in no bucket.
+
+Empty buckets are left behind rather than erased, which is the convention
+`frozenRemoveRunnable` already follows: `frozenRunAgrees` compares
+`(get? prio).getD []` at every key present on either side, so an empty frozen
+bucket and an absent live key agree. -/
+def frozenRebucketRunnable (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    (newPrio : SeLe4n.Priority) : FrozenSystemState :=
+  let dropped := st.scheduler.byPriority.indexMap.toList.foldl
+    (fun bp kv =>
+      let bucket := (bp.get? kv.1).getD []
+      if bucket.contains tid then bp.insert kv.1 (bucket.filter (· != tid)) else bp)
+    st.scheduler.byPriority
+  let newBucket := (dropped.get? newPrio).getD []
+  { st with scheduler := { st.scheduler with
+      byPriority := dropped.insert newPrio (newBucket ++ [tid]) } }
+
+/-- **Write a TCB and re-bucket it if its effective priority moved** -- the shape
+the two base-priority writers share, and the one a new frozen priority writer
+reaches for.
+
+The bucket key is `after.boostedPriority` -- the live accessor, which
+`frozenEnsureRunnable` and `frozenChooseThread` already read, so "which bucket
+does this thread belong in" keeps one answer on this surface.  It is read off the
+record being *written* rather than looked up afterwards, which is the stronger
+spelling: a lookup could read a record some later write had moved.
+
+The guard is `migrateRunQueueBucketOnCore`'s, not `updatePipBoostOnCore`'s:
+**queue membership alone, with no `oldPrio != newPrio` condition**, because that
+is what the live base-priority writers do -- and the difference is observable
+rather than cosmetic.  `RunQueue.insert` appends (`bucket ++ [tid]`), so the
+live remove-and-reinsert moves the thread to its bucket's *tail* even at an
+unchanged key; a frozen mirror that short-circuited there would keep the thread
+at its old position, and `frozenRunAgrees` compares buckets as **lists**.  A
+`.tcbSetPriority` that writes a thread's current priority reaches exactly that
+case.
+
+The caller that needs the guarded form (`frozenUpdatePipBoost`, mirroring
+`updatePipBoostOnCore`) composes `frozenQueuedAnywhere` and
+`frozenRebucketRunnable` itself rather than reaching for this. -/
+def frozenWriteTcbRebucketed (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    (after : TCB) : Except KernelError FrozenSystemState :=
+  match frozenWithObjectStored st tid.toObjId (.tcb after) with
+  | .error e => .error e
+  | .ok st' =>
+      if frozenQueuedAnywhere st' tid then
+        .ok (frozenRebucketRunnable st' tid after.boostedPriority)
+      else .ok st'
+
 -- ============================================================================
 -- **Frozen priority inheritance** (PR #895 review round 15)
 -- ============================================================================
@@ -534,28 +627,28 @@ def frozenUpdatePipBoost (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
         let newPrio := tcb'.boostedPriority
         let st' : FrozenSystemState :=
           frozenRewriteObject st tid.toObjId (.tcb tcb')
-        -- **Queued ANYWHERE, not queued at `oldPrio`.**  The live
-        -- `updatePipBoost` asks `tid ∈ runQueueOnCore` -- membership in the
-        -- queue -- and then `RunQueue.remove tid` takes it out of whichever
-        -- bucket holds it.  Looking only in the bucket `oldPrio` names assumes
-        -- a thread's bucket always equals its effective priority, and a state
-        -- where the two have drifted apart is exactly the one a reversion has
-        -- to repair: on such a state the thread was left where it was while the
-        -- live kernel moved it, which the operation-level differential (FO-041)
-        -- caught on its first run.  `frozenRemoveRunnable` searches every
-        -- bucket for the same reason, and says so.
-        let queued := st'.scheduler.byPriority.indexMap.toList.any (fun kv =>
-          ((st'.scheduler.byPriority.get? kv.1).getD []).contains tid)
-        if oldPrio == newPrio || !queued then st'
-        else
-          let dropped := st'.scheduler.byPriority.indexMap.toList.foldl
-            (fun bp kv =>
-              let bucket := (bp.get? kv.1).getD []
-              if bucket.contains tid then bp.insert kv.1 (bucket.filter (· != tid)) else bp)
-            st'.scheduler.byPriority
-          let newBucket := (dropped.get? newPrio).getD []
-          { st' with scheduler := { st'.scheduler with
-              byPriority := dropped.insert newPrio (newBucket ++ [tid]) } }
+        -- **The mechanics are `frozenRebucketRunnable`; the guard is this
+        -- operation's own.**  Up to `v0.35.100` the fold and the membership scan
+        -- were spelled inline here, which made this the *only* frozen writer
+        -- that re-bucketed at all -- so `frozenSchedContextBind` and
+        -- `frozenWriteBasePriority`, which move the same key through
+        -- `TCB.priority` rather than through `pipBoost`, left the thread in the
+        -- band their own write had removed (PR #897 review).  The guard stays
+        -- here because the live writers disagree about it and faithfully:
+        -- `updatePipBoostOnCore` migrates only `if oldPrio != newPrio`, where
+        -- `migrateRunQueueBucketOnCore` and the bind migrate whenever the thread
+        -- is queued.
+        --
+        -- `frozenQueuedAnywhere` asks membership in **any** bucket, which is
+        -- what the live `tid ∈ runQueueOnCore` plus `RunQueue.remove` does:
+        -- looking only in the bucket `oldPrio` names assumes a thread's bucket
+        -- always equals its effective priority, and a state where the two have
+        -- drifted apart is exactly the one a reversion has to repair -- on such
+        -- a state the thread was left where it was while the live kernel moved
+        -- it, which the operation-level differential (FO-041) caught on its
+        -- first run.
+        if oldPrio == newPrio || !frozenQueuedAnywhere st' tid then st'
+        else frozenRebucketRunnable st' tid newPrio
 
 /-- **Revert priority inheritance for `tid` and the chain above it** --
 `revertPriorityInheritance`'s frozen counterpart, and the step the frozen reply

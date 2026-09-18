@@ -2286,6 +2286,43 @@ private def differentialSchedContextBindClearsOrigin : IO Unit := do
   expect "FO-047 control: ...which is the priority the live bind writes too"
     ((liveSchedContextBindState ist.state diffScId diffA).bind
       (fun st => (st.getTcb? diffA).map (·.priority)) == some ⟨40⟩)
+  -- **`v0.35.101`: and the bound thread's run-queue BUCKET moves with it.**
+  --
+  -- The eight assertions above all passed while the mirror left `diffA` in
+  -- bucket `0`, which is the shape this suite has now recorded three times: a
+  -- scenario that asserts only what it set out to measure cannot see a
+  -- divergence one field over.  `diffA` is `.ready`, so `diffAddTcb` queues it
+  -- at its TCB priority `0`; the bind propagates the reservation's `40`, and the
+  -- live Z5-G3 step re-buckets there while the frozen mirror wrote the field and
+  -- stopped -- so `frozenChooseThread`, which folds `byPriority`, went on
+  -- ordering the thread at the band the bind had just left.
+  --
+  -- `frozenStateAgrees` compares the buckets **as lists at every key either side
+  -- holds**, so `frozenRunAgrees` over the whole operation is the decisive
+  -- assertion and the per-bucket ones below are what name the offending key when
+  -- it breaks.
+  expect "FO-047 control: diffA starts in bucket 0, its TCB priority"
+    (((freeze ist).scheduler.byPriority.get? ⟨0⟩).getD [] == [diffA, diffB])
+  expect "FO-047: the live bind moves diffA into bucket 40"
+    ((liveSchedContextBindState ist.state diffScId diffA).map
+      (fun st => (st.scheduler.runQueueOnCore bootCoreId).byPriority[(⟨40⟩ : SeLe4n.Priority)]?.getD [])
+      == some [diffA])
+  expect "FO-047 PAYOFF: ...and so does the frozen bind"
+    (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
+     | .ok (_, st') => ((st'.scheduler.byPriority.get? ⟨40⟩).getD [] == [diffA])
+                         && ((st'.scheduler.byPriority.get? ⟨0⟩).getD [] == [diffB])
+     | .error _ => false)
+  expect "FO-047 DIFFERENTIAL: the two post-bind states agree, buckets included"
+    (frozenRunAgrees unitResultAgrees
+      (frozenSchedContextBind diffScId.toObjId diffA (freeze ist))
+      (do
+        let vSc ← match diffScId.toObjId.toValid? with
+                  | some v => pure v
+                  | none => throw KernelError.invalidArgument
+        let vTid ← match diffA.toValid? with
+                   | some v => pure v
+                   | none => throw KernelError.invalidArgument
+        SeLe4n.Kernel.SchedContextOps.schedContextBind vSc vTid ist.state))
 
 /-- FO-047b: the unbind half — both arms of the live unbind clear the origin. -/
 private def differentialSchedContextUnbindClearsOrigin : IO Unit := do

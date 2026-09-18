@@ -8351,6 +8351,65 @@ run_check "INVARIANT" rg -n '^def markRunnable' SeLe4n/Model/Builder.lean
 # maintain with `ensureRunnable` / `removeRunnable`.
 run_check "INVARIANT" rg -n 'frozenEnsureRunnable' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n 'frozenRemoveRunnable' SeLe4n/Kernel/FrozenOps/Operations.lean
+# **`v0.35.101`: the frozen re-bucket has ONE answer, and three askers reach it.**
+# Reported on PR #897 against `frozenSchedContextBind` and `frozenWriteBasePriority`:
+# both write a base priority and neither moved the thread's bucket, where the live
+# `schedContextBind` Z5-G3 step and `applyPriorityChangeOnCore`'s
+# `migrateRunQueueBucketOnCore` do.  `TCB.boostedPriority` is
+# `priority.raisedBy pipBoost`, so a base write moves the run-queue key exactly as
+# a boost write does -- and `frozenUpdatePipBoost` had the fold spelled inline, so
+# only the boost half was ever answered.  One question, two places, and only one of
+# them answering.
+run_check "INVARIANT" rg -n '^def frozenQueuedAnywhere' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenRebucketRunnable' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenWriteTcbRebucketed' SeLe4n/Kernel/FrozenOps/Core.lean
+# The three askers, each by the reading it needs: the boost writer composes the
+# mechanics under its own `oldPrio != newPrio` guard (which is
+# `updatePipBoostOnCore`'s and which the base writers deliberately do not have),
+# and the two base writers take the shared write-and-re-bucket.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenUpdatePipBoost[^\n]*(\n([ \t][^\n]*)?)*frozenRebucketRunnable st. tid newPrio" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenUpdatePipBoost[^\n]*(\n([ \t][^\n]*)?)*frozenQueuedAnywhere st. tid" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbRebucketed st1 targetTid tcb." SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*none => frozenWriteTcbRebucketed st targetTid tcb." SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbRebucketed st1 threadId updatedTcb" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# **Test a gate by breaking the relation, not by deleting the token** -- and a
+# negative that is not DECLARATION-BOUNDED is a presence check.  The first draft of
+# the two store negatives below was written file-wide and fired on the clean tree:
+# `frozenSetIPCBuffer` stores a TCB at the same variable name, legitimately, because
+# `ipcBuffer` is not a run-queue key.  The relation is about *these three
+# declarations*, so each negative is scoped to one, with the gap written so it
+# cannot leave it.  Each keeps every name and re-introduces the defect's shape --
+# the pre-fix direct store, which passes every positive above, since the helper is
+# still defined and still called from the other askers.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*frozenWithObjectStored st1? targetTid\.toObjId \(\.tcb tcb.\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([ \t][^\n]*)?)*frozenWithObjectStored st1 threadId\.toObjId \(\.tcb updatedTcb\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*frozenWithObjectStored st. boundTid\.toObjId \(\.tcb boundTcb2\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# A second inlined bucket fold anywhere in that file would be a further answer to
+# the question the owner exists to have one answer to; the owner is in `Core.lean`,
+# so this one is legitimately file-wide.
+run_negative_check "INVARIANT" rg -n 'byPriority\.indexMap\.toList\.foldl' SeLe4n/Kernel/FrozenOps/Operations.lean
+# **`v0.35.101`, and found by the sweep rather than by the review**:
+# `frozenSchedContextConfigure` wrote the reservation and stopped, where the live
+# `schedContextConfigureBoundPropagate` propagates BOTH thread-owned parameters to
+# the bound thread and re-buckets it -- so every frozen post-configure state with a
+# bound owner falsified `boundThreadPriorityConsistent` AND
+# `boundThreadDomainConsistent`.  The gate is the live predicate's own question --
+# the bound thread must OWN the reservation, so a donee is never propagated to.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbRebucketed st. boundTid boundTcb2" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*!= some \(⟨scId\.toNat⟩ : SeLe4n\.SchedContextId\) then" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*priority := ⟨priority⟩, domain := ⟨domain⟩" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# The bucket key is the LIVE accessor, so "which bucket does this thread belong
+# in" has no frozen-specific answer -- the rule `frozenEnsureRunnable` states and
+# the one a second reading here would break.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteTcbRebucketed[^\n]*(\n([ \t][^\n]*)?)*after\.boostedPriority" SeLe4n/Kernel/FrozenOps/Core.lean'
+# The witnesses: the bind differential compares BUCKETS, which is what eight
+# passing per-object assertions in the same scenario could not see, and the two
+# priority witnesses queue the target on BOTH surfaces before measuring -- a
+# bucket comparison whose two sides start out different measures the fixture.
+run_check "INVARIANT" rg -n 'FO-047 DIFFERENTIAL: the two post-bind states agree, buckets included' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^private def pm_frozenBasePriorityRebucketsLikeTheLiveWrite' tests/PriorityManagementSuite.lean
+run_check "INVARIANT" rg -n '^private def pm_frozenCeilingRebucketsLikeTheLiveWrite' tests/PriorityManagementSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def pm_frozenBasePriorityRebucketsLikeTheLiveWrite[^\n]*(\n([ \t][^\n]*)?)*runnable := \[callerTid, targetTid\]" tests/PriorityManagementSuite.lean'
 # The relation compares the buckets, not just the current thread; comparing
 # `current` alone is what let the wake divergence through the differential
 # scenarios that were built to catch exactly this class.
@@ -15471,7 +15530,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "          match tcb\.queuePPrev with\n
 # the live side and left this one writing the reservation alone -- reported on
 # PR #897, and this project's own *a field added to a shared record is a sweep of
 # both surfaces* rule, which that cut's entry quoted and did not apply to itself.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority \(st : FrozenSystemState\) \(targetTid : SeLe4n\.ThreadId\)[^\n]*(\n([ \t][^\n]*)?)*\| \.ok st1 => frozenWithObjectStored st1 targetTid\.toObjId \(\.tcb tcb.\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# **Repointed at `v0.35.101`**: this pinned the *pair* by naming the TCB store in
+# the `.ok st1` arm, and that store moved into the shared `frozenWriteTcbRebucketed`
+# when the re-bucket landed -- so the anchor went red, which is the loud direction
+# and what a positive on a retired spelling is for.  The claim is unchanged and the
+# evidence is now the pair **in the live order**: the reservation, then the thread.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*\(\.schedContext \{ sc with priority := newPriority \}\) with(\n([ \t][^\n]*)?)*\| \.ok st1 => frozenWriteTcbRebucketed st1 targetTid tcb." SeLe4n/Kernel/FrozenOps/Operations.lean'
 # ...and neither operation may go back to spelling its own write.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetPriority[^\n]*(\n([ \t][^\n]*)?)*let sc. := \{ sc with priority := newPriority \}" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetMCPriority[^\n]*(\n([ \t][^\n]*)?)*frozenWriteBasePriority st1 targetTid targetTcb. newMCP" SeLe4n/Kernel/FrozenOps/Operations.lean'

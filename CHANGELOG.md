@@ -1,3 +1,122 @@
+## v0.35.101 — the frozen surface's re-bucket has one answer, and three askers reach it
+
+**Two P2 findings on PR #897, both confirmed, and a third the sweep found.**  The
+frozen run queue is keyed by `TCB.boostedPriority`, which is
+`priority.raisedBy pipBoost` — so a write to a thread's **base** priority moves its
+bucket exactly as a write to its inherited **boost** does.  The mechanics of that
+move were spelled **inline** in `frozenUpdatePipBoost` (PR #895 review round 15),
+whose own docstring states the hazard in terms: a thread whose key changes while it
+sits in a bucket is in the wrong one, and a later `frozenEnsureRunnable` would not
+repair it but would leave the thread in **two**, because it appends when the thread
+is absent from the bucket for its new priority.  So the question had one place that
+answered it and every other writer of the same key answered nothing.
+
+`frozenSchedContextBind` (`Operations.lean:1321`) propagates `sc.priority` to the
+bound TCB and left it in its old bucket; `frozenWriteBasePriority` (`:1563`) — the
+shared base-priority writer `v0.35.99` had just created — wrote the field and
+stopped.  `frozenChooseThread` folds `byPriority`, so on both paths the frozen
+kernel went on ordering the thread by the band the write had just removed, where
+the live `schedContextBind`'s Z5-G3 step and `applyPriorityChangeOnCore`'s
+`migrateRunQueueBucketOnCore` re-bucket for precisely that reason.  This is the
+project's *one question answered in two places* shape with only one of the places
+ever answering, so the remedy is a shared definition rather than two per-site
+patches.
+
+### The shared answer, and what it deliberately does not own
+
+`SeLe4n/Kernel/FrozenOps/Core.lean` gains three definitions, beside
+`frozenEnsureRunnable` and `frozenRemoveRunnable` where "what does the frozen run
+queue do" already lives:
+
+- **`frozenQueuedAnywhere`** — the frozen reading of the live `tid ∈ RunQueue`.
+  Queued **anywhere**, never at a particular priority: every live re-bucket asks
+  membership and then `RunQueue.remove`, which takes the thread out of whichever
+  bucket holds it, and a state where bucket and effective priority have drifted
+  apart is exactly the one a re-bucket has to repair.
+- **`frozenRebucketRunnable`** — the mirror of `(rq.remove tid).insert tid newPrio`,
+  and the one answer to "which bucket is it in now?".  Empty buckets are left
+  behind rather than erased, the convention `frozenRemoveRunnable` already follows:
+  `frozenRunAgrees` compares `(get? prio).getD []` at every key either side holds,
+  so an empty frozen bucket and an absent live key agree.
+- **`frozenWriteTcbRebucketed`** — write the TCB, then re-bucket it, which is the
+  shape all three base-priority writers share.  The key is `after.boostedPriority`,
+  read off the record being *written* rather than looked up afterwards, and it is
+  the **live** accessor, so "which bucket does this thread belong in" keeps one
+  answer on this surface — the rule `frozenEnsureRunnable`'s docstring already
+  states.
+
+**The guard stays per-operation, because the live writers disagree about it and
+faithfully.**  `updatePipBoostOnCore` migrates only `if oldPrio != newPrio`;
+`migrateRunQueueBucketOnCore` and the bind migrate whenever the thread is queued.
+The difference is observable rather than cosmetic: `RunQueue.insert` appends
+(`bucket ++ [tid]`), so the live remove-and-reinsert moves the thread to its
+bucket's **tail** even at an unchanged key, and a `.tcbSetPriority` that writes a
+thread's current priority reaches exactly that case.  A mirror that short-circuited
+there would keep the thread at its old position and `frozenRunAgrees` compares
+buckets as **lists**.  So `frozenUpdatePipBoost` composes `frozenQueuedAnywhere`
+and `frozenRebucketRunnable` under its own guard and the base writers take the
+shared write-and-re-bucket unguarded — each faithful to its own subject.
+
+### The third site, found by sweeping the question rather than the report
+
+The review named two sites; asking *which other frozen writer moves a run-queue
+key?* found a third, and it was worse than either.
+**`frozenSchedContextConfigure`** wrote the reservation and stopped — no priority
+propagation, no domain propagation, no re-bucket — where the live
+`schedContextConfigureBoundPropagate` does all three.  So every frozen
+post-configure state with a thread bound to the reconfigured reservation falsified
+**two** invariants at once, `boundThreadPriorityConsistent` and
+`boundThreadDomainConsistent`, which is `v0.35.99`'s bind finding on a third
+operation.  The gate is the live predicate's own question —
+`schedContextConfigurePropagates`, the bound thread must **own** the reservation —
+so a donee running on it is never propagated to, its base priority and domain being
+its own since WS-OD `v0.35.3`.  Each parameter is written only when it moved, as the
+live halves are, so an unchanged value is no write and the re-bucket is not reached.
+
+### The witnesses, and the fixture defect that had made the existing ones blind
+
+**FO-047 already built the defective state and never looked at the queue.**  `diffA`
+is `.ready`, so `diffAddTcb` queues it at its TCB priority `0`; the bind propagates
+the reservation's `40`.  Eight per-object assertions in that scenario passed
+throughout while the thread sat in bucket `0` — which is the third time this suite
+has recorded that shape, and the reason the decisive assertion is a whole-state
+`frozenRunAgrees` over the operation rather than another field comparison.  Three
+per-bucket assertions sit beside it to name the offending key when it breaks.
+Mutation-verified: reverting the bind's re-bucket fails the differential **on its
+own**, with the per-bucket assertions neutered.
+
+**And the two `v0.35.99` priority witnesses are structurally blind to it, because
+their two fixtures do not correspond.**  `mkState`'s `runnable` defaults to `[]`
+while `frozenStateOf` queues **every** `.ready` TCB at its own priority — so the
+frozen side queues threads the live side does not, and the live
+`migrateRunQueueBucket` is the identity on them.  Comparing buckets there would have
+compared a populated frozen queue against an empty live one and failed for the wrong
+reason.  `pm_frozenBasePriorityRebucketsLikeTheLiveWrite` passes
+`runnable := [callerTid, targetTid]` so both surfaces queue the target, and its
+control asserts that correspondence before anything is measured — *a bucket
+comparison whose two sides start out different measures the fixture*.  The caller
+shares the target's band, so a re-bucket that dropped the whole bucket rather than
+the one thread would pass against a singleton and fails here.
+`pm_frozenCeilingRebucketsLikeTheLiveWrite` is the sibling through the same shared
+writer; both were mutation-verified independently.
+
+### Anchors, and a negative of mine that was a presence check
+
+Twelve positives and four negatives.  The first draft of the two store negatives was
+written **file-wide** and fired on the clean tree: `frozenSetIPCBuffer` stores a TCB
+at the same variable name, legitimately, because `ipcBuffer` is not a run-queue key.
+The relation is about three named declarations, so each negative is
+declaration-bounded with the gap written so it cannot leave the declaration — this
+project's own *a region-scoped presence check is still a presence check* rule
+arriving in an anchor written to enforce a different one.  Each keeps every name and
+re-introduces the pre-fix direct store, which passes every positive above since the
+helper is still defined and still called from the other askers.  The fourth negative
+refuses a second inlined bucket fold anywhere in `Operations.lean`, the owner being
+in `Core.lean`.
+
+No live kernel behaviour changed: every edit is on the frozen differential surface.
+The golden trace is byte-identical.
+
 ## v0.35.100 — the pop's reservation record has a name, and the frozen mirror reads the live reader
 
 **The de-duplication `docs/REGISTERED_DEBT.md` asks for before the priority-mirror

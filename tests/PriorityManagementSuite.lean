@@ -1068,6 +1068,114 @@ private def pm_frozenCeilingAgreesWithTheLiveWrite : IO Unit := do
       expect "...so the two surfaces agree on the reservation's band"
         (frozenScPrio == liveScPrio)
 
+/-- **`v0.35.101`: and the write RE-BUCKETS, which neither witness above could
+see.**  Reported on PR #897.
+
+`v0.35.99` closed the field half and left the queue: the frozen run queue is
+keyed by `TCB.boostedPriority` (`priority.raisedBy pipBoost`), so a base write
+moves a queued thread's bucket exactly as a boost write does, and
+`frozenWriteBasePriority` wrote the field and stopped.  `frozenChooseThread` folds
+`byPriority`, so the frozen kernel went on ordering the thread by the band the
+write had just removed -- and a later `frozenEnsureRunnable`, which appends when
+the thread is absent from the bucket for its *new* priority, would have left it in
+**two**.  The live `setPriorityOp` composes `migrateRunQueueBucket` onto
+`updatePrioritySource` for precisely this reason.
+
+**Why the two witnesses above are structurally blind to it, and the fixture defect
+that made them so.**  `mkState`'s `runnable` defaults to `[]` while
+`frozenStateOf` queues **every** `.ready` TCB at its own priority -- so those
+fixtures do not correspond: the frozen side queues threads the live side does not,
+and the live `migrateRunQueueBucket` is therefore the identity on them.  Comparing
+buckets there would have compared a populated frozen queue against an empty live
+one and failed for the wrong reason.  This one passes `runnable := [targetTid]` so
+both surfaces queue the target, and the control below asserts that correspondence
+before anything is measured -- because a bucket comparison whose two sides start
+out different measures the fixture. -/
+private def pm_frozenBasePriorityRebucketsLikeTheLiveWrite : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let targetTid : SeLe4n.ThreadId := ⟨2⟩
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨50⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+      boundThread := some targetTid }
+  -- The caller is priority 50 as well, so bucket 50 has a second member: a
+  -- re-bucket that dropped the whole bucket rather than the one thread would
+  -- pass against a singleton and fail here.
+  let objs : List (ObjId × KernelObject) := [
+    (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 50) (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc) ]
+  let liveSt := mkState objs (runnable := [callerTid, targetTid])
+  let frozenSt := mkFrozenState [
+    (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 50) (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc) ]
+  let liveBucket (st : SystemState) (p : Nat) : List SeLe4n.ThreadId :=
+    ((st.scheduler.runQueueOnCore bootCoreId).byPriority[(⟨p⟩ : SeLe4n.Priority)]?).getD []
+  let frozenBucket (st : FrozenSystemState) (p : Nat) : List SeLe4n.ThreadId :=
+    (st.scheduler.byPriority.get? ⟨p⟩).getD []
+  expect "control: both surfaces start with the target queued at 50"
+    (liveBucket liveSt 50 == [callerTid, targetTid]
+      && frozenBucket frozenSt 50 == [callerTid, targetTid])
+  match setPriorityOp liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩ with
+  | .error e => throw <| IO.userError s!"live setPriority should succeed, got {repr e}"
+  | .ok liveAfter =>
+    match frozenSetPriority callerTid targetTid ⟨10⟩ frozenSt with
+    | .error e => throw <| IO.userError s!"frozen setPriority should succeed, got {repr e}"
+    | .ok ((), frozenAfter) =>
+      expect "control: the live demote moves the target to bucket 10"
+        (liveBucket liveAfter 10 == [targetTid] && liveBucket liveAfter 50 == [callerTid])
+      expect "PAYOFF: ...and so does the frozen demote -- the half that diverged"
+        (frozenBucket frozenAfter 10 == [targetTid])
+      expect "PAYOFF: ...leaving the caller alone in bucket 50"
+        (frozenBucket frozenAfter 50 == [callerTid])
+      expect "...so the two surfaces agree on both buckets"
+        (frozenBucket frozenAfter 10 == liveBucket liveAfter 10
+          && frozenBucket frozenAfter 50 == liveBucket liveAfter 50)
+
+/-- **`v0.35.101`: the MC-priority ceiling re-buckets too**, because it caps
+through the same shared writer.  Swept rather than reported, as the `v0.35.99`
+ceiling divergence was: a fix applied to one of two callers of a shared helper
+leaves the class open, and here the helper is the fix, so the sibling is covered
+by construction -- which is the point of this witness rather than an argument
+against having it. -/
+private def pm_frozenCeilingRebucketsLikeTheLiveWrite : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let targetTid : SeLe4n.ThreadId := ⟨2⟩
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  -- The reservation carries the live band (80) and the TCB's own field agrees,
+  -- so the thread is queued at 80 and the ceiling at 20 must move it.
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨80⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+      boundThread := some targetTid }
+  let objs : List (ObjId × KernelObject) := [
+    (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 80) (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc) ]
+  let liveSt := mkState objs (runnable := [targetTid])
+  let frozenSt := mkFrozenState [
+    (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 80) (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc) ]
+  let liveBucket (st : SystemState) (p : Nat) : List SeLe4n.ThreadId :=
+    ((st.scheduler.runQueueOnCore bootCoreId).byPriority[(⟨p⟩ : SeLe4n.Priority)]?).getD []
+  let frozenBucket (st : FrozenSystemState) (p : Nat) : List SeLe4n.ThreadId :=
+    (st.scheduler.byPriority.get? ⟨p⟩).getD []
+  expect "control: both surfaces start with the target queued at 80"
+    (liveBucket liveSt 80 == [targetTid] && frozenBucket frozenSt 80 == [targetTid])
+  match setMCPriorityOp liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨20⟩ with
+  | .error e => throw <| IO.userError s!"live setMCPriority should succeed, got {repr e}"
+  | .ok liveAfter =>
+    match frozenSetMCPriority callerTid targetTid ⟨20⟩ frozenSt with
+    | .error e => throw <| IO.userError s!"frozen setMCPriority should succeed, got {repr e}"
+    | .ok ((), frozenAfter) =>
+      expect "control: the live cap moves the target to bucket 20"
+        (liveBucket liveAfter 20 == [targetTid] && liveBucket liveAfter 80 == [])
+      expect "PAYOFF: ...and so does the frozen cap"
+        (frozenBucket frozenAfter 20 == [targetTid] && frozenBucket frozenAfter 80 == [])
+
 -- ============================================================================
 -- The bound thread's base priority has two homes (`v0.35.98`)
 -- ============================================================================
@@ -1214,4 +1322,6 @@ def main : IO Unit := do
   IO.println "--- `v0.35.99`: the frozen mirror writes both homes too ---"
   pm_frozenBasePriorityAgreesWithTheLiveWrite
   pm_frozenCeilingAgreesWithTheLiveWrite
+  pm_frozenBasePriorityRebucketsLikeTheLiveWrite
+  pm_frozenCeilingRebucketsLikeTheLiveWrite
   IO.println "=== All D2 priority management tests passed (42 tests) ==="

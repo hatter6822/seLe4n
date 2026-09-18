@@ -1218,7 +1218,26 @@ def frozenLookupServiceByCap (epId : SeLe4n.ObjId)
 /-- Z8-H: Frozen SchedContext configure — update scheduling parameters.
 Mirrors `schedContextConfigure` in frozen state. SchedContext is passthrough-
 frozen (no internal RHTables), so this is a straightforward lookup + store.
-Validates parameters and checks admission control against frozen state. -/
+Validates parameters and checks admission control against frozen state.
+
+**And it propagates the two thread-owned parameters to the bound thread, and
+re-buckets it** (`v0.35.101`).  Found by sweeping the *question* rather than the
+two sites PR #897 named: the review reported `frozenSchedContextBind` and
+`frozenWriteBasePriority`, and asking "which other frozen writer moves a run-queue
+key?" found this one, which was worse than either.  It wrote the reservation and
+stopped -- no priority propagation, no domain propagation, no re-bucket -- where
+the live `schedContextConfigureBoundPropagate` does all three under one gate.  So
+every frozen post-configure state with a thread bound to the reconfigured
+reservation falsified **two** invariants at once, `boundThreadPriorityConsistent`
+and `boundThreadDomainConsistent`, which is `v0.35.99`'s bind finding on a third
+operation.
+
+The gate is the live one, `schedContextConfigurePropagates`: the bound thread must
+**own** this reservation, so a donee running on it is never propagated to -- its
+base priority and domain are its own (WS-OD `v0.35.3`), and writing them from the
+donor's reservation would be the authority crossing that cut closed.  `.bound` is
+the only binding `boundThread` can hold on this surface for a thread that owns the
+reservation, and the gate says so rather than this arm assuming it. -/
 def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
     (budget period priority deadline domain : Nat) : FrozenKernel Unit :=
   fun st =>
@@ -1255,7 +1274,35 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
           | _ => acc
         if SeLe4n.Kernel.admissionCheck allScs updated then
           match frozenWithObjectStored st scId (.schedContext updated) with
-          | .ok st' => .ok ((), st')
+          | .ok st' =>
+            -- The propagation half: the live `schedContextConfigureBoundPropagate`
+            -- reads the *stored* state, so this does too.  Each parameter is
+            -- written only when it moved, as the live halves are, so an unchanged
+            -- value is no write at all and the re-bucket is not reached.
+            match sc.boundThread with
+            | none => .ok ((), st')
+            | some boundTid =>
+              match frozenLookupTcb st' boundTid with
+              | none => .ok ((), st')
+              | some boundTcb =>
+                -- The id comes from the **argument**, as the live gate's does
+                -- (`SchedContextId.ofObjId vScId.val`), not from the record's own
+                -- `scId` field: a self-id field is data the store holds and the
+                -- operation is about the object at this key.  Same derivation the
+                -- frozen bind uses for its own binding.
+                if boundTcb.schedContextBinding.ownScId?
+                    != some (⟨scId.toNat⟩ : SeLe4n.SchedContextId) then
+                  .ok ((), st')
+                else
+                  let boundTcb2 : TCB :=
+                    { boundTcb with priority := ⟨priority⟩, domain := ⟨domain⟩ }
+                  if boundTcb2.priority == boundTcb.priority
+                      && boundTcb2.domain == boundTcb.domain then
+                    .ok ((), st')
+                  else
+                    match frozenWriteTcbRebucketed st' boundTid boundTcb2 with
+                    | .ok st'' => .ok ((), st'')
+                    | .error e => .error e
           | .error e => .error e
         else
           .error .resourceExhausted
@@ -1321,7 +1368,19 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
               priority := sc.priority }
             match frozenWithObjectStored st scId (.schedContext updatedSc) with
             | .ok st1 =>
-              match frozenWithObjectStored st1 threadId.toObjId (.tcb updatedTcb) with
+              -- **And the bound thread is re-bucketed** (`v0.35.101`, reported on
+              -- PR #897).  The propagated `sc.priority` moves `updatedTcb`'s
+              -- `boostedPriority`, which is the frozen run queue's key, and the
+              -- live bind's Z5-G3 step exists for exactly this: `if tid ∈
+              -- runQueueOnCore bindHome then remove + insert at
+              -- resolveInsertPriority`.  Post-bind that insert priority *is*
+              -- `updatedTcb.boostedPriority` -- `resolveEffectivePrioDeadline`
+              -- reads the reservation for a `.bound` thread and this write has
+              -- just made the two agree -- so the shared frozen writer's key is
+              -- the live one's value, not a frozen-specific reading of it.
+              -- Without it a bind could raise a queued thread's band and
+              -- `frozenSchedule` would keep selecting it at the old one.
+              match frozenWriteTcbRebucketed st1 threadId updatedTcb with
               | .ok st2 => .ok ((), st2)
               | .error e => .error e
             | .error e => .error e
@@ -1530,7 +1589,21 @@ and then did not apply to its own change.
 
 Both frozen operations that move a base priority call this, so the surface has
 one answer: `frozenSetPriority` directly, and `frozenSetMCPriority` when its
-ceiling bites. -/
+ceiling bites.
+
+**And the write re-buckets** (`v0.35.101`, reported on PR #897).  The frozen run
+queue is keyed by `TCB.boostedPriority`, which is `priority.raisedBy pipBoost` --
+so a base-priority write moves a queued thread's bucket exactly as a boost write
+does, and this wrote the field and stopped.  `frozenChooseThread` folds
+`byPriority`, so the frozen kernel went on ordering the thread by the band this
+write had just removed, where the live `applyPriorityChangeOnCore` composes
+`migrateRunQueueBucketOnCore` onto `updatePrioritySource` for precisely that
+reason; worse, a later `frozenEnsureRunnable` appends when the thread is absent
+from the bucket for its *new* priority, so the thread would have ended in **two**.
+`frozenWriteTcbRebucketed` is the shared answer -- the mechanics were spelled
+inline in `frozenUpdatePipBoost` and so answered the boost half only, which is
+this project's *one question answered in two places* shape with one of the places
+never answering. -/
 def frozenWriteBasePriority (st : FrozenSystemState) (targetTid : SeLe4n.ThreadId)
     (targetTcb : TCB) (newPriority : SeLe4n.Priority) :
     Except KernelError FrozenSystemState :=
@@ -1541,10 +1614,10 @@ def frozenWriteBasePriority (st : FrozenSystemState) (targetTid : SeLe4n.ThreadI
     | some sc =>
       match frozenWithObjectStored st scId.toObjId
               (.schedContext { sc with priority := newPriority }) with
-      | .ok st1 => frozenWithObjectStored st1 targetTid.toObjId (.tcb tcb')
+      | .ok st1 => frozenWriteTcbRebucketed st1 targetTid tcb'
       | .error e => .error e
     | none => .error .objectNotFound
-  | none => frozenWithObjectStored st targetTid.toObjId (.tcb tcb')
+  | none => frozenWriteTcbRebucketed st targetTid tcb'
 
 /-- D2-L: Frozen-phase setPriority. Validates MCP authority, updates priority
 on the frozen state (the thread's SchedContext if `.bound`, its TCB otherwise).

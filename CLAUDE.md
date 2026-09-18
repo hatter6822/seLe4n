@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.100.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.101.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,13 +203,13 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~70968 lines)
+- `CHANGELOG.md` (~71254 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23652 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7786 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7834 lines)
 - `SeLe4n/Kernel/API.lean` (~7592 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7459 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7456 lines)
 - `docs/spec/SELE4N_SPEC.md` (~6336 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6144 lines)
@@ -226,8 +226,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4225 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3898 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3813 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3811 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3803 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
 - `tests/SmpIpcSuite.lean` (~3716 lines)
 - `SeLe4n/Platform/FFI.lean` (~3595 lines)
@@ -248,7 +248,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/Object/Types.lean` (~2861 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2740 lines)
-- `tests/FrozenOpsSuite.lean` (~2689 lines)
+- `tests/FrozenOpsSuite.lean` (~2726 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2633 lines)
@@ -303,6 +303,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1819 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1808 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
@@ -310,13 +311,13 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1727 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1714 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1624 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1617 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1538 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
@@ -324,13 +325,12 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1445 lines)
-- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1438 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1430 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
+- `tests/SmpCrossCoreCallSuite.lean` (~1415 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
-- `tests/SmpCrossCoreCallSuite.lean` (~1410 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1385 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
@@ -338,6 +338,7 @@ To find files that need pagination today, run:
 - `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1366 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
+- `tests/PriorityManagementSuite.lean` (~1327 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1316 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
@@ -347,8 +348,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1254 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
+- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1249 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
-- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1240 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1239 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1236 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
@@ -361,14 +362,13 @@ To find files that need pagination today, run:
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
-- `tests/PriorityManagementSuite.lean` (~1129 lines)
 - `SeLe4n/Machine.lean` (~1128 lines)
+- `SeLe4n/Model/FrozenState.lean` (~1127 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1126 lines)
 - `tests/SmpIdleSuite.lean` (~1118 lines)
 - `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean` (~1110 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1107 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
-- `SeLe4n/Model/FrozenState.lean` (~1090 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
@@ -6890,6 +6890,31 @@ code may assume:
   `frozenSetMCPriority`'s ceiling call, so a new frozen priority operation reads
   and writes the pair the way the live one does rather than growing a second
   answer.
+
+  **And a priority write moves the thread's run-queue BUCKET, on both surfaces**
+  (`v0.35.101`, reported on PR #897).  `TCB.boostedPriority` is
+  `priority.raisedBy pipBoost`, so a **base** write moves the run-queue key exactly
+  as an inherited-**boost** write does, and every live writer of either re-buckets:
+  `updatePipBoostOnCore`, `migrateRunQueueBucketOnCore` (which
+  `applyPriorityChangeOnCore` composes) and `schedContextBind`'s Z5-G3 step.  On the
+  frozen surface the mechanics were spelled *inline* in `frozenUpdatePipBoost`, so
+  only the boost half was answered and three base writers moved nothing.  They are
+  one definition now — `frozenQueuedAnywhere`, `frozenRebucketRunnable` and
+  `frozenWriteTcbRebucketed` (`FrozenOps/Core.lean`, beside `frozenEnsureRunnable`)
+  — and a new frozen writer of either field calls them.  Two things new code must
+  respect.  (1) **The guard is per-operation and the mechanics are shared**, because
+  the live writers disagree about the guard and faithfully: `updatePipBoostOnCore`
+  migrates only `if oldPrio != newPrio` while the base writers migrate whenever the
+  thread is queued, and the difference is observable — `RunQueue.insert` appends, so
+  a remove-and-reinsert at an unchanged key moves the thread to its bucket's tail,
+  and `frozenRunAgrees` compares buckets as **lists**.  (2) **The key is the live
+  accessor**, read off the record being written: `frozenEnsureRunnable` and
+  `frozenChooseThread` already read `TCB.boostedPriority`, so "which bucket does this
+  thread belong in" has no frozen-specific answer and must not acquire one.  The
+  third site was found by sweeping the *question* rather than the two the review
+  named: `frozenSchedContextConfigure` propagated **neither** thread-owned parameter
+  and re-bucketed nothing, so every frozen post-configure state with a bound owner
+  falsified `boundThreadPriorityConsistent` **and** `boundThreadDomainConsistent`.
 
   What `v0.35.98` measured, on the live per-core dispatch path: a
   `seL4_TCB_SetPriority` demotion of a bound thread from 50 to 10 re-bucketed it
