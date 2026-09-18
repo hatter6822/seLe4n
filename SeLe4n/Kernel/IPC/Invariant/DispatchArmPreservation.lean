@@ -449,29 +449,24 @@ private theorem updatePrioritySource_tcbTarget_eq (st : SystemState)
     ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr hPre) _
 
 /-- Reduction of `updatePrioritySource` at a binding that **does** name a
-priority source — `.bound scId`, and only that since WS-OD (v0.35.3). -/
-private theorem updatePrioritySource_sc_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
-    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
-    (hB : tcb.schedContextBinding.ownScId? = some scId)
-    (hSc : st.getSchedContext? scId = some sc) :
-    SchedContext.PriorityManagement.updatePrioritySource st tid tcb p
-      = { st with objects :=
-            st.objects.insert scId.toObjId (.schedContext { sc with priority := p }) } := by
-  unfold SchedContext.PriorityManagement.updatePrioritySource
-  rw [hB]
-  exact SystemState.updateSchedContext_eq_of_some hSc _
+priority source — `.bound scId`, and only that since WS-OD (v0.35.3).
 
-/-- Reduction of `updatePrioritySource` when the named SchedContext is absent. -/
-private theorem updatePrioritySource_sc_none_eq (st : SystemState)
+**`v0.35.98`: that arm is a PAIR of writes**, the reservation and the thread,
+because the base priority of a `.bound` thread has two homes and the syscall
+must move both (see the operation's own docstring).  The reduction is therefore
+to the composed typed updates rather than to a single insert; each half is an
+identity where its object is absent, so no presence hypothesis is needed here
+and the two `_sc_eq` / `_sc_none_eq` reductions this replaces — which described
+a one-object write — are gone rather than given a second object. -/
+private theorem updatePrioritySource_bound_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
     (scId : SeLe4n.SchedContextId)
-    (hB : tcb.schedContextBinding.ownScId? = some scId)
-    (hSc : st.getSchedContext? scId = none) :
-    SchedContext.PriorityManagement.updatePrioritySource st tid tcb p = st := by
+    (hB : tcb.schedContextBinding.ownScId? = some scId) :
+    SchedContext.PriorityManagement.updatePrioritySource st tid tcb p
+      = (st.updateSchedContext scId fun sc => { sc with priority := p }).updateTcb tid
+          fun t => { t with priority := p } := by
   unfold SchedContext.PriorityManagement.updatePrioritySource
   rw [hB]
-  exact SystemState.updateSchedContext_eq_self_of_none hSc _
 
 /-- `updatePrioritySource` writes a priority field — on the thread's own TCB
 unless the binding names a priority source, in which case on that SchedContext —
@@ -488,13 +483,36 @@ theorem updatePrioritySource_preserves_ipcInvariantFull
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
         { tcb with priority := p } hObjInv hInv hPre rfl rfl rfl rfl rfl rfl rfl rfl rfl
   | some scId =>
-      cases hSc : st.getSchedContext? scId with
-      | some sc =>
-          rw [updatePrioritySource_sc_eq st tid tcb p scId sc hB hSc]
-          exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st scId
-            sc { sc with priority := p } hObjInv hInv
-            ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc) rfl
-      | none => rw [updatePrioritySource_sc_none_eq st tid tcb p scId hB hSc]; exact hInv
+      -- `v0.35.98`: two writes, so two preservation steps — the reservation at
+      -- `st`, the thread at the reservation-written state.  The thread's record
+      -- survives the first because a SchedContext rewrite is invisible to every
+      -- TCB lookup **at every key** (`updateSchedContext_getTcb?`), so no
+      -- key-distinctness side condition enters the argument.
+      have hObjInv1 :
+          (st.updateSchedContext scId fun sc => { sc with priority := p }).objects.invExt :=
+        SystemState.updateSchedContext_preserves_objects_invExt st scId _ hObjInv
+      have hGet1 :
+          (st.updateSchedContext scId fun sc => { sc with priority := p }).getTcb? tid
+            = some tcb := by
+        rw [SystemState.updateSchedContext_getTcb? st scId _ hObjInv tid]
+        exact (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hPre
+      have hPre1 :
+          (st.updateSchedContext scId fun sc => { sc with priority := p }).objects[tid.toObjId]?
+            = some (.tcb tcb) :=
+        (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hGet1
+      have hInv1 :
+          ipcInvariantFull (st.updateSchedContext scId fun sc => { sc with priority := p }) := by
+        cases hSc : st.getSchedContext? scId with
+        | some sc =>
+            rw [SystemState.updateSchedContext_eq_of_some hSc]
+            exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st scId
+              sc { sc with priority := p } hObjInv hInv
+              ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc) rfl
+        | none => rw [SystemState.updateSchedContext_eq_self_of_none hSc]; exact hInv
+      rw [updatePrioritySource_bound_eq st tid tcb p scId hB,
+        SystemState.updateTcb_eq_of_some hGet1]
+      exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ tid tcb
+        { tcb with priority := p } hObjInv1 hInv1 hPre1 rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- `migrateRunQueueBucketOnCore` moves no object. -/
 theorem migrateRunQueueBucketOnCore_objects_eq (st : SystemState)

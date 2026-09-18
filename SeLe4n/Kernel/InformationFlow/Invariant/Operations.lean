@@ -3647,10 +3647,29 @@ theorem updatePrioritySource_preserves_projection
     projectState ctx observer
       (SchedContext.PriorityManagement.updatePrioritySource st tid tcb newPriority) =
     projectState ctx observer st := by
+  -- `v0.35.98`: the `.bound` arm writes **both** homes of the base priority, so
+  -- it is two applications of one frame, each at its own non-observability
+  -- hypothesis -- and `hTcbHigh`, which that arm did not consume before, is
+  -- what discharges the second.  The thread half is shared, since both arms
+  -- perform it (the `.bound` arm over the reservation-written state).
+  have hTcbStep : ∀ (s : SystemState), s.objects.invExt →
+      projectState ctx observer
+        (s.updateTcb tid fun t => { t with priority := newPriority })
+        = projectState ctx observer s := by
+    intro s hs
+    cases hT : s.getTcb? tid with
+    | some t =>
+        rw [SystemState.updateTcb_eq_of_some hT]
+        exact objects_insert_preserves_projection_high ctx observer s tid.toObjId _
+          hTcbHigh hs
+    | none =>
+        rw [SystemState.updateTcb_eq_self_of_none hT]
   unfold SchedContext.PriorityManagement.updatePrioritySource
   split
-  · -- the priority source resolves (`.bound scId`)
+  · -- the priority source resolves (`.bound scId`): the reservation, then the thread
     rename_i scId hSrc
+    rw [hTcbStep _
+      (SystemState.updateSchedContext_preserves_objects_invExt st scId _ hObjInv)]
     cases hSc : st.getSchedContext? scId with
     | some sc =>
         -- present: the typed rewrite is the insert, and the frame lemma applies
@@ -3661,13 +3680,7 @@ theorem updatePrioritySource_preserves_projection
         -- absent: the typed rewrite is the identity
         rw [SystemState.updateSchedContext_eq_self_of_none hSc]
   · -- no priority source (`.unbound` / `.donated`): the target's own TCB
-    cases hT : st.getTcb? tid with
-    | some t =>
-        rw [SystemState.updateTcb_eq_of_some hT]
-        exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
-          hTcbHigh hObjInv
-    | none =>
-        rw [SystemState.updateTcb_eq_self_of_none hT]
+    exact hTcbStep st hObjInv
 
 -- ============================================================================
 -- AK6-F.2h/i: VSpace checked+flush wrappers preservation

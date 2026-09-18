@@ -890,8 +890,16 @@ private def pm_od_06_boundControlStillWritesTheReservation : IO Unit := do
     | _ => throw <| IO.userError "bound SchedContext not found after setPriority"
     match st'.objects[(⟨2⟩ : SeLe4n.ThreadId).toObjId]? with
     | some (.tcb tcb') =>
-      expect "control: a BOUND thread's TCB priority is NOT the write target"
-        (tcb'.priority == ⟨odDoneePriority⟩)
+      -- **Corrected at `v0.35.98`.**  This asserted `tcb'.priority ==
+      -- odDoneePriority` — that a bound thread's own TCB is *not* written —
+      -- which was the defect rather than the contract: the base priority of a
+      -- `.bound` thread has two homes and every run-queue insert reads the TCB
+      -- one, so leaving it stale reverted the demotion at the thread's next
+      -- wake.  What WS-OD (`v0.35.3`) actually guarantees is the *donee* split
+      -- asserted by `pm_od_03` / `pm_od_04` above (a donee's update spares the
+      -- **donor's** reservation), not that a bound thread's TCB is spared.
+      expect "control: a BOUND thread's TCB priority moves with its reservation"
+        (tcb'.priority == ⟨80⟩)
     | _ => throw <| IO.userError "bound TCB not found after setPriority"
   -- ...and the reader agrees with the writer on that arm too.
   match st.getTcb? ⟨2⟩ with
@@ -975,9 +983,92 @@ private def pm_od_08_configureBoundControlStillPropagates : IO Unit := do
         (tcb'.domain == ⟨5⟩)
     | _ => throw <| IO.userError "bound TCB not found after configure"
 
+-- ============================================================================
+-- The bound thread's base priority has two homes (`v0.35.98`)
+-- ============================================================================
+
+/-- The reading `updatePrioritySource`'s `.bound` arm had until `v0.35.98`: the
+reservation alone.  It lives here, `private`, and nowhere else — a witness that
+cannot name what it replaced cannot show that the replacement changed anything,
+and every assertion below is *computed against both* so the suite is known to
+discriminate rather than merely to pass. -/
+private def reservationOnlyPriorityWrite (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (p : SeLe4n.Priority) : SystemState :=
+  st.updateSchedContext scId fun sc => { sc with priority := p }
+
+/-- Shared fixture: a thread **bound** to a reservation, the two homes of its
+base priority in sync at 50 (the state `schedContextBind` leaves), queued on the
+boot core at that band. -/
+private def boundInSyncState (callerTid targetTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) : SystemState :=
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨50⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+      boundThread := some targetTid }
+  mkState [
+    (callerTid.toObjId, .tcb (mkTcb callerTid.toNat (prio := 50) (mcp := 200))),
+    (targetTid.toObjId, .tcb (mkTcb targetTid.toNat (prio := 50)
+        (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc) ] (runnable := [targetTid])
+
+/-- Both homes move.  `pm_od_06` already asserts the reservation half; this adds
+the thread half, which is the one that was missing — and which every run-queue
+insert in the kernel reads. -/
+private def pm_basePriorityWritesBothHomes : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let targetTid : SeLe4n.ThreadId := ⟨2⟩
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  let st := boundInSyncState callerTid targetTid scId
+  match setPriorityOnCore st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩
+          bootCoreId with
+  | .error e => throw <| IO.userError s!"setPriority should succeed, got {repr e}"
+  | .ok (st1, _) =>
+    expect "bound demote writes the reservation"
+      ((st1.getSchedContext? scId).map (·.priority) == some ⟨10⟩)
+    expect "bound demote writes the thread"
+      ((st1.getTcb? targetTid).map (·.priority) == some ⟨10⟩)
+    -- the retired reading, on the same state: the thread half never moved
+    let stOld := migrateRunQueueBucketOnCore
+      (reservationOnlyPriorityWrite st scId ⟨10⟩) targetTid ⟨10⟩ bootCoreId
+    expect "the retired reading left the thread at its old band"
+      ((stOld.getTcb? targetTid).map (·.priority) == some ⟨50⟩)
+
+/-- **The decisive one.**  A demotion must survive the thread's next block and
+wake: `enqueueRunnableOnCore` inserts at `TCB.boostedPriority`, so a reservation
+write alone put the thread back in the band the demotion had just removed —
+permanently, since every later wake reads the same field. -/
+private def pm_basePrioritySurvivesBlockAndWake : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let targetTid : SeLe4n.ThreadId := ⟨2⟩
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  let st := boundInSyncState callerTid targetTid scId
+  let blockAndWake : SystemState → SystemState := fun s =>
+    let rq := (s.scheduler.runQueueOnCore bootCoreId).remove targetTid
+    let sched := s.scheduler.setRunQueueOnCore bootCoreId rq
+    let s' : SystemState := { s with scheduler := sched }
+    enqueueRunnableOnCore s' bootCoreId targetTid
+  let bucketOf : SystemState → Option SeLe4n.Priority := fun s =>
+    (s.scheduler.runQueueOnCore bootCoreId).threadPriority[targetTid]?
+  expect "the fixture starts queued at its bound band" (bucketOf st == some ⟨50⟩)
+  match setPriorityOnCore st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩
+          bootCoreId with
+  | .error e => throw <| IO.userError s!"setPriority should succeed, got {repr e}"
+  | .ok (st1, _) =>
+    expect "the demotion re-buckets immediately" (bucketOf st1 == some ⟨10⟩)
+    expect "the demotion SURVIVES a block and wake"
+      (bucketOf (blockAndWake st1) == some ⟨10⟩)
+    -- the retired reading, driven through the same block and wake
+    let stOld := migrateRunQueueBucketOnCore
+      (reservationOnlyPriorityWrite st scId ⟨10⟩) targetTid ⟨10⟩ bootCoreId
+    expect "the retired reading also re-bucketed immediately"
+      (bucketOf stOld == some ⟨10⟩)
+    expect "...and the retired reading REVERTED the demotion on the wake"
+      (bucketOf (blockAndWake stOld) == some ⟨50⟩)
+
 end SeLe4n.Testing.PriorityManagementSuite
 
 open SeLe4n.Testing.PriorityManagementSuite in
+
 def main : IO Unit := do
   IO.println "=== D2 Priority Management Test Suite ==="
   IO.println "--- D2-M1: setPriority success cases ---"
@@ -1032,4 +1123,7 @@ def main : IO Unit := do
   pm_od_06_boundControlStillWritesTheReservation
   pm_od_07_configureOnDonatedReservationSparesTheDonee
   pm_od_08_configureBoundControlStillPropagates
-  IO.println "=== All D2 priority management tests passed (38 tests) ==="
+  IO.println "--- `v0.35.98`: the bound thread's base priority has two homes ---"
+  pm_basePriorityWritesBothHomes
+  pm_basePrioritySurvivesBlockAndWake
+  IO.println "=== All D2 priority management tests passed (40 tests) ==="

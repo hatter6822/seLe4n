@@ -3113,10 +3113,16 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem faultAbandonOnCore_
 # across a rewrite without `invExt`, which executable code has no proof of.
 # The proofs reduce that pair with `updateTcb_after_rewriteObject_schedContext`.
 
-# `updatePrioritySource`: both arms are the typed rewrite, the reservation's
+# `updatePrioritySource`: every write is the typed rewrite, the reservation's
 # through `updateSchedContext` (its identity-on-absent arm is the defensive
 # no-op this site always had) and the thread's through `updateTcb`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def updatePrioritySource \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(tcb : TCB\) \(newPriority : SeLe4n\.Priority\) : SystemState :=\n  match tcb\.schedContextBinding\.ownScId\? with\n  \| some scId =>(\n([ \t][^\n]*)?)*    st\.updateSchedContext scId fun sc => \{ sc with priority := newPriority \}\n  \| none =>(\n([ \t][^\n]*)?)*    st\.updateTcb tid fun t => \{ t with priority := newPriority \}$" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+#
+# **Repointed at `v0.35.98`**, which made the `.bound` arm a PAIR of writes --
+# a bound thread's base priority has two homes and the syscall must move both.
+# The anchor's subject is unchanged (the classifier, and that no arm reaches for
+# a raw insert); only the arm's shape moved, and a pin on a shape a cut changes
+# is exactly the artefact this project's sweep rule says to carry with it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def updatePrioritySource \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(tcb : TCB\) \(newPriority : SeLe4n\.Priority\) : SystemState :=\n  match tcb\.schedContextBinding\.ownScId\? with\n  \| some scId =>(\n([ \t][^\n]*)?)*    \(st\.updateSchedContext scId fun sc => \{ sc with priority := newPriority \}\)\.updateTcb tid\n      fun t => \{ t with priority := newPriority \}\n  \| none =>(\n([ \t][^\n]*)?)*    st\.updateTcb tid fun t => \{ t with priority := newPriority \}$" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
 # The donor-reservation statement lost its key-distinctness hypothesis: the
 # typed rewrite fires only at a key holding a TCB, so it reaches no
 # SchedContext at any key.  NEGATIVE: the hypothesis must not come back.
@@ -15334,4 +15340,20 @@ run_negative_check "INVARIANT" bash -lc 'rg -n "^WRITE = re\.compile\(r\"\\\\b\(
 # that being read as absence.
 run_check "INVARIANT" bash -lc 'rg -n "STORE_SWEEP_SCOPE=whole-table traversals; diagnostic only, never enforced" scripts/lean_store_read_census.py'
 
+# ---------------------------------------------------------------------------
+# `v0.35.98`: a bound thread's base priority has TWO homes and the syscall
+# writes both.  `SystemState.threadBasePriority` reads the reservation;
+# `TCB.boostedPriority` -- which every run-queue insert is keyed by -- reads the
+# thread.  Writing the reservation alone left the thread stale, so the demotion
+# was reverted at its next wake.
+run_check "INVARIANT" bash -lc 'rg -U -n "^    \(st\.updateSchedContext scId fun sc => \{ sc with priority := newPriority \}\)\.updateTcb tid\n      fun t => \{ t with priority := newPriority \}$" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+# ...and the retired reservation-only spelling must not come back.  Anchored at
+# the arm's own indentation, so the `.unbound` arm's legitimate TCB-only write
+# (`st.updateTcb tid ...`) is untouched and the private copy the witness keeps
+# in `tests/` is out of scope by file.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^    st\.updateSchedContext scId fun sc => \{ sc with priority := newPriority \}$" SeLe4n/Kernel/SchedContext/PriorityManagement.lean'
+# The agreement is a THEOREM about the operation, not a sentence about it: the
+# docstring that stood on `boundThreadPriorityConsistent` claimed no transition
+# touches either of its two fields, and three do.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem updatePrioritySource_preserves_boundThreadPriorityConsistent[^\n]*(\n([ \t][^\n]*)?)*boundThreadPriorityConsistent \(SchedContext\.PriorityManagement\.updatePrioritySource st tid tcb newPrio\)" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
 finalize_report

@@ -24,33 +24,34 @@ open SeLe4n.Kernel
 -- ============================================================================
 -- Transport lemmas — updatePrioritySource
 -- ============================================================================
+--
+-- **`v0.35.98`: each is one application of the frame stated at the write.**
+-- All six ran the same two-branch case analysis over `updatePrioritySource`'s
+-- body, so the cut that made its `.bound` arm a *pair* of writes broke all six
+-- identically.  `updatePrioritySource_only_modifies_objects`
+-- (`SchedContext/PriorityManagement.lean`, beside the definition) is the one
+-- owner now; a further write on either arm costs these nothing.
 
 theorem updatePrioritySource_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPrio : SeLe4n.Priority) :
     (updatePrioritySource st tid tcb newPrio).scheduler = st.scheduler := by
-  unfold updatePrioritySource
-  split <;> first
-    | rw [SystemState.updateSchedContext_eq_objects_update]
-    | rw [SystemState.updateTcb_eq_objects_update]
+  obtain ⟨_, h⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPrio
+  rw [h]
 
 theorem updatePrioritySource_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPrio : SeLe4n.Priority) :
     (updatePrioritySource st tid tcb newPrio).serviceRegistry = st.serviceRegistry := by
-  unfold updatePrioritySource
-  split <;> first
-    | rw [SystemState.updateSchedContext_eq_objects_update]
-    | rw [SystemState.updateTcb_eq_objects_update]
+  obtain ⟨_, h⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPrio
+  rw [h]
 
 theorem updatePrioritySource_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPrio : SeLe4n.Priority) :
     (updatePrioritySource st tid tcb newPrio).lifecycle = st.lifecycle := by
-  unfold updatePrioritySource
-  split <;> first
-    | rw [SystemState.updateSchedContext_eq_objects_update]
-    | rw [SystemState.updateTcb_eq_objects_update]
+  obtain ⟨_, h⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPrio
+  rw [h]
 
 -- ============================================================================
 -- Transport lemmas — migrateRunQueueBucket
@@ -79,28 +80,22 @@ theorem updatePrioritySource_irqHandlers_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPrio : SeLe4n.Priority) :
     (updatePrioritySource st tid tcb newPrio).irqHandlers = st.irqHandlers := by
-  unfold updatePrioritySource
-  split <;> first
-    | rw [SystemState.updateSchedContext_eq_objects_update]
-    | rw [SystemState.updateTcb_eq_objects_update]
+  obtain ⟨_, h⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPrio
+  rw [h]
 
 theorem updatePrioritySource_machine_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPrio : SeLe4n.Priority) :
     (updatePrioritySource st tid tcb newPrio).machine = st.machine := by
-  unfold updatePrioritySource
-  split <;> first
-    | rw [SystemState.updateSchedContext_eq_objects_update]
-    | rw [SystemState.updateTcb_eq_objects_update]
+  obtain ⟨_, h⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPrio
+  rw [h]
 
 theorem updatePrioritySource_objectIndex_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPrio : SeLe4n.Priority) :
     (updatePrioritySource st tid tcb newPrio).objectIndex = st.objectIndex := by
-  unfold updatePrioritySource
-  split <;> first
-    | rw [SystemState.updateSchedContext_eq_objects_update]
-    | rw [SystemState.updateTcb_eq_objects_update]
+  obtain ⟨_, h⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPrio
+  rw [h]
 
 -- ============================================================================
 -- Transport lemmas — migrateRunQueueBucket (additional fields)

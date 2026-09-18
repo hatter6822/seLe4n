@@ -281,12 +281,55 @@ def updatePrioritySource (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (newPriority : SeLe4n.Priority) : SystemState :=
   match tcb.schedContextBinding.ownScId? with
   | some scId =>
-    -- `.bound`: the reservation is the thread's own, so its priority field is
-    -- the scheduling source.
-    st.updateSchedContext scId fun sc => { sc with priority := newPriority }
+    -- `.bound`: the base priority has **two homes** and this writes both.
+    --
+    -- `SystemState.threadBasePriority` reads `sc.priority` here, while
+    -- `TCB.boostedPriority` -- the bucket every run-queue *insert* is keyed by
+    -- (`enqueueRunnableOnCore`, `preemptCurrentOnCore`) -- reads
+    -- `tcb.priority`.  `boundThreadPriorityConsistent` is the agreement between
+    -- them, `schedContextBind` establishes it and
+    -- `schedContextConfigureBoundPropagate` maintains it; until `v0.35.98` this
+    -- arm wrote the reservation alone, so the syscall whose entire job is to
+    -- change a priority was the one writer that broke it.  Measured on the
+    -- live per-core path: `.tcbSetPriority` demoted a bound thread from 50 to
+    -- 10, `migrateRunQueueBucketOnCore` re-bucketed it at 10, and its first
+    -- wake re-inserted it at `tcb.boostedPriority` -- **50**, the band the
+    -- demotion had just removed -- permanently, since every later wake reads
+    -- the same stale field.  A demotion that does not stick is a
+    -- temporal-isolation break in the mixed-criticality deployments MCS exists
+    -- for; a promotion that does not stick is the latency failure in the other
+    -- direction.
+    --
+    -- The SchedContext first and the thread second, mirroring
+    -- `schedContextBind`'s order, so the two establish the same agreement the
+    -- same way round.  Each half is an identity where its object is absent, so
+    -- the arm is total and a dangling `.bound` (an invariant violation) still
+    -- gets the TCB write rather than being silently dropped whole.
+    (st.updateSchedContext scId fun sc => { sc with priority := newPriority }).updateTcb tid
+      fun t => { t with priority := newPriority }
   | none =>
-    -- `.unbound` and `.donated`: the thread's own TCB.
+    -- `.unbound` and `.donated`: the thread's own TCB, which is its only home.
     st.updateTcb tid fun t => { t with priority := newPriority }
+
+/-- **The frame belongs to the write** (`v0.35.98`).  `updatePrioritySource`
+moves objects and nothing else, at either binding — stated once here rather than
+re-derived per field, because the `.bound` arm became a *pair* of writes in this
+cut and six consumers were each running their own two-branch case analysis over
+its shape.  Every `_scheduler_eq` / `_lifecycle_eq` / … transport lemma in
+`SchedContext/Invariant/PriorityPreservation.lean` is now one application of
+this, so a third write added to either arm costs them nothing. -/
+theorem updatePrioritySource_only_modifies_objects
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (newPriority : SeLe4n.Priority) :
+    ∃ objects', updatePrioritySource st tid tcb newPriority
+      = { st with objects := objects' } := by
+  unfold updatePrioritySource
+  split
+  · rw [SystemState.updateTcb_eq_objects_update,
+      SystemState.updateSchedContext_eq_objects_update]
+    exact ⟨_, rfl⟩
+  · rw [SystemState.updateTcb_eq_objects_update]
+    exact ⟨_, rfl⟩
 
 /-- WS-OD (v0.35.3): the payoff — a priority update on a **donated** thread
 writes that thread's own TCB and nothing else, so the donor's reservation is

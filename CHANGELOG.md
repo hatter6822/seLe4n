@@ -1,3 +1,100 @@
+## v0.35.98 — a bound thread's base priority has two homes, and the syscall wrote one
+
+**SECURITY (High, pre-existing since `v0.29.2`).**  `seL4_TCB_SetPriority` on a
+thread bound to a scheduling context — the ordinary MCS configuration — changed
+the reservation's `priority` and left the thread's own `TCB.priority` at its old
+value.  Every run-queue *insert* in the kernel is keyed by `TCB.boostedPriority`,
+which reads that field (`enqueueRunnableOnCore`, `preemptCurrentOnCore`), so the
+change survived only until the thread's next block/wake or preemption and then
+silently reverted — permanently, since every later wake re-installs the same
+stale band.
+
+Measured on the live per-core dispatch path, not argued:
+
+```
+T bound, both homes in sync at 50, queued on the boot core
+  initial : tcb.priority=50  sc.priority=50  bucket=50
+after seL4_TCB_SetPriority(T, 10)
+  demoted : tcb.priority=50  sc.priority=10  bucket=10
+after T blocks and is woken
+  re-woken: tcb.priority=50  sc.priority=10  bucket=50   <- the demotion is gone
+```
+
+A demotion that does not stick is a temporal-isolation break in the
+mixed-criticality deployments MCS exists for: a supervisor lowers a thread's
+band, is told it succeeded, and the thread is back at its old band one IPC
+later.  The symmetric case — a promotion for a latency-critical phase — is undone
+the same way.  The authority needed is exactly what the syscall already requires
+(a TCB write capability on the target plus caller MCP headroom), and the target
+being bound to a reservation is the normal case rather than an edge one.
+`.tcbSetMCPriority`'s capping rule reaches the same body and had the same defect.
+
+`updatePrioritySource`'s `.bound` arm now writes **both** homes, in
+`schedContextBind`'s own order (the reservation, then the thread), each half an
+identity where its object is absent so a dangling `.bound` still gets the thread
+write rather than being dropped whole.
+
+**The class, which is why the fix is a theorem and not a patch.**
+`boundThreadPriorityConsistent` — a `.bound` thread's own `priority` equals its
+reservation's — is what makes `SystemState.threadBasePriority` (which reads the
+reservation) and `TCB.boostedPriority` (which the run queue reads) agree.  It had
+**no preservation theorem for any operation**, while being consumed as a
+*hypothesis* by the scheduler's own effective-priority agreement, and its
+docstring asserted the opposite of the tree: *"It frames through every scheduler
+transition (none touch a TCB's base `priority` / `schedContextBinding` or a
+SchedContext's `priority`)"*.  Three transitions touch exactly those fields.
+`schedContextBind` establishes the agreement,
+`schedContextConfigureBoundPropagate` maintains it, `updatePrioritySource` broke
+it — and `returnDonatedSchedContext`'s bottom arm still does, rebinding a
+recipient `.bound` without refreshing the reservation's record.  The docstring
+now says which transitions do what, and
+`updatePrioritySource_preserves_boundThreadPriorityConsistent` is the statement
+for the one this cut fixes: mutation-tested by reverting the body, which fails
+the build in three places.  The pop is the remaining writer and is registered.
+
+Its three hypotheses are each load-bearing and named as such: `hPre` ties the
+classified record to the stored one, `hObjInv` is what every typed-update lookup
+lemma needs, and `hBind` (`schedContextBindingConsistent`) is what rules out a
+**second** thread bound to the same reservation — the reservation's `priority`
+moves for the whole reservation, so a second claimant would be left stale, and
+the invariant is what makes two claimants the same thread.  It is homed beside
+the *invariant* rather than beside the write, because the operation is upstream
+of the predicate (`CrossSubsystem` imports the SchedContext invariants) and
+stating it at the write closes an import cycle — this project's *the frame
+belongs to the write* rule does not apply when the predicate is downstream.
+
+**And nine proofs were coupled to the operation's branch COUNT.**  Six transport
+lemmas in `SchedContext/Invariant/PriorityPreservation.lean`, the
+information-flow projection, the `ipcInvariantFull` preservation and the per-core
+confinement each ran their own two-branch case analysis over
+`updatePrioritySource`'s body, so making one arm a *pair* of writes broke all
+nine identically.  `updatePrioritySource_only_modifies_objects` — stated once,
+beside the write — is the owner now, and the six transport lemmas and the
+confinement are one application of it each.  That is `v0.35.97`'s frozen-surface
+finding on a second operation: *a proof that case-splits on a definition's body
+is coupled to how many branches it has*, and the fix is to state the frame where
+the write is.  The two reductions that genuinely described a one-object write
+(`updatePrioritySource_sc_eq`, `_sc_none_eq`) are **deleted** rather than given a
+second object; `updatePrioritySource_bound_eq` replaces them, and the
+`ipcInvariantFull` argument composes two preservation steps with no
+key-distinctness side condition (a SchedContext rewrite is invisible to every TCB
+lookup at every key).
+
+**The witness asserted the half that worked.**  `pm009_setPriorityBoundThread`
+checked that the reservation was written and nothing else, and
+`pm_od_06_boundControlStillWritesTheReservation` asserted *"a BOUND thread's TCB
+priority is NOT the write target"* — the defect stated as a contract.  That
+control is corrected in place with its reason, and two scenarios are added which
+compute the retired reading **beside** the live one on the same fixture: the
+demotion survives a block and wake under the fix, and the retired reading is
+shown to revert it.  A witness that cannot name what it replaced cannot show that
+the replacement changed anything.
+
+Three Tier 3 anchors, one of them a negative, each mutation-tested by breaking
+the relation it forbids while keeping every token.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8
+
 ## v0.35.97 — PR #897 review F2: a spelling is not a write, and a frame belongs to the write
 
 The review's fourth finding, closed — and the class underneath it, which the fix

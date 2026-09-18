@@ -4097,22 +4097,21 @@ theorem schedContextUnbindOnCore_crossCoreNonInterference (ctx : LabelingContext
 -- was never rerouted — it has been per-core since SM5.H.4 — and had the same
 -- gap for the same reason.
 
-/-- SM8.B.2: rewriting a thread's priority source is per-core silent — it stores
-one TCB or one SchedContext and touches neither the scheduler nor a register
-bank. -/
+/-- SM8.B.2: rewriting a thread's priority source is per-core silent — it moves
+objects and touches neither the scheduler nor a register bank.
+
+**`v0.35.98`: one application of the frame stated at the write.**  Both halves
+ran their own case analysis over the body, so the cut that made the `.bound` arm
+a *pair* of writes broke both identically; the shared
+`updatePrioritySource_only_modifies_objects` is what a further write on either
+arm now costs nothing. -/
 theorem updatePrioritySource_confinedToCores (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (newPriority : SeLe4n.Priority) :
     observableSlotsConfinedToCores st
-      (SchedContext.PriorityManagement.updatePrioritySource st tid tcb newPriority) [] :=
-  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-    (by unfold SchedContext.PriorityManagement.updatePrioritySource
-        split
-        · exact SystemState.updateSchedContext_scheduler _ _ _
-        · exact SystemState.updateTcb_scheduler _ _ _)
-    (by unfold SchedContext.PriorityManagement.updatePrioritySource
-        split
-        · exact SystemState.updateSchedContext_machine _ _ _
-        · exact SystemState.updateTcb_machine _ _ _)
+      (SchedContext.PriorityManagement.updatePrioritySource st tid tcb newPriority) [] := by
+  obtain ⟨_, h⟩ := SchedContext.PriorityManagement.updatePrioritySource_only_modifies_objects
+    st tid tcb newPriority
+  exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq (by rw [h]) (by rw [h])
 
 /-- SM8.B.2: the run-queue bucket migration writes exactly the core it is given.
 

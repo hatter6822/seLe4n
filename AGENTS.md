@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.97.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.98.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,21 +203,21 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~70427 lines)
+- `CHANGELOG.md` (~70916 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23652 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7786 lines)
 - `SeLe4n/Kernel/API.lean` (~7592 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7459 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6336 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6286 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6145 lines)
-- `SeLe4n/Platform/Boot.lean` (~5780 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6144 lines)
+- `SeLe4n/Platform/Boot.lean` (~5790 lines)
 - `SeLe4n/Model/State.lean` (~5710 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5416 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5085 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5084 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5103 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5097 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~4454 lines)
@@ -248,6 +248,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/Object/Types.lean` (~2837 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2740 lines)
+- `tests/FrozenOpsSuite.lean` (~2689 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2633 lines)
@@ -258,10 +259,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
 - `tests/SmpCancellationSuite.lean` (~2518 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2481 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
-- `tests/FrozenOpsSuite.lean` (~2473 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2471 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2461 lines)
 - `tests/ModelIntegritySuite.lean` (~2456 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
@@ -272,6 +272,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2291 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2184 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2150 lines)
@@ -279,7 +280,6 @@ To find files that need pagination today, run:
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2077 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2066 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2051 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2048 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~2044 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2031 lines)
@@ -310,8 +310,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1727 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1714 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1675 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1624 lines)
@@ -324,6 +324,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1445 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1438 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1430 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
@@ -340,7 +341,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1316 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
-- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1445 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1254 lines)
@@ -348,9 +348,9 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
+- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1240 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1239 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1236 lines)
-- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1224 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1181 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
@@ -361,6 +361,7 @@ To find files that need pagination today, run:
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
+- `tests/PriorityManagementSuite.lean` (~1129 lines)
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1126 lines)
 - `tests/SmpIdleSuite.lean` (~1118 lines)
@@ -372,7 +373,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
-- `tests/PriorityManagementSuite.lean` (~1035 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
 - `tests/SmpCbsSuite.lean` (~1015 lines)
 - `tests/DeadlockFreedomSuite.lean` (~1007 lines)
@@ -421,6 +421,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 - `docs/DEVELOPMENT.md` (~803 lines)
+- `docs/REGISTERED_DEBT.md` (~801 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -3980,9 +3981,19 @@ Five things new code must respect.  (1) **The classifier is
 binding constructor* (WS-CB's hierarchical servers) must be classified.  It is
 the counterpart to `scId?`, the one a thread *runs on*, and the two split a
 thread's scheduling parameters: **reservation-owned** (budget, period, deadline)
-read `scId?` at every binding, **thread-owned** (base priority, domain) read the
-thread's own TCB fields, mirrored onto `ownScId?`'s SchedContext by the AK2-B
-convention.  It is a **narrowing** of `scId?`
+read `scId?` at every binding, **thread-owned** (base priority, domain) are the
+thread's, and are **stored in two places** for a `.bound` thread: the TCB field
+and, mirrored onto it by the AK2-B convention, `ownScId?`'s SchedContext.  Which
+one a reader takes is not uniform and that is the hazard — `threadBasePriority`
+reads the *reservation* at `.bound` while `TCB.boostedPriority`, which every
+run-queue insert is keyed by, reads the *thread* — so every writer of either
+must move both, which is `boundThreadPriorityConsistent` and which
+`v0.35.98` found `.tcbSetPriority` not doing (see the standing constraint
+below).  **The improvement is one home, not two kept in sync**: reading the TCB
+at every binding would make the pair unfalsifiable by construction and retire
+the invariant, and it is registered in `docs/REGISTERED_DEBT.md` table C rather
+than done here, because a scheduling-model change must not ride along with a
+security fix.  It is a **narrowing** of `scId?`
 (`ownScId?_eq_scId?_of_isSome`), so the two can never name different contexts.  (2) **The one answer is
 `SystemState.threadBasePriority`**, and a new priority reader calls it rather
 than matching the binding.  The three scheduler resolvers also need the
@@ -6823,6 +6834,44 @@ code may assume:
   no thread locates no entries a migration could move.  (3) **The footprint does not
   grow**: both cores the destination can name were already declared, and
   `maxLockSetSize` is unmoved.
+- **A `.bound` thread's base priority lives in TWO places, and every writer of
+  either must move both** (`v0.35.98`).  `SystemState.threadBasePriority` reads
+  the reservation's `priority`; `TCB.boostedPriority` — which
+  `enqueueRunnableOnCore`, `preemptCurrentOnCore` and every other run-queue
+  insert is keyed by — reads the thread's own.  `boundThreadPriorityConsistent`
+  is the agreement between them, and it is **not** a bundle conjunct: it is a
+  standalone predicate consumed as a *hypothesis* by the effective-priority
+  agreement in `Scheduler/Operations/Selection.lean`.  Three things new code
+  must respect.  (1) **A new writer of `TCB.priority` or
+  `SchedContext.priority` writes both homes and carries a preservation
+  theorem.**  Four transitions touch them today: `schedContextBind`
+  (establishes), `schedContextConfigureBoundPropagate` (maintains, gated on
+  `schedContextConfigurePropagates`), `updatePrioritySource` (maintains since
+  `v0.35.98` —
+  `updatePrioritySource_preserves_boundThreadPriorityConsistent`), and
+  `returnDonatedSchedContext`'s bottom arm, which **still breaks it**: it
+  rebinds a recipient `.bound` without refreshing the reservation's record, so a
+  `.tcbSetPriority` on the origin *during* the loan leaves the pair
+  desynchronised at the pop.  That is the one remaining writer, it is latent
+  rather than reachable-by-default, and it is registered.  (2) **A new writer
+  needs `schedContextBindingConsistent`**, which is what rules out a second
+  thread bound to one reservation — the reservation's `priority` moves for the
+  whole reservation, so a second claimant would be left stale.  (3) **A
+  preservation theorem for this predicate is homed beside the INVARIANT, not
+  beside the write**: `CrossSubsystem` imports the SchedContext invariants, so
+  `Scheduler/Invariant/PerCore.lean` is downstream of every priority operation
+  and stating it at the write closes an import cycle.  This project's *the frame
+  belongs to the write* rule is about frames, and does not apply when the
+  predicate is downstream of the operation.
+
+  What `v0.35.98` measured, on the live per-core dispatch path: a
+  `seL4_TCB_SetPriority` demotion of a bound thread from 50 to 10 re-bucketed it
+  at 10 and its first wake re-inserted it at **50**, the band the demotion had
+  removed — permanently, since every later wake reads the same stale field.  A
+  demotion that does not stick is a temporal-isolation break in the
+  mixed-criticality deployments MCS exists for, and it needed no authority
+  beyond what the syscall already requires.
+
 - **The scheduler liveness trace model is boot-core-pinned** (SM4.C.11's
   residual).  SM5.J lifted the per-core Liveness *predicates* at v0.31.64 —
   `eventuallyExitsOnCore`, `higherBandExhaustedOnCore`,
