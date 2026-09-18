@@ -277,6 +277,187 @@ def lockSet_notificationWaitOnCore (notificationId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) : LockSet :=
   lockSet_notificationWait caller cnodeRootObjId notificationId
 
+/-- **WS-RR RR8.12 (frame)**: a cross-core notification signal touches **no**
+core's replenish queue.
+
+The obligation the scheduler-domain footprint below owes for declaring an *empty*
+replenish segment: a footprint that omits a written lock is false, so "this arm
+moves no scheduling context" has to be a theorem rather than a reading of the
+body.  Every arm is a composition of steps that frame the whole scheduler
+(`storeObject`, `storeTcbIpcStateAndMessage`) or write a run queue alone
+(`wakeThread`). -/
+theorem notificationSignalOnCore_replenishQueueOnCore (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (ec : CoreId) (st : SystemState) (c : CoreId) :
+    (notificationSignalOnCore notificationId badge ec st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold notificationSignalOnCore
+  cases hN : st.getNotification? notificationId with
+  | none => simp only []; split <;> rfl
+  | some ntfn =>
+    simp only []
+    cases hT : ntfn.waitingThreads.tail? with
+    | none =>
+      simp only []
+      split
+      · rfl
+      · next st1 hStore => rw [storeObject_scheduler_eq st st1 _ _ hStore]
+    | some pair =>
+      simp only []
+      split
+      · rfl
+      · next st1 hStore =>
+        split
+        · rfl
+        · next st2 hMsg =>
+          rw [wakeThread_replenishQueueOnCore,
+            storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hMsg,
+            storeObject_scheduler_eq st st1 _ _ hStore]
+
+/-- **WS-RR RR8.12 (frame)**: and a cross-core notification *wait* touches none
+either — the block path writes the executing core's run queue through
+`removeRunnableOnCore` and the badge-consume path writes no scheduler slot. -/
+theorem notificationWaitOnCore_replenishQueueOnCore (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) (ec : CoreId) (st : SystemState) (c : CoreId) :
+    (notificationWaitOnCore notificationId waiter ec st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold notificationWaitOnCore
+  cases hN : st.getNotification? notificationId with
+  | none => simp only []; split <;> rfl
+  | some ntfn =>
+    simp only []
+    cases hB : ntfn.pendingBadge with
+    | some badge =>
+      simp only []
+      split
+      · rfl
+      · next st1 hStore =>
+        split
+        · rfl
+        · next st2 hIpc =>
+          rw [storeTcbIpcState_scheduler_eq st1 st2 _ _ hIpc,
+            storeObject_scheduler_eq st st1 _ _ hStore]
+    | none =>
+      simp only []
+      cases hLk : lookupTcb st waiter with
+      | none => rfl
+      | some tcb =>
+        simp only []
+        split
+        · rfl
+        · cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
+          | none => rfl
+          | some wt' =>
+            simp only []
+            split
+            · rfl
+            · next st1 hStore =>
+              split
+              · rfl
+              · next st2 hIpc =>
+                rw [removeRunnableOnCore_replenishQueueOnCore]
+                unfold storeTcbIpcStateAndMessage_fromTcb at hIpc
+                split at hIpc
+                · exact absurd hIpc (by simp)
+                · next st1' hStore' =>
+                  rw [Except.ok.injEq] at hIpc
+                  subst hIpc
+                  rw [storeObject_scheduler_eq st1 st1' _ _ hStore',
+                    storeObject_scheduler_eq st st1 _ _ hStore]
+
+/-- WS-SM SM8.B.2, relocated to production at **WS-RR RR8.12**: **the cores a
+cross-core notification signal may write.**
+
+Read off the pre-state: the head waiter's home core if the notification has a
+waiter, nothing otherwise (the badge-accumulation path and every fail-closed arm
+touch no scheduler slot at all).
+
+`notificationSignalWriteSet_eq_lockSet_waiter` ties this to the *same*
+pre-resolution the SM6.B lock set uses, so the declared information-flow write
+set and the declared 2PL footprint cannot name different threads.
+
+**Why it lives here** (RR8.12): it was declared in
+`InformationFlow/NonInterferenceCrossCore.lean`, which is **staged** and imports
+`Kernel.API`, so the *scheduler-domain footprint* — a production artefact the
+syscall seam will bracket over — could not read it and would have grown its own
+second reading of the same core list.  *When a question has one owner and an
+asker that cannot see it, the owner is in the wrong layer.*  The write set is a
+statement about this transition, so it belongs beside it; the confinement
+theorem that consumes it stays staged. -/
+def notificationSignalWriteSet (st : SystemState) (notificationId : SeLe4n.ObjId) :
+    List CoreId :=
+  match st.getNotification? notificationId with
+  | some ntfn =>
+      match ntfn.waitingThreads.tail? with
+      | some (waiter, _) => [determineTargetCore st waiter]
+      | none => []
+  | none => []
+
+/-- **WS-RR RR8.12**: the scheduler-domain footprint of a cross-core
+`notificationSignalOnCore` — the object-store table write lock and the run-queue
+write lock of the core the woken waiter is homed on.
+
+**Defined over the write set, not beside it.**  A footprint and a confinement
+claim that name different cores are the failure this constructor exists to
+refuse, and the only way to make that impossible is for both to read one
+expression: `notificationSignalOnCore_confinedToCores` is stated at
+`notificationSignalWriteSet` and this footprint is `schedFootprintOfCores` of it,
+so the coverage obligation is the confinement theorem rather than a second
+argument about which cores the signal touches.
+
+No replenish segment: a signal moves no scheduling context, so the set is the
+run-queue side alone.  On the badge-accumulation path and on every fail-closed
+arm the write set is empty and the footprint is the table lock by itself. -/
+def schedLockSet_notificationSignalOnCore (st : SystemState) (notificationId : SeLe4n.ObjId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  schedFootprintOfCores (notificationSignalWriteSet st notificationId) []
+
+/-- **WS-RR RR8.12**: the scheduler-domain footprint of a cross-core
+`notificationWaitOnCore` — the object-store table write lock and the **executing**
+core's run-queue write lock.
+
+The wait writes no other core, in either direction: the block path removes the
+caller from its own core's run queue and the badge-consume path keeps it runnable
+and writes no scheduler slot at all (`notificationWaitOnCore_confinedToCores`,
+stated at `[executingCore]`).  So the footprint is state-independent, which is
+why — unlike the signal's — it takes no `SystemState`; the object-domain
+`lockSet_notificationWaitOnCore` is state-independent for the same reason. -/
+def schedLockSet_notificationWaitOnCore (executingCore : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  schedFootprintOfCores [executingCore] []
+
+/-- **WS-RR RR8.12**: the wait footprint names the executing core's run-queue
+write lock — the one the block path's `removeRunnableOnCore` writes under. -/
+theorem schedLockSet_notificationWaitOnCore_contains_executing_runQueue_write
+    (executingCore : CoreId) :
+    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_notificationWaitOnCore executingCore :=
+  (mem_schedFootprintOfCores_runQueue_iff _ _ executingCore).mpr (by simp)
+
+/-- **WS-RR RR8.12**: and it names no other core's, so the footprint is not
+merely sound but *exact* on this arm — the negative half, and the one a widened
+footprint would fail. -/
+theorem schedLockSet_notificationWaitOnCore_no_other_runQueue
+    (executingCore d : CoreId) (hne : d ≠ executingCore) :
+    (SchedLockId.runQueue ⟨d⟩, Concurrency.AccessMode.write)
+      ∉ schedLockSet_notificationWaitOnCore executingCore := by
+  rw [schedLockSet_notificationWaitOnCore, mem_schedFootprintOfCores_runQueue_iff]
+  simpa using hne
+
+/-- **WS-RR RR8.12**: the signal footprint names the woken waiter's home core. -/
+theorem schedLockSet_notificationSignalOnCore_contains_waiter_runQueue_write
+    (st : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (ntfn : Notification) (rest : SeLe4n.NoDupList SeLe4n.ThreadId)
+    (hN : st.getNotification? notificationId = some ntfn)
+    (hT : ntfn.waitingThreads.tail? = some (waiter, rest)) :
+    (SchedLockId.runQueue ⟨determineTargetCore st waiter⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_notificationSignalOnCore st notificationId := by
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  unfold notificationSignalWriteSet
+  rw [hN]
+  simp only []
+  rw [hT]
+  simp
+
 -- ============================================================================
 -- §3  Path reduction lemmas (full characterisation of each control path)
 -- ============================================================================

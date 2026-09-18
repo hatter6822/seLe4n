@@ -5215,7 +5215,12 @@ run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_mono' SeLe4
 run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_trans' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem storeObject_tcb_determineTargetCore_eq' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_determineTargetCore_eq' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^def notificationSignalWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# WS-RR RR8.12 (seventh cut): `notificationSignalWriteSet` is declared in
+# production now, beside the transition it is about, so the production
+# scheduler-domain footprint can read it; the anchor is repointed rather than
+# deleted, because a positive anchor on a relocated symbol that keeps pointing at
+# the old module fails, and one simply deleted stops checking anything.
+run_check "INVARIANT" rg -n '^def notificationSignalWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
 run_check "INVARIANT" rg -n '^def endpointCallWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_waiter' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -5507,7 +5512,9 @@ run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_preserves_machine' SeLe4n/Ke
 # to omit — a bound-delivery signal, a receive rendezvousing with a blocked
 # sender, and the composed `replyRecv`.  Each needs a write set, a confinement
 # lemma and an NI instantiation, and the inventory must count all eleven.
-run_check "INVARIANT" rg -n '^def notificationSignalBoundWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# WS-RR RR8.12 (seventh cut): repointed with its sibling — declared in production
+# beside `notificationSignalBoundOnCore`.
+run_check "INVARIANT" rg -n '^def notificationSignalBoundWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^def endpointReceiveDualWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -9453,6 +9460,50 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingOnCoreS
 # (`cancelBoundDonationOnCoreSchedLockSet` keeps `object_lt_replenishQueue`: it is
 # a fixed-single-core literal, two elements, and names no run queue at all.)
 run_negative_check "INVARIANT" rg -n 'runQueue_lt_replenishQueue' SeLe4n/Kernel/IPC/ SeLe4n/Kernel/Lifecycle/
+
+# WS-RR RR8.12 (seventh cut): the three syscall arms that write no replenish queue
+# now declare a scheduler-domain footprint.  `UncoveredLockDomain.syscallSeamSchedulerDomain`
+# records that `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a
+# run-queue lock at all, so an `endpointSend`'s receiver wake is outside the
+# footprint the RR7.12 seam acquires; these are the first three arms to have one.
+run_check "INVARIANT" rg -n '^def schedLockSet_notificationSignalOnCore \(' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_notificationWaitOnCore \(' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_notificationSignalBoundOnCore \(' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_endpointSendOnCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+# RELATION, not presence: each footprint's own BODY must be `schedFootprintOfCores`
+# of the SM8.B **write set** the confinement theorem is stated at, so the footprint
+# and the confinement claim cannot name different cores.  The mutation that decides
+# keeps the definition and resolves the cores a second way.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_notificationSignalOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(notificationSignalWriteSet st notificationId\) \[\]" SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_notificationSignalBoundOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(notificationSignalBoundWriteSet st notificationId\) \[\]" SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointSendOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(endpointSendWriteSet st endpointId executingCore\) \[\]" SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean'
+# The write sets are declared in PRODUCTION, beside the transitions they are about.
+# They were in the staged `InformationFlow/NonInterferenceCrossCore.lean`, which
+# imports `Kernel.API`, so the production footprints above could not read them and
+# would each have grown a second reading of the same core list.
+run_check "INVARIANT" rg -n '^def notificationSignalWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^def notificationSignalBoundWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
+run_check "INVARIANT" rg -n '^def endpointSendWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_negative_check "INVARIANT" rg -n '^def notificationSignalWriteSet|^def notificationSignalBoundWriteSet|^def endpointSendWriteSet' SeLe4n/Kernel/InformationFlow/
+# The obligation an EMPTY replenish segment owes: a footprint that omits a written
+# lock is false, so "this arm moves no scheduling context" is a theorem, not a
+# reading of the body.  These three have no consumer until the eighth cut's
+# coverage proofs, so they are anchored rather than orphaned.
+run_check "INVARIANT" rg -n '^theorem notificationSignalOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaitOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendCrossCoreDispatchChecked_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+# ...and the wake frame they all compose, relocated out of the staged `PerCoreCbs`
+# where the `_local` suffix was the signal that its owner was in the wrong layer.
+#
+# Every positive in this section pins the name FOLLOWED BY its parameter list.
+# `^theorem X` alone asserts a *prefix*, not the declaration named `X`: the mutation
+# that renamed this frame back to `wakeThread_replenishQueueOnCore_local` left
+# `^theorem wakeThread_replenishQueueOnCore` matching, so the anchor passed on a tree
+# where the symbol it names does not exist.  A presence check is not a relation
+# check, one character down.
+run_check "INVARIANT" rg -n '^theorem wakeThread_replenishQueueOnCore \(' SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean
+run_negative_check "INVARIANT" rg -n 'wakeThread_replenishQueueOnCore_local' SeLe4n/ tests/
 run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 

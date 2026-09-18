@@ -435,4 +435,171 @@ theorem endpointSendCrossCoreDispatchChecked_flow_allowed
   simp [endpointSendCrossCoreDispatchChecked, hTooLarge, hTooMany,
     endpointFlowGate_of ctx endpointId _ _ hAllow hOverride]
 
+/-- **WS-RR RR8.12 (frame)**: a cross-core send touches **no** core's replenish
+queue.
+
+The obligation the scheduler-domain footprint below owes for declaring an *empty*
+replenish segment.  Both paths compose steps that frame the whole scheduler (the
+endpoint pop or enqueue, the receiver's or sender's TCB store) with one that
+writes a run queue alone (the rendezvous' `wakeThread`, the block's
+`removeRunnableOnCore`).  A plain send carries no scheduling context — only
+`.call` donates — so there is nothing in the replenishment domain for it to
+move. -/
+theorem endpointSendDualOnCore_replenishQueueOnCore (epId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId) (st : SystemState)
+    (c : CoreId) :
+    (endpointSendDualOnCore epId sender msg ec st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold endpointSendDualOnCore
+  split
+  · rfl
+  · split
+    · rfl
+    · cases hEp : st.getEndpoint? epId with
+      | none => simp only []; split <;> rfl
+      | some ep =>
+        simp only []
+        cases hHead : ep.receiveQ.head with
+        | none =>
+          simp only []
+          cases hEnq : endpointQueueEnqueue epId false sender st with
+          | error e => rfl
+          | ok st1 =>
+            simp only []
+            cases hIpc : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend epId) (some msg) with
+            | error e => rfl
+            | ok st2 =>
+              simp only []
+              rw [removeRunnableOnCore_replenishQueueOnCore,
+                storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hIpc,
+                endpointQueueEnqueue_scheduler_eq epId false sender st st1 hEnq]
+        | some _ =>
+          simp only []
+          cases hSnd : st.getTcb? sender with
+          | none => rfl
+          | some _ =>
+            simp only []
+            cases hPop : endpointQueuePopHead epId true st with
+            | error e => rfl
+            | ok triple =>
+              obtain ⟨receiver, headTcb, st1⟩ := triple
+              simp only []
+              cases hRecv : storeTcbReceiveComplete st1 receiver (some msg) with
+              | error e => rfl
+              | ok st2 =>
+                simp only []
+                rw [wakeThread_replenishQueueOnCore,
+                  storeTcbReceiveComplete_scheduler_eq st1 st2 _ _ hRecv,
+                  endpointQueuePopHead_scheduler_eq epId true st st1 receiver hPop]
+
+/-- **WS-RR RR8.12 (frame)**: and neither does the caps-carrying form — the
+capability transfer writes CNodes and the CDT, never the scheduler
+(`ipcUnwrapCaps_preserves_scheduler`). -/
+theorem endpointSendDualWithCapsOnCore_replenishQueueOnCore (epId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (rights : AccessRightSet)
+    (slotBase : SeLe4n.Slot) (ec : CoreId) (st st' : SystemState) (c : CoreId)
+    (h : (endpointSendDualWithCapsOnCore epId sender msg rights slotBase ec st).1 = st') :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  subst h
+  unfold endpointSendDualWithCapsOnCore
+  have hBare := endpointSendDualOnCore_replenishQueueOnCore epId sender
+    { msg with capsGranted := rights.mem .grant } ec st c
+  cases hSend : endpointSendDualOnCore epId sender
+      { msg with capsGranted := rights.mem .grant } ec st with
+  | mk st1 res =>
+    rw [hSend] at hBare
+    cases res with
+    | error e => simpa using hBare
+    | ok sgi =>
+      simp only []
+      repeat' split
+      all_goals
+        first
+          | exact hBare
+          | (rename_i hUnwrap
+             rw [ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ hUnwrap]
+             exact hBare)
+
+/-- **WS-RR RR8.12 (frame)**: and neither does the **live** `.send` arm.  Its
+three gates each return the pre-state; past them it *is* the caps-carrying
+form. -/
+theorem endpointSendCrossCoreDispatchChecked_replenishQueueOnCore (ctx : LabelingContext)
+    (epId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (rights : AccessRightSet) (slotBase : SeLe4n.Slot) (ec : CoreId)
+    (st st' : SystemState) (c : CoreId)
+    (h : (endpointSendCrossCoreDispatchChecked ctx epId sender msg rights slotBase ec st).1
+      = st') :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  subst h
+  unfold endpointSendCrossCoreDispatchChecked
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · exact endpointSendDualWithCapsOnCore_replenishQueueOnCore epId sender msg rights
+          slotBase ec st _ c rfl
+      · rfl
+
+/-- WS-SM SM8.B.2, relocated to production at **WS-RR RR8.12**: **the cores a
+cross-core send may write.**  Exactly one, on either path:
+
+* **rendezvous** — a receiver is parked, so it is woken on *its* home core and the
+  executing core is untouched;
+* **block** — nobody is waiting, so the sender is descheduled on the **executing**
+  core and no other core moves.
+
+The receiver is resolved from the pre-state through SM6.A's own
+`endpointCallReceiver?` — the receive-queue head, which is the same rendezvous
+partner a `.call` would take, so send and call name it once rather than twice.
+
+Relocated for the reason `notificationSignalWriteSet`'s docstring gives: the
+scheduler-domain footprint below is production and
+`InformationFlow/NonInterferenceCrossCore.lean`, where this was declared, is
+staged and imports `Kernel.API`. -/
+def endpointSendWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (executingCore : CoreId) : List CoreId :=
+  match endpointCallReceiver? st endpointId with
+  | some receiver => [determineTargetCore st receiver]
+  | none => [executingCore]
+
+/-- **WS-RR RR8.12**: the scheduler-domain footprint of the live `.send` arm — the
+object-store table write lock and the run-queue write lock of the one core the
+send moves.
+
+Defined over `endpointSendWriteSet`, so this footprint and
+`endpointSendCrossCoreDispatchChecked_confinedToCores` read one core list rather
+than two that have to be kept in step.  No replenish segment: a plain send
+carries no scheduling context (only `.call` donates), so `.send` writes no
+replenish queue on any path. -/
+def schedLockSet_endpointSendOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (executingCore : CoreId) : List (SchedLockId × Concurrency.AccessMode) :=
+  schedFootprintOfCores (endpointSendWriteSet st endpointId executingCore) []
+
+/-- **WS-RR RR8.12**: on the rendezvous path the footprint names the woken
+receiver's home core. -/
+theorem schedLockSet_endpointSendOnCore_contains_receiver_runQueue_write (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (executingCore : CoreId) (receiver : SeLe4n.ThreadId)
+    (hRecv : endpointCallReceiver? st endpointId = some receiver) :
+    (SchedLockId.runQueue ⟨determineTargetCore st receiver⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_endpointSendOnCore st endpointId executingCore := by
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  unfold endpointSendWriteSet
+  rw [hRecv]
+  simp
+
+/-- **WS-RR RR8.12**: and on the block path it names the executing core's, which
+the sender's own deschedule writes.  The two arms are exclusive — a send that
+rendezvouses does not block — so the footprint is one run-queue member either
+way. -/
+theorem schedLockSet_endpointSendOnCore_contains_executing_runQueue_write (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (executingCore : CoreId)
+    (hRecv : endpointCallReceiver? st endpointId = none) :
+    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_endpointSendOnCore st endpointId executingCore := by
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  unfold endpointSendWriteSet
+  rw [hRecv]
+  simp
+
 end SeLe4n.Kernel

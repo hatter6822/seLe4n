@@ -1,3 +1,107 @@
+## v0.35.95 — WS-RR RR8.12 (seventh cut): three syscall arms get a scheduler footprint
+
+`UncoveredLockDomain.syscallSeamSchedulerDomain` records that `lockSetForSyscall`
+returns a `LockSet` whose `LockId` cannot name a run-queue lock **at all**, so the
+scheduler writes a syscall performs — an `endpointSend`'s receiver wake, a
+`notificationWait`'s own deschedule — sit outside the footprint the RR7.12 seam
+acquires and are covered only by the free over-approximation.  This cut gives the
+first three arms a footprint: `.notificationSignal` (through
+`notificationSignalBoundOnCore`, the transition `API.dispatchWithCap{,Checked}`
+actually routes to), `.notificationWait`, and `.send`.  All four definitions are
+**inert** — nothing acquires them until the bracket cut — which is the order the
+numbering rule requires: a bracket over a footprint whose coverage is unproved is
+the false-footprint failure, while a declaration nothing acquires is not.
+
+**Each footprint is `schedFootprintOfCores` of the arm's own SM8.B write set.**
+Not of a second resolution of the same cores.  `notificationSignalOnCore_confinedToCores`
+is *stated at* `notificationSignalWriteSet`, and
+`schedLockSet_notificationSignalOnCore` is `schedFootprintOfCores` of that same
+expression — so "the footprint and the confinement claim name different cores"
+is not a defect that can be stated, let alone shipped.  The alternative, resolving
+the receiver or the waiter a second time inside the footprint, is the
+one-question-two-answers shape this workstream has now paid for five times.
+
+**That required moving three write sets and one frame into production.**
+`notificationSignalWriteSet`, `notificationSignalBoundWriteSet` and
+`endpointSendWriteSet` were declared in
+`InformationFlow/NonInterferenceCrossCore.lean`, which is **staged** and imports
+`Kernel.API`; a production footprint — and the syscall seam brackets over a
+production footprint — cannot read them.  `wakeThread_replenishQueueOnCore` was
+`wakeThread_replenishQueueOnCore_local` in the staged `PerCoreCbs.lean`, and the
+`_local` suffix was the signal.  *When a question has one owner and an asker that
+cannot see it, the owner is in the wrong layer* — Cut 5's rule, for the fourth
+time in this row.  Each write set now sits beside the transition it is about; each
+confinement theorem that consumes it stays staged, which is the same split Cut 5
+used for the relocated reclaim (the predicate moves, the invariants that entail it
+do not).
+
+**An empty replenish segment is a theorem, not a reading of the body.**  The three
+arms move no scheduling context — only `.call`, `.receive` and `.replyRecv` donate
+— so each footprint declares `schedFootprintOfCores <runCores> []`, and a
+footprint that omits a written lock is *false*.  `observableSlotsConfinedToCores`
+constrains six per-core slots and the replenish queue is **not** one of them, so
+the confinement theorems say nothing about it: `notificationSignalOnCore_replenishQueueOnCore`,
+`notificationWaitOnCore_replenishQueueOnCore`,
+`notificationSignalBoundOnCore_replenishQueueOnCore`,
+`endpointSendDualOnCore_replenishQueueOnCore`, its caps-carrying and its **live
+checked** forms are what make the `[]` honest.  They have no consumer until the
+coverage cut, so they are anchored in Tier 3 rather than orphaned.
+
+**`.receive` and `.replyRecv` are deliberately left undeclared, and why is
+stated.**  Both donate, so their replenish segments are non-empty and their cores
+come from the *migration* rather than from a confinement write set; and
+`.receive`'s chain leg is not pre-state computable at all —
+`receiveRendezvousHandoffWriteSet` takes the post-donation state as a parameter
+because the donation rewrites the bindings `determineTargetCore` reads.  Those
+cores are declared through the dynamic chain extension, exactly as the
+object-domain footprints declare them.  Guessing a replenish pair for them would
+have been a footprint asserted from a reading rather than derived.
+
+### Changed
+
+* `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean`: `notificationSignalWriteSet`
+  (relocated), `schedLockSet_notificationSignalOnCore`,
+  `schedLockSet_notificationWaitOnCore`, their two membership relations and the
+  exactness negative for the wait, plus the two replenish frames.
+* `SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean`: `notificationSignalBoundWriteSet`
+  (relocated), `schedLockSet_notificationSignalBoundOnCore`, its bound-path
+  membership relation, the `of_no_target` collapse onto the bare signal's
+  footprint, and the bound arm's replenish frame.
+* `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean`: `endpointSendWriteSet`
+  (relocated), `schedLockSet_endpointSendOnCore`, its two membership relations
+  (rendezvous and block, which are exclusive), and the replenish frames for the
+  bare, caps-carrying and live checked forms.
+* `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean`:
+  `wakeThread_replenishQueueOnCore`, relocated out of the staged `PerCoreCbs.lean`.
+* `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean`: the shared
+  constructor's docstring records that the per-arm footprints are built over the
+  write sets.
+* `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` and
+  `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean`: relocation tombstones
+  naming the new home and the layer argument.
+* `scripts/test_tier3_invariant_surface.sh`: twelve anchors — four footprint
+  positives, three **relation** positives over each footprint's body, three
+  write-set positives, one negative refusing a write set re-declared under
+  `SeLe4n/Kernel/InformationFlow/`, and one refusing the `_local` wake frame — plus
+  two pre-existing positives repointed onto the relocated definitions.
+
+### The anchor defect this cut found in its own mutation run
+
+`^theorem X` asserts a **prefix**, not the declaration named `X`.  The mutation
+that renamed `wakeThread_replenishQueueOnCore` back to
+`wakeThread_replenishQueueOnCore_local` left the positive anchor *passing* on a
+tree where the symbol it names does not exist — the negative fired, so the pair
+was still decisive, but the positive alone was a presence check one character
+down.  Every positive added here pins the name followed by its parameter list, and
+the re-run mutation confirms all three directions.
+
+### Unchanged, and measured
+
+* No fixture moved: the golden trace and all four per-core golden fixtures are
+  byte-identical, because every new definition is inert.
+* `maxLockSetSize` is unmoved — a `SchedLockSet` carries no cardinality bound, the
+  ceiling being the object domain's.
+
 ## v0.35.94 — WS-RR RR8.12 (sixth cut): the three-domain ladder is one constructor
 
 RR8.12's remaining work is to declare per-arm scheduler footprints for the five

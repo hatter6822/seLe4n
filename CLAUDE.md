@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.94.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.95.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~70313 lines)
+- `CHANGELOG.md` (~70427 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23652 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -211,8 +211,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/API.lean` (~7592 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7459 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6267 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6175 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6286 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6145 lines)
 - `SeLe4n/Platform/Boot.lean` (~5780 lines)
 - `SeLe4n/Model/State.lean` (~5710 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5416 lines)
@@ -285,13 +285,13 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2031 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2024 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~2016 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~2006 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~2000 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1960 lines)
 - `tests/LockSetSuite.lean` (~1951 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1940 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1914 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `tests/InformationFlowSuite.lean` (~1895 lines)
@@ -352,6 +352,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1236 lines)
 - `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1224 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1181 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
@@ -376,7 +377,6 @@ To find files that need pagination today, run:
 - `tests/SmpCbsSuite.lean` (~1015 lines)
 - `tests/DeadlockFreedomSuite.lean` (~1007 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
@@ -5759,6 +5759,43 @@ code may assume:
   Tier 3 negative that refuses a re-inlined `runQueue_lt_replenishQueue` is
   scoped to `SeLe4n/Kernel/IPC/` and `SeLe4n/Kernel/Lifecycle/` rather than
   tree-wide.
+
+- **...and the first three syscall arms declare one** (WS-RR RR8.12 seventh cut,
+  `v0.35.95`).  `UncoveredLockDomain.syscallSeamSchedulerDomain` records that
+  `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a run-queue
+  lock at all, so an `endpointSend`'s receiver wake is outside the footprint the
+  RR7.12 seam acquires.  `.notificationSignal` (through the **bound** arm the
+  live dispatch routes to), `.notificationWait` and `.send` now have one —
+  `schedLockSet_notificationSignalBoundOnCore`,
+  `schedLockSet_notificationSignalOnCore`,
+  `schedLockSet_notificationWaitOnCore`, `schedLockSet_endpointSendOnCore`, all
+  **inert** until the bracket cut.  Four things new code must respect.  (1) **A
+  footprint is `schedFootprintOfCores` of the arm's SM8.B write set**, never of a
+  second resolution of the same cores: `notificationSignalOnCore_confinedToCores`
+  is *stated at* `notificationSignalWriteSet` and the footprint is that list, so a
+  footprint and a confinement claim naming different cores is unstateable rather
+  than merely refuted.  (2) **The write sets moved to production for that
+  reason.**  `notificationSignalWriteSet`, `notificationSignalBoundWriteSet` and
+  `endpointSendWriteSet` were declared in
+  `InformationFlow/NonInterferenceCrossCore.lean`, which is staged and imports
+  `Kernel.API`, so the production footprint could not read them; they now sit
+  beside the transitions they describe and the confinement theorems that consume
+  them stay staged.  `wakeThread_replenishQueueOnCore` moved the same way, out of
+  the staged `PerCoreCbs.lean` where its `_local` suffix was the signal.  (3) **An
+  empty replenish segment is a theorem, not a reading of the body**: these three
+  arms move no scheduling context — only `.call`, `.receive` and `.replyRecv`
+  donate — and `notificationSignalOnCore_replenishQueueOnCore`,
+  `notificationWaitOnCore_replenishQueueOnCore`,
+  `notificationSignalBoundOnCore_replenishQueueOnCore` and
+  `endpointSendCrossCoreDispatchChecked_replenishQueueOnCore` say so, because a
+  footprint that omits a written lock is false and `observableSlotsConfinedToCores`
+  covers six per-core slots of which the replenish queue is **not** one.  (4)
+  **`.receive` and `.replyRecv` are deliberately still undeclared**: both donate,
+  so their replenish segments are non-empty and their cores come from the
+  migration rather than from a confinement write set, and `.receive`'s chain leg
+  is not pre-state computable at all (`receiveRendezvousHandoffWriteSet` takes the
+  post-donation state) — those cores are declared through the dynamic chain
+  extension, as the object domain declares them.
 
 - **`ipcInvariantFull` has its dispatch payoff, under stated packs and
   confinements** (WS-RR RR3.15–RR3.26, `v0.34.43`; compressed here at RR8.14,

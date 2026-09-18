@@ -1445,21 +1445,15 @@ theorem ensureRunnable_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.Thr
     · simp
     · rfl
 
-/-- WS-SM (PR #880 round 8, frame): the target-aware wake never touches any
-replenish queue — its state effect is `enqueueRunnableOnCore` (a run-queue
-insert plus a TCB write). -/
-theorem wakeThread_replenishQueueOnCore_local (st : SystemState)
-    (tid : SeLe4n.ThreadId) (ec : CoreId) (c : CoreId) :
-    (wakeThread st tid ec).1.scheduler.replenishQueueOnCore c
-      = st.scheduler.replenishQueueOnCore c := by
-  show (enqueueRunnableOnCore st (determineTargetCore st tid) tid).scheduler.replenishQueueOnCore c
-      = st.scheduler.replenishQueueOnCore c
-  unfold enqueueRunnableOnCore
-  split
-  · split
-    · rfl
-    · simp [SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
-  · rfl
+-- WS-SM (PR #880 round 8, frame): the target-aware wake never touches any
+-- replenish queue -- its state effect is `enqueueRunnableOnCore` (a run-queue
+-- insert plus a TCB write).
+--
+-- WS-SM SM5.H, relocated at **WS-RR RR8.12**: `wakeThread_replenishQueueOnCore`
+-- is declared in `Scheduler/Operations/PerCoreWake.lean`, beside `wakeThread`.
+-- This module is staged, so the production IPC footprints that need the frame in
+-- order to declare an empty replenish segment could not read it; the `_local`
+-- suffix was the signal that the owner was in the wrong layer.
 
 /-- WS-SM SM5.H (frame): timing out one IPC-blocked thread never touches any
 replenish queue.  Its steps are an endpoint-queue removal (scheduler-invariant),
@@ -1486,7 +1480,7 @@ theorem timeoutThread_replenishQueueOnCore (epId : SeLe4n.ObjId) (isReceiveQ : B
         first
           | rw [revertPriorityInheritance_replenishQueueOnCore]
           | skip
-        rw [wakeThread_replenishQueueOnCore_local]
+        rw [wakeThread_replenishQueueOnCore]
         show st2.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c
         rw [hSched2]
 

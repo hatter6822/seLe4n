@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.94` (`lakefile.toml`) |
+| **Package version** | `0.35.95` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 390,824 across 333 Lean files |
+| **Production LoC** | 391,269 across 333 Lean files |
 | **Test LoC** | 79,176 across 70 Lean test suites |
-| **Proved declarations** | 13,029 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 13,043 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4267,6 +4267,21 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   (`Concurrency.canonicalCores_congr`, `schedFootprintOfCores_congr`,
   `canonicalCores_singleton`).  No footprint's member set moved, so the golden
   trace is byte-identical and `maxLockSetSize` is unmoved.
+
+  **And the first three syscall arms declare a scheduler-domain footprint** (WS-RR
+  RR8.12 seventh cut, `v0.35.95`).  `.notificationSignal` — through
+  `notificationSignalBoundOnCore`, the transition the live dispatch routes to —
+  `.notificationWait` and `.send` each get one, built as `schedFootprintOfCores` of
+  the arm's own SM8.B **write set**, so the footprint and the confinement theorem
+  read one core list.  Three write sets and the cross-core wake's replenish frame
+  moved into production for that: they were declared in staged modules the
+  production footprints cannot import.  The **empty replenish segment** each
+  declares is a theorem rather than a reading of the body — a footprint that omits
+  a written lock is false, and `observableSlotsConfinedToCores` constrains six
+  per-core slots of which the replenish queue is not one.  `.receive` and
+  `.replyRecv` stay undeclared: both donate, so their replenish cores come from the
+  migration, and `.receive`'s chain leg is not pre-state computable.  All four
+  footprints are inert — nothing acquires them until the bracket cut.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

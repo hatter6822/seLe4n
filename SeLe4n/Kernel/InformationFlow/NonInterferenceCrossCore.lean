@@ -600,22 +600,13 @@ theorem endpointQueuePopHead_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
 -- §2 SM6.B — the notification transitions
 -- ============================================================================
 
-/-- SM8.B.2: **the cores a cross-core notification signal may write.**
-Read off the pre-state: the head waiter's home core if the notification has a
-waiter, nothing otherwise (the badge-accumulation path and every fail-closed arm
-touch no scheduler slot at all).
-
-`notificationSignalWriteSet_eq_lockSet_waiter` ties this to the *same*
-pre-resolution the SM6.B lock set uses, so the declared information-flow write
-set and the declared 2PL footprint cannot name different threads. -/
-def notificationSignalWriteSet (st : SystemState) (notificationId : SeLe4n.ObjId) :
-    List CoreId :=
-  match st.getNotification? notificationId with
-  | some ntfn =>
-      match ntfn.waitingThreads.tail? with
-      | some (waiter, _) => [determineTargetCore st waiter]
-      | none => []
-  | none => []
+-- SM8.B.2, relocated at **WS-RR RR8.12**: `notificationSignalWriteSet` is declared
+-- in `IPC/CrossCore/NotificationSignal.lean`, beside the transition it is about.
+-- This module is **staged** and imports `Kernel.API`, so the production
+-- scheduler-domain footprint `schedLockSet_notificationSignalOnCore` could not
+-- read a core list declared here and would have grown a second one; *when a
+-- question has one owner and an asker that cannot see it, the owner is in the
+-- wrong layer.*  The confinement theorem below, which consumes it, stays here.
 
 /-- SM8.B.2 (coherence with the SM6.B lock set): the write set names the home
 core of exactly the thread `notificationSignalWaiter?` pre-resolves — the thread
@@ -753,17 +744,10 @@ theorem notificationWaitOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
                     (storeTcbIpcStateAndMessage_fromTcb_confinedToCores st1 st2 waiter tcb _ _ hIpc))
                   (removeRunnableOnCore_confinedToCores st2 waiter executingCore)
 
-/-- SM8.B.2: **the cores a bound-aware cross-core signal may write** — the bound
-TCB's home core when the badge is delivered directly, otherwise the plain
-signal's set.
-
-`boundDeliveryTarget?` is the transition's own pre-state resolution, so the
-declared set and the transition name the same TCB. -/
-def notificationSignalBoundWriteSet (st : SystemState) (notificationId : SeLe4n.ObjId) :
-    List CoreId :=
-  match boundDeliveryTarget? st notificationId with
-  | some (t, _) => [determineTargetCore st t]
-  | none => notificationSignalWriteSet st notificationId
+-- SM8.B.2, relocated at **WS-RR RR8.12**: `notificationSignalBoundWriteSet` is
+-- declared in `IPC/CrossCore/NotificationBind.lean`, beside
+-- `notificationSignalBoundOnCore` and beside the production scheduler-domain
+-- footprint `schedLockSet_notificationSignalBoundOnCore` that reads it.
 
 /-- SM8.B.2 (**SM6.B, cross-core** — the *bound* signal, the live `.signal` arm):
 a bound-aware signal's per-core writes stay inside
@@ -3260,25 +3244,11 @@ theorem resumeThreadOnCoreLive_crossCoreNonInterference (ctx : LabelingContext)
 -- arm is rerouted through `endpointSendDualWithCapsOnCore`; this section is the
 -- per-core audit that reroute owes.
 
-/-- SM8.B.2: **the cores a cross-core endpoint send may write.**
-
-Sharper than its `.call` sibling, because a send has *one* scheduling effect
-rather than two:
-
-* **rendezvous** — the receive queue offers a partner, so the send wakes it on
-  **its** home core and returns; the sender keeps running, so the executing core
-  is untouched;
-* **block** — nobody is waiting, so the sender is descheduled on the **executing**
-  core and no other core moves.
-
-The receiver is resolved from the pre-state through SM6.A's own
-`endpointCallReceiver?` — the receive-queue head, which is the same rendezvous
-partner a `.call` would take, so send and call name it once rather than twice. -/
-def endpointSendWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (executingCore : CoreId) : List CoreId :=
-  match endpointCallReceiver? st endpointId with
-  | some receiver => [determineTargetCore st receiver]
-  | none => [executingCore]
+-- SM8.B.2, relocated at **WS-RR RR8.12**: `endpointSendWriteSet` is declared in
+-- `IPC/CrossCore/EndpointSend.lean`, beside `endpointSendDualOnCore` and beside
+-- the production scheduler-domain footprint `schedLockSet_endpointSendOnCore` that
+-- reads it.  This module is staged and imports `Kernel.API`, so a core list
+-- declared here is unreachable from the footprint the syscall seam brackets over.
 
 /-- SM8.B.2 (**the bare cross-core send bound**): `endpointSendDualOnCore` writes
 no core outside `endpointSendWriteSet`.

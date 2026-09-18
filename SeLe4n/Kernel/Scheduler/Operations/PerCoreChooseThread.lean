@@ -578,7 +578,17 @@ shown to cover it.
 
 A fixed-single-core footprint that later gains a second core of a kind stops
 being a literal and becomes this constructor in the same cut; that is the
-question to ask when adding an argument, not which list a name is on. -/
+question to ask when adding an argument, not which list a name is on.
+
+**WS-RR RR8.12's seventh cut builds the per-arm syscall footprints over this**,
+and does it by reading the SM8.B **write set** the arm's confinement theorem is
+already stated at rather than resolving the cores a second time — so
+`schedLockSet_notificationSignalBoundOnCore`,
+`schedLockSet_notificationSignalOnCore`, `schedLockSet_notificationWaitOnCore`
+and `schedLockSet_endpointSendOnCore` are each `schedFootprintOfCores` of a core
+list the non-interference surface already owns.  A footprint and a confinement
+claim that name different cores is the failure that arrangement makes
+unstateable. -/
 def schedFootprintOfCores (runCores replenishCores : List CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   (SchedLockId.object schedObjStoreLockId, .write) ::

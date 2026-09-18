@@ -856,6 +856,32 @@ theorem handleRescheduleSgiOnCore_independent_of_other_core (st : SystemState)
 --   unreachable under `.ok`, the two identity arms inherit the pre-state fact,
 --   and the dispatch arm cites the SM5.B switch lemma.
 
+/-- WS-SM SM5.H, relocated to production at **WS-RR RR8.12**: a cross-core wake
+never touches any core's replenish queue.
+
+A wake is `enqueueRunnableOnCore` at the woken thread's home core: it writes that
+core's run queue and nothing in the replenishment domain.  This is what lets an
+IPC arm that wakes a partner declare an **empty** replenish segment in its
+scheduler-domain footprint, and a footprint that declared one it does not write
+would be wider than its operation.
+
+It was `wakeThread_replenishQueueOnCore_local` in `PerCoreCbs.lean`, which is
+staged — so the production footprints below it could not reach it, and the `_local`
+suffix was the signal.  *When a question has one owner and an asker that cannot
+see it, the owner is in the wrong layer.* -/
+theorem wakeThread_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId) (c : CoreId) :
+    (wakeThread st tid ec).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  show (enqueueRunnableOnCore st (determineTargetCore st tid) tid).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c
+  unfold enqueueRunnableOnCore
+  split
+  · split
+    · rfl
+    · simp [SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+  · rfl
+
 /-- WS-SM (PR #880 round 7): the SGI handler never touches any core's replenish
 queue — the CBS frame that lets `timerTickOnCore`'s local replenish-wake
 reschedule arm preserve every replenish-queue invariant verbatim. -/
