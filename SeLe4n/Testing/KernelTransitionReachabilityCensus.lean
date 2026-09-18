@@ -59,7 +59,7 @@ namespace SeLe4n.Testing.KernelTransitionReachabilityCensus
 
 open Lean Elab Command Meta
 open SeLe4n.Testing.ExportCommitDisciplineCensus (isProjectConstant commitsState)
-open SeLe4n.Testing.ReplyStackWriteCensus (privateIn)
+open SeLe4n.Testing.ReplyStackWriteCensus (privateIn conclusionOf)
 
 /-- The state this kernel transforms.  A definition whose **result** mentions it
 is a transition, a resolver over it, or a step of one; a definition that merely
@@ -465,7 +465,7 @@ own: a **new** non-executed transformer is the dangerous one, since it is a
 transition nobody runs that nobody has had to explain; a **stale** entry is the
 harmless one and is still a failure, because a pin that no longer describes the
 tree understates coverage as silently as it overstates it. -/
-def reconciliationViolations (env : Environment) (live unreachable : NameSet)
+def reconciliationViolations (live unreachable : NameSet)
     (recorded : List Name) : List String := Id.run do
   let recordedSet : NameSet := recorded.foldl (fun acc n => acc.insert n) {}
   let mut out : List String := []
@@ -487,6 +487,61 @@ def reconciliationViolations (env : Environment) (live unreachable : NameSet)
           longer imports."]
   return out
 
+/-- The two sides of a two-sided relation, or `none` if the conclusion is not one.
+
+`Eq` and `Iff` are the two shapes a pin between two programs can take; anything
+else -- a conjunction, an implication, a bare predicate -- relates nothing that
+this check can read.
+
+The telescope is stripped by `ReplyStackWriteCensus.conclusionOf`, which this
+module already imports and which strips `letE` and `mdata` as well as `forallE`:
+*before writing a helper, find the one this tree already has.*  The binders are
+not instantiated, which is exactly right here -- loose bound variables carry no
+constants, and `getUsedConstants` is the only thing read. -/
+def pinSides (ty : Expr) : Option (Expr × Expr) :=
+  let concl := conclusionOf ty
+  match concl.eq? with
+  | some (_, l, r) => some (l, r)
+  | none =>
+    match concl with
+    | .app (.app (.const ``Iff _) l) r => some (l, r)
+    | _ => none
+
+/-- **Is this pin a RELATION between the two programs?** (PR #897 review.)
+
+The question this replaces was *does the statement mention both constants*, which
+is this project's oldest rule failing in the gate written to enforce a different
+one: **a presence check is not a relation check.**  A conjunction of reflexive
+equations mentions both and says nothing; so does a reflexive equation over a
+pair built from both; so does an equation with both programs on one side.  Each
+of those satisfies "mentions both" and leaves a step free to be added to either
+program alone, which is the whole content of the claim.
+
+What is required instead: the conclusion is `Eq` or `Iff`, and **each program
+occurs on exactly one side, on opposite sides**.  A statement of that shape has
+one side built from the surface without naming the counterpart and the other
+built from the counterpart without naming the surface, so it necessarily connects
+the two.  The structural inequality of the sides falls out of it rather than
+being asked for separately.
+
+**What it still cannot decide**, stated rather than left to be rediscovered: that
+the equation is about the *whole* program rather than a projection of it
+(`(surface ..).1 = (counterpart ..).1` passes), and that the two sides are
+applied at corresponding arguments.  Those are questions about what a proposition
+*means*, and no reading of its syntax answers them; the check over-approximates
+there, so it fails closed on shape and admits a narrow-but-real relation. -/
+def pinRelatesPrograms (ty : Expr) (surface counterpart : Name) : Bool :=
+  match pinSides ty with
+  | none => false
+  | some (l, r) =>
+    let lc := l.getUsedConstants
+    let rc := r.getUsedConstants
+    -- Each program on exactly one side...
+    (lc.contains surface != rc.contains surface)
+      && (lc.contains counterpart != rc.contains counterpart)
+      -- ...and not the same side.
+      && (lc.contains surface != lc.contains counterpart)
+
 /-- Where a `standsBesideLive` row does not hold up. -/
 def pinViolations (env : Environment) (live unreachable : NameSet)
     (rows : List (Name × Name × Name)) : List String := Id.run do
@@ -506,13 +561,75 @@ def pinViolations (env : Environment) (live unreachable : NameSet)
     | some ci =>
         match ci with
         | .thmInfo ti =>
-            let used := ti.type.getUsedConstants
-            if !used.contains surface || !used.contains counterpart then
-              out := out ++ [s!"`{pin}` does not mention both `{surface}` and \
-                `{counterpart}` in its statement, so it is not a pin between them."]
+            if !pinRelatesPrograms ti.type surface counterpart then
+              out := out ++ [s!"`{pin}` does not RELATE `{surface}` to `{counterpart}`: a \
+                pin's conclusion must be an `Eq` or an `Iff` with each program on exactly \
+                one side and the two on opposite sides.  Merely mentioning both is a \
+                presence check -- a conjunction of reflexive equations passes it -- and \
+                leaves a step free to be added to either program alone."]
         | _ =>
             out := out ++ [s!"`{pin}` is not a theorem; a pin between two programs is a \
               proposition about both."]
+  return out
+
+/-! ### Witnesses that the pin check decides
+
+Both live rows pass, so nothing on this tree exercises the refusal: a check that
+cannot fire is indistinguishable from one that is wrong.  The three theorems
+below are the shapes the superseded *presence* check accepted -- each mentions
+both programs and relates nothing -- and the census asserts that all three are
+refused, beside a control asserting the live pin is accepted, so the refusal is
+known to be about the shape rather than about the row. -/
+
+/-- Witness: a conjunction of reflexive equations.  Mentions both programs,
+relates nothing; the shape the review named. -/
+theorem pinWitnessConjunctionOfReflexivity :
+    (@SeLe4n.Kernel.cancelIpcBlockingOnCore = @SeLe4n.Kernel.cancelIpcBlockingOnCore)
+      ∧ (@SeLe4n.Kernel.cancelIpcBlockingReclaimed
+          = @SeLe4n.Kernel.cancelIpcBlockingReclaimed) :=
+  ⟨rfl, rfl⟩
+
+/-- Witness: one equation, both programs on **both** sides.  `Eq`-headed, so a
+head test alone admits it, and reflexive, so it asserts nothing. -/
+theorem pinWitnessReflexiveOverBoth :
+    (@SeLe4n.Kernel.cancelIpcBlockingOnCore, @SeLe4n.Kernel.cancelIpcBlockingReclaimed)
+      = (@SeLe4n.Kernel.cancelIpcBlockingOnCore,
+         @SeLe4n.Kernel.cancelIpcBlockingReclaimed) := rfl
+
+/-- Witness: both programs on **one** side.  The sides differ structurally, so a
+"not reflexive" test admits it, and the projection discards the counterpart. -/
+theorem pinWitnessBothOnOneSide :
+    (@SeLe4n.Kernel.cancelIpcBlockingOnCore, @SeLe4n.Kernel.cancelIpcBlockingReclaimed).1
+      = @SeLe4n.Kernel.cancelIpcBlockingOnCore := rfl
+
+/-- The three shapes above, each of which must be refused. -/
+def pinCheckWitnesses : List Name :=
+  [ ``pinWitnessConjunctionOfReflexivity
+  , ``pinWitnessReflexiveOverBoth
+  , ``pinWitnessBothOnOneSide ]
+
+/-- Every witness shape is refused.
+
+The **acceptance** direction needs no witness of its own: `pinViolations` runs
+over `standsBesideLive` in the same block, and both live rows are real relations,
+so a change that refused everything would fail there.  Keeping the rows a fix does
+not change is what distinguishes a narrowing from a disabling, and those rows are
+them. -/
+def pinCheckWitnessViolations (env : Environment) : List String := Id.run do
+  let surface := `SeLe4n.Kernel.cancelIpcBlockingOnCore
+  let counterpart := `SeLe4n.Kernel.cancelIpcBlockingReclaimed
+  let mut out : List String := []
+  for w in pinCheckWitnesses do
+    match env.find? w with
+    | some (.thmInfo ti) =>
+        if pinRelatesPrograms ti.type surface counterpart then
+          out := out ++ [s!"the pin check ACCEPTS `{w}`, which mentions both programs and \
+            relates nothing -- it has degenerated into the presence check PR #897's review \
+            named, and a step may again be added to either program alone."]
+    | _ =>
+        out := out ++ [s!"pin-check witness `{w}` is missing or is not a theorem; without \
+          it nothing on this tree exercises the refusal, and a check that cannot fire is \
+          indistinguishable from one that is wrong."]
   return out
 
 /-! ## The census -/
@@ -529,14 +646,16 @@ run_cmd Command.liftTermElabM do
       if !live.contains n then unreachable := unreachable.insert n
   let recorded := nonExecutedTransitions
   let violations :=
-    reconciliationViolations env live unreachable recorded ++
-    pinViolations env live unreachable standsBesideLive
+    reconciliationViolations live unreachable recorded ++
+    pinViolations env live unreachable standsBesideLive ++
+    pinCheckWitnessViolations env
   if violations.isEmpty then
     let unreachableCount := unreachable.toList.length
     logInfo s!"kernel-transition reachability census: {domainSize} state transformers, \
       {domainSize - unreachableCount} reachable from one of {roots.size} committing \
       `@[export]`s, {unreachableCount} not — every one of them recorded, and \
-      {standsBesideLive.length} pinned to code the live path runs."
+      {standsBesideLive.length} RELATED to code the live path runs, with \
+      {pinCheckWitnesses.length} witness shapes refused."
   else
     throwError "kernel-transition reachability census failed:\n{
       String.intercalate "\n" (violations.map ("  - " ++ ·))}"

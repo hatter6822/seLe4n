@@ -14089,6 +14089,35 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameOnLiveStack[^\
 # guard exists to prevent.  One question, two answers; the docstring described
 # the better behaviour, so the code moved.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*if tcb\.schedContextBinding\.isDonated then \.error \.illegalState else" SeLe4n/Kernel/FrozenOps/Operations.lean'
+#
+# (3) PR #897 review -- **the same mirror, swept.**  Two things the review's own
+# finding named and two the sweep found.  `SchedContext.donationOrigin` is a field
+# of the LIVE record and `freeze` copies it verbatim, so a frozen state taken
+# mid-chain carries one; WS-HP HP10.4 landed the field's clears on the live side
+# at three sites and both frozen mirrors kept the history the kernel erases, so
+# `frozenDonationOriginRecipient?` could still name a thread whose loan had ended.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*boundThread := some threadId,(\n([ \t][^\n]*)?)*donationOrigin := none" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind \([^\n]*(\n([ \t][^\n]*)?)*boundThread := none, isActive := false,(\n([ \t][^\n]*)?)*donationOrigin := none" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# ...and the three refusals the mirror did not carry.  The live bind refuses four
+# things and this one refused one, so on three concrete states it SUCCEEDED where
+# the kernel refuses -- the direction that matters on a differential surface, and
+# `v0.35.59`'s shape (*a named condition beside unnamed ones is a subset*) one
+# operation over.  The order is the live order, so the error codes agree too.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*else if sc\.scReply\.isSome then \.error \.illegalState" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*if tcb\.domain != sc\.domain then \.error \.invalidArgument" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*else if frozenReplyFrameOnLiveStack st tcb then \.error \.illegalState" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# ...and the write AK2-B establishes: without it every frozen post-bind state
+# falsified `boundThreadPriorityConsistent`, the invariant the live write exists
+# to establish, so the mirror produced states the live kernel cannot reach.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*priority := sc\.priority }" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# The frozen live-stack predicate asks RECIPROCITY, exactly as the live one does.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReplyFrameOnLiveStack \([^\n]*(\n([ \t][^\n]*)?)*a\.prev == some rid" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReplyFrameOnLiveStack \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply == some rid" SeLe4n/Kernel/FrozenOps/Core.lean'
+# NEGATIVE: the presence test must not come back on the frozen side either --
+# token-preserving, keeping the definition and the field and changing only the
+# question.  The live twin carries the same negative twenty lines above; a fix
+# applied to one and not its sibling is how this class stays open.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReplyFrameOnLiveStack \([^\n]*(\n([ \t][^\n]*)?)*r\.next\.isSome" SeLe4n/Kernel/FrozenOps/Core.lean'
 
 # ============================================================================
 # WS-RM (`v0.35.6`) — seL4's `reply_remove` on the reply path
@@ -15158,11 +15187,25 @@ run_negative_check "INVARIANT" bash -lc 'rg -n "^def commitPrimitives" SeLe4n/Te
 run_check "INVARIANT" bash -lc 'rg -U -n "SeLe4n\.Kernel\.cancelIpcBlockingOnCore,\n[^\n]*SeLe4n\.Kernel\.cancelIpcBlockingReclaimed,\n[^\n]*SeLe4n\.Kernel\.cancelIpcBlockingOnCore_eq_reclaimed_deschedule" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "SeLe4n\.Kernel\.cancelDonationOnCore,\n[^\n]*SeLe4n\.Kernel\.cancelBoundDonationOnCore,\n[^\n]*SeLe4n\.Kernel\.suspendDonationArm_eq_cancelDonationOnCore" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
 
-# The pin check asks for BOTH names in the theorem's statement.  A check that
-# asked only for the surface would accept a theorem relating it to anything,
-# which is a presence check wearing the relation's comment.
-run_check "INVARIANT" rg -n 'if !used\.contains surface \|\| !used\.contains counterpart then' \
-  SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# The pin check asks for a RELATION, not for both names (PR #897 review).  Asking
+# whether the statement MENTIONS both programs is this project's oldest defect
+# inside the gate written to enforce a different rule: a conjunction of reflexive
+# equations mentions both and relates nothing, and the whole content of the claim
+# is that a step added to either program alone fails the build.  The conclusion
+# must be an `Eq` or `Iff` with each program on exactly one side, on opposite
+# sides.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def pinRelatesPrograms[^\n]*(\n([ \t][^\n]*)?)*\(lc\.contains surface != rc\.contains surface\)" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def pinRelatesPrograms[^\n]*(\n([ \t][^\n]*)?)*\(lc\.contains surface != lc\.contains counterpart\)" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+# ...and `pinViolations` asks it rather than re-deriving the question.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def pinViolations[^\n]*(\n([ \t][^\n]*)?)*if !pinRelatesPrograms ti\.type surface counterpart then" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+# NEGATIVE: the retired presence check must not come back anywhere in the census.
+# Token-preserving -- it keeps both names and changes only the question asked.
+run_negative_check "INVARIANT" bash -lc 'rg -n "used\.contains surface" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+# Both live rows pass the relation check, so nothing on this tree exercises the
+# refusal: the three witness shapes are what make it decisive, and the census
+# asserts all three are refused.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def pinCheckWitnesses[^\n]*(\n([ \t][^\n]*)?)*pinWitnessBothOnOneSide" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "pinViolations env live unreachable standsBesideLive \+\+(\n([ \t][^\n]*)?)*pinCheckWitnessViolations env" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
 
 # Tier 1 runs it.  A census nothing builds reports nothing.
 run_check "INVARIANT" rg -n 'lake build SeLe4n\.Testing\.KernelTransitionReachabilityCensus' \

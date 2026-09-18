@@ -1277,15 +1277,54 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
     match st.getObject? scId with
     | some (.schedContext sc) =>
       if sc.boundThread.isSome then .error .illegalState
+      -- **PR #897 review, the sweep the origin fix owed.**  The live bind refuses
+      -- four things and this mirror refused one, so it **succeeded where the
+      -- kernel refuses** -- the direction that matters on a differential surface,
+      -- and the `v0.35.59` shape one operation over (*a named condition beside
+      -- unnamed ones is a subset*).  The three below are the live guards in the
+      -- live order, so the two agree on the error code as well as on the verdict.
+      --
+      -- WS-OD (`v0.35.4`): a context that heads a reply stack is on loan down a
+      -- call chain and owed back along it; binding it elsewhere would give it a
+      -- second claimant the pop then displaces.
+      else if sc.scReply.isSome then .error .illegalState
       else
         match st.getTcb? threadId with
         | some tcb =>
+          -- AE3-A/U-11: the domain filter reads `tcb.domain` while effective
+          -- priority resolves from `sc.domain`, so a cross-domain bind would let
+          -- a thread pass the filter by one and be prioritised by the other.
+          if tcb.domain != sc.domain then .error .invalidArgument
+          -- WS-OD (`v0.35.4`): a thread blocked on a reply whose frame is on a
+          -- live stack is owed a context by the pop that reaches that frame, and
+          -- that pop writes its binding; a second context now would be
+          -- overwritten by it and orphaned.
+          else if frozenReplyFrameOnLiveStack st tcb then .error .illegalState
+          else
           match tcb.schedContextBinding with
           | .unbound =>
             let scIdTyped : SeLe4n.SchedContextId := ⟨scId.toNat⟩
-            let updatedSc := { sc with boundThread := some threadId }
+            -- **WS-HP HP10.4, frozen mirror (PR #897 review).**  A bind ends any
+            -- loan, so the recorded origin clears — the live clause, which this
+            -- mirror did not carry.  `FrozenSystemState` holds the **live**
+            -- `SchedContext` record and `Model.freeze` copies it verbatim, so a
+            -- frozen state taken mid-chain really does carry an origin; leaving it
+            -- here would let `frozenDonationOriginRecipient?` hand a later
+            -- bottom-of-stack return to a thread this bind has nothing to do with,
+            -- which is the thread-id-reuse hazard the field's own docstring names.
+            -- A field added to a shared record is a sweep of **both** surfaces,
+            -- not of the one whose transition motivated it.
+            let updatedSc := { sc with boundThread := some threadId,
+                                       donationOrigin := none }
+            -- **AK2-B option B (S-H04), frozen mirror (PR #897 review)**: and the
+            -- SchedContext's priority reaches the TCB, as the live bind's does.
+            -- Omitting it left every frozen post-bind state falsifying
+            -- `boundThreadPriorityConsistent` -- the invariant the live write
+            -- exists to establish -- so the mirror was not merely narrower than
+            -- its subject but produced states the live kernel cannot reach.
             let updatedTcb := { tcb with
-              schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound scIdTyped }
+              schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound scIdTyped,
+              priority := sc.priority }
             match st.objects.set scId (.schedContext updatedSc) with
             | some objs1 =>
               match objs1.set threadId.toObjId (.tcb updatedTcb) with
@@ -1339,7 +1378,14 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
           let st0 := if (st.scheduler.current) == some tid then
             { st with scheduler := { st.scheduler with current := none } }
           else st
-          let updatedSc := { sc with boundThread := none, isActive := false }
+          -- **WS-HP HP10.4, frozen mirror (PR #897 review)**: and the origin,
+          -- for the bind's reason in the other direction — the reservation stops
+          -- being owned at all, so a recorded departure from ownership has no
+          -- subject.  Both live arms of `schedContextUnbind` clear it; a mirror
+          -- that keeps history the kernel erases is a mirror that answers a later
+          -- pop differently.
+          let updatedSc := { sc with boundThread := none, isActive := false,
+                                     donationOrigin := none }
           let updatedTcb := { tcb with
             schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
           match st0.objects.set scId (.schedContext updatedSc) with

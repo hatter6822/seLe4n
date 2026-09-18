@@ -736,6 +736,38 @@ def frozenReplyStackOuterCaller? (st : FrozenSystemState)
             | none => .error .illegalState
             | some outer => .ok (some outer)
 
+/-- **WS-OD (`v0.35.4`), frozen mirror (PR #897 review)**: does this thread's
+reply link name a frame on a **live** reply stack?
+
+`replyFrameOnLiveStack`'s counterpart, clause for clause, and it is here because
+`frozenSchedContextBind` was missing the refusal it gates.  The frozen store holds
+the **live** `Reply` and `SchedContext` records, so the question is the same one
+and is asked the same way: reciprocity one step -- the frame or context *above*
+must answer this frame -- never `next.isSome`, because a stale upward link is
+reachable (the splice's below side degenerates to the sever when the frame below
+does not reciprocate) and a thread holding one is owed nothing.
+
+Exact rather than approximate under `donationChainWellFormed`, for the reason the
+live guard's docstring gives: `prevLinkReciprocal` and `headTerminates` make a
+reciprocated link a link to a frame that is itself on the stack. -/
+def frozenReplyFrameOnLiveStack (st : FrozenSystemState) (tcb : TCB) : Bool :=
+  match tcb.replyObject with
+  | none => false
+  | some rid =>
+    match st.getReply? rid with
+    | none => false
+    | some r =>
+      match r.next with
+      | none => false
+      | some (.frame above) =>
+        match st.getReply? above with
+        | none => false
+        | some a => a.prev == some rid
+      | some (.head scId) =>
+        match st.getSchedContext? scId with
+        | none => false
+        | some sc => sc.scReply == some rid
+
 /-- **WS-RM, frozen mirror**: clear the popped head's links and re-head the
 frame below it onto `scId`.
 

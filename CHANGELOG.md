@@ -1,3 +1,110 @@
+## v0.35.96 — PR #897 review: a mirror's refusal set, and two gates that asked presence
+
+Three review findings, and the reading that matters is **where** they landed: one
+is a divergence on the frozen execution surface, and two are *presence checks
+inside gates this same PR wrote*.  This file's oldest rule — **a presence check is
+not a relation check** — has now been found failing in gates added to enforce
+other rules three times in this branch.
+
+**(1) The frozen SchedContext bind and unbind kept history the kernel erases, and
+the sweep found three more divergences beside it.**
+`SchedContext.donationOrigin` is a field of the **live** record and `Model.freeze`
+copies a live state's SchedContexts verbatim, so a frozen state taken mid-chain
+really carries one.  WS-HP HP10.4 landed the field's clears on the live side at
+three sites; `frozenSchedContextBind` and `frozenSchedContextUnbind` carried none,
+so `frozenDonationOriginRecipient?` could still name a thread whose loan had
+ended and redirect a later bottom-of-stack return to it.  *A field added to a
+shared record is a sweep of both surfaces* — `v0.35.52` recorded that after the
+same class had cost four corrections, and this is the fifth.
+
+Running the sweep on the **operation** rather than on the field found the rest.
+The live `schedContextBind` refuses four things and the mirror refused one, so on
+three concrete states it **succeeded where the kernel refuses** — the direction
+that matters on a differential surface, and `v0.35.59`'s shape (*a named condition
+beside unnamed ones is a subset*) one operation over.  The three are now carried in
+the live order, so the error codes agree as well as the verdicts: a reservation
+that heads a reply stack (`.illegalState`), a cross-domain bind
+(`.invalidArgument`), and a thread whose own reply frame is on a live stack
+(`.illegalState`, through the new `frozenReplyFrameOnLiveStack`, which asks
+one-step **reciprocity** exactly as the live predicate does rather than
+`next.isSome`).  The mirror also did not propagate `sc.priority` to the bound TCB,
+so every frozen post-bind state falsified `boundThreadPriorityConsistent` — the
+invariant the live write exists to establish — which makes the mirror not merely
+narrower than its subject but a producer of states the live kernel cannot reach.
+
+`tests/FrozenOpsSuite.lean` FO-047 / FO-047b / FO-047c are the witnesses, and the
+**payoff** half is the one worth having: the field matters only because a resolver
+reads it, so the control establishes that `frozenDonationOriginRecipient?` names
+the recorded origin before the bind and the payoff that it names nobody after.
+Each refusal half is paired with a control asserting the *live* side really
+refuses, so a shared success cannot read as agreement, and the live-stack half
+carries a NEGATIVE — a frame whose upward link nothing answers is owed nothing and
+both sides admit it — so the guard is known not to have degenerated into "any reply
+link refuses".  Seven mutations, each reverting one production change, all
+decisive.  Nine Tier 3 anchors, the last of them the frozen twin of a negative the
+live predicate has carried since `v0.35.5`: *a fix applied to one site and not its
+sibling is how this class stays open.*
+
+**(2) `standsBesideLive`'s pin was a presence check** (`v0.35.91`, this branch).
+The check read *does the pin's statement mention both programs*, which a
+conjunction of reflexive equations satisfies while relating nothing — and the whole
+content of the claim is that a step added to either program alone fails the build.
+`pinRelatesPrograms` asks the relation instead: the conclusion is `Eq` or `Iff`,
+and **each program occurs on exactly one side, on opposite sides**.  A statement of
+that shape has one side built from the surface without naming the counterpart and
+the other built from the counterpart without naming the surface, so it necessarily
+connects them; the structural inequality of the sides falls out rather than being
+asked for.  What it still cannot decide is stated in its own docstring — that the
+equation is about the *whole* program rather than a projection of it, and that the
+two sides are applied at corresponding arguments — because those are questions
+about what a proposition *means*.
+
+Both live rows pass, so nothing on this tree exercises the refusal and a check that
+cannot fire is indistinguishable from one that is wrong: three witness theorems
+carry the shapes the superseded check accepted (a conjunction of reflexive
+equations, a reflexive equation over a pair built from both, an equation with both
+programs on one side), and the census asserts all three are refused.  The
+**acceptance** direction needs no witness of its own — `pinViolations` runs over
+`standsBesideLive` in the same block, and keeping the rows a fix does not change is
+what distinguishes a narrowing from a disabling.  The mutation that decides
+restores the presence check at `pinRelatesPrograms`, where both consumers read it;
+restoring it at the *call site* alone is **not** decisive, which is the sweep rule
+arriving inside a mutation.
+
+**(3) `DECLARED_FROZEN_TAINT_WRITERS` was never checked as a relation** (`v0.35.60`,
+this branch).  Its two reconciliation directions ask *is the key reported as naming
+some taint API* and *is the value some member of the live surface* — two
+memberships, so exchanging the two mirrors' bodies (`frozenTaintFlow` clearing and
+`frozenTaintClear` joining) keeps both true and inverts what every frozen content
+move does to provenance.  The probe now emits `CF_TAINT_EDGE <caller> <api>` and
+the declared counterpart must be among the edges the mirror itself carries.
+Measured by the swap: the gate reports both rows misdirected and names the API each
+one actually calls, while every presence check stays green.
+
+One mechanical note, earned twice now: `check_content_flow_coverage.py` elaborates
+its probe against **existing oleans**, so the first run of that mutation reported
+`PASS` over a mutated source.  A gate mutation whose subject is a Lean dependency
+is run after rebuilding it, or it measures the last build.
+
+**The review's fourth finding is not in this cut**, and saying so is the point of
+recording it here: `scripts/lean_store_read_census.py`'s `WRITE` pattern names
+`set` in its *qualified* branch and not in its *method* branch, so
+`st.objects.set k v` — the frozen surface's ordinary store spelling — is invisible
+to an **enforced zero**.  Measured by widening the alternation: **31 executable
+raw writes across 22 frozen declarations** walk around `STORE_WRITE_CODE = 0`
+today.  Widening alone would turn Tier 0 red, so the widening and the migration
+onto a frozen store primitive are one cut, and it is the next one.
+
+Also in this cut: `reconciliationViolations` no longer takes an `Environment` it
+never read — *a parameter is a place for a caller to be wrong*, and an unread one
+is a linter warning standing where a reader looks for a reason.
+
+**Files**: `SeLe4n/Kernel/FrozenOps/{Core,Operations}.lean`,
+`SeLe4n/Testing/KernelTransitionReachabilityCensus.lean`,
+`scripts/check_content_flow_coverage.py`,
+`scripts/test_tier3_invariant_surface.sh`, `tests/FrozenOpsSuite.lean`,
+`docs/spec/SELE4N_SPEC.md`, `CLAUDE.md`, `AGENTS.md`.
+
 ## v0.35.95 — WS-RR RR8.12 (seventh cut): three syscall arms get a scheduler footprint
 
 `UncoveredLockDomain.syscallSeamSchedulerDomain` records that `lockSetForSyscall`

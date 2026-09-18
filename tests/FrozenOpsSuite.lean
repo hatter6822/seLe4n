@@ -1007,6 +1007,37 @@ private def diffAddSchedContext (ist : IntermediateState) (scId : SeLe4n.SchedCo
   Builder.createObject ist scId.toObjId (.schedContext sc)
     (fun _ h => nomatch h) (fun _ h => nomatch h)
 
+/-! ### Driving the live SchedContext binding operations
+
+`schedContextBind` / `schedContextUnbind` take `ValidObjId` / `ValidThreadId`, so
+a scenario that wants to compare them against their frozen mirrors has to promote
+its ids first.  Both helpers answer `none` for "did not run" -- an unpromotable id
+or a refusal -- and every consumer pairs its assertion with a control asserting
+`isSome`, so a silent `none` cannot read as agreement. -/
+private def liveSchedContextBindState (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (tid : SeLe4n.ThreadId) : Option SystemState := do
+  let vSc ← scId.toObjId.toValid?
+  let vTid ← tid.toValid?
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind vSc vTid st with
+  | .ok (_, st') => some st'
+  | .error _ => none
+
+private def liveSchedContextUnbindState (st : SystemState)
+    (scId : SeLe4n.SchedContextId) : Option SystemState := do
+  let vSc ← scId.toObjId.toValid?
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind vSc st with
+  | .ok (_, st') => some st'
+  | .error _ => none
+
+/-- The recorded origin of a live reservation; the outer `none` is "no such
+reservation", which is a different answer from "no loan is recorded". -/
+private def originOf (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    Option (Option SeLe4n.ThreadId) := (st.getSchedContext? scId).map (·.donationOrigin)
+
+/-- ...and its frozen counterpart, over the **same** `SchedContext` record. -/
+private def frozenOriginOf (st : FrozenSystemState) (scId : SeLe4n.SchedContextId) :
+    Option (Option SeLe4n.ThreadId) := (st.getSchedContext? scId).map (·.donationOrigin)
+
 /-- **WS-HP HP8.1**: the donated scheduling context the FO-042 halves below move.
 
 Held by the recorded server, owed back to the answered caller, and — in the
@@ -2190,6 +2221,188 @@ private def differentialRemovalRefusalSetAgrees : IO Unit := do
   expect "FO-046: ...and so does the frozen mirror, which answered .illegalState"
     (refusesQueueEmpty (frozenQueueRemove diffEpId false diffA (freeze istDetached)))
 
+/-- FO-047 (**PR #897 review**): **the frozen bind and unbind clear the
+reservation's recorded origin, and the bind refuses what the live bind refuses.**
+
+`SchedContext.donationOrigin` is a field of the **live** record, and `freeze`
+copies a live state's SchedContexts verbatim, so a frozen state taken mid-chain
+really carries one.  WS-HP HP10.4 landed the field's clears on the live side at
+three sites -- `schedContextBind` and both arms of `schedContextUnbind` -- and the
+frozen mirrors kept the history the kernel erases, so
+`frozenDonationOriginRecipient?` could still name a thread whose loan had ended
+and hand it a later bottom-of-stack return.  *A field added to a shared record is
+a sweep of both surfaces.*
+
+The **payoff** half is the assertion worth having: the field is only interesting
+because a resolver reads it, so the control establishes that the resolver names
+the recorded origin before the operation and the payoff that it names nobody
+after.  Asserting the field alone would pass against a mirror whose resolver had
+drifted instead.
+
+The **refusal** halves are the sweep the origin fix owed.  The live bind refuses
+four things; this mirror refused one, so on three concrete states it *succeeded
+where the kernel refuses*.  Each half is paired with a control establishing that
+the live side really refuses, so a shared success cannot read as agreement. -/
+private def differentialSchedContextBindClearsOrigin : IO Unit := do
+  -- The reservation: unbound, heading no stack, carrying an origin from a loan
+  -- that has ended.  `diffB` is stored and `.unbound`, so it passes both of
+  -- `frozenDonationOriginRecipient?`'s guards and the resolver really fires.
+  let scWithOrigin : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+      boundThread := none, scReply := none, donationOrigin := some diffB,
+      isActive := false }
+  let ist := diffAddSchedContext
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState (diffTcb 62)) (diffTcb 63))
+    diffScId scWithOrigin
+  expect "FO-047 control: the frozen reservation starts with a recorded origin"
+    (frozenOriginOf (freeze ist) diffScId == some (some diffB))
+  expect "FO-047 control: ...and the resolver would redirect a bottom-of-stack return to it"
+    (SeLe4n.Kernel.FrozenOps.frozenDonationOriginRecipient? (freeze ist) diffScId
+      == some diffB)
+  expect "FO-047 control: the live bind succeeds on the counterpart state"
+    (liveSchedContextBindState ist.state diffScId diffA).isSome
+  expect "FO-047 control: and so does the frozen bind"
+    (frozenSchedContextBind diffScId.toObjId diffA (freeze ist)).toOption.isSome
+  expect "FO-047: the live bind clears the origin"
+    ((liveSchedContextBindState ist.state diffScId diffA).bind
+      (originOf · diffScId) == some none)
+  expect "FO-047: ...and so does the frozen bind"
+    (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
+     | .ok (_, st') => frozenOriginOf st' diffScId == some none
+     | .error _ => false)
+  expect "FO-047 PAYOFF: ...so the frozen resolver names nobody after the bind"
+    (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
+     | .ok (_, st') =>
+         (SeLe4n.Kernel.FrozenOps.frozenDonationOriginRecipient? st' diffScId).isNone
+     | .error _ => false)
+  -- **AK2-B**: and the SchedContext's priority reaches the bound TCB, as it does
+  -- live.  Without it every frozen post-bind state falsified
+  -- `boundThreadPriorityConsistent`.
+  expect "FO-047: the frozen bind propagates the reservation's priority to the TCB"
+    (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
+     | .ok (_, st') => (st'.getTcb? diffA).map (·.priority) == some ⟨40⟩
+     | .error _ => false)
+  expect "FO-047 control: ...which is the priority the live bind writes too"
+    ((liveSchedContextBindState ist.state diffScId diffA).bind
+      (fun st => (st.getTcb? diffA).map (·.priority)) == some ⟨40⟩)
+
+/-- FO-047b: the unbind half — both arms of the live unbind clear the origin. -/
+private def differentialSchedContextUnbindClearsOrigin : IO Unit := do
+  let boundTcb : TCB :=
+    { diffTcb 62 with
+      priority := ⟨40⟩,
+      schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound diffScId }
+  let scBoundWithOrigin : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+      boundThread := some diffA, scReply := none, donationOrigin := some diffB,
+      isActive := true }
+  let ist := diffAddSchedContext
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState boundTcb) (diffTcb 63))
+    diffScId scBoundWithOrigin
+  expect "FO-047b control: the frozen reservation starts with a recorded origin"
+    (frozenOriginOf (freeze ist) diffScId == some (some diffB))
+  expect "FO-047b control: the live unbind succeeds on the counterpart state"
+    (liveSchedContextUnbindState ist.state diffScId).isSome
+  expect "FO-047b control: and so does the frozen unbind"
+    (frozenSchedContextUnbind diffScId.toObjId (freeze ist)).toOption.isSome
+  expect "FO-047b: the live unbind clears the origin"
+    ((liveSchedContextUnbindState ist.state diffScId).bind
+      (originOf · diffScId) == some none)
+  expect "FO-047b: ...and so does the frozen unbind"
+    (match frozenSchedContextUnbind diffScId.toObjId (freeze ist) with
+     | .ok (_, st') => frozenOriginOf st' diffScId == some none
+     | .error _ => false)
+
+/-- FO-047c: the three refusals the frozen bind did not carry.
+
+Each half drives a state the live bind refuses and asserts the frozen mirror
+refuses it **with the same error code**, beside a control establishing that the
+live side really refuses rather than both sides sharing a success. -/
+private def differentialSchedContextBindRefusalsAgree : IO Unit := do
+  let errOf {α : Type} : Except KernelError α → Option KernelError
+    | .ok _ => none
+    | .error e => some e
+  let frozenErr (r : Except KernelError (Unit × FrozenSystemState)) : Option KernelError :=
+    match r with | .ok _ => none | .error e => some e
+  let liveErr (st : SystemState) : Option KernelError :=
+    match diffScId.toObjId.toValid?, diffA.toValid? with
+    | some vSc, some vTid =>
+        errOf (SeLe4n.Kernel.SchedContextOps.schedContextBind vSc vTid st)
+    | _, _ => none
+  -- (1) the reservation heads a reply stack.
+  let headRid : SeLe4n.ReplyId := ⟨70⟩
+  let headReply : SeLe4n.Kernel.Reply :=
+    { replyId := headRid, caller := some diffB, next := some (.head diffScId) }
+  let scHeading : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+      boundThread := none, scReply := some headRid, isActive := false }
+  let istHeading := diffAddSchedContext (diffAddReply
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState (diffTcb 62)) (diffTcb 63))
+    headRid headReply) diffScId scHeading
+  expect "FO-047c control: the live bind refuses a reservation heading a stack"
+    (liveErr istHeading.state == some KernelError.illegalState)
+  expect "FO-047c: ...and the frozen bind refuses it identically"
+    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istHeading))
+      == some KernelError.illegalState)
+  -- (2) the thread's domain differs from the reservation's.
+  let otherDomainTcb : TCB := { diffTcb 62 with domain := ⟨1⟩ }
+  let scDomainZero : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+      boundThread := none, scReply := none, isActive := false }
+  let istDomain := diffAddSchedContext
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState otherDomainTcb) (diffTcb 63))
+    diffScId scDomainZero
+  expect "FO-047c control: the live bind refuses a cross-domain bind"
+    (liveErr istDomain.state == some KernelError.invalidArgument)
+  expect "FO-047c: ...and the frozen bind refuses it identically"
+    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istDomain))
+      == some KernelError.invalidArgument)
+  -- (3) the thread's own reply frame is on a LIVE stack — reciprocated, so the
+  -- pop that reaches it will write this thread's binding.
+  let ownRid : SeLe4n.ReplyId := ⟨71⟩
+  let aboveRid : SeLe4n.ReplyId := ⟨72⟩
+  let ownReply : SeLe4n.Kernel.Reply :=
+    { replyId := ownRid, caller := some diffA, next := some (.frame aboveRid) }
+  let aboveReply : SeLe4n.Kernel.Reply :=
+    { replyId := aboveRid, caller := some diffB, prev := some ownRid }
+  let owedTcb : TCB :=
+    { diffTcb 62 with
+      replyObject := some ownRid,
+      ipcState := .blockedOnReply diffEpId diffB }
+  let istOwed := diffAddSchedContext (diffAddReply (diffAddReply
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState owedTcb) (diffTcb 63))
+    ownRid ownReply) aboveRid aboveReply) diffScId scDomainZero
+  expect "FO-047c control: the frame above really answers this one (a LIVE stack)"
+    (SeLe4n.Kernel.FrozenOps.frozenReplyFrameOnLiveStack (freeze istOwed) owedTcb)
+  expect "FO-047c control: the live bind refuses a thread owed a context"
+    (liveErr istOwed.state == some KernelError.illegalState)
+  expect "FO-047c: ...and the frozen bind refuses it identically"
+    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istOwed))
+      == some KernelError.illegalState)
+  -- ...and the NEGATIVE that keeps the guard from degenerating into "any reply
+  -- link refuses": a frame whose upward link nothing answers is owed nothing, and
+  -- binding it is an operation both sides support.
+  let staleTcb : TCB :=
+    { diffTcb 62 with
+      replyObject := some ownRid,
+      ipcState := .blockedOnReply diffEpId diffB }
+  let staleAbove : SeLe4n.Kernel.Reply := { replyId := aboveRid, caller := some diffB }
+  let istStale := diffAddSchedContext (diffAddReply (diffAddReply
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState staleTcb) (diffTcb 63))
+    ownRid ownReply) aboveRid staleAbove) diffScId scDomainZero
+  expect "FO-047c control: a stale upward link is NOT a live stack"
+    (!(SeLe4n.Kernel.FrozenOps.frozenReplyFrameOnLiveStack (freeze istStale) staleTcb))
+  -- SUCCESS on both sides, not "no error": `liveErr` answers `none` for an
+  -- unpromotable id as well as for an accepted bind, so the weaker form could
+  -- pass on a fixture the live operation never ran at all.
+  expect "FO-047c NEGATIVE: both sides ADMIT a thread whose frame is off every stack"
+    ((liveSchedContextBindState istStale.state diffScId diffA).isSome
+      && (frozenSchedContextBind diffScId.toObjId diffA (freeze istStale)).toOption.isSome)
+
 /-- FO-036: **a send naming a thread that does not exist** (PR #873 round 17).
 
 On a rendezvous the message goes straight from the argument into the receiver's
@@ -2464,6 +2677,9 @@ def main : IO Unit := do
   differentialRefusalsAgree
   differentialRemovalGuardRefusalsAgree
   differentialRemovalRefusalSetAgrees
+  differentialSchedContextBindClearsOrigin
+  differentialSchedContextUnbindClearsOrigin
+  differentialSchedContextBindRefusalsAgree
   differentialComparisonHasBite
   -- **Derived, not hand-kept** (PR #895 review round 15).  The literal that
   -- stood here read "33 scenarios" against 40 distinct `FO-` ids and 34 runner

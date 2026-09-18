@@ -724,16 +724,26 @@ run_cmd do
   -- property of it, and a property cannot move a field.  `ConstantInfo.defnInfo`
   -- is exactly that distinction, decided by the elaborator rather than by a
   -- name pattern.
-  let writers : List Name :=
+  --
+  -- **PR #897 review**: and *which* member of the API each one names.  The frozen
+  -- mirror map declares one live counterpart per mirror, and reconciling its keys
+  -- against this set and its values against the live surface is a presence check
+  -- on both sides -- swapping two mirrors' bodies keeps every key reported and
+  -- every value declared.  The caller-to-API edge is the relation, so the map is
+  -- checked against it rather than against two memberships.
+  let writers : List (Name × List Name) :=
     env.constants.fold (init := []) fun acc n ci =>
       if !cfInspectable n then acc
       else match ci with
         | .defnInfo di =>
-            if cfTaintApi.any (fun a => di.value.getUsedConstants.contains a) then n :: acc
-            else acc
+            let used := di.value.getUsedConstants
+            let apis := cfTaintApi.filter (fun a => used.contains a)
+            if apis.isEmpty then acc else (n, apis) :: acc
         | _ => acc
-  for w in writers do
+  for (w, apis) in writers do
     logInfo m!"CF_TAINT_WRITER {cfReportName w}"
+    for a in apis do
+      logInfo m!"CF_TAINT_EDGE {cfReportName w} {a}"
   -- (C3) WS-SM SM9.D.13a: **who can append to the audit trail.**
   --
   -- `applySyscallTaint` skips the origination diff for every arm
@@ -1046,6 +1056,11 @@ def parse(out: str):
     for arm, name in re.findall(r"CF_HIT (\S+) (\S+)", out):
         detail.setdefault(arm, []).append(name)
     writers = set(re.findall(r"CF_TAINT_WRITER (\S+)", out))
+    # PR #897 review: caller -> API edges, so a declared mirror's counterpart can be
+    # checked as a RELATION rather than as two independent memberships.
+    taint_edges: dict[str, set[str]] = {}
+    for caller, api in re.findall(r"CF_TAINT_EDGE (\S+) (\S+)", out):
+        taint_edges.setdefault(caller, set()).add(api)
     field_writers = set(re.findall(r"CF_FIELD_WRITER (\S+)", out))
     field_unresolved = bool(re.search(r"CF_FIELD_UNRESOLVED", out))
     noroot = set(re.findall(r"CF_NO_ROOT (\S+)", out))
@@ -1056,8 +1071,8 @@ def parse(out: str):
     audit_detail: dict[str, list[str]] = {}
     for arm, name in re.findall(r"CF_AUDIT_HIT (\S+) (\S+)", out):
         audit_detail.setdefault(arm, []).append(name)
-    return (hits, detail, writers, field_writers, field_unresolved, noroot, truncated,
-            audit_hits, audit_detail, justified, state_ctors)
+    return (hits, detail, writers, taint_edges, field_writers, field_unresolved, noroot,
+            truncated, audit_hits, audit_detail, justified, state_ctors)
 
 
 def main() -> int:
@@ -1109,8 +1124,8 @@ def main() -> int:
         cls[SELF_TEST_ROOT_ARM] = "inert"
 
     out = run_probe(roots, args.depth, channels, plant_rogue=args.self_test)
-    (hits, detail, writers, field_writers, field_unresolved, noroot, truncated,
-     audit_hits, audit_detail, justified, state_ctors) = parse(out)
+    (hits, detail, writers, taint_edges, field_writers, field_unresolved, noroot,
+     truncated, audit_hits, audit_detail, justified, state_ctors) = parse(out)
 
     failures: list[str] = []
 
@@ -1434,6 +1449,23 @@ def main() -> int:
         failures.append(
             "  declared frozen taint mirrors naming a live counterpart outside "
             "`DECLARED_TAINT_WRITERS`:\n      " + "\n      ".join(unknown_counterpart))
+    # ...and the RELATION, which neither of the two above asks (PR #897 review).  A
+    # key is reported for naming *some* member of the taint API and a value is
+    # accepted for being *some* member of the live surface, so exchanging two
+    # mirrors' bodies -- `frozenTaintFlow` clearing and `frozenTaintClear`
+    # joining -- keeps both memberships true and inverts what every frozen content
+    # move does to provenance.  *A presence check is not a relation check*: the
+    # declared counterpart must be among the edges the mirror itself carries.
+    misdirected = sorted(
+        f"{k} -> {v} (it names: "
+        + (", ".join(sorted(taint_edges.get(k, set()))) or "nothing") + ")"
+        for k, v in DECLARED_FROZEN_TAINT_WRITERS.items()
+        if k in writers and v not in taint_edges.get(k, set()))
+    if misdirected:
+        failures.append(
+            "  declared frozen taint mirrors whose recorded live counterpart is not an "
+            "API the mirror actually names (the edge is the relation; two memberships "
+            "are not):\n      " + "\n      ".join(misdirected))
 
     # (C2) one field writer.  Check (C) sees only constants that NAME the taint
     # API; a definition writing `SystemState.declassificationTaint` directly in

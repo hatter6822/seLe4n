@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.95` (`lakefile.toml`) |
+| **Package version** | `0.35.96` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 391,269 across 333 Lean files |
-| **Test LoC** | 79,176 across 70 Lean test suites |
-| **Proved declarations** | 13,043 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 391,466 across 333 Lean files |
+| **Test LoC** | 79,392 across 70 Lean test suites |
+| **Proved declarations** | 13,046 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1846,10 +1846,15 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    already-registered one, which is the defect that motivated it.  The
    `standsBesideLive` rows are what can: each names the non-executed
    surface, the live definition that re-composes it, and a **pin
-   theorem** whose statement must mention both, so a step added to one
-   side alone fails the build.  A registered surface with no pin makes
-   no agreement claim, and extending the pinned set is what closes the
-   class rather than the instance.
+   theorem** that RELATES them, so a step added to one side alone fails
+   the build.  *Relates*, not *mentions* (`v0.35.96`):
+   `pinRelatesPrograms` requires an `Eq` or `Iff` conclusion with each
+   program on exactly one side and the two on opposite sides, since a
+   conjunction of reflexive equations mentions both and relates nothing;
+   three witness theorems carry the shapes the superseded check accepted
+   and the census asserts all three are refused.  A registered surface
+   with no pin makes no agreement claim, and extending the pinned set is
+   what closes the class rather than the instance.
 
    **SM3.C.11 — dynamic PIP chain-walk locking**: the 3 PIP-invoking
    transitions (`.call`/`.reply`/`.replyRecv`) walk a blocking chain
@@ -4048,6 +4053,21 @@ preservation theorems including `schedContextBind_output_bidirectional` and
 `decodeSchedContextBindArgs_error_iff`, `decodeSchedContextUnbindArgs_error_iff`).
 4 frozen SchedContext operations (`frozenSchedContextConfigure`,
 `frozenSchedContextBind`, `frozenSchedContextUnbind`, `frozenTimerTickBudget`).
+
+**PR #897 review (`v0.35.96`): the frozen bind and unbind mirror the live guards
+and the live clears.**  `frozenSchedContextBind` refuses, in the live order and
+with the live error codes, a reservation that heads a reply stack
+(`.illegalState`), a cross-domain bind (`.invalidArgument`) and a thread whose own
+reply frame is on a live stack (`.illegalState`, decided by
+`frozenReplyFrameOnLiveStack`, which asks one-step **reciprocity** rather than
+`next.isSome`); it propagates `sc.priority` to the bound TCB, as AK2-B's live
+write does, so a frozen post-bind state no longer falsifies
+`boundThreadPriorityConsistent`; and both operations clear
+`SchedContext.donationOrigin`, which WS-HP HP10.4 clears at three live sites.
+Before this cut the mirror carried one of the four refusals, neither write, and so
+**succeeded where the kernel refuses** — the direction that matters on a
+differential surface.  Witnessed by `FO-047` / `FO-047b` / `FO-047c`, each refusal
+half paired with a control asserting the live side really refuses.
 `enforcementBoundary` expanded 22→25 entries (3 new `.capabilityOnly` SchedContext
 operations). `frozenOpCoverage_count` increased 12→15.
 

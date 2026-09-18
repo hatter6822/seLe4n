@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.95.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.96.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3400,6 +3400,26 @@ promotion (`v0.35.38`); still severing after the live removal spliced
 boundary followed by a guard carrying **one of four** refusals with the wrong
 error code (`v0.35.58`–`v0.35.59`).
 
+**...and a sixth, after the promotion, which is the measurement that says what the
+promotion did and did not close** (PR #897 review, `v0.35.96`).
+`frozenSchedContextBind` and `frozenSchedContextUnbind` were still keeping a
+`donationOrigin` the live kernel erases — the `v0.35.52` correction's own class,
+one operation over — and sweeping the **operation** rather than the field found
+three more: the live bind refuses four things and the mirror refused one, and it
+did not propagate `sc.priority` to the bound TCB, so every frozen post-bind state
+falsified `boundThreadPriorityConsistent`.  Every one of those was invisible to
+the promotion, because putting a module in the library root fixes which
+*definitions* a gate can see and says nothing about whether a mirror **agrees**
+with what it mirrors.  That second half is `docs/REGISTERED_DEBT.md` table C's
+open row — a hand-written second implementation whose fidelity is checked by a
+hand-written scenario list — and the measurement here is what it costs: the three
+missing refusals sit on an operation `frozenBranchDifferentiallyChecked` does not
+name, so no `frozenRunAgrees` comparison could have reached them and none did.
+**Promotion into the root is necessary and is not the fidelity check**; until the
+coverage set is derived, a cut that touches a live transition with a frozen mirror
+sweeps the mirror by reading both, and a cut that adds a *field* to a shared record
+sweeps every writer of it on both surfaces.
+
 So: **the gates' domains nearly all key on library-root reachability, which makes
 "not in a root" a silent exemption from most of this tree's defences.**  A
 mirror deliberately shaped to be compared against production therefore gets the
@@ -6051,13 +6071,22 @@ code may assume:
   unreachable.  The register row claiming the census "would have failed on the
   day" that step was added was wrong and is corrected.  What sees it is
   `standsBesideLive`: a row names the non-executed surface, the live definition
-  that re-composes it, and a **pin theorem** whose statement must mention both,
-  so a step added to one side alone fails the build — measured by inserting one
-  into `cancelIpcBlockingOnCore` and watching
-  `cancelIpcBlockingOnCore_eq_reclaimed_deschedule` stop elaborating.  Two rows
-  are pinned today; a registered surface with no pin makes **no** agreement
-  claim, and extending the pinned set is what closes the class rather than the
-  instance.
+  that re-composes it, and a **pin theorem** that RELATES them, so a step added to
+  one side alone fails the build — measured by inserting one into
+  `cancelIpcBlockingOnCore` and watching
+  `cancelIpcBlockingOnCore_eq_reclaimed_deschedule` stop elaborating.  *Relates*,
+  not *mentions* (PR #897 review, `v0.35.96`): the check asked whether the
+  statement named both programs, which a conjunction of reflexive equations
+  satisfies while relating nothing — this file's oldest rule failing inside the
+  gate written to enforce a different one.  `pinRelatesPrograms` requires an `Eq`
+  or `Iff` conclusion with **each program on exactly one side, on opposite
+  sides**, so one side is built from the surface without naming the counterpart
+  and the other from the counterpart without naming the surface; three witness
+  theorems carry the shapes the superseded check accepted and the census asserts
+  all three are refused, because a check that cannot fire on this tree is
+  indistinguishable from one that is wrong.  Two rows are pinned today; a
+  registered surface with no pin makes **no** agreement claim, and extending the
+  pinned set is what closes the class rather than the instance.
 - **An endpoint queue's membership lives in its members' TCBs, and those members'
   labels differ** (WS-RR RR8.8, `v0.35.83`).  Three facts new code must respect,
   and the first is the one that decides the other two.  (1) **The admission gate
