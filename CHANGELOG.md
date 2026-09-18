@@ -1,3 +1,105 @@
+## v0.35.91 — WS-RR RR8.12 (third cut): which kernel transitions are on an executed path, derived
+
+`ExportCommitDisciplineCensus` walks outward from each state-committing
+`@[export]` and asks how it commits.  `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean`
+(Tier 1) walks the same graph the other way: it derives every definition that
+**transforms kernel state**, partitions that domain by whether a committing
+export can reach it, and requires every member of the unreachable half to be
+recorded.  **528 state transformers; 288 reachable from one of the 7 committing
+exports; 240 not.**
+
+The gap it closes is `v0.35.90`'s.  WS-OD OD1.7's aborted-donation-holder wake
+and WS-RR RR7.22/RR8.11's replenishment migration both went into
+`cancelIpcBlockingOnCore`, a composite no production path calls, while the live
+`.tcbSuspend` re-composed that composite's parts and carried neither — a
+permanent denial of service against a passive server.  Nothing in the tree could
+say the composite was not on an executed path: the fact was true, checkable and
+unstated.
+
+### And landing it corrected this row's own remedy claim
+
+`docs/REGISTERED_DEBT.md` said the census *"would have failed on the day OD1.7
+put a behavioural step into a transition nothing runs"*.  **It would not.**
+`cancelIpcBlockingOnCore` already existed and was already unreachable, so its
+entry in the pin would not have moved.  A reachability partition sees a **new**
+non-executed transition; it cannot see a **step added inside an
+already-registered one** — which is precisely the defect that motivated it.
+
+What sees that is the census's `standsBesideLive` category: each row names the
+non-executed surface, the live definition that re-composes it, and a **pin
+theorem** whose statement must mention both.  Measured rather than argued —
+inserting one behavioural step into `cancelIpcBlockingOnCore`'s body and not
+into the live path breaks `cancelIpcBlockingOnCore_eq_reclaimed_deschedule` at
+build time.  Two rows are pinned today; extending the pinned set is what closes
+the class rather than the instance, and the census's own docstring says so.
+
+### What the derivation is, and where it fails closed
+
+The domain is every project `def` whose **result type** mentions `SystemState`
+after its binders are stripped — so a predicate `SystemState → Prop` is not in
+it and `SystemState → Except KernelError SystemState` is.  It
+over-approximates (an `Option SystemState` resolver qualifies), which is the
+safe direction for a domain: a member wrongly included must be explained, a
+member wrongly excluded is never looked at.  The commit predicate is
+`ExportCommitDisciplineCensus`'s own, imported rather than restated, so the two
+censuses cannot disagree about what installs kernel state; the auxiliary filter
+is `ReplyStackWriteCensus.isAuxiliary`, reused for the same reason, and the
+three generated shapes it does not reach are named with the measurement that
+found them rather than pattern-matched loosely.  The closure is fuel-bounded
+and an exhausted walk returns what it has, which shrinks the *reachable* set and
+so makes the census demand more.
+
+The 240 are a **pin**, in the shape `scripts/identifier_naming_baseline.json`
+uses: the set is derived, and the list is what makes a change to it visible.  It
+carries no per-entry prose deliberately — 240 shallow reasons would read as
+justification while asserting nothing — and the obligation falls on whoever adds
+the 241st.  Reconciled in both directions: a new non-executed transformer is a
+failure, and so is an entry that has become live, because a pin that no longer
+describes the tree understates coverage as silently as it overstates it.
+
+### Three findings on its first run
+
+**A docstring called a definition "the live `.lifecycleRetype` seam" and nothing
+reaches it.**  `lifecycleRetypeWithCleanupShootdownPerCoreIcache` is the
+CSpaceAddr-authority sibling of the live retype, and its docstring called it one
+of "the two production retype entry points"; the ABI resolves a capability at
+the seam, so there is one authority form a syscall can present and this is not
+it.  `API.lean`'s entry-point table carried the same claim — *"production entry
+point … SMP callers use it"* — in the same row that correctly names the
+Direct-cap form as what the live dispatch routes through, a self-contradiction
+the census turned into a measurement.  Corrected at all three sites, because
+*"the live seam"* on a definition nothing reaches is the reading that let
+`v0.35.90`'s denial of service survive two cuts.
+
+**The revocation family has no syscall arm at all.**  `cspaceRevoke` and its
+nine relatives are outside the live closure, and not because the dispatch
+reaches a different spelling: `API.lean` has no revocation arm, so no capability
+a thread can present revokes anything.  Registered, with the wire-or-retire
+decision owed rather than taken — and until it lands, **v1.0.0 must not claim
+that a capability derivation tree can be revoked by a thread holding the root.**
+
+**Four state transformers are consumed by nothing.**  `cleanupActiveDonation`,
+`timerTickChecked`, `switchDomainChecked` and `endpointCallWithDonation`: no
+live path, no theorem, no suite, no gate.  Measured with WS-HP HP7's discipline
+— over the code view, with test and `scripts/` consumers subtracted separately —
+because counting references naively would have taken sixteen more that a suite
+or a gate does consume.  Registered rather than deleted: two are the unused
+members of a symmetric flow-`Checked` family, and deleting two of a symmetric
+family may be worse than keeping them, which is a call to make explicitly.
+
+### Validation
+
+Seven mutations, each keeping every token and breaking only the relation: a new
+unrecorded transformer, a baseline entry naming nothing, a recorded surface that
+has become live, a pin counterpart that is not live, a pin that does not mention
+both programs, a deleted pin — and the decisive one, a behavioural step inserted
+into the non-executed composite, which fails the build.  A clean-tree control
+accepts.  One mutation that failed to apply was caught by the harness reporting
+the fix as *unverified* rather than passing, which is what an inert mutation
+looks like when it is noticed.
+
+`test_full.sh` exit 0, zero FAIL.  Golden trace byte-identical.
+
 ## v0.35.90 — WS-RR RR8.12 (second cut): the live `.tcbSuspend` completes the reclaim it starts
 
 **A live defect, found by reading, measured before it was fixed.**  WS-OD OD1.7

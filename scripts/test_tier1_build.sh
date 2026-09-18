@@ -108,6 +108,20 @@ run_check "BUILD" lake build SeLe4n.Testing.ReplyStackWriteCensus
 # can, since the classifier's own tier cannot.
 run_check "BUILD" lake build SeLe4n.Testing.StoreReadClassificationCensus
 
+# WS-RR RR8.12 (third cut): the counterpart of the export-commit census, walked
+# the other way.  That one asks how each state-committing `@[export]` commits;
+# this one derives every definition that transforms kernel state and asks which
+# of them a committing export can reach.  It exists because WS-RR RR8.12 found
+# two verified behavioural steps sitting in `cancelIpcBlockingOnCore`, a
+# composite no production path calls, while the live `.tcbSuspend` re-composed
+# its parts and carried neither -- a permanent denial of service against a
+# passive server, and a fact that was true, checkable and unstated.  The
+# partition is derived, the non-executed half is pinned by name in both
+# directions, and the rows that stand beside a live re-composition carry a pin
+# theorem, which is what makes a step added to one side and not the other a
+# build failure rather than a reading nobody did.
+run_check "BUILD" lake build SeLe4n.Testing.KernelTransitionReachabilityCensus
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "f8f4c04728e8ab75e47f9fd082f0c24d437f8dd1",
-      "tree_sha": "eeb4252714170cbd43c235e5b7ef727354157154",
-      "committed_at_utc": "2026-09-18T06:18:28+00:00"
+      "commit_sha": "745cbcd38c88369b00baddaaedb3cc5ddc138520",
+      "tree_sha": "096da5fea8bab4ceeeb969dd9885e31e55061484",
+      "committed_at_utc": "2026-09-18T08:36:14+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a0b2a399df3d4ae29e592c0351a3878279bc0b1f7bbaa2b8d935fb90b51d2b7c"
+    "source_digest": "5788398f6c6ca76f5b720723e5b29a41abe8912b2cb81baa26554c80fc056882"
   },
   "summary": {
-    "module_count": 402,
-    "declaration_count": 21843
+    "module_count": 403,
+    "declaration_count": 21855
   },
   "readme_sync": {
-    "version": "0.35.90",
+    "version": "0.35.91",
     "lean_toolchain": "v4.28.0",
-    "production_files": 332,
-    "production_loc": 389382,
+    "production_files": 333,
+    "production_loc": 389944,
     "test_files": 70,
     "test_loc": 79141,
     "proved_theorem_lemma_decls": 12989,
@@ -185429,7 +185429,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeWithCleanupShootdownPerCore",
-          "line": 1219,
+          "line": 1224,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -185445,7 +185445,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCore_non_vspace",
-          "line": 1234,
+          "line": 1239,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -185464,7 +185464,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCore_initiator_drained",
-          "line": 1258,
+          "line": 1263,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -185485,7 +185485,7 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_facts_local",
-          "line": 1300,
+          "line": 1305,
           "called": [
             "ASID",
             "ObjId",
@@ -185500,7 +185500,7 @@
         {
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_vspaceRoot_id",
-          "line": 1327,
+          "line": 1332,
           "called": [
             "KernelObject",
             "ObjId",
@@ -185513,7 +185513,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanup_vspaceRoot_storeObject",
-          "line": 1338,
+          "line": 1343,
           "called": [
             "Capability",
             "KernelObject",
@@ -185534,7 +185534,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanup_vspaceRoot_storeObject",
-          "line": 1362,
+          "line": 1367,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -185554,7 +185554,7 @@
         {
           "kind": "theorem",
           "name": "retypeStoreObject_tlbEntryConsistent_frame",
-          "line": 1395,
+          "line": 1400,
           "called": [
             "KernelObject",
             "ObjId",
@@ -185580,7 +185580,7 @@
         {
           "kind": "theorem",
           "name": "retype_tlbInvariant_of_storeObject",
-          "line": 1466,
+          "line": 1471,
           "called": [
             "ASID",
             "CoreId",
@@ -185626,7 +185626,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1577,
+          "line": 1582,
           "called": [
             "Capability",
             "CoreId",
@@ -185657,7 +185657,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1625,
+          "line": 1630,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -185688,7 +185688,7 @@
         {
           "kind": "def",
           "name": "retypeIcacheOp",
-          "line": 1726,
+          "line": 1731,
           "called": [
             "ICacheInvalidation",
             "ObjId",
@@ -185702,7 +185702,7 @@
         {
           "kind": "def",
           "name": "retypeIcacheOperand",
-          "line": 1735,
+          "line": 1740,
           "called": [
             "ICacheInvalidation",
             "ObjId",
@@ -185714,7 +185714,7 @@
         {
           "kind": "theorem",
           "name": "retypeIcacheOperand_eq",
-          "line": 1740,
+          "line": 1745,
           "called": [
             "ObjId",
             "SystemState",
@@ -185726,7 +185726,7 @@
         {
           "kind": "theorem",
           "name": "retypeIcacheOp_isDomainWide",
-          "line": 1746,
+          "line": 1751,
           "called": [
             "ObjId",
             "SystemState",
@@ -185738,7 +185738,7 @@
         {
           "kind": "theorem",
           "name": "retypeIcacheOp_cleans_scrub_extent",
-          "line": 1764,
+          "line": 1769,
           "called": [
             "KernelObject",
             "ObjId",
@@ -185753,7 +185753,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_cleaned_by_retype",
-          "line": 1782,
+          "line": 1787,
           "called": [
             "KernelObject",
             "ObjId",
@@ -185771,7 +185771,7 @@
         {
           "kind": "theorem",
           "name": "retypeIcacheOp_discharges_scrub_obligation",
-          "line": 1805,
+          "line": 1810,
           "called": [
             "ICacheInvalidation.covers",
             "KernelObject",
@@ -185788,7 +185788,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache",
-          "line": 1824,
+          "line": 1829,
           "called": [
             "Capability",
             "CoreId",
@@ -185803,7 +185803,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache",
-          "line": 1835,
+          "line": 1853,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -185818,7 +185818,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_error_iff",
-          "line": 1844,
+          "line": 1862,
           "called": [
             "Capability",
             "CoreId",
@@ -185835,7 +185835,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache_error_iff",
-          "line": 1855,
+          "line": 1873,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -185852,7 +185852,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok",
-          "line": 1867,
+          "line": 1885,
           "called": [
             "Capability",
             "CoreId",
@@ -185873,7 +185873,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache_ok",
-          "line": 1883,
+          "line": 1901,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -185894,7 +185894,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore",
-          "line": 1906,
+          "line": 1924,
           "called": [
             "Capability",
             "CoreId",
@@ -185921,7 +185921,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore",
-          "line": 1941,
+          "line": 1959,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -185948,7 +185948,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1977,
+          "line": 1995,
           "called": [
             "Capability",
             "CoreId",
@@ -185975,7 +185975,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_tlbInvalidationConsistent_perCore",
-          "line": 2009,
+          "line": 2027,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -186002,7 +186002,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_perCore_memory_invariants",
-          "line": 2042,
+          "line": 2060,
           "called": [
             "Capability",
             "CoreId",
@@ -269483,6 +269483,376 @@
             "checkWitness",
             "ipcInvariantFull",
             "st",
+            "toList"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Testing.KernelTransitionReachabilityCensus",
+      "path": "SeLe4n/Testing/KernelTransitionReachabilityCensus.lean",
+      "declaration_count": 12,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.KernelTransitionReachabilityCensus",
+          "line": 58,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "kernelStateType",
+          "line": 67,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isCompilerGenerated",
+          "line": 88,
+          "called": [
+            "any",
+            "isAuxiliary"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isStateTransformer",
+          "line": 104,
+          "called": [
+            "isCompilerGenerated",
+            "isProjectConstant",
+            "kernelStateType",
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "liveClosure",
+          "line": 119,
+          "called": [
+            "bind",
+            "contains",
+            "insert",
+            "isProjectConstant",
+            "none",
+            "toList",
+            "value"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "committingExports",
+          "line": 137,
+          "called": [
+            "commitsState",
+            "isProjectConstant",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "nonExecutedTransitionsPlain",
+          "line": 163,
+          "called": [
+            "ackInterruptAudit",
+            "adapterAdvanceTimer",
+            "adapterContextSwitch",
+            "adapterFlushTlbByAsidHw",
+            "adapterFlushTlbByVAddrHw",
+            "adapterFlushTlbHw",
+            "adapterReadMemory",
+            "adapterWriteRegister",
+            "advanceDomainOnCore",
+            "advanceDomainOnCoreN",
+            "advanceTimerState",
+            "applyReplyDonation",
+            "applySequential",
+            "applySequentialWithLockSet",
+            "asidAllocateWithShootdown",
+            "bootAndInitialiseFromPlatform",
+            "bootAndInitialiseFromPlatformOn",
+            "bootAndInitialisePlatform",
+            "bootAndInitialiseRPi5",
+            "cancelBoundDonation",
+            "cancelDonatedDonation",
+            "cancelDonation",
+            "cancelDonationOnCore",
+            "cancelDonationValid",
+            "cancelIpcBlockingOnCore",
+            "cancelIpcBlockingValid",
+            "chooseThread",
+            "chooseThreadEffective",
+            "chooseThreadInDomain",
+            "cleanupActiveDonation",
+            "cleanupPreReceiveDonation",
+            "cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull",
+            "commitKernelAction",
+            "contextSwitchState",
+            "continueFromAcquired",
+            "cspaceLookupMultiLevel",
+            "cspaceLookupPath",
+            "cspaceMutate",
+            "cspaceResolvePath",
+            "cspaceRevoke",
+            "cspaceRevokeCdt",
+            "cspaceRevokeCdtStreaming",
+            "cspaceRevokeCdtStrict",
+            "cspaceRevokeCdtTransactional",
+            "declassifyRun",
+            "declassifyStore",
+            "declassifyStoreFromCore",
+            "declassifyStoreOnCore",
+            "descheduleThread",
+            "dispatchException",
+            "dispatchSynchronousException",
+            "dispatchSyscall",
+            "dispatchWithCap",
+            "donationChainWitness",
+            "endOfInterrupt",
+            "endpointCall",
+            "endpointCallChecked",
+            "endpointCallWithCaps",
+            "endpointCallWithDonation",
+            "endpointReceiveDual",
+            "endpointReceiveDualChecked",
+            "endpointReceiveDualWithCaps",
+            "endpointReply",
+            "endpointReplyChecked",
+            "endpointReplyRecv",
+            "endpointReplyRecvChecked",
+            "endpointReplyRecvOnCore",
+            "endpointReplyRecvWithDonation",
+            "endpointReplyWithDonation",
+            "endpointSendDual",
+            "endpointSendDualChecked",
+            "endpointSendDualWithCaps",
+            "endpointSweepBody",
+            "enqueueIdleThreadOnCore",
+            "ensureRunnable",
+            "faultAbandon",
+            "faultSuspend",
+            "getKernelState",
+            "handleInterrupt",
+            "handleTlbShootdownReqOnCore",
+            "handleTlbShootdownReqOnCorePerCore",
+            "handleYield",
+            "handleYieldChecked",
+            "handleYieldWithBudget",
+            "icFetchOnCore",
+            "icInvalidateOnCore",
+            "interruptDispatchSequence",
+            "lifecycleCleanupPipeline",
+            "lifecyclePreRetypeCleanupWithToken",
+            "lifecycleRetypeObject",
+            "lifecycleRetypeWithCleanup",
+            "lifecycleRetypeWithCleanupShootdown",
+            "lifecycleRetypeWithCleanupShootdownPerCore",
+            "lifecycleRetypeWithCleanupShootdownPerCoreIcache",
+            "lifecycleRevokeDeleteRetype",
+            "lockSetAcquiredState",
+            "lookupObject",
+            "lookupVSpaceRoot",
+            "markTlbBarriered",
+            "markTlbDirty",
+            "migrateRunQueueBucket",
+            "mmioRead",
+            "mmioRead32",
+            "mmioRead64",
+            "mmioReadByte",
+            "mmioWrite",
+            "mmioWrite32",
+            "mmioWrite32W1C",
+            "mmioWrite64",
+            "notificationPurgeBody",
+            "notificationSignal",
+            "notificationSignalBound",
+            "notificationSignalBoundCrossCoreDispatch",
+            "notificationSignalChecked",
+            "notificationWait",
+            "notificationWaitChecked",
+            "notificationWaitCrossCoreDispatch",
+            "processReplenishmentsDue",
+            "processRevokeNode",
+            "propagatePipChainCrossCoreState",
+            "propagatePriorityInheritance",
+            "purgedAndRestored",
+            "registerInterface",
+            "removeRunnable",
+            "removeRunnableValid",
+            "replenishScOnCore",
+            "replyRecvPostPopState",
+            "replyTransferOnCore",
+            "restoreIncomingContext",
+            "restoreIncomingContextChecked",
+            "restoreToReadyMidState",
+            "restoreToReadyOnCore",
+            "restoreToReadyWithWake",
+            "restoredAndConsumed",
+            "resumeThread",
+            "returnDonatedSchedContextValid",
+            "retypeAsidRoundFold",
+            "retypeAsidRoundStep",
+            "retypeFromUntyped",
+            "revokeCdtFoldBody",
+            "revokeCdtReportingStep",
+            "revokeCdtScaffold",
+            "revokePendingTransfersFrom",
+            "runChainExtension",
+            "saveOutgoingContext",
+            "saveOutgoingContextChecked",
+            "schedContextYieldTo",
+            "schedule",
+            "scheduleChecked",
+            "scheduleDomain",
+            "scheduleEffective",
+            "scheduleOrIdleOnCore",
+            "serviceRegisterDependency",
+            "setCurrentThread",
+            "setDomainScheduleChecked",
+            "setIcacheOnCore",
+            "setMCPriorityOp",
+            "setObjStoreLockAction",
+            "setObjectLockAt",
+            "setPriorityOp",
+            "setSchedulerAction",
+            "setThreadCpuAffinityOp",
+            "shootdownCatchUpPerCore",
+            "shootdownRound",
+            "shootdownRoundPerCore",
+            "stageCancelledIpcFrame",
+            "stageTimeoutFrame",
+            "state",
+            "stepPost",
+            "storeObjectChecked",
+            "storeObjectKindChecked",
+            "storeServiceEntry",
+            "storeServiceState",
+            "storeTcbIpcState_fromTcb",
+            "storeTcbPendingMessage",
+            "streamingRevokeBFS",
+            "suspendThread",
+            "sweptAndRestored",
+            "switchDomain",
+            "switchDomainChecked",
+            "syncThreadStates",
+            "syscallEntry",
+            "syscallEntryFromAcquired",
+            "syscallEntryUnderDeclaredLockSet",
+            "syscallEntryUnderLockSet",
+            "syscallLookupReplyId",
+            "timeoutAwareReceive",
+            "timerInterruptHandler",
+            "timerTick",
+            "timerTickBudget",
+            "timerTickChecked",
+            "timerTickOnCorePreDomain",
+            "timerTickOnCorePrepared",
+            "timerTickWithBudget",
+            "tlbFlushByPage",
+            "tlbFlushByPageWithShootdown",
+            "tlbInvalidateOnAllCores",
+            "tlbInvalidateOnAllCoresCoalescing",
+            "tlbInvalidateOnCore",
+            "tlbShootdownBroadcast",
+            "tlbShootdownBroadcastIn",
+            "tlbShootdownDrainOnCore",
+            "tlbShootdownLocal",
+            "tlbShootdownLocalPerCore",
+            "traceStateAt",
+            "vspaceLookup",
+            "vspaceLookupFull",
+            "vspaceMapPageChecked",
+            "vspaceMapPageCheckedWithFlush",
+            "vspaceMapPageCheckedWithFlushPlatform",
+            "withDynamicChainExtension",
+            "withObjectStored",
+            "withObjects",
+            "withPipChainSchedExtension",
+            "writeRegisterState",
+            "writeRestartFrameToTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "nonExecutedTransitionsPrivate",
+          "line": 396,
+          "called": [
+            "censusWitnessBareConsume",
+            "censusWitnessDelegatedStoreHelper",
+            "censusWitnessDelegatedStoreWriter",
+            "censusWitnessDirectLinkWrite",
+            "censusWitnessRawTableWrite",
+            "censusWitnessSplitWriter",
+            "chainWitnessSt1",
+            "chainWitnessSt2",
+            "eq_1",
+            "eq_censusWitnessUserNamed",
+            "privateIn",
+            "resolveExtraCapsDetailed",
+            "resolveExtraCapsGated",
+            "revokePendingTransfersStep",
+            "witnessSt1",
+            "witnessSt2",
+            "witnessSt3",
+            "witnessSt4"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "nonExecutedTransitions",
+          "line": 418,
+          "called": [
+            "nonExecutedTransitionsPlain",
+            "nonExecutedTransitionsPrivate"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "standsBesideLive",
+          "line": 444,
+          "called": [
+            "cancelBoundDonationOnCore",
+            "cancelDonationOnCore",
+            "cancelIpcBlockingOnCore",
+            "cancelIpcBlockingOnCore_eq_reclaimed_deschedule",
+            "cancelIpcBlockingReclaimed",
+            "suspendDonationArm_eq_cancelDonationOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "reconciliationViolations",
+          "line": 468,
+          "called": [
+            "contains",
+            "insert",
+            "nonExecutedTransitions",
+            "state",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pinViolations",
+          "line": 491,
+          "called": [
+            "any",
+            "committingExports",
+            "contains",
+            "insert",
+            "isEmpty",
+            "isStateTransformer",
+            "length",
+            "liveClosure",
+            "nonExecutedTransitions",
+            "none",
+            "of",
+            "reconciliationViolations",
+            "size",
+            "standsBesideLive",
+            "state",
             "toList"
           ]
         }

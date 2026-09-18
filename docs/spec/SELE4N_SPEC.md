@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.90` (`lakefile.toml`) |
+| **Package version** | `0.35.91` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 389,382 across 332 Lean files |
+| **Production LoC** | 389,944 across 333 Lean files |
 | **Test LoC** | 79,141 across 70 Lean test suites |
 | **Proved declarations** | 12,989 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -1826,6 +1826,30 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    reason.  Building the module is the check, and its witnesses — a
    planted bare-commit body, a commit reached only through a helper, a
    read-only body — keep it from passing vacuously.
+
+   Its counterpart walks the same graph the other way.
+   `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (WS-RR
+   RR8.12, `v0.35.91`) derives every project definition whose **result
+   type** transforms `SystemState` and asks which of them a committing
+   export can reach: **528 state transformers, 288 reachable, 240 not**,
+   with the unreachable half pinned by name and reconciled in both
+   directions — a new one is a build failure, and so is an entry that
+   has become live.  It exists because `v0.35.90` found two verified
+   behavioural steps in a composite no production path calls while the
+   live `.tcbSuspend` re-composed that composite's parts and carried
+   neither.  Its commit predicate and its auxiliary filter are imported
+   from the two sibling censuses rather than restated, so the three
+   cannot disagree about what installs kernel state.
+
+   **What it decides and what it does not.**  Reachability sees a *new*
+   non-executed transition; it cannot see a step added inside an
+   already-registered one, which is the defect that motivated it.  The
+   `standsBesideLive` rows are what can: each names the non-executed
+   surface, the live definition that re-composes it, and a **pin
+   theorem** whose statement must mention both, so a step added to one
+   side alone fails the build.  A registered surface with no pin makes
+   no agreement claim, and extending the pinned set is what closes the
+   class rather than the instance.
 
    **SM3.C.11 — dynamic PIP chain-walk locking**: the 3 PIP-invoking
    transitions (`.call`/`.reply`/`.replyRecv`) walk a blocking chain

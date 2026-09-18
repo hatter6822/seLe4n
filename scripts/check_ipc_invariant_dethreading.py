@@ -328,6 +328,11 @@ MACHINERY_PINS = {
     # pin's own payoff -- the machinery it rides is reviewed here like any
     # other.
     ("SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean", "run_cmd"): 1,
+    # WS-RR RR8.12 (third cut): the kernel-transition reachability census.
+    # One `run_cmd`, which derives the state-transformer domain, partitions it
+    # by reachability from the committing exports and reconciles the
+    # unreachable half against its pin.  It mints no declaration.
+    ("SeLe4n/Testing/KernelTransitionReachabilityCensus.lean", "run_cmd"): 1,
     # The census's own loop witness: a `local macro` minting a hygienic
     # clean family theorem, so the no-macro-scope-skip rule is exercised
     # at every elaboration.

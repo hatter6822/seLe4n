@@ -15021,4 +15021,46 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspend
 run_check "INVARIANT" bash -lc 'rg -U -n "^def runSmpCancellationChecks[^\n]*(\n([ \t][^\n]*)?)*runReclaimCompleteSuspendChecks" tests/SmpCancellationSuite.lean'
 
 
+# ---------------------------------------------------------------------------
+# WS-RR RR8.12 (third cut): the kernel-transition reachability census.
+#
+# The gate itself is Tier 1 -- building the module IS the check -- so what Tier
+# 3 pins here is what the census may not quietly stop doing: reusing the two
+# sibling censuses' answers instead of growing its own, and carrying the
+# `standsBesideLive` rows, which are the only part that can see a step added
+# inside an already-registered surface.
+# ---------------------------------------------------------------------------
+
+# The commit predicate and the auxiliary filter are IMPORTED, not restated.
+# Two censuses answering "what installs kernel state" or "what did the compiler
+# generate" differently is this project's one-question-two-answers hazard, and
+# the reachability census is exactly the kind of module that would grow its own.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.ExportCommitDisciplineCensus$' \
+  SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.ReplyStackWriteCensus$' \
+  SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -n 'open SeLe4n\.Testing\.ExportCommitDisciplineCensus \(isProjectConstant commitsState\)' \
+  SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+
+# ...and it must not define a second copy of either.  Mutation-tested by adding
+# a local `commitPrimitives` to the census, which is how the drift would start.
+run_negative_check "INVARIANT" bash -lc 'rg -n "^def commitPrimitives" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+
+# The two pinned rows, each naming surface, live counterpart and pin theorem.
+# A row is what makes a step added to one side and not the other a build
+# failure; losing one is losing the only check on that pair.
+run_check "INVARIANT" bash -lc 'rg -U -n "SeLe4n\.Kernel\.cancelIpcBlockingOnCore,\n[^\n]*SeLe4n\.Kernel\.cancelIpcBlockingReclaimed,\n[^\n]*SeLe4n\.Kernel\.cancelIpcBlockingOnCore_eq_reclaimed_deschedule" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "SeLe4n\.Kernel\.cancelDonationOnCore,\n[^\n]*SeLe4n\.Kernel\.cancelBoundDonationOnCore,\n[^\n]*SeLe4n\.Kernel\.suspendDonationArm_eq_cancelDonationOnCore" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+
+# The pin check asks for BOTH names in the theorem's statement.  A check that
+# asked only for the surface would accept a theorem relating it to anything,
+# which is a presence check wearing the relation's comment.
+run_check "INVARIANT" rg -n 'if !used\.contains surface \|\| !used\.contains counterpart then' \
+  SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+
+# Tier 1 runs it.  A census nothing builds reports nothing.
+run_check "INVARIANT" rg -n 'lake build SeLe4n\.Testing\.KernelTransitionReachabilityCensus' \
+  scripts/test_tier1_build.sh
+
+
 finalize_report

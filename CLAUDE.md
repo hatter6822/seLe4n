@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.90.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.91.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5916,6 +5916,47 @@ code may assume:
   through the six stages after G2 is a registered obligation
   (`docs/REGISTERED_DEBT.md` §A), as is the single-core reference path, which
   cannot see the shared step across the import boundary and still strands.
+- **A definition that transforms kernel state is wired or recorded** (WS-RR
+  RR8.12 third cut, `v0.35.91`).
+  `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (Tier 1) derives every
+  project `def` whose **result type** mentions `SystemState` — 528 of them —
+  partitions that domain by whether one of the 7 committing `@[export]`s can
+  reach it (288 do), and reconciles the other 240 against a pin in **both**
+  directions: a new non-executed transformer fails, and so does an entry that
+  has become live.  New code adding a state transformer that no seam runs must
+  either wire it or record it there.
+
+  Four things it decides and one it does not.  (1) **The commit predicate and
+  the auxiliary filter are imported, not restated** —
+  `ExportCommitDisciplineCensus.commitsState` and
+  `ReplyStackWriteCensus.isAuxiliary` — so the three censuses cannot disagree
+  about what installs kernel state or about what the compiler generated; the
+  three generated shapes the second does not reach are named with the
+  measurement that found them.  (2) **The domain over-approximates on purpose**:
+  an `Option SystemState` resolver qualifies, which is the safe direction, since
+  a member wrongly included must be explained and a member wrongly excluded is
+  never looked at.  (3) **The 240 carry no per-entry prose**, deliberately —
+  that many shallow reasons read as justification while asserting nothing — so
+  the obligation falls on whoever adds the 241st.  (4) **Two known residues are
+  named in the pin's docstring rather than left to read as unexamined**: the
+  revocation family, which has no syscall arm at all, and four transformers
+  consumed by nothing; both carry register rows, because each needs the
+  wire-or-retire judgement `v0.35.78` made for the capability-reference table.
+
+  **What it does not decide, and this corrects the row that asked for it**:
+  reachability sees a *new* non-executed transition and **cannot** see a step
+  added inside an already-registered one — which is the defect that motivated
+  it, since `cancelIpcBlockingOnCore` already existed and was already
+  unreachable.  The register row claiming the census "would have failed on the
+  day" that step was added was wrong and is corrected.  What sees it is
+  `standsBesideLive`: a row names the non-executed surface, the live definition
+  that re-composes it, and a **pin theorem** whose statement must mention both,
+  so a step added to one side alone fails the build — measured by inserting one
+  into `cancelIpcBlockingOnCore` and watching
+  `cancelIpcBlockingOnCore_eq_reclaimed_deschedule` stop elaborating.  Two rows
+  are pinned today; a registered surface with no pin makes **no** agreement
+  claim, and extending the pinned set is what closes the class rather than the
+  instance.
 - **An endpoint queue's membership lives in its members' TCBs, and those members'
   labels differ** (WS-RR RR8.8, `v0.35.83`).  Three facts new code must respect,
   and the first is the one that decides the other two.  (1) **The admission gate
