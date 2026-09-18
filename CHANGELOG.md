@@ -1,3 +1,64 @@
+## v0.35.102 — the frozen surface is the execute phase, and its row said otherwise
+
+Documentation-only, and a correction to this project's own register rather than to
+its code.  Reported by the maintainer against `docs/REGISTERED_DEBT.md`'s open
+frozen-fidelity row, which called `SeLe4n/Kernel/FrozenOps/` *"a hand-written second
+implementation of kernel transitions, kept deliberately so the live ones can be
+differentially compared against it"*.  That names the interim **method** and not the
+**purpose**, and naming the method reads the severity down.
+
+**What it is.**  `FrozenOps` is the *execute* phase of this project's
+build → freeze → execute architecture.  The intent is in the code, not only in the
+prose: `Model.freeze` takes the **builder**'s `IntermediateState` to a
+`FrozenSystemState`, and `Platform/Boot.lean`'s `bootToRuntime_invariantBridge_empty`
+— *boot to runtime* — proves
+`proofLayerInvariantBundle ist.state ∧ apiInvariantBundle_frozen (freeze ist)`.  A
+bridge that carries the invariant bundle *across the freeze* is worth proving only if
+the runtime is meant to run on the frozen representation.
+
+**What the tree does, measured rather than asserted.**  `API.lean` contains zero
+occurrences of `FrozenOps` or `frozen`; `kernelStateRef` is an `IO.Ref SystemState`;
+`bootAndInitialiseFromPlatformOn` installs `ist.state`, never `freeze ist`; and
+`Model.freeze` has **no executable caller anywhere under `SeLe4n/`** — every
+occurrence in `Boot.lean` is inside a theorem statement.  The freeze is proved and
+not run.  So the two implementations are an **interim**, the differential is the
+evidence that would license ending it, and every divergence the row records is a
+*deferred kernel defect* rather than a model one — the frozen pop missing
+`donationRecipientAcceptable`, `frozenSchedContextConfigure` propagating neither
+thread-owned parameter, the frozen bind carrying one of four refusals.  Those are
+operations the execute phase would run.
+
+**Three corrections follow, and two are defects in their own right.**
+
+1. **A mitigation resting on another row's non-closure is a deferral, not a
+   defence.**  The row's mitigation column read *"Not a soundness gap in the shipped
+   kernel: `FrozenOps` is linked into no image and is built only by its own
+   `lean_exe`."*  The second clause was retired at `v0.35.60`, which put the
+   subsystem in the library root — it compiles into the static archive like any
+   module — and the clause survived five cuts past its own retraction, in the column
+   a reader takes as evidence.  The first clause holds only while C.1 row 14 stays
+   open, which is a row this register schedules to close.  Both are stated as such,
+   with the measurement.
+
+2. **C.1 row 14 named a performance gate and no correctness gate.**  The dispatch
+   switch was registered as gated on RPi5 freeze→operate→thaw benchmarks "that do
+   not exist", and on nothing else — so as written it admitted taking the switch on
+   benchmark evidence alone, while the fidelity row was still open.  That is a
+   precondition living in neither row.  Row 14 now names both gates and says the
+   correctness one comes first; the fidelity row now names row 14 as the consumer of
+   its remedy.  The two are one piece of work read from opposite ends.
+
+3. **`FrozenOps/Core.lean`'s own header carried the same single gate**, and said
+   "for a future architecture" of a phase whose invariant bridge is already proved.
+   It now states the architecture it implements, the four measurements that show the
+   dispatch is not wired, and both gates.
+
+`CLAUDE.md` / `AGENTS.md` carry the correction at both sites that described the
+surface by its interim shape.  No Lean definition, theorem, fixture or gate changed;
+the golden trace is byte-identical.
+
+Refs: docs/REGISTERED_DEBT.md table C (frozen fidelity) and C.1 row 14
+
 ## v0.35.101 — the frozen surface's re-bucket has one answer, and three askers reach it
 
 **Two P2 findings on PR #897, both confirmed, and a third the sweep found.**  The

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.101.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.102.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1981,6 +1981,26 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   section's own strongest rule (*one question answered in two places will
   diverge*) meeting the artefact deliberately built to be two places.
 
+  **And that artefact is not a test double** (the maintainer's correction,
+  `v0.35.102`).  `FrozenOps` is the *execute* phase of this project's
+  build → freeze → execute architecture: `Model.freeze` takes the **builder**'s
+  `IntermediateState` to a `FrozenSystemState`, and `Platform/Boot.lean`'s
+  `bootToRuntime_invariantBridge_empty` — *boot to runtime* — carries the
+  invariant bundle across the freeze into `apiInvariantBundle_frozen`, which is
+  a bridge worth proving only if the runtime is meant to run on the frozen
+  representation.  What is missing is the dispatch: `API.lean` contains no
+  occurrence of `FrozenOps`, `kernelStateRef` holds a `SystemState`, the boot
+  installs `ist.state` rather than `freeze ist`, and `Model.freeze` has no
+  executable caller anywhere under `SeLe4n/` — every occurrence in `Boot.lean`
+  is inside a theorem statement.  So the duplication is an **interim**, the
+  differential is the evidence that would license ending it, and every
+  divergence found is a *deferred kernel defect* rather than a model one.
+  Calling it a second implementation *kept so the live one can be compared
+  against it* names the interim method and not the purpose, which reads the
+  severity down; the register row says so since `v0.35.102`, and C.1 row 14 —
+  the dispatch switch — gated on *benchmarks* and named no correctness gate at
+  all, so the two preconditions lived in neither row.
+
   **What changed, and what did not.**  Both causes are now rows in
   `docs/REGISTERED_DEBT.md` table C with closure targets before v1.0.0, because
   the remedies are a reconciliation against the real tools and a derived
@@ -3497,8 +3517,8 @@ falsified `boundThreadPriorityConsistent`.  Every one of those was invisible to
 the promotion, because putting a module in the library root fixes which
 *definitions* a gate can see and says nothing about whether a mirror **agrees**
 with what it mirrors.  That second half is `docs/REGISTERED_DEBT.md` table C's
-open row — a hand-written second implementation whose fidelity is checked by a
-hand-written scenario list — and the measurement here is what it costs: the three
+open row — a second implementation (the architecture's own *execute* phase, not a
+test double) whose fidelity is checked by a hand-written scenario list — and the measurement here is what it costs: the three
 missing refusals sit on an operation `frozenBranchDifferentiallyChecked` does not
 name, so no `frozenRunAgrees` comparison could have reached them and none did.
 **Promotion into the root is necessary and is not the fidelity check**; until the

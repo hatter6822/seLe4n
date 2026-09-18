@@ -43,12 +43,26 @@ Decision at the time: **defer as post-1.0 hardening candidate**. Rationale:
    "import weight" while a differential mirror sat outside every derived gate
    domain weighed the cheap axis and not the expensive one.
 
-These modules implement the frozen-state kernel monad for a future
-architecture where syscall processing operates on immutable
-`FrozenSystemState` snapshots. Currently exercised by test suites only.
+These modules implement the frozen-state kernel monad for the **execute**
+phase of this project's build → freeze → execute architecture, in which syscall
+processing operates on immutable `FrozenSystemState` snapshots.  That is not a
+prospective use invented here: `Model.freeze` takes the *builder*'s
+`IntermediateState` to a `FrozenSystemState`, and `Platform/Boot.lean`'s
+`bootToRuntime_invariantBridge_empty` — *boot to runtime* — already proves
+`proofLayerInvariantBundle ist.state ∧ apiInvariantBundle_frozen (freeze ist)`,
+a bridge worth proving only if the runtime runs on the frozen representation.
+Currently exercised by test suites only: `API.lean` contains no occurrence of
+`FrozenOps`, `kernelStateRef` holds a `SystemState`, and `Model.freeze` has no
+executable caller anywhere under `SeLe4n/` — every occurrence in `Boot.lean` is
+inside a theorem statement.  The freeze is proved and not run.
+
 Integration into the production API layer is a post-1.0 hardening candidate
-(registered in `docs/REGISTERED_DEBT.md`, Registered debt index, C.1)
-pending RPi5 benchmark data.
+(registered in `docs/REGISTERED_DEBT.md`, Registered debt index, C.1 row 14).
+**Two gates, and until `v0.35.102` only one was written down**: the RPi5
+freeze→operate→thaw benchmark data AG8-D point 4 names, *and* the frozen
+surface agreeing with the live one on every operation it would dispatch — table
+C's open frozen-fidelity row.  A switch taken on benchmark evidence alone would
+promote a mirror known to diverge; the correctness gate comes first.
 (AE2-E / U-02 / AG8-D)
 
 **Subsystem status:** FrozenOps has no production *caller* — the kernel API
