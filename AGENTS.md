@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.111.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.112.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,14 +203,14 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~71804 lines)
+- `CHANGELOG.md` (~72226 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23662 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7984 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7834 lines)
 - `SeLe4n/Kernel/API.lean` (~7592 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6367 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6390 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5881 lines)
 - `SeLe4n/Platform/Boot.lean` (~5805 lines)
@@ -220,16 +220,17 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5097 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
+- `tests/NegativeStateSuite.lean` (~4545 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~4454 lines)
-- `tests/NegativeStateSuite.lean` (~4422 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4225 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3898 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3813 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3811 lines)
+- `tests/SmpIpcSuite.lean` (~3796 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
-- `tests/SmpIpcSuite.lean` (~3716 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~3682 lines)
 - `SeLe4n/Platform/FFI.lean` (~3595 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~3439 lines)
@@ -239,7 +240,6 @@ To find files that need pagination today, run:
 - `tests/OperationChainSuite.lean` (~3289 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3275 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3247 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~3207 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
@@ -314,9 +314,9 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1663 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1624 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1617 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
 - `SeLe4n/Kernel/FrozenOps/Core.lean` (~1565 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
@@ -407,6 +407,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `tests/An10CascadeSuite.lean` (~854 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~851 lines)
+- `SeLe4n/Testing/InvariantChecks.lean` (~851 lines)
 - `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~839 lines)
 - `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~833 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
@@ -421,8 +422,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 - `docs/DEVELOPMENT.md` (~803 lines)
-- `SeLe4n/Testing/InvariantChecks.lean` (~801 lines)
-- `docs/REGISTERED_DEBT.md` (~801 lines)
+- `docs/REGISTERED_DEBT.md` (~802 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -6182,7 +6182,7 @@ code may assume:
   `endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous` — *the
   receive leg moves no thread's home core*, because `determineTargetCore` reads
   `cpuAffinity` and only `.tcbSetAffinity` writes it — and
-  `endpointReceiveHandoffReplenishCores_of_rendezvous` states that the pre-state
+  `endpointReceiveHandoffReplenishCores_of_call_rendezvous` states that the pre-state
   list **equals** the pair the donation resolves, not that it agrees with or
   over-approximates it.  So this *closes*, for `.receive`, the
   footprint/transition resolution asymmetry WS-HP HP10.8 registered for the reply
@@ -6474,6 +6474,107 @@ code may assume:
   teardown they complete now — *when a question has one owner and an asker that
   cannot see it, the owner is in the wrong layer* — keeping the `SeLe4n.Kernel`
   namespace they were declared in, so the move renames nothing.
+- **...and its replenish segment follows the donation's own guard, not "is the send
+  queue non-empty"** (PR #897 Codex review, `v0.35.112`).  Cut 8a-ii's own docstring
+  rejected over-declaration in as many words — *a segment naming two cores would be
+  a footprint wider than its operation, and lock contention is an observable channel
+  (SM8.D's CC-5)* — and applied that to the **block** path only.  The segment keyed
+  on `receiveRendezvousSender?` while WS-OD OD3.6's donation fires only on a dequeued
+  **`Call`**, so **every ordinary `seL4_Send` rendezvous declared two
+  replenish-queue write locks for a migration that provably does not happen**: the
+  defect the paragraph above it rejects, on the more common path, which is this
+  file's own *a fix applied at one site and not its siblings*.  Seven things new code
+  must respect.
+
+  (1) **The pre-state guard and the post-state guard are two spellings of one
+  question and both must exist.**  `rendezvousSenderIsCall` is
+  `rendezvousDequeuedCall`'s pre-state sibling, clause for clause, because a dequeued
+  `Call` sender is `.blockedOnCall` *before* the receive leg and `.blockedOnReply`
+  *after* it.  Asking for the post-state constructor at the pre-state answers `false`
+  for exactly the sender that *will* donate, so a footprint derived from it would
+  **omit** a lock the transition writes — and a footprint that omits a written lock
+  is false, where one wider than its operation is merely expensive.  That asymmetry
+  is the whole reason the narrowing is safe in one direction and not the other.
+
+  (2) **It reads the leg's OWN branch condition.**
+  `endpointReceiveDualOnCore` branches on the TCB `endpointQueuePopHead` *returns*,
+  which no consumer could name until
+  `endpointQueuePopHead_popped_tcb_eq_lookup` — the twin of WS-RR RR2.6's
+  `endpointQueuePopHead_popped_eq_head` — said that record **is**
+  `lookupTcb st head`.  Without it a pre-state resolver is a *second* reading of the
+  same question, which is the shape this file spends its length retiring.
+
+  (3) **The licence is unconditional in the result, and that is why it names
+  `.blockedOnSend` rather than "not a `Call`".**  On the refusal branches the leg
+  returns the *pre*-state, where a sender already `.blockedOnReply` would satisfy the
+  weaker hypothesis and refute the conclusion; `ipcStateQueueMembershipConsistent` is
+  what says `.blockedOnSend` is the reachable non-`Call` shape on a send queue.  The
+  proof needs **no** distinctness between sender and receiver, because the last write
+  at the sender's key is `.ready` either way.
+
+  (4) **The rename is the claim.**  `_of_rendezvous` asserted the
+  segment/migration equality for *every* rendezvous, which on a plain `Send` is now
+  false (the segment is `[]`), so it is `_of_call_rendezvous` with the hypothesis the
+  name promises, and a Tier 3 negative refuses the retired spelling.  Its four
+  citations were swept, and the two positive anchors **failed loudly** at the rename —
+  which is *sweep what was pinning the thing you deleted* working in the direction it
+  is meant to.
+
+  (5) **The residual is a LAYERING defect, registered rather than glossed — and
+  the first statement of it was FALSE, which is the part worth keeping.**  A
+  dequeued `Call` whose donation prerequisites fail migrates nothing either, and the
+  transition's guard for that is `callDonationSchedContext?`; transporting its
+  pre-state answer across the receive leg is the backward `sameSchedContextBindings`
+  frame.  This item first said that frame's four per-primitive members, which sit in
+  `IPC/Invariant/Structural/DualQueueMembership.lean`, are unreachable from the
+  module that declares the footprint, "so the transport cannot be stated there at
+  all".  They are reachable: `EndpointReply.lean` → `EndpointCall` →
+  `Scheduler.Operations.PerCoreWake` → `PerCoreSwitchToThread` →
+  `PerCoreChooseThread` → `Scheduler.Invariant.PerCore` → `CrossSubsystem` →
+  `Capability.Invariant.Defs` → `IPC.Invariant` → `IPC.Invariant.Structural`, every
+  module production, with the first edge already present at `v0.35.111`.  **A
+  module's layer is a fact about the import closure, and a nine-edge path is not
+  visible in the two names at its ends** — RR8.4's *a plan row's premise is a
+  claim* a second time, and what catches it is this file's own *resolve the text
+  into the structure it stands for* applied to the module graph: compute the
+  closure, never infer it from paths — and the decisive check is cheaper still:
+  `#check` the name from a module that imports the asker and let the elaborator
+  answer, which is what settled this one.  What is actually left is two smaller
+  things.
+  **No** `sameSchedContextBindings` frame exists for `endpointReceiveDual` or
+  `endpointReceiveDualWithCaps` at all — the two theorems that need one
+  (`endpointReceiveDual_preserves_donationBudgetTransfer`,
+  `endpointReceiveDual_preserves_donationOwnerUnique`) each inline the whole
+  rendezvous composition, so it must be **extracted**, which is a de-duplication and
+  the evidence the frame was missing rather than merely unnamed.  And
+  `IPC/Operations/Donation.lean`'s closure does not contain
+  `IPC/Invariant/Defs.lean` nor the reverse, so a bridge from that frame to
+  `callDonationSchedContext?` has no home beside the resolver — *that* is *a shared
+  answer must be reachable from every asker* (`v0.35.59`), with the same remedy,
+  move the owner down, keeping the `SeLe4n.Kernel` namespace so that nothing is
+  renamed.  It is table C's row with Cut 9 as its deadline.  So the further
+  narrowing is **available at a placement cost** rather than blocked, and it is
+  deferred because a relocation and a 130-line extraction are not a footprint
+  narrowing.
+
+  (6) **The claim is made about the step the ARM runs, not only about the donation.**
+  `API.lean`'s `.receive` arm calls `applyReceiveRendezvousHandoff`, which is the
+  donation **and** WS-OD OD3.14's priority-inheritance walk under one guard, so
+  `applyReceiveRendezvousHandoff_eq_self_of_blockedOnSend` sits beside the
+  donation-level fact — *a proxy is not the fact*, and a consumer reaching for the
+  component would be reasoning about a sub-step of the transition it brackets.  The
+  walk writes run queues rather than replenish queues (declared dynamically through
+  `pipChainSchedFootprint`), so the replenish segment's own licence is still the
+  donation half; both exist so neither can be read as the other.
+
+  (7) **The witness computes the retired reading beside the live one.**
+  `tests/SmpIpcSuite.lean` §3.26 drives both shapes from one base state through the
+  live operations and shows the two readings **agreeing** on the `Call` shape (the
+  control) and **disagreeing** on the `Send` shape, where the retired one declares
+  two cores and the live one none.  It then asserts the donation step moves no
+  replenishment, on the replenish *entries* rather than on state equality, because
+  that is the proposition the footprint is about — `SystemState` has no
+  `DecidableEq`, and reaching for one would have been a claim about the wrong thing.
 - **A definition that transforms kernel state is wired or recorded** (WS-RR
   RR8.12 third cut, `v0.35.91`).
   `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (Tier 1) derives every

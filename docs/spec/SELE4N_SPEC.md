@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.111` (`lakefile.toml`) |
+| **Package version** | `0.35.112` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 394,244 across 333 Lean files |
-| **Test LoC** | 80,133 across 70 Lean test suites |
-| **Proved declarations** | 13,097 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 394,808 across 333 Lean files |
+| **Test LoC** | 80,213 across 70 Lean test suites |
+| **Proved declarations** | 13,115 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4330,7 +4330,7 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   `endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous` says the
   receive leg moves no thread's home core (`determineTargetCore` reads
   `cpuAffinity`, and only `.tcbSetAffinity` writes it), and
-  `endpointReceiveHandoffReplenishCores_of_rendezvous` states that the pre-state
+  `endpointReceiveHandoffReplenishCores_of_call_rendezvous` states that the pre-state
   list **equals** the pair WS-OD OD3.6's donation resolves at the post-receive-leg
   state it runs on.  So the footprint a bracket acquires before the transition and
   the migration the transition then performs cannot name different cores, which
@@ -4338,7 +4338,38 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   registered for the reply arm's origin member.  On the block path the segment is
   `[]` (`…_no_replenishQueue_of_blocked`), since a receive that parks itself donates
   nothing and a footprint wider than its operation carries contention that says
-  nothing about it (SM8.D's CC-5).  The declaration is true in both directions by
+  nothing about it (SM8.D's CC-5).
+
+  **And on a plain `Send` rendezvous it is `[]` too** (PR #897 Codex review,
+  `v0.35.112`).  That last sentence was written about the block path and not applied
+  to its sibling: the segment keyed on `receiveRendezvousSender?` — *is there a
+  queued sender at all* — while WS-OD OD3.6's donation fires only on a dequeued
+  **`Call`**, so every ordinary `seL4_Send` rendezvous declared two replenish-queue
+  write locks for a migration that provably does not happen.  It keys on
+  `receiveRendezvousCallSender?` now, narrowed by `rendezvousSenderIsCall` — the
+  **pre**-state sibling of `rendezvousDequeuedCall`, which must be spelled separately
+  because a dequeued `Call` sender is `.blockedOnCall` before the leg runs and
+  `.blockedOnReply` after it; asking the post-state question at the pre-state would
+  answer `false` for exactly the sender that *will* donate, and a footprint that
+  omits a written lock is false where one wider than its operation is merely
+  expensive.  The licence is
+  `endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend` (the leg
+  leaves the dequeued sender `.ready`, so the post-state guard is false), the payoffs
+  are `applyReceiveRendezvousDonation_eq_self_of_blockedOnSend` and
+  `…_no_replenishQueue_of_blockedOnSend`, and `tests/SmpIpcSuite.lean` §3.26
+  measures both shapes against the retired reading.  **What remains over-declared** is
+  a dequeued `Call` whose donation prerequisites fail; narrowing on
+  `callDonationSchedContext?` needs its pre-state answer transported across the receive
+  leg by the backward `sameSchedContextBindings` frame, and two things are in the way:
+  no such frame exists for `endpointReceiveDual` or `endpointReceiveDualWithCaps` at
+  all (the two theorems needing one inline the whole rendezvous composition), and
+  `IPC/Operations/Donation.lean`'s import closure contains neither
+  `IPC/Invariant/Defs.lean`, where the frame is declared, nor the reverse — so a bridge
+  to the resolver has no home beside it.  The frames themselves *are* reachable from
+  the module declaring the footprint, which an earlier statement of this paragraph
+  denied; the deferral is therefore a placement cost, not an impossibility, and it is
+  registered in `docs/REGISTERED_DEBT.md` table C with WS-RR RR8.12 Cut 9 as its
+  deadline.  The declaration is true in both directions by
   theorem:
   `schedLockSet_endpointReceiveOnCore_covers_donation` covers the donation's own
   footprint member for member, hence the SM5.H migration's two slots, while

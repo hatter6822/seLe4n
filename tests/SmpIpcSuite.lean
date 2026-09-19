@@ -3676,6 +3676,85 @@ private def runMiddleRemovalDepthFourChecks : IO Unit := do
     assertBool "PAYOFF: the cut frame's own downward link is cleared by the removal"
       (pushLinksOf post depth3Reply == some (none, none))
 
+-- ============================================================================
+-- §3.26 the `.receive` replenish segment is keyed on the donation's own guard
+--        (WS-RR RR8.12, PR #897 Codex review)
+-- ============================================================================
+
+/-! The narrowing is pinned definitionally — reverting the segment breaks
+`endpointReceiveHandoffReplenishCores_of_blockedOnSend` at elaboration — so what no
+theorem states is that **both shapes are reachable by the live operations and the
+segment differs between them**.  That is this section's whole subject.
+
+The retired reading lives here, `private`, and nowhere else: computed beside the
+live one on both shapes, so the assertions are known to discriminate rather than
+merely to pass. -/
+
+/-- The superseded segment: keyed on *is there a queued sender at all*, which named
+both cores on every rendezvous including a plain `Send`. -/
+private def senderKeyedReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) : List CoreId :=
+  match receiveRendezvousSender? st endpointId with
+  | some sender => [determineTargetCore st sender, determineTargetCore st receiver]
+  | none        => []
+
+private def runReceiveReplenishSegmentChecks : IO Unit := do
+  IO.println "--- §3.26 WS-RR RR8.12: the `.receive` replenish segment follows the donation ---"
+  -- (a) a `Call` rendezvous: the donation can migrate, so both cores are declared.
+  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
+  | none => assertBool "RR8.12 setup: the no-receiver call parks the caller" false
+  | some (stCall, _) =>
+    assertBool "the caller parks `.blockedOnCall`" (ipcStateIs stCall donClient (.blockedOnCall donEp))
+    assertBool "the pre-state guard fires on a queued Call"
+      (decide (rendezvousSenderIsCall stCall donClient = true))
+    assertBool "...so the narrowed resolver names the queued caller"
+      (decide (receiveRendezvousCallSender? stCall donEp = some donClient))
+    assertBool "...and the segment declares the donor's and the receiver's homes"
+      (decide (endpointReceiveHandoffReplenishCores stCall donEp donServer
+                 = [determineTargetCore stCall donClient,
+                    determineTargetCore stCall donServer]))
+    assertBool "CONTROL: the retired reading agrees here — both name two cores"
+      (decide (senderKeyedReplenishCores stCall donEp donServer
+                 = endpointReceiveHandoffReplenishCores stCall donEp donServer))
+  -- (b) a plain `Send` rendezvous: the donation is the identity, so NO replenish
+  --     lock is declared.  This is the shape the superseded segment over-declared.
+  match okPair (endpointSendDualOnCore donEp donClient IpcMessage.empty c0
+      stHandoffActiveBase) with
+  | none => assertBool "RR8.12 setup: the no-receiver send parks the sender" false
+  | some (stSend, _) =>
+    assertBool "the sender parks `.blockedOnSend`" (ipcStateIs stSend donClient (.blockedOnSend donEp))
+    assertBool "the pre-state guard is false on a queued plain Send"
+      (decide (rendezvousSenderIsCall stSend donClient = false))
+    assertBool "...so the narrowed resolver names nobody"
+      (decide (receiveRendezvousCallSender? stSend donEp = none))
+    assertBool "PAYOFF: the segment declares NO replenish-queue lock"
+      (decide (endpointReceiveHandoffReplenishCores stSend donEp donServer = []))
+    -- The decisive comparison: same state, same endpoint, same receiver; the
+    -- retired reading declares two cores for a migration that does not happen.
+    assertBool "NEGATIVE (the defect): the retired reading declared TWO cores here"
+      (decide ((senderKeyedReplenishCores stSend donEp donServer).length = 2))
+    -- ...and the reason it is sound to declare none: the donation step is the
+    -- identity, because the receive leg leaves the dequeued sender `.ready`.
+    match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stSend) with
+    | none => assertBool "RR8.12: the receive completes the plain-Send rendezvous" false
+    | some (stRecv, (sender, _)) =>
+      assertBool "the receive dequeues the parked sender" (sender == donClient)
+      assertBool "the dequeued sender is woken `.ready`, not `.blockedOnReply`"
+        (ipcStateIs stRecv donClient .ready)
+      assertBool "...so the post-state donation guard is false"
+        (decide (rendezvousDequeuedCall stRecv donClient = false))
+      -- Asserted on the replenish queues themselves rather than on state equality:
+      -- what the footprint claims is that no replenishment moves, and that is the
+      -- proposition, not "the states are equal" (which `SystemState` cannot decide).
+      assertBool "...and the donation step moves NO replenishment on either core"
+        (match applyReceiveRendezvousDonation stRecv donServer donClient with
+         | .ok stDon =>
+             (replenishEntriesOn stDon (determineTargetCore stRecv donClient)
+                == replenishEntriesOn stRecv (determineTargetCore stRecv donClient))
+             && (replenishEntriesOn stDon (determineTargetCore stRecv donServer)
+                == replenishEntriesOn stRecv (determineTargetCore stRecv donServer))
+         | .error _ => false)
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -3706,6 +3785,7 @@ def runSmpIpcChecks : IO Unit := do
   runDonationOriginIdReuseChecks
   runDonationOriginRedirectChecks
   runReceivePriorityHandoffChecks
+  runReceiveReplenishSegmentChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

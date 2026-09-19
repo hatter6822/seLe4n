@@ -1,3 +1,158 @@
+## v0.35.112 — the `.receive` replenish segment follows the donation's own guard
+
+WS-RR RR8.12 Cut 8a-ii's docstring rejected over-declaration in as many words —
+*"a segment naming two cores would be a footprint wider than its operation, which
+this project rates as a real cost, lock contention being an observable channel
+(SM8.D's CC-5)"* — and applied that reasoning to the **block** path only.  The
+segment keyed on `receiveRendezvousSender?`, which asks *is there a queued sender
+at all*, while WS-OD OD3.6's donation fires only on a dequeued **`Call`**.  So
+**every ordinary `seL4_Send` rendezvous declared two replenish-queue write locks
+for a migration that provably does not happen** — the same defect the paragraph
+above it rejects, on the more common path, which is this tree's *a fix applied at
+one site and not its siblings* shape.  Reported by Codex on PR #897.
+
+**The guard is the pre-state form of the donation's own, and the two must be
+spelled separately.**  `rendezvousSenderIsCall` is `rendezvousDequeuedCall`'s
+pre-state sibling, clause for clause: a dequeued `Call` sender is `.blockedOnCall`
+*before* the receive leg runs and `.blockedOnReply` *after* it.  Asking for the
+post-state constructor at the pre-state would answer `false` for exactly the sender
+that *will* donate, so a footprint derived from it would **omit** a lock the
+transition writes — and a footprint that omits a written lock is false, where one
+wider than its operation is merely expensive.  `receiveRendezvousCallSender?` is
+`receiveRendezvousSender?` narrowed by it, so the arm's sender member, the object
+domain's `receiveRendezvousDonatedSc?` and this segment cannot disagree about which
+thread a rendezvous dequeues.
+
+**And it reads the leg's own branch condition rather than a copy of it.**
+`endpointReceiveDualOnCore` branches on the TCB `endpointQueuePopHead` *returns*,
+which no consumer could name: `endpointQueuePopHead_popped_tcb_eq_lookup` is the
+twin of WS-RR RR2.6's `endpointQueuePopHead_popped_eq_head` and says that record
+**is** `lookupTcb st head`.  Without it the pre-state resolver would be a second
+reading of the same question.
+
+**The licence.**
+`endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend`: on a plain
+`Send` rendezvous the leg stores `.ready` at the dequeued sender's key, wakes it
+(`getTcb?`-invisible on a `.ready` thread) and then stores the *receiver* — and
+whether the two ids coincide is immaterial, because the last write at the sender's
+key is `.ready` either way, which is why the proof needs no distinctness
+hypothesis.  It is **unconditional in the result, refusal branches included**: those
+return the pre-state, where the sender is `.blockedOnSend` and so not
+`.blockedOnReply`.  That is why the hypothesis names `.blockedOnSend` rather than
+"not a `Call`" — a pre-state sender already `.blockedOnReply` satisfies the weaker
+hypothesis and refutes the conclusion on a refusal, and
+`ipcStateQueueMembershipConsistent` is what says `.blockedOnSend` is the reachable
+non-`Call` shape for a thread on a send queue.  The `ipcUnwrapCaps` tail costs
+nothing: `ipcUnwrapCaps_getTcb?_eq` joins the existing forward and backward TCB
+frames into an equality, so cap transfer cannot revive the guard.
+
+**The payoffs.**  `applyReceiveRendezvousDonation_eq_self_of_blockedOnSend` — the
+donation step is the **identity** there — its arm-level counterpart
+`applyReceiveRendezvousHandoff_eq_self_of_blockedOnSend`, because *a proxy is not the
+fact*: `API.lean`'s `.receive` arm runs `applyReceiveRendezvousHandoff`, which is the
+donation **and** WS-OD OD3.14's priority-inheritance walk under one guard, so on a
+plain `Send` rendezvous the whole hand-off is the identity and the donation alone is a
+component rather than the arm's stage — and
+`schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blockedOnSend`, the sibling
+of the existing `_of_blocked`, for the path that used to declare two.
+`schedLockSet_endpointReceiveOnCore_covers_donation` is conditioned on the `Call`
+shape, because that is the only shape on which there is a migration to cover; a
+coverage claim on a plain `Send` would be covering nothing while reading like
+coverage.
+
+**A rename, and its sweep.**
+`endpointReceiveHandoffReplenishCores_of_rendezvous` held the segment/migration
+equality for *every* rendezvous, which is precisely the over-declaration removed
+here — on a plain `Send` the segment is `[]` and the equality is false.  It is
+`_of_call_rendezvous` now, with the `.blockedOnCall` hypothesis the name promises;
+the retired spelling is refused by a Tier 3 negative, and its four citations (two
+Tier 3 anchors, one docstring, `CLAUDE.md` / `AGENTS.md` / `docs/spec/SELE4N_SPEC.md`)
+were swept.  The positives **failed loudly** when the rename landed, which is the
+"sweep what was pinning the thing you deleted" rule working in the direction it is
+supposed to.
+
+**What this still over-declares, registered rather than glossed — and a premise
+corrected before it shipped.**  A dequeued `Call` whose donation prerequisites
+fail — the receiver already holds a context, or the sender holds none — migrates
+nothing either, and the transition's guard for that is
+`callDonationSchedContext?`.  Narrowing on it needs the pre-state answer
+transported across the receive leg, which is the backward
+`sameSchedContextBindings` frame.  The first draft of this entry said the frame's
+four per-primitive members were **unreachable** from the module that declares the
+footprint, "so the transport cannot be stated there at all".  That was false, and
+measuring the import closure rather than reading module paths is what showed it:
+`EndpointReply.lean` reaches `DualQueueMembership.lean` through `EndpointCall` →
+`Scheduler.Operations.PerCoreWake` → `PerCoreSwitchToThread` →
+`PerCoreChooseThread` → `Scheduler.Invariant.PerCore` → `CrossSubsystem` →
+`Capability.Invariant.Defs` → `IPC.Invariant` → `IPC.Invariant.Structural`, every
+module production, with the first edge already present at `v0.35.111`, and a
+`#check` of all four from a module importing `EndpointReply` settles it.  The real
+residual is smaller and differently shaped: **no** `sameSchedContextBindings`
+frame exists for `endpointReceiveDual` or `endpointReceiveDualWithCaps` at all
+(`endpointReceiveDual_preserves_donationBudgetTransfer` and
+`endpointReceiveDual_preserves_donationOwnerUnique` each inline the whole
+rendezvous composition, so it has to be extracted — a de-duplication), and
+`IPC/Operations/Donation.lean`'s closure does not contain
+`IPC/Invariant/Defs.lean` nor the reverse, so a bridge from that frame to
+`callDonationSchedContext?` has no home beside the resolver.  That second half
+*is* this tree's *a shared answer must be reachable from every asker* shape
+(`v0.35.59`), with the same remedy — move the owner down — and it is table C's
+row with Cut 9 as its deadline.  So the further narrowing is **available at a
+placement cost**, not blocked, and it is deferred because moving a definition
+between layers and extracting a 130-line composition are not a footprint
+narrowing; the over-declaration it leaves is sound, costs CC-5 contention, and is
+unobservable until Cut 9 brackets the seam.
+
+**Measured.**  `tests/SmpIpcSuite.lean` §3.26 drives both shapes from the same base
+state through the live operations — a `.call` parks the client `.blockedOnCall`, a
+`.send` parks it `.blockedOnSend` — and computes the **retired** segment beside the
+live one on each: they agree on the `Call` shape (the control) and disagree on the
+`Send` shape, where the retired reading declares two cores and the live one declares
+none.  The section then takes the receive to completion and asserts that the
+donation step moves no replenishment on either core, on the replenish *entries*
+rather than on state equality, because that is the proposition the footprint is
+about.  Fourteen assertions, all passing; the golden fixture is byte-identical (the
+comparison is scoped to `ipcFourCoreTraceLines`).
+
+**Found while editing the register: three rows of it do not render.**  GitHub-flavoured
+Markdown splits table cells on `|` **before** inline parsing, so a pipe inside a code
+span ends the cell — and `docs/REGISTERED_DEBT.md` carried three: `` `| _ => .ok st` ``
+in the WS-OD chain row, `` `q.head.isNone || q.tail.isNone` `` in the frozen-guard row
+and `` `O(|capabilityRefs|)` `` in the raw-write row.  Each truncated its debt text
+mid-sentence and shoved the remainder into the next column, in the file this project
+names its *single canonical source for workstream planning, status, and history*.  They
+are escaped (`\|`), and sweeping the file for the shape found a fourth defect of a
+different kind — a struck row with only two of the table's three cells — so its closure
+column is restored.  Every row in the register now has its header's cell count.  The
+same scan over the rest of the tracked tree reports roughly forty more rows, in
+`docs/planning/` and `docs/audits/`; that scan over-reports (it does not skip fenced
+code and it mis-reads two adjacent tables as one), so the number is a floor on a
+recogniser rather than a count, and turning it into a Tier 0 gate is its own cut.
+
+- `SeLe4n/Kernel/IPC/DualQueue/Core.lean`: `endpointQueuePopHead_popped_tcb_eq_lookup`.
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`: `rendezvousSenderIsCall` +
+  two characterisations, `receiveRendezvousCallSender?` + four,
+  `rendezvousDequeuedCall_congr_getTcb?`, `ipcUnwrapCaps_getTcb?_eq`, the two
+  walk theorems, the narrowed segment, `_of_blockedOnSend`, the renamed
+  `_of_call_rendezvous`, `applyReceiveRendezvousDonation_eq_self_of_blockedOnSend`,
+  `schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blockedOnSend`, and the
+  conditioned `_covers_donation`.  One import added
+  (`SeLe4n.Kernel.IPC.Operations.Donation`, a sibling whose closure cannot reach
+  `CrossCore/`, so no cycle closes).
+- `tests/SmpIpcSuite.lean`: §3.26, with the retired segment `private` in the
+  witness that refutes it and nowhere else.
+- `scripts/test_tier3_invariant_surface.sh`: 11 new positives and 2 negatives, two
+  existing positives repointed at the renamed licence, and the SmpIpc
+  contiguous-run anchor extended.  `receiveRendezvousCallSender?_eq_sender` — the
+  derivation behind "the three resolvers cannot disagree about which thread a
+  rendezvous dequeues" — has no consumer, so it is **anchored** rather than
+  orphaned, per WS-HP HP7's rule.
+
+`maxLockSetSize` does not move: a `SchedLockSet` carries no cardinality bound, and
+this narrows a segment rather than widening one.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
+
 ## v0.35.111 — three presence checks inside the machinery built to close them
 
 `v0.35.109` added the scenario-traceability machinery whose whole subject is that

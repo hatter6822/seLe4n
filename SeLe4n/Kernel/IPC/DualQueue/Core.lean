@@ -467,6 +467,52 @@ theorem endpointQueuePopHead_popped_eq_head
             simp only [Except.ok.injEq, Prod.mk.injEq] at hPop
             exact hPop.1.symm
 
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and the TCB a successful
+`endpointQueuePopHead` returns **is** that head's pre-state lookup.
+
+The twin of `endpointQueuePopHead_popped_eq_head`, and needed for the same reason
+one level over.  The pop reads the head's TCB once and hands that record back
+beside the post-state; `endpointReceiveDual` then branches on *its* `ipcState` to
+decide whether the rendezvous dequeued a `Call`.  Without this, that branch
+condition is a fact about a record only the pop's own body can name, so a
+pre-state resolver asking `lookupTcb` the same question would be a **second**
+reading of it rather than the same one — and two readings of one question is what
+this tree spends its length retiring.
+
+Stated at `head` rather than at `popped` for the reason the sibling is: a caller
+that inspected the endpoint holds `hHead`, not the operation's own output. -/
+theorem endpointQueuePopHead_popped_tcb_eq_lookup
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
+    (ep : Endpoint) (popped head : SeLe4n.ThreadId) (poppedTcb : TCB)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some head)
+    (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (popped, poppedTcb, st')) :
+    lookupTcb st head = some poppedTcb := by
+  revert hPop
+  unfold endpointQueuePopHead SystemState.getObject?
+  rw [hEp]
+  simp only []
+  rw [hHead]
+  simp only []
+  cases hTcb : lookupTcb st head with
+  | none => intro hPop; cases hPop
+  | some headTcb =>
+    simp only []
+    split
+    · intro hPop; cases hPop
+    · split
+      · intro hPop; cases hPop
+      · split
+        · intro hPop; cases hPop
+        · split
+          · intro hPop; cases hPop
+          · intro hPop
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hPop
+            -- `cases hTcb :` has already replaced the goal's `lookupTcb st head`
+            -- with `some headTcb`, so only the record identity is left.
+            exact congrArg some hPop.2.1
+
+
 def endpointQueueEnqueue
     (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool)

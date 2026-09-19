@@ -14,6 +14,15 @@
 -- docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §3.1, §5 (SM6.C).
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+-- **WS-RR RR8.12 (PR #897 Codex review)**: the `.receive` arm's replenish
+-- segment is derived from the donation's own guard, so the footprint's module
+-- must see `rendezvousDequeuedCall`.  `Operations.Donation` is a sibling of
+-- `CrossCore.EndpointCall` -- its closure is `DualQueue.Transport`,
+-- `PriorityInheritance.Propagate`, `Operations.Donation.Primitives` and
+-- `SchedContext.ReplenishAffinity`, none of which reaches `CrossCore/` -- so
+-- this edge closes no cycle.  Asking the question with a locally-spelled copy
+-- of that guard is what would let the footprint and the transition disagree.
+import SeLe4n.Kernel.IPC.Operations.Donation
 
 /-!
 # WS-SM SM6.C — Reply path across cores
@@ -3033,6 +3042,358 @@ theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore (epId : SeLe4n.Ob
   rw [endpointReceiveDualWithCapsOnCore_scheduler_eq epId receiver replyId cnRoot slotBase ec st]
   exact endpointReceiveDualOnCore_replenishQueueOnCore epId receiver replyId ec st c
 
+/-- **WS-RR RR8.12 (PR #897 Codex review): does this thread carry an outstanding
+`Call`?** -- the PRE-state sibling of `rendezvousDequeuedCall`, clause for clause.
+
+The two ask one question at two states and *must* be spelled separately, because a
+dequeued `Call` sender is `.blockedOnCall` before the receive leg runs and
+`.blockedOnReply` after it.  Asking for the post-state constructor at the pre-state
+would answer `false` for exactly the sender that *will* donate, so a footprint
+derived from it would **omit** a lock the transition writes -- and a footprint that
+omits a written lock is false, where one wider than its operation is merely
+expensive.
+
+Reads through `lookupTcb`, not `getTcb?`, for the reason `rendezvousDequeuedCall`
+does: `lookupTcb` refuses a reserved (idle) thread id, and it is the reader
+`endpointQueuePopHead` itself uses, so this is the leg's own branch condition
+rather than a second reading of it
+(`endpointQueuePopHead_popped_tcb_eq_lookup`). -/
+def rendezvousSenderIsCall (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match lookupTcb st tid with
+  | some tcb =>
+      match tcb.ipcState with
+      | .blockedOnCall _ => true
+      | _                => false
+  | none => false
+
+/-- **WS-RR RR8.12**: true exactly of a thread the store resolves as
+`.blockedOnCall`. -/
+theorem rendezvousSenderIsCall_of_blockedOnCall (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (callEp : SeLe4n.ObjId)
+    (hTcb : lookupTcb st tid = some tcb) (hCall : tcb.ipcState = .blockedOnCall callEp) :
+    rendezvousSenderIsCall st tid = true := by
+  unfold rendezvousSenderIsCall
+  simp only [hTcb, hCall]
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and false of one still parked
+`.blockedOnSend` -- the plain `Send` rendezvous this cut narrows the footprint on.
+
+`ipcStateQueueMembershipConsistent` admits exactly `.blockedOnSend` and
+`.blockedOnCall` for a thread on an endpoint's send queue, so this is *the*
+reachable non-`Call` shape there; the predicate is false for every other
+`ipcState` by construction. -/
+theorem rendezvousSenderIsCall_of_blockedOnSend (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (sendEp : SeLe4n.ObjId)
+    (hTcb : lookupTcb st tid = some tcb) (hSend : tcb.ipcState = .blockedOnSend sendEp) :
+    rendezvousSenderIsCall st tid = false := by
+  unfold rendezvousSenderIsCall
+  simp only [hTcb, hSend]
+
+/-- **WS-RR RR8.12 (PR #897 Codex review): the queued sender, WHEN IT CARRIES A
+`Call`.**
+
+Derived from `receiveRendezvousSender?` -- the resolver the arm's own sender member
+and `receiveRendezvousDonatedSc?` already come from -- so the three cannot disagree
+about which thread a rendezvous dequeues, and narrowed by `rendezvousSenderIsCall`,
+which is `rendezvousDequeuedCall`'s pre-state sibling.  A `Bool` guard rather than a
+nested match, so a consumer splits an `if` rather than reducing a matcher. -/
+def receiveRendezvousCallSender? (st : SystemState) (endpointId : SeLe4n.ObjId) :
+    Option SeLe4n.ThreadId :=
+  (receiveRendezvousSender? st endpointId).bind fun sender =>
+    if rendezvousSenderIsCall st sender then some sender else none
+
+/-- **WS-RR RR8.12**: it narrows `receiveRendezvousSender?` and never names another
+thread -- the two resolvers agree about *which* thread whenever this one answers. -/
+theorem receiveRendezvousCallSender?_eq_sender (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (h : receiveRendezvousCallSender? st endpointId = some sender) :
+    receiveRendezvousSender? st endpointId = some sender := by
+  unfold receiveRendezvousCallSender? at h
+  cases hS : receiveRendezvousSender? st endpointId with
+  | none => rw [hS] at h; exact absurd h (by simp)
+  | some s =>
+    -- `cases hS :` has already substituted the resolver's value in the GOAL, so
+    -- only `h` still mentions it.
+    simp only [hS, Option.bind_some] at h
+    split at h
+    · exact congrArg some (Option.some.inj h)
+    · exact absurd h (by simp)
+
+/-- **WS-RR RR8.12**: `none` when the endpoint has no queued sender at all -- the
+block path, where the arm donates nothing. -/
+theorem receiveRendezvousCallSender?_of_blocked (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep : Endpoint)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none) :
+    receiveRendezvousCallSender? st endpointId = none := by
+  unfold receiveRendezvousCallSender? receiveRendezvousSender?
+  rw [hEp]
+  simp only [Option.bind_some, hHead]
+  rfl
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and `none` on a plain `Send`
+rendezvous -- the case this cut exists to close. -/
+theorem receiveRendezvousCallSender?_of_blockedOnSend (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
+    (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
+    receiveRendezvousCallSender? st endpointId = none := by
+  unfold receiveRendezvousCallSender? receiveRendezvousSender?
+  rw [hEp]
+  simp only [Option.bind_some, hHead,
+    rendezvousSenderIsCall_of_blockedOnSend st sender senderTcb sendEp hTcb hSend]
+  rfl
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and `some sender` on a `Call`
+rendezvous -- the one shape on which the arm's donation can migrate a
+replenishment. -/
+theorem receiveRendezvousCallSender?_of_blockedOnCall (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
+    (senderTcb : TCB) (callEp : SeLe4n.ObjId)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hCall : senderTcb.ipcState = .blockedOnCall callEp) :
+    receiveRendezvousCallSender? st endpointId = some sender := by
+  unfold receiveRendezvousCallSender? receiveRendezvousSender?
+  rw [hEp]
+  simp only [Option.bind_some, hHead,
+    rendezvousSenderIsCall_of_blockedOnCall st sender senderTcb callEp hTcb hCall]
+  rfl
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: the donation guard reads the store
+only through `lookupTcb`, so a step that fixes the `getTcb?` projection fixes the
+guard.  The congruence the `ipcUnwrapCaps` tail of the `.receive` arm needs. -/
+private theorem rendezvousDequeuedCall_congr_getTcb? (st' st : SystemState)
+    (tid : SeLe4n.ThreadId) (h : st'.getTcb? tid = st.getTcb? tid) :
+    rendezvousDequeuedCall st' tid = rendezvousDequeuedCall st tid := by
+  have hL : lookupTcb st' tid = lookupTcb st tid := by
+    unfold lookupTcb
+    split
+    · rfl
+    · exact h
+  unfold rendezvousDequeuedCall
+  rw [hL]
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: a `.ready` thread is not a dequeued
+`Call`.  The `lookupTcb`/`getTcb?` bridge the walk below needs: a reserved id
+resolves to nothing there, and every other id resolves through `getTcb?`. -/
+private theorem rendezvousDequeuedCall_false_of_getTcb?_ready (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready) :
+    rendezvousDequeuedCall st tid = false := by
+  have hL : lookupTcb st tid = none ∨ lookupTcb st tid = some tcb := by
+    unfold lookupTcb
+    split
+    · exact Or.inl rfl
+    · exact Or.inr hTcb
+  unfold rendezvousDequeuedCall
+  rcases hL with h | h
+  · simp only [h]
+  · simp only [h, hReady]
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and neither is a thread still parked
+`.blockedOnSend`, which is what the refusal branches of the receive leg return. -/
+private theorem rendezvousDequeuedCall_false_of_blockedOnSend (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (sendEp : SeLe4n.ObjId)
+    (hTcb : lookupTcb st tid = some tcb) (hSend : tcb.ipcState = .blockedOnSend sendEp) :
+    rendezvousDequeuedCall st tid = false := by
+  unfold rendezvousDequeuedCall
+  simp only [hTcb, hSend]
+
+/-- **WS-RR RR8.12 (PR #897 Codex review): a plain `Send` rendezvous leaves the
+dequeued sender `.ready`, so the post-state donation guard is FALSE.**
+
+This is the licence for declaring an **empty** replenish segment there, and the
+whole content of the narrowing: `endpointReceiveHandoffReplenishCores` used to name
+both cores whenever the send queue was non-empty, while WS-OD OD3.6's donation fires
+only on a dequeued `Call` -- so every ordinary `seL4_Send` rendezvous declared two
+replenish-queue write locks for a migration that provably does not happen, and lock
+contention is an observable channel (SM8.D's CC-5) rather than a free
+over-approximation.
+
+`endpointReceiveDualOnCore` branches on the *pre*-dequeue TCB's `ipcState` -- the
+record `endpointQueuePopHead` hands back, which
+`endpointQueuePopHead_popped_tcb_eq_lookup` ties to `lookupTcb st sender`, so this
+reads the leg's own branch condition rather than a second copy of it.  The `Send`
+arm stores `.ready` at the sender's key, wakes it (`getTcb?`-invisible on a `.ready`
+thread) and then stores the *receiver*; whether the two ids coincide is immaterial,
+because the last write at the sender's key is `.ready` either way, which is why no
+distinctness hypothesis appears.
+
+Unconditional in the result, refusal branches included: those return the pre-state,
+where the sender is `.blockedOnSend` and so not `.blockedOnReply`.  That is why the
+hypothesis names `.blockedOnSend` rather than "not a `Call`": a pre-state sender
+already `.blockedOnReply` satisfies the weaker hypothesis and refutes the conclusion
+on a refusal, and `ipcStateQueueMembershipConsistent` is what says `.blockedOnSend`
+is the reachable non-`Call` shape for a thread on a send queue. -/
+theorem endpointReceiveDualOnCore_not_dequeuedCall_of_blockedOnSend
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) (st : SystemState)
+    (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
+    rendezvousDequeuedCall
+        (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 sender
+      = false := by
+  have hFail := rendezvousDequeuedCall_false_of_blockedOnSend st sender senderTcb sendEp hTcb hSend
+  have hEpObj : st.objects[endpointId]? = some (.endpoint ep) :=
+    (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+  unfold endpointReceiveDualOnCore
+  rw [hEp]
+  simp only [hHead]
+  cases hPop : endpointQueuePopHead endpointId false st with
+  | error e => simpa using hFail
+  | ok triple =>
+      obtain ⟨popTid, popTcb, st1⟩ := triple
+      simp only []
+      have hHeadQ : (if (false : Bool) then ep.receiveQ else ep.sendQ).head = some sender := by
+        simpa using hHead
+      have hPopId : popTid = sender :=
+        endpointQueuePopHead_popped_eq_head endpointId false st st1 ep popTid sender popTcb
+          hEpObj hHeadQ hPop
+      have hPopTcb : lookupTcb st sender = some popTcb :=
+        endpointQueuePopHead_popped_tcb_eq_lookup endpointId false st st1 ep popTid sender popTcb
+          hEpObj hHeadQ hPop
+      -- The popped record IS the one the hypothesis names; keep `popTcb` (the
+      -- body's own binding) and carry the hypothesis onto it, rather than
+      -- substituting and leaving the body's `let` mentioning a dead name.
+      have hEqTcb : popTcb = senderTcb := Option.some.inj (hPopTcb.symm.trans hTcb)
+      have hSend' : popTcb.ipcState = .blockedOnSend sendEp := by rw [hEqTcb]; exact hSend
+      subst hPopId
+      have hI1 : st1.objects.invExt :=
+        endpointQueuePopHead_preserves_objects_invExt endpointId false st st1 popTid popTcb
+          hObjInv hPop
+      split
+      · -- The `Call` arm is unreachable: the branch test is `senderTcb.ipcState`,
+        -- which `hSend` fixes at `.blockedOnSend`.
+        rename_i hCall
+        rw [hSend'] at hCall
+        exact absurd hCall (by simp)
+      · cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
+        | error e => simpa using hFail
+        | ok st2 =>
+            simp only []
+            obtain ⟨t2, hT2, hR2⟩ :=
+              storeTcbIpcStateAndMessage_getTcb?_ipcState st1 st2 popTid .ready none hI1 hS2
+            have hI2 : st2.objects.invExt :=
+              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid .ready none hI1 hS2
+            have hTW : (wakeThread st2 popTid executingCore).1.getTcb? popTid = some t2 := by
+              rw [wakeThread_getTcb?_eq_of_ready st2 popTid executingCore t2 hT2 hR2 hI2 popTid]
+              exact hT2
+            have hIW : (wakeThread st2 popTid executingCore).1.objects.invExt :=
+              wakeThread_preserves_objects_invExt st2 popTid executingCore hI2
+            cases hS3 : storeTcbIpcStateAndMessage (wakeThread st2 popTid executingCore).1
+                receiver .ready popTcb.pendingMessage with
+            | error e => simpa using hFail
+            | ok st3 =>
+                simp only []
+                by_cases hEqId : receiver = popTid
+                · subst hEqId
+                  obtain ⟨t3, hT3, hR3⟩ :=
+                    storeTcbIpcStateAndMessage_getTcb?_ipcState _ st3 receiver .ready
+                      popTcb.pendingMessage hIW hS3
+                  exact rendezvousDequeuedCall_false_of_getTcb?_ready st3 receiver t3 hT3 hR3
+                · have hNe : popTid.toObjId ≠ receiver.toObjId := fun h =>
+                    hEqId (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+                  have hFrame := storeTcbIpcStateAndMessage_preserves_objects_ne
+                    (wakeThread st2 popTid executingCore).1 st3 receiver .ready
+                    popTcb.pendingMessage popTid.toObjId hNe hIW hS3
+                  refine rendezvousDequeuedCall_false_of_getTcb?_ready st3 popTid t2 ?_ hR2
+                  simp only [SystemState.getTcb?] at hTW ⊢
+                  rw [hFrame]
+                  exact hTW
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: `ipcUnwrapCaps` fixes the whole
+`getTcb?` projection -- forward by `ipcUnwrapCaps_preserves_tcb_objects`, back by
+`ipcUnwrapCaps_tcb_backward`, so the two directions join into an equality.
+
+Cap transfer writes only `receiverRoot`, and only as a CNode, so no TCB is
+created, destroyed or altered.  The `determineTargetCore` family reaches the same
+conclusion one field down; this is the whole record, because the donation guard
+reads `ipcState` rather than `cpuAffinity`. -/
+private theorem ipcUnwrapCaps_getTcb?_eq (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool) (st st' : SystemState)
+    (summary : CapTransferSummary) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    st'.getTcb? x = st.getTcb? x := by
+  simp only [SystemState.getTcb?]
+  cases hT : st.objects[x.toObjId]? with
+  | none =>
+      cases hT' : st'.objects[x.toObjId]? with
+      | none => rfl
+      | some obj =>
+          cases obj with
+          | tcb tcb =>
+              rw [ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
+                x.toObjId tcb hObjInv hStep hT'] at hT
+              exact absurd hT (by simp)
+          | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
+          | reply _ => rfl
+  | some obj =>
+      cases obj with
+      | tcb tcb =>
+          rw [ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase grantRight st st'
+            summary x.toObjId tcb hT hObjInv hStep]
+      | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
+      | reply _ =>
+          cases hT' : st'.objects[x.toObjId]? with
+          | none => rfl
+          | some obj' =>
+              cases obj' with
+              | tcb tcb' =>
+                  rw [ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st'
+                    summary x.toObjId tcb' hObjInv hStep hT'] at hT
+                  exact absurd hT (by simp)
+              | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+              | schedContext _ | reply _ => rfl
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and installing the parked send's
+capabilities does not revive the guard, so the leg's verdict is the whole arm's.
+
+Same shape as `endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous`:
+every branch but the last returns the bare leg's own post-state, and the last is an
+`ipcUnwrapCaps`, which fixes the whole `getTcb?` projection. -/
+theorem endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
+    rendezvousDequeuedCall
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+          receiverSlotBase executingCore st).1 sender
+      = false := by
+  have hLeg := endpointReceiveDualOnCore_not_dequeuedCall_of_blockedOnSend endpointId receiver
+    replyId executingCore st ep sender senderTcb sendEp hObjInv hEp hHead hTcb hSend
+  have hLegInv :
+      ((endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1).objects.invExt :=
+    endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver replyId executingCore
+      st hObjInv
+  unfold endpointReceiveDualWithCapsOnCore
+  cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | mk stRecv res =>
+      rw [hRecv] at hLeg hLegInv
+      cases res with
+      | error e => simpa using hLeg
+      | ok pair =>
+          obtain ⟨senderId, sgi⟩ := pair
+          simp only []
+          repeat' split
+          all_goals
+            first
+              | simpa using hLeg
+              | (rename_i hUnwrap
+                 refine (rendezvousDequeuedCall_congr_getTcb? _ stRecv sender ?_).trans hLeg
+                 exact ipcUnwrapCaps_getTcb?_eq _ receiverCspaceRoot receiverSlotBase _ stRecv _ _
+                   sender hLegInv hUnwrap)
+
 /-- **WS-RR RR8.12**: **the cores whose replenish queue a cross-core receive may
 write** — the dequeued donor's home and the receiver's, on a rendezvous, and none
 at all when the receive blocks.
@@ -3049,7 +3410,7 @@ could not supply them at all.
 Read on the **pre**-state, which is sound because the receive leg moves no thread's
 home core: `endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous`
 is that fact, and
-`endpointReceiveHandoffReplenishCores_of_rendezvous` below is this list
+`endpointReceiveHandoffReplenishCores_of_call_rendezvous` below is this list
 *being* the pair the donation resolves.  So this closes, for `.receive`, the
 footprint/transition resolution asymmetry WS-HP HP10.8 registered for the reply
 arm's origin member rather than adding a second instance of it.
@@ -3058,10 +3419,43 @@ arm's origin member rather than adding a second instance of it.
 for the `.blockedOnReceive` id that path returns, so the arm donates nothing there
 and a segment naming two cores would be a footprint wider than its operation —
 which this project rates as a real cost, lock contention being an observable
-channel (SM8.D's CC-5). -/
+channel (SM8.D's CC-5).
+
+**PR #897 Codex review**: and that reasoning was applied to the block path and not
+to its sibling.  The segment keyed on `receiveRendezvousSender?` — *is there a
+queued sender at all* — while WS-OD OD3.6's donation fires only on a dequeued
+`Call`, so **every ordinary `seL4_Send` rendezvous declared two replenish-queue
+write locks for a migration that provably does not happen**: the same
+over-declaration the paragraph above rejects, on the more common path.  It keys on
+`receiveRendezvousCallSender?` now, whose licence is
+`endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend` — a plain
+`Send` rendezvous leaves the dequeued sender `.ready`, so the post-state guard is
+false and the donation step is the identity.
+
+**What this still over-declares, and why it is a separate cut.**  A dequeued `Call`
+whose donation prerequisites fail — the receiver already holds a context, or the
+sender holds none — migrates nothing either, and the transition's own guard for
+that is `callDonationSchedContext?`.  Narrowing on it needs the pre-state answer
+transported across the receive leg, which is `sameSchedContextBindings`, and two
+things are in the way.  **No** such frame exists for `endpointReceiveDual` or
+`endpointReceiveDualWithCaps` at all: the two theorems that need one
+(`endpointReceiveDual_preserves_donationBudgetTransfer`,
+`endpointReceiveDual_preserves_donationOwnerUnique`) each inline the whole
+rendezvous composition, so it has to be extracted — a de-duplication.  And
+`IPC/Operations/Donation.lean`'s import closure contains neither
+`IPC/Invariant/Defs.lean`, where `sameSchedContextBindings` is declared, nor the
+reverse, so a bridge from the frame to `callDonationSchedContext?` has no home
+beside the resolver; moving the owner down is this tree's own remedy for that
+shape (`v0.35.59`).  What is **not** in the way is reachability: the family's
+per-primitive members in `IPC/Invariant/Structural/DualQueueMembership.lean` are
+reachable from here (through `EndpointCall`, `PerCoreWake`, the per-core scheduler
+chain, `CrossSubsystem` and `IPC.Invariant`), which an earlier draft of this
+docstring denied — so the deferral is a placement cost rather than an
+impossibility.  It is registered in `docs/REGISTERED_DEBT.md` table C with that
+closure. -/
 def endpointReceiveHandoffReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) : List CoreId :=
-  match receiveRendezvousSender? st endpointId with
+  match receiveRendezvousCallSender? st endpointId with
   | some sender => [determineTargetCore st sender, determineTargetCore st receiver]
   | none        => []
 
@@ -3071,24 +3465,53 @@ theorem endpointReceiveHandoffReplenishCores_of_blocked (st : SystemState)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (ep : Endpoint)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none) :
     endpointReceiveHandoffReplenishCores st endpointId receiver = [] := by
-  unfold endpointReceiveHandoffReplenishCores receiveRendezvousSender?
-  rw [hEp]
-  simp only [Option.bind_some, hHead]
+  unfold endpointReceiveHandoffReplenishCores
+  rw [receiveRendezvousCallSender?_of_blocked st endpointId ep hEp hHead]
 
-/-- **WS-RR RR8.12: the licence.**  On a rendezvous the pre-state reading **is** the
-pair of cores WS-OD OD3.6's donation resolves at the state it runs on.
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and empty on a plain `Send`
+rendezvous — the case this narrowing closes.
+
+The licence is
+`endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend`: the receive
+leg leaves the dequeued sender `.ready`, so `applyReceiveRendezvousDonation` is the
+identity (`applyReceiveRendezvousDonation_of_no_call`) and no replenish queue moves.
+Declaring two cores there is not conservatism but contention nobody needs. -/
+theorem endpointReceiveHandoffReplenishCores_of_blockedOnSend (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (ep : Endpoint)
+    (sender : SeLe4n.ThreadId) (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
+    endpointReceiveHandoffReplenishCores st endpointId receiver = [] := by
+  unfold endpointReceiveHandoffReplenishCores
+  rw [receiveRendezvousCallSender?_of_blockedOnSend st endpointId ep sender senderTcb sendEp
+    hEp hHead hTcb hSend]
+
+/-- **WS-RR RR8.12: the licence.**  On a **`Call`** rendezvous the pre-state reading
+**is** the pair of cores WS-OD OD3.6's donation resolves at the state it runs on.
 
 Not "agrees with" and not "over-approximates": the two lists are equal, so the
 footprint the RR7.12-style bracket acquires before the transition and the migration
 the transition then performs cannot name different cores.  What makes it true is
 that nothing in the receive leg writes a `cpuAffinity` — the only field
-`determineTargetCore` reads, and one only `.tcbSetAffinity` writes. -/
-theorem endpointReceiveHandoffReplenishCores_of_rendezvous (st : SystemState)
+`determineTargetCore` reads, and one only `.tcbSetAffinity` writes.
+
+**PR #897 Codex review**: `.blockedOnCall` is a hypothesis now rather than a
+consequence of the queue being non-empty, and the name says so.  The retired
+`_of_rendezvous` spelling held for *every* rendezvous because the segment was
+`.blockedOnSend`-blind, which is exactly the over-declaration this cut removes; a
+theorem still claiming the equality there would be claiming the footprint names two
+cores on a path where it names none.  The plain-`Send` case is
+`endpointReceiveHandoffReplenishCores_of_blockedOnSend`. -/
+theorem endpointReceiveHandoffReplenishCores_of_call_rendezvous (st : SystemState)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
-    (ep : Endpoint) (sender : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
-    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender) :
+    (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (callEp : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hCall : senderTcb.ipcState = .blockedOnCall callEp) :
     endpointReceiveHandoffReplenishCores st endpointId receiver
       = [determineTargetCore
              (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
@@ -3098,9 +3521,9 @@ theorem endpointReceiveHandoffReplenishCores_of_rendezvous (st : SystemState)
                receiverSlotBase executingCore st).1 receiver] := by
   have hFrame := endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous
     endpointId receiver replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender
-  unfold endpointReceiveHandoffReplenishCores receiveRendezvousSender?
-  rw [hEp]
-  simp only [Option.bind_some, hHead]
+  unfold endpointReceiveHandoffReplenishCores
+  rw [receiveRendezvousCallSender?_of_blockedOnCall st endpointId ep sender senderTcb callEp
+    hEp hHead hTcb hCall]
   rw [hFrame sender hObjInv hEp hHead, hFrame receiver hObjInv hEp hHead]
 
 /-- **WS-RR RR8.12**: the scheduler-domain footprint of the live `.receive` arm —
@@ -3176,6 +3599,89 @@ theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked (st : Sy
   rw [endpointReceiveHandoffReplenishCores_of_blocked st endpointId receiver ep hEp hHead] at this
   simp at this
 
+/-- **WS-RR RR8.12 (PR #897 Codex review): the payoff.**  On a plain `Send`
+rendezvous the arm's donation step is the **identity**, so it writes no replenish
+queue and the empty segment is exact rather than merely narrow.
+
+The composition a bracket consumer cites: the receive leg leaves the dequeued
+sender `.ready`, so WS-OD OD3.6's post-state guard is false and
+`applyReceiveRendezvousDonation_of_no_call` collapses the step.  Nothing here is a
+claim about the *object* domain — the arm still writes the endpoint and the two
+TCBs, and `lockSet_endpointReceive` still declares them. -/
+theorem applyReceiveRendezvousDonation_eq_self_of_blockedOnSend
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
+    applyReceiveRendezvousDonation
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+          receiverSlotBase executingCore st).1 receiver sender
+      = .ok (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+              receiverSlotBase executingCore st).1 :=
+  applyReceiveRendezvousDonation_of_no_call _ receiver sender
+    (endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend endpointId receiver
+      replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender senderTcb sendEp
+      hObjInv hEp hHead hTcb hSend)
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and the step the live arm actually runs
+is the identity too — *a proxy is not the fact*.
+
+`API.lean`'s `.receive` arm runs `applyReceiveRendezvousHandoff`, which is WS-OD
+OD3.6's donation **and** OD3.14's priority-inheritance walk under one guard, so the
+donation alone is a component rather than the arm's stage.  Both halves are gated on
+`rendezvousDequeuedCall`, so on a plain `Send` rendezvous neither fires: the whole
+hand-off is the identity, which is stronger than the component fact and is what a
+bracket consumer over this arm needs.
+
+(The walk writes run queues rather than replenish queues — declared dynamically
+through `PriorityInheritance.pipChainSchedFootprint` — so the *replenish* segment's
+own licence is the donation half; this states the arm's step so that neither half
+can be read as the other.) -/
+theorem applyReceiveRendezvousHandoff_eq_self_of_blockedOnSend
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore handoffCore : CoreId) (st : SystemState)
+    (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
+    applyReceiveRendezvousHandoff
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+          receiverSlotBase executingCore st).1 receiver sender handoffCore
+      = .ok (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+              receiverSlotBase executingCore st).1 :=
+  applyReceiveRendezvousHandoff_of_no_call _ receiver sender handoffCore
+    (endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend endpointId receiver
+      replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender senderTcb sendEp
+      hObjInv hEp hHead hTcb hSend)
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and so the `.receive` footprint declares
+**no** replenish-queue lock on a plain `Send` rendezvous — the sibling of
+`schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked`, for the path that
+used to declare two.
+
+Over-declaring is sound and not free: lock contention is an observable channel
+(SM8.D's CC-5), and WS-OD OD3.5 narrowed a footprint for exactly this reason. -/
+theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blockedOnSend
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (executingCore : CoreId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
+    (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hSend : senderTcb.ipcState = .blockedOnSend sendEp) (c : CoreId) :
+    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+  intro hMem
+  have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
+  rw [endpointReceiveHandoffReplenishCores_of_blockedOnSend st endpointId receiver ep sender
+    senderTcb sendEp hEp hHead hTcb hSend] at this
+  simp at this
+
 /-- **WS-RR RR8.12 (arm-level coverage)**: the `.receive` footprint covers WS-OD
 OD3.6's donation footprint member for member — hence, by
 `applyCallDonationOnCoreSchedLockSet_covers_migration`, the SM5.H replenishment
@@ -3184,13 +3690,24 @@ migration's two replenish-queue write locks.
 This is the statement that makes the declaration *true* rather than merely
 plausible, and it is stated at the cores the donation **actually** resolves, on the
 post-receive-leg state it runs on — not at two operands a caller supplied.  A
-`withLockSet` bracket over this footprint therefore holds both migration slots. -/
+`withLockSet` bracket over this footprint therefore holds both migration slots.
+
+**PR #897 Codex review**: conditioned on the dequeued sender carrying a `Call`,
+because that is the only shape on which the donation migrates anything — and so the
+only shape on which there is a migration to cover.  On a plain `Send` rendezvous the
+step is the identity
+(`endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend`) and the
+segment is empty (`endpointReceiveHandoffReplenishCores_of_blockedOnSend`), so a
+coverage claim there would be covering nothing while reading like coverage. -/
 theorem schedLockSet_endpointReceiveOnCore_covers_donation (st : SystemState)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
-    (ep : Endpoint) (sender : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
-    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender) :
+    (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (callEp : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hCall : senderTcb.ipcState = .blockedOnCall callEp) :
     ∀ p ∈ applyCallDonationOnCoreSchedLockSet
              (determineTargetCore
                (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
@@ -3200,8 +3717,9 @@ theorem schedLockSet_endpointReceiveOnCore_covers_donation (st : SystemState)
                  receiverSlotBase executingCore st).1 receiver),
       p ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
   refine schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun c hc => ?_)
-  rw [endpointReceiveHandoffReplenishCores_of_rendezvous st endpointId receiver replyId
-    receiverCspaceRoot receiverSlotBase executingCore ep sender hObjInv hEp hHead]
+  rw [endpointReceiveHandoffReplenishCores_of_call_rendezvous st endpointId receiver replyId
+    receiverCspaceRoot receiverSlotBase executingCore ep sender senderTcb callEp hObjInv hEp
+    hHead hTcb hCall]
   exact hc
 
 end SeLe4n.Kernel
