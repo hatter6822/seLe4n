@@ -5614,7 +5614,10 @@ run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_preserves_machine' SeLe4n/Ke
 run_check "INVARIANT" rg -n '^def notificationSignalBoundWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^def endpointReceiveDualWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# WS-RR RR8.12 (Cut 8a-ii): repointed with its siblings above — declared in
+# production beside `endpointReceiveDualOnCore`, so the `.receive` scheduler
+# footprint can read it.  The confinement theorem below stays staged.
+run_check "INVARIANT" rg -n '^def endpointReceiveDualWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -9686,7 +9689,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointSendOnCore[^
 run_check "INVARIANT" rg -n '^def notificationSignalWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
 run_check "INVARIANT" rg -n '^def notificationSignalBoundWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
 run_check "INVARIANT" rg -n '^def endpointSendWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
-run_negative_check "INVARIANT" rg -n '^def notificationSignalWriteSet|^def notificationSignalBoundWriteSet|^def endpointSendWriteSet' SeLe4n/Kernel/InformationFlow/
+run_negative_check "INVARIANT" rg -n '^def notificationSignalWriteSet|^def notificationSignalBoundWriteSet|^def endpointSendWriteSet|^def endpointReceiveDualWriteSet' SeLe4n/Kernel/InformationFlow/
 # The obligation an EMPTY replenish segment owes: a footprint that omits a written
 # lock is false, so "this arm moves no scheduling context" is a theorem, not a
 # reading of the body.  These three have no consumer until the eighth cut's
@@ -9718,8 +9721,18 @@ run_negative_check "INVARIANT" rg -n '^theorem storeObject_tcb_determineTargetCo
 # `storeObject_*` group (TCB / endpoint / SchedContext / **Reply**) -- an
 # asymmetric table is how a cell stays uncovered until someone needs it -- and the
 # enqueue is `endpointQueuePopHead`'s dual, so the receive leg's rendezvous arm
-# and its block arm are both framed.  No consumer until Cut 8a-ii's footprint, so
-# they are anchored rather than orphaned.
+# and its block arm are both framed.
+#
+# `v0.35.107` corrects what this note used to say.  Cut 8a promoted all five with
+# NO consumer, which was the measurement that Cut 8a-ii's first shape was wrong:
+# that shape took the donation's two cores as PARAMETERS, so it needed no frame at
+# all and left five frames orphaned.  Three are consumed now -- `wakeThread_…`
+# and `enqueueRunnableOnCore_…` by the rendezvous frame, `storeObject_reply_…`
+# through `linkCallerReply_determineTargetCore_eq` -- and the two that frame the
+# BLOCK path (`removeRunnableOnCore_…`, `endpointQueueEnqueue_…`) stay anchored,
+# because the replenish segment is `[]` there so no pre-state reading needs
+# licensing.  A frame with no consumer is a question nobody asked; a fix that
+# consumes three of five is the evidence the question was real.
 run_check "INVARIANT" rg -n '^theorem enqueueRunnableOnCore_determineTargetCore_eq \(' SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean
 run_check "INVARIANT" rg -n '^theorem wakeThread_determineTargetCore_eq \(' SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem removeRunnableOnCore_determineTargetCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
@@ -9737,6 +9750,103 @@ run_check "INVARIANT" rg -n '^theorem endpointSendCrossCoreDispatchChecked_reple
 # check, one character down.
 run_check "INVARIANT" rg -n '^theorem wakeThread_replenishQueueOnCore \(' SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean
 run_negative_check "INVARIANT" rg -n 'wakeThread_replenishQueueOnCore_local' SeLe4n/ tests/
+# ---------------------------------------------------------------------------
+# `v0.35.107` (RR8.12 Cut 8a-ii): the `.receive` arm declares a scheduler
+# footprint -- the first arm that DONATES to have one, so the first with a
+# non-empty replenish segment.
+run_check "INVARIANT" rg -n '^def schedLockSet_endpointReceiveOnCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# RELATION, not presence, and it pins BOTH segments at once: each must be
+# `schedFootprintOfCores` of a DERIVED core list -- the run segment of the SM8.B
+# **write set** the arm's confinement theorem is stated at (so the footprint and
+# the confinement claim cannot name different cores), the replenish segment of
+# `endpointReceiveHandoffReplenishCores`, which is the donation's own pair by
+# theorem.  The mutation that decides keeps `schedFootprintOfCores` and resolves
+# either segment a second way inside the definition.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(endpointReceiveDualWriteSet st endpointId executingCore\)\n *\(endpointReceiveHandoffReplenishCores st endpointId receiver\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# ...and the shape that was REPLACED must not come back.  Cut 8a-ii's first form
+# took the two donation cores as parameters `donorHome doneeHome`, which breaks the
+# project's own rule that *a parameter is a place for a caller to be wrong*, and
+# which a bracket resolving the footprint BEFORE the transition runs cannot supply
+# at all.  Scoped to this file because `applyCallDonationOnCoreSchedLockSet` in
+# `EndpointCall.lean` legitimately binds those names -- measured: zero occurrences
+# here.  Mutation: reintroduce the parameter pair, keeping every other token.
+run_negative_check "INVARIANT" rg -n 'donorHome|doneeHome' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The derived replenish segment itself, and the two readings that make it honest:
+# `[]` when the receive blocks (so a footprint is never wider than its operation --
+# contention is an observable channel, SM8.D's CC-5) and, on a rendezvous, EQUAL to
+# the pair WS-OD OD3.6's donation resolves at the post-receive-leg state.
+run_check "INVARIANT" rg -n '^def endpointReceiveHandoffReplenishCores \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_blocked \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_rendezvous \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# RELATION: the licence is an EQUALITY between the pre-state reading and the two
+# `determineTargetCore` calls taken at the WithCaps post-state -- not "agrees with",
+# not "over-approximates".  The mutation that decides keeps the theorem and states
+# it against the *bare* receive leg's post-state, or against the pre-state on the
+# right, either of which makes it a claim about a different pair.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveHandoffReplenishCores_of_rendezvous[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveHandoffReplenishCores st endpointId receiver\n *= \[determineTargetCore\n *\(endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# ...and what licenses the pre-state reading: the receive leg moves NO thread's home
+# core, so the footprint's reading and the donation's are the same reading rather
+# than two that happen to agree.  Stated on the rendezvous branch because that is
+# the claim's own subject -- the segment is `[]` on the other one.
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The two primitive frames the composite needed and the family did not have:
+# `linkCallerReply` (the `Call` rendezvous' reply link -- a Reply store then a TCB
+# store, both `cpuAffinity`-`rfl`) and `ipcUnwrapCaps` (the capability installation,
+# whose own TCB frame holds at every key in BOTH directions, so the whole `getTcb?`
+# projection is fixed).  Both in the family's home module, not beside their
+# operations, because that is where every other member lives.
+run_check "INVARIANT" rg -n '^theorem linkCallerReply_determineTargetCore_eq \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_determineTargetCore_eq \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+# The write set is declared in PRODUCTION, beside the transition it is about (the
+# staged negative above refuses it coming back), and so is the WithCaps scheduler
+# frame the replenish frame reads -- a frame lemma about a production transition
+# belongs beside that transition, not in the staged surface that first needed it.
+run_check "INVARIANT" rg -n '^def endpointReceiveDualWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_scheduler_eq \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_negative_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_scheduler_eq' SeLe4n/Kernel/InformationFlow/
+# Two more relocations of the SAME class, found by the build rather than by reading:
+# an answer whose asker cannot reach it.  `storeTcbIpcStateAndMessage_…` is a frame
+# over an IPC *primitive* and sat in a cross-core *arm* module that the receive
+# leg's frame does not import; `endpointReceiveDualOnCore_preserves_objects_invExt`
+# is a frame over a transition and sat DOWNSTREAM of the module declaring it.  Both
+# now sit where their question has one owner every asker can see.
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_determineTargetCore_eq$' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_negative_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_preserves_objects_invExt$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_negative_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+# The obligation the replenish segment owes in the OTHER direction: every core in
+# it comes from the donation, and NONE from the receive leg -- so "the receive leg
+# writes no replenish queue" is a theorem rather than a reading of the body.  The
+# `Checked` cleanup frame is the one lemma that was missing, and it is a corollary
+# through `cleanupPreReceiveDonationChecked_ok_eq_cleanup` rather than a second
+# case analysis over the checked body.
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem cleanupPreReceiveDonationChecked_scheduler_eq$' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# ...and what makes the declaration TRUE rather than plausible: the footprint
+# covers WS-OD OD3.6's donation footprint member for member, hence the SM5.H
+# migration's two replenish-queue write locks -- at the cores the donation ACTUALLY
+# resolves, on the state it runs on, rather than at two operands a caller supplied.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_covers_donation \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The RUN segment's coverage: that the declared segment names the core the receive
+# leg actually writes, on each of the two exclusive paths.  These have no consumer
+# until the bracket cut, so they are anchored rather than orphaned -- and the same
+# sweep covers Cut 7's four arms, whose membership lemmas were left unanchored.
+# Measured while writing these: **33 of the 47** theorems in the whole
+# scheduler-footprint family have neither a consumer nor an anchor, which is a
+# derived census's job rather than seven anchors' -- registered as Cut 8c.  Until it
+# lands, a hand anchor is what keeps the window from being silent.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_contains_sender_runQueue_write \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_contains_executing_runQueue_write \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointSendOnCore_contains_receiver_runQueue_write \(' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointSendOnCore_contains_executing_runQueue_write \(' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationSignalOnCore_contains_waiter_runQueue_write$' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationWaitOnCore_contains_executing_runQueue_write$' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationWaitOnCore_no_other_runQueue$' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationSignalBoundOnCore_contains_bound_runQueue_write$' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
+
 run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 

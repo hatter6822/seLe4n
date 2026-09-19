@@ -740,21 +740,12 @@ theorem endpointReplyOnCore_confinedToCores (replier target : SeLe4n.ThreadId)
 -- §4a SM6.C — the receive leg, and the composed `replyRecv`
 -- ============================================================================
 
-/-- SM8.B.2: **the cores a cross-core endpoint receive may write** — the woken
-sender's home core on a rendezvous, the receiver's own core when it blocks.
-
-Read from the pre-state through the same `sendQ.head` the transition resolves,
-so the declared set and the transition name the same sender. The two arms are
-genuinely exclusive: a receive that rendezvouses does not block, and a receive
-that blocks wakes nobody. -/
-def endpointReceiveDualWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (executingCore : CoreId) : List CoreId :=
-  match st.getEndpoint? endpointId with
-  | some ep =>
-      match ep.sendQ.head with
-      | some sender => [determineTargetCore st sender]
-      | none => [executingCore]
-  | none => []
+-- SM8.B.2, relocated at **WS-RR RR8.12**: `endpointReceiveDualWriteSet` is
+-- declared in `IPC/CrossCore/EndpointReply.lean`, beside `endpointReceiveDualOnCore`
+-- and beside the production scheduler-domain footprint
+-- `schedLockSet_endpointReceiveOnCore` that reads it.  This module is staged and
+-- imports `Kernel.API`, so a core list declared here is unreachable from the
+-- footprint the syscall seam brackets over.
 
 /-- SM8.B.2 (**SM6.C, cross-core** — the `replyRecv` receive leg): a cross-core
 endpoint receive's per-core writes stay inside `endpointReceiveDualWriteSet`.
@@ -2120,33 +2111,13 @@ theorem observableSlotsConfinedToCores_of_framed_suffix {st stMid st' : SystemSt
      (h.domainScheduleIndex c hc),
    fun c hc => (by rw [hMach] : st'.machine.regsOnCore c = _).trans (h.regs c hc)⟩
 
-/-- SM8.B.2 (PR #873 round 7): the WithCaps per-core **receive** leaves the
-scheduler where the bare receive left it.
-
-The same shape as `endpointSendDualWithCapsOnCore_scheduler_eq` one section over,
-and for the same reason: the extra leg is an `ipcUnwrapCaps`, which installs
-capabilities into a CNode and writes no run queue. Every other branch — a
-receiver that enqueued, a delivered message with no caps, a sender with no CSpace
-root — returns the bare receive's own post-state. -/
-theorem endpointReceiveDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
-    (executingCore : CoreId) (st : SystemState) :
-    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1.scheduler
-      = (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.scheduler := by
-  unfold endpointReceiveDualWithCapsOnCore
-  cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
-  | mk stRecv res =>
-    cases res with
-    | error e => rfl
-    | ok pair =>
-      obtain ⟨senderId, sgi⟩ := pair
-      simp only []
-      repeat' split
-      all_goals first
-        | rfl
-        | (rename_i h; exact ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ h)
+-- SM8.B.2, relocated at **WS-RR RR8.12**:
+-- `endpointReceiveDualWithCapsOnCore_scheduler_eq` is declared in
+-- `IPC/CrossCore/EndpointReply.lean`, beside the transition it frames — the
+-- production replenish-queue frame the `.receive` scheduler footprint owes reads
+-- it, and this module is staged.  A frame lemma about a production transition
+-- belongs beside that transition, not in the staged surface that first happened
+-- to need it.
 
 /-- SM8.B.2 (PR #873 round 7): and the register banks, by the same case
 analysis. -/

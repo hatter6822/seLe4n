@@ -6245,6 +6245,21 @@ theorem cleanupPreReceiveDonation_scheduler_eq
         obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
         exact returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner n hPop
 
+/-- **WS-RR RR8.12**: and so does the `Checked` variant the live receive path
+runs.
+
+A corollary through `cleanupPreReceiveDonationChecked_ok_eq_cleanup`, not a second
+case analysis: the two variants are pointwise equal on `.ok` (AK1-A), so the
+defensive twin's frame *is* this one.  Re-deriving it from the checked body would
+be a second answer to a question the bridge already settles, and the two could
+then disagree about a branch. -/
+theorem cleanupPreReceiveDonationChecked_scheduler_eq
+    (st st' : SystemState) (receiver : SeLe4n.ThreadId)
+    (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :
+    st'.scheduler = st.scheduler :=
+  (cleanupPreReceiveDonationChecked_ok_eq_cleanup st st' receiver h) ▸
+    cleanupPreReceiveDonation_scheduler_eq st receiver
+
 /-- AI4-A: cleanupPreReceiveDonation preserves objects.invExt. -/
 theorem cleanupPreReceiveDonation_preserves_objects_invExt
     (st : SystemState) (receiver : SeLe4n.ThreadId)

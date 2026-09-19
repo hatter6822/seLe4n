@@ -1008,32 +1008,6 @@ theorem notificationSignalOnCore_remaining_waiters
 -- the cross-core donation arms (which cannot see this module) can consume it.
 -- Same name, same `SeLe4n.Kernel` namespace — every use below is unchanged.
 
-/-- `storeTcbIpcStateAndMessage` preserves every thread's `cpuAffinity` (it writes
-only `ipcState` / `pendingMessage`), hence preserves `determineTargetCore`. -/
-theorem storeTcbIpcStateAndMessage_determineTargetCore_eq
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
-    (msg : Option IpcMessage) (x : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
-    determineTargetCore st' x = determineTargetCore st x := by
-  refine determineTargetCore_congr st st' x ?_
-  unfold storeTcbIpcStateAndMessage at hStep
-  cases hLk : lookupTcb st tid with
-  | none => simp [hLk] at hStep
-  | some tcb =>
-    simp only [hLk] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
-    | error e => simp [hSO] at hStep
-    | ok pair =>
-      simp only [hSO] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      simp only [SystemState.getTcb?]
-      by_cases hEq2 : x.toObjId = tid.toObjId
-      · rw [hEq2]
-        simp [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hSO,
-              lookupTcb_some_objects st tid tcb hLk]
-      · rw [storeObject_objects_ne' st tid.toObjId x.toObjId _ pair hEq2 hObjInv hSO]
-
 /-- `storeObject` at an id distinct from `x`'s TCB preserves `x`'s
 `determineTargetCore` (it does not touch `x`'s TCB). -/
 theorem storeObject_determineTargetCore_eq
@@ -1044,6 +1018,16 @@ theorem storeObject_determineTargetCore_eq
   refine determineTargetCore_congr st st' x ?_
   simp only [SystemState.getTcb?,
     storeObject_objects_ne st st' id x.toObjId obj (fun h => hNe h.symm) hObjInv hStore]
+
+-- WS-SM SM5.C, relocated at **WS-RR RR8.12**:
+-- `storeTcbIpcStateAndMessage_determineTargetCore_eq` moved to
+-- `IPC/CrossCore/EndpointCall.lean`, where the rest of the
+-- `*_determineTargetCore_eq` family lives.  It is a frame over an IPC *primitive*,
+-- and this module is a cross-core *arm*: the live `.receive` arm's own home-core
+-- frame could not reach it here, which is the layering the project's
+-- one-question-one-owner rule names -- when a question has one owner and an asker
+-- that cannot see it, the owner is in the wrong layer.  This module imports
+-- `EndpointCall`, so every use below is unchanged.
 
 /-- WS-SM SM6.B.2 (honest SGI target): the cross-core signal's `.reschedule` SGI
 targets the waiter's **pre-state** home core `determineTargetCore st waiter` — the

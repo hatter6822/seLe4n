@@ -1435,122 +1435,17 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
 -- valid badges on the parked message's capabilities) rather than any post-state
 -- conjunct.
 
-/-- WS-RR RR2 (closure audit): the bare per-core receive preserves the
-object-store invariant — the definition walk, mirroring
-`endpointSendDualOnCore_preserves_objects_invExt`. -/
-theorem endpointReceiveDualOnCore_preserves_objects_invExt
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
-    (st : SystemState) (hObjInv : st.objects.invExt) :
-    (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.objects.invExt := by
-  unfold endpointReceiveDualOnCore
-  cases hEp : st.getEndpoint? endpointId with
-  | none => simp only; split <;> exact hObjInv
-  | some ep =>
-    simp only
-    cases hHead : ep.sendQ.head with
-    | some sender0 =>
-      simp only
-      cases hPop : endpointQueuePopHead endpointId false st with
-      | error e => simp only; exact hObjInv
-      | ok popRes =>
-        obtain ⟨sender, senderTcb, st'⟩ := popRes
-        simp only
-        have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId false
-          st st' sender senderTcb hObjInv hPop
-        split
-        · -- The dequeued sender was a `Call`: re-block it on reply, link, deliver.
-          cases hS1 : storeTcbIpcStateAndMessage st' sender
-              (.blockedOnReply endpointId (some receiver)) none with
-          | error e => simp only; exact hObjInv
-          | ok st'' =>
-            simp only
-            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
-              sender _ _ hObjInv1 hS1
-            cases replyId with
-            | none => exact hObjInv
-            | some rid =>
-              simp only
-              cases hLink : SystemState.linkCallerReply sender rid st'' with
-              | error e => simp only; exact hObjInv
-              | ok pLink =>
-                obtain ⟨⟨⟩, stLinked⟩ := pLink
-                simp only
-                have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
-                  sender rid hObjInv2 hLink
-                cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
-                    senderTcb.pendingMessage with
-                | ok st3 =>
-                    exact storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked st3
-                      receiver _ _ hObjInv3 hS2
-                | error e => simp only; exact hObjInv
-        · -- A plain `Send`: complete the sender, wake it on its home core, deliver.
-          cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
-          | error e => simp only; exact hObjInv
-          | ok st'' =>
-            simp only
-            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
-              sender _ _ hObjInv1 hS1
-            have hObjInvW := wakeThread_preserves_objects_invExt st'' sender executingCore hObjInv2
-            cases hS2 : storeTcbIpcStateAndMessage (wakeThread st'' sender executingCore).1
-                receiver .ready senderTcb.pendingMessage with
-            | ok st4 =>
-                exact storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4 receiver _ _
-                  hObjInvW hS2
-            | error e => simp only; exact hObjInv
-    | none =>
-      simp only
-      cases hClean : cleanupPreReceiveDonationChecked st receiver with
-      | error e => simp only; exact hObjInv
-      | ok stClean =>
-        simp only
-        have hObjInvC : stClean.objects.invExt := by
-          unfold cleanupPreReceiveDonationChecked at hClean
-          cases hLk : lookupTcb st receiver with
-          | none => rw [hLk] at hClean; cases hClean; exact hObjInv
-          | some recvTcb =>
-            rw [hLk] at hClean; simp only [] at hClean
-            cases hB : recvTcb.schedContextBinding with
-            | donated scId originalOwner =>
-                rw [hB] at hClean
-                exact returnDonatedSchedContextResolved_lift hClean
-                  (fun n s hs => returnDonatedSchedContext_preserves_objects_invExt st s receiver
-                    scId originalOwner hObjInv n hs)
-            | unbound => rw [hB] at hClean; cases hClean; exact hObjInv
-            | bound scId => rw [hB] at hClean; cases hClean; exact hObjInv
-        cases hEnq : endpointQueueEnqueue endpointId true receiver stClean with
-        | error e => simp only; exact hObjInv
-        | ok st1 =>
-          simp only
-          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver
-            stClean st1 hObjInvC hEnq
-          cases hS1 : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId)
-              none with
-          | error e => simp only; exact hObjInv
-          | ok st2 =>
-            simp only
-            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
-              receiver _ _ hObjInv1 hS1
-            cases hGetR : st2.getTcb? receiver with
-            | none =>
-                show (removeRunnableOnCore st2 receiver executingCore).objects.invExt
-                rw [removeRunnableOnCore_preserves_objects]
-                exact hObjInv2
-            | some rTcb =>
-              simp only
-              split
-              · cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
-                | error e => simp only; exact hObjInv
-                | ok pStash =>
-                  obtain ⟨⟨⟩, stStashed⟩ := pStash
-                  show (removeRunnableOnCore stStashed receiver executingCore).objects.invExt
-                  rw [removeRunnableOnCore_preserves_objects]
-                  exact storeObject_preserves_objects_invExt st2 stStashed receiver.toObjId _
-                    hObjInv2 hStash
-              · exact hObjInv
-
 open SeLe4n.Model.SystemState in
+-- WS-SM SM6.C, relocated at **WS-RR RR8.12**:
+-- `endpointReceiveDualOnCore_preserves_objects_invExt` moved to
+-- `IPC/CrossCore/EndpointReply.lean`, beside the transition it frames.  An
+-- `objects.invExt` preservation is a frame, and this project homes a frame with the
+-- write it is about; sitting here it was *downstream* of the module that declares
+-- the transition, so the receive leg's own home-core frame -- which needs invExt at
+-- the post-leg state to reach the capability installation -- could not consult it.
+-- Third instance of that layering in this cut, after `endpointReceiveDualWriteSet`
+-- and `endpointReceiveDualWithCapsOnCore_scheduler_eq`.
+
 /-- **WS-RR RR2 (closure audit): the transition the live `.receive` arm really
 calls preserves the whole IPC invariant bundle.**
 

@@ -376,6 +376,34 @@ theorem endpointReceiveDualWithCapsOnCore_no_caps
     | none => simp [hMsg]
     | some m => simp [hMsg, hNoCaps tcb hTcb m hMsg]
 
+/-- SM8.B.2 (PR #873 round 7), relocated to production at **WS-RR RR8.12**: the
+WithCaps per-core **receive** leaves the scheduler where the bare receive left it.
+
+The same shape as `endpointSendDualWithCapsOnCore_scheduler_eq`, and for the same
+reason: the extra leg is an `ipcUnwrapCaps`, which installs capabilities into a
+CNode and writes no run queue. Every other branch — a receiver that enqueued, a
+delivered message with no caps, a sender with no CSpace root — returns the bare
+receive's own post-state. -/
+theorem endpointReceiveDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) :
+    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st).1.scheduler
+      = (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.scheduler := by
+  unfold endpointReceiveDualWithCapsOnCore
+  cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | mk stRecv res =>
+    cases res with
+    | error e => rfl
+    | ok pair =>
+      obtain ⟨senderId, sgi⟩ := pair
+      simp only []
+      repeat' split
+      all_goals first
+        | rfl
+        | (rename_i h; exact ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ h)
+
 /-- **WS-SM SM6 (PR #873 round 8): a receive that dequeued nothing installs
 nothing.**
 
@@ -2585,5 +2613,595 @@ theorem endpointReplyCrossCoreDispatchSchedLockSet_covers_donation
             replierHome ownerHome :=
   -- The server's own core is one of the run-queue segment's three cores.
   schedFootprintOfCores_subset (fun _ h => by simp at h; simp [h]) (fun _ h => h)
+
+-- ============================================================================
+-- §11 WS-RR RR8.12 — the scheduler-domain footprint of the cross-core `.receive`
+-- ============================================================================
+--
+-- `lockSet_endpointReceive` is an object-domain `LockSet` and cannot name a
+-- per-core run-queue or replenish-queue slot at all, so
+-- `UncoveredLockDomain.syscallSeamSchedulerDomain` recorded the live `.receive`
+-- arm's scheduler writes as outside the footprint the RR7.12 seam acquires.
+-- This section declares them, in the same cross-domain `SchedLockId` order every
+-- sibling footprint uses (`object < runQueue < replenishQueue`, each same-kind
+-- segment `CoreId`-ascending, so the list *is* the SM3.D acquisition sequence).
+-- Inert until the bracket cut wires `schedLockSetForSyscall`.
+
+/-- SM8.B.2, relocated to production at **WS-RR RR8.12**: **the cores a
+cross-core endpoint receive may write** — the woken sender's home core on a
+rendezvous, the receiver's own core when it blocks.
+
+Read from the pre-state through the same `sendQ.head` the transition resolves,
+so the declared set and the transition name the same sender. The two arms are
+genuinely exclusive: a receive that rendezvouses does not block, and a receive
+that blocks wakes nobody.
+
+Relocated for the reason `endpointSendWriteSet`'s docstring gives: the
+scheduler-domain footprint below is production and
+`InformationFlow/NonInterferenceCrossCore.lean`, where this was declared, is
+staged and imports `Kernel.API`. -/
+def endpointReceiveDualWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (executingCore : CoreId) : List CoreId :=
+  match st.getEndpoint? endpointId with
+  | some ep =>
+      match ep.sendQ.head with
+      | some sender => [determineTargetCore st sender]
+      | none => [executingCore]
+  | none => []
+
+/-- **WS-RR RR8.12**: on a rendezvous the set is the home core of the sender
+`receiveRendezvousSender?` names.
+
+The tie between this core list and the object-domain footprint's own `senderTid`
+member, which comes from that resolver: the two cannot name different threads.
+Stating it here rather than spelling the resolver inside the definition keeps
+every SM8.B.2 result taken against the write set byte-identical — the `none`
+arms of the two readings differ, since `receiveRendezvousSender?` answers `none`
+for an unresolvable endpoint as well as for an empty send queue, and the write
+set distinguishes them. -/
+theorem endpointReceiveDualWriteSet_of_sender (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (executingCore : CoreId) (sender : SeLe4n.ThreadId)
+    (hSender : receiveRendezvousSender? st endpointId = some sender) :
+    endpointReceiveDualWriteSet st endpointId executingCore
+      = [determineTargetCore st sender] := by
+  unfold endpointReceiveDualWriteSet
+  unfold receiveRendezvousSender? at hSender
+  cases hEp : st.getEndpoint? endpointId with
+  | none => rw [hEp] at hSender; simp at hSender
+  | some ep =>
+      rw [hEp] at hSender
+      simp only [Option.bind_some] at hSender
+      simp only [hSender]
+
+/-- **WS-RR RR8.12**: and on the block path it is the executing core's, which the
+receiver's own deschedule writes. -/
+theorem endpointReceiveDualWriteSet_of_blocked (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (executingCore : CoreId) (ep : Endpoint)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none) :
+    endpointReceiveDualWriteSet st endpointId executingCore = [executingCore] := by
+  unfold endpointReceiveDualWriteSet
+  rw [hEp]
+  simp only [hHead]
+
+/-- WS-RR RR2 (closure audit): the bare per-core receive preserves the
+object-store invariant — the definition walk, mirroring
+`endpointSendDualOnCore_preserves_objects_invExt`. -/
+theorem endpointReceiveDualOnCore_preserves_objects_invExt
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.objects.invExt := by
+  unfold endpointReceiveDualOnCore
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact hObjInv
+  | some ep =>
+    simp only
+    cases hHead : ep.sendQ.head with
+    | some sender0 =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId false st with
+      | error e => simp only; exact hObjInv
+      | ok popRes =>
+        obtain ⟨sender, senderTcb, st'⟩ := popRes
+        simp only
+        have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId false
+          st st' sender senderTcb hObjInv hPop
+        split
+        · -- The dequeued sender was a `Call`: re-block it on reply, link, deliver.
+          cases hS1 : storeTcbIpcStateAndMessage st' sender
+              (.blockedOnReply endpointId (some receiver)) none with
+          | error e => simp only; exact hObjInv
+          | ok st'' =>
+            simp only
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+              sender _ _ hObjInv1 hS1
+            cases replyId with
+            | none => exact hObjInv
+            | some rid =>
+              simp only
+              cases hLink : SystemState.linkCallerReply sender rid st'' with
+              | error e => simp only; exact hObjInv
+              | ok pLink =>
+                obtain ⟨⟨⟩, stLinked⟩ := pLink
+                simp only
+                have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
+                  sender rid hObjInv2 hLink
+                cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
+                    senderTcb.pendingMessage with
+                | ok st3 =>
+                    exact storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked st3
+                      receiver _ _ hObjInv3 hS2
+                | error e => simp only; exact hObjInv
+        · -- A plain `Send`: complete the sender, wake it on its home core, deliver.
+          cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
+          | error e => simp only; exact hObjInv
+          | ok st'' =>
+            simp only
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+              sender _ _ hObjInv1 hS1
+            have hObjInvW := wakeThread_preserves_objects_invExt st'' sender executingCore hObjInv2
+            cases hS2 : storeTcbIpcStateAndMessage (wakeThread st'' sender executingCore).1
+                receiver .ready senderTcb.pendingMessage with
+            | ok st4 =>
+                exact storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4 receiver _ _
+                  hObjInvW hS2
+            | error e => simp only; exact hObjInv
+    | none =>
+      simp only
+      cases hClean : cleanupPreReceiveDonationChecked st receiver with
+      | error e => simp only; exact hObjInv
+      | ok stClean =>
+        simp only
+        have hObjInvC : stClean.objects.invExt := by
+          unfold cleanupPreReceiveDonationChecked at hClean
+          cases hLk : lookupTcb st receiver with
+          | none => rw [hLk] at hClean; cases hClean; exact hObjInv
+          | some recvTcb =>
+            rw [hLk] at hClean; simp only [] at hClean
+            cases hB : recvTcb.schedContextBinding with
+            | donated scId originalOwner =>
+                rw [hB] at hClean
+                exact returnDonatedSchedContextResolved_lift hClean
+                  (fun n s hs => returnDonatedSchedContext_preserves_objects_invExt st s receiver
+                    scId originalOwner hObjInv n hs)
+            | unbound => rw [hB] at hClean; cases hClean; exact hObjInv
+            | bound scId => rw [hB] at hClean; cases hClean; exact hObjInv
+        cases hEnq : endpointQueueEnqueue endpointId true receiver stClean with
+        | error e => simp only; exact hObjInv
+        | ok st1 =>
+          simp only
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver
+            stClean st1 hObjInvC hEnq
+          cases hS1 : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId)
+              none with
+          | error e => simp only; exact hObjInv
+          | ok st2 =>
+            simp only
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
+              receiver _ _ hObjInv1 hS1
+            cases hGetR : st2.getTcb? receiver with
+            | none =>
+                show (removeRunnableOnCore st2 receiver executingCore).objects.invExt
+                rw [removeRunnableOnCore_preserves_objects]
+                exact hObjInv2
+            | some rTcb =>
+              simp only
+              split
+              · cases hStash : storeObject receiver.toObjId
+                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                | error e => simp only; exact hObjInv
+                | ok pStash =>
+                  obtain ⟨⟨⟩, stStashed⟩ := pStash
+                  show (removeRunnableOnCore stStashed receiver executingCore).objects.invExt
+                  rw [removeRunnableOnCore_preserves_objects]
+                  exact storeObject_preserves_objects_invExt st2 stStashed receiver.toObjId _
+                    hObjInv2 hStash
+              · exact hObjInv
+
+/-- **WS-RR RR8.12 (frame)**: a cross-core receive that **rendezvouses** moves no
+thread's home core.
+
+The theorem that licenses resolving WS-OD OD3.6's donation cores on the syscall's
+*pre*-state: the donation runs at the post-receive-leg state, so a pre-state
+reading is only the same reading if nothing the leg does moves a home.  Nothing
+does — the rendezvous is a queue pop, TCB `ipcState` / `pendingMessage` stores, a
+reply link and a run-queue insert, and `determineTargetCore` reads `cpuAffinity`,
+which only `.tcbSetAffinity` writes.
+
+**Stated on the rendezvous branch, and that is the claim's own subject rather than
+an economy.**  The replenish segment `endpointReceiveHandoffReplenishCores`
+declares is `[]` wherever the send queue is empty — a receive that blocks donates
+nothing (`rendezvousDequeuedCall` is false for the `.blockedOnReceive` id the
+block path returns) — so there is no core for a pre-state reading to get wrong
+there.  The block path frames homes too (its steps are a donation return, an
+enqueue, a TCB store, a stash and a run-queue removal, none of them an affinity
+write); that half has no consumer, so it is not stated. -/
+theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) (st : SystemState)
+    (ep : Endpoint) (sender x : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender) :
+    determineTargetCore
+        (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 x
+      = determineTargetCore st x := by
+  unfold endpointReceiveDualOnCore
+  rw [hEp]
+  simp only [hHead]
+  cases hPop : endpointQueuePopHead endpointId false st with
+  | error e => simp [hPop]
+  | ok triple =>
+      obtain ⟨popTid, popTcb, st1⟩ := triple
+      simp only [hPop]
+      have hF1 : determineTargetCore st1 x = determineTargetCore st x :=
+        endpointQueuePopHead_determineTargetCore_eq endpointId false st st1 popTid popTcb x
+          hObjInv hPop
+      have hI1 : st1.objects.invExt :=
+        endpointQueuePopHead_preserves_objects_invExt endpointId false st st1 popTid popTcb
+          hObjInv hPop
+      split
+      · -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
+        cases hS2 : storeTcbIpcStateAndMessage st1 popTid
+            (.blockedOnReply endpointId (some receiver)) none with
+        | error e => simp [hS2]
+        | ok st2 =>
+            simp only [hS2]
+            have hF2 : determineTargetCore st2 x = determineTargetCore st x := by
+              rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 popTid _ none x
+                hI1 hS2, hF1]
+            have hI2 : st2.objects.invExt :=
+              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
+            cases hRid : replyId with
+            | none => simp [hRid]
+            | some rid =>
+                simp only [hRid]
+                cases hLink : SystemState.linkCallerReply popTid rid st2 with
+                | error e => simp [hLink]
+                | ok pair =>
+                    obtain ⟨_, st3⟩ := pair
+                    simp only [hLink]
+                    have hF3 : determineTargetCore st3 x = determineTargetCore st x := by
+                      rw [linkCallerReply_determineTargetCore_eq st2 st3 popTid rid x hI2 hLink,
+                        hF2]
+                    have hI3 : st3.objects.invExt :=
+                      linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
+                    cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
+                        popTcb.pendingMessage with
+                    | error e => simp [hS4]
+                    | ok st4 =>
+                        simp only [hS4]
+                        exact (storeTcbIpcStateAndMessage_determineTargetCore_eq st3 st4 receiver
+                          .ready popTcb.pendingMessage x hI3 hS4).trans hF3
+      · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
+        cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
+        | error e => simp [hS2]
+        | ok st2 =>
+            simp only [hS2]
+            have hF2 : determineTargetCore st2 x = determineTargetCore st x := by
+              rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 popTid .ready none x
+                hI1 hS2, hF1]
+            have hI2 : st2.objects.invExt :=
+              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid .ready none hI1
+                hS2
+            have hFW : determineTargetCore (wakeThread st2 popTid executingCore).1 x
+                = determineTargetCore st x := by
+              rw [wakeThread_determineTargetCore_eq st2 popTid x executingCore hI2, hF2]
+            have hIW : (wakeThread st2 popTid executingCore).1.objects.invExt :=
+              wakeThread_preserves_objects_invExt st2 popTid executingCore hI2
+            cases hS3 : storeTcbIpcStateAndMessage (wakeThread st2 popTid executingCore).1
+                receiver .ready popTcb.pendingMessage with
+            | error e => simp [hS3]
+            | ok st3 =>
+                simp only [hS3]
+                exact (storeTcbIpcStateAndMessage_determineTargetCore_eq _ st3 receiver .ready
+                  popTcb.pendingMessage x hIW hS3).trans hFW
+
+/-- **WS-RR RR8.12 (frame)**: and installing the parked send's capabilities moves
+none either, so the whole receive leg the live `.receive` arm runs frames every
+home core on the rendezvous path.
+
+The shape `endpointReceiveDualWithCapsOnCore_scheduler_eq` has: every branch but
+the last returns the bare receive's own post-state, and the last is an
+`ipcUnwrapCaps`, which fixes the whole `getTcb?` projection. -/
+theorem endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (ep : Endpoint) (sender x : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender) :
+    determineTargetCore
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+          receiverSlotBase executingCore st).1 x
+      = determineTargetCore st x := by
+  have hLeg := endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous endpointId
+    receiver replyId executingCore st ep sender x hObjInv hEp hHead
+  have hLegInv :
+      ((endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1).objects.invExt :=
+    endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver replyId executingCore
+      st hObjInv
+  unfold endpointReceiveDualWithCapsOnCore
+  cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | mk stRecv res =>
+      rw [hRecv] at hLeg hLegInv
+      cases res with
+      | error e => simpa using hLeg
+      | ok pair =>
+          obtain ⟨senderId, sgi⟩ := pair
+          simp only []
+          repeat' split
+          all_goals first
+            | simpa using hLeg
+            | (rename_i hUnwrap
+               rw [ipcUnwrapCaps_determineTargetCore_eq _ receiverCspaceRoot receiverSlotBase _
+                 stRecv _ _ x hLegInv hUnwrap]
+               simpa using hLeg)
+
+/-- **WS-RR RR8.12 (frame)**: a cross-core receive touches **no** core's
+replenish queue.
+
+The obligation the footprint below owes for the replenish segment it declares:
+every core in that segment comes from the *donation* the arm runs afterwards, and
+none from the receive leg itself.  Both paths compose steps that frame the whole
+scheduler (the queue pop or enqueue, the TCB stores, the reply link, the stash,
+and — since the block path returns a donation — `cleanupPreReceiveDonationChecked`)
+with one that writes a run queue alone (the rendezvous' `wakeThread`, the block's
+`removeRunnableOnCore`).  A `blockedOnCall` rendezvous writes no per-core slot at
+all: the caller becomes `.blockedOnReply` and is deliberately not woken. -/
+theorem endpointReceiveDualOnCore_replenishQueueOnCore (epId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (ec : CoreId)
+    (st : SystemState) (c : CoreId) :
+    (endpointReceiveDualOnCore epId receiver replyId ec st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold endpointReceiveDualOnCore
+  cases hEp : st.getEndpoint? epId with
+  | none => simp only []; split <;> rfl
+  | some ep =>
+    simp only []
+    cases hHead : ep.sendQ.head with
+    | none =>
+      simp only []
+      split
+      · rfl
+      · next stClean hClean =>
+        split
+        · rfl
+        · next st1 hEnq =>
+          split
+          · rfl
+          · next st2 hIpc =>
+            have hChain : st2.scheduler = st.scheduler := by
+              rw [storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hIpc,
+                endpointQueueEnqueue_scheduler_eq epId true receiver stClean st1 hEnq,
+                cleanupPreReceiveDonationChecked_scheduler_eq st stClean receiver hClean]
+            split
+            · simp only [removeRunnableOnCore_replenishQueueOnCore, hChain]
+            · next rTcb hTcb =>
+              split
+              · split
+                · rfl
+                · next _ st3 hStash =>
+                  simp only [removeRunnableOnCore_replenishQueueOnCore,
+                    storeObject_scheduler_eq st2 st3 _ _ hStash, hChain]
+              · rfl
+    | some _ =>
+      simp only []
+      split
+      · rfl
+      · next sender senderTcb st1 hPop =>
+        have hPopSched : st1.scheduler = st.scheduler :=
+          endpointQueuePopHead_scheduler_eq epId false st st1 sender hPop
+        split
+        · -- `blockedOnCall` sender: recorded `.blockedOnReply`, never woken.
+          rw [if_pos rfl]
+          split
+          · rfl
+          · next st2 hIpc =>
+            split
+            · rfl
+            · next rid =>
+              split
+              · rfl
+              · next st3 hLink =>
+                split
+                · next st4 hMsg =>
+                  simp only [storeTcbIpcStateAndMessage_scheduler_eq st3 st4 _ _ _ hMsg,
+                    linkCallerReply_scheduler_eq st2 st3 sender rid hLink,
+                    storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hIpc, hPopSched]
+                · rfl
+        · -- `blockedOnSend` sender: woken on its own home core.
+          rw [if_neg (by simp)]
+          split
+          · rfl
+          · next st2 hReady =>
+            split
+            · next st3 hMsg =>
+              simp only [storeTcbIpcStateAndMessage_scheduler_eq _ st3 _ _ _ hMsg,
+                wakeThread_replenishQueueOnCore,
+                storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hReady, hPopSched]
+            · rfl
+
+/-- **WS-RR RR8.12 (frame)**: and neither does the caps-carrying form the live
+`.receive` arm runs — the capability install writes CNodes and the CDT, never the
+scheduler (`ipcUnwrapCaps_preserves_scheduler`). -/
+theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore (epId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (cnRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (ec : CoreId)
+    (st st' : SystemState) (c : CoreId)
+    (h : (endpointReceiveDualWithCapsOnCore epId receiver replyId cnRoot slotBase ec st).1
+      = st') :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  subst h
+  rw [endpointReceiveDualWithCapsOnCore_scheduler_eq epId receiver replyId cnRoot slotBase ec st]
+  exact endpointReceiveDualOnCore_replenishQueueOnCore epId receiver replyId ec st c
+
+/-- **WS-RR RR8.12**: **the cores whose replenish queue a cross-core receive may
+write** — the dequeued donor's home and the receiver's, on a rendezvous, and none
+at all when the receive blocks.
+
+The replenish twin of `endpointReceiveDualWriteSet`, and the reason it is a
+definition rather than two parameters on the footprint below: *a parameter is a
+place for a caller to be wrong.*  The two cores are WS-OD OD3.6's
+`applyRendezvousCallDonation` own `determineTargetCore` arguments, and the donation
+runs at the *post*-receive-leg state — so a footprint taking them as operands would
+let its caller declare locks for a migration between two cores the transition never
+touches, and a bracket that must resolve a footprint *before* the transition runs
+could not supply them at all.
+
+Read on the **pre**-state, which is sound because the receive leg moves no thread's
+home core: `endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous`
+is that fact, and
+`endpointReceiveHandoffReplenishCores_of_rendezvous` below is this list
+*being* the pair the donation resolves.  So this closes, for `.receive`, the
+footprint/transition resolution asymmetry WS-HP HP10.8 registered for the reply
+arm's origin member rather than adding a second instance of it.
+
+`[]` on the block path is not an economy either: `rendezvousDequeuedCall` is false
+for the `.blockedOnReceive` id that path returns, so the arm donates nothing there
+and a segment naming two cores would be a footprint wider than its operation —
+which this project rates as a real cost, lock contention being an observable
+channel (SM8.D's CC-5). -/
+def endpointReceiveHandoffReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) : List CoreId :=
+  match receiveRendezvousSender? st endpointId with
+  | some sender => [determineTargetCore st sender, determineTargetCore st receiver]
+  | none        => []
+
+/-- **WS-RR RR8.12**: and on the block path it is empty — a receive that parks
+itself donates nothing, so no replenish queue is written and none is declared. -/
+theorem endpointReceiveHandoffReplenishCores_of_blocked (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (ep : Endpoint)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none) :
+    endpointReceiveHandoffReplenishCores st endpointId receiver = [] := by
+  unfold endpointReceiveHandoffReplenishCores receiveRendezvousSender?
+  rw [hEp]
+  simp only [Option.bind_some, hHead]
+
+/-- **WS-RR RR8.12: the licence.**  On a rendezvous the pre-state reading **is** the
+pair of cores WS-OD OD3.6's donation resolves at the state it runs on.
+
+Not "agrees with" and not "over-approximates": the two lists are equal, so the
+footprint the RR7.12-style bracket acquires before the transition and the migration
+the transition then performs cannot name different cores.  What makes it true is
+that nothing in the receive leg writes a `cpuAffinity` — the only field
+`determineTargetCore` reads, and one only `.tcbSetAffinity` writes. -/
+theorem endpointReceiveHandoffReplenishCores_of_rendezvous (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (ep : Endpoint) (sender : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender) :
+    endpointReceiveHandoffReplenishCores st endpointId receiver
+      = [determineTargetCore
+             (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+               receiverSlotBase executingCore st).1 sender,
+         determineTargetCore
+             (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+               receiverSlotBase executingCore st).1 receiver] := by
+  have hFrame := endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous
+    endpointId receiver replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender
+  unfold endpointReceiveHandoffReplenishCores receiveRendezvousSender?
+  rw [hEp]
+  simp only [Option.bind_some, hHead]
+  rw [hFrame sender hObjInv hEp hHead, hFrame receiver hObjInv hEp hHead]
+
+/-- **WS-RR RR8.12**: the scheduler-domain footprint of the live `.receive` arm —
+the object-store table write lock, the run-queue write lock of the one core the
+receive leg moves, and the replenish-queue write locks of the two endpoints
+WS-OD OD3.6's donation migrates between.
+
+**Every core is derived; nothing is a parameter.**  The run segment is
+`endpointReceiveDualWriteSet`, which the arm's own SM8.B confinement theorem
+`endpointReceiveDualWithCapsOnCore_confinedToCores` is stated at, so the footprint
+and the confinement claim cannot name different cores (Cut 7's rule).  The
+replenish segment is `endpointReceiveHandoffReplenishCores`, which is the
+donation's own pair by theorem.  The remaining arguments are the syscall's own
+operands, so a bracket resolving this footprint has everything it needs before the
+transition runs — the property WS-HP HP10.8 could not get for the reply arm's
+origin member and registered as an asymmetry.
+
+**Dynamic chain extension (declared, not static).** The arm also runs
+`applyReceiverPipHandoff`, which re-buckets each blocking-chain member's run
+queue on *that member's* home core.  The chain is state-discovered, so no static
+footprint can enumerate those cores: `PriorityInheritance.pipChainSchedFootprint`
+declares them per walked member, and the SM3.C obligation
+`pipChainStart_endpointReceive` is what ties the walk to it.  Every sibling
+footprint over an arm that walks a chain carries the identical caveat. -/
+def schedLockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (executingCore : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  schedFootprintOfCores (endpointReceiveDualWriteSet st endpointId executingCore)
+    (endpointReceiveHandoffReplenishCores st endpointId receiver)
+
+-- No `_write_only` / `_pairwise_le` restatement here, and that is deliberate: both
+-- are `schedFootprintOfCores_write_only` / `_pairwise_le` applied to this
+-- footprint's own arguments, so a consumer reaches for the shared lemma directly.
+-- Cut 7's four arm footprints omit them for the same reason; the RR2.4 / RR2.10
+-- siblings that carry them predate the shared constructor.
+
+/-- **WS-RR RR8.12**: on the rendezvous path the footprint names the woken
+sender's home core — resolved through `receiveRendezvousSender?`, the resolver the
+object-domain footprint's own sender member comes from. -/
+theorem schedLockSet_endpointReceiveOnCore_contains_sender_runQueue_write (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (executingCore : CoreId)
+    (sender : SeLe4n.ThreadId)
+    (hSender : receiveRendezvousSender? st endpointId = some sender) :
+    (SchedLockId.runQueue ⟨determineTargetCore st sender⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  rw [endpointReceiveDualWriteSet_of_sender st endpointId executingCore sender hSender]
+  simp
+
+/-- **WS-RR RR8.12**: and on the block path it names the executing core's, which
+the receiver's own deschedule writes.  The two arms are exclusive — a receive
+that rendezvouses does not block — so the run segment is one member either
+way. -/
+theorem schedLockSet_endpointReceiveOnCore_contains_executing_runQueue_write (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (executingCore : CoreId)
+    (ep : Endpoint) (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none) :
+    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  rw [endpointReceiveDualWriteSet_of_blocked st endpointId executingCore ep hEp hHead]
+  simp
+
+/-- **WS-RR RR8.12**: and a receive that blocks declares no replenish-queue lock at
+all — the segment is empty, so the footprint is the table lock and one run queue. -/
+theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (executingCore : CoreId)
+    (ep : Endpoint) (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none)
+    (c : CoreId) :
+    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+  intro hMem
+  have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
+  rw [endpointReceiveHandoffReplenishCores_of_blocked st endpointId receiver ep hEp hHead] at this
+  simp at this
+
+/-- **WS-RR RR8.12 (arm-level coverage)**: the `.receive` footprint covers WS-OD
+OD3.6's donation footprint member for member — hence, by
+`applyCallDonationOnCoreSchedLockSet_covers_migration`, the SM5.H replenishment
+migration's two replenish-queue write locks.
+
+This is the statement that makes the declaration *true* rather than merely
+plausible, and it is stated at the cores the donation **actually** resolves, on the
+post-receive-leg state it runs on — not at two operands a caller supplied.  A
+`withLockSet` bracket over this footprint therefore holds both migration slots. -/
+theorem schedLockSet_endpointReceiveOnCore_covers_donation (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (ep : Endpoint) (sender : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender) :
+    ∀ p ∈ applyCallDonationOnCoreSchedLockSet
+             (determineTargetCore
+               (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+                 receiverSlotBase executingCore st).1 sender)
+             (determineTargetCore
+               (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+                 receiverSlotBase executingCore st).1 receiver),
+      p ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+  refine schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun c hc => ?_)
+  rw [endpointReceiveHandoffReplenishCores_of_rendezvous st endpointId receiver replyId
+    receiverCspaceRoot receiverSlotBase executingCore ep sender hObjInv hEp hHead]
+  exact hc
 
 end SeLe4n.Kernel

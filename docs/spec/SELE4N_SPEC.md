@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.106` (`lakefile.toml`) |
+| **Package version** | `0.35.107` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 393,612 across 333 Lean files |
+| **Production LoC** | 394,194 across 333 Lean files |
 | **Test LoC** | 79,985 across 70 Lean test suites |
-| **Proved declarations** | 13,082 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 13,097 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4314,9 +4314,40 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   declares is a theorem rather than a reading of the body — a footprint that omits
   a written lock is false, and `observableSlotsConfinedToCores` constrains six
   per-core slots of which the replenish queue is not one.  `.receive` and
-  `.replyRecv` stay undeclared: both donate, so their replenish cores come from the
-  migration, and `.receive`'s chain leg is not pre-state computable.  All four
-  footprints are inert — nothing acquires them until the bracket cut.
+  `.replyRecv` stay undeclared at that cut: both donate, so their replenish cores
+  come from the migration, and `.receive`'s chain leg is not pre-state computable.
+  All four footprints are inert — nothing acquires them until the bracket cut.
+
+  **And the first DONATING arm declares one** (WS-RR RR8.12 Cut 8a-ii,
+  `v0.35.107`).  `schedLockSet_endpointReceiveOnCore` is the live `.receive` arm's
+  footprint, and the first with a non-empty replenish segment: the object-store
+  table write lock, the run-queue write lock of the one core the receive leg moves,
+  and the replenish-queue write locks of the two endpoints WS-OD OD3.6's donation
+  migrates between.  **Every core is derived and nothing is a parameter**: the run
+  segment is the arm's SM8.B write set, as above, and the replenish segment is
+  `endpointReceiveHandoffReplenishCores`, read on the **pre**-state.  That reading
+  is licensed rather than assumed —
+  `endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous` says the
+  receive leg moves no thread's home core (`determineTargetCore` reads
+  `cpuAffinity`, and only `.tcbSetAffinity` writes it), and
+  `endpointReceiveHandoffReplenishCores_of_rendezvous` states that the pre-state
+  list **equals** the pair WS-OD OD3.6's donation resolves at the post-receive-leg
+  state it runs on.  So the footprint a bracket acquires before the transition and
+  the migration the transition then performs cannot name different cores, which
+  closes for `.receive` the footprint/transition resolution asymmetry WS-HP HP10.8
+  registered for the reply arm's origin member.  On the block path the segment is
+  `[]` (`…_no_replenishQueue_of_blocked`), since a receive that parks itself donates
+  nothing and a footprint wider than its operation carries contention that says
+  nothing about it (SM8.D's CC-5).  The declaration is true in both directions by
+  theorem:
+  `schedLockSet_endpointReceiveOnCore_covers_donation` covers the donation's own
+  footprint member for member, hence the SM5.H migration's two slots, while
+  `endpointReceiveDualOnCore_replenishQueueOnCore` and its WithCaps sibling say the
+  receive **leg** writes no replenish queue at all.  The arm's PIP chain walk stays
+  declared *dynamically* through `pipChainSchedFootprint` and the
+  `pipChainStart_endpointReceive` obligation, since a walked chain is unbounded and
+  no static footprint can enumerate it.  `.replyRecv` remains undeclared;
+  `maxLockSetSize` is unmoved, a `SchedLockSet` carrying no cardinality bound.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

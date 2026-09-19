@@ -1371,6 +1371,105 @@ composes. -/
   unfold SystemState.getTcb?
   rw [removeRunnableOnCore_preserves_objects]
 
+/-- `storeTcbIpcStateAndMessage` preserves every thread's `cpuAffinity` (it writes
+only `ipcState` / `pendingMessage`), hence preserves `determineTargetCore`. -/
+theorem storeTcbIpcStateAndMessage_determineTargetCore_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (msg : Option IpcMessage) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    determineTargetCore st' x = determineTargetCore st x := by
+  refine determineTargetCore_congr st st' x ?_
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStep
+  | some tcb =>
+    simp only [hLk] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hSO] at hStep
+    | ok pair =>
+      simp only [hSO] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      simp only [SystemState.getTcb?]
+      by_cases hEq2 : x.toObjId = tid.toObjId
+      · rw [hEq2]
+        simp [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hSO,
+              lookupTcb_some_objects st tid tcb hLk]
+      · rw [storeObject_objects_ne' st tid.toObjId x.toObjId _ pair hEq2 hObjInv hSO]
+
+/-- **WS-RR RR8.12**: linking a dequeued caller to its reply object moves no
+thread's home core.
+
+The composite the receive leg's `Call` rendezvous runs, and the fifth member of
+this family: `linkReply` stores a **Reply** (`storeObject_reply_…` above) and the
+second step stores the caller's TCB with only `replyObject` set, so `cpuAffinity`
+is `rfl` on both writes.  Nothing here consults an affinity, which is the whole
+content -- and what lets a *pre-state* scheduler footprint name the home cores a
+later step resolves, rather than assuming the two coincide. -/
+theorem linkCallerReply_determineTargetCore_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  unfold SystemState.linkCallerReply at hStep
+  cases hLink : SystemState.linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hFrame1 : determineTargetCore st1 x = determineTargetCore st x := by
+      unfold SystemState.linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · exact storeObject_reply_determineTargetCore_eq st st1 rid.toObjId r
+            { r with caller := some caller } x
+            ((SystemState.getReply?_eq_some_iff st rid r).mp hGetR) hObjInv hLink
+        · simp at hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · have hInv1 :=
+          SystemState.linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+        rw [storeObject_tcb_determineTargetCore_eq st1 st' caller tcb
+          { tcb with replyObject := some rid } x hT rfl hInv1 hStep, hFrame1]
+      · simp at hStep
+
+/-- **WS-RR RR8.12**: and installing the capabilities a parked send was carrying
+moves no thread's home core either.
+
+The last step of the live `.receive` arm's receive leg.  `ipcUnwrapCaps` writes
+CNodes and the CDT, and its own TCB frame holds at *every* key in both directions
+(`ipcUnwrapCaps_preserves_tcb_objects` / `_tcb_backward`), so the whole
+`getTcb?` projection is fixed -- a strictly stronger fact than the affinity this
+needs, which is why no per-field argument appears here. -/
+theorem ipcUnwrapCaps_determineTargetCore_eq (msg : IpcMessage)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  have hEq : st'.getTcb? x = st.getTcb? x := by
+    cases hT' : st'.getTcb? x with
+    | none =>
+        cases hT : st.getTcb? x with
+        | none => rfl
+        | some tcb =>
+            have hFwd := ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase
+              grantRight st st' summary x.toObjId tcb
+              ((SystemState.getTcb?_eq_some_iff st x tcb).mp hT) hObjInv hStep
+            simp [(SystemState.getTcb?_eq_some_iff st' x tcb).mpr hFwd] at hT'
+    | some tcb' =>
+        have hBwd := ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
+          st st' summary x.toObjId tcb' hObjInv hStep
+          ((SystemState.getTcb?_eq_some_iff st' x tcb').mp hT')
+        rw [(SystemState.getTcb?_eq_some_iff st x tcb').mpr hBwd]
+  exact determineTargetCore_congr st st' x (by rw [hEq])
+
 /-- `placedCoreOf?` reads exactly two per-core scheduler slices, so a step that
 frames both at every core frames it.  The pointwise form, because the migration
 frames them per core rather than by handing back the whole scheduler. -/

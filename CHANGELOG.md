@@ -1,3 +1,192 @@
+## v0.35.107 — the first donating arm declares a scheduler footprint
+
+**WS-RR RR8.12 (Cut 8a-ii).**  `UncoveredLockDomain.syscallSeamSchedulerDomain`
+records that `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a
+run-queue or replenish-queue slot at all, so every scheduler write the RR7.12
+syscall seam performs is outside the footprint it acquires.  Cut 7 declared the
+three arms that write **no** replenish queue; this cut declares the live
+`.receive` arm, which is the first that **donates** and so the first whose
+replenish segment is non-empty.  `schedLockSet_endpointReceiveOnCore` is the
+object-store table write lock, the run-queue write lock of the one core the
+receive leg moves, and the replenish-queue write locks of the two endpoints
+WS-OD OD3.6's donation migrates between.  Inert until the bracket cut.
+
+**Every core is derived; nothing is a parameter — and the first shape of this cut
+got that wrong.**  The run segment is `schedFootprintOfCores` of the arm's SM8.B
+write set, which is what Cut 7's rule requires —
+`endpointReceiveDualWithCapsOnCore_confinedToCores` is *stated at*
+`endpointReceiveDualWriteSet`, so the footprint and the confinement claim cannot
+name different cores.  The replenish segment has no write set to take:
+`observableSlotsConfinedToCores` covers six per-core slots and the replenish queue
+is **not** one of them.  This cut's first shape therefore took the donation's two
+cores as **parameters**, on the reasoning that `applyRendezvousCallDonation`
+resolves them at the *post*-receive-leg state it runs on — the reading
+`applyCallDonationOnCoreSchedLockSet` has taken for `.call` since RR2.4 — so a
+pre-state reading would answer the question at a state the migration does not run
+at.
+
+Three things were wrong with it, and the third is what measured the other two.
+It breaks the project's own rule that **a parameter is a place for a caller to be
+wrong** (PR #895 round 10: *the fix is not a better argument at the call site but
+no argument*), since a caller could declare locks for a migration between two
+cores the transition never touches.  A bracket resolves a footprint **before** the
+transition runs, so Cut 9 could not have supplied those operands at all and the
+form would have had to be rewritten anyway.  And it left **three** frames Cut 8a
+had promoted *for this footprint* — `wakeThread_determineTargetCore_eq`,
+`storeObject_reply_determineTargetCore_eq`,
+`endpointQueueEnqueue_determineTargetCore_eq` — with no consumer at all, under a
+Tier 3 comment reading "No consumer until Cut 8a-ii's footprint".  A frame nobody
+asks for is a question nobody asked; a fix that consumes three of the five is the
+evidence the question was real.
+
+**So the replenish segment is derived too, and licensed by a theorem.**
+`endpointReceiveHandoffReplenishCores st endpointId receiver` reads the donor's and
+the receiver's home cores off the **pre**-state, or `[]` when the send queue is
+empty.  What licenses the pre-state reading is
+`endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous`: *the
+receive leg moves no thread's home core*, because `determineTargetCore` reads
+`cpuAffinity` and only `.tcbSetAffinity` writes it.  The claim is an
+**equality** — `endpointReceiveHandoffReplenishCores_of_rendezvous` proves the
+pre-state list *is* the pair of `determineTargetCore` calls the donation makes at
+the state it runs on, not that it agrees with them or over-approximates them — so
+the footprint a bracket acquires and the migration the transition performs cannot
+name different cores.  That **closes**, for `.receive`, the footprint/transition
+resolution asymmetry WS-HP HP10.8 registered for the reply arm's origin member,
+rather than adding a second instance of it.  With the parameters gone the
+footprint's remaining arguments are the syscall's own operands, which is the
+property the bracket cut needs.
+
+`[]` on the block path is not an economy either.  `rendezvousDequeuedCall` is
+false for the `.blockedOnReceive` id that path returns, so the arm donates nothing
+there, and `schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked` states
+it: a segment naming two cores would be a footprint wider than its operation,
+which this project rates as a real cost — lock contention is an observable channel
+(SM8.D's CC-5), and OD3.5 *narrowed* a footprint for exactly that reason.
+
+**The frames the licence needed, and where they live.**  The
+`*_determineTargetCore_eq` family gained two members: `linkCallerReply_…` (the
+`Call` rendezvous' reply link — a Reply store then a TCB store, `cpuAffinity`-`rfl`
+on both) and `ipcUnwrapCaps_…` (the capability installation, whose own TCB frame
+holds at every key in **both** directions, so the whole `getTcb?` projection is
+fixed — strictly stronger than the affinity the licence needs, which is why no
+per-field argument appears in it).  Both sit in the family's home module rather
+than beside their operations, because that is where every other member lives.  The
+composite frame is stated on the **rendezvous** branch, and that is the claim's own
+subject rather than an economy: the replenish segment is `[]` on the block path, so
+there is no core there for a pre-state reading to get wrong.  The block path frames
+homes too — its steps are a donation return, an enqueue, a TCB store, a stash and a
+run-queue removal, none of them an affinity write — and that half has no consumer,
+so it is not stated.
+
+One Tier 3 positive pins **both** segments, a second pins the licence's equality,
+and a negative refuses the retired parameter names coming back; all three were
+mutation-tested by keeping every other token — resolving a segment a second way
+inside the definition, restating the equality against the *bare* leg's post-state,
+and reintroducing the parameter pair.
+
+**True by theorem in both directions.**  `schedLockSet_endpointReceiveOnCore_covers_donation`
+covers `applyCallDonationOnCoreSchedLockSet` member for member, hence — through
+`applyCallDonationOnCoreSchedLockSet_covers_migration` — the SM5.H replenishment
+migration's two slots; and `endpointReceiveDualOnCore_replenishQueueOnCore` with
+its WithCaps sibling say the receive **leg** writes no replenish queue, so every
+core in that segment comes from the donation and none from the leg.  A footprint
+that omits a written lock is false, so both halves are theorems rather than
+readings of the body.
+
+**The chain walk stays declared dynamically.**  The arm also runs
+`applyReceiverPipHandoff`, whose cores are state-discovered and unbounded;
+`PriorityInheritance.pipChainSchedFootprint` declares them per walked member and
+`pipChainStart_endpointReceive` is the SM3.C obligation that ties the walk to it.
+A static footprint enumerating them would be a footprint over a set no bound
+covers — the same caveat every sibling footprint over a chain-walking arm
+carries.  `maxLockSetSize` does not move: a `SchedLockSet` carries no cardinality
+bound.
+
+**Four production relocations, for the reason `v0.35.59` states — and two of them
+came from the build rather than from reading.**
+`endpointReceiveDualWriteSet` and `endpointReceiveDualWithCapsOnCore_scheduler_eq`
+were declared in the staged `InformationFlow/NonInterferenceCrossCore.lean`, which
+imports `Kernel.API`, so the production footprint and the replenish frame it owes
+could not read them.  A frame lemma about a production transition belongs beside
+that transition, not in the staged surface that first happened to need it.
+
+Building the licence then failed on two more of the same class, and both are the
+shape `v0.35.59` names — *when a question has one owner and an asker that cannot
+see it, the owner is in the wrong layer*.
+`storeTcbIpcStateAndMessage_determineTargetCore_eq` is a frame over an IPC
+**primitive** and sat in `IPC/CrossCore/NotificationSignal.lean`, a cross-core
+**arm** module that the receive leg's own frame does not import — while every other
+member of its family already lived in `EndpointCall.lean`, which both arms import.
+`endpointReceiveDualOnCore_preserves_objects_invExt` is a frame over a transition
+and sat in `EndpointReplyInvariant.lean`, **downstream** of the module that declares
+that transition, so the receive leg's frame — which needs `invExt` at the post-leg
+state to reach the capability installation — could not consult it.  Four
+relocations in one cut is the signal that this is a layering convention rather than
+four accidents.  All four are refused at their old homes by Tier 3 negatives,
+mutation-tested in both directions (the tombstones left in their place are
+comments, which the code view strips, so the clean tree is silent and a
+re-declaration fires).
+
+**The one missing frame is a corollary, not a second case analysis.**
+`cleanupPreReceiveDonationChecked_scheduler_eq` goes through
+`cleanupPreReceiveDonationChecked_ok_eq_cleanup` — the AK1-A bridge that already
+settles that the checked and defensive variants agree on `.ok` — rather than
+re-running the case analysis over the checked body, which would let the two
+disagree about a branch.
+
+**And the layering worry that deferred this cut was unfounded.**  The previous
+cut recorded that `IPC.Invariant.Defs`, which holds
+`cleanupPreReceiveDonation_scheduler_eq` and `linkCallerReply_scheduler_eq`,
+appeared unreachable from `IPC/CrossCore/EndpointReply.lean`.  It is reachable,
+through `Scheduler.Operations.PerCoreWake → IPC.Invariant.PerCore`: the grep that
+suggested otherwise measured which cross-core module happens to *cite* those
+frames, not which one *can*.  A reachability question goes to the import closure,
+not to a search for existing citations.
+
+**And asking the whole family who consumes its theorems found 33 orphans.**  A
+footprint's `_write_only` / `_pairwise_le` are `schedFootprintOfCores`' own lemmas
+at that footprint's arguments, so restating them per footprint has no content:
+Cut 7's four arms omit them, this cut's first draft added them, and they are
+deleted with the reason stated where a reader looks for them.  A **run-segment
+coverage** lemma is not a delegation — it says the declared segment names the core
+the transition writes — and asking who consumes those turned up **33 of the 47**
+theorems in the whole scheduler-footprint family with neither a consumer nor a
+Tier 3 anchor: every RR2.4, RR2.10 and RR8.12 footprint property, silently
+deletable.  Their consumer is the bracket cut, which is the order the numbering
+rule requires, so the finding is not that they are dead; it is that the scheduler
+domain has no `LockFootprintBoundCensus` — the object domain has had one since
+RR7.18 for exactly this reason.  Deriving one is scheduled as Cut 8c.  Eight hand
+anchors close the window meanwhile (this arm's two plus Cut 7's six, the sweep that
+cut owed), and a hand-written list is precisely what the census retires.
+
+**And the relocation retired a pin nobody swept.**  Tier 3 carried an SM8.B.2
+positive requiring `endpointReceiveDualWriteSet` *in the staged module* — correct
+when written, and the relocation is exactly what makes it false, so the run came
+back red with that anchor failing beside the new negative forbidding the name
+there.  Cut 7 had hit this and repointed its three; the sweep was not re-run for
+this one.  It is repointed at the production home with the same comment idiom.
+That is this project's *a fix retires more than it changes — sweep what was
+PINNING the thing you deleted* rule, arriving through a relocation rather than a
+deletion.
+
+**And the pair was caught by RUNNING Tier 3, not by
+`check_anchor_consistency.py`, whose charter covers exactly this shape** — a
+negative over a directory contradicting a positive over a file inside it.  The
+reason is verified rather than guessed: the containment test compares the
+negative's *literal core*, and `_literal_runs` refuses an alternation outright
+(soundly — `a*` guarantees no `a`), so a four-branch negative has no core and the
+pair is skipped.  What bounds the cost is that such a pair **cannot both pass**:
+if the name is in the directory the negative fails, and if it is not the positive
+does, so Tier 3 always reports it.  The gap is therefore diagnosis latency — an
+841-second Tier 3 instead of Tier 0 — and not a silence.  The sound widening
+(decompose each branch and contradict on any one of them) is a gate change with
+its own mutation obligation, so it is recorded here rather than ridden along.
+
+Three Lean modules, `scripts/test_tier3_invariant_surface.sh` (seventeen new
+anchors, one existing positive repointed, one existing negative widened),
+`CLAUDE.md` / `AGENTS.md`, `docs/spec/SELE4N_SPEC.md`.  Version bumped
+0.35.106 → 0.35.107.
+
 ## v0.35.106 — the head's back-pointer is the queue's fact
 
 **PR #897 review (Codex P2).**  `intrusiveQueueWellFormed`'s **P2** constrained
