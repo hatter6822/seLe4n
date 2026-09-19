@@ -15875,4 +15875,15 @@ run_prose_check "INVARIANT" rg -n 'scenario-traceability manifest\*\*, not golde
 run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*lstrip\(\).startswith\(.\|.\)" scripts/scenario_catalog.py'
 run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*stale FIXTURE_INDEX_EXEMPT" scripts/scenario_catalog.py'
 run_check "INVARIANT" bash -lc 'rg -n "check-fixture-index" scripts/test_tier0_hygiene.sh'
+# v0.35.110: the main trace comparison is BOTH-directional.  The reverse
+# direction — every output line accounted for by some fixture fragment — used to
+# be computed inside the failure branch, so a passing run never asked it and an
+# ADDED trace line left the fixture silently no longer enumerating the trace.
+run_check "INVARIANT" bash -lc 'rg -U -n "unaccounted_count.. -gt 0[^\n]*(\n([ \t][^\n]*)?)*record_failure" scripts/test_tier2_trace.sh'
+run_check "INVARIANT" bash -lc 'rg -n "matched_count.*expected_count.*unaccounted_count.* -eq 0 \]\]; then" scripts/test_tier2_trace.sh'
+# ...and the verdict must not go back to the forward direction alone, nor may the
+# reverse computation move back inside the failure branch (where `NEW_LINES` was
+# the local it counted into).
+run_negative_check "INVARIANT" bash -lc 'rg -n "expected_count\}. \]\]; then" scripts/test_tier2_trace.sh'
+run_negative_check "INVARIANT" bash -lc 'rg -n "NEW_LINES=" scripts/test_tier2_trace.sh'
 finalize_report

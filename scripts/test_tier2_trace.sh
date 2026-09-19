@@ -29,7 +29,9 @@ MISSING_REPORT="$(mktemp)"
 MANIFEST_LIST="$(mktemp)"
 MANIFEST_ERR="$(mktemp)"
 MANIFEST_OUTPUT="$(mktemp)"
-trap 'rm -f "${TRACE_OUTPUT}" "${MISSING_REPORT}" "${MANIFEST_LIST}" "${MANIFEST_ERR}" "${MANIFEST_OUTPUT}"' EXIT
+EXPECTED_FRAGMENTS="$(mktemp)"
+UNACCOUNTED_REPORT="$(mktemp)"
+trap 'rm -f "${TRACE_OUTPUT}" "${MISSING_REPORT}" "${MANIFEST_LIST}" "${MANIFEST_ERR}" "${MANIFEST_OUTPUT}" "${EXPECTED_FRAGMENTS}" "${UNACCOUNTED_REPORT}"' EXIT
 TRACE_ARTIFACT_DIR="${TRACE_ARTIFACT_DIR:-}"
 
 write_trace_artifacts() {
@@ -193,57 +195,86 @@ if [[ "${expected_count}" -eq 0 ]]; then
   finalize_report
 fi
 
-if [[ "${matched_count}" -eq "${expected_count}" ]]; then
-  log_section "TRACE" "Fixture comparison passed (${matched_count}/${expected_count} matched)."
+# The fragment list, extracted once.  Both directions read it, and the diagnostic
+# block below reuses it rather than rebuilding it — one extraction, one answer.
+while IFS= read -r fline || [[ -n "${fline}" ]]; do
+  [[ -z "${fline}" ]] && continue
+  [[ "${fline}" =~ ^[[:space:]]*# ]] && continue
+  if [[ "${fline}" == *"|"* ]]; then
+    raw_frag="$(printf '%s' "${fline}" | cut -d'|' -f3-)"
+    raw_frag="${raw_frag#"${raw_frag%%[![:space:]]*}"}"
+    raw_frag="${raw_frag%"${raw_frag##*[![:space:]]}"}"
+    printf '%s\n' "${raw_frag}"
+  else
+    printf '%s\n' "${fline}"
+  fi
+done < "${TRACE_FIXTURE}" > "${EXPECTED_FRAGMENTS}"
+
+# ---------------------------------------------------------------------------
+# v0.35.109: the REVERSE direction is an assertion, not a diagnostic.
+#
+# The loop above answers "does every fixture fragment occur in the output".  The
+# converse — "is every output line accounted for by some fragment" — was computed
+# only INSIDE the failure branch, so a passing run never asked it, and a trace
+# line ADDED to the output left the fixture silently no longer enumerating the
+# trace.  That is weaker than what the artefacts claim: `CLAUDE.md` says
+# `Main.lean` output "must match" this fixture and GitBook says it holds "all
+# trace output lines".  Measured before the change: 239 fragments, 239 non-empty
+# output lines, zero unaccounted — so requiring the strict direction costs the
+# tree nothing, which is what makes taking it the right call rather than a
+# tightening to be deferred.
+# ---------------------------------------------------------------------------
+unaccounted_count=0
+: > "${UNACCOUNTED_REPORT}"
+while IFS= read -r aline || [[ -n "${aline}" ]]; do
+  [[ -z "${aline}" ]] && continue
+  found=0
+  while IFS= read -r eline || [[ -n "${eline}" ]]; do
+    if [[ "${aline}" == *"${eline}"* ]]; then
+      found=1
+      break
+    fi
+  done < "${EXPECTED_FRAGMENTS}"
+  if [[ "${found}" -eq 0 ]]; then
+    unaccounted_count=$((unaccounted_count + 1))
+    printf '%s\n' "${aline}" >> "${UNACCOUNTED_REPORT}"
+  fi
+done < "${TRACE_OUTPUT}"
+
+if [[ "${unaccounted_count}" -gt 0 ]]; then
+  record_failure "TRACE" \
+    "${unaccounted_count} trace line(s) are not accounted for by any fixture expectation in ${TRACE_FIXTURE}. The fixture must enumerate the whole trace, not a subset of it: add the new lines (and refresh the .sha256 companion) if the behaviour change is intended."
+fi
+
+if [[ "${matched_count}" -eq "${expected_count}" && "${unaccounted_count}" -eq 0 ]]; then
+  log_section "TRACE" "Fixture comparison passed (${matched_count}/${expected_count} matched, both directions)."
 else
   log_section "TRACE" "Matched ${matched_count}/${expected_count} expected lines from ${TRACE_FIXTURE}."
-  log_section "TRACE" "Missing expectation lines:"
-  while IFS= read -r missing_line || [[ -n "${missing_line}" ]]; do
-    log_section "TRACE" "  - ${missing_line}"
-  done < "${MISSING_REPORT}"
+  if [[ -s "${MISSING_REPORT}" ]]; then
+    log_section "TRACE" "Missing expectation lines:"
+    while IFS= read -r missing_line || [[ -n "${missing_line}" ]]; do
+      log_section "TRACE" "  - ${missing_line}"
+    done < "${MISSING_REPORT}"
+  fi
   # S2-E: Show a fixture diff to make review easier
   log_section "TRACE" "--- Fixture diff (expected fragments vs actual trace) ---"
-  # Extract expected fragments for line-by-line comparison
-  EXPECTED_FRAGMENTS="$(mktemp)"
-  while IFS= read -r fline || [[ -n "${fline}" ]]; do
-    [[ -z "${fline}" ]] && continue
-    [[ "${fline}" =~ ^[[:space:]]*# ]] && continue
-    if [[ "${fline}" == *"|"* ]]; then
-      raw_frag="$(printf '%s' "${fline}" | cut -d'|' -f3-)"
-      raw_frag="${raw_frag#"${raw_frag%%[![:space:]]*}"}"
-      raw_frag="${raw_frag%"${raw_frag##*[![:space:]]}"}"
-      printf '%s\n' "${raw_frag}"
-    else
-      printf '%s\n' "${fline}"
-    fi
-  done < "${TRACE_FIXTURE}" > "${EXPECTED_FRAGMENTS}"
   # Show lines in expected but not in actual (removed/changed)
   while IFS= read -r eline || [[ -n "${eline}" ]]; do
     if ! grep -Fq "${eline}" "${TRACE_OUTPUT}" 2>/dev/null; then
       log_section "TRACE" "  MISSING: ${eline}"
     fi
   done < "${EXPECTED_FRAGMENTS}"
-  # Show lines in actual that don't match any expected fragment (new/changed)
-  NEW_LINES=0
+  # Show the unaccounted-for output lines the reverse direction found (new/changed).
+  shown=0
   while IFS= read -r aline || [[ -n "${aline}" ]]; do
-    found=0
-    while IFS= read -r eline || [[ -n "${eline}" ]]; do
-      if [[ "${aline}" == *"${eline}"* ]]; then
-        found=1
-        break
-      fi
-    done < "${EXPECTED_FRAGMENTS}"
-    if [[ "${found}" -eq 0 && -n "${aline}" ]]; then
-      if [[ "${NEW_LINES}" -lt 20 ]]; then
-        log_section "TRACE" "  NEW:     ${aline}"
-      fi
-      NEW_LINES=$((NEW_LINES + 1))
+    if [[ "${shown}" -lt 20 ]]; then
+      log_section "TRACE" "  NEW:     ${aline}"
     fi
-  done < "${TRACE_OUTPUT}"
-  if [[ "${NEW_LINES}" -gt 20 ]]; then
-    log_section "TRACE" "  ... and $((NEW_LINES - 20)) more new lines (run diff manually for full output)"
+    shown=$((shown + 1))
+  done < "${UNACCOUNTED_REPORT}"
+  if [[ "${unaccounted_count}" -gt 20 ]]; then
+    log_section "TRACE" "  ... and $((unaccounted_count - 20)) more new lines (run diff manually for full output)"
   fi
-  rm -f "${EXPECTED_FRAGMENTS}"
   log_section "TRACE" "If behavior changed intentionally, update ${TRACE_FIXTURE} in this PR and explain why."
 fi
 

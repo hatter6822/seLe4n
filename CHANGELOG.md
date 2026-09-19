@@ -1,3 +1,53 @@
+## v0.35.110 — the trace comparison is both-directional
+
+The second finding of `v0.35.109`'s fixture-drift audit, and the one that was
+about the fixture the tree watches most closely.
+`scripts/test_tier2_trace.sh` checked that every fixture fragment occurs in
+`lake exe sele4n`'s output.  The converse — that every output line is accounted
+for by some fragment — was computed **inside the failure branch**, so a passing
+run never asked it.  A trace line *added* to the output therefore left the
+fixture silently no longer enumerating the trace, while `CLAUDE.md` says
+`Main.lean` output "must match" this fixture and GitBook says it holds "all trace
+output lines".  A presence check standing in for an equality, in the gate this
+project relies on for cross-commit determinism.
+
+**Measured on the real artefact, not a fixture.**  The decisive mutation drops
+**one** line from the fixture and touches nothing else: every remaining row is
+byte-identical, the program is untouched, and the forward direction still passes
+at 238/238 — so only the enumeration is incomplete, which only the reverse
+direction can see.  Run against both gate versions: the strengthened gate exits
+**1** naming the unaccounted line, and the superseded gate exits **0** reporting
+`Fixture comparison passed (238/238 matched)`.  That is the fail-open, executed.
+
+**Taking the strict direction was free**, which is what licensed taking it now
+rather than registering it: before the change, 239 fragments, 239 non-empty output
+lines, **zero** unaccounted.  This project's own rule — take the measurement that
+tells you the strict option costs nothing, and the temptation to approximate
+disappears.
+
+**The sweep was run, and it is why this is one line of code rather than eleven.**
+Ten more fixtures are compared against live output by a `fixturePath` read inside
+the producing suite, and one by `include_str!` in
+`rust/sele4n-abi/tests/conformance.rs`; asking the same question of all eleven
+found every one of them using **byte equality** (`actual == expectedContent`),
+which is the strongest form and has no direction to get wrong.  The defect was
+confined to the single comparison written in shell over a *fragment* format, where
+containment is the natural idiom and the converse is easy to leave as a
+diagnostic.  A sweep that changes nothing at a site is the sweep working; not
+running it is how a class stays open.
+
+Two things the change keeps rather than adds.  The fragment extraction both
+directions read happens **once**, at the top level, where it used to be built
+inside the failure branch and thrown away; and the diagnostic block reuses the
+reverse direction's own result rather than recomputing it, so the `NEW:` lines a
+reviewer reads and the lines the gate failed on cannot disagree.  Two Tier 3
+negatives refuse the regression: the verdict may not go back to the forward
+direction alone, and the reverse computation may not move back inside the failure
+branch.  Both fire on a token-preserving mutation and are silent on the clean
+tree.
+
+Refs: tests/fixtures/README.md
+
 ## v0.35.109 — a checksum is not a comparison
 
 **The fixture-drift audit.**  A `[TRACE] FAIL: Fixture drift detected` on the

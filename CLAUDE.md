@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.109.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.110.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2744,9 +2744,19 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   conventions, 19 labels with an id and 36 without, in one file.
 
   Four things new code must respect.  (1) **A fixture needs a gate that runs its
-  producer**, and which gate that is belongs in `tests/fixtures/README.md`'s
-  "Used by" column — where it was *false* for both manifests, naming suites that
-  do not read their file.  (2) **The improvement direction is the code, not the
+  producer, and the comparison has two directions.**  Which gate it is belongs in
+  `tests/fixtures/README.md`'s "Used by" column — where it was *false* for both
+  manifests, naming suites that do not read their file.  And the main trace's own
+  gate asked only the forward direction (every fixture fragment occurs in the
+  output), computing the converse *inside the failure branch*, so a passing run
+  never asked whether every output line is accounted for: a trace line **added**
+  to the output left the fixture no longer enumerating the trace, while this file
+  said "must match".  Both directions are asserted since `v0.35.110`, and the
+  measurement is what licensed taking the strict one — 239 fragments, 239
+  non-empty output lines, zero unaccounted, so it cost the tree nothing.  The
+  mutation that decides drops **one** fixture line and touches nothing else: the
+  forward direction still passes at 238/238, and the superseded gate reported
+  `Fixture comparison passed` on it.  (2) **The improvement direction is the code, not the
   fixture.**  The manifests were right and the labels had drifted, so the fix
   relabels 94 assertions rather than rewriting 19 rows — and it costs no fixture
   churn, because a manifest nobody edits keeps its checksum.  Rewriting the rows

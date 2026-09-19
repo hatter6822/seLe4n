@@ -37,7 +37,11 @@ fixture fails CI with a uniform remediation message.
 against *itself*: it forces a fixture edit to be paired with a hash refresh in
 the same commit, and it says nothing about whether the fixture still agrees with
 the program.  Every fixture therefore also needs a gate that runs its producer
-and compares — and at `v0.35.109` two did not: the `expected_trace_fragment`
+and compares — **in both directions**.  The main trace's comparison checked only
+that every fixture fragment occurs in the output until `v0.35.110`; the converse
+was computed inside the failure branch, so an *added* trace line left this fixture
+silently no longer enumerating the trace.  A new trace line now fails Tier 2 and
+must be added here (with a hash refresh) in the same PR — and at `v0.35.109` two did not: the `expected_trace_fragment`
 column of both scenario-traceability manifests named lines no suite printed,
 **19 of 19**, because the suites' `expect` labels had lost the scenario-id prefix
 the manifests presuppose while the only consumer parsed the ID column alone.
