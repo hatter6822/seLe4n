@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.113.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.114.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1325,6 +1325,61 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   registering the parameter as a provider.  That is round 16's `.macro` hazard
   arriving through the fix for a different one; a preprocessor line is not split
   and contributes nothing.
+
+  **And a default branch over a closed inductive is a decision four censuses got
+  wrong** (PR #897 review, `v0.35.114`).  The rule above is about input a scanner
+  cannot *read*; this is the same rule where the scanner reads the input perfectly
+  and answers a wildcard.  `ConstantInfo` has exactly eight constructors, and
+  "which declarations carry a body" is the first question every environment-derived
+  **domain** in this tree has to settle.  It had **five answers**:
+  `ReplyStackWriteCensus` was right (`.defnInfo` *or* `.opaqueInfo`), and four
+  sites across three censuses matched `.defnInfo` alone and wildcarded the rest —
+  so an `opaque`, which is executable, which this tree's FFI surface has
+  seventy-odd of, and whose body `ConstantInfo.value? (allowOpaque := true)` hands
+  back, was silently outside four derived domains at once.  What each one then
+  stopped asking: an unreachable `opaque` transition owed no wire-or-record
+  judgement (`KernelTransitionReachabilityCensus`), an `opaque` lock-set footprint
+  owed no `_size_le` bound — so `boundedWait_under_2pl` and the whole WCRT surface
+  would be **silent** about it — and an `opaque` invariant conjunct dropped out of
+  `measuredConjuncts`, making the de-threading census demand less.  The review
+  reported one of the four.
+
+  Three things follow, and the first is why this was not four patches.  **A domain
+  miss is silent by construction** — the constant is never examined, the pin never
+  moves, and each census goes on reporting that its whole domain is accounted for
+  — so the class cannot be found by reading a failure; it is found by sweeping
+  every asker of the question.  **The right answer was already in the tree and
+  unreachable from two of the askers**, which is `v0.35.59`'s rule verbatim: the
+  owner was in the wrong layer.  It is
+  `SeLe4n/Testing/DeclarationKind.lean`'s `bodyBearing` now, upstream of every
+  census, matching all eight constructors with **no `_` case at all**, so a ninth
+  in a future toolchain is a *build error* naming the function rather than a silent
+  exclusion.  And **two of the six exclusions are necessary rather than
+  incidental**, which is precisely why folding them back under a wildcard reads as
+  harmless: a `.thmInfo` carries a value, and a result-type test still matches one
+  — `theorem f : step st = st'` elaborates to `@Eq SystemState (step st) st'`,
+  whose implicit type argument *is* the constant a `SystemState` domain looks for —
+  and `.ctorInfo` covers `SystemState.mk`, whose result type is `SystemState`
+  itself.  `scripts/check_module_axioms.py` had enumerated all eight, case for
+  case, since it was written; that was the precedent, unswept onto the censuses.
+
+  **The widening is not vacuous, and the witnesses are the measurement.**  On the
+  real tree it admitted exactly one constant: `Platform.FFI.kernelStateRef`, an
+  `opaque IO.Ref SystemState` — the state cell the reachability census is
+  *defined over*, since "commits state" means "reaches a write to it", and which
+  was outside its own census's domain.  It is reachable from every committing
+  seam, so it needs no pin entry; carving it out by name would be the enumeration
+  the census exists to retire.  Beyond that the arms needed planting, since a
+  check that cannot fire and carries no witness is indistinguishable from one that
+  is wrong: the owner carries a `def`, an `opaque` and a `theorem` control, and
+  the reachability census carries an `opaque` transformer that must be in its pin
+  and a control that only *takes* a `SystemState` and must not be.  Both census
+  witnesses were decided by **building**: deleting the pin entry makes the
+  reconciliation report the transformer as unrecorded, and reading the whole type
+  instead of the telescoped result makes it report the control as unrecorded — so
+  the pair pins the domain in both directions, and the first draft's claim that
+  the control witnesses "any declaration" was corrected by the mutation that
+  refused to produce it.
 
   **And a recognised set is not a derived set — so a count over one is a floor,
   not a measurement** (PR #895 review, rounds 1 and 2, `v0.35.13`).  Every rule

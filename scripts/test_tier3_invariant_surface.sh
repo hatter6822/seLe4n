@@ -15965,6 +15965,60 @@ run_check "INVARIANT" bash -lc 'rg -n "..controls-only\) CONTROLS_ONLY=1" script
 # which the guard refuses before the gate reads a line -- must not come back.
 run_negative_check "INVARIANT" bash -lc 'rg -n "TMP_FIXTURE" scripts/audit_testing_framework.sh'
 # ===========================================================================
+# v0.35.114 — "does this declaration carry a body" has ONE answer.
+#
+# Four Tier 1 censuses derive a domain from the environment and each must decide
+# that first.  It had five answers: `ReplyStackWriteCensus` was right
+# (`.defnInfo` OR `.opaqueInfo`) and four sites across three censuses matched
+# `.defnInfo` alone and wildcarded the rest, so an `opaque` -- executable, and
+# whose body `value? (allowOpaque := true)` hands back -- was silently outside
+# four derived domains at once.  A domain miss is silent by construction, so
+# these anchors pin the RELATION: one owner, exhaustive over `ConstantInfo`, and
+# every asker reading it rather than re-deciding.
+# ===========================================================================
+run_check "INVARIANT" bash -lc 'rg -n "def bodyBearing : ConstantInfo . Bool" SeLe4n/Testing/DeclarationKind.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.defnInfo _   => true[^\n]*(\n([ \t][^\n]*)?)*\| \.recInfo _    => false" SeLe4n/Testing/DeclarationKind.lean'
+run_check "INVARIANT" bash -lc 'rg -n "def bodyBearingName \(env : Environment\) \(n : Name\) : Bool" SeLe4n/Testing/DeclarationKind.lean'
+# ...and no `_` arm may return to it: a wildcard is what produced the defect, and
+# with the match exhaustive a ninth `ConstantInfo` constructor is a build error.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def bodyBearing[^\n]*(\n([ \t][^\n]*)?)*\| _ " SeLe4n/Testing/DeclarationKind.lean'
+# The owner witnesses its own arms on a real environment -- a `def`, the
+# `opaque` the four censuses were missing, and a `theorem` control, since a
+# predicate widened to "carries any value" would admit a proof.
+run_check "INVARIANT" bash -lc 'rg -n "private opaque witnessOpaque : Nat . Nat" SeLe4n/Testing/DeclarationKind.lean'
+run_check "INVARIANT" bash -lc 'rg -n "expect ..witnessOpaque true" SeLe4n/Testing/DeclarationKind.lean'
+run_check "INVARIANT" bash -lc 'rg -n "expect ..witnessTheorem false" SeLe4n/Testing/DeclarationKind.lean'
+# Each of the four askers consults the owner...
+run_check "INVARIANT" bash -lc 'rg -n "if !bodyBearing ci then return false" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+run_check "INVARIANT" bash -lc 'rg -n "DeclarationKind\.bodyBearing ci then return false" SeLe4n/Testing/LockFootprintBoundCensus.lean'
+run_check "INVARIANT" bash -lc 'rg -n "DeclarationKind\.bodyBearing info then" SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean'
+run_check "INVARIANT" bash -lc 'rg -n "DeclarationKind\.bodyBearing nested then" SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean'
+run_check "INVARIANT" bash -lc 'rg -n "DeclarationKind\.bodyBearingName env n" SeLe4n/Testing/ReplyStackWriteCensus.lean'
+# ...and none of them may decide it again, so the retired `.defnInfo`-only test
+# is refused inside each declaration that used to carry it.  The negatives are
+# declaration-bounded because the claim is about those declarations: the
+# dethreading census keeps one deliberate `.defnInfo`, a fail-closed assertion
+# that its ONE named root is a definition, and a file-wide negative would fire
+# on it.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def isStateTransformer[^\n]*(\n([ \t][^\n]*)?)*\.defnInfo" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def isFootprintDecl[^\n]*(\n([ \t][^\n]*)?)*\.defnInfo" SeLe4n/Testing/LockFootprintBoundCensus.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def boundViolation[^\n]*(\n([ \t][^\n]*)?)*\.defnInfo" SeLe4n/Testing/LockFootprintBoundCensus.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "if let .*\.defnInfo" SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean'
+run_check "INVARIANT" bash -lc 'rg -n "let some \(\.defnInfo _\) := env\.find\? root" SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean'
+# ...and the answer that was right is DELETED rather than kept beside the owner.
+run_negative_check "INVARIANT" bash -lc 'rg -n "isDefinitionShaped" SeLe4n/Testing/ReplyStackWriteCensus.lean'
+# The reachability census witnesses the PIPELINE, which is the part that broke: a
+# planted opaque transformer that must be in the pin, and a control that only
+# TAKES a `SystemState` and must not be.  Both were decided by building:
+# deleting the pin entry makes the reconciliation report the transformer as
+# unrecorded, and reading the whole type instead of the telescoped result makes
+# it report the control as unrecorded.  Narrowing the owner is caught one module
+# earlier by `DeclarationKind`'s own `opaque` witness.
+run_check "INVARIANT" bash -lc 'rg -n "^private opaque censusWitnessOpaqueTransformer : Model\.SystemState . Model\.SystemState" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+run_check "INVARIANT" bash -lc 'rg -n "^private opaque censusWitnessOpaqueNonTransformer : Model\.SystemState . Nat" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "privateIn .SeLe4n.Testing.KernelTransitionReachabilityCensus[^\n]*(\n([ \t][^\n]*)?)*censusWitnessOpaqueTransformer" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def nonExecutedTransitionsPrivate[^\n]*(\n([ \t][^\n]*)?)*censusWitnessOpaqueNonTransformer" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
+# ===========================================================================
 # v0.35.111 — the fixture machinery's OWN three presence-for-relation defects.
 # Each was the class `v0.35.109` built the machinery to close, one level down, so
 # these anchors pin the RELATIONS rather than the tokens the superseded readings

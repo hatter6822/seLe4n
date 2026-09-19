@@ -13,6 +13,7 @@ import Lean.Elab.Command
 -- here, or this census would pass vacuously about it.
 import SeLe4n
 import SeLe4n.Platform.Staged
+import SeLe4n.Testing.DeclarationKind
 -- The chain surface itself: the two cancellation shape modules and the reply
 -- dispatch invariant sit outside the staged closure, and their results are what
 -- the registry names.
@@ -419,8 +420,9 @@ environment rather than argued: of the project constants that are definition-
 shaped, non-`Prop` and reference a chain primitive, the number kept only by a
 name test is **zero**, so `isGeneratedComponent` was deleted instead of being
 narrowed a third time.  Equation and proof auxiliaries need no test at all —
-every one of the 5185 in this environment is `Prop`-typed, and `isDefinitionShaped`
-plus the caller's `Meta.isProp` filter exclude them structurally.
+every one of the 5185 in this environment is `Prop`-typed, and
+`DeclarationKind.bodyBearingName` plus the caller's `Meta.isProp` filter exclude
+them structurally.
 
 **Not `Name.isInternal` and not `Name.isInternalDetail`**: the first is true of
 the `_private.…` mangling, so it would have excluded every `private def` in the
@@ -481,36 +483,25 @@ def chainWriteFrontier : String :=
 directly and stored through one helper hop; delegating BOTH halves at once is \
 outside the recognised frontier"
 
-/-- `true` when `n` is a *definition* rather than a proof.
-
-A theorem whose statement mentions a primitive is a result *about* a write, not
-a write, and is excluded here structurally.  The caller's `Meta.isProp` check
-excludes the other shape a proof takes — a proof written with `def`, whose
-**type is** a proposition.
-
-It does **not** exclude a *predicate*: `def p : SystemState → Prop` has type
-`SystemState → Prop`, which is a `Type` rather than a `Prop`, so `Meta.isProp`
-answers `false` for it.  That is the safe direction — such a definition would be
-reported as an unregistered write site rather than silently skipped — and the
-tree currently contains none, since the census's own reconciliation passes.  A
-predicate written in terms of a chain-write primitive would therefore fail this
-gate and want an explicit decision, not a silent pass. -/
-def isDefinitionShaped (env : Environment) (n : Name) : Bool :=
-  match env.find? n with
-  | some (.defnInfo _) => true
-  | some (.opaqueInfo _) => true
-  | _ => false
 
 /-- The derived subject set: every project definition that directly writes
 reply-stack data.
 
 The primitives are included — each one writes, so each one owes a chain result
 — and auxiliaries and `Prop`-valued definitions are not.  The `Prop` filter is
-the caller's, since deciding it needs `MetaM`. -/
+the caller's, since deciding it needs `MetaM`.
+
+`DeclarationKind.bodyBearingName` is what excludes a **proof**: a theorem whose
+statement mentions a primitive is a result *about* a write, not a write.  It does
+not exclude a *predicate* — `def p : SystemState → Prop` has type
+`SystemState → Prop`, a `Type` rather than a `Prop`, so `Meta.isProp` answers
+`false` for it — and that is the safe direction, since such a definition is
+reported as an unregistered write site rather than silently skipped.  The tree
+contains none, the reconciliation passing being the measurement. -/
 def directWriteCandidates (env : Environment) : List Name :=
   env.constants.toList.foldl
     (fun acc (n, _) =>
-      if isProjectConstant n && !isAuxiliary env n && isDefinitionShaped env n &&
+      if isProjectConstant n && !isAuxiliary env n && DeclarationKind.bodyBearingName env n &&
           (chainWritePrimitives.contains n || usesDirectly env chainWritePrimitives n)
       then n :: acc else acc) []
 
@@ -564,7 +555,7 @@ closed: a definition it cannot classify is reported rather than skipped. -/
 def recordConstructingStoreCandidates (env : Environment) : List Name :=
   env.constants.toList.foldl
     (fun acc (n, _) =>
-      if isProjectConstant n && !isAuxiliary env n && isDefinitionShaped env n &&
+      if isProjectConstant n && !isAuxiliary env n && DeclarationKind.bodyBearingName env n &&
           ((usesDirectly env objectStoreSpellings n && (reachesChainConstructor env {} n).1) ||
             (storesObject env n && constructsChainRecord env n))
       then n :: acc else acc) []

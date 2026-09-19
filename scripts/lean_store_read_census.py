@@ -299,8 +299,10 @@ def branch_symmetry_violations() -> list[str]:
 # `theorem` was emitted as `SPEC` and walked around the enforced
 # `STORE_READ_CODE = 0` (PR #895 review round 5).
 # **An unrecognised declaration keyword is not a missing feature, it is a
-# misattribution.**  `opaque` was absent from this alternation, and the tree has
-# **73** `opaque` declarations at column zero: each one left `sig_open`/`decl`
+# misattribution.**  `opaque` was absent from this alternation, and the tree had
+# **73** `opaque` declarations at column zero when that was measured (`v0.35.19`;
+# the figure is dated because a live count in a comment drifts on contact, and
+# this one had reached 76 by `v0.35.114`): each one left `sig_open`/`decl`
 # pointing at whatever declaration preceded it, so an executable `opaque` body
 # following a `theorem` had its reads emitted under the theorem's name as
 # `SPEC` -- past the enforced `STORE_READ_CODE = 0` (PR #895 review round 6).

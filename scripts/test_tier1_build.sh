@@ -78,6 +78,18 @@ run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
 # catch.  Today: seven committing seams, two of them bracketed.
 run_check "BUILD" lake build SeLe4n.Testing.ExportCommitDisciplineCensus
 
+# v0.35.114: which declarations carry a body has ONE answer.  Four of the
+# censuses below derive a domain from the environment and each has to decide it
+# first; until this module they answered it five ways, and four of those matched
+# `.defnInfo` alone and wildcarded the rest, so an `opaque` — executable, and
+# seventy-odd of them in this tree's FFI surface — was silently outside four
+# derived domains at once.  A domain miss is silent by construction, which is why
+# this became one owner rather than four patches.  Building it IS the check: the
+# eight-constructor match is exhaustive with no `_`, so a ninth constructor in a
+# future toolchain is a build error, and three witnesses (a `def`, an `opaque`,
+# a `theorem` control) decide the arms on a real environment.
+run_check "BUILD" lake build SeLe4n.Testing.DeclarationKind
+
 # WS-RR RR7.18: every declared `LockSet` footprint has a size bound, stated at
 # the footprint's OWN arity.  The bound is what `boundedWait_under_2pl` and the
 # WCRT surface take as a premise, so a footprint without one is a transition

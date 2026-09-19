@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "b3976e869a63f81509f8959881986bbd7f08c761",
-      "tree_sha": "85976f1e7fd143c3fdf1b090c3a50e26526af177",
-      "committed_at_utc": "2026-09-19T09:15:46+00:00"
+      "commit_sha": "7081f9bc3f620deb542fa91daa5f22ae7742bf8d",
+      "tree_sha": "f2a1fe791f74c6726d278b4952d71d4cdb1a4c09",
+      "committed_at_utc": "2026-09-19T09:51:24+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "38826bd8da33830dced587c668dc3e1610085dfdd8f9dc0798948e4b97dabb3a"
+    "source_digest": "a63295f88e2613c4521dcb59f0fe1801124aa89c40c8d95cffd144e190d03c20"
   },
   "summary": {
-    "module_count": 403,
-    "declaration_count": 22024
+    "module_count": 404,
+    "declaration_count": 22031
   },
   "readme_sync": {
-    "version": "0.35.113",
+    "version": "0.35.114",
     "lean_toolchain": "v4.28.0",
-    "production_files": 333,
-    "production_loc": 394808,
+    "production_files": 334,
+    "production_loc": 394995,
     "test_files": 70,
     "test_loc": 80213,
-    "proved_theorem_lemma_decls": 13115,
+    "proved_theorem_lemma_decls": 13116,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -270567,6 +270567,59 @@
       ]
     },
     {
+      "module": "SeLe4n.Testing.DeclarationKind",
+      "path": "SeLe4n/Testing/DeclarationKind.lean",
+      "declaration_count": 6,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.DeclarationKind",
+          "line": 39,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "bodyBearing",
+          "line": 70,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "bodyBearingName",
+          "line": 84,
+          "called": [
+            "any",
+            "bodyBearing"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "witnessDefinition",
+          "line": 102,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "witnessOpaque",
+          "line": 104,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "witnessTheorem",
+          "line": 106,
+          "called": [
+            "any",
+            "bodyBearing",
+            "expect",
+            "value",
+            "witnessDefinition",
+            "witnessOpaque"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Testing.Deprecated",
       "path": "SeLe4n/Testing/Deprecated.lean",
       "declaration_count": 2,
@@ -271647,19 +271700,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.IpcDethreadingEnvironmentCensus",
-          "line": 59,
+          "line": 60,
           "called": []
         },
         {
           "kind": "def",
           "name": "familyMarkers",
-          "line": 63,
+          "line": 64,
           "called": []
         },
         {
           "kind": "def",
           "name": "carriesFamilyMarker",
-          "line": 73,
+          "line": 74,
           "called": [
             "any",
             "length"
@@ -271668,13 +271721,13 @@
         {
           "kind": "def",
           "name": "isFamilyForm",
-          "line": 82,
+          "line": 83,
           "called": []
         },
         {
           "kind": "def",
           "name": "systemStateName",
-          "line": 87,
+          "line": 88,
           "called": [
             "SystemState"
           ]
@@ -271682,7 +271735,7 @@
         {
           "kind": "def",
           "name": "andLeafHeads",
-          "line": 90,
+          "line": 91,
           "called": [
             "insert"
           ]
@@ -271690,9 +271743,10 @@
         {
           "kind": "def",
           "name": "measuredConjuncts",
-          "line": 105,
+          "line": 106,
           "called": [
             "andLeafHeads",
+            "bodyBearing",
             "contains",
             "insert",
             "ipcInvariantFull",
@@ -271705,7 +271759,7 @@
         {
           "kind": "def",
           "name": "entailedTargets",
-          "line": 145,
+          "line": 149,
           "called": [
             "contains",
             "insert",
@@ -271718,7 +271772,7 @@
         {
           "kind": "def",
           "name": "conclusionStates",
-          "line": 196,
+          "line": 200,
           "called": [
             "isFamilyForm",
             "systemStateName"
@@ -271727,7 +271781,7 @@
         {
           "kind": "def",
           "name": "checkStatement",
-          "line": 215,
+          "line": 219,
           "called": [
             "conclusionStates",
             "entailedTargets",
@@ -271741,7 +271795,7 @@
         {
           "kind": "def",
           "name": "censusMain",
-          "line": 232,
+          "line": 236,
           "called": [
             "carriesFamilyMarker",
             "checkStatement",
@@ -271758,13 +271812,13 @@
         {
           "kind": "section",
           "name": "CheckerWitnesses",
-          "line": 264,
+          "line": 268,
           "called": []
         },
         {
           "kind": "structure",
           "name": "censusWitnessPack",
-          "line": 269,
+          "line": 273,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -271774,7 +271828,7 @@
         {
           "kind": "def",
           "name": "censusWitnessCarrier",
-          "line": 273,
+          "line": 277,
           "called": [
             "SystemState",
             "censusWitnessPack",
@@ -271784,7 +271838,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessThreaded",
-          "line": 279,
+          "line": 283,
           "called": [
             "SystemState",
             "ipcInvariantFull"
@@ -271793,7 +271847,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessChained",
-          "line": 286,
+          "line": 290,
           "called": [
             "SystemState",
             "censusWitnessCarrier",
@@ -271804,7 +271858,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessOrCarried",
-          "line": 294,
+          "line": 298,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -271815,7 +271869,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessExistsCarried",
-          "line": 303,
+          "line": 307,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -271826,7 +271880,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessOrTrue",
-          "line": 312,
+          "line": 316,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -271837,7 +271891,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessOrMixed",
-          "line": 322,
+          "line": 326,
           "called": [
             "SystemState",
             "blockedThreadsPendingMessageConsistent",
@@ -271849,7 +271903,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessClean",
-          "line": 330,
+          "line": 334,
           "called": [
             "SystemState",
             "ipcInvariantFull",
@@ -271859,7 +271913,7 @@
         {
           "kind": "def",
           "name": "checkWitness",
-          "line": 338,
+          "line": 342,
           "called": [
             "checkStatement",
             "insert",
@@ -271872,13 +271926,13 @@
         {
           "kind": "macro",
           "name": "\"censusMintGeneratedWitness\"",
-          "line": 351,
+          "line": 355,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "generatedWitness_preserves_ipcInvariantFull",
-          "line": 352,
+          "line": 356,
           "called": [
             "SystemState",
             "carriesFamilyMarker",
@@ -271901,18 +271955,18 @@
     {
       "module": "SeLe4n.Testing.KernelTransitionReachabilityCensus",
       "path": "SeLe4n/Testing/KernelTransitionReachabilityCensus.lean",
-      "declaration_count": 19,
+      "declaration_count": 21,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.KernelTransitionReachabilityCensus",
-          "line": 58,
+          "line": 59,
           "called": []
         },
         {
           "kind": "def",
           "name": "kernelStateType",
-          "line": 67,
+          "line": 69,
           "called": [
             "SystemState"
           ]
@@ -271920,7 +271974,7 @@
         {
           "kind": "def",
           "name": "isCompilerGenerated",
-          "line": 88,
+          "line": 90,
           "called": [
             "any",
             "isAuxiliary"
@@ -271929,8 +271983,9 @@
         {
           "kind": "def",
           "name": "isStateTransformer",
-          "line": 104,
+          "line": 128,
           "called": [
+            "bodyBearing",
             "isCompilerGenerated",
             "isProjectConstant",
             "kernelStateType",
@@ -271938,9 +271993,26 @@
           ]
         },
         {
+          "kind": "opaque",
+          "name": "censusWitnessOpaqueTransformer",
+          "line": 160,
+          "called": [
+            "SystemState",
+            "st"
+          ]
+        },
+        {
+          "kind": "opaque",
+          "name": "censusWitnessOpaqueNonTransformer",
+          "line": 163,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
           "kind": "def",
           "name": "liveClosure",
-          "line": 119,
+          "line": 172,
           "called": [
             "bind",
             "contains",
@@ -271954,7 +272026,7 @@
         {
           "kind": "def",
           "name": "committingExports",
-          "line": 137,
+          "line": 190,
           "called": [
             "commitsState",
             "isProjectConstant",
@@ -271964,7 +272036,7 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitionsPlain",
-          "line": 163,
+          "line": 216,
           "called": [
             "ackInterruptAudit",
             "adapterAdvanceTimer",
@@ -272187,12 +272259,13 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
-          "line": 396,
+          "line": 453,
           "called": [
             "censusWitnessBareConsume",
             "censusWitnessDelegatedStoreHelper",
             "censusWitnessDelegatedStoreWriter",
             "censusWitnessDirectLinkWrite",
+            "censusWitnessOpaqueTransformer",
             "censusWitnessRawTableWrite",
             "censusWitnessSplitWriter",
             "chainWitnessSt1",
@@ -272212,7 +272285,7 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitions",
-          "line": 418,
+          "line": 477,
           "called": [
             "nonExecutedTransitionsPlain",
             "nonExecutedTransitionsPrivate"
@@ -272221,7 +272294,7 @@
         {
           "kind": "def",
           "name": "standsBesideLive",
-          "line": 444,
+          "line": 503,
           "called": [
             "cancelBoundDonationOnCore",
             "cancelDonationOnCore",
@@ -272234,7 +272307,7 @@
         {
           "kind": "def",
           "name": "reconciliationViolations",
-          "line": 468,
+          "line": 527,
           "called": [
             "contains",
             "insert",
@@ -272246,7 +272319,7 @@
         {
           "kind": "def",
           "name": "pinSides",
-          "line": 501,
+          "line": 560,
           "called": [
             "conclusionOf",
             "none"
@@ -272255,7 +272328,7 @@
         {
           "kind": "def",
           "name": "pinRelatesPrograms",
-          "line": 533,
+          "line": 592,
           "called": [
             "contains",
             "none",
@@ -272265,7 +272338,7 @@
         {
           "kind": "def",
           "name": "pinViolations",
-          "line": 546,
+          "line": 605,
           "called": [
             "any",
             "contains",
@@ -272279,7 +272352,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
-          "line": 586,
+          "line": 645,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -272288,7 +272361,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
-          "line": 594,
+          "line": 653,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -272297,7 +272370,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
-          "line": 601,
+          "line": 660,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -272306,7 +272379,7 @@
         {
           "kind": "def",
           "name": "pinCheckWitnesses",
-          "line": 606,
+          "line": 665,
           "called": [
             "pinWitnessBothOnOneSide",
             "pinWitnessConjunctionOfReflexivity",
@@ -272316,7 +272389,7 @@
         {
           "kind": "def",
           "name": "pinCheckWitnessViolations",
-          "line": 618,
+          "line": 677,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed",
@@ -272350,34 +272423,36 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.LockFootprintBoundCensus",
-          "line": 77,
+          "line": 78,
           "called": []
         },
         {
           "kind": "def",
           "name": "boundSuffix",
-          "line": 85,
+          "line": 86,
           "called": []
         },
         {
           "kind": "def",
           "name": "boundExemptions",
-          "line": 93,
+          "line": 94,
           "called": []
         },
         {
           "kind": "def",
           "name": "isFootprintDecl",
-          "line": 101,
+          "line": 102,
           "called": [
             "LockSet",
-            "boundSuffix"
+            "bodyBearing",
+            "boundSuffix",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "requiredBoundType",
-          "line": 119,
+          "line": 121,
           "called": [
             "le",
             "maxLockSetSize",
@@ -272387,11 +272462,12 @@
         {
           "kind": "def",
           "name": "boundViolation",
-          "line": 128,
+          "line": 130,
           "called": [
             "LockSet",
             "WCRT",
             "any",
+            "bodyBearing",
             "boundSuffix",
             "bounded",
             "isFootprintDecl",
@@ -273637,24 +273713,24 @@
     {
       "module": "SeLe4n.Testing.ReplyStackWriteCensus",
       "path": "SeLe4n/Testing/ReplyStackWriteCensus.lean",
-      "declaration_count": 40,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.ReplyStackWriteCensus",
-          "line": 76,
+          "line": 77,
           "called": []
         },
         {
           "kind": "def",
           "name": "privateIn",
-          "line": 90,
+          "line": 91,
           "called": []
         },
         {
           "kind": "def",
           "name": "chainWritePrimitives",
-          "line": 110,
+          "line": 111,
           "called": [
             "consumeCallerReply",
             "consumeCallerReplyLink",
@@ -273675,13 +273751,13 @@
         {
           "kind": "def",
           "name": "chainRecordConstructors",
-          "line": 158,
+          "line": 159,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectStorePrimitives",
-          "line": 167,
+          "line": 168,
           "called": [
             "FrozenMap.set",
             "RHTable.insert"
@@ -273690,7 +273766,7 @@
         {
           "kind": "def",
           "name": "objectStoreHelpers",
-          "line": 189,
+          "line": 190,
           "called": [
             "frozenRewriteObject",
             "frozenStoreObject",
@@ -273707,7 +273783,7 @@
         {
           "kind": "def",
           "name": "objectStoreSpellings",
-          "line": 236,
+          "line": 237,
           "called": [
             "objectStoreHelpers",
             "objectStorePrimitives"
@@ -273716,7 +273792,7 @@
         {
           "kind": "def",
           "name": "chainNeutralConstructors",
-          "line": 249,
+          "line": 250,
           "called": [
             "cancelBoundDonation",
             "cancelBoundDonationOnCore",
@@ -273758,7 +273834,7 @@
         {
           "kind": "def",
           "name": "primitiveCoverageViolations",
-          "line": 379,
+          "line": 380,
           "called": [
             "Reply",
             "SchedContext",
@@ -273773,7 +273849,7 @@
         {
           "kind": "def",
           "name": "isProjectConstant",
-          "line": 399,
+          "line": 400,
           "called": [
             "any"
           ]
@@ -273781,13 +273857,13 @@
         {
           "kind": "def",
           "name": "isAuxiliary",
-          "line": 430,
+          "line": 432,
           "called": []
         },
         {
           "kind": "def",
           "name": "usesDirectly",
-          "line": 435,
+          "line": 437,
           "called": [
             "any",
             "bind",
@@ -273799,7 +273875,7 @@
         {
           "kind": "def",
           "name": "storesVia",
-          "line": 467,
+          "line": 469,
           "called": [
             "any",
             "bind",
@@ -273812,7 +273888,7 @@
         {
           "kind": "def",
           "name": "storesObject",
-          "line": 475,
+          "line": 477,
           "called": [
             "objectStoreSpellings",
             "storesVia"
@@ -273821,24 +273897,18 @@
         {
           "kind": "def",
           "name": "chainWriteFrontier",
-          "line": 479,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "isDefinitionShaped",
-          "line": 498,
+          "line": 481,
           "called": []
         },
         {
           "kind": "def",
           "name": "directWriteCandidates",
-          "line": 510,
+          "line": 501,
           "called": [
+            "bodyBearingName",
             "chainWritePrimitives",
             "contains",
             "isAuxiliary",
-            "isDefinitionShaped",
             "isProjectConstant",
             "usesDirectly"
           ]
@@ -273846,7 +273916,7 @@
         {
           "kind": "def",
           "name": "constructsChainRecord",
-          "line": 522,
+          "line": 513,
           "called": [
             "chainRecordConstructors",
             "usesDirectly"
@@ -273855,7 +273925,7 @@
         {
           "kind": "def",
           "name": "reachesChainConstructor",
-          "line": 543,
+          "line": 534,
           "called": [
             "any",
             "bind",
@@ -273869,11 +273939,11 @@
         {
           "kind": "def",
           "name": "recordConstructingStoreCandidates",
-          "line": 564,
+          "line": 555,
           "called": [
+            "bodyBearingName",
             "constructsChainRecord",
             "isAuxiliary",
-            "isDefinitionShaped",
             "isProjectConstant",
             "objectStoreSpellings",
             "reachesChainConstructor",
@@ -273884,25 +273954,25 @@
         {
           "kind": "inductive",
           "name": "ChainDiscipline",
-          "line": 582,
+          "line": 573,
           "called": []
         },
         {
           "kind": "def",
           "name": "isChainForm",
-          "line": 608,
+          "line": 599,
           "called": []
         },
         {
           "kind": "def",
           "name": "conclusionOf",
-          "line": 614,
+          "line": 605,
           "called": []
         },
         {
           "kind": "def",
           "name": "isPredicate",
-          "line": 621,
+          "line": 612,
           "called": [
             "conclusionOf",
             "none",
@@ -273912,7 +273982,7 @@
         {
           "kind": "def",
           "name": "isChainPredicate",
-          "line": 632,
+          "line": 623,
           "called": [
             "isChainForm",
             "isPredicate"
@@ -273921,7 +273991,7 @@
         {
           "kind": "def",
           "name": "resultViolations",
-          "line": 641,
+          "line": 632,
           "called": [
             "any",
             "conclusionOf",
@@ -273934,7 +274004,7 @@
         {
           "kind": "def",
           "name": "chainWriteRegistry",
-          "line": 674,
+          "line": 665,
           "called": [
             "ChainDiscipline",
             "chainWitnessSt1",
@@ -273982,7 +274052,7 @@
         {
           "kind": "def",
           "name": "halfStepResolves",
-          "line": 811,
+          "line": 802,
           "called": [
             "ChainDiscipline",
             "length",
@@ -273992,7 +274062,7 @@
         {
           "kind": "def",
           "name": "disciplineViolations",
-          "line": 827,
+          "line": 818,
           "called": [
             "ChainDiscipline",
             "covers",
@@ -274006,7 +274076,7 @@
         {
           "kind": "def",
           "name": "reconciliationViolations",
-          "line": 867,
+          "line": 858,
           "called": [
             "Reply",
             "SchedContext",
@@ -274022,7 +274092,7 @@
         {
           "kind": "def",
           "name": "censusWitnessBareConsume",
-          "line": 899,
+          "line": 890,
           "called": [
             "Kernel",
             "ReplyId",
@@ -274033,7 +274103,7 @@
         {
           "kind": "def",
           "name": "censusWitnessDirectLinkWrite",
-          "line": 910,
+          "line": 901,
           "called": [
             "Kernel",
             "ReplyId",
@@ -274047,7 +274117,7 @@
         {
           "kind": "def",
           "name": "censusWitnessRawTableWrite",
-          "line": 929,
+          "line": 920,
           "called": [
             "ReplyId",
             "SystemState",
@@ -274061,7 +274131,7 @@
         {
           "kind": "def",
           "name": "censusWitnessSplitHelper",
-          "line": 939,
+          "line": 930,
           "called": [
             "Reply",
             "none"
@@ -274070,7 +274140,7 @@
         {
           "kind": "def",
           "name": "censusWitnessSplitWriter",
-          "line": 946,
+          "line": 937,
           "called": [
             "Kernel",
             "ReplyId",
@@ -274085,7 +274155,7 @@
         {
           "kind": "def",
           "name": "censusWitnessDelegatedStoreHelper",
-          "line": 959,
+          "line": 950,
           "called": [
             "Kernel",
             "KernelObject",
@@ -274096,7 +274166,7 @@
         {
           "kind": "def",
           "name": "censusWitnessDelegatedStoreWriter",
-          "line": 963,
+          "line": 954,
           "called": [
             "Kernel",
             "ReplyId",
@@ -274110,7 +274180,7 @@
         {
           "kind": "def",
           "name": "eq_censusWitnessUserNamed",
-          "line": 975,
+          "line": 966,
           "called": [
             "Kernel",
             "ReplyId",
@@ -274124,7 +274194,7 @@
         {
           "kind": "def",
           "name": "eq_1",
-          "line": 990,
+          "line": 981,
           "called": [
             "Kernel",
             "ReplyId",
@@ -274138,7 +274208,7 @@
         {
           "kind": "def",
           "name": "censusWitnessNoWrite",
-          "line": 997,
+          "line": 988,
           "called": [
             "Reply",
             "ReplyId",

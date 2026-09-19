@@ -1,3 +1,121 @@
+## v0.35.114 — "does this declaration carry a body" has one answer
+
+Four of this tree's Tier 1 censuses derive a **domain** from the elaborated
+environment, and each has to settle the same question first: *is this constant a
+declaration somebody wrote a body for?*  It had **five answers**.
+`ReplyStackWriteCensus` got it right — `.defnInfo` **or** `.opaqueInfo` — and four
+sites across three censuses matched `.defnInfo` alone and wildcarded the rest, so
+an `opaque` declaration was silently outside four derived domains at once.  An
+`opaque` is executable, this tree's FFI surface carries seventy-six of them, and
+`ConstantInfo.value? (allowOpaque := true)` hands its body back — a fact
+`CLAUDE.md` already records and which two of these very censuses already rely on.
+
+What each census stopped asking:
+
+* `KernelTransitionReachabilityCensus` — an unreachable `opaque` transition owed
+  no wire-or-record judgement and never entered the reconciliation (the site
+  Codex reported on PR #897);
+* `LockFootprintBoundCensus` — an `opaque` `lockSet_…` footprint owed no
+  `_size_le` bound, so `boundedWait_under_2pl` and the whole WCRT surface would
+  be **silent** about a transition rather than conservative about it;
+* `IpcDethreadingEnvironmentCensus` — an `opaque` invariant conjunct dropped out
+  of `measuredConjuncts` at both walk sites, so the census demanded *less*.
+
+**A domain miss is silent by construction**, which is why this is one owner
+rather than four patches: the constant is never examined, the pin never moves,
+and each census goes on reporting that its whole domain is accounted for.  The
+class cannot be found by reading a failure — it is found by sweeping every asker
+of the question, which is how the three unreported siblings surfaced.
+
+**The right answer was already in the tree and unreachable from two of the
+askers**, which is `v0.35.59`'s rule verbatim: when a question has one owner and
+an asker that cannot see it, the owner is in the wrong layer.
+`SeLe4n/Testing/DeclarationKind.lean` owns it now — upstream of every census and
+of the kernel vocabulary they differ in — as `bodyBearing`, which matches all
+**eight** `ConstantInfo` constructors with **no `_` case at all**, so a ninth in a
+future toolchain is a build error naming the function rather than a silent
+exclusion.  `scripts/check_module_axioms.py`'s `axiomSweepEdges` had enumerated
+all eight, case for case, since it was written; that was the precedent, unswept
+onto the censuses.
+
+**Two of the six exclusions are necessary rather than incidental**, and that is
+exactly why folding them back under a wildcard reads as harmless.  A `.thmInfo`
+*carries a value* — its proof — and a result-type test still matches one:
+`theorem f : step st = st'` elaborates to `@Eq SystemState (step st) st'`, whose
+implicit type argument **is** the constant a `SystemState` domain looks for, so a
+theorem *about* a transition would enter the domain *of* transitions.  And
+`.ctorInfo` covers `SystemState.mk`, whose result type is `SystemState` itself.
+Both are stated at the arm rather than left to a reader.
+
+**The widening is not vacuous on the real tree.**  It admitted exactly one
+constant: `Platform.FFI.kernelStateRef`, an `opaque IO.Ref SystemState` — the
+state cell the reachability census is *defined over*, since "commits state" means
+"reaches a write to it", and which was outside its own census's domain.  It is
+reachable from every committing seam, so it needs no pin entry, and carving it out
+by name would be the enumeration that census exists to retire.  The figures moved
+**528 → 530** transformers, **288 → 289** reachable and **240 → 241** pinned: one
+real constant and one planted witness.  The other three censuses report
+byte-identical figures — 47 bounded footprints, 25 reply-stack write sites, 186
+family statements with 0 threaded — so the delta is exactly the two constants
+accounted for above.
+
+**The witnesses are the measurement, and one of them corrected this cut's own
+prose.**  A check that cannot fire and carries no witness is indistinguishable
+from one that is wrong, and no `opaque` in this tree mentions `SystemState`, so
+the arms are planted.  `DeclarationKind` carries a `def`, an `opaque` and a
+`theorem` control, typed over `Nat` so they enter no downstream census's domain;
+the reachability census carries an `opaque` transformer that must appear in its
+pin and a control that only *takes* a `SystemState` and must not.  Both census
+witnesses were decided by **building**: deleting the pin entry makes the
+reconciliation report the transformer as unrecorded, and reading the whole type
+instead of the telescoped result makes it report the control as unrecorded — so
+the pair pins the domain in both directions.  The first draft claimed the control
+witnesses "widen the classifier to any declaration"; the mutation for that claim
+does not exist, because the control is excluded by the **result-type** test rather
+than by `bodyBearing`, and the docstring now says what the mutation actually
+proved.
+
+Twenty-two Tier 3 anchors pin the relation rather than the tokens — the owner's
+eight arms, its three witnesses, each of the four askers reading it, and a
+declaration-bounded negative refusing the retired `.defnInfo`-only test at each
+site that used to carry it.  The dethreading census keeps **one** deliberate
+`.defnInfo`: a fail-closed assertion that its single named root is a definition,
+which a file-wide negative would have fired on, so that one is anchored as a
+positive instead.  `isDefinitionShaped` is deleted rather than kept beside the
+owner, and a negative refuses its return.  Six token-preserving mutations over
+the anchors and two over the build, every one caught.
+
+One stale figure swept while adding to the population it counts:
+`scripts/lean_store_read_census.py`'s comment said "the tree has **73** `opaque`
+declarations at column zero", measured at `v0.35.19` and 76 by this cut.  It is
+dated rather than re-counted, because a live count in a comment drifts on contact
+— and `docs/REGISTERED_DEBT.md`'s landing note for the reachability census is
+dated for the same reason.
+
+No kernel transition changed, so the golden fixture is byte-identical and
+`maxLockSetSize` does not move.
+
+The new module's `run_cmd` was refused by the de-threading gate's
+`minting_machinery` check until it was pinned in `MACHINERY_PINS` — declaration-
+minting machinery can define declarations no text census sees, so the whole
+mechanism set is reviewed by count and a new one fails closed.  That is the gate
+working: this witness block mints nothing, and the pin says so.
+
+**The remaining asker is `scripts/check_content_flow_coverage.py`**, whose
+embedded Lean probe has four `.defnInfo`-only sweeps and a `cfExecutableValue`
+that calls `value?` without `allowOpaque` — the same class in an artefact with its
+own invocation and its own `--self-test` harness, so it is the next cut rather
+than a silent omission here.
+
+**Files**: `SeLe4n/Testing/DeclarationKind.lean` (new),
+`SeLe4n/Testing/KernelTransitionReachabilityCensus.lean`,
+`SeLe4n/Testing/LockFootprintBoundCensus.lean`,
+`SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean`,
+`SeLe4n/Testing/ReplyStackWriteCensus.lean`, `scripts/test_tier1_build.sh`,
+`scripts/test_tier3_invariant_surface.sh`, `scripts/lean_store_read_census.py`,
+`scripts/check_ipc_invariant_dethreading.py`,
+`docs/spec/SELE4N_SPEC.md`, `docs/REGISTERED_DEBT.md`, `CLAUDE.md`, `AGENTS.md`.
+
 ## v0.35.113 — the trace comparison is a SEQUENCE, and the control that watched it was inert
 
 `v0.35.110` made the golden-trace comparison both-directional after finding that

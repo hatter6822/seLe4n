@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.113` (`lakefile.toml`) |
+| **Package version** | `0.35.114` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 394,808 across 333 Lean files |
+| **Production LoC** | 394,995 across 334 Lean files |
 | **Test LoC** | 80,213 across 70 Lean test suites |
-| **Proved declarations** | 13,115 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 13,116 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1829,12 +1829,21 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
 
    Its counterpart walks the same graph the other way.
    `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (WS-RR
-   RR8.12, `v0.35.91`) derives every project definition whose **result
-   type** transforms `SystemState` and asks which of them a committing
-   export can reach: **528 state transformers, 288 reachable, 240 not**,
-   with the unreachable half pinned by name and reconciled in both
-   directions — a new one is a build failure, and so is an entry that
-   has become live.  It exists because `v0.35.90` found two verified
+   RR8.12, `v0.35.91`) derives every project declaration with a body
+   whose **result type** transforms `SystemState` and asks which of them
+   a committing export can reach: **530 state transformers, 289
+   reachable, 241 not**, with the unreachable half pinned by name and
+   reconciled in both directions — a new one is a build failure, and so
+   is an entry that has become live.  It read `.defnInfo` alone until
+   `v0.35.114`, when the same wildcard was found at four sites across
+   three censuses: an `opaque` is executable and was silently outside
+   four derived domains, so which declarations carry a body has one
+   owner now (`SeLe4n/Testing/DeclarationKind.lean`, exhaustive over all
+   eight `ConstantInfo` constructors with no `_` case).  The widening
+   admitted one real constant — `Platform.FFI.kernelStateRef`, the
+   `opaque IO.Ref SystemState` this census is defined over — which is
+   reachable and so needs no pin entry; the other new member is a
+   planted witness.  It exists because `v0.35.90` found two verified
    behavioural steps in a composite no production path calls while the
    live `.tcbSuspend` re-composed that composite's parts and carried
    neither.  Its commit predicate and its auxiliary filter are imported

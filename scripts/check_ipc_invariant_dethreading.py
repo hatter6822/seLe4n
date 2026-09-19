@@ -323,6 +323,11 @@ MACHINERY_PINS = {
     # PR #889 review round 17: the boot entry's contract, decided over the
     # elaborated environment.  One `run_cmd`; it mints no declaration.
     ("SeLe4n/Testing/BootEntryContract.lean", "run_cmd"): 1,
+    # v0.35.114: the owner of "does this declaration carry a body", shared by the
+    # four censuses below.  One `run_cmd`, which looks its three planted
+    # witnesses up in the environment and throws when `bodyBearing` answers the
+    # wrong arm for one of them.  It mints no declaration.
+    ("SeLe4n/Testing/DeclarationKind.lean", "run_cmd"): 1,
     # The elaborator-backed de-threading census itself: one `run_cmd`
     # running the witnesses and the environment walk.  The census is this
     # pin's own payoff -- the machinery it rides is reviewed here like any

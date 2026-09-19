@@ -7,6 +7,7 @@
 import Lean.Elab.Command
 import SeLe4n
 import SeLe4n.Platform.Staged
+import SeLe4n.Testing.DeclarationKind
 import SeLe4n.Testing.ExportCommitDisciplineCensus
 import SeLe4n.Testing.ReplyStackWriteCensus
 
@@ -60,6 +61,7 @@ namespace SeLe4n.Testing.KernelTransitionReachabilityCensus
 open Lean Elab Command Meta
 open SeLe4n.Testing.ExportCommitDisciplineCensus (isProjectConstant commitsState)
 open SeLe4n.Testing.ReplyStackWriteCensus (privateIn conclusionOf)
+open SeLe4n.Testing.DeclarationKind (bodyBearing)
 
 /-- The state this kernel transforms.  A definition whose **result** mentions it
 is a transition, a resolver over it, or a step of one; a definition that merely
@@ -92,7 +94,8 @@ def isCompilerGenerated (env : Environment) (n : Name) : Bool :=
     s == "_cstage1" || s == "_cstage2" || s == "_flat_ctor"
       || s == "_sunfold" || s == "_unsafe_rec" || s.startsWith "initFn"
 
-/-- `true` when `n` is a definition whose result type mentions `SystemState`.
+/-- `true` when `n` is a declaration with a body whose result type mentions
+`SystemState`.
 
 `forallTelescopeReducing` strips the binders, so a predicate
 `SystemState → Prop` has body `Prop` and is **not** in the domain, while
@@ -100,15 +103,65 @@ def isCompilerGenerated (env : Environment) (n : Name) : Bool :=
 over-approximates — an `Option SystemState` resolver and a pure reader that
 returns its argument both qualify — and that is the safe direction for a
 *domain*: a member wrongly included must be explained, a member wrongly excluded
-is never looked at. -/
+is never looked at.
+
+**Which declarations have a body is `DeclarationKind.bodyBearing`'s question, not
+this function's** (PR #897's review).  What stood here was a `match` on
+`.defnInfo` with a `| _ => return false` wildcard, so an `opaque` — which is
+executable, and whose body `liveClosure` below reads through
+`value? (allowOpaque := true)` precisely because this tree has such declarations
+— was silently outside this **domain**.  A domain miss is silent by
+construction: the constant is never examined, the pin never moves, and the
+reconciliation goes on reporting that every non-executed transformer is
+recorded.  The same wildcard stood at four sites across three censuses while a
+fifth had the right answer, which is why the question has one owner now rather
+than four patches.
+
+**The widening is not vacuous on this tree.**  It brought in exactly one real
+constant: `Platform.FFI.kernelStateRef`, an `opaque IO.Ref SystemState` — the
+state cell this census is *defined over*, since "commits state" means "reaches a
+write to it".  It is not a transition, and the domain says as much by
+over-approximating; it is **reachable** from every committing seam, so it needs
+no pin entry and demands nothing.  Carving it out by name would be the
+enumeration this census exists to retire, so it stays in and is explained here.
+The other new member is the planted witness below. -/
 def isStateTransformer (env : Environment) (n : Name) (ci : ConstantInfo) :
     MetaM Bool := do
-  match ci with
-  | .defnInfo _ =>
-    if !isProjectConstant n || isCompilerGenerated env n then return false
-    forallTelescopeReducing ci.type fun _ body =>
-      pure (body.find? (·.isConstOf kernelStateType)).isSome
-  | _ => return false
+  if !bodyBearing ci then return false
+  if !isProjectConstant n || isCompilerGenerated env n then return false
+  forallTelescopeReducing ci.type fun _ body =>
+    pure (body.find? (·.isConstOf kernelStateType)).isSome
+
+/-! ## Witnesses for the `opaque` arm of the domain
+
+`DeclarationKind` witnesses the *predicate*; these two witness the **pipeline**,
+which is the part that was broken: a transformer the classifier does not
+recognise never reaches the reachability partition or the reconciliation at all.
+They make the arm decisive in **both** directions through the reconciliation
+itself rather than through a second check:
+
+* the transformer is a state transformer no committing export reaches, so it must
+  appear in the pin below; **measured** — delete that pin entry and the
+  reconciliation reports it as a non-executed transformer nobody recorded, which
+  is what says the witness reaches the reconciliation rather than merely
+  elaborating;
+* the control only *takes* a `SystemState`, so it must **not** appear: what keeps
+  it out is that the type test reads the **telescoped result** rather than the
+  whole type.  **Measured** — replace `forallTelescopeReducing`'s body with
+  `ci.type` and the control becomes an unrecorded non-executed transformer, so
+  the pair decides the domain in both directions.  (Narrowing `bodyBearing` back
+  to `.defnInfo` is caught one module earlier, by `DeclarationKind`'s own
+  `opaque` witness, which names the arm and the reason.)
+
+They are `opaque` rather than `def` deliberately: a `def` exercises the arm that
+already worked.  Each carries a value, because the finding is about an
+*executable* opaque transition rather than a declared-and-unimplemented one. -/
+
+private opaque censusWitnessOpaqueTransformer : Model.SystemState → Model.SystemState :=
+  fun st => st
+
+private opaque censusWitnessOpaqueNonTransformer : Model.SystemState → Nat :=
+  fun _ => 0
 
 /-- Every constant a committing export can reach, following project constants
 transitively.
@@ -392,7 +445,11 @@ literal can spell, so each is built with the compiler's own mangling through
 `ReplyStackWriteCensus.privateIn`.  Eight of these are that census's own planted
 witnesses, which enter this domain because this module imports it for
 `isAuxiliary`; they are deliberately not executed, and their presence here is
-the derivation working rather than noise to carve out. -/
+the derivation working rather than noise to carve out.  One more is **this**
+census's own, planted above so the `opaque` arm of its domain is decided by
+something on this tree; the control beside it is deliberately absent, since its
+result type is not `SystemState` and a widening that admitted it would fail
+here. -/
 def nonExecutedTransitionsPrivate : List Name :=
   [ privateIn `SeLe4n.Kernel.API `SeLe4n.Kernel.resolveExtraCapsDetailed
   , privateIn `SeLe4n.Kernel.API `SeLe4n.Kernel.resolveExtraCapsGated
@@ -412,6 +469,8 @@ def nonExecutedTransitionsPrivate : List Name :=
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitWriter
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_1
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_censusWitnessUserNamed
+  , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
+      `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessOpaqueTransformer
   ]
 
 /-- The whole pin. -/
